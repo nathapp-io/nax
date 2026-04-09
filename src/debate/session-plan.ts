@@ -213,6 +213,7 @@ export async function runPlan(
     /* reviewerSession */ undefined,
     /* resolverContext */ undefined,
     planSynthesisSuffix,
+    successful.map((p) => p.debater),
   );
 
   // Winning output: synthesis/custom resolver returns a combined PRD — use it when available.

@@ -6,7 +6,7 @@
 
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
-import { resolvePersonas } from "./personas";
+import { buildDebaterLabel, resolvePersonas } from "./personas";
 import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
@@ -62,13 +62,17 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   // Step 2: Proposal round — bounded parallel
   const debate = ctx.config?.debate;
   const concurrencyLimit = debate?.maxConcurrentDebaters ?? 2;
+  const proposalBuilder = new DebatePromptBuilder(
+    { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+    { debaters: resolved.map((r) => r.debater), sessionMode: "one-shot" },
+  );
   const proposalSettled = await allSettledBounded(
     resolved.map(
       ({ debater, adapter }, i) =>
         () =>
           runComplete(
             adapter,
-            prompt,
+            proposalBuilder.buildProposalPrompt(i),
             {
               model: resolveDebaterModel(debater, ctx.config),
               featureName: ctx.stage,
@@ -219,7 +223,7 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   const fullResolverContext = ctx.resolverContextInput
     ? {
         ...ctx.resolverContextInput,
-        labeledProposals: successful.map((p) => ({ debater: p.debater.agent, output: p.output })),
+        labeledProposals: successful.map((p) => ({ debater: buildDebaterLabel(p.debater), output: p.output })),
       }
     : undefined;
   const outcome: ResolveOutcome = await resolveOutcome(
@@ -233,6 +237,8 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
     ctx.featureName,
     ctx.reviewerSession,
     fullResolverContext,
+    /* promptSuffix */ undefined,
+    successful.map((p) => p.debater),
   );
   totalCostUsd += outcome.resolverCostUsd;
 

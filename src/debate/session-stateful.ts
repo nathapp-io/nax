@@ -10,7 +10,7 @@ import type { ModelDef, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { allSettledBounded } from "./concurrency";
-import { resolvePersonas } from "./personas";
+import { buildDebaterLabel, resolvePersonas } from "./personas";
 import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
@@ -136,11 +136,22 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   // Proposal round — bounded parallel
   const debate = ctx.config?.debate;
   const concurrencyLimit = debate?.maxConcurrentDebaters ?? 2;
+  const proposalBuilder = new DebatePromptBuilder(
+    { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+    { debaters: resolved.map((r) => r.debater), sessionMode: "stateful" },
+  );
   const proposalSettled = await allSettledBounded(
     resolved.map(
       ({ debater, adapter }, debaterIdx) =>
         () =>
-          runStatefulTurn(ctx, adapter, debater, prompt, `debate-${ctx.stage}-${debaterIdx}`, config.rounds > 1),
+          runStatefulTurn(
+            ctx,
+            adapter,
+            debater,
+            proposalBuilder.buildProposalPrompt(debaterIdx),
+            `debate-${ctx.stage}-${debaterIdx}`,
+            config.rounds > 1,
+          ),
     ),
     concurrencyLimit,
   );
@@ -279,7 +290,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   const fullResolverContext = ctx.resolverContextInput
     ? {
         ...ctx.resolverContextInput,
-        labeledProposals: successfulProposals.map((s) => ({ debater: s.debater.agent, output: s.output })),
+        labeledProposals: successfulProposals.map((s) => ({ debater: buildDebaterLabel(s.debater), output: s.output })),
       }
     : undefined;
   const outcome: ResolveOutcome = await resolveOutcome(
@@ -293,6 +304,8 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     ctx.featureName,
     ctx.reviewerSession,
     fullResolverContext,
+    /* promptSuffix */ undefined,
+    successfulProposals.map((s) => s.debater),
   );
   totalCostUsd += outcome.resolverCostUsd;
 
