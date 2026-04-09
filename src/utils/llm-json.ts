@@ -128,7 +128,7 @@ export function parseLLMJson<T = unknown>(text: string): T {
     }
   }
 
-  throw new SyntaxError(`[llm-json] Failed to parse LLM response as JSON`);
+  throw new SyntaxError("[llm-json] Failed to parse LLM response as JSON");
 }
 
 /**
