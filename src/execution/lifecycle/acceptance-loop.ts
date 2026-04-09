@@ -326,6 +326,17 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
   const { unlink } = await import("node:fs/promises");
   await unlink(testPath);
 
+  // Delete acceptance-meta.json so acceptanceSetupExecute cannot reuse the
+  // fingerprint of the (now-deleted) test and is forced to regenerate.
+  if (acceptanceContext.featureDir) {
+    const metaPath = path.join(acceptanceContext.featureDir, "acceptance-meta.json");
+    try {
+      await unlink(metaPath);
+    } catch {
+      // missing meta is fine — setup will treat it as not-yet-generated
+    }
+  }
+
   // Collect implementation context from git diff when storyGitRef is available
   let implementationContext: Array<{ path: string; content: string }> | undefined;
   const storyGitRef = acceptanceContext.storyGitRef;

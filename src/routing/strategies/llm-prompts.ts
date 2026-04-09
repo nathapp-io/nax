@@ -7,7 +7,7 @@
 
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
-import { extractJsonFromMarkdown, wrapJsonPrompt } from "../../utils/llm-json";
+import { extractJsonFromMarkdown, parseLLMJson, wrapJsonPrompt } from "../../utils/llm-json";
 import { determineTestStrategy } from "../classify";
 import type { RoutingDecision } from "../router";
 
@@ -177,8 +177,7 @@ export function stripCodeFences(text: string): string {
  * @throws Error if JSON parsing or validation fails
  */
 export function parseRoutingResponse(output: string, story: UserStory, config: NaxConfig): RoutingDecision {
-  const jsonText = extractJsonFromMarkdown(output.trim());
-  const parsed = JSON.parse(jsonText);
+  const parsed = parseLLMJson<Record<string, unknown>>(output);
   return validateRoutingDecision(parsed, config, story);
 }
 
@@ -196,7 +195,7 @@ export function parseBatchResponse(
   stories: UserStory[],
   config: NaxConfig,
 ): Map<string, RoutingDecision> {
-  const parsed = JSON.parse(extractJsonFromMarkdown(output.trim()));
+  const parsed = parseLLMJson(output);
 
   if (!Array.isArray(parsed)) {
     throw new Error("Batch LLM response must be a JSON array");

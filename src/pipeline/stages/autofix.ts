@@ -322,6 +322,7 @@ async function runAgentRectification(
         config: ctx.config,
         projectDir: ctx.projectDir,
         maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+        featureName: ctx.prd.feature,
         storyId: ctx.story.id,
         sessionRole: "implementer",
       });

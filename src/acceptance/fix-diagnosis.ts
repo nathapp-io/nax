@@ -9,6 +9,7 @@ import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import { type ModelTier, resolveModelForAgent } from "../config/schema-types";
+import { tryParseLLMJson } from "../utils/llm-json";
 import type { DiagnosisResult, SemanticVerdict } from "./types";
 
 export interface DiagnoseOptions {
@@ -179,32 +180,20 @@ function parseDiagnosisResult(output: string): DiagnosisResult | null {
     return null;
   }
 
-  try {
-    const cleaned = output.trim();
-    let jsonStr = cleaned;
-
-    const firstBrace = cleaned.indexOf("{");
-    const lastBrace = cleaned.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      jsonStr = cleaned.slice(firstBrace, lastBrace + 1);
-    }
-
-    const parsed = JSON.parse(jsonStr);
-    if (
-      typeof parsed.verdict === "string" &&
-      typeof parsed.reasoning === "string" &&
-      typeof parsed.confidence === "number"
-    ) {
-      return {
-        verdict: parsed.verdict,
-        reasoning: parsed.reasoning,
-        confidence: parsed.confidence,
-        testIssues: parsed.testIssues,
-        sourceIssues: parsed.sourceIssues,
-      };
-    }
-    return null;
-  } catch {
-    return null;
+  const parsed = tryParseLLMJson<Record<string, unknown>>(output);
+  if (
+    parsed &&
+    typeof parsed.verdict === "string" &&
+    typeof parsed.reasoning === "string" &&
+    typeof parsed.confidence === "number"
+  ) {
+    return {
+      verdict: parsed.verdict as DiagnosisResult["verdict"],
+      reasoning: parsed.reasoning,
+      confidence: parsed.confidence,
+      testIssues: Array.isArray(parsed.testIssues) ? (parsed.testIssues as string[]) : undefined,
+      sourceIssues: Array.isArray(parsed.sourceIssues) ? (parsed.sourceIssues as string[]) : undefined,
+    };
   }
+  return null;
 }
