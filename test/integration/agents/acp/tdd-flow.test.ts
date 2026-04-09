@@ -806,7 +806,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
         // First call: fail with regressions → triggers rectification
         // Second call (after rectification): pass
         const failed = testRunCount === 1;
-        // Use bun test output format that parseBunTestOutput recognizes
+        // Use bun test output format that parseTestOutput recognizes
         const failedOutput = "test/feature.test.ts:\n✘ should work [1.0ms]\n";
         const passedOutput = "test/feature.test.ts:\n✓ should work [1.0ms]\n";
         return {
@@ -863,7 +863,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash") && cmd[1] === "-c") {
         testRunCount++;
         // Always fail — exhausts all retries
-        // Use bun test output format that parseBunTestOutput recognizes
+        // Use bun test output format that parseTestOutput recognizes
         return {
           pid: 9999,
           exited: Promise.resolve(1),

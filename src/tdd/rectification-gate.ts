@@ -15,10 +15,9 @@ import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
-  type parseBunTestOutput as ParseBunTestOutputType,
   type RectificationState,
   executeWithTimeout as _executeWithTimeout,
-  parseBunTestOutput as _parseBunTestOutput,
+  parseTestOutput as _parseTestOutput,
   shouldRetryRectification as _shouldRetryRectification,
   runSharedRectificationLoop,
 } from "../verification";
@@ -29,7 +28,7 @@ import { buildImplementerRectificationPrompt } from "./prompts";
 /** Injectable deps for testability — avoids mock.module() contamination */
 export const _rectificationGateDeps = {
   executeWithTimeout: _executeWithTimeout,
-  parseBunTestOutput: _parseBunTestOutput,
+  parseTestOutput: _parseTestOutput,
   shouldRetryRectification: _shouldRetryRectification,
 };
 
@@ -66,7 +65,7 @@ export async function runFullSuiteGate(
   const fullSuitePassed = fullSuiteResult.success && fullSuiteResult.exitCode === 0;
 
   if (!fullSuitePassed && fullSuiteResult.output) {
-    const testSummary = _rectificationGateDeps.parseBunTestOutput(fullSuiteResult.output);
+    const testSummary = _rectificationGateDeps.parseTestOutput(fullSuiteResult.output);
 
     if (testSummary.failed > 0) {
       return await runRectificationLoop(
@@ -132,7 +131,7 @@ async function runRectificationLoop(
   contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
-  testSummary: ReturnType<typeof _parseBunTestOutput>,
+  testSummary: ReturnType<typeof _parseTestOutput>,
   rectificationConfig: NonNullable<NaxConfig["execution"]["rectification"]>,
   testCmd: string,
   fullSuiteTimeout: number,
@@ -264,7 +263,7 @@ async function runRectificationLoop(
       }
 
       if (retryFullSuite.output) {
-        const newTestSummary = _rectificationGateDeps.parseBunTestOutput(retryFullSuite.output);
+        const newTestSummary = _rectificationGateDeps.parseTestOutput(retryFullSuite.output);
         state.currentFailures = newTestSummary.failed;
         testSummary.failures = newTestSummary.failures;
         testSummary.failed = newTestSummary.failed;

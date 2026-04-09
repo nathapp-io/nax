@@ -1,6 +1,6 @@
 import type { RectificationConfig } from "../config";
-import type { TestFailure } from "../execution/test-output-parser";
 import type { UserStory } from "../prd";
+import type { TestFailure } from "../verification/parser";
 import { createRectificationPrompt } from "../verification/rectification";
 
 /**

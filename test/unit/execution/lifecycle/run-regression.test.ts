@@ -101,7 +101,7 @@ describe("runDeferredRegression — initial suite passes", () => {
       return makePassResult();
     });
     _regressionDeps.runRectificationLoop = mock(async () => false);
-    _regressionDeps.parseBunTestOutput = mock(() => ({ passed: 150, failed: 0, failures: [] }));
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 150, failed: 0, failures: [] }));
     _regressionDeps.reverseMapTestToSource = mock(() => []);
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
@@ -130,7 +130,7 @@ describe("runDeferredRegression — early exit after first story", () => {
       return makePassResult(150);
     });
 
-    _regressionDeps.parseBunTestOutput = mock(() => ({
+    _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 92,
       failures: [], // unmapped → all stories affected
@@ -171,7 +171,7 @@ describe("runDeferredRegression — early exit after second story", () => {
       return makePassResult(100);                          // mid-loop after US-002: pass → early exit
     });
 
-    _regressionDeps.parseBunTestOutput = mock(() => ({
+    _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 92,
       failures: [],
@@ -208,7 +208,7 @@ describe("runDeferredRegression — no story fixes anything", () => {
       return makeVerifyResult(); // always fail
     });
 
-    _regressionDeps.parseBunTestOutput = mock(() => ({
+    _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 92,
       failures: [],
@@ -244,7 +244,7 @@ describe("runDeferredRegression — test output context forwarding", () => {
       return makePassResult(); // mid-loop after US-002 → early exit
     });
 
-    _regressionDeps.parseBunTestOutput = mock(() => ({
+    _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 92,
       failures: [],

@@ -199,7 +199,7 @@ describe("runDeferredRegression", () => {
 const origRegressionDeps = {
   runVerification: _regressionDeps.runVerification,
   runRectificationLoop: _regressionDeps.runRectificationLoop,
-  parseBunTestOutput: _regressionDeps.parseBunTestOutput,
+  parseTestOutput: _regressionDeps.parseTestOutput,
   reverseMapTestToSource: _regressionDeps.reverseMapTestToSource,
 };
 
@@ -321,11 +321,11 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
       };
     });
 
-    _regressionDeps.parseBunTestOutput = mock(() => ({
+    _regressionDeps.parseTestOutput = mock(() => ({
       failed: 1,
       passed: 5,
       failures: [{ testName: "some test", error: "boom" }],
-    })) as unknown as typeof _regressionDeps.parseBunTestOutput;
+    })) as unknown as typeof _regressionDeps.parseTestOutput;
 
     _regressionDeps.runRectificationLoop = mock(async () => false);
 

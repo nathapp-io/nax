@@ -1,16 +1,82 @@
 /**
- * Test Output Parsing
+ * Test Output Parsing — SSOT
  *
- * Unified test output parsing logic for Bun test framework.
- * Extracted from execution/test-output-parser.ts and execution/verification.ts.
+ * Single entry point for parsing test runner output across all supported frameworks.
+ * Use `parseTestOutput(output)` — it auto-detects the framework and dispatches.
+ *
+ * Supported:
+ *   - Bun test
+ *   - Jest / Vitest
+ *   - pytest        (common-parser fallback — structured extraction TODO)
+ *   - go test       (common-parser fallback — structured extraction TODO)
+ *   - Unknown       (common-parser fallback via broad regexes)
  */
 
 import type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Framework detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+type Framework = "bun" | "jest" | "vitest" | "pytest" | "go" | "unknown";
+
+function detectFramework(output: string): Framework {
+  // Vitest: "Test Files  1 failed | 2 passed (3)"
+  if (/^\s*Test Files\s+\d+/m.test(output)) return "vitest";
+  // Jest: "Tests:       41 failed, 38 passed, 79 total"
+  if (/^\s*Tests:\s+\d+/m.test(output)) return "jest";
+  // pytest: "====== X failed, Y passed in Z.Zs ======"
+  if (/={3,}\s+\d+\s+(?:failed|passed).*in\s+[\d.]+s\s*={3,}/m.test(output)) return "pytest";
+  // go test: "--- FAIL:" or "ok  \t" or "FAIL\t"
+  if (/^--- (?:FAIL|PASS):/m.test(output) || /^(?:ok|FAIL)\s+\t/m.test(output)) return "go";
+  // Bun: "(fail)" marker or bun-specific checkmark patterns
+  if (/^\(fail\)\s/m.test(output) || /^bun test/m.test(output)) return "bun";
+  return "unknown";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public SSOT
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Parse Bun test output into structured failure objects.
+ * Parse test runner output into a structured TestSummary.
  *
- * Example output format:
+ * Auto-detects the framework from output content and dispatches to the
+ * appropriate sub-parser. Falls back to a common regex-based parser for
+ * unknown or unsupported formats.
+ */
+export function parseTestOutput(output: string): TestSummary {
+  const framework = detectFramework(output);
+  switch (framework) {
+    case "bun":
+      return parseBunOutput(output);
+    case "jest":
+    case "vitest":
+      return parseJestOutput(output);
+    case "pytest":
+      return parsePytestOutput(output);
+    case "go":
+      return parseGoTestOutput(output);
+    default:
+      return parseCommonOutput(output);
+  }
+}
+
+/**
+ * @deprecated Use `parseTestOutput` instead — it auto-detects the framework.
+ */
+export function parseBunTestOutput(output: string): TestSummary {
+  return parseTestOutput(output);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Framework-specific parsers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parse Bun test output.
+ *
+ * Example format:
  * ```
  * bun test v1.0.0
  *
@@ -21,97 +87,7 @@ import type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
  * (fail) describe block > nested block > test name [1.2ms]
  * Error: Expected 1 to equal 2
  *   at /path/to/file.ts:10:15
- *   at Object.test (/path/to/file.ts:8:3)
  * ```
- */
-export function parseBunTestOutput(output: string): TestSummary {
-  // Detect Jest/Vitest output by the presence of their summary line format.
-  // Jest:   "Tests:       41 failed, 38 passed, 79 total"
-  // Vitest: "Test Files  1 failed | 2 passed (3)"
-  if (isJestLikeOutput(output)) {
-    return parseJestOutput(output);
-  }
-  return parseBunOutput(output);
-}
-
-/**
- * Detect whether the output comes from Jest or Vitest rather than Bun.
- * Looks for the Jest summary line format or Vitest's "Test Files" line.
- */
-function isJestLikeOutput(output: string): boolean {
-  return /^\s*Tests:\s+\d+/m.test(output) || /^\s*Test Files\s+\d+/m.test(output);
-}
-
-/**
- * Parse Jest / Vitest test output into a TestSummary.
- *
- * Jest summary line examples:
- *   "Tests:       41 failed, 38 passed, 79 total"
- *   "Tests:       38 passed, 38 total"
- *
- * Jest failure block example:
- *   "  ● describe block > test name"
- *   "    Expected: ..."
- */
-function parseJestOutput(output: string): TestSummary {
-  const failures: TestFailure[] = [];
-  let passed = 0;
-  let failed = 0;
-
-  // Extract counts from the "Tests:" summary line (use the last occurrence)
-  const summaryMatches = Array.from(output.matchAll(/^\s*Tests:\s+(.*)/gm));
-  if (summaryMatches.length > 0) {
-    const summaryLine = summaryMatches[summaryMatches.length - 1][1];
-
-    const failedMatch = summaryLine.match(/(\d+)\s+failed/);
-    const passedMatch = summaryLine.match(/(\d+)\s+passed/);
-    if (failedMatch) failed = Number.parseInt(failedMatch[1], 10);
-    if (passedMatch) passed = Number.parseInt(passedMatch[1], 10);
-  }
-
-  // Extract failure test names from "  ● describe > test name" lines
-  // Jest marks failures with a bullet "●" character
-  let currentFile = "unknown";
-  const lines = output.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Track FAIL/PASS file headers: "FAIL hooks/usePositionSizer.spec.ts"
-    const fileMatch = line.match(/^\s*(?:FAIL|PASS)\s+(\S+\.[jt]sx?)/);
-    if (fileMatch) {
-      currentFile = fileMatch[1];
-      continue;
-    }
-
-    // Jest failure marker: "  ● test suite name > test name"
-    const bulletMatch = line.match(/^\s+●\s+(.+)$/);
-    if (bulletMatch) {
-      const testName = bulletMatch[1].trim();
-      // Skip bullet-summary headers that end with a block title (no ">" separator)
-      // and collect the error from the next non-blank line
-      let error = "";
-      for (let j = i + 1; j < lines.length && j < i + 10; j++) {
-        const next = lines[j].trim();
-        if (!next) continue;
-        // Stop at next bullet or PASS/FAIL header
-        if (next.startsWith("●") || /^(?:FAIL|PASS)\s/.test(next)) break;
-        error = next;
-        break;
-      }
-      failures.push({
-        file: currentFile,
-        testName,
-        error: error || "Unknown error",
-        stackTrace: [],
-      });
-    }
-  }
-
-  return { passed, failed, failures };
-}
-
-/**
- * Original Bun test output parser (unchanged logic).
  */
 function parseBunOutput(output: string): TestSummary {
   const lines = output.split("\n");
@@ -151,28 +127,20 @@ function parseBunOutput(output: string): TestSummary {
       const testName = failMatch[1].trim();
       i++;
 
-      // Extract error message and stack trace
       let error = "";
       const stackTrace: string[] = [];
       let stackLineCount = 0;
 
-      // Read lines until we hit a blank line or another test result
       while (i < lines.length && stackLineCount < 5) {
         const nextLine = lines[i];
-
-        // Stop at blank line or next test result
         if (!nextLine.trim() || nextLine.includes("(fail)") || nextLine.includes("✓") || nextLine.includes("✗")) {
           break;
         }
-
-        // First non-blank line is typically the error message
         if (!error && nextLine.trim()) {
           error = nextLine.trim();
           i++;
           continue;
         }
-
-        // Subsequent lines starting with "at" are stack trace
         if (nextLine.trim().startsWith("at ")) {
           stackTrace.push(nextLine.trim());
           stackLineCount++;
@@ -196,6 +164,188 @@ function parseBunOutput(output: string): TestSummary {
 }
 
 /**
+ * Parse Jest / Vitest test output.
+ *
+ * Jest summary line examples:
+ *   "Tests:       41 failed, 38 passed, 79 total"
+ *   "Tests:       38 passed, 38 total"
+ *
+ * Vitest summary line examples:
+ *   "Test Files  1 failed | 2 passed (3)"
+ */
+function parseJestOutput(output: string): TestSummary {
+  const failures: TestFailure[] = [];
+  let passed = 0;
+  let failed = 0;
+
+  // Extract counts from the "Tests:" summary line (use the last occurrence)
+  const summaryMatches = Array.from(output.matchAll(/^\s*Tests:\s+(.*)/gm));
+  if (summaryMatches.length > 0) {
+    const summaryLine = summaryMatches[summaryMatches.length - 1][1];
+    const failedMatch = summaryLine.match(/(\d+)\s+failed/);
+    const passedMatch = summaryLine.match(/(\d+)\s+passed/);
+    if (failedMatch) failed = Number.parseInt(failedMatch[1], 10);
+    if (passedMatch) passed = Number.parseInt(passedMatch[1], 10);
+  }
+
+  // Extract failure test names from "  ● describe > test name" lines
+  let currentFile = "unknown";
+  const lines = output.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Track FAIL/PASS file headers: "FAIL hooks/usePositionSizer.spec.ts"
+    const fileMatch = line.match(/^\s*(?:FAIL|PASS)\s+(\S+\.[jt]sx?)/);
+    if (fileMatch) {
+      currentFile = fileMatch[1];
+      continue;
+    }
+
+    // Jest failure marker: "  ● test suite name > test name"
+    const bulletMatch = line.match(/^\s+●\s+(.+)$/);
+    if (bulletMatch) {
+      const testName = bulletMatch[1].trim();
+      let error = "";
+      for (let j = i + 1; j < lines.length && j < i + 10; j++) {
+        const next = lines[j].trim();
+        if (!next) continue;
+        if (next.startsWith("●") || /^(?:FAIL|PASS)\s/.test(next)) break;
+        error = next;
+        break;
+      }
+      failures.push({
+        file: currentFile,
+        testName,
+        error: error || "Unknown error",
+        stackTrace: [],
+      });
+    }
+  }
+
+  return { passed, failed, failures };
+}
+
+/**
+ * Parse pytest output.
+ *
+ * Example format:
+ * ```
+ * FAILED tests/test_foo.py::test_bar - AssertionError: assert 1 == 2
+ * ====== 2 failed, 5 passed in 0.42s ======
+ * ```
+ *
+ * TODO: Add structured error/stack extraction from the verbose block.
+ * Currently falls back to common parser for counts and extracts FAILED lines for names.
+ */
+function parsePytestOutput(output: string): TestSummary {
+  const common = parseCommonOutput(output);
+
+  // Structured failure names from "FAILED path::test_name - reason" lines
+  const failures: TestFailure[] = [];
+  for (const line of output.split("\n")) {
+    const m = line.match(/^FAILED\s+(\S+)(?:\s+-\s+(.*))?$/);
+    if (m) {
+      const [, location, reason] = m;
+      const parts = location.split("::");
+      failures.push({
+        file: parts[0] ?? location,
+        testName: parts.slice(1).join(" > ") || location,
+        error: reason?.trim() || "Unknown error",
+        stackTrace: [],
+      });
+    }
+  }
+
+  return {
+    passed: common.passed,
+    failed: common.failed,
+    failures: failures.length > 0 ? failures : common.failures,
+  };
+}
+
+/**
+ * Parse `go test` output.
+ *
+ * Example format:
+ * ```
+ * --- FAIL: TestFoo (0.00s)
+ *     foo_test.go:12: Error message
+ * ok  	example.com/pkg	0.042s
+ * FAIL	example.com/pkg	0.001s
+ * ```
+ *
+ * TODO: Add structured error extraction from indented lines after "--- FAIL:".
+ * Currently falls back to common parser for counts and extracts FAIL lines for names.
+ */
+function parseGoTestOutput(output: string): TestSummary {
+  const common = parseCommonOutput(output);
+
+  // Structured failure names from "--- FAIL: TestName (Xs)" lines
+  const failures: TestFailure[] = [];
+  for (const line of output.split("\n")) {
+    const m = line.match(/^--- FAIL:\s+(\S+)\s+\([\d.]+s\)/);
+    if (m) {
+      failures.push({
+        file: "unknown",
+        testName: m[1],
+        error: "Unknown error",
+        stackTrace: [],
+      });
+    }
+  }
+
+  return {
+    passed: common.passed,
+    failed: common.failed,
+    failures: failures.length > 0 ? failures : common.failures,
+  };
+}
+
+/**
+ * Common fallback parser using broad regexes.
+ *
+ * Handles any output that includes pass/fail count patterns, regardless of framework.
+ * Does not extract structured failure details — returns empty failures array.
+ *
+ * Patterns matched:
+ *   "5 passed, 2 failed"  "5 pass, 2 fail"  "Tests: 5 passed"  "2 fail"
+ */
+function parseCommonOutput(output: string): TestSummary {
+  let passed = 0;
+  let failed = 0;
+
+  const patterns: RegExp[] = [
+    /(\d+)\s+pass(?:ed)?(?:,\s*|\s+)(\d+)\s+fail/i,
+    /Tests:\s+(\d+)\s+passed,\s+(\d+)\s+failed/i,
+    /(\d+)\s+pass/i,
+  ];
+
+  for (const pattern of patterns) {
+    const matches = Array.from(output.matchAll(new RegExp(pattern, "gi")));
+    if (matches.length > 0) {
+      const last = matches[matches.length - 1];
+      passed = Number.parseInt(last[1], 10);
+      failed = last[2] ? Number.parseInt(last[2], 10) : 0;
+      break;
+    }
+  }
+
+  // Fallback: pick up a bare fail count if not already found
+  if (failed === 0) {
+    const failMatches = Array.from(output.matchAll(/(\d+)\s+fail/gi));
+    if (failMatches.length > 0) {
+      failed = Number.parseInt(failMatches[failMatches.length - 1][1], 10);
+    }
+  }
+
+  return { passed, failed, failures: [] };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Formatting
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
  * Format failure summary for agent feedback.
  *
  * Format:
@@ -206,7 +356,6 @@ function parseBunOutput(output: string): TestSummary {
  *
  * 2. another.test.ts > OtherTest
  *    Error: another error
- *    at other.ts:20:10
  * ```
  */
 export function formatFailureSummary(failures: TestFailure[], maxChars = 2000): string {
@@ -221,72 +370,42 @@ export function formatFailureSummary(failures: TestFailure[], maxChars = 2000): 
     const failure = failures[i];
     const num = i + 1;
 
-    // Format: "1. file.test.ts > TestName"
     const header = `${num}. ${failure.file} > ${failure.testName}`;
     const errorLine = `   Error: ${failure.error}`;
-
-    // Add first stack trace line if available
     const stackLine = failure.stackTrace.length > 0 ? `   ${failure.stackTrace[0]}` : "";
 
     const blockLines = [header, errorLine];
-    if (stackLine) {
-      blockLines.push(stackLine);
-    }
-    blockLines.push(""); // blank line separator
+    if (stackLine) blockLines.push(stackLine);
+    blockLines.push("");
 
     const block = blockLines.join("\n");
-    const blockLength = block.length;
-
-    // Check if adding this block would exceed maxChars
-    if (totalChars + blockLength > maxChars && lines.length > 0) {
-      const remaining = failures.length - i;
-      lines.push(`\n... and ${remaining} more failure(s) (truncated)`);
+    if (totalChars + block.length > maxChars && lines.length > 0) {
+      lines.push(`\n... and ${failures.length - i} more failure(s) (truncated)`);
       break;
     }
 
     lines.push(...blockLines);
-    totalChars += blockLength;
+    totalChars += block.length;
   }
 
   return lines.join("\n").trim();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Exit-code analysis (separate concern from output parsing)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Parse test output to detect environmental failures.
+ * Analyze test output + exit code to detect environmental failures.
  *
  * When exit code != 0 but all tests pass, classifies as ENVIRONMENTAL_FAILURE
- * instead of TEST_FAILURE.
+ * (e.g. open handles, linter errors, missing files) rather than TEST_FAILURE.
+ *
+ * This is a separate concern from `parseTestOutput` — it answers
+ * "did the runner environment fail?" not "which tests failed?".
  */
-export function parseTestOutput(output: string, exitCode: number): TestOutputAnalysis {
-  // Regex patterns for different test frameworks
-  const patterns = [
-    /(\d+)\s+pass(?:ed)?(?:,\s+|\s+)(\d+)\s+fail/i, // "5 pass, 0 fail" or "5 passed 0 fail"
-    /Tests:\s+(\d+)\s+passed,\s+(\d+)\s+failed/i, // Jest format
-    /(\d+)\s+pass/i, // Bun format (just pass count)
-  ];
-
-  let passCount = 0;
-  let failCount = 0;
-
-  for (const pattern of patterns) {
-    // Match ALL occurrences — use the LAST one (final summary line)
-    const matches = Array.from(output.matchAll(new RegExp(pattern, "gi")));
-    if (matches.length > 0) {
-      const lastMatch = matches[matches.length - 1];
-      passCount = Number.parseInt(lastMatch[1], 10);
-      // Some formats only show pass count
-      failCount = lastMatch[2] ? Number.parseInt(lastMatch[2], 10) : 0;
-      break;
-    }
-  }
-
-  // Check for explicit fail count if not found
-  if (failCount === 0) {
-    const failMatches = Array.from(output.matchAll(/(\d+)\s+fail/gi));
-    if (failMatches.length > 0) {
-      failCount = Number.parseInt(failMatches[failMatches.length - 1][1], 10);
-    }
-  }
+export function analyzeTestExitCode(output: string, exitCode: number): TestOutputAnalysis {
+  const { passed: passCount, failed: failCount } = parseCommonOutput(output);
 
   const allTestsPassed = passCount > 0 && failCount === 0;
   const isEnvironmentalFailure = allTestsPassed && exitCode !== 0;
