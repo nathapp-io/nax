@@ -102,10 +102,17 @@ export async function handlePipelineSuccess(
         if (filtered.length > 0) {
           completedStory.outputFiles = filtered;
         }
-        // Capture diff stat summary for dependency context injection
+        // Capture diff stat summary for dependency context injection.
+        // Note: if the agent commits at session-close time (after pipeline stages complete),
+        // HEAD may still equal storyGitRef here and the diff will be empty.
         const diffSummary = await captureDiffSummary(ctx.workdir, ctx.storyGitRef, completedStory.workdir);
         if (diffSummary) {
           completedStory.diffSummary = diffSummary;
+        } else {
+          logger?.debug("context-chain", "No diff summary captured (agent may not have committed yet)", {
+            storyId: completedStory.id,
+            storyGitRef: ctx.storyGitRef,
+          });
         }
       } catch {
         // Non-fatal — context chaining is best-effort

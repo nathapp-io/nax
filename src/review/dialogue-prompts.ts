@@ -34,6 +34,7 @@ export function buildReviewPrompt(diff: string, story: SemanticStory, _semanticC
     "## Diff",
     diff,
     "",
+    "Also flag any changes in the diff not required by the acceptance criteria above as out-of-scope findings.",
     "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string } }",
   ].join("\n");
 }

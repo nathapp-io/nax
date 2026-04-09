@@ -113,7 +113,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
 
   // testStrategy — accept from routing.testStrategy or top-level testStrategy
   const rawTestStrategy = routing.testStrategy ?? s.testStrategy;
-  const testStrategy: TestStrategy = resolveTestStrategy(
+  let testStrategy: TestStrategy = resolveTestStrategy(
     typeof rawTestStrategy === "string" ? rawTestStrategy : undefined,
   );
 
@@ -125,6 +125,14 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
         `[schema] story[${index}].routing.noTestJustification is required when testStrategy is "no-test"`,
       );
     }
+  }
+
+  // Auto-correct: noTestJustification present but testStrategy is not "no-test".
+  // This happens when debate synthesis keeps the majority testStrategy but adopts
+  // a minority debater's no-test justification. Resolve the contradiction by
+  // downgrading to "no-test" — the justification is the stronger signal.
+  if (testStrategy !== "no-test" && typeof rawJustification === "string" && rawJustification.trim() !== "") {
+    testStrategy = "no-test";
   }
   const noTestJustification: string | undefined =
     typeof rawJustification === "string" && rawJustification.trim() !== "" ? rawJustification.trim() : undefined;

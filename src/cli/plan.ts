@@ -652,6 +652,8 @@ If this is a greenfield project (empty or minimal codebase):
 
 Record ALL findings in the "analysis" field of the output JSON. This analysis is provided to every implementation agent as context — be thorough.
 
+**Important:** The codebase context below contains file names and structure only — no file content. Do NOT assert specific line numbers. The implementer will read the actual files via contextFiles.
+
 ## Codebase Context
 
 ${codebaseContext}${monorepoHint}
