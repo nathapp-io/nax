@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, resolveModel, resolveModelForAgent } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelDef } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
+import { tryParseLLMJson } from "../utils/llm-json";
 import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
 import type { DebateResult, DebateStageConfig, Debater, Rebuttal } from "./types";
 
@@ -229,19 +230,10 @@ export async function resolveOutcome(
         let passCount = 0;
         let failCount = 0;
         for (const proposal of proposalOutputs) {
-          try {
-            const stripped = proposal
-              .trim()
-              .replace(/^```(?:json)?\s*\n?/, "")
-              .replace(/\n?```\s*$/, "");
-            const parsed = JSON.parse(stripped) as Record<string, unknown>;
-            if (typeof parsed.passed === "boolean" && parsed.passed) passCount++;
-            else if (failOpen) passCount++;
-            else failCount++;
-          } catch {
-            if (failOpen) passCount++;
-            else failCount++;
-          }
+          const parsed = tryParseLLMJson<Record<string, unknown>>(proposal);
+          if (parsed !== null && typeof parsed.passed === "boolean" && parsed.passed) passCount++;
+          else if (failOpen) passCount++;
+          else failCount++;
         }
         debateCtx.majorityVote = { passed: rawOutcome === "passed", passCount, failCount };
       }
