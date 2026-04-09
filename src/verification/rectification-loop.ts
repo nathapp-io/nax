@@ -287,7 +287,7 @@ export async function runRectificationLoop(
         testSummary.failed = newTestSummary.failed;
         testSummary.passed = newTestSummary.passed;
 
-        if (newTestSummary.failed === 0) {
+        if (newTestSummary.failed === 0 && retryVerification.status === "SUCCESS") {
           state.lastExitCode = 0;
           logger?.info("rectification", `[OK] ${label} succeeded after parsing retry output`, {
             storyId: story.id,
