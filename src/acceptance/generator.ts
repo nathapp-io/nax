@@ -214,7 +214,8 @@ Rules:
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
-- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${join(options.workdir, ".nax", "features", options.featureName, resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath))}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).`;
+- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${join(options.workdir, ".nax", "features", options.featureName, resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath))}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).
+- **Process cwd (CRITICAL)**: When spawning child processes to invoke a CLI or binary, always set the working directory to the **package root**, not the test file's directory. The package root is 3 levels up: \`join(import.meta.dir, "../../..")\`. Using \`import.meta.dir\` or \`__dirname\` as cwd causes ENOENT errors when the process looks for data files (e.g. \`tasks.json\`) at the project root.`;
 
   const implementationSection =
     options.implementationContext && options.implementationContext.length > 0
