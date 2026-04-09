@@ -8,16 +8,25 @@
  */
 
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
-import type { ResolverConfig } from "./types";
+import type { Debater, ResolverConfig } from "./types";
 
 // ─── Private prompt helpers ───────────────────────────────────────────────────
 
-function buildProposalsSection(proposals: string[]): string {
-  return proposals.map((p, i) => `### Proposal ${i + 1}\n${p}`).join("\n\n");
+function buildDebaterLabel(debater: Debater): string {
+  return debater.persona ? `${debater.agent} (${debater.persona})` : debater.agent;
 }
 
-function buildSynthesisPrompt(proposals: string[], critiques: string[]): string {
-  const proposalsSection = buildProposalsSection(proposals);
+function buildProposalsSection(proposals: string[], debaters?: Debater[]): string {
+  return proposals
+    .map((p, i) => {
+      const label = debaters?.[i] ? buildDebaterLabel(debaters[i]) : String(i + 1);
+      return `### Proposal ${label}\n${p}`;
+    })
+    .join("\n\n");
+}
+
+function buildSynthesisPrompt(proposals: string[], critiques: string[], debaters?: Debater[]): string {
+  const proposalsSection = buildProposalsSection(proposals, debaters);
   const critiquesSection =
     critiques.length > 0
       ? `\n\n## Critiques\n${critiques.map((c, i) => `### Critique ${i + 1}\n${c}`).join("\n\n")}`
@@ -25,8 +34,8 @@ function buildSynthesisPrompt(proposals: string[], critiques: string[]): string 
   return `You are a synthesis agent. Your task is to synthesize the following proposals into a single coherent, high-quality response.\n\n## Proposals\n${proposalsSection}${critiquesSection}\n\nPlease synthesize these into the best possible unified response, incorporating the strongest elements from each proposal.`;
 }
 
-function buildJudgePrompt(proposals: string[], critiques: string[]): string {
-  const proposalsSection = buildProposalsSection(proposals);
+function buildJudgePrompt(proposals: string[], critiques: string[], debaters?: Debater[]): string {
+  const proposalsSection = buildProposalsSection(proposals, debaters);
   const critiquesSection =
     critiques.length > 0
       ? `\n\n## Critiques\n${critiques.map((c, i) => `### Critique ${i + 1}\n${c}`).join("\n\n")}`
@@ -88,9 +97,9 @@ export function majorityResolver(proposals: string[], failOpen: boolean): "passe
 export async function synthesisResolver(
   proposals: string[],
   critiques: string[],
-  opts: { adapter: AgentAdapter; completeOptions?: CompleteOptions; promptSuffix?: string },
+  opts: { adapter: AgentAdapter; completeOptions?: CompleteOptions; promptSuffix?: string; debaters?: Debater[] },
 ): Promise<CompleteResult> {
-  const base = buildSynthesisPrompt(proposals, critiques);
+  const base = buildSynthesisPrompt(proposals, critiques, opts.debaters);
   const prompt = opts.promptSuffix ? `${base}\n\n${opts.promptSuffix}` : base;
   return opts.adapter.complete(prompt, opts.completeOptions);
 }
@@ -108,6 +117,7 @@ export async function judgeResolver(
     getAgent: (name: string) => AgentAdapter | undefined;
     defaultAgentName?: string;
     completeOptions?: CompleteOptions;
+    debaters?: Debater[];
   },
 ): Promise<CompleteResult> {
   const agentName = resolverConfig.agent ?? opts.defaultAgentName ?? DEFAULT_FALLBACK_AGENT;
@@ -117,6 +127,6 @@ export async function judgeResolver(
     throw new Error(`[debate] Judge agent '${agentName}' not found`);
   }
 
-  const prompt = buildJudgePrompt(proposals, critiques);
+  const prompt = buildJudgePrompt(proposals, critiques, opts.debaters);
   return adapter.complete(prompt, opts.completeOptions);
 }

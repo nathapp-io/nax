@@ -210,6 +210,7 @@ export async function resolveOutcome(
   reviewerSession?: import("../review/dialogue").ReviewerSession,
   resolverContext?: ResolverContext,
   promptSuffix?: string,
+  debaters?: Debater[],
 ): Promise<ResolveOutcome> {
   const resolverConfig = stageConfig.resolver;
   const logger = _debateSessionDeps.getSafeLogger();
@@ -311,6 +312,7 @@ export async function resolveOutcome(
       const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
         adapter,
         promptSuffix,
+        debaters,
         completeOptions: {
           model: resolveDebaterModel({ agent: agentName }, config),
           config,
@@ -338,6 +340,7 @@ export async function resolveOutcome(
     const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
       getAgent: (name: string) => _debateSessionDeps.getAgent(name, config),
       defaultAgentName: RESOLVER_FALLBACK_AGENT,
+      debaters,
       completeOptions: {
         model: resolveDebaterModel({ agent: agentName }, config),
         config,

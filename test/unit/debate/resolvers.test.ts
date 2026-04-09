@@ -16,7 +16,7 @@ import {
   synthesisResolver,
 } from "../../../src/debate/resolvers";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../../../src/agents/types";
-import type { ResolverConfig } from "../../../src/debate/types";
+import type { Debater, ResolverConfig } from "../../../src/debate/types";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
@@ -479,5 +479,128 @@ describe("judgeResolver()", () => {
     expect(capturedOptions?.model).toBe("claude-haiku-4-5");
     expect(capturedOptions?.storyId).toBe("US-002");
     expect(capturedOptions?.sessionRole).toBe("judge");
+  });
+});
+
+// ─── P2: Proposal labeling with persona ──────────────────────────────────────
+
+describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
+  test("labels proposals with agent+persona when debaters provided with personas", async () => {
+    let capturedPrompt = "";
+    const adapter = makeMockAdapter("claude", async (prompt) => {
+      capturedPrompt = prompt;
+      return { output: "synthesis", costUsd: 0, source: "fallback" };
+    });
+
+    const debaters: Debater[] = [
+      { agent: "claude", persona: "challenger" },
+      { agent: "claude", persona: "pragmatist" },
+      { agent: "claude", persona: "completionist" },
+    ];
+
+    await synthesisResolver(
+      ["proposal A", "proposal B", "proposal C"],
+      [],
+      { adapter, debaters },
+    );
+
+    expect(capturedPrompt).toContain("### Proposal claude (challenger)");
+    expect(capturedPrompt).toContain("### Proposal claude (pragmatist)");
+    expect(capturedPrompt).toContain("### Proposal claude (completionist)");
+    expect(capturedPrompt).toContain("proposal A");
+    expect(capturedPrompt).toContain("proposal B");
+    expect(capturedPrompt).toContain("proposal C");
+  });
+
+  test("labels proposals with agent name only when debaters have no persona", async () => {
+    let capturedPrompt = "";
+    const adapter = makeMockAdapter("claude", async (prompt) => {
+      capturedPrompt = prompt;
+      return { output: "synthesis", costUsd: 0, source: "fallback" };
+    });
+
+    const debaters: Debater[] = [
+      { agent: "claude" },
+      { agent: "opencode" },
+    ];
+
+    await synthesisResolver(["proposal A", "proposal B"], [], { adapter, debaters });
+
+    expect(capturedPrompt).toContain("### Proposal claude");
+    expect(capturedPrompt).toContain("### Proposal opencode");
+    expect(capturedPrompt).not.toContain("(challenger)");
+  });
+
+  test("falls back to numeric labels when no debaters provided", async () => {
+    let capturedPrompt = "";
+    const adapter = makeMockAdapter("claude", async (prompt) => {
+      capturedPrompt = prompt;
+      return { output: "synthesis", costUsd: 0, source: "fallback" };
+    });
+
+    await synthesisResolver(["proposal A", "proposal B"], [], { adapter });
+
+    expect(capturedPrompt).toContain("### Proposal 1");
+    expect(capturedPrompt).toContain("### Proposal 2");
+  });
+
+  test("mixed personas: labeled where present, agent name where absent", async () => {
+    let capturedPrompt = "";
+    const adapter = makeMockAdapter("claude", async (prompt) => {
+      capturedPrompt = prompt;
+      return { output: "synthesis", costUsd: 0, source: "fallback" };
+    });
+
+    const debaters: Debater[] = [
+      { agent: "claude", persona: "security" },
+      { agent: "opencode" },
+    ];
+
+    await synthesisResolver(["proposal A", "proposal B"], [], { adapter, debaters });
+
+    expect(capturedPrompt).toContain("### Proposal claude (security)");
+    expect(capturedPrompt).toContain("### Proposal opencode");
+  });
+});
+
+describe("judgeResolver() — persona-aware proposal labels (P2)", () => {
+  test("labels proposals with agent+persona when debaters provided with personas", async () => {
+    let capturedPrompt = "";
+    const getAgentFn = mock((_name: string) =>
+      makeMockAdapter("judge", async (prompt) => {
+        capturedPrompt = prompt;
+        return { output: "judge verdict", costUsd: 0, source: "fallback" };
+      }),
+    );
+
+    const debaters: Debater[] = [
+      { agent: "claude", persona: "testability" },
+      { agent: "claude", persona: "security" },
+    ];
+
+    await judgeResolver(["proposal A", "proposal B"], [], { type: "custom", agent: "judge" }, {
+      getAgent: getAgentFn,
+      debaters,
+    });
+
+    expect(capturedPrompt).toContain("### Proposal claude (testability)");
+    expect(capturedPrompt).toContain("### Proposal claude (security)");
+  });
+
+  test("falls back to numeric labels when no debaters provided", async () => {
+    let capturedPrompt = "";
+    const getAgentFn = mock((_name: string) =>
+      makeMockAdapter("judge", async (prompt) => {
+        capturedPrompt = prompt;
+        return { output: "verdict", costUsd: 0, source: "fallback" };
+      }),
+    );
+
+    await judgeResolver(["p1", "p2"], [], { type: "custom", agent: "judge" }, {
+      getAgent: getAgentFn,
+    });
+
+    expect(capturedPrompt).toContain("### Proposal 1");
+    expect(capturedPrompt).toContain("### Proposal 2");
   });
 });

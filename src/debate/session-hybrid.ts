@@ -8,7 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
-import { resolvePersonas } from "./personas";
+import { buildDebaterLabel, resolvePersonas } from "./personas";
 import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
@@ -249,7 +249,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const fullResolverContext = ctx.resolverContextInput
     ? {
         ...ctx.resolverContextInput,
-        labeledProposals: successfulProposals.map((s) => ({ debater: s.debater.agent, output: s.output })),
+        labeledProposals: successfulProposals.map((s) => ({ debater: buildDebaterLabel(s.debater), output: s.output })),
       }
     : undefined;
   const resolveResult: ResolveOutcome = await resolveOutcome(
@@ -263,6 +263,8 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     ctx.featureName,
     ctx.reviewerSession,
     fullResolverContext,
+    /* promptSuffix */ undefined,
+    successfulProposals.map((s) => s.debater),
   );
   totalCostUsd += resolveResult.resolverCostUsd;
 

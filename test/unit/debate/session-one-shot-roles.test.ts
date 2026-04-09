@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import type { CompleteOptions } from "../../../src/agents/types";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -110,5 +111,266 @@ describe("DebateSession.runOneShot() session roles", () => {
 
     const critiqueRoles = roles.filter((role) => role.startsWith("debate-critique"));
     expect(critiqueRoles).toEqual(["debate-critique-0", "debate-critique-1"]);
+  });
+});
+
+// ─── P1: Proposal prompts include persona block ───────────────────────────────
+
+describe("DebateSession.runOneShot() — persona injection in proposal round (P1)", () => {
+  let origGetAgent: typeof _debateSessionDeps.getAgent;
+
+  beforeEach(() => {
+    origGetAgent = _debateSessionDeps.getAgent;
+  });
+
+  afterEach(() => {
+    _debateSessionDeps.getAgent = origGetAgent;
+  });
+
+  test("each debater receives a distinct persona block when autoPersona is true", async () => {
+    const capturedPrompts: string[] = [];
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "claude",
+      displayName: "claude",
+      binary: "claude",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async (prompt: string) => {
+        capturedPrompts.push(prompt);
+        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+      },
+    }));
+
+    const session = new DebateSession({
+      storyId: "US-P1",
+      stage: "review",
+      stageConfig: makeStageConfig({
+        rounds: 1,
+        autoPersona: true,
+        debaters: [
+          { agent: "claude", model: "fast" },
+          { agent: "claude", model: "fast" },
+          { agent: "claude", model: "fast" },
+        ],
+      }),
+    });
+
+    await session.run("the task context");
+
+    // Three proposal prompts captured
+    expect(capturedPrompts).toHaveLength(3);
+
+    // Each prompt contains "## Your Role"
+    for (const prompt of capturedPrompts) {
+      expect(prompt).toContain("## Your Role");
+    }
+
+    // Prompts are NOT all identical — personas differentiate them
+    const unique = new Set(capturedPrompts);
+    expect(unique.size).toBeGreaterThan(1);
+  });
+
+  test("proposal prompts do NOT contain persona block when autoPersona is false", async () => {
+    const capturedPrompts: string[] = [];
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "claude",
+      displayName: "claude",
+      binary: "claude",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async (prompt: string) => {
+        capturedPrompts.push(prompt);
+        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+      },
+    }));
+
+    const session = new DebateSession({
+      storyId: "US-P1-NO-PERSONA",
+      stage: "review",
+      stageConfig: makeStageConfig({
+        rounds: 1,
+        autoPersona: false,
+        debaters: [
+          { agent: "claude", model: "fast" },
+          { agent: "claude", model: "fast" },
+        ],
+      }),
+    });
+
+    await session.run("the task context");
+
+    for (const prompt of capturedPrompts) {
+      expect(prompt).not.toContain("## Your Role");
+    }
+  });
+
+  test("task context is preserved in proposal prompt alongside persona", async () => {
+    const capturedPrompts: string[] = [];
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "claude",
+      displayName: "claude",
+      binary: "claude",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async (prompt: string) => {
+        capturedPrompts.push(prompt);
+        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+      },
+    }));
+
+    const session = new DebateSession({
+      storyId: "US-P1-TASK",
+      stage: "review",
+      stageConfig: makeStageConfig({
+        rounds: 1,
+        autoPersona: true,
+        debaters: [{ agent: "claude", model: "fast" }],
+      }),
+    });
+
+    await session.run("UNIQUE_TASK_CONTENT_XYZ");
+
+    expect(capturedPrompts[0]).toContain("UNIQUE_TASK_CONTENT_XYZ");
+    expect(capturedPrompts[0]).toContain("## Your Role");
+  });
+});
+
+// ─── P3: labeledProposals uses persona-aware label ────────────────────────────
+
+describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", () => {
+  let origGetAgent: typeof _debateSessionDeps.getAgent;
+
+  beforeEach(() => {
+    origGetAgent = _debateSessionDeps.getAgent;
+  });
+
+  afterEach(() => {
+    _debateSessionDeps.getAgent = origGetAgent;
+  });
+
+  test("synthesis prompt labels proposals with persona when autoPersona is true", async () => {
+    let capturedSynthesisPrompt = "";
+    let callIndex = 0;
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "claude",
+      displayName: "claude",
+      binary: "claude",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async (prompt: string, opts?: CompleteOptions) => {
+        callIndex++;
+        // The synthesis call is identified by sessionRole
+        if (opts?.sessionRole === "synthesis") {
+          capturedSynthesisPrompt = prompt;
+        }
+        return { output: "proposal output", costUsd: 0, source: "fallback" as const };
+      },
+    }));
+
+    const session = new DebateSession({
+      storyId: "US-P3",
+      stage: "plan",
+      stageConfig: makeStageConfig({
+        rounds: 1,
+        sessionMode: "one-shot",
+        autoPersona: true,
+        resolver: { type: "synthesis", agent: "claude" },
+        debaters: [
+          { agent: "claude", model: "fast" },
+          { agent: "claude", model: "fast" },
+          { agent: "claude", model: "fast" },
+        ],
+      }),
+    });
+
+    await session.run("task");
+
+    // Synthesis prompt should have persona-labeled proposals
+    expect(capturedSynthesisPrompt).toContain("(challenger)");
+    expect(capturedSynthesisPrompt).toContain("(pragmatist)");
+    expect(capturedSynthesisPrompt).toContain("(completionist)");
+  });
+
+  test("synthesis prompt labels proposals without persona when autoPersona is false", async () => {
+    let capturedSynthesisPrompt = "";
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "claude",
+      displayName: "claude",
+      binary: "claude",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async (prompt: string, opts?: CompleteOptions) => {
+        if (opts?.sessionRole === "synthesis") {
+          capturedSynthesisPrompt = prompt;
+        }
+        return { output: "proposal output", costUsd: 0, source: "fallback" as const };
+      },
+    }));
+
+    const session = new DebateSession({
+      storyId: "US-P3-NO-PERSONA",
+      stage: "plan",
+      stageConfig: makeStageConfig({
+        rounds: 1,
+        sessionMode: "one-shot",
+        autoPersona: false,
+        resolver: { type: "synthesis", agent: "claude" },
+        debaters: [
+          { agent: "claude", model: "fast" },
+          { agent: "claude", model: "fast" },
+        ],
+      }),
+    });
+
+    await session.run("task");
+
+    // Should use agent name label only — no persona parens
+    expect(capturedSynthesisPrompt).toContain("### Proposal claude");
+    expect(capturedSynthesisPrompt).not.toContain("(challenger)");
   });
 });
