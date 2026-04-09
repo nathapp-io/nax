@@ -419,16 +419,30 @@ describe("runThreeSessionTdd", () => {
   test("BUG-22: post-TDD verification does not override when tests actually fail", async () => {
     // Scenario: Sessions complete with failures AND independent test run also fails
     // Expected: Result should remain failed
+    // The full-suite gate (first bun test call) passes so it does not consume
+    // agent mock results via rectification. Only the post-verifier T9 check sees failures.
 
     let testCommandCalled = false;
     let revParseCount = 0;
     let diffCount = 0;
+    let testRunCount = 0;
 
     const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
 
     mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
         testCommandCalled = true;
+        testRunCount++;
+        // First call = full-suite gate (before verifier): pass so no rectification.
+        if (testRunCount === 1) {
+          return {
+            pid: 9999,
+            exited: Promise.resolve(0),
+            stdout: new Response("3 pass 0 fail\n").body,
+            stderr: new Response("").body,
+          };
+        }
+        // Subsequent calls = post-TDD verification: still failing.
         return {
           pid: 9999,
           exited: Promise.resolve(1), // Tests FAIL!

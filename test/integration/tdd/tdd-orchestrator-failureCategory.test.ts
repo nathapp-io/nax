@@ -147,18 +147,32 @@ describe("runThreeSessionTdd — failureCategory", () => {
   });
 
   test("post-TDD test failure sets failureCategory='tests-failing'", async () => {
-    // Verifier session fails AND independent test run also fails
+    // Verifier session fails AND independent post-TDD test run also fails.
+    // The full-suite gate (runs before the verifier) must PASS so it doesn't
+    // consume agent mock results via rectification. Only the post-verifier T9
+    // check should see failures.
     let revParseCount = 0;
     let diffCount = 0;
+    let testRunCount = 0;
 
     const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
 
-
     mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
+        testRunCount++;
+        // First call = full-suite gate (before verifier): pass cleanly so no rectification.
+        if (testRunCount === 1) {
+          return {
+            pid: 9999,
+            exited: Promise.resolve(0),
+            stdout: new Response("3 pass 0 fail\n").body,
+            stderr: new Response("").body,
+          };
+        }
+        // Subsequent calls = post-TDD verification (after verifier fails): still failing.
         return {
           pid: 9999,
-          exited: Promise.resolve(1), // Tests FAIL
+          exited: Promise.resolve(1),
           stdout: new Response("3 pass, 2 fail\n").body,
           stderr: new Response("Test errors...\n").body,
         };

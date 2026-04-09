@@ -29,8 +29,8 @@ function detectFramework(output: string): Framework {
   if (/={3,}\s+\d+\s+(?:failed|passed).*in\s+[\d.]+s\s*={3,}/m.test(output)) return "pytest";
   // go test: "--- FAIL:" or "ok  \t" or "FAIL\t"
   if (/^--- (?:FAIL|PASS):/m.test(output) || /^(?:ok|FAIL)\s+\t/m.test(output)) return "go";
-  // Bun: "(fail)" marker or bun-specific checkmark patterns
-  if (/^\(fail\)\s/m.test(output) || /^bun test/m.test(output)) return "bun";
+  // Bun: "(fail)" marker, bun test header, or bun's Unicode checkmarks (✓ ✔ ✗ ✘)
+  if (/^\(fail\)\s/m.test(output) || /^bun test/m.test(output) || /[✓✔✗✘]/m.test(output)) return "bun";
   return "unknown";
 }
 
