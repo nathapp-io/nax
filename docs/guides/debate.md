@@ -93,7 +93,15 @@ Assign personas per debater directly in the `debaters` array. This gives full co
 
 ### How Personas Appear in Prompts
 
-When a debater has a persona assigned (via `autoPersona` or explicit config), a `## Your Role` block is injected into its proposal and critique prompts. The block contains an identity statement and a lens description specific to that persona. Rebuttal prompts also include the persona block and label proposals with their originating debater's lens (e.g. `claude (challenger)`).
+Personas are injected in all session modes — panel and hybrid alike:
+
+| Prompt type | Panel | Hybrid |
+|:------------|:-----:|:------:|
+| Proposal (round 0) | ✓ | ✓ |
+| Critique (`rounds > 1`) | ✓ | ✓ |
+| Rebuttal | — | ✓ |
+
+When a debater has a persona, a `## Your Role` block is injected into its prompt. The block contains an identity statement and a lens description specific to that persona. In critique and rebuttal prompts, proposals are also labelled with their originating debater's lens (e.g. `claude (challenger)`) so each debater knows which perspective produced each proposal.
 
 ---
 
