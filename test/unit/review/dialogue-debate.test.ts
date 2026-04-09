@@ -17,7 +17,7 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import { createReviewerSession } from "../../../src/review/dialogue";
-import type { DebateResolverContext } from "../../../src/review/dialogue-prompts";
+import type { DebateResolverContext } from "../../../src/debate/types";
 import type { AgentAdapter, AgentRunOptions, AgentResult } from "../../../src/agents/types";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";

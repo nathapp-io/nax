@@ -220,7 +220,7 @@ export async function resolveOutcome(
   // to the session for a tool-verified verdict. Falls back to stateless on error.
   if (reviewerSession && resolverContext) {
     try {
-      const debateCtx: import("../review/dialogue-prompts").DebateResolverContext = {
+      const debateCtx: import("./types").DebateResolverContext = {
         resolverType: resolverConfig.type,
       };
 

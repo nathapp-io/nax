@@ -317,3 +317,238 @@ describe("buildClosePrompt()", () => {
     expect(builder.buildClosePrompt()).toBe("Close this debate session.");
   });
 });
+
+// ─── Review-specific methods (Phase 4) ──────────────────────────────────────
+
+import type { DebateResolverContext } from "../../../src/debate/types";
+import type { ReviewFinding } from "../../../src/plugins/types";
+import type { ReviewStoryContext } from "../../../src/debate/prompt-builder";
+
+const REVIEW_STORY: ReviewStoryContext = {
+  id: "US-001",
+  title: "Add debate resolver dialogue",
+  acceptanceCriteria: ["AC-1: resolveDebate() works", "AC-2: reReviewDebate() references prior findings"],
+};
+
+const DIFF = "diff --git a/src/foo.ts b/src/foo.ts\n+export function foo() {}";
+
+const FINDING: ReviewFinding = {
+  ruleId: "missing-ac",
+  severity: "error",
+  file: "src/foo.ts",
+  line: 1,
+  message: "AC-1 not satisfied",
+};
+
+const LABELED_PROPOSALS: Array<{ debater: string; output: string }> = [
+  { debater: "claude", output: '{"passed": false, "findings": []}' },
+  { debater: "opencode", output: '{"passed": true, "findings": []}' },
+];
+
+const CRITIQUES_STRINGS = ["Proposal 1 missed edge case X", "Proposal 2 looks good"];
+
+// ─── buildReviewPrompt ──────────────────────────────────────────────────────
+
+describe("buildReviewPrompt()", () => {
+  test("includes story id and title", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
+    expect(prompt).toContain("US-001");
+    expect(prompt).toContain("Add debate resolver dialogue");
+  });
+
+  test("includes acceptance criteria", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
+    expect(prompt).toContain("AC-1: resolveDebate() works");
+    expect(prompt).toContain("AC-2: reReviewDebate() references prior findings");
+  });
+
+  test("includes the diff", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
+    expect(prompt).toContain(DIFF);
+  });
+
+  test("asks for JSON response with passed + findings", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
+    expect(prompt).toContain("passed");
+    expect(prompt).toContain("findings");
+  });
+});
+
+// ─── buildReReviewPrompt ────────────────────────────────────────────────────
+
+describe("buildReReviewPrompt()", () => {
+  test("includes follow-up framing", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReReviewPrompt(DIFF, [FINDING]);
+    expect(prompt).toContain("follow-up");
+  });
+
+  test("includes previous findings", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReReviewPrompt(DIFF, [FINDING]);
+    expect(prompt).toContain("missing-ac");
+    expect(prompt).toContain("AC-1 not satisfied");
+  });
+
+  test("shows (none) when no previous findings", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReReviewPrompt(DIFF, []);
+    expect(prompt).toContain("(none)");
+  });
+
+  test("includes updated diff", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReReviewPrompt(DIFF, [FINDING]);
+    expect(prompt).toContain(DIFF);
+  });
+
+  test("asks for deltaSummary in JSON", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReReviewPrompt(DIFF, [FINDING]);
+    expect(prompt).toContain("deltaSummary");
+  });
+});
+
+// ─── buildResolverPrompt ────────────────────────────────────────────────────
+
+describe("buildResolverPrompt()", () => {
+  test("includes labeled debater proposals", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain("claude");
+    expect(prompt).toContain("opencode");
+    expect(prompt).toContain(LABELED_PROPOSALS[0].output);
+    expect(prompt).toContain(LABELED_PROPOSALS[1].output);
+  });
+
+  test("includes critiques when present", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain(CRITIQUES_STRINGS[0]);
+  });
+
+  test("omits critiques section when empty", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, [], DIFF, REVIEW_STORY, ctx);
+    expect(prompt).not.toContain("Critiques");
+  });
+
+  test("includes diff", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain(DIFF);
+  });
+
+  test("includes acceptance criteria", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain("AC-1: resolveDebate() works");
+  });
+
+  test("synthesis type: instructs to synthesize", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt.toLowerCase()).toContain("synthes");
+  });
+
+  test("custom type: instructs judge framing", () => {
+    const ctx: DebateResolverContext = { resolverType: "custom" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt.toLowerCase()).toContain("judge");
+  });
+
+  test("majority-fail-closed: includes vote tally", () => {
+    const ctx: DebateResolverContext = {
+      resolverType: "majority-fail-closed",
+      majorityVote: { passed: false, passCount: 1, failCount: 1 },
+    };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain("1 passed");
+    expect(prompt).toContain("1 failed");
+  });
+
+  test("majority-fail-open: includes vote tally with fail-open note", () => {
+    const ctx: DebateResolverContext = {
+      resolverType: "majority-fail-open",
+      majorityVote: { passed: true, passCount: 2, failCount: 0 },
+    };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain("2 passed");
+  });
+
+  test("asks for JSON response with passed + findings", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain("passed");
+    expect(prompt).toContain("findings");
+  });
+
+  test("instructs tool verification", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, REVIEW_STORY, ctx);
+    expect(prompt.toLowerCase()).toMatch(/verif|tool/);
+  });
+});
+
+// ─── buildReResolverPrompt ──────────────────────────────────────────────────
+
+describe("buildReResolverPrompt()", () => {
+  test("includes re-review framing", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, [FINDING], ctx);
+    expect(prompt.toLowerCase()).toMatch(/re-review|follow-up|previous finding/);
+  });
+
+  test("includes previous findings", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, [FINDING], ctx);
+    expect(prompt).toContain("missing-ac");
+    expect(prompt).toContain("AC-1 not satisfied");
+  });
+
+  test("shows (none) when no previous findings", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, [], ctx);
+    expect(prompt).toContain("(none)");
+  });
+
+  test("includes labeled debater proposals", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, [FINDING], ctx);
+    expect(prompt).toContain("claude");
+    expect(prompt).toContain("opencode");
+  });
+
+  test("includes updated diff", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, [FINDING], ctx);
+    expect(prompt).toContain(DIFF);
+  });
+
+  test("asks for deltaSummary in JSON", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, DIFF, [FINDING], ctx);
+    expect(prompt).toContain("deltaSummary");
+  });
+});
