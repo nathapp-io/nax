@@ -146,6 +146,8 @@ export class DebateSession {
       timeoutSeconds?: number;
       dangerouslySkipPermissions?: boolean;
       maxInteractionTurns?: number;
+      /** Original spec content — anchors synthesis to prevent AC hallucination. */
+      specContent?: string;
     },
   ): Promise<DebateResult> {
     return runPlan(
