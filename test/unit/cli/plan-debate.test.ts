@@ -279,9 +279,11 @@ describe("planCommand — debate integration (US-004)", () => {
     });
 
     expect(runPlanMock).toHaveBeenCalledTimes(1);
-    const [promptArg, optsArg] = runPlanMock.mock.calls[0];
-    expect(typeof promptArg).toBe("string");
-    expect(promptArg.length).toBeGreaterThan(100);
+    const [taskContextArg, outputFormatArg, optsArg] = runPlanMock.mock.calls[0];
+    expect(typeof taskContextArg).toBe("string");
+    expect(taskContextArg.length).toBeGreaterThan(100);
+    expect(typeof outputFormatArg).toBe("string");
+    expect(outputFormatArg).toContain("Output Schema");
     expect(optsArg.feature).toBe("debate-plan");
     expect(optsArg.workdir).toBe(tmpDir);
   });

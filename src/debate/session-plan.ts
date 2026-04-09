@@ -30,7 +30,8 @@ interface PlanCtx {
 
 export async function runPlan(
   ctx: PlanCtx,
-  basePrompt: string,
+  taskContext: string,
+  outputFormat: string,
   opts: {
     workdir: string;
     feature: string;
@@ -69,7 +70,7 @@ export async function runPlan(
   const settled = await allSettledBounded(
     resolved.map(({ debater, adapter }, i) => async () => {
       const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
-      const debaterPrompt = `${basePrompt}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
+      const debaterPrompt = `${taskContext}\n\n${outputFormat}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
       const modelTier = modelTierFromDebater(debater);
       const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
@@ -175,7 +176,7 @@ export async function runPlan(
       featureName: opts.feature,
       timeoutSeconds: opts.timeoutSeconds ?? 600,
     };
-    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, basePrompt, "plan-hybrid");
+    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, taskContext, "plan-hybrid");
     critiqueOutputs = rebuttals.map((r) => r.output);
     rebuttalList = rebuttals;
     totalCostUsd += costUsd;

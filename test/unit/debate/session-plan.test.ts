@@ -75,7 +75,7 @@ describe("DebateSession.runPlan()", () => {
       config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
-    await session.runPlan("base prompt", {
+    await session.runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "config-ssot",
       outputDir: "/tmp/out",
@@ -126,7 +126,7 @@ describe("DebateSession.runPlan()", () => {
       config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
-    await session.runPlan("base prompt", {
+    await session.runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "config-ssot",
       outputDir: "/tmp/out",
@@ -184,7 +184,7 @@ describe("DebateSession.runPlan()", () => {
       config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
-    const result = await session.runPlan("base prompt", {
+    const result = await session.runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "plan-hybrid-test",
       outputDir: "/tmp/out",
@@ -249,7 +249,7 @@ describe("DebateSession.runPlan()", () => {
       config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
-    const result = await session.runPlan("base prompt", {
+    const result = await session.runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "plan-panel-test",
       outputDir: "/tmp/out",
@@ -311,7 +311,7 @@ describe("DebateSession.runPlan()", () => {
       config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
-    const result = await session.runPlan("base prompt", {
+    const result = await session.runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "plan-hybrid-oneshot",
       outputDir: "/tmp/out",
@@ -368,7 +368,7 @@ describe("DebateSession.runPlan()", () => {
       config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
-    const runPromise = session.runPlan("base prompt", {
+    const runPromise = session.runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "config-ssot",
       outputDir: "/tmp/out",

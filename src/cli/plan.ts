@@ -170,8 +170,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   if (debateEnabled) {
     // Debate path: run N agents in parallel via DebateSession.runPlan().
     // Each debater calls adapter.plan() writing to a temp path; resolver picks the best PRD.
-    // basePrompt has no file-write instruction — DebateSession.runPlan() injects per-debater paths.
-    const basePrompt = buildPlanningPrompt(
+    // taskContext is passed to the rebuttal loop; outputFormat is proposal-round only.
+    const { taskContext: planTaskContext, outputFormat: planOutputFormat } = buildPlanningPrompt(
       specContent,
       codebaseContext,
       undefined, // no file path — runPlan() appends per-debater temp path
@@ -196,7 +196,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       rounds: planStageConfig.rounds,
       feature: options.feature,
     });
-    const debateResult = await debateSession.runPlan(basePrompt, {
+    const debateResult = await debateSession.runPlan(planTaskContext, planOutputFormat, {
       workdir,
       feature: options.feature,
       outputDir: outputDir,
@@ -219,7 +219,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     // #91: Respect agent.protocol — ACP protocol uses adapter.plan() (session-based),
     // CLI protocol uses adapter.complete() (one-shot). This matches how the run path works.
     const isAcp = config?.agent?.protocol === "acp";
-    const prompt = buildPlanningPrompt(
+    const { taskContext: autoTaskCtx, outputFormat: autoOutputFmt } = buildPlanningPrompt(
       specContent,
       codebaseContext,
       isAcp ? outputPath : undefined, // ACP writes directly to file; CLI returns inline
@@ -227,6 +227,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       packageDetails,
       config?.project,
     );
+    const prompt = `${autoTaskCtx}\n\n${autoOutputFmt}`;
 
     const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
@@ -323,7 +324,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // ── Interactive plan helper (used by: interactive path + debate fallback) ──────────────────────
   async function runInteractivePlan(): Promise<string> {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
-    const prompt = buildPlanningPrompt(
+    const { taskContext: interactiveTaskCtx, outputFormat: interactiveOutputFmt } = buildPlanningPrompt(
       specContent,
       codebaseContext,
       outputPath,
@@ -331,6 +332,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       packageDetails,
       config?.project,
     );
+    const prompt = `${interactiveTaskCtx}\n\n${interactiveOutputFmt}`;
     const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     // Use configured interaction plugin (telegram/webhook/auto) if available;
@@ -605,6 +607,14 @@ function buildCodebaseContext(scan: CodebaseScan): string {
  * - Complexity + test strategy guides
  * - MW-007: Monorepo hint and package list when packages are detected
  */
+/** The two separable parts of the planning prompt. */
+export interface PlanningPromptParts {
+  /** Spec, codebase context, and analysis instructions — safe to include in rebuttal rounds. */
+  taskContext: string;
+  /** Output schema and format directive — proposal round only; omitted from rebuttal prompts. */
+  outputFormat: string;
+}
+
 export function buildPlanningPrompt(
   specContent: string,
   codebaseContext: string,
@@ -612,7 +622,7 @@ export function buildPlanningPrompt(
   packages?: string[],
   packageDetails?: PackageSummary[],
   projectProfile?: ProjectProfile,
-): string {
+): PlanningPromptParts {
   const isMonorepo = packages && packages.length > 0;
   const packageDetailsSection =
     packageDetails && packageDetails.length > 0 ? buildPackageDetailsSection(packageDetails) : "";
@@ -624,7 +634,7 @@ export function buildPlanningPrompt(
     ? `\n      "workdir": "string — optional, relative path to package (e.g. \\"packages/api\\"). Omit for root-level stories.",`
     : "";
 
-  return `You are a senior software architect generating a product requirements document (PRD) as JSON.
+  const taskContext = `You are a senior software architect generating a product requirements document (PRD) as JSON.
 
 ## Step 1: Understand the Spec
 
@@ -670,9 +680,9 @@ For each story, set "contextFiles" to the key source files the agent should read
 
 ${COMPLEXITY_GUIDE}
 
-${TEST_STRATEGY_GUIDE}
+${TEST_STRATEGY_GUIDE}`;
 
-## Output Schema
+  const outputFormat = `## Output Schema
 
 Generate a JSON object with this exact structure (no markdown, no explanation — JSON only):
 
@@ -711,6 +721,8 @@ ${
     ? `Write the PRD JSON directly to this file path: ${outputFilePath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`
     : "Output ONLY the JSON object. Do not wrap in markdown code blocks."
 }`;
+
+  return { taskContext, outputFormat };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

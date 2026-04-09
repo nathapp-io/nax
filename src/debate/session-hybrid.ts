@@ -47,13 +47,13 @@ export interface HybridCtx {
  *
  * @param ctx                - Session context (must include workdir/featureName/timeoutSeconds)
  * @param proposals          - Successful proposals with adapter references
- * @param originalPrompt     - The original debate prompt (included in rebuttal context)
+ * @param taskContext        - Spec and analysis instructions (no output schema). Included in rebuttal prompts.
  * @param sessionRolePrefix  - Prefix for session roles (e.g. "debate-hybrid", "plan-hybrid")
  */
 export async function runRebuttalLoop(
   ctx: HybridCtx,
   proposals: SuccessfulProposal[],
-  originalPrompt: string,
+  taskContext: string,
   sessionRolePrefix: string,
 ): Promise<RebuttalLoopResult> {
   const logger = _debateSessionDeps.getSafeLogger();
@@ -77,7 +77,8 @@ export async function runRebuttalLoop(
           debaterIndex: debaterIdx,
         });
 
-        const rebuttalPrompt = buildRebuttalContext(originalPrompt, proposalList, priorRebuttals, debaterIdx);
+        const sessionMode = ctx.stageConfig.sessionMode ?? "one-shot";
+        const rebuttalPrompt = buildRebuttalContext(taskContext, proposalList, priorRebuttals, debaterIdx, sessionMode);
 
         try {
           const turnResult = await runStatefulTurn(

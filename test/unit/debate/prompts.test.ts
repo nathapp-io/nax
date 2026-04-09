@@ -163,7 +163,7 @@ describe("buildJudgePrompt()", () => {
 
 describe("buildRebuttalContext()", () => {
   test("with 2 proposals and 0 rebuttals returns string containing '## Proposals' section with both proposals and no '## Previous Rebuttals' section", () => {
-    const prompt = "original prompt";
+    const taskContext = "original task context";
     const debater1: Debater = { agent: "agent-a" };
     const debater2: Debater = { agent: "agent-b" };
     const proposals = [
@@ -172,7 +172,7 @@ describe("buildRebuttalContext()", () => {
     ];
     const rebuttalOutputs: string[] = [];
 
-    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
 
     expect(result).toContain("## Proposals");
     expect(result).toContain("proposal from agent-a");
@@ -181,7 +181,7 @@ describe("buildRebuttalContext()", () => {
   });
 
   test("with 2 proposals and 3 rebuttals returns string containing '## Previous Rebuttals' section with all 3 rebuttals numbered", () => {
-    const prompt = "original prompt";
+    const taskContext = "original task context";
     const debater1: Debater = { agent: "agent-a" };
     const debater2: Debater = { agent: "agent-b" };
     const proposals = [
@@ -190,7 +190,7 @@ describe("buildRebuttalContext()", () => {
     ];
     const rebuttalOutputs = ["rebuttal 1", "rebuttal 2", "rebuttal 3"];
 
-    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
 
     expect(result).toContain("## Previous Rebuttals");
     expect(result).toContain("rebuttal 1");
@@ -199,7 +199,7 @@ describe("buildRebuttalContext()", () => {
   });
 
   test("with currentDebaterIndex 0 returns string containing 'You are debater 1' (1-indexed in output)", () => {
-    const prompt = "original prompt";
+    const taskContext = "original task context";
     const debater1: Debater = { agent: "agent-a" };
     const debater2: Debater = { agent: "agent-b" };
     const proposals = [
@@ -208,13 +208,13 @@ describe("buildRebuttalContext()", () => {
     ];
     const rebuttalOutputs: string[] = [];
 
-    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
 
     expect(result).toContain("You are debater 1");
   });
 
   test("includes each proposal labeled with the debater's agent name", () => {
-    const prompt = "original prompt";
+    const taskContext = "original task context";
     const debater1: Debater = { agent: "claude-3-opus" };
     const debater2: Debater = { agent: "gpt-4-turbo" };
     const proposals = [
@@ -223,7 +223,7 @@ describe("buildRebuttalContext()", () => {
     ];
     const rebuttalOutputs: string[] = [];
 
-    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
 
     expect(result).toContain("claude-3-opus");
     expect(result).toContain("gpt-4-turbo");
@@ -232,30 +232,52 @@ describe("buildRebuttalContext()", () => {
   });
 
   test("returns a non-empty string", () => {
-    const prompt = "test prompt";
+    const taskContext = "test task context";
     const debater: Debater = { agent: "test-agent" };
     const proposals = [{ debater, output: "test output" }];
     const rebuttalOutputs: string[] = [];
 
-    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
 
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test("includes the original prompt", () => {
-    const prompt = "custom task description for rebuttal";
+  test("stateful mode: does NOT include taskContext (debater already saw it in proposal turn)", () => {
+    const taskContext = "custom task description for rebuttal";
     const debater: Debater = { agent: "test-agent" };
     const proposals = [{ debater, output: "test output" }];
     const rebuttalOutputs: string[] = [];
 
-    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
 
-    expect(result).toContain(prompt);
+    expect(result).not.toContain(taskContext);
+  });
+
+  test("one-shot mode: includes taskContext (each round is a fresh prompt with no prior context)", () => {
+    const taskContext = "custom task description for rebuttal";
+    const debater: Debater = { agent: "test-agent" };
+    const proposals = [{ debater, output: "test output" }];
+    const rebuttalOutputs: string[] = [];
+
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "one-shot");
+
+    expect(result).toContain(taskContext);
+  });
+
+  test("uses prose-only instruction — no JSON output directive", () => {
+    const taskContext = "task context";
+    const debater: Debater = { agent: "agent-a" };
+    const proposals = [{ debater, output: "proposal" }];
+
+    const result = buildRebuttalContext(taskContext, proposals, [], 0, "stateful");
+
+    expect(result).toContain("Do NOT output JSON");
+    expect(result).toContain("prose");
   });
 
   test("correctly 1-indexes debater number for different indices", () => {
-    const prompt = "original prompt";
+    const taskContext = "original task context";
     const debater1: Debater = { agent: "agent-a" };
     const debater2: Debater = { agent: "agent-b" };
     const debater3: Debater = { agent: "agent-c" };
@@ -267,25 +289,25 @@ describe("buildRebuttalContext()", () => {
     const rebuttalOutputs: string[] = [];
 
     // Debater at index 0 should see "You are debater 1"
-    const result0 = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result0 = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
     expect(result0).toContain("You are debater 1");
 
     // Debater at index 1 should see "You are debater 2"
-    const result1 = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 1);
+    const result1 = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 1, "stateful");
     expect(result1).toContain("You are debater 2");
 
     // Debater at index 2 should see "You are debater 3"
-    const result2 = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 2);
+    const result2 = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 2, "stateful");
     expect(result2).toContain("You are debater 3");
   });
 
   test("rebuttals section includes numbered rebuttals", () => {
-    const prompt = "original prompt";
+    const taskContext = "original task context";
     const debater: Debater = { agent: "agent-a" };
     const proposals = [{ debater, output: "proposal" }];
     const rebuttalOutputs = ["first rebuttal", "second rebuttal"];
 
-    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    const result = buildRebuttalContext(taskContext, proposals, rebuttalOutputs, 0, "stateful");
 
     // Check that rebuttals are numbered
     expect(result).toContain("1.");

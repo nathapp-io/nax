@@ -66,14 +66,21 @@ As the judge, provide your final verdict with clear reasoning, selecting or synt
 
 /**
  * Build a rebuttal context prompt for a debater in a rebuttal round.
- * Includes all proposals, previous rebuttals, and task instruction addressing the current debater by index.
+ *
+ * In stateful mode the debater already saw taskContext during the proposal turn — omit it.
+ * In one-shot mode each round is a fresh prompt, so taskContext must be included.
+ *
+ * The task instruction is prose-only: debaters must critique, not produce JSON.
  */
 export function buildRebuttalContext(
-  prompt: string,
+  taskContext: string,
   proposals: Array<{ debater: Debater; output: string }>,
   rebuttalOutputs: string[],
   currentDebaterIndex: number,
+  sessionMode: "stateful" | "one-shot",
 ): string {
+  const contextBlock = sessionMode === "one-shot" ? `${taskContext}\n\n` : "";
+
   const proposalsSection = proposals
     .map((p, i) => `### Proposal ${i + 1} (${p.debater.agent})\n${p.output}`)
     .join("\n\n");
@@ -85,11 +92,11 @@ export function buildRebuttalContext(
 
   const debaterNumber = currentDebaterIndex + 1;
 
-  return `${prompt}
-
-## Proposals
+  return `${contextBlock}## Proposals
 ${proposalsSection}${rebuttalsSection}
 
 ## Your Task
-You are debater ${debaterNumber}. Provide your rebuttal to the proposals and previous rebuttals above.`;
+You are debater ${debaterNumber}. Provide your critique in prose.
+Identify strengths, weaknesses, and specific improvements for each proposal.
+Do NOT output JSON — focus on analysis only.`;
 }
