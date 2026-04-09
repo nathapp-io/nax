@@ -1,6 +1,6 @@
 ---
 title: Multi-Agent Debate
-description: Resolver strategies, session modes, and behavior matrices for the debate system
+description: Resolver strategies, session modes, debater personas, and behavior matrices for the debate system
 ---
 
 ## Multi-Agent Debate
@@ -26,6 +26,74 @@ Enable via config:
   }
 }
 ```
+
+---
+
+## Debater Personas
+
+Each debater can be assigned an **analytical lens** that shapes how it frames its proposal or critique. Personas prevent same-model debaters from producing near-identical outputs and make the resolver's job easier by ensuring each proposal approaches the problem from a distinct angle.
+
+### Available Personas
+
+| Persona | Analytical focus |
+|:--------|:-----------------|
+| `challenger` | Challenges assumptions, identifies weak points, proposes alternative approaches |
+| `pragmatist` | Prioritises deliverability — effort, risk, and timeline constraints |
+| `completionist` | Ensures nothing is missed — edge cases, error paths, test coverage |
+| `security` | Flags authentication, authorisation, injection, and data-exposure risks |
+| `testability` | Evaluates testability, observability, and verification coverage |
+
+### Auto-Rotation (`autoPersona`)
+
+Set `autoPersona: true` on a stage to have nax automatically assign a persona to each debater in order. Debaters without an explicit `persona` field receive personas from a stage-specific rotation list:
+
+| Stage | Rotation order |
+|:------|:---------------|
+| `plan` | `challenger → pragmatist → completionist → security → testability` |
+| `review` | `security → completionist → testability → challenger → pragmatist` |
+
+If there are more debaters than personas, the list wraps around. Explicit `persona` fields always override auto-rotation.
+
+```json
+{
+  "debate": {
+    "stages": {
+      "plan": {
+        "autoPersona": true
+      },
+      "review": {
+        "autoPersona": true
+      }
+    }
+  }
+}
+```
+
+`autoPersona` defaults to `false` — existing configs are unaffected.
+
+### Explicit Persona Assignment
+
+Assign personas per debater directly in the `debaters` array. This gives full control and is useful when you want specific lenses regardless of debater count:
+
+```json
+{
+  "debate": {
+    "stages": {
+      "plan": {
+        "debaters": [
+          { "agent": "claude", "model": "balanced", "persona": "challenger" },
+          { "agent": "claude", "model": "balanced", "persona": "pragmatist" },
+          { "agent": "claude", "model": "fast",     "persona": "completionist" }
+        ]
+      }
+    }
+  }
+}
+```
+
+### How Personas Appear in Prompts
+
+When a debater has a persona assigned (via `autoPersona` or explicit config), a `## Your Role` block is injected into its proposal and critique prompts. The block contains an identity statement and a lens description specific to that persona. Rebuttal prompts also include the persona block and label proposals with their originating debater's lens (e.g. `claude (challenger)`).
 
 ---
 
