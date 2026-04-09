@@ -6,7 +6,8 @@
 
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
-import { buildCritiquePrompt } from "./prompts";
+import { resolvePersonas } from "./personas";
+import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -36,7 +37,9 @@ interface OneShotCtx {
 export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
-  const debaters = config.debaters ?? [];
+  const personaStage: "plan" | "review" = ctx.stage === "plan" ? "plan" : "review";
+  const rawDebaters = config.debaters ?? [];
+  const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
   // Step 1: Resolve adapters — skip unavailable agents
@@ -176,14 +179,18 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   // Step 4: Critique rounds (when rounds > 1)
   let critiqueOutputs: string[] = [];
   if (config.rounds > 1) {
-    const proposalOutputs = successful.map((p) => p.output);
+    const proposals = successful.map((p) => ({ debater: p.debater, output: p.output }));
+    const critiqueBuilder = new DebatePromptBuilder(
+      { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+      { debaters: proposals.map((p) => p.debater), sessionMode: ctx.stageConfig.sessionMode ?? "one-shot" },
+    );
     const critiqueSettled = await allSettledBounded(
       successful.map(
         ({ debater, adapter }, i) =>
           () =>
             runComplete(
               adapter,
-              buildCritiquePrompt(prompt, proposalOutputs, i),
+              critiqueBuilder.buildCritiquePrompt(i, proposals),
               {
                 model: resolveDebaterModel(debater, ctx.config),
                 featureName: ctx.stage,

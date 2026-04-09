@@ -132,11 +132,13 @@ export class DebateSession {
    * After all plans complete, the resolver picks the best PRD (or synthesises one).
    * Returns a DebateResult whose `output` field contains the winning PRD JSON string.
    *
-   * @param basePrompt - Planning prompt WITHOUT a file-write instruction.
-   * @param opts       - Plan options shared across all debaters.
+   * @param taskContext  - Spec, codebase context, and analysis instructions. Included in rebuttal rounds.
+   * @param outputFormat - Output schema and format directive. Proposal round only; omitted from rebuttals.
+   * @param opts         - Plan options shared across all debaters.
    */
   async runPlan(
-    basePrompt: string,
+    taskContext: string,
+    outputFormat: string,
     opts: {
       workdir: string;
       feature: string;
@@ -153,7 +155,8 @@ export class DebateSession {
         stageConfig: this.stageConfig,
         config: this.config,
       },
-      basePrompt,
+      taskContext,
+      outputFormat,
       opts,
     );
   }

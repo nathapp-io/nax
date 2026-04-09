@@ -10,7 +10,8 @@ import type { ModelDef, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { allSettledBounded } from "./concurrency";
-import { buildCritiquePrompt } from "./prompts";
+import { resolvePersonas } from "./personas";
+import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -110,7 +111,9 @@ export async function closeStatefulSession(
 export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
-  const debaters = config.debaters ?? [];
+  const personaStage: "plan" | "review" = ctx.stage === "plan" ? "plan" : "review";
+  const rawDebaters = config.debaters ?? [];
+  const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
   // Resolve adapters — skip unavailable agents
@@ -240,7 +243,11 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   // In stateful mode, send only OTHER debaters' proposals — session retains own history.
   let critiqueOutputs: string[] = [];
   if (config.rounds > 1) {
-    const proposalOutputs = successfulProposals.map((s) => s.output);
+    const proposals = successfulProposals.map((s) => ({ debater: s.debater, output: s.output }));
+    const critiqueBuilder = new DebatePromptBuilder(
+      { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+      { debaters: proposals.map((p) => p.debater), sessionMode: ctx.stageConfig.sessionMode ?? "one-shot" },
+    );
     const critiqueSettled = await allSettledBounded(
       successfulProposals.map(
         (proposal, successfulIdx) => () =>
@@ -248,7 +255,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
             ctx,
             proposal.adapter,
             proposal.debater,
-            buildCritiquePrompt(prompt, proposalOutputs, successfulIdx),
+            critiqueBuilder.buildCritiquePrompt(successfulIdx, proposals),
             proposal.roleKey ?? `debate-${ctx.stage}-${successfulIdx}`,
             false,
           ),

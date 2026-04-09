@@ -8,7 +8,8 @@
 
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
-import { buildRebuttalContext } from "./prompts";
+import { resolvePersonas } from "./personas";
+import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -47,13 +48,13 @@ export interface HybridCtx {
  *
  * @param ctx                - Session context (must include workdir/featureName/timeoutSeconds)
  * @param proposals          - Successful proposals with adapter references
- * @param originalPrompt     - The original debate prompt (included in rebuttal context)
+ * @param builder            - Prompt builder (constructed by caller with successful debaters)
  * @param sessionRolePrefix  - Prefix for session roles (e.g. "debate-hybrid", "plan-hybrid")
  */
 export async function runRebuttalLoop(
   ctx: HybridCtx,
   proposals: SuccessfulProposal[],
-  originalPrompt: string,
+  builder: DebatePromptBuilder,
   sessionRolePrefix: string,
 ): Promise<RebuttalLoopResult> {
   const logger = _debateSessionDeps.getSafeLogger();
@@ -65,7 +66,7 @@ export async function runRebuttalLoop(
 
   try {
     for (let round = 1; round <= config.rounds; round++) {
-      const priorRebuttals = rebuttals.filter((r) => r.round < round).map((r) => r.output);
+      const priorRebuttals = rebuttals.filter((r) => r.round < round);
 
       for (let debaterIdx = 0; debaterIdx < proposals.length; debaterIdx++) {
         const proposal = proposals[debaterIdx];
@@ -77,7 +78,7 @@ export async function runRebuttalLoop(
           debaterIndex: debaterIdx,
         });
 
-        const rebuttalPrompt = buildRebuttalContext(originalPrompt, proposalList, priorRebuttals, debaterIdx);
+        const rebuttalPrompt = builder.buildRebuttalPrompt(debaterIdx, proposalList, priorRebuttals);
 
         try {
           const turnResult = await runStatefulTurn(
@@ -130,7 +131,9 @@ export async function runRebuttalLoop(
 export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
-  const debaters = config.debaters ?? [];
+  const personaStage: "plan" | "review" = ctx.stage === "plan" ? "plan" : "review";
+  const rawDebaters = config.debaters ?? [];
+  const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
   // Resolve adapters via shared helper — skip unavailable agents
@@ -229,7 +232,16 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const proposalList = successfulProposals.map((s) => ({ debater: s.debater, output: s.output }));
 
   // Rebuttal loop + session cleanup — delegated to SSOT
-  const { rebuttals, costUsd: rebuttalCost } = await runRebuttalLoop(ctx, successfulProposals, prompt, "debate-hybrid");
+  const rebuttalBuilder = new DebatePromptBuilder(
+    { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+    { debaters: successfulProposals.map((s) => s.debater), sessionMode: "stateful" },
+  );
+  const { rebuttals, costUsd: rebuttalCost } = await runRebuttalLoop(
+    ctx,
+    successfulProposals,
+    rebuttalBuilder,
+    "debate-hybrid",
+  );
   totalCostUsd += rebuttalCost;
 
   const critiqueOutputs = rebuttals.map((r) => r.output);

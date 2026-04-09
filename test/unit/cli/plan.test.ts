@@ -543,51 +543,70 @@ describe("buildPlanningPrompt (ENH-006)", () => {
   const spec = "Refactor auth module to use @nathapp/nestjs-auth";
   const ctx = "## Codebase Structure\nsrc/auth/auth.module.ts";
 
+  /** Helper: concatenate both parts into a single string for content assertions. */
+  function fullPrompt(...args: Parameters<typeof buildPlanningPrompt>): string {
+    const { taskContext, outputFormat } = buildPlanningPrompt(...args);
+    return `${taskContext}\n\n${outputFormat}`;
+  }
+
   test("prompt has Step 1 — understand the spec", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("Step 1");
     expect(prompt).toContain("Understand the Spec");
   });
 
   test("prompt has Step 2 — analyze", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("Step 2");
     expect(prompt).toContain("Analyze");
   });
 
   test("prompt has Step 3 — generate stories", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("Step 3");
     expect(prompt).toContain("Generate Implementation Stories");
   });
 
   test("prompt handles greenfield guidance", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("greenfield project");
   });
 
   test("output schema includes analysis field", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain('"analysis"');
   });
 
   test("output schema includes contextFiles field", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain('"contextFiles"');
   });
 
   test("testStrategy list is in correct order (tdd-simple first, test-after last)", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
   });
 
   test("monorepo: includes workdir field in schema", () => {
-    const prompt = buildPlanningPrompt(spec, ctx, undefined, ["apps/api", "apps/web"]);
+    const prompt = fullPrompt(spec, ctx, undefined, ["apps/api", "apps/web"]);
     expect(prompt).toContain('"workdir"');
   });
 
   test("non-monorepo: no workdir field in schema", () => {
-    const prompt = buildPlanningPrompt(spec, ctx);
+    const prompt = fullPrompt(spec, ctx);
     expect(prompt).not.toContain('"workdir"');
+  });
+
+  test("taskContext excludes output schema — no Output Schema header or JSON field listing", () => {
+    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    expect(taskContext).not.toContain("Output Schema");
+    expect(taskContext).not.toContain('"analysis": "string');
+  });
+
+  test("outputFormat contains schema and format directive but not spec steps", () => {
+    const { outputFormat } = buildPlanningPrompt(spec, ctx);
+    expect(outputFormat).toContain("Output Schema");
+    expect(outputFormat).toContain('"analysis"');
+    expect(outputFormat).not.toContain("Step 1");
   });
 });

@@ -479,9 +479,12 @@ const GenerateConfigSchema = z.object({
   agents: z.array(z.enum(VALID_AGENT_TYPES)).optional(),
 });
 
+const DebaterPersonaEnum = z.enum(["challenger", "pragmatist", "completionist", "security", "testability"]);
+
 const DebaterSchema = z.object({
   agent: z.string().min(1, "debater.agent must be non-empty"),
   model: z.string().min(1, "debater.model must be non-empty").optional(),
+  persona: DebaterPersonaEnum.optional(),
 });
 
 const toObject = (val: unknown): unknown => (val === undefined || val === null ? {} : val);
@@ -515,6 +518,7 @@ const DebateStageConfigSchema = (defaults: {
       mode: z.enum(["panel", "hybrid"]).default("panel"),
       debaters: z.array(DebaterSchema).min(2, "debaters must have at least 2 entries").optional(),
       timeoutSeconds: z.number().int().positive().default(600),
+      autoPersona: z.boolean().default(false),
     }),
   );
 
@@ -813,6 +817,7 @@ export const NaxConfigSchema = z
           rounds: 3,
           mode: "panel" as const,
           timeoutSeconds: 600,
+          autoPersona: false,
         },
         review: {
           enabled: true,
@@ -821,6 +826,7 @@ export const NaxConfigSchema = z
           rounds: 2,
           mode: "panel" as const,
           timeoutSeconds: 600,
+          autoPersona: false,
         },
         acceptance: {
           enabled: false,
@@ -829,6 +835,7 @@ export const NaxConfigSchema = z
           rounds: 1,
           mode: "panel" as const,
           timeoutSeconds: 600,
+          autoPersona: false,
         },
         rectification: {
           enabled: false,
@@ -837,6 +844,7 @@ export const NaxConfigSchema = z
           rounds: 1,
           mode: "panel" as const,
           timeoutSeconds: 600,
+          autoPersona: false,
         },
         escalation: {
           enabled: false,
@@ -845,6 +853,7 @@ export const NaxConfigSchema = z
           rounds: 1,
           mode: "panel" as const,
           timeoutSeconds: 600,
+          autoPersona: false,
         },
       },
     })),

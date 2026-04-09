@@ -6,8 +6,10 @@ export { DebateSession } from "./session";
 export { _debateSessionDeps, resolveDebaterModel } from "./session-helpers";
 export type { DebateSessionOptions, ResolverContextInput, ResolveOutcome } from "./session-helpers";
 export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";
-export { buildCritiquePrompt, buildSynthesisPrompt, buildJudgePrompt } from "./prompts";
-export { buildRebuttalContext } from "./session-helpers";
+export { DebatePromptBuilder } from "./prompt-builder";
+export type { StageContext, PromptBuilderOptions } from "./prompt-builder";
+export { PERSONA_FRAGMENTS, buildDebaterLabel, buildPersonaBlock, resolvePersonas } from "./personas";
+export type { DebaterPersona } from "./types";
 export type {
   DebateConfig,
   DebateStageConfig,
