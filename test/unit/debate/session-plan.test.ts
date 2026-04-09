@@ -324,6 +324,118 @@ describe("DebateSession.runPlan()", () => {
     _debateSessionDeps.getSafeLogger = origLogger;
   });
 
+  test("includes spec anchor in synthesis prompt when specContent is provided", async () => {
+    let capturedSynthesisPrompt = "";
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "opencode",
+      displayName: "opencode",
+      binary: "opencode",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+      }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "ok" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async (prompt: string) => {
+        capturedSynthesisPrompt = prompt;
+        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+      },
+    }));
+
+    _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
+
+    const specContent = `# My Feature\n## Stories\n### US-001\n**AC:**\n- AC one\n- AC two`;
+
+    const session = new DebateSession({
+      storyId: "spec-anchor-test",
+      stage: "plan",
+      stageConfig: makeStageConfig({
+        resolver: { type: "synthesis", agent: "opencode" },
+      }),
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+    });
+
+    await session.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "spec-anchor-test",
+      outputDir: "/tmp/out",
+      specContent,
+    });
+
+    // Synthesis prompt should contain the spec anchor
+    expect(capturedSynthesisPrompt).toContain("## Original Spec");
+    expect(capturedSynthesisPrompt).toContain("AC one");
+    expect(capturedSynthesisPrompt).toContain("AC two");
+    // Should contain anchoring instruction
+    expect(capturedSynthesisPrompt).toContain("acceptanceCriteria");
+    expect(capturedSynthesisPrompt).toContain("suggestedCriteria");
+  });
+
+  test("synthesis prompt omits spec anchor when specContent is not provided", async () => {
+    let capturedSynthesisPrompt = "";
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "opencode",
+      displayName: "opencode",
+      binary: "opencode",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+      }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "ok" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async (prompt: string) => {
+        capturedSynthesisPrompt = prompt;
+        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+      },
+    }));
+
+    _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
+
+    const session = new DebateSession({
+      storyId: "no-spec-anchor",
+      stage: "plan",
+      stageConfig: makeStageConfig({
+        resolver: { type: "synthesis", agent: "opencode" },
+      }),
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+    });
+
+    await session.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "no-spec-anchor",
+      outputDir: "/tmp/out",
+      // no specContent
+    });
+
+    // Should NOT contain spec anchor section
+    expect(capturedSynthesisPrompt).not.toContain("## Original Spec");
+    expect(capturedSynthesisPrompt).not.toContain("suggestedCriteria");
+  });
+
   test("runs plan debaters in parallel (when limit >= agents)", async () => {
     const startedOrder: number[] = [];
     const resolvers: Array<() => void> = [];

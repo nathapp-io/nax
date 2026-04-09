@@ -203,6 +203,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       timeoutSeconds,
       dangerouslySkipPermissions: resolvedPerm.skipPermissions,
       maxInteractionTurns: config?.agent?.maxInteractionTurns,
+      specContent,
     });
     if (debateResult.outcome !== "failed" && debateResult.output) {
       rawResponse = debateResult.output;
