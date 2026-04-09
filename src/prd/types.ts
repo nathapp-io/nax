@@ -99,6 +99,8 @@ export interface UserStory {
   description: string;
   /** Acceptance criteria */
   acceptanceCriteria: string[];
+  /** Debater-suggested criteria beyond the spec — tested in hardening pass, never blocks pipeline. */
+  suggestedCriteria?: string[];
   /** Tags for routing (e.g., ["security", "public-api"]) */
   tags: string[];
   /** Dependencies (story IDs that must complete first) */

@@ -490,3 +490,40 @@ describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
     expect(prd.userStories[0].contextFiles).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// suggestedCriteria validation
+// ---------------------------------------------------------------------------
+
+describe("suggestedCriteria", () => {
+  test("absent — validates and omits field", () => {
+    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
+    expect(prd.userStories[0].suggestedCriteria).toBeUndefined();
+  });
+
+  test("valid string[] — passes through", () => {
+    const story = makeStory({ suggestedCriteria: ["edge case A", "edge case B"] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].suggestedCriteria).toEqual(["edge case A", "edge case B"]);
+  });
+
+  test("empty array — stripped to undefined", () => {
+    const story = makeStory({ suggestedCriteria: [] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].suggestedCriteria).toBeUndefined();
+  });
+
+  test("non-string elements — throws", () => {
+    const story = makeStory({ suggestedCriteria: ["valid", 42] });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
+      "suggestedCriteria[1] must be a string",
+    );
+  });
+
+  test("non-array — throws", () => {
+    const story = makeStory({ suggestedCriteria: "not an array" });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
+      "suggestedCriteria must be an array",
+    );
+  });
+});

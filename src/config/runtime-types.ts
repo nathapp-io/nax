@@ -295,6 +295,10 @@ export interface AcceptanceConfig {
   timeoutMs: number;
   /** Fix configuration for acceptance test failures (US-001) */
   fix: AcceptanceFixConfig;
+  /** Override filename for suggested acceptance tests (hardening pass) */
+  suggestedTestPath?: string;
+  /** Hardening pass configuration — test debater-suggested criteria after acceptance passes */
+  hardening?: { enabled: boolean };
 }
 
 /** Optimizer config (v0.10) */

@@ -93,6 +93,23 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     }
   }
 
+  // suggestedCriteria — optional, if present must be non-empty string[]
+  let suggestedCriteria: string[] | undefined;
+  if (s.suggestedCriteria !== undefined && s.suggestedCriteria !== null) {
+    if (!Array.isArray(s.suggestedCriteria)) {
+      throw new Error(`[schema] story[${index}].suggestedCriteria must be an array when present`);
+    }
+    if (s.suggestedCriteria.length > 0) {
+      for (let i = 0; i < s.suggestedCriteria.length; i++) {
+        if (typeof s.suggestedCriteria[i] !== "string") {
+          throw new Error(`[schema] story[${index}].suggestedCriteria[${i}] must be a string`);
+        }
+      }
+      suggestedCriteria = s.suggestedCriteria as string[];
+    }
+    // empty array → stripped to undefined
+  }
+
   // complexity — accept from routing.complexity (PRD format) or top-level complexity (legacy)
   const routing = typeof s.routing === "object" && s.routing !== null ? (s.routing as Record<string, unknown>) : {};
   const rawComplexity = routing.complexity ?? s.complexity;
@@ -194,6 +211,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     },
     ...(workdir !== undefined ? { workdir } : {}),
     ...(contextFiles.length > 0 ? { contextFiles } : {}),
+    ...(suggestedCriteria !== undefined ? { suggestedCriteria } : {}),
   };
 }
 

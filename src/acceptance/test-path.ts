@@ -73,6 +73,44 @@ export function resolveAcceptanceTestCandidates(options: ResolveAcceptanceTestCa
   return [resolveAcceptanceFeatureTestPath(options.featureDir, options.testPathConfig, options.language)];
 }
 
+// ─── Suggested test path helpers (hardening pass) ───────────────────────────
+
+/**
+ * Return the suggested test filename for a given language.
+ * Mirrors acceptanceTestFilename() but with `.nax-suggested` prefix.
+ */
+export function suggestedTestFilename(language?: string): string {
+  switch (language?.toLowerCase()) {
+    case "go":
+      return ".nax-suggested_test.go";
+    case "python":
+      return ".nax-suggested.test.py";
+    case "rust":
+      return ".nax-suggested.rs";
+    default:
+      return ".nax-suggested.test.ts";
+  }
+}
+
+/**
+ * Resolve suggested test filename based on explicit config override and language.
+ */
+export function resolveSuggestedTestFile(language?: string, testPathConfig?: string): string {
+  return testPathConfig ?? suggestedTestFilename(language);
+}
+
+/**
+ * Resolve package-scoped suggested test absolute path (monorepo aware).
+ */
+export function resolveSuggestedPackageFeatureTestPath(
+  packageDir: string,
+  featureName: string,
+  testPathConfig?: string,
+  language?: string,
+): string {
+  return path.join(packageDir, ".nax", "features", featureName, resolveSuggestedTestFile(language, testPathConfig));
+}
+
 /**
  * Find the first existing acceptance test path from resolved candidates.
  */

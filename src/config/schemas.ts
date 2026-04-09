@@ -344,6 +344,13 @@ export const AcceptanceConfigSchema = z.object({
     strategy: "diagnose-first",
     maxRetries: 2,
   }),
+  suggestedTestPath: z.string().min(1).optional(),
+  hardening: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .optional()
+    .default({ enabled: true }),
 });
 
 const TestCoverageConfigSchema = z.object({
@@ -755,6 +762,7 @@ export const NaxConfigSchema = z
         strategy: "diagnose-first",
         maxRetries: 2,
       },
+      hardening: { enabled: true },
     }),
     context: ContextConfigSchema.default({
       fileInjection: "disabled",
