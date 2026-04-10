@@ -39,6 +39,10 @@ export interface RefinementContext {
   testStrategy?: AcceptanceTestStrategy;
   /** Test framework — informs LLM which testing library syntax to use */
   testFramework?: string;
+  /** Story title — anchors the refiner to the correct subject function/entity */
+  storyTitle?: string;
+  /** Story description — additional context so the refiner avoids guessing function names */
+  storyDescription?: string;
 }
 
 /**

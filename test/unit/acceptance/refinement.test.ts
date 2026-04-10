@@ -18,8 +18,10 @@ import {
   parseRefinementResponse,
   refineAcceptanceCriteria,
 } from "../../../src/acceptance/refinement";
+import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import type { RefinedCriterion } from "../../../src/acceptance/types";
+import type { CompleteResult } from "../../../src/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -37,7 +39,7 @@ const CODEBASE_CONTEXT = "File tree:\nsrc/\n  acceptance/\n    refinement.ts\n";
 
 function makeConfig(acceptanceOverride?: Partial<NaxConfig["acceptance"]>): NaxConfig {
   return {
-    version: 1,
+    ...DEFAULT_CONFIG,
     models: {
       claude: {
         fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
@@ -45,121 +47,20 @@ function makeConfig(acceptanceOverride?: Partial<NaxConfig["acceptance"]>): NaxC
         powerful: { provider: "anthropic", model: "claude-opus-4-5" },
       },
     },
-    autoMode: {
-      enabled: true,
-      defaultAgent: "claude",
-      fallbackOrder: ["claude"],
-      complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      escalation: {
-        enabled: false,
-        tierOrder: [{ tier: "fast", attempts: 3 }],
-      },
-    },
-    analyze: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 5000,
-    },
-    routing: {
-      strategy: "keyword",
-      adaptive: { minSamples: 10, costThreshold: 0.8, fallbackStrategy: "keyword" },
-      llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
-    },
-    execution: {
-      maxIterations: 5,
-      iterationDelayMs: 0,
-      costLimit: 10,
-      sessionTimeoutSeconds: 60,
-      verificationTimeoutSeconds: 60,
-      maxStoriesPerFeature: 100,
-      rectification: {
-        enabled: false,
-        maxRetries: 1,
-        fullSuiteTimeoutSeconds: 60,
-        maxFailureSummaryChars: 1000,
-        abortOnIncreasingFailures: false,
-      },
-      regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true, maxRectificationAttempts: 1 },
-      contextProviderTokenBudget: 1000,
-      smartTestRunner: false,
-    },
-    quality: {
-      requireTypecheck: false,
-      requireLint: false,
-      requireTests: false,
-      commands: {},
-      forceExit: false,
-      detectOpenHandles: false,
-      detectOpenHandlesRetries: 0,
-      gracePeriodMs: 0,
-      dangerouslySkipPermissions: true,
-      drainTimeoutMs: 0,
-      shell: "/bin/sh",
-      stripEnvVars: [],
-    },
-    tdd: {
-      maxRetries: 1,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: true,
-      strategy: "off",
-      sessionTiers: { testWriter: "fast", verifier: "fast" },
-      testWriterAllowedPaths: [],
-      rollbackOnFailure: false,
-      greenfieldDetection: false,
-    },
-    constitution: { enabled: false, path: "constitution.md", maxTokens: 0 },
-    review: { enabled: false, checks: [], commands: {} },
-    plan: { model: "balanced", outputPath: "spec.md" },
-    acceptance: {
-      enabled: true,
-      maxRetries: 1,
-      generateTests: false,
-      testPath: "acceptance.test.ts",
-      model: "fast",
-      ...acceptanceOverride,
-    },
-    context: {
-      fileInjection: "disabled",
-      testCoverage: {
-        enabled: false,
-        detail: "names-and-counts",
-        maxTokens: 0,
-        testPattern: "**/*.test.ts",
-        scopeToStory: false,
-      },
-      autoDetect: { enabled: false, maxFiles: 0, traceImports: false },
-    },
-    interaction: {
-      plugin: "cli",
-      config: {},
-      defaults: { timeout: 1000, fallback: "escalate" },
-      triggers: {},
-    },
-    precheck: {
-      storySizeGate: { enabled: false, maxAcCount: 10, maxDescriptionLength: 5000, maxBulletPoints: 20 },
-    },
-    prompts: {},
-    decompose: {
-      trigger: "disabled",
-      maxAcceptanceCriteria: 6,
-      maxSubstories: 5,
-      maxSubstoryComplexity: "medium",
-      maxRetries: 1,
-      model: "balanced",
-    },
+    autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+    acceptance: { ...DEFAULT_CONFIG.acceptance, model: "fast", ...acceptanceOverride },
   };
 }
 
-/** Build a valid LLM JSON response for the given criteria */
-function makeLLMResponse(criteria: string[], storyId: string, testable = true): string {
+/** Build a valid LLM JSON response for the given criteria, wrapped as CompleteResult */
+function makeLLMResponse(criteria: string[], storyId: string, testable = true): CompleteResult {
   const items: RefinedCriterion[] = criteria.map((c) => ({
     original: c,
     refined: `Verify that: ${c}`,
     testable,
     storyId,
   }));
-  return JSON.stringify(items);
+  return { output: JSON.stringify(items), costUsd: 0, source: "fallback" };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,20 +126,47 @@ describe("buildRefinementPrompt", () => {
     expect(prompt).toContain("CODEBASE CONTEXT:");
     expect(prompt).toContain(CODEBASE_CONTEXT);
   });
+
+  test("includes STORY CONTEXT section when storyTitle is provided", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "", { storyTitle: "Export tasks to CSV" });
+    expect(prompt).toContain("STORY CONTEXT:");
+    expect(prompt).toContain("Export tasks to CSV");
+  });
+
+  test("includes storyDescription in STORY CONTEXT when provided", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "", {
+      storyTitle: "Export tasks to CSV",
+      storyDescription: "As a user, I can call exportTasks() to get a file",
+    });
+    expect(prompt).toContain("As a user, I can call exportTasks() to get a file");
+  });
+
+  test("omits STORY CONTEXT section when neither storyTitle nor storyDescription is provided", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "");
+    expect(prompt).not.toContain("STORY CONTEXT:");
+  });
+
+  test("STORY CONTEXT appears before CODEBASE CONTEXT in the prompt", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, CODEBASE_CONTEXT, {
+      storyTitle: "Export tasks to CSV",
+    });
+    const storyIdx = prompt.indexOf("STORY CONTEXT:");
+    const codebaseIdx = prompt.indexOf("CODEBASE CONTEXT:");
+    expect(storyIdx).toBeGreaterThanOrEqual(0);
+    expect(codebaseIdx).toBeGreaterThan(storyIdx);
+  });
 });
 
 describe("parseRefinementResponse", () => {
   test("parses valid JSON response into RefinedCriterion[]", () => {
-    const response = makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    const result = parseRefinementResponse(response, SAMPLE_CRITERIA);
+    const result = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID).output, SAMPLE_CRITERIA);
 
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(SAMPLE_CRITERIA.length);
   });
 
   test("each result has original field matching input criteria", () => {
-    const response = makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    const result = parseRefinementResponse(response, SAMPLE_CRITERIA);
+    const result = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID).output, SAMPLE_CRITERIA);
 
     for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
       expect(result[i].original).toBe(SAMPLE_CRITERIA[i]);
@@ -246,8 +174,7 @@ describe("parseRefinementResponse", () => {
   });
 
   test("each result has a non-empty refined field", () => {
-    const response = makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    const result = parseRefinementResponse(response, SAMPLE_CRITERIA);
+    const result = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID).output, SAMPLE_CRITERIA);
 
     for (const item of result) {
       expect(typeof item.refined).toBe("string");
@@ -256,8 +183,7 @@ describe("parseRefinementResponse", () => {
   });
 
   test("each result has a boolean testable field", () => {
-    const response = makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    const result = parseRefinementResponse(response, SAMPLE_CRITERIA);
+    const result = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID).output, SAMPLE_CRITERIA);
 
     for (const item of result) {
       expect(typeof item.testable).toBe("boolean");
@@ -265,8 +191,7 @@ describe("parseRefinementResponse", () => {
   });
 
   test("each result has a storyId field", () => {
-    const response = makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    const result = parseRefinementResponse(response, SAMPLE_CRITERIA);
+    const result = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID).output, SAMPLE_CRITERIA);
 
     for (const item of result) {
       expect(typeof item.storyId).toBe("string");
@@ -295,8 +220,7 @@ describe("parseRefinementResponse", () => {
   });
 
   test("preserves testable:false items from valid JSON response", () => {
-    const response = makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false);
-    const result = parseRefinementResponse(response, SAMPLE_CRITERIA);
+    const result = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false).output, SAMPLE_CRITERIA);
 
     for (const item of result) {
       expect(item.testable).toBe(false);
@@ -514,7 +438,7 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
 
     _refineDeps.adapter.complete = mock(async () => {
       adapterCalled = true;
-      return "[]";
+      return { output: "[]", costUsd: 0, source: "fallback" } satisfies CompleteResult;
     });
 
     const result = await refineAcceptanceCriteria([], {
@@ -530,7 +454,7 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   test("falls back to original text when adapter.complete() returns malformed JSON", async () => {
     const config = makeConfig();
 
-    _refineDeps.adapter.complete = mock(async () => "not valid json at all {{{");
+    _refineDeps.adapter.complete = mock(async () => ({ output: "not valid json at all {{{", costUsd: 0, source: "fallback" } satisfies CompleteResult));
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
