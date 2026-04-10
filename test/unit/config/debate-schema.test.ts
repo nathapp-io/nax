@@ -285,6 +285,46 @@ describe("debate config schema — AC-7: FIELD_DESCRIPTIONS contains debate entr
   });
 });
 
+describe("debate config schema — resolver.model field (#352)", () => {
+  test("accepts model: 'powerful' in plan resolver and preserves it", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...baseConfig,
+      debate: { enabled: true, stages: { plan: { resolver: { type: "synthesis", model: "powerful" } } } },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.debate?.stages.plan.resolver.model).toBe("powerful");
+  });
+
+  test("accepts full model ID in plan resolver and preserves it", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...baseConfig,
+      debate: { enabled: true, stages: { plan: { resolver: { type: "synthesis", model: "claude-opus-4-6" } } } },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.debate?.stages.plan.resolver.model).toBe("claude-opus-4-6");
+  });
+
+  test("rejects model: '' (empty string — min(1) check)", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...baseConfig,
+      debate: { enabled: true, stages: { plan: { resolver: { type: "synthesis", model: "" } } } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("model is optional — absent resolver parses without error", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...baseConfig,
+      debate: { enabled: true, stages: { plan: { resolver: { type: "synthesis" } } } },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.debate?.stages.plan.resolver.model).toBeUndefined();
+  });
+});
+
 describe("DEFAULT_CONFIG includes debate section", () => {
   test("debate.enabled is false by default", () => {
     expect(DEFAULT_CONFIG.debate?.enabled).toBe(false);

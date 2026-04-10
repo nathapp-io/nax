@@ -32,6 +32,9 @@ export interface ResolverConfig {
   type: ResolverType;
   /** Optional agent to use as resolver (resolved from config.autoMode.defaultAgent when absent) */
   agent?: string;
+  /** Model override for the resolver agent — accepts tier labels ("fast"|"balanced"|"powerful"),
+   *  shorthand aliases ("haiku"|"sonnet"|"opus"), or a full model ID. Defaults to "fast" when absent. */
+  model?: string;
   /** Tie-breaker strategy when votes are tied */
   tieBreaker?: string;
   /** Max prompt tokens passed to the resolver agent */
