@@ -42,6 +42,10 @@ export interface RefinementPromptOptions {
   testStrategy?: "unit" | "component" | "cli" | "e2e" | "snapshot";
   /** Test framework — informs LLM which testing library syntax to use */
   testFramework?: string;
+  /** Story title — anchors the refiner to the correct subject function/entity */
+  storyTitle?: string;
+  /** Story description — provides additional function/entity context */
+  storyDescription?: string;
 }
 
 /**
@@ -61,11 +65,16 @@ export function buildRefinementPrompt(
   const strategySection = buildStrategySection(options);
   const refinedExample = buildRefinedExample(options?.testStrategy);
 
+  const storyLines: string[] = [];
+  if (options?.storyTitle) storyLines.push(`Title: ${options.storyTitle}`);
+  if (options?.storyDescription) storyLines.push(`Description: ${options.storyDescription}`);
+  const storySection = storyLines.length > 0 ? `STORY CONTEXT:\n${storyLines.join("\n")}\n\n` : "";
+
   const codebaseSection = codebaseContext ? `CODEBASE CONTEXT:\n${codebaseContext}\n` : "";
 
   const core = `You are an acceptance criteria refinement assistant. Your task is to convert raw acceptance criteria into concrete, machine-verifiable assertions.
 
-${codebaseSection}${strategySection}ACCEPTANCE CRITERIA TO REFINE:
+${storySection}${codebaseSection}${strategySection}ACCEPTANCE CRITERIA TO REFINE:
 ${criteriaList}
 
 For each criterion, produce a refined version that is concrete and automatically testable where possible.
@@ -186,7 +195,17 @@ export async function refineAcceptanceCriteria(
     return [];
   }
 
-  const { storyId, featureName, workdir, codebaseContext, config, testStrategy, testFramework } = context;
+  const {
+    storyId,
+    featureName,
+    workdir,
+    codebaseContext,
+    config,
+    testStrategy,
+    testFramework,
+    storyTitle,
+    storyDescription,
+  } = context;
   const logger = getLogger();
 
   const modelTier = config.acceptance?.model ?? "fast";
@@ -196,7 +215,12 @@ export async function refineAcceptanceCriteria(
     modelTier,
     config.autoMode.defaultAgent,
   );
-  const prompt = buildRefinementPrompt(criteria, codebaseContext, { testStrategy, testFramework });
+  const prompt = buildRefinementPrompt(criteria, codebaseContext, {
+    testStrategy,
+    testFramework,
+    storyTitle,
+    storyDescription,
+  });
 
   let response: string;
 

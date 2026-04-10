@@ -77,6 +77,8 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
         workdir: ctx.workdir,
         codebaseContext: "",
         config: ctx.config,
+        storyTitle: story.title,
+        storyDescription: story.description,
       });
       allRefined.push(...refined);
     }
