@@ -341,6 +341,9 @@ export const acceptanceSetupStage: PipelineStage = {
           ...("implementationContext" in ctx && ctx.implementationContext
             ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
             : {}),
+          ...("previousFailure" in ctx && ctx.previousFailure
+            ? { previousFailure: ctx.previousFailure as string }
+            : {}),
         });
 
         await _acceptanceSetupDeps.writeFile(testPath, result.testCode);
