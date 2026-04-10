@@ -673,3 +673,139 @@ describe("Edge cases", () => {
     expect(mockAgent.run).toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// executeTestFix() — surgical test fix (US-001)
+// ---------------------------------------------------------------------------
+
+import { type ExecuteTestFixOptions, buildTestFixPrompt, executeTestFix } from "../../../src/acceptance/fix-executor";
+
+function makeTestFixOptions(overrides: Partial<ExecuteTestFixOptions> = {}): ExecuteTestFixOptions {
+  return {
+    testOutput: "(fail) AC-6: stdout indentation\n  expected '  \"id\"' got '  {'",
+    testFileContent: 'import { test, expect } from "bun:test";\ntest("AC-6", () => { expect(lines[1]).toMatch(/^  "id"/); });',
+    failedACs: ["AC-6", "AC-7"],
+    diagnosis: makeDiagnosis("test expects wrong line index", "test_bug"),
+    config: makeMinimalConfig(),
+    workdir: "/tmp/workdir",
+    featureName: "test-feature",
+    storyId: "US-001",
+    acceptanceTestPath: "/tmp/workdir/.nax/features/test-feature/.nax-acceptance.test.ts",
+    ...overrides,
+  };
+}
+
+describe("executeTestFix()", () => {
+  test("throws when agent is null", async () => {
+    await expect(executeTestFix(null as unknown as AgentAdapter, makeTestFixOptions())).rejects.toThrow(
+      "[fix-executor] agent is required",
+    );
+  });
+
+  test("calls agent.run() with sessionRole 'test-fix'", async () => {
+    const agent = makeMockAgentAdapter();
+    await executeTestFix(agent, makeTestFixOptions());
+    const calls = getRunMockCalls(agent);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0].sessionRole).toBe("test-fix");
+  });
+
+  test("session name follows nax-<hash>-<feature>-<storyId>-test-fix pattern", async () => {
+    const agent = makeMockAgentAdapter();
+    await executeTestFix(agent, makeTestFixOptions());
+    const calls = getRunMockCalls(agent);
+    const expectedName = buildSessionName("/tmp/workdir", "test-feature", "US-001", "test-fix");
+    expect(calls[0]?.[0].acpSessionName).toBe(expectedName);
+  });
+
+  test("resolves fixModel via resolveModelForAgent()", async () => {
+    const agent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await executeTestFix(agent, makeTestFixOptions({ config }));
+    const calls = getRunMockCalls(agent);
+    const expectedModelDef = resolveModelForAgent(
+      config.models,
+      config.autoMode.defaultAgent,
+      config.acceptance.fix.fixModel,
+      config.autoMode.defaultAgent,
+    );
+    expect(calls[0]?.[0].modelDef).toEqual(expectedModelDef);
+  });
+
+  test("prompt includes failing ACs list", async () => {
+    const agent = makeMockAgentAdapter();
+    await executeTestFix(agent, makeTestFixOptions({ failedACs: ["AC-6", "AC-7", "AC-9"] }));
+    const calls = getRunMockCalls(agent);
+    expect(calls[0]?.[0].prompt).toContain("AC-6, AC-7, AC-9");
+  });
+
+  test("prompt includes test output, diagnosis, and test file content", async () => {
+    const agent = makeMockAgentAdapter();
+    await executeTestFix(
+      agent,
+      makeTestFixOptions({
+        testOutput: "FAILING_OUTPUT_MARKER",
+        diagnosis: makeDiagnosis("DIAGNOSIS_MARKER", "test_bug"),
+        testFileContent: "TEST_CONTENT_MARKER",
+      }),
+    );
+    const calls = getRunMockCalls(agent);
+    const prompt = calls[0]?.[0].prompt as string;
+    expect(prompt).toContain("FAILING_OUTPUT_MARKER");
+    expect(prompt).toContain("DIAGNOSIS_MARKER");
+    expect(prompt).toContain("TEST_CONTENT_MARKER");
+  });
+
+  test("prompt includes previousFailure when provided", async () => {
+    const agent = makeMockAgentAdapter();
+    await executeTestFix(agent, makeTestFixOptions({ previousFailure: "PREVIOUS_ATTEMPT_MARKER" }));
+    const calls = getRunMockCalls(agent);
+    expect(calls[0]?.[0].prompt).toContain("PREVIOUS_ATTEMPT_MARKER");
+  });
+
+  test("prompt instructs to fix only failing assertions, not source code", async () => {
+    const agent = makeMockAgentAdapter();
+    await executeTestFix(agent, makeTestFixOptions());
+    const calls = getRunMockCalls(agent);
+    const prompt = calls[0]?.[0].prompt as string;
+    expect(prompt).toContain("Fix ONLY the failing test assertions");
+    expect(prompt).toContain("Do NOT modify passing tests");
+    expect(prompt).toContain("Do NOT modify source code");
+  });
+
+  test("returns { success, cost } from agent.run() result", async () => {
+    const agent = makeMockAgentAdapter({ success: true, estimatedCost: 0.42 });
+    const result = await executeTestFix(agent, makeTestFixOptions());
+    expect(result).toEqual({ success: true, cost: 0.42 });
+  });
+
+  test("returns success=false when agent.run() fails", async () => {
+    const agent = makeMockAgentAdapter({ success: false, estimatedCost: 0.1 });
+    const result = await executeTestFix(agent, makeTestFixOptions());
+    expect(result).toEqual({ success: false, cost: 0.1 });
+  });
+
+  test("sets pipelineStage='acceptance'", async () => {
+    const agent = makeMockAgentAdapter();
+    await executeTestFix(agent, makeTestFixOptions());
+    const calls = getRunMockCalls(agent);
+    expect(calls[0]?.[0].pipelineStage).toBe("acceptance");
+  });
+});
+
+describe("buildTestFixPrompt()", () => {
+  test("includes failing ACs in 'FAILING ACS:' section", () => {
+    const prompt = buildTestFixPrompt(makeTestFixOptions({ failedACs: ["AC-1", "AC-2"] }));
+    expect(prompt).toContain("FAILING ACS: AC-1, AC-2");
+  });
+
+  test("omits previousFailure section when not provided", () => {
+    const prompt = buildTestFixPrompt(makeTestFixOptions({ previousFailure: undefined }));
+    expect(prompt).not.toContain("PREVIOUS FAILED ATTEMPTS");
+  });
+
+  test("includes previousFailure section when provided", () => {
+    const prompt = buildTestFixPrompt(makeTestFixOptions({ previousFailure: "attempt 1 failed" }));
+    expect(prompt).toContain("PREVIOUS FAILED ATTEMPTS:\nattempt 1 failed");
+  });
+});

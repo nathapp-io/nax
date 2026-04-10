@@ -20,6 +20,8 @@ export interface DiagnoseOptions {
   featureName?: string;
   storyId?: string;
   semanticVerdicts?: SemanticVerdict[];
+  /** Accumulated context from prior failed fix attempts — included in the diagnosis prompt */
+  previousFailure?: string;
 }
 
 const MAX_SOURCE_FILES = 5;
@@ -65,6 +67,7 @@ export function buildDiagnosisPrompt(options: {
   testFileContent: string;
   sourceFiles: Array<{ path: string; content: string }>;
   semanticVerdicts?: SemanticVerdict[];
+  previousFailure?: string;
 }): string {
   const truncatedOutput = options.testOutput.slice(0, MAX_TEST_OUTPUT_CHARS);
 
@@ -82,6 +85,11 @@ export function buildDiagnosisPrompt(options: {
     verdictSection = `\nSEMANTIC VERDICTS:\n${lines.join("\n")}\n`;
   }
 
+  let previousFailureSection = "";
+  if (options.previousFailure && options.previousFailure.length > 0) {
+    previousFailureSection = `\nPREVIOUS FIX ATTEMPTS:\n${options.previousFailure}\n`;
+  }
+
   return `You are a debugging expert. An acceptance test has failed.
 
 TASK: Diagnose whether the failure is due to a bug in the SOURCE CODE or a bug in the TEST CODE.
@@ -96,7 +104,7 @@ ${options.testFileContent}
 
 SOURCE FILES (auto-detected from imports, up to ${MAX_FILE_LINES} lines each):
 ${sourceFilesSection}
-${verdictSection}
+${verdictSection}${previousFailureSection}
 Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
 {
   "verdict": "source_bug" | "test_bug" | "both",
@@ -137,6 +145,7 @@ export async function diagnoseAcceptanceFailure(
     testFileContent,
     sourceFiles: validSourceFiles,
     semanticVerdicts: options.semanticVerdicts,
+    previousFailure: options.previousFailure,
   });
 
   try {
