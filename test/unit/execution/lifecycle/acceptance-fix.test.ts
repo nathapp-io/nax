@@ -4,13 +4,18 @@
  * Covers US-004: resolveAcceptanceDiagnosis fast paths
  */
 
-import { describe, expect, mock, test } from "bun:test";
-import { resolveAcceptanceDiagnosis } from "../../../../src/execution/lifecycle/acceptance-fix";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  _applyFixDeps,
+  applyFix,
+  resolveAcceptanceDiagnosis,
+} from "../../../../src/execution/lifecycle/acceptance-fix";
 import type { DiagnoseOptions } from "../../../../src/acceptance/fix-diagnosis";
-import type { SemanticVerdict } from "../../../../src/acceptance/types";
+import type { DiagnosisResult, SemanticVerdict } from "../../../../src/acceptance/types";
 import type { AgentAdapter } from "../../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { NaxConfig } from "../../../../src/config/schema";
+import type { AcceptanceLoopContext } from "../../../../src/execution/lifecycle/acceptance-loop";
 
 function makeMockAgent(): AgentAdapter {
   return {
@@ -148,5 +153,143 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     });
     const calls = (agent.run as unknown as { mock: { calls: Array<[{ prompt: string }]> } }).mock.calls;
     expect(calls[0]?.[0].prompt).toContain("PREVIOUS_MARKER");
+  });
+});
+
+// ─── applyFix() — single-attempt fix orchestration (US-003) ─────────────────
+
+function makeAcceptanceCtx(): AcceptanceLoopContext {
+  return {
+    config: makeConfig(),
+    prd: { userStories: [{ id: "US-001" }] } as unknown as AcceptanceLoopContext["prd"],
+    prdPath: "/tmp/prd.json",
+    workdir: "/tmp/workdir",
+    featureDir: "/tmp/features/test",
+    feature: "test-feature",
+    hooks: {} as AcceptanceLoopContext["hooks"],
+    totalCost: 0,
+    iterations: 0,
+    storiesCompleted: 0,
+    allStoryMetrics: [],
+    pluginRegistry: {} as AcceptanceLoopContext["pluginRegistry"],
+    statusWriter: {} as AcceptanceLoopContext["statusWriter"],
+    agentGetFn: mock(() => makeMockAgent()),
+    acceptanceTestPaths: [{ testPath: "/tmp/features/test/.nax-acceptance.test.ts", packageDir: "/tmp/workdir" }],
+  };
+}
+
+function makeApplyFixDiagnosis(verdict: DiagnosisResult["verdict"] = "source_bug"): DiagnosisResult {
+  return { verdict, reasoning: "test reasoning", confidence: 0.9 };
+}
+
+let origExecuteSourceFix: typeof _applyFixDeps.executeSourceFix;
+let origExecuteTestFix: typeof _applyFixDeps.executeTestFix;
+
+beforeEach(() => {
+  origExecuteSourceFix = _applyFixDeps.executeSourceFix;
+  origExecuteTestFix = _applyFixDeps.executeTestFix;
+});
+
+afterEach(() => {
+  _applyFixDeps.executeSourceFix = origExecuteSourceFix;
+  _applyFixDeps.executeTestFix = origExecuteTestFix;
+});
+
+describe("applyFix()", () => {
+  test("source_bug verdict → calls executeSourceFix once", async () => {
+    const sourceFixMock = mock(async () => ({ success: true, cost: 0.1 }));
+    const testFixMock = mock(async () => ({ success: true, cost: 0.05 }));
+    _applyFixDeps.executeSourceFix = sourceFixMock;
+    _applyFixDeps.executeTestFix = testFixMock;
+
+    const result = await applyFix({
+      ctx: makeAcceptanceCtx(),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      diagnosis: makeApplyFixDiagnosis("source_bug"),
+    });
+
+    expect(sourceFixMock).toHaveBeenCalledTimes(1);
+    expect(testFixMock).not.toHaveBeenCalled();
+    expect(result.cost).toBe(0.1);
+  });
+
+  test("test_bug verdict → calls executeTestFix once", async () => {
+    const sourceFixMock = mock(async () => ({ success: true, cost: 0.1 }));
+    const testFixMock = mock(async () => ({ success: true, cost: 0.05 }));
+    _applyFixDeps.executeSourceFix = sourceFixMock;
+    _applyFixDeps.executeTestFix = testFixMock;
+
+    const result = await applyFix({
+      ctx: makeAcceptanceCtx(),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      diagnosis: makeApplyFixDiagnosis("test_bug"),
+    });
+
+    expect(testFixMock).toHaveBeenCalledTimes(1);
+    expect(sourceFixMock).not.toHaveBeenCalled();
+    expect(result.cost).toBe(0.05);
+  });
+
+  test("both verdict → calls executeSourceFix then executeTestFix", async () => {
+    const callOrder: string[] = [];
+    const sourceFixMock = mock(async () => {
+      callOrder.push("source");
+      return { success: true, cost: 0.1 };
+    });
+    const testFixMock = mock(async () => {
+      callOrder.push("test");
+      return { success: true, cost: 0.05 };
+    });
+    _applyFixDeps.executeSourceFix = sourceFixMock;
+    _applyFixDeps.executeTestFix = testFixMock;
+
+    const result = await applyFix({
+      ctx: makeAcceptanceCtx(),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      diagnosis: makeApplyFixDiagnosis("both"),
+    });
+
+    expect(callOrder).toEqual(["source", "test"]);
+    expect(result.cost).toBeCloseTo(0.15, 6);
+  });
+
+  test("does not retry — calls fix functions exactly once regardless of failure", async () => {
+    const sourceFixMock = mock(async () => ({ success: false, cost: 0.1 }));
+    _applyFixDeps.executeSourceFix = sourceFixMock;
+
+    await applyFix({
+      ctx: makeAcceptanceCtx(),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      diagnosis: makeApplyFixDiagnosis("source_bug"),
+    });
+
+    expect(sourceFixMock).toHaveBeenCalledTimes(1); // not retried even though failed
+  });
+
+  test("passes previousFailure to executeTestFix", async () => {
+    const testFixMock = mock(async () => ({ success: true, cost: 0.05 }));
+    _applyFixDeps.executeTestFix = testFixMock;
+
+    await applyFix({
+      ctx: makeAcceptanceCtx(),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      diagnosis: makeApplyFixDiagnosis("test_bug"),
+      previousFailure: "PREVIOUS_MARKER",
+    });
+
+    const callArgs = (testFixMock as unknown as { mock: { calls: Array<[unknown, { previousFailure?: string }]> } }).mock
+      .calls;
+    expect(callArgs[0]?.[1].previousFailure).toBe("PREVIOUS_MARKER");
+  });
+
+  test("returns { cost: 0 } when agent not found", async () => {
+    const ctx = makeAcceptanceCtx();
+    ctx.agentGetFn = mock(() => undefined);
+    const result = await applyFix({
+      ctx,
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      diagnosis: makeApplyFixDiagnosis("source_bug"),
+    });
+    expect(result.cost).toBe(0);
   });
 });
