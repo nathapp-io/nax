@@ -87,7 +87,7 @@ function detectType(pkg: Record<string, unknown> | null): ProjectProfile["type"]
 // ── testFramework inference ───────────────────────────────────────────────────
 
 async function detectTestFramework(
-  workdir: string,
+  _workdir: string,
   language: ProjectProfile["language"] | undefined,
   pkg: Record<string, unknown> | null,
 ): Promise<string | undefined> {

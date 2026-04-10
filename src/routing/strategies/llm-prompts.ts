@@ -5,7 +5,7 @@
  * for LLM-based routing decisions.
  */
 
-import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
+import type { Complexity, ModelTier, NaxConfig, TddStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
 import { extractJsonFromMarkdown, parseLLMJson, wrapJsonPrompt } from "../../utils/llm-json";
 import { determineTestStrategy } from "../classify";
@@ -18,7 +18,7 @@ import type { RoutingDecision } from "../router";
  * @param config - nax configuration
  * @returns Formatted prompt string
  */
-export function buildRoutingPrompt(story: UserStory, config: NaxConfig): string {
+export function buildRoutingPrompt(story: UserStory, _config: NaxConfig): string {
   const { title, description, acceptanceCriteria, tags } = story;
   const criteria = acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
 
@@ -61,7 +61,7 @@ Respond with:
  * @param config - nax configuration
  * @returns Formatted batch prompt string
  */
-export function buildBatchRoutingPrompt(stories: UserStory[], config: NaxConfig): string {
+export function buildBatchRoutingPrompt(stories: UserStory[], _config: NaxConfig): string {
   const storyBlocks = stories
     .map((story, idx) => {
       const criteria = story.acceptanceCriteria.map((c, i) => `   ${i + 1}. ${c}`).join("\n");

@@ -38,7 +38,7 @@ function parseImportStatements(content: string): string[] {
   return imports;
 }
 
-function resolveImportPaths(imports: string[], workdir: string): string[] {
+function resolveImportPaths(imports: string[], _workdir: string): string[] {
   const resolved: string[] = [];
   for (const imp of imports) {
     if (imp.startsWith(".")) {

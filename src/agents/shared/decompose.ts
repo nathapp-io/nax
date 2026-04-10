@@ -6,7 +6,7 @@
  */
 
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, resolveTestStrategy } from "../../config/test-strategy";
-import type { DecomposeOptions, DecomposeResult, DecomposedStory } from "../types";
+import type { DecomposeOptions, DecomposedStory } from "../types";
 
 /**
  * Build the decompose prompt combining spec content and codebase context.

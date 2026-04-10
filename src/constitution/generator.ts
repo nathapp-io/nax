@@ -11,7 +11,7 @@ import { aiderGenerator } from "./generators/aider";
 import { claudeGenerator } from "./generators/claude";
 import { cursorGenerator } from "./generators/cursor";
 import { opencodeGenerator } from "./generators/opencode";
-import type { AgentConfigGenerator, AgentType, ConstitutionContent, GeneratorMap } from "./generators/types";
+import type { AgentType, ConstitutionContent, GeneratorMap } from "./generators/types";
 import { windsurfGenerator } from "./generators/windsurf";
 
 /** Generator registry */

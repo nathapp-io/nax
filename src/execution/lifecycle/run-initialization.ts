@@ -9,7 +9,6 @@
  */
 
 import { join } from "node:path";
-import chalk from "chalk";
 import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
@@ -64,7 +63,6 @@ export interface InitializationResult {
 async function reconcileState(prd: PRD, prdPath: string, workdir: string, config: NaxConfig): Promise<PRD> {
   const logger = getSafeLogger();
   let reconciledCount = 0;
-  let modified = false;
 
   for (const story of prd.userStories) {
     if (story.status !== "failed") continue;
@@ -108,7 +106,6 @@ async function reconcileState(prd: PRD, prdPath: string, workdir: string, config
     });
     markStoryPassed(prd, story.id);
     reconciledCount++;
-    modified = true;
   }
 
   if (reconciledCount > 0) {
@@ -126,7 +123,6 @@ async function checkAgentInstalled(config: NaxConfig, dryRun: boolean, agentGetF
   if (dryRun) return;
 
   const logger = getSafeLogger();
-  const { getAgent } = await import("../../agents");
   const agent = (agentGetFn ?? _reconcileDeps.getAgent)(config.autoMode.defaultAgent);
 
   if (!agent) {

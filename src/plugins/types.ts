@@ -8,14 +8,7 @@
 import type { AgentAdapter } from "../agents/types";
 import type { IPromptOptimizer } from "../optimizer/types";
 import type { RoutingStrategy } from "../routing/router";
-import type {
-  IContextProvider,
-  IPostRunAction,
-  IReporter,
-  IReviewPlugin,
-  PostRunActionResult,
-  PostRunContext,
-} from "./extensions";
+import type { IContextProvider, IPostRunAction, IReporter, IReviewPlugin } from "./extensions";
 
 // Re-export extension types
 export type {

@@ -7,10 +7,8 @@
 
 import { join } from "node:path";
 import { loadConfigForWorkdir } from "../config/loader";
-import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
-import type { PipelineRunResult } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
 import { savePRD } from "../prd";
@@ -40,7 +38,6 @@ export async function runIteration(
   totalCost: number,
   allStoryMetrics: StoryMetrics[],
 ): Promise<IterationResult> {
-  const logger = getSafeLogger();
   const { story, storiesToExecute, routing, isBatchExecution } = selection;
 
   if (ctx.dryRun) {

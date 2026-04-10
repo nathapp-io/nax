@@ -6,7 +6,7 @@
  * Blocks execution on Tier 1 failures, warns on Tier 2 failures.
  */
 
-import { appendFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
 import type { NaxConfig } from "../../config";

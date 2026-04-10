@@ -5,7 +5,6 @@
  */
 
 import path from "node:path";
-import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";

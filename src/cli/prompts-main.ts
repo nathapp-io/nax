@@ -11,7 +11,6 @@ import { getLogger } from "../logger";
 import { runPipeline } from "../pipeline";
 import type { PipelineContext } from "../pipeline";
 import { constitutionStage, contextStage, promptStage, routingStage } from "../pipeline/stages";
-import type { UserStory } from "../prd";
 import { loadPRD } from "../prd";
 // buildFrontmatter lives in prompts-shared to avoid circular import with prompts-tdd.
 // Import for local use + re-export to preserve the public API via prompts.ts.

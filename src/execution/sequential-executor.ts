@@ -12,7 +12,7 @@ import { wireInteraction } from "../pipeline/subscribers/interaction";
 import { wireRegistry } from "../pipeline/subscribers/registry";
 import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
-import { generateHumanHaltSummary, isComplete, isStalled, loadPRD } from "../prd";
+import { isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";

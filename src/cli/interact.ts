@@ -12,12 +12,7 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import type { InteractionRequest, InteractionResponse } from "../interaction";
-import {
-  deletePendingInteraction,
-  listPendingInteractions,
-  loadPendingInteraction,
-  savePendingInteraction,
-} from "../interaction";
+import { deletePendingInteraction, listPendingInteractions, loadPendingInteraction } from "../interaction";
 
 /**
  * Options for interact list command

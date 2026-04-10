@@ -71,7 +71,7 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     // No-op
   }
 
-  async send(request: InteractionRequest): Promise<void> {
+  async send(_request: InteractionRequest): Promise<void> {
     // No-op — in-process plugin
   }
 

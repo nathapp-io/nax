@@ -55,17 +55,6 @@ export function formatCost(cost: number): string {
 }
 
 /**
- * Get emoji for stage name
- */
-function getStageEmoji(stage: string): string {
-  if (stage.includes("routing")) return EMOJI.routing;
-  if (stage.includes("execution") || stage.includes("agent")) return EMOJI.execution;
-  if (stage.includes("review")) return EMOJI.review;
-  if (stage.includes("tdd")) return EMOJI.tdd;
-  return EMOJI.info;
-}
-
-/**
  * Check if entry should be displayed based on verbosity mode
  */
 function shouldDisplay(entry: LogEntry, mode: string): boolean {
@@ -136,7 +125,7 @@ export function formatLogEntry(entry: LogEntry, options: FormatterOptions): Form
 /**
  * Format run start event
  */
-function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
+function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, _mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
   const lines: string[] = [];
 
@@ -160,7 +149,7 @@ function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: 
 /**
  * Format story start event
  */
-function formatStoryStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
+function formatStoryStart(entry: LogEntry, c: ChalkLike, _timestamp: string, mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
   const storyId = String(data.storyId || entry.storyId || "unknown");
   const title = String(data.storyTitle || data.title || "Untitled story");
@@ -195,7 +184,7 @@ function formatStoryStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode
 /**
  * Format story completion event
  */
-function formatStoryComplete(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
+function formatStoryComplete(entry: LogEntry, c: ChalkLike, _timestamp: string, mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
   const storyId = String(data.storyId || entry.storyId || "unknown");
   const success = data.success ?? true;
@@ -235,7 +224,7 @@ function formatStoryComplete(entry: LogEntry, c: ChalkLike, timestamp: string, m
 /**
  * Format TDD session start
  */
-function formatTDDSession(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
+function formatTDDSession(entry: LogEntry, c: ChalkLike, _timestamp: string, mode: string): FormattedEntry {
   if (mode === "quiet") {
     return { output: "", shouldDisplay: false };
   }
@@ -256,8 +245,6 @@ function formatTDDSession(entry: LogEntry, c: ChalkLike, timestamp: string, mode
 function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
   const levelEmoji = entry.level === "error" ? EMOJI.failure : entry.level === "warn" ? EMOJI.warning : EMOJI.info;
   const levelColor = entry.level === "error" ? c.red : entry.level === "warn" ? c.yellow : c.gray;
-  const stageEmoji = getStageEmoji(entry.stage);
-
   const parts = [c.gray(`[${timestamp}]`), levelColor(`${levelEmoji} ${entry.stage}`)];
 
   if (entry.storyId) {

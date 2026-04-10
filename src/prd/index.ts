@@ -169,7 +169,7 @@ export interface PostRunStatusWriter {
 }
 
 /** Mark a story as passed */
-export function markStoryPassed(prd: PRD, storyId: string, statusWriter?: PostRunStatusWriter): void {
+export function markStoryPassed(prd: PRD, storyId: string, _statusWriter?: PostRunStatusWriter): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.passes = true;

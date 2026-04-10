@@ -20,7 +20,6 @@ import type { PipelineRunResult } from "../pipeline/runner";
 import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
-import type { ConflictedStoryInfo } from "./merge-conflict-rectify";
 
 /**
  * Result returned by runParallelBatch.

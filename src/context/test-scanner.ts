@@ -168,10 +168,8 @@ export function deriveTestPatterns(contextFiles: string[]): string[] {
 async function detectTestDir(workdir: string): Promise<string | null> {
   for (const dir of COMMON_TEST_DIRS) {
     const fullPath = path.join(workdir, dir);
-    const file = Bun.file(path.join(fullPath, ".")); // Check directory exists
     try {
-      const dirStat = await Bun.file(fullPath).exists();
-      // Bun.file().exists() returns false for directories, use different check
+      // Bun.file().exists() returns false for directories, use shell test -d
       const proc = Bun.spawn(["test", "-d", fullPath], { stdout: "pipe", stderr: "pipe" });
       const exitCode = await proc.exited;
       if (exitCode === 0) return dir;

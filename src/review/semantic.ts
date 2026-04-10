@@ -130,7 +130,7 @@ function truncateDiff(diff: string, stat?: string): string {
  *               as context so the LLM knows which test files were modified even when their
  *               content is excluded from the diff.
  */
-function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig, diff: string, stat?: string): string {
+function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig, diff: string, _stat?: string): string {
   const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
   const customRulesSection =

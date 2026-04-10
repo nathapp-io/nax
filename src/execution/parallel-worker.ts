@@ -99,7 +99,7 @@ export interface ParallelBatchResult {
  */
 export async function executeParallelBatch(
   stories: UserStory[],
-  projectRoot: string,
+  _projectRoot: string,
   config: NaxConfig,
   context: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">,
   worktreePaths: Map<string, string>,

@@ -439,7 +439,7 @@ export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterio
 export function buildAcceptanceTestPrompt(
   criteria: AcceptanceCriterion[],
   featureName: string,
-  codebaseContext: string,
+  _codebaseContext: string,
   testPathConfig?: string,
   language?: string,
 ): string {
@@ -696,7 +696,7 @@ ${tests || "  // No acceptance criteria found"}
 `;
 }
 
-function generateGoSkeletonTests(featureName: string, criteria: AcceptanceCriterion[]): string {
+function generateGoSkeletonTests(_featureName: string, criteria: AcceptanceCriterion[]): string {
   const sanitize = (text: string) =>
     text
       .replace(/[^a-zA-Z0-9 ]/g, "")

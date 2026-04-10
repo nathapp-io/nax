@@ -330,7 +330,6 @@ class SpawnAcpSession implements AcpSession {
  * loadSession() tries to resume an existing named session.
  */
 export class SpawnAcpClient implements AcpClient {
-  private readonly agentName: string;
   private readonly model: string;
   private readonly cwd: string;
   private readonly timeoutSeconds: number;
@@ -347,7 +346,6 @@ export class SpawnAcpClient implements AcpClient {
     if (!lastToken || lastToken.startsWith("-")) {
       throw new Error(`[acp-adapter] Could not parse agentName from cmdStr: "${cmdStr}"`);
     }
-    this.agentName = lastToken;
     this.cwd = cwd || process.cwd();
     this.timeoutSeconds = timeoutSeconds || 1800;
     this.env = buildAllowedEnv();
