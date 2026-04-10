@@ -51,11 +51,17 @@ PRD loaded (stories with acceptance criteria)
  │       └─ Destroy ReviewerSession
  │
  └─ 5. ACCEPTANCE LOOP (post-run, after ALL stories complete)
-     runAcceptanceLoop() — retry up to maxRetries
+     runAcceptanceLoop() — outer loop owns all retries
      ├─ Run acceptance tests (per-package)
-     ├─ If ALL pass → success
-     ├─ Failure triage → diagnose → fix → retry
-     └─ Legacy path (no strategy): generate US-FIX-* stories → retry
+     ├─ PASS → success (+ hardening pass for suggestedCriteria)
+     ├─ Stub guard (stubRegenCount capped at 2) → full regen → continue
+     ├─ resolveAcceptanceDiagnosis() (fresh each iteration, fast paths skip LLM)
+     ├─ applyFix(diagnosis) — single attempt, no inner retry
+     │   ├─ source_bug → executeSourceFix()
+     │   ├─ test_bug   → executeTestFix() (surgical, in-place)
+     │   └─ both       → executeSourceFix() + executeTestFix()
+     ├─ previousFailure += attempt context
+     └─ continue (always — back to acceptance test)
 ```
 
 ---
@@ -133,7 +139,7 @@ ctx.reviewResult.checks[check === "semantic"]
 **Read (in acceptance loop):**
 ```
 loadSemanticVerdicts(featureDir) → all verdict files
-  → used by isTestLevelFailure() and runFixRouting() fast-path
+  → used by resolveAcceptanceDiagnosis() fast-path (skips LLM diagnosis)
 ```
 
 **Lifecycle:** ReviewerSession is destroyed in completion stage. Semantic verdicts persist on disk and survive across the acceptance loop.
@@ -142,52 +148,79 @@ loadSemanticVerdicts(featureDir) → all verdict files
 
 ### 4. Acceptance Loop (Diagnose & Fix)
 
+Restructured per [ADR-006](../adr/ADR-006-acceptance-retry-restructure.md). The outer loop owns all retry logic; inner functions apply exactly one fix per iteration.
+
 **Files:**
-- `src/execution/lifecycle/acceptance-loop.ts` — main retry loop
-- `src/acceptance/fix-diagnosis.ts` — LLM diagnosis (test bug vs source bug)
-- `src/acceptance/fix-generator.ts` — fix story generation
-- `src/acceptance/fix-executor.ts` — source fix execution
+- `src/execution/lifecycle/acceptance-loop.ts` — outer retry loop (`runAcceptanceLoop`)
+- `src/execution/lifecycle/acceptance-fix.ts` — `applyFix()` + `resolveAcceptanceDiagnosis()`
+- `src/execution/lifecycle/acceptance-helpers.ts` — `isStubTestFile`, `isTestLevelFailure`, `regenerateAcceptanceTest`
+- `src/acceptance/fix-diagnosis.ts` — LLM diagnosis (test bug vs source bug), accepts `previousFailure`
+- `src/acceptance/fix-executor.ts` — `executeSourceFix()` + `executeTestFix()` (surgical)
 
 **Loop structure:**
 ```
+let stubRegenCount = 0
+let previousFailure = ""
+
 while (retries < maxRetries):
   1. Run acceptance tests via acceptanceStage
-  2. If pass → return success
-  3. Parse failedACs[]
+     ├─ PASS → return success (+ hardening pass)
+     └─ FAIL → collect { failedACs, testOutput }
 
-  4. TRIAGE (checked in order)
-     ├─ Stub detection (skeleton test) → regenerate test → loop back
-     ├─ isTestLevelFailure() → regenerate test → loop back
-     ├─ Strategy is "diagnose-first" or "implement-only":
-     │   └─ runFixRouting() → diagnose → source fix or test regen
-     │       ├─ fixed=true → loop back to step 1
-     │       └─ fixed=false → return failure (no fix story fallback)
-     └─ Legacy path (no strategy configured):
-         └─ generateAndAddFixStories() → US-FIX-* stories
-             → execute through pipeline → loop back to step 1
+  2. retries++
+     └─ >= maxRetries? → on-pause hook + return failure
+
+  3. STUB GUARD
+     ├─ Test file is a stub?
+     │   ├─ stubRegenCount >= 2 → return failure ("generator cannot produce tests")
+     │   └─ stubRegenCount++ → regenerateAcceptanceTest() → continue
+     └─ Otherwise → step 4
+
+  4. resolveAcceptanceDiagnosis() — FRESH EACH ITERATION
+     ├─ Fast path: implement-only strategy → source_bug (skip LLM)
+     ├─ Fast path: all semantic verdicts passed → test_bug (skip LLM)
+     ├─ Fast path: >80% ACs fail OR AC-ERROR sentinel → test_bug (skip LLM)
+     └─ Slow path: diagnoseAcceptanceFailure(agent, { previousFailure })
+
+  5. applyFix(diagnosis, previousFailure) — SINGLE ATTEMPT
+     ├─ source_bug → executeSourceFix() (one call)
+     ├─ test_bug   → executeTestFix() (one call, surgical)
+     └─ both       → executeSourceFix() + executeTestFix()
+
+  6. previousFailure += "Attempt N: verdict=X, reasoning=Y, failedACs=Z"
+
+  7. continue (always — back to step 1)
 ```
 
-**isTestLevelFailure() decision tree:**
+**Key properties:**
 
-| Condition | Result |
-|:----------|:-------|
-| All semantic verdicts passed | TEST BUG (fast-path, skip diagnosis) |
-| `"AC-ERROR"` in failedACs | TEST BUG (test crashed) |
-| >80% of total ACs failed | TEST BUG (threshold) |
-| Otherwise | SOURCE BUG |
+- **Outer loop always continues** after `applyFix()` — never exits early on fix failure
+- **Fresh diagnosis each iteration** — verdict can change as fixes are applied (e.g. `test_bug` → `source_bug` after a regen)
+- **No inline acceptance re-test** in `applyFix` — the outer loop handles all re-testing
+- **No inner retry loops** — `applyFix` does exactly one fix attempt per verdict
+- **`previousFailure` accumulates** across iterations and is passed to diagnosis, source fix, and test fix
+- **Single retry budget**: `acceptance.maxRetries` (default 3). `acceptance.fix.maxRetries` is deprecated.
 
-**Fix routing (diagnose-first strategy):**
+**Diagnosis fast paths** (in `resolveAcceptanceDiagnosis`):
+
+| Condition | Verdict | Confidence | Cost |
+|:----------|:--------|:-----------|:-----|
+| `strategy: "implement-only"` | `source_bug` | 1.0 | 0 (no LLM) |
+| All semantic verdicts passed | `test_bug` | 1.0 | 0 (no LLM) |
+| `"AC-ERROR"` sentinel OR >80% ACs failed | `test_bug` | 0.9 | 0 (no LLM) |
+| Otherwise | LLM `diagnoseAcceptanceFailure()` | parsed | LLM cost |
+
+**Fix routing (in `applyFix`):**
 
 | Diagnosis verdict | Action |
 |:------------------|:-------|
-| `source_bug` | `executeSourceFix()` — agent session with `sessionRole: "source-fix"` |
-| `test_bug` | `regenerateAcceptanceTest()` — backup, delete, re-run acceptance-setup |
-| `both` | Source fix first, then regen if still failing |
+| `source_bug` | `executeSourceFix()` — `sessionRole: "source-fix"`, modifies source code only |
+| `test_bug` | `executeTestFix()` — `sessionRole: "test-fix"`, **surgical patch** of failing assertions, preserves passing tests |
+| `both` | `executeSourceFix()` then `executeTestFix()` in sequence |
 
-**Fix story generation** (when source fix fails):
-- `groupACsByRelatedStories()` — batch failed ACs by shared implementation
-- `convertFixStoryToUserStory()` — creates US-FIX-* with inherited workdir (D4)
-- Fix stories execute through the normal pipeline (implement → review → test)
+**Stub guard:** When the test file matches `isStubTestFile()` (skeleton with `expect(true).toBe(...)`), the loop calls `regenerateAcceptanceTest()` (full regen). The `stubRegenCount` counter caps this at 2 attempts to prevent infinite loops if the generator can't produce real tests.
+
+**Why no full regen for `test_bug`?** Surgical `executeTestFix()` preserves passing tests. Full regen throws away the entire file and often reproduces the same bugs. The fresh diagnosis each iteration handles strategy escalation — if surgical fix keeps failing, the verdict may change to `source_bug` and the loop tries that instead. See [ADR-006](../adr/ADR-006-acceptance-retry-restructure.md) for the full rationale.
 
 ---
 
@@ -198,12 +231,13 @@ while (retries < maxRetries):
 | Acceptance setup | Acceptance stage | `ctx.acceptanceTestPaths[]` | Per-package test file paths |
 | Semantic review | Completion stage | `ctx.reviewResult.checks[semantic]` | Findings, pass/fail |
 | Completion stage | Acceptance loop | `persistSemanticVerdict()` → disk | SemanticVerdict JSON |
-| Acceptance loop | Semantic verdicts | `loadSemanticVerdicts()` ← disk | Fast-path for test-level failure |
+| Acceptance loop | Diagnosis fast path | `loadSemanticVerdicts()` ← disk | All-passed → skip LLM diagnosis |
 | Review stage | Autofix stage | `ctx.reviewResult` (success=false) | Findings, check output |
 | Autofix | Review stage | Pipeline retry (`fromStage: "review"`) | `ctx.reviewerSession` persists |
 | Debate resolver | ReviewerSession | `resolverContextInput` | diff, story, semanticConfig, resolverType |
-| Fix diagnosis | Source fix | `DiagnosisResult` | verdict, reasoning, confidence |
-| Fix stories | Pipeline | `convertFixStoryToUserStory()` | US-FIX-* with inherited workdir |
+| `runAcceptanceLoop` | `resolveAcceptanceDiagnosis` | `previousFailure` accumulator | Diagnosis reasoning + test output from prior attempts |
+| `resolveAcceptanceDiagnosis` | `applyFix` | `DiagnosisResult` | verdict, reasoning, confidence |
+| `applyFix` | `executeSourceFix` / `executeTestFix` | `previousFailure` | Accumulated context across retries |
 
 ---
 
@@ -252,8 +286,9 @@ semantic.ts (reviewDebateEnabled = true)
 | ReviewerSession destroyed | `REVIEWER_SESSION_DESTROYED` error — caught by fallback |
 | Semantic parse fails | Fail-open (pass with warning) |
 | Semantic parse fails with `"passed": false` | Fail-closed (LLM intended failure) |
-| Acceptance test crashes | `AC-ERROR` sentinel → test-level failure → regenerate |
-| Source fix fails | Generate US-FIX-* stories → execute through pipeline |
+| Acceptance test crashes | `AC-ERROR` sentinel → diagnosis fast path → `test_bug` → `executeTestFix()` |
+| Source fix fails | Outer loop continues; next iteration's fresh diagnosis may change verdict |
+| Test file is a stub | Stub guard → `regenerateAcceptanceTest()` (full regen, capped at 2 attempts) |
 | Max acceptance retries exceeded | Return failure, fire `on-pause` hook |
 
 ---
@@ -280,8 +315,16 @@ After `executeSourceFix()` succeeds, the acceptance loop re-runs acceptance test
 
 ### GAP-4: Acceptance diagnosis does not receive debate proposals
 
-`diagnoseAcceptanceFailure()` receives test output and source files but NOT the debate proposals or resolver findings. When debate+dialogue produced the semantic verdict, the diagnosis agent doesn't see the reviewer's reasoning about why it passed/failed.
+`diagnoseAcceptanceFailure()` receives test output, source files, and `previousFailure` accumulator — but NOT the debate proposals or resolver findings. When debate+dialogue produced the semantic verdict, the diagnosis agent doesn't see the reviewer's reasoning about why it passed/failed.
 
-**Why accepted:** The diagnosis agent focuses on test vs source bug classification, not semantic reasoning. The semantic verdict `passed: true/false` is sufficient context via the `isTestLevelFailure()` fast-path — when all verdicts passed, diagnosis is skipped entirely.
+**Why accepted:** The diagnosis agent focuses on test vs source bug classification, not semantic reasoning. The `resolveAcceptanceDiagnosis()` fast path skips the LLM call entirely when all semantic verdicts passed — so debate findings are only relevant in the slow-path mixed-verdict case.
 
-**When to revisit:** If diagnosis accuracy is poor when debate+dialogue is enabled. The fix would be to thread `dialogueResult.findingReasoning` into the diagnosis prompt, which requires persisting debate findings alongside semantic verdicts.
+**When to revisit:** If diagnosis accuracy is poor when debate+dialogue is enabled with mixed verdicts. The fix would be to thread `dialogueResult.findingReasoning` into the diagnosis prompt, which requires persisting debate findings alongside semantic verdicts.
+
+### GAP-5: `previousFailure` is not persisted across runs
+
+The `previousFailure` accumulator lives in memory inside `runAcceptanceLoop()`. When the run terminates (success, failure, or interruption), the context is lost. A subsequent run starts with empty `previousFailure`.
+
+**Why accepted:** Within a single run, retries are bounded by `maxRetries: 3`. Persisting `previousFailure` would only matter for cross-run resumption, which is a separate feature.
+
+**When to revisit:** If we add explicit cross-run resumption (`nax resume`) that needs to remember why the previous run failed.
