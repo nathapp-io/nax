@@ -579,4 +579,6 @@ export interface AgentConfig {
   maxInteractionTurns?: number;
   /** Prompt audit — write every ACP-bound prompt to a file for auditing. */
   promptAudit?: PromptAuditConfig;
+  /** Timeout for decompose (complete) calls in milliseconds (default: 300_000). */
+  decomposeTimeoutMs?: number;
 }

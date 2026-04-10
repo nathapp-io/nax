@@ -451,6 +451,8 @@ const AgentConfigSchema = z.object({
   protocol: z.enum(["acp", "cli"]).default("acp"),
   maxInteractionTurns: z.number().int().min(1).max(100).default(10),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
+  /** Timeout for decompose (complete) calls in milliseconds. Default: 300_000 (5 min). */
+  decomposeTimeoutMs: z.number().int().min(30_000).max(1_800_000).default(300_000),
 });
 
 const PrecheckConfigSchema = z.object({
@@ -799,6 +801,7 @@ export const NaxConfigSchema = z
       protocol: "acp",
       maxInteractionTurns: 10,
       promptAudit: { enabled: false },
+      decomposeTimeoutMs: 300_000,
     }),
     precheck: PrecheckConfigSchema.optional().default({
       storySizeGate: {
