@@ -112,6 +112,10 @@ const ExecutionConfigSchema = z.object({
   iterationDelayMs: z.number().int().nonnegative(),
   costLimit: z.number().positive({ message: "costLimit must be > 0" }),
   sessionTimeoutSeconds: z.number().int().positive({ message: "sessionTimeoutSeconds must be > 0" }).default(3600),
+  /** Max retries when acpx signals a non-retryable session error (e.g. stale/locked session). */
+  sessionErrorMaxRetries: z.number().int().min(0).max(5).default(1),
+  /** Max retries when acpx signals a retryable session error (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). */
+  sessionErrorRetryableMaxRetries: z.number().int().min(0).max(10).default(3),
   verificationTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
   maxStoriesPerFeature: z.number().int().positive(),
   rectification: RectificationConfigSchema,

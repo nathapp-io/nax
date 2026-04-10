@@ -45,6 +45,8 @@ export interface AgentResult {
   pid?: number;
   /** Whether the failure was a session error (e.g. acpx exit code 4 — stale/locked session) */
   sessionError?: boolean;
+  /** Whether acpx signalled the session error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION) */
+  sessionErrorRetryable?: boolean;
 }
 
 /**

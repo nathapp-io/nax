@@ -218,6 +218,7 @@ class SpawnAcpSession implements AcpSession {
         return {
           messages: [{ role: "assistant", content: errorContent }],
           stopReason: "error",
+          retryable: parsedOnError.retryable,
         };
       }
 
