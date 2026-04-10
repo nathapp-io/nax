@@ -177,6 +177,7 @@ export const _acceptanceLoopDeps = {
   executeTestRegen: async (
     ctx: AcceptanceLoopContext,
     acceptanceContext: PipelineContext,
+    previousFailure?: string,
   ): Promise<"passed" | "failed" | "no_test_file"> => {
     const testPath = await findExistingAcceptanceTestPathFromOptions({
       acceptanceTestPaths: ctx.acceptanceTestPaths,
@@ -185,7 +186,7 @@ export const _acceptanceLoopDeps = {
       language: ctx.config.project?.language,
     });
     if (!testPath) return "no_test_file";
-    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext, previousFailure);
     if (!regenerated) return "failed";
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
     const result = await acceptanceStage.execute(acceptanceContext);
@@ -315,7 +316,11 @@ async function executeFixStory(
  *
  * @returns true if regeneration succeeded, false otherwise
  */
-export async function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean> {
+export async function regenerateAcceptanceTest(
+  testPath: string,
+  acceptanceContext: PipelineContext,
+  previousFailure?: string,
+): Promise<boolean> {
   const logger = getSafeLogger();
   const bakPath = `${testPath}.bak`;
 
@@ -376,9 +381,13 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
     }
   }
 
-  const contextForSetup: PipelineContext & { implementationContext?: Array<{ path: string; content: string }> } = {
+  const contextForSetup: PipelineContext & {
+    implementationContext?: Array<{ path: string; content: string }>;
+    previousFailure?: string;
+  } = {
     ...acceptanceContext,
     ...(implementationContext ? { implementationContext } : {}),
+    ...(previousFailure ? { previousFailure } : {}),
   };
 
   await _regenerateDeps.acceptanceSetupExecute(contextForSetup as PipelineContext);
@@ -456,7 +465,8 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       };
     }
 
-    const regenOutcome = await _acceptanceLoopDeps.executeTestRegen(ctx, acceptanceContext);
+    const semanticFailureContext = `All semantic verdicts passed (${verdictCount} stories) but acceptance tests failed. This is a test generation bug, not a source bug.\n\nFailing test output:\n${failures.testOutput}`;
+    const regenOutcome = await _acceptanceLoopDeps.executeTestRegen(ctx, acceptanceContext, semanticFailureContext);
     logger?.info("acceptance.test-regen", "Test regeneration completed", { storyId, outcome: regenOutcome });
 
     if (regenOutcome === "passed") {
@@ -652,7 +662,8 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       return { fixed: false, cost: diagnosisCost, prdDirty: false };
     }
 
-    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext as PipelineContext);
+    const failureContext = `Diagnosis: ${diagnosis.reasoning}\n\nFailing test output:\n${failures.testOutput}`;
+    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext as PipelineContext, failureContext);
 
     logger?.info("acceptance.test-regen", "Test regeneration completed", {
       outcome: regenerated ? "success" : "failure",
@@ -765,7 +776,12 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       return { fixed: false, cost: sourceFixCost + diagnosisCost, prdDirty: false };
     }
 
-    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext as PipelineContext);
+    const bothFailureContext = `Diagnosis: ${diagnosis.reasoning}\n\nFailing test output:\n${failures.testOutput}`;
+    const regenerated = await regenerateAcceptanceTest(
+      testPath,
+      acceptanceContext as PipelineContext,
+      bothFailureContext,
+    );
 
     logger?.info("acceptance.test-regen", "Test regeneration completed", {
       outcome: regenerated ? "success" : "failure",
@@ -934,7 +950,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         language: ctx.config.project?.language,
       });
       if (testPath) {
-        const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+        const testLevelFailureContext = `Test-level failure: ${failures.failedACs.length}/${totalACs} ACs failed.\n\nFailing test output:\n${failures.testOutput}`;
+        const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext, testLevelFailureContext);
         if (!regenerated) {
           return buildResult(
             false,
