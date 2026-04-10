@@ -22,7 +22,6 @@
 import { createAgentRegistry } from "../../agents/registry";
 import { resolveModelForAgent } from "../../config";
 import type { NaxConfig } from "../../config";
-import { loadConfigForWorkdir } from "../../config/loader";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
 import { runQualityCommand } from "../../quality";
@@ -437,5 +436,4 @@ export const _autofixDeps = {
     formatFixCmd: string | undefined,
     effectiveWorkdir: string,
   ) => runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir),
-  loadConfigForWorkdir,
 };

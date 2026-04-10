@@ -206,17 +206,27 @@ export function _clearRootConfigCache(): void {
  *
  * @param rootConfigPath - Absolute path to the root .nax/config.json
  * @param packageDir - Package directory relative to repo root (e.g. "packages/api")
+ * @param cliOverrides - CLI-level overrides (e.g. profile) to thread through to loadConfig
  */
-export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: string): Promise<NaxConfig> {
+export async function loadConfigForWorkdir(
+  rootConfigPath: string,
+  packageDir?: string,
+  cliOverrides?: Record<string, unknown>,
+): Promise<NaxConfig> {
   const logger = getLogger();
   const resolvedRootConfigPath = resolve(rootConfigPath);
   const rootNaxDir = dirname(resolvedRootConfigPath);
 
+  // Include the profile in the cache key so that --profile overrides are not
+  // shadowed by a cached root config that was loaded without the profile flag.
+  const profileKey = (cliOverrides?.profile as string | undefined) ?? "";
+  const cacheKey = profileKey ? `${resolvedRootConfigPath}:${profileKey}` : resolvedRootConfigPath;
+
   // Cache root config load — avoids repeated I/O for each package in a monorepo run
-  let rootConfigPromise = _rootConfigCache.get(resolvedRootConfigPath);
+  let rootConfigPromise = _rootConfigCache.get(cacheKey);
   if (!rootConfigPromise) {
-    rootConfigPromise = loadConfig(rootNaxDir);
-    _rootConfigCache.set(resolvedRootConfigPath, rootConfigPromise);
+    rootConfigPromise = loadConfig(rootNaxDir, cliOverrides);
+    _rootConfigCache.set(cacheKey, rootConfigPromise);
   }
   const rootConfig = await rootConfigPromise;
 

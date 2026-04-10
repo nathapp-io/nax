@@ -247,8 +247,10 @@ export interface PlanConfig {
   model: ModelTier;
   /** Output path for generated spec (relative to nax/ directory) */
   outputPath: string;
-  /** Timeout for plan sessions in seconds (default: execution.sessionTimeoutSeconds) */
+  /** Timeout for plan sessions in seconds (default: 600) */
   timeoutSeconds?: number;
+  /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
+  decomposeTimeoutSeconds?: number;
 }
 
 /** Valid test strategy values for acceptance testing */

@@ -1180,6 +1180,8 @@ export class AcpAgentAdapter implements AgentAdapter {
         featureName: options.featureName,
         storyId: options.storyId,
         sessionRole: options.sessionRole ?? "decompose",
+        timeoutMs:
+          (this.naxConfig?.plan?.decomposeTimeoutSeconds ?? this.naxConfig?.plan?.timeoutSeconds ?? 300) * 1_000,
       });
       output = completeResult.output;
     } catch (err) {

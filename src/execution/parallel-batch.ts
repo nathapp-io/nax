@@ -140,12 +140,13 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // Without this, all parallel stories use the root config regardless of story.workdir.
   // Loads run concurrently (Promise.all) since each is an independent file-system read.
   const rootConfigPath = path.join(workdir, ".nax", "config.json");
+  const profileOverride = config.profile && config.profile !== "default" ? { profile: config.profile } : undefined;
   const storyEffectiveConfigs = new Map<string, NaxConfig>();
   await Promise.all(
     stories
       .filter((story) => story.workdir)
       .map(async (story) => {
-        const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir as string);
+        const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir as string, profileOverride);
         storyEffectiveConfigs.set(story.id, effectiveConfig);
       }),
   );

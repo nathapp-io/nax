@@ -181,6 +181,7 @@ export async function executeParallel(
     // Runs after all worktrees are created so git state is stable.
     // Only loads for stories whose worktrees were successfully created.
     const rootConfigPath = join(projectRoot, ".nax", "config.json");
+    const profileOverride = config.profile && config.profile !== "default" ? { profile: config.profile } : undefined;
     await Promise.all(
       batch
         .filter((story) => worktreePaths.has(story.id))
@@ -189,7 +190,7 @@ export async function executeParallel(
             logger?.debug("parallel", "No story.workdir — using root config", { storyId: story.id });
             return;
           }
-          const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir);
+          const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir, profileOverride);
           storyEffectiveConfigs.set(story.id, effectiveConfig);
         }),
     );
