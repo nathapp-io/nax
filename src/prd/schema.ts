@@ -94,18 +94,30 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   }
 
   // suggestedCriteria — optional, if present must be non-empty string[]
+  // Coerce {criterion, rationale} objects to plain strings (LLM sometimes emits this shape).
   let suggestedCriteria: string[] | undefined;
   if (s.suggestedCriteria !== undefined && s.suggestedCriteria !== null) {
     if (!Array.isArray(s.suggestedCriteria)) {
       throw new Error(`[schema] story[${index}].suggestedCriteria must be an array when present`);
     }
     if (s.suggestedCriteria.length > 0) {
+      const coerced: string[] = [];
       for (let i = 0; i < s.suggestedCriteria.length; i++) {
-        if (typeof s.suggestedCriteria[i] !== "string") {
+        const item = s.suggestedCriteria[i];
+        if (typeof item === "string") {
+          coerced.push(item);
+        } else if (
+          item !== null &&
+          typeof item === "object" &&
+          typeof (item as Record<string, unknown>).criterion === "string"
+        ) {
+          // LLM emitted {criterion, rationale} — extract the string criterion only
+          coerced.push((item as Record<string, unknown>).criterion as string);
+        } else {
           throw new Error(`[schema] story[${index}].suggestedCriteria[${i}] must be a string`);
         }
       }
-      suggestedCriteria = s.suggestedCriteria as string[];
+      suggestedCriteria = coerced;
     }
     // empty array → stripped to undefined
   }
