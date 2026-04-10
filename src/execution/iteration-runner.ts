@@ -84,8 +84,15 @@ export async function runIteration(
   const accumulatedAttemptCost = (story.priorFailures || []).reduce((sum, f) => sum + (f.cost || 0), 0);
 
   // PKG-003: Resolve per-package effective config once per story (not per-stage)
+  // Thread the CLI profile override through so --profile flags apply to per-package configs.
+  const profileOverride =
+    ctx.config.profile && ctx.config.profile !== "default" ? { profile: ctx.config.profile } : undefined;
   const effectiveConfig = story.workdir
-    ? await _iterationRunnerDeps.loadConfigForWorkdir(join(ctx.workdir, ".nax", "config.json"), story.workdir)
+    ? await _iterationRunnerDeps.loadConfigForWorkdir(
+        join(ctx.workdir, ".nax", "config.json"),
+        story.workdir,
+        profileOverride,
+      )
     : ctx.config;
 
   const pipelineContext: PipelineContext = {
