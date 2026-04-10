@@ -5,6 +5,7 @@
  * Extracted from runner.ts for better code organization.
  */
 
+import { groupStoriesByPackage } from "../acceptance/test-path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
@@ -105,6 +106,20 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
       options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
 
+      // Compute per-package acceptance test paths from PRD story workdirs.
+      // This is necessary because preRunCtx.acceptanceTestPaths is ephemeral and
+      // not propagated here; it's also skipped entirely when the PRD is already
+      // complete at run start (re-run). groupStoriesByPackage is the SSOT.
+      const acceptanceTestPaths = options.featureDir
+        ? groupStoriesByPackage(
+            options.prd,
+            options.workdir,
+            options.feature,
+            options.config.acceptance.testPath,
+            options.config.project?.language,
+          ).map((g) => ({ testPath: g.testPath, packageDir: g.packageDir }))
+        : undefined;
+
       const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
         config: options.config,
         prd: options.prd,
@@ -121,6 +136,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         eventEmitter: options.eventEmitter,
         statusWriter: options.statusWriter,
         agentGetFn: options.agentGetFn,
+        acceptanceTestPaths,
       });
 
       const lastRunAt = new Date().toISOString();

@@ -392,3 +392,79 @@ describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () 
     expect(callOrder.indexOf("running")).toBeLessThan(callOrder.indexOf("failed"));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Monorepo: acceptanceTestPaths derived from PRD story workdirs (bug fix)
+// ---------------------------------------------------------------------------
+
+describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAcceptanceLoop", () => {
+  test("passes acceptanceTestPaths derived from PRD workdirs when featureDir is set", async () => {
+    let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
+
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
+      capturedCtx = ctx;
+      return {
+        success: true,
+        prd: ctx.prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 2,
+        prdDirty: false,
+      };
+    });
+
+    const prd: PRD = {
+      project: "proj",
+      feature: "graphify-kb-cc",
+      branchName: "feat/graphify-kb-cc",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        { ...makeStory("US-001", "passed"), workdir: "apps/api" },
+        { ...makeStory("US-002", "passed"), workdir: "apps/cli" },
+      ],
+    };
+
+    const config = makeConfig(true);
+    const statusWriter = makeStatusWriter();
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: `${WORKDIR}/.nax/features/graphify-kb-cc`,
+    };
+
+    await runCompletionPhase(opts);
+
+    const paths = capturedCtx?.acceptanceTestPaths ?? [];
+    expect(paths.length).toBe(2);
+    const packageDirs = paths.map((p) => p.packageDir).sort();
+    expect(packageDirs).toEqual([`${WORKDIR}/apps/api`, `${WORKDIR}/apps/cli`]);
+  });
+
+  test("passes undefined acceptanceTestPaths when featureDir is not set", async () => {
+    let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
+
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
+      capturedCtx = ctx;
+      return {
+        success: true,
+        prd: ctx.prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+      };
+    });
+
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+    const config = makeConfig(true);
+    const statusWriter = makeStatusWriter();
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: undefined,
+    };
+
+    await runCompletionPhase(opts);
+
+    expect(capturedCtx?.acceptanceTestPaths).toBeUndefined();
+  });
+});

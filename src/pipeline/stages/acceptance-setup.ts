@@ -22,12 +22,11 @@
 
 import path from "node:path";
 import { buildAcceptanceRunCommand } from "../../acceptance/generator";
-import { resolveAcceptancePackageFeatureTestPath } from "../../acceptance/test-path";
+import { groupStoriesByPackage } from "../../acceptance/test-path";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import { type ModelDef, resolveModelForAgent } from "../../config";
 import { getSafeLogger } from "../../logger";
-import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
@@ -140,7 +139,7 @@ export const _acceptanceSetupDeps = {
     return (await refineAcceptanceCriteria(_criteria, _context)).criteria;
   },
   generate: async (
-    _stories: UserStory[],
+    _stories: import("../../prd/types").UserStory[],
     _refined: RefinedCriterion[],
     _options: import("../../acceptance/types").GenerateFromPRDOptions,
   ): Promise<import("../../acceptance/types").AcceptanceTestResult> => {
@@ -174,40 +173,11 @@ export const acceptanceSetupStage: PipelineStage = {
       .filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed")
       .flatMap((s) => s.acceptanceCriteria);
 
-    // US-001: Group non-fix stories by story.workdir.
-    // Each group gets its own test file at <package-root>/.nax-acceptance.test.ts.
-    // Decomposed stories are parent containers whose ACs are fully covered by their
-    // children — including them causes duplicate refine LLM calls and duplicate
-    // acceptance test cases.
-    const nonFixStories = ctx.prd.userStories.filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed");
-    const workdirGroups = new Map<string, { stories: UserStory[]; criteria: string[] }>();
-
-    for (const story of nonFixStories) {
-      const wd = story.workdir ?? "";
-      if (!workdirGroups.has(wd)) {
-        workdirGroups.set(wd, { stories: [], criteria: [] });
-      }
-      const group = workdirGroups.get(wd);
-      if (group) {
-        group.stories.push(story);
-        group.criteria.push(...story.acceptanceCriteria);
-      }
-    }
-
-    // Fallback: always have at least the root group so RED gate runs
-    if (workdirGroups.size === 0) {
-      workdirGroups.set("", { stories: [], criteria: [] });
-    }
-
-    // Build test paths for each workdir group — tests go under packageDir/.nax/features/<feature>/
-    // to avoid collisions between features targeting the same package.
+    // US-001: Group non-fix, non-decomposed stories by story.workdir — one test file per package.
+    // groupStoriesByPackage handles workdir grouping, path computation, and root fallback.
     const featureName = ctx.prd.feature ?? (ctx.prd as unknown as Record<string, string>).featureName;
-    const testPaths: Array<{ testPath: string; packageDir: string }> = [];
-    for (const [workdir] of workdirGroups) {
-      const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-      const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, language);
-      testPaths.push({ testPath, packageDir });
-    }
+    const groups = groupStoriesByPackage(ctx.prd, ctx.workdir, featureName, testPathConfig, language);
+    const nonFixStories = groups.flatMap((g) => g.stories);
 
     let totalCriteria = 0;
     let testableCount = 0;
@@ -236,7 +206,7 @@ export const acceptanceSetupStage: PipelineStage = {
         });
       }
       // Back up and delete all existing per-package test files
-      for (const { testPath } of testPaths) {
+      for (const { testPath } of groups) {
         if (await _acceptanceSetupDeps.fileExists(testPath)) {
           await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
           await _acceptanceSetupDeps.deleteFile(testPath);
@@ -306,9 +276,8 @@ export const acceptanceSetupStage: PipelineStage = {
       testableCount = allRefinedCriteria.filter((r) => r.testable).length;
 
       // Generate one acceptance test file per workdir group
-      for (const [workdir, group] of workdirGroups) {
-        const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-        const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, language);
+      for (const group of groups) {
+        const { testPath, packageDir } = group;
 
         // Filter refined criteria to this group's stories
         const groupStoryIds = new Set(group.stories.map((s) => s.id));
@@ -361,7 +330,7 @@ export const acceptanceSetupStage: PipelineStage = {
     }
 
     // Store per-package test paths in context for the acceptance runner (US-002)
-    ctx.acceptanceTestPaths = testPaths;
+    ctx.acceptanceTestPaths = groups.map((g) => ({ testPath: g.testPath, packageDir: g.packageDir }));
 
     if (ctx.config.acceptance.redGate === false) {
       ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
@@ -371,7 +340,7 @@ export const acceptanceSetupStage: PipelineStage = {
     // BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
     // Run RED gate for each per-package test file from its package directory
     let redFailCount = 0;
-    for (const { testPath, packageDir } of testPaths) {
+    for (const { testPath, packageDir } of groups) {
       const runCmd = buildAcceptanceRunCommand(
         testPath,
         ctx.config.project?.testFramework,

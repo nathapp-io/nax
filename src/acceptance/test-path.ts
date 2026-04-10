@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { PRD, UserStory } from "../prd/types";
 
 export interface AcceptanceTestPathEntry {
   testPath: string;
@@ -71,6 +72,70 @@ export function resolveAcceptanceTestCandidates(options: ResolveAcceptanceTestCa
   }
   if (!options.featureDir) return [];
   return [resolveAcceptanceFeatureTestPath(options.featureDir, options.testPathConfig, options.language)];
+}
+
+// ─── Per-package grouping (monorepo) ────────────────────────────────────────
+
+/**
+ * One acceptance test group per unique story.workdir value in the PRD.
+ * Returned by groupStoriesByPackage — used by both acceptance-setup (generation)
+ * and runner-completion (path resolution for the acceptance loop).
+ */
+export interface AcceptanceTestGroup {
+  testPath: string;
+  packageDir: string;
+  stories: UserStory[];
+  criteria: string[];
+}
+
+/**
+ * Group non-fix, non-decomposed PRD stories by story.workdir and compute the
+ * acceptance test path for each group.
+ *
+ * This is the SSOT for per-package test path computation. Call it from:
+ *   - acceptance-setup stage (to generate test files + set ctx.acceptanceTestPaths)
+ *   - runner-completion (to pass acceptanceTestPaths into runAcceptanceLoop)
+ *
+ * @param prd         - The loaded PRD
+ * @param workdir     - Absolute repo root (ctx.workdir / options.workdir)
+ * @param featureName - Feature name used in the test file path
+ * @param testPathConfig - Optional override filename from config.acceptance.testPath
+ * @param language    - Optional language from config.project.language
+ */
+export function groupStoriesByPackage(
+  prd: PRD,
+  workdir: string,
+  featureName: string,
+  testPathConfig?: string,
+  language?: string,
+): AcceptanceTestGroup[] {
+  const nonFixStories = prd.userStories.filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed");
+
+  const groupMap = new Map<string, { stories: UserStory[]; criteria: string[] }>();
+  for (const story of nonFixStories) {
+    const wd = story.workdir ?? "";
+    if (!groupMap.has(wd)) {
+      groupMap.set(wd, { stories: [], criteria: [] });
+    }
+    const group = groupMap.get(wd);
+    if (group) {
+      group.stories.push(story);
+      group.criteria.push(...story.acceptanceCriteria);
+    }
+  }
+
+  // Fallback: always have at least the root group so RED gate runs
+  if (groupMap.size === 0) {
+    groupMap.set("", { stories: [], criteria: [] });
+  }
+
+  const groups: AcceptanceTestGroup[] = [];
+  for (const [wd, { stories, criteria }] of groupMap) {
+    const packageDir = wd ? path.join(workdir, wd) : workdir;
+    const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, language);
+    groups.push({ testPath, packageDir, stories, criteria });
+  }
+  return groups;
 }
 
 // ─── Suggested test path helpers (hardening pass) ───────────────────────────
