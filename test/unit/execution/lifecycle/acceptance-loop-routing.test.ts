@@ -317,7 +317,7 @@ describe("AC-6: Fix retries respect config.acceptance.fix.maxRetries (separate f
     const config = makeMinimalConfig();
     expect(config.acceptance.maxRetries).toBeDefined();
     expect(config.acceptance.fix?.maxRetries).toBeDefined();
-    expect(config.acceptance.maxRetries).toBe(2);
+    expect(config.acceptance.maxRetries).toBe(3);
     expect(config.acceptance.fix?.maxRetries).toBe(2);
   });
 
