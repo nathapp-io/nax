@@ -31,10 +31,10 @@ import type { PluginRegistry } from "../../plugins";
 import type { PRD } from "../../prd/types";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
+import { applyFix, resolveAcceptanceDiagnosis } from "./acceptance-fix";
 import {
   buildResult,
   isStubTestFile,
-  isTestLevelFailure,
   regenerateAcceptanceTest as regenerateAcceptanceTestFn,
 } from "./acceptance-helpers";
 
@@ -507,16 +507,28 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
   return { fixed: false, cost: diagnosisCost, prdDirty: false };
 }
 
+const MAX_STUB_REGENS = 2;
+
 /**
- * Run the acceptance retry loop
+ * Run the acceptance retry loop.
  *
- * Executes acceptance tests and handles retry logic with fix story generation.
+ * Each iteration:
+ *   1. Run acceptance tests → PASS → done / FAIL → collect failures
+ *   2. Stub guard (with stubRegenCount cap) → regen + continue
+ *   3. Diagnose (fresh each iteration via resolveAcceptanceDiagnosis)
+ *   4. applyFix(diagnosis) — single-attempt
+ *   5. Accumulate previousFailure context
+ *   6. continue (always — back to step 1)
+ *
+ * The outer loop owns ALL retry logic. Inner functions apply exactly one fix.
  */
 export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult> {
   const logger = getSafeLogger();
   const maxRetries = ctx.config.acceptance.maxRetries;
 
   let acceptanceRetries = 0;
+  let stubRegenCount = 0;
+  let previousFailure = "";
   const prd = ctx.prd;
   let totalCost = ctx.totalCost;
   const iterations = ctx.iterations;
@@ -526,7 +538,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
   logger?.info("acceptance", "All stories complete, running acceptance validation");
 
   while (acceptanceRetries < maxRetries) {
-    // Run acceptance validation — use per-package test paths when available (monorepo aware)
+    // ── 1. Run acceptance ────────────────────────────────────────────────
     const firstStory = prd.userStories[0];
     const acceptanceContext: PipelineContext = {
       config: ctx.config,
@@ -562,11 +574,9 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
     }
 
-    // Handle acceptance test failures
     const failures = acceptanceContext.acceptanceFailures;
     if (!failures || failures.failedACs.length === 0) {
       logger?.error("acceptance", "Acceptance tests failed but no specific failures detected");
-      logger?.warn("acceptance", "Manual intervention required");
       await fireHook(
         ctx.hooks,
         "on-pause",
@@ -576,15 +586,15 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
     }
 
+    // ── 2. retries++ ─────────────────────────────────────────────────────
     acceptanceRetries++;
     logger?.warn("acceptance", `Acceptance retry ${acceptanceRetries}/${maxRetries}`, {
+      storyId: firstStory?.id,
       failedACs: failures.failedACs,
     });
 
     if (acceptanceRetries >= maxRetries) {
-      logger?.error("acceptance", "Max acceptance retries reached");
-      logger?.warn("acceptance", "Manual intervention required");
-      logger?.debug("acceptance", 'Run: nax accept --override AC-N "reason" to skip specific ACs');
+      logger?.error("acceptance", "Max acceptance retries reached", { storyId: firstStory?.id });
       await fireHook(
         ctx.hooks,
         "on-pause",
@@ -606,7 +616,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       );
     }
 
-    // Check for stub test file before other checks
+    // ── 3. Stub guard (stubRegenCount capped at 2) ───────────────────────
     if (ctx.featureDir) {
       const existingStubPath = await findExistingAcceptanceTestPathFromOptions({
         acceptanceTestPaths: ctx.acceptanceTestPaths,
@@ -614,59 +624,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         testPathConfig: ctx.config.acceptance.testPath,
         language: ctx.config.project?.language,
       });
-      if (existingStubPath) {
-        const testContent = await Bun.file(existingStubPath).text();
-        if (isStubTestFile(testContent)) {
-          logger?.warn("acceptance", "Stub tests detected — re-generating acceptance tests", {
-            testPath: existingStubPath,
+      if (existingStubPath && isStubTestFile(await Bun.file(existingStubPath).text())) {
+        if (stubRegenCount >= MAX_STUB_REGENS) {
+          logger?.error("acceptance", "Acceptance test generator cannot produce real tests — giving up", {
+            storyId: firstStory?.id,
+            stubRegenCount,
           });
-          const { unlink } = await import("node:fs/promises");
-          await unlink(existingStubPath);
-          const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
-          await acceptanceSetupStage.execute(acceptanceContext);
-          const newContent = await Bun.file(existingStubPath).text();
-          if (isStubTestFile(newContent)) {
-            logger?.error(
-              "acceptance",
-              "Acceptance test generation failed after retry — manual implementation required",
-            );
-            return buildResult(
-              false,
-              prd,
-              totalCost,
-              iterations,
-              storiesCompleted,
-              prdDirty,
-              failures.failedACs,
-              acceptanceRetries,
-            );
-          }
-          continue;
-        }
-      }
-    }
-
-    // P1-D / D2: Detect test-level failure — regenerate instead of fixing
-    // Count total ACs from non-fix stories only
-    const totalACs = prd.userStories
-      .filter((s) => !s.id.startsWith("US-FIX-"))
-      .flatMap((s) => s.acceptanceCriteria).length;
-
-    if (ctx.featureDir && isTestLevelFailure(failures.failedACs, totalACs)) {
-      logger?.warn(
-        "acceptance",
-        `Test-level failure detected (${failures.failedACs.length}/${totalACs} ACs failed) — regenerating acceptance test`,
-      );
-      const testPath = await findExistingAcceptanceTestPathFromOptions({
-        acceptanceTestPaths: ctx.acceptanceTestPaths,
-        featureDir: ctx.featureDir,
-        testPathConfig: ctx.config.acceptance.testPath,
-        language: ctx.config.project?.language,
-      });
-      if (testPath) {
-        const testLevelFailureContext = `Test-level failure: ${failures.failedACs.length}/${totalACs} ACs failed.\n\nFailing test output:\n${failures.testOutput}`;
-        const regenerated = await regenerateAcceptanceTestFn(testPath, acceptanceContext, testLevelFailureContext);
-        if (!regenerated) {
           return buildResult(
             false,
             prd,
@@ -678,32 +641,27 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
             acceptanceRetries,
           );
         }
-        continue; // retry with regenerated test
+        stubRegenCount++;
+        logger?.warn("acceptance", "Stub test detected — full regen", {
+          storyId: firstStory?.id,
+          attempt: stubRegenCount,
+          maxStubRegens: MAX_STUB_REGENS,
+        });
+        await regenerateAcceptanceTestFn(existingStubPath, acceptanceContext);
+        continue; // back to acceptance test
       }
     }
 
-    // Run fix routing based on strategy
-    const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
-    if (strategy === "diagnose-first" || strategy === "implement-only") {
-      logger?.info("acceptance", `Running fix routing with strategy: ${strategy}`);
+    // ── 4. Diagnose (fresh each iteration) ───────────────────────────────
+    const semanticVerdicts = ctx.featureDir ? await _acceptanceLoopDeps.loadSemanticVerdicts(ctx.featureDir) : [];
+    const totalACs = prd.userStories
+      .filter((s) => !s.id.startsWith("US-FIX-"))
+      .flatMap((s) => s.acceptanceCriteria).length;
 
-      const semanticVerdicts = ctx.featureDir ? await _acceptanceLoopDeps.loadSemanticVerdicts(ctx.featureDir) : [];
-      const fixResult = await runFixRouting({
-        ctx,
-        failures,
-        prd,
-        acceptanceContext,
-        semanticVerdicts,
-      });
-
-      totalCost += fixResult.cost;
-
-      if (fixResult.fixed) {
-        logger?.info("acceptance", "Fix succeeded — re-running acceptance tests...");
-        continue;
-      }
-
-      logger?.error("acceptance", "Fix routing failed to resolve acceptance failures");
+    const agentName = ctx.config.autoMode.defaultAgent;
+    const agent = (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName);
+    if (!agent) {
+      logger?.error("acceptance", "Agent not found for diagnosis", { storyId: firstStory?.id, agentName });
       return buildResult(
         false,
         prd,
@@ -716,8 +674,50 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       );
     }
 
-    // Legacy fallback path removed — strategy is always "diagnose-first" | "implement-only"
-    // (enforced by Zod enum in AcceptanceFixConfigSchema). The if-block above is always entered.
+    // Load test file content for diagnosis
+    const testEntries = ctx.acceptanceTestPaths
+      ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
+      : [];
+    const testFileContent = testEntries[0]?.content ?? "";
+
+    const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
+    const diagnosis = await resolveAcceptanceDiagnosis({
+      agent,
+      failures,
+      totalACs,
+      strategy,
+      semanticVerdicts,
+      diagnosisOpts: {
+        testOutput: failures.testOutput,
+        testFileContent,
+        config: ctx.config,
+        workdir: ctx.workdir,
+        featureName: ctx.feature,
+        storyId: firstStory?.id,
+      },
+      previousFailure,
+    });
+
+    logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
+      storyId: firstStory?.id,
+      verdict: diagnosis.verdict,
+      confidence: diagnosis.confidence,
+      attempt: acceptanceRetries,
+    });
+
+    // ── 5. Apply fix (single attempt) ────────────────────────────────────
+    const fixResult = await applyFix({
+      ctx,
+      failures,
+      diagnosis,
+      previousFailure,
+    });
+    totalCost += fixResult.cost;
+
+    // ── 6. Accumulate previousFailure ────────────────────────────────────
+    previousFailure += `\n---\nAttempt ${acceptanceRetries}/${maxRetries}: verdict=${diagnosis.verdict}, confidence=${diagnosis.confidence}\nReasoning: ${diagnosis.reasoning}\nFailed ACs: ${failures.failedACs.join(", ")}\n`;
+
+    // ── 7. continue (always — back to step 1) ────────────────────────────
   }
 
   return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
