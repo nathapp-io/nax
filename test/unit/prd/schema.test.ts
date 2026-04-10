@@ -513,6 +513,25 @@ describe("suggestedCriteria", () => {
     expect(prd.userStories[0].suggestedCriteria).toBeUndefined();
   });
 
+  test("{criterion, rationale} objects — coerced to plain strings", () => {
+    const story = makeStory({
+      suggestedCriteria: [
+        { criterion: "edge case A", rationale: "debater suggested" },
+        { criterion: "edge case B", rationale: "another reason" },
+      ],
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].suggestedCriteria).toEqual(["edge case A", "edge case B"]);
+  });
+
+  test("mixed strings and {criterion} objects — coerced uniformly", () => {
+    const story = makeStory({
+      suggestedCriteria: ["plain string", { criterion: "from object" }],
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].suggestedCriteria).toEqual(["plain string", "from object"]);
+  });
+
   test("non-string elements — throws", () => {
     const story = makeStory({ suggestedCriteria: ["valid", 42] });
     expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
