@@ -146,6 +146,8 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     const failedSet = new Set(failedACs.map((ac) => ac.toUpperCase()));
 
     // Map AC indices back to suggested criteria
+    // allRefined is in the same iteration order, so allRefined[acIndex - 1] is the
+    // refined version of criterion at position acIndex (1-based).
     let acIndex = 0;
     for (const story of storiesWithSuggested) {
       const suggested = story.suggestedCriteria ?? [];
@@ -155,8 +157,9 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       for (const criterion of suggested) {
         acIndex++;
         const acId = `AC-${acIndex}`;
-        if (failedSet.has(acId) || (exitCode !== 0 && failedACs.length === 0)) {
-          // Failed or test crashed with no parsed ACs → discard all
+        const nonTestable = allRefined[acIndex - 1]?.testable === false;
+        if (nonTestable || failedSet.has(acId) || (exitCode !== 0 && failedACs.length === 0)) {
+          // Discard: non-testable implementation detail, failed, or test crashed
           toDiscard.push(criterion);
         } else {
           toPromote.push(criterion);
