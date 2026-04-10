@@ -506,6 +506,7 @@ const makeResolverSchema = (defaultType: (typeof RESOLVER_TYPES)[number]) =>
     z.object({
       type: z.enum(RESOLVER_TYPES).default(defaultType),
       agent: z.string().min(1).optional(),
+      model: z.string().min(1).optional(),
       tieBreaker: z.string().min(1).optional(),
       maxPromptTokens: z.number().int().positive().optional(),
     }),

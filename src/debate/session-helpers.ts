@@ -309,12 +309,18 @@ export async function resolveOutcome(
     if (adapter) {
       const synthesisSessionName =
         workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "synthesis") : undefined;
+      const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
+      const resolverTier: ModelTier =
+        (resolverConfig.model && MODEL_SHORTHAND_TIERS[resolverConfig.model.toLowerCase()]) ||
+        modelTierFromDebater(resolverDebater);
+      const resolverModelDef = resolveModelDefForDebater(resolverDebater, resolverTier, config);
       const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
         adapter,
         promptSuffix,
         debaters,
         completeOptions: {
-          model: resolveDebaterModel({ agent: agentName }, config),
+          model: resolverModelDef.model,
+          modelTier: resolverTier,
           config,
           storyId,
           featureName,
@@ -337,12 +343,18 @@ export async function resolveOutcome(
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
     const judgeSessionName =
       workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "judge") : undefined;
+    const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
+    const resolverTier: ModelTier =
+      (resolverConfig.model && MODEL_SHORTHAND_TIERS[resolverConfig.model.toLowerCase()]) ||
+      modelTierFromDebater(resolverDebater);
+    const resolverModelDef = resolveModelDefForDebater(resolverDebater, resolverTier, config);
     const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
       getAgent: (name: string) => _debateSessionDeps.getAgent(name, config),
       defaultAgentName: RESOLVER_FALLBACK_AGENT,
       debaters,
       completeOptions: {
-        model: resolveDebaterModel({ agent: agentName }, config),
+        model: resolverModelDef.model,
+        modelTier: resolverTier,
         config,
         storyId,
         featureName,
