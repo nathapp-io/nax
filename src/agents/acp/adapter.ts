@@ -93,6 +93,8 @@ export interface AcpSessionResponse {
   };
   /** Exact cost in USD from acpx usage_update event. Preferred over token-based estimation. */
   exactCostUsd?: number;
+  /** True if acpx signalled the error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). */
+  retryable?: boolean;
 }
 
 export interface AcpSession {
@@ -580,7 +582,11 @@ export class AcpAgentAdapter implements AgentAdapter {
     let currentAgent: string = this.resolveCurrentAgent(config);
 
     const rateLimitedRetryAfter = new Map<string, number | undefined>();
-    let sessionErrorRetried = false;
+    let sessionErrorRetries = 0;
+    // Max retries for non-retryable session errors (e.g. stale/locked session)
+    const SESSION_ERROR_MAX_RETRIES = config?.execution?.sessionErrorMaxRetries ?? 1;
+    // Max retries for acpx-retryable session errors (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION)
+    const SESSION_ERROR_RETRYABLE_MAX_RETRIES = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
     // Legacy attempt counter used only when no fallback chain is configured
     let legacyAttempt = 0;
     let retryCount = 0;
@@ -595,14 +601,24 @@ export class AcpAgentAdapter implements AgentAdapter {
             ...(result.output ? { output: result.output.slice(0, 500) } : {}),
           });
 
-          // BUG-122: session error (acpx exit code 4 — stale/locked session) — retry once
-          // with a fresh session when _acpAdapterDeps.shouldRetrySessionError is set.
+          // Session error retry: use a fresh session. Retryable errors (e.g. queue owner
+          // disconnect) get more attempts than non-retryable ones (stale/locked session).
           // Default (test mode): disabled — retries would advance mock callIndex and break tests.
-          if (result.sessionError && _acpAdapterDeps.shouldRetrySessionError && !sessionErrorRetried) {
-            sessionErrorRetried = true;
+          const maxSessionRetries = result.sessionErrorRetryable
+            ? SESSION_ERROR_RETRYABLE_MAX_RETRIES
+            : SESSION_ERROR_MAX_RETRIES;
+          if (
+            result.sessionError &&
+            _acpAdapterDeps.shouldRetrySessionError &&
+            sessionErrorRetries < maxSessionRetries
+          ) {
+            sessionErrorRetries += 1;
             getSafeLogger()?.warn("acp-adapter", "Session error — retrying with fresh session", {
               storyId: options.storyId,
               featureName: options.featureName,
+              retryable: result.sessionErrorRetryable,
+              attempt: sessionErrorRetries,
+              maxAttempts: maxSessionRetries,
             });
             if (options.featureName && options.storyId) {
               await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
@@ -876,6 +892,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     const success = lastResponse?.stopReason === "end_turn";
     const isSessionError = lastResponse?.stopReason === "error";
+    const isSessionErrorRetryable = isSessionError && lastResponse?.retryable === true;
     const output = extractOutput(lastResponse);
 
     // Prefer exact cost from acpx usage_update; fall back to token-based estimation
@@ -905,6 +922,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       output: output.slice(-MAX_AGENT_OUTPUT_CHARS),
       rateLimited: false,
       sessionError: isSessionError,
+      sessionErrorRetryable: isSessionErrorRetryable,
       durationMs,
       estimatedCost,
       tokenUsage,

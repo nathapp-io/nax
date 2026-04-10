@@ -30,6 +30,8 @@ export interface AcpxParseState {
   exactCostUsd: number | undefined;
   stopReason: string | undefined;
   error: string | undefined;
+  /** True if the acpx error response explicitly set retryable=true (e.g. QUEUE_DISCONNECTED). */
+  retryable: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,7 +39,14 @@ export interface AcpxParseState {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function createParseState(): AcpxParseState {
-  return { text: "", tokenUsage: undefined, exactCostUsd: undefined, stopReason: undefined, error: undefined };
+  return {
+    text: "",
+    tokenUsage: undefined,
+    exactCostUsd: undefined,
+    stopReason: undefined,
+    error: undefined,
+    retryable: false,
+  };
 }
 
 /**
@@ -92,6 +101,8 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): void {
           const data = err.data as Record<string, unknown>;
           const suffix = [data.acpxCode, data.detailCode].filter(Boolean).join("/");
           if (suffix) errorMsg = `${errorMsg} [${suffix}]`;
+          // Respect retryable flag — first error wins
+          if (!state.error && data.retryable === true) state.retryable = true;
         }
         // First error wins — preserves the root cause if acpx emits a cascade of errors
         if (!state.error) state.error = errorMsg;
@@ -132,6 +143,7 @@ export function finalizeParseState(state: AcpxParseState): ReturnType<typeof par
     exactCostUsd: state.exactCostUsd,
     stopReason: state.stopReason,
     error: state.error,
+    retryable: state.retryable,
   };
 }
 
@@ -155,6 +167,7 @@ export function parseAcpxJsonOutput(rawOutput: string): {
   exactCostUsd?: number;
   stopReason?: string;
   error?: string;
+  retryable: boolean;
 } {
   const state = createParseState();
   for (const line of rawOutput.split("\n")) {

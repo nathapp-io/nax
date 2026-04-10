@@ -103,6 +103,10 @@ export interface ExecutionConfig {
   costLimit: number;
   /** Timeout per agent coding session (seconds) */
   sessionTimeoutSeconds: number;
+  /** Max retries for non-retryable session errors (e.g. stale/locked session). Default: 1. */
+  sessionErrorMaxRetries: number;
+  /** Max retries for retryable session errors (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). Default: 3. */
+  sessionErrorRetryableMaxRetries: number;
   /** Verification subprocess timeout in seconds (ADR-003 Decision 4) */
   verificationTimeoutSeconds: number;
   /** Max stories per feature (prevents memory exhaustion) */
