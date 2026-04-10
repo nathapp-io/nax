@@ -213,6 +213,7 @@ export async function runTddSession(
       storyId: story.id,
       durationMs: Date.now() - startTime,
       exitCode: result.exitCode,
+      ...(result.output ? { output: result.output.slice(0, 500) } : {}),
     });
   }
 
