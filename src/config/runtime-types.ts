@@ -247,8 +247,10 @@ export interface PlanConfig {
   model: ModelTier;
   /** Output path for generated spec (relative to nax/ directory) */
   outputPath: string;
-  /** Timeout for plan sessions in seconds (default: execution.sessionTimeoutSeconds) */
+  /** Timeout for plan sessions in seconds (default: 600) */
   timeoutSeconds?: number;
+  /** Override timeout for decompose calls in ms. Defaults to plan.timeoutSeconds * 1000. */
+  decomposeTimeoutMs?: number;
 }
 
 /** Valid test strategy values for acceptance testing */
@@ -579,6 +581,4 @@ export interface AgentConfig {
   maxInteractionTurns?: number;
   /** Prompt audit — write every ACP-bound prompt to a file for auditing. */
   promptAudit?: PromptAuditConfig;
-  /** Timeout for decompose (complete) calls in milliseconds (default: 300_000). */
-  decomposeTimeoutMs?: number;
 }
