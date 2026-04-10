@@ -1,0 +1,33 @@
+{
+"debate": {
+  "stages": {
+    "plan": {
+      "enabled": true,
+      "mode": "hybrid",           // stateful rebuttal loop = real debate, not parallel monologues
+      "sessionMode": "stateful",
+      "rounds": 2,                // 2 is usually enough; 3 only if you see convergence
+      "autoPersona": true,        // ← critical; forces lens diversity
+      "debaters": [
+        { "agent": "claude", "model": "fast", "persona": "pragmatist" },
+        { "agent": "claude", "model": "fast", "persona": "challenger" },
+        { "agent": "claude", "model": "balanced", "persona": "completionist" }
+      ],
+      "resolver": {
+        "type": "synthesis",
+        "agent": "claude"         // configure this agent's "powerful" tier = Opus
+      }
+    },
+    "review": {
+      "mode": "panel",            // cheaper, no rebuttal
+      "rounds": 1,
+      "autoPersona": true,
+      "debaters": [
+        { "agent": "claude", "model": "fast", "persona": "security" },
+        { "agent": "claude", "model": "fast", "persona": "testability" },
+        { "agent": "claude", "model": "fast", "persona": "challenger" }
+      ],
+      "resolver": { "type": "majority-fail-closed" }  // no LLM resolver cost
+    }
+  }
+}  
+}
