@@ -98,7 +98,7 @@ function globToRegex(pattern: string): RegExp {
  * ```
  */
 export async function isGreenfieldStory(
-  story: UserStory,
+  _story: UserStory,
   workdir: string,
   testPattern = "**/*.{test,spec}.{ts,js,tsx,jsx}",
 ): Promise<boolean> {

@@ -2,8 +2,6 @@
  * Logging formatter types for human-readable output
  */
 
-import type { LogEntry } from "../logger/types.js";
-
 /**
  * Verbosity mode for log formatting
  */

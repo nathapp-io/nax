@@ -9,8 +9,7 @@
 
 import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { NaxConfig } from "../config";
-import type { PRD, StoryStatus, UserStory } from "../prd";
+import type { PRD } from "../prd";
 
 // ============================================================================
 // PostRun Phase Status Types

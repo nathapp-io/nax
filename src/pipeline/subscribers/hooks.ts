@@ -45,7 +45,7 @@ export function wireHooks(
 
   // run:started → on-start
   unsubs.push(
-    bus.on("run:started", (ev) => {
+    bus.on("run:started", (_ev) => {
       return safe("on-start", () => fireHook(hooks, "on-start", hookCtx(feature, { status: "running" }), workdir));
     }),
   );
@@ -131,7 +131,7 @@ export function wireHooks(
 
   // run:resumed → on-resume
   unsubs.push(
-    bus.on("run:resumed", (ev) => {
+    bus.on("run:resumed", (_ev) => {
       return safe("on-resume", () => fireHook(hooks, "on-resume", hookCtx(feature, { status: "running" }), workdir));
     }),
   );

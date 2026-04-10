@@ -8,7 +8,7 @@
  * 4. Reviewer failures do NOT fail the overall run
  * 5. When no reviewers are registered, deferred review is silently skipped
  *
- * Uses executeSequential directly with mocked deps to avoid spawning real agents.
+ * Uses executeUnified directly with mocked deps to avoid spawning real agents.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -18,7 +18,7 @@ import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import { _deferredReviewDeps } from "../../../src/execution/deferred-review";
 import type { SequentialExecutionContext } from "../../../src/execution/executor-types";
-import { executeSequential } from "../../../src/execution/sequential-executor";
+import { executeUnified } from "../../../src/execution/unified-executor";
 import type { PluginRegistry } from "../../../src/plugins";
 import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import type { PRD } from "../../../src/prd/types";
@@ -188,7 +188,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
 
-    const result = await executeSequential(ctx, makeCompletedPRD());
+    const result = await executeUnified(ctx, makeCompletedPRD());
 
     // Reviewer should be called exactly once (at end, not per-story)
     expect(reviewer.check).toHaveBeenCalledTimes(1);
@@ -204,7 +204,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
 
-    await executeSequential(ctx, makeCompletedPRD());
+    await executeUnified(ctx, makeCompletedPRD());
 
     // Called exactly once (deferred), not 0 or 2+
     expect(reviewer.check).toHaveBeenCalledTimes(1);
@@ -217,7 +217,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
 
-    const result = await executeSequential(ctx, makeCompletedPRD());
+    const result = await executeUnified(ctx, makeCompletedPRD());
 
     // Run should still complete successfully despite reviewer failure
     expect(result.exitReason).toBe("completed");
@@ -233,7 +233,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
 
-    const result = await executeSequential(ctx, makeCompletedPRD());
+    const result = await executeUnified(ctx, makeCompletedPRD());
 
     expect(result.deferredReview).toBeDefined();
     expect(result.deferredReview?.reviewerResults).toHaveLength(1);
@@ -248,7 +248,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
 
-    await executeSequential(ctx, makeCompletedPRD());
+    await executeUnified(ctx, makeCompletedPRD());
 
     // Verify a git diff call was made using a ref as baseRef
     const spawnCalls = (_deferredReviewDeps.spawn as ReturnType<typeof mock>).mock.calls;
@@ -265,7 +265,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
 
-    const result = await executeSequential(ctx, makeCompletedPRD());
+    const result = await executeUnified(ctx, makeCompletedPRD());
 
     // Should complete without error
     expect(result.exitReason).toBe("completed");
@@ -280,7 +280,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("per-story");
     const ctx = makeCtx(registry, config);
 
-    const result = await executeSequential(ctx, makeCompletedPRD());
+    const result = await executeUnified(ctx, makeCompletedPRD());
 
     // deferredReview should not be set for per-story mode
     expect(result.deferredReview).toBeUndefined();
@@ -319,7 +319,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
 
-    await executeSequential(ctx, makeCompletedPRD());
+    await executeUnified(ctx, makeCompletedPRD());
 
     // rev-parse (capture ref) must come before diff (use ref for deferred review)
     const revParseIdx = captureOrder.indexOf("rev-parse");

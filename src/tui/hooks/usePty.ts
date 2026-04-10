@@ -81,7 +81,6 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
   }));
 
   const [handle, setHandle] = useState<PtyHandle | null>(null);
-  const [ptyProcess, setPtyProcess] = useState<ReturnType<typeof Bun.spawn> | null>(null);
 
   // Spawn PTY process
   // BUG-2: Destructure options to prevent infinite respawn loop due to object identity
@@ -105,7 +104,6 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
       stderr: "inherit", // MEM-1: Inherit stderr to avoid blocking on unread pipe
     });
 
-    setPtyProcess(proc);
     setState((prev) => ({ ...prev, isRunning: true }));
 
     // Stream stdout line-by-line into state buffer

@@ -6,11 +6,10 @@
  */
 
 import type { ConstitutionConfig } from "../constitution/types";
-import type { ReviewConfig, SemanticReviewConfig } from "../review/types";
+import type { ReviewConfig } from "../review/types";
 import type {
   Complexity,
   LlmRoutingMode,
-  ModelMap,
   ModelTier,
   ModelsConfig,
   RoutingStrategyName,

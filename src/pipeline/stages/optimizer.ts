@@ -32,7 +32,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types.js";
 
 export const optimizerStage: PipelineStage = {
   name: "optimizer",
-  enabled: (ctx) => {
+  enabled: (_ctx) => {
     // Always enabled - NoopOptimizer is used when optimization is disabled
     return true;
   },

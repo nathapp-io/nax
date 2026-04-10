@@ -270,7 +270,7 @@ type ToolConfig =
  * - ruby: [ruby, rubocop]
  * - java: [java, mvn or gradle]
  */
-export async function checkLanguageTools(profile: ProjectProfile | undefined, workdir: string): Promise<Check> {
+export async function checkLanguageTools(profile: ProjectProfile | undefined, _workdir: string): Promise<Check> {
   // Skip check if no profile or language not set
   if (!profile || !profile.language) {
     return {

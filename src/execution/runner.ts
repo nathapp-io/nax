@@ -24,9 +24,9 @@ import { countStories, isComplete } from "../prd";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
 import { stopHeartbeat } from "./crash-recovery";
-import { type RunnerCompletionOptions, runCompletionPhase } from "./runner-completion";
-import { type RunnerExecutionOptions, runExecutionPhase } from "./runner-execution";
-import { type RunnerSetupOptions, runSetupPhase } from "./runner-setup";
+import { runCompletionPhase } from "./runner-completion";
+import { runExecutionPhase } from "./runner-execution";
+import { runSetupPhase } from "./runner-setup";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -113,8 +113,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let runCompleted = false;
   // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
   const allStoryMetrics: any[] = [];
-
-  const logger = getSafeLogger();
 
   // Create protocol-aware agent registry (ACP wiring — ACP-003/registry-wiring)
   const registry = createAgentRegistry(config);

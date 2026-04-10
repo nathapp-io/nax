@@ -11,7 +11,7 @@ import type { PRD } from "../prd/types";
 import type { DiagnosisReport, FailurePattern, StoryDiagnosis } from "./diagnose";
 
 /** Detect failure pattern for a story */
-export function detectFailurePattern(story: UserStory, prd: PRD, status: NaxStatusFile | null): FailurePattern {
+export function detectFailurePattern(story: UserStory, _prd: PRD, status: NaxStatusFile | null): FailurePattern {
   if (
     story.status === "passed" &&
     story.priorErrors?.some((err) => err.toLowerCase().includes("greenfield-no-tests"))
