@@ -262,7 +262,7 @@ export interface AcceptanceFixConfig {
   fixModel: string;
   /** Fix strategy (default: "diagnose-first") */
   strategy: "diagnose-first" | "implement-only";
-  /** Maximum retry attempts (default: 2) */
+  /** @deprecated Ignored — outer loop controls retries via acceptance.maxRetries. Kept for backward compat. */
   maxRetries: number;
 }
 
@@ -270,7 +270,7 @@ export interface AcceptanceFixConfig {
 export interface AcceptanceConfig {
   /** Enable acceptance test generation and validation */
   enabled: boolean;
-  /** Maximum retry loops for fix stories (default: 2) */
+  /** Maximum retry loops for the acceptance fix flow (default: 3) */
   maxRetries: number;
   /** Generate acceptance tests during analyze (default: true) */
   generateTests: boolean;

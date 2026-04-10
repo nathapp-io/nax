@@ -748,7 +748,7 @@ export const NaxConfigSchema = z
     }),
     acceptance: AcceptanceConfigSchema.default({
       enabled: true,
-      maxRetries: 2,
+      maxRetries: 3,
       generateTests: true,
       testPath: ".nax-acceptance.test.ts",
       model: "fast",
