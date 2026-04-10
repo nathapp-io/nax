@@ -176,9 +176,10 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
         }
       }
 
-      // Promote passing criteria
+      // Promote passing criteria — deduplicate against existing ACs (#336 gap 5)
       if (toPromote.length > 0) {
-        story.acceptanceCriteria = [...story.acceptanceCriteria, ...toPromote];
+        const existingACs = new Set(story.acceptanceCriteria);
+        story.acceptanceCriteria = [...story.acceptanceCriteria, ...toPromote.filter((ac) => !existingACs.has(ac))];
         result.promoted.push(...toPromote);
       }
       result.discarded.push(...toDiscard);

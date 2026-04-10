@@ -368,6 +368,52 @@ describe("runHardeningPass()", () => {
     expect(result.discarded).toEqual([]);
   });
 
+  test("deduplicates against existing acceptanceCriteria when promoting (#336 gap 5)", async () => {
+    const story = {
+      id: "US-001",
+      title: "Story",
+      description: "Desc",
+      acceptanceCriteria: ["spec AC", "already promoted criterion"],
+      suggestedCriteria: ["already promoted criterion", "new criterion"],
+      tags: [],
+      dependencies: [],
+      status: "passed" as const,
+      passes: true,
+      escalations: [],
+      attempts: 1,
+    };
+    const prd = makePRD({ userStories: [story] });
+    const ctx = makeCtx({ prd });
+
+    _hardeningDeps.refine = mock(async (criteria: string[]) => ({
+      criteria: criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" })),
+      costUsd: 0,
+    }));
+    _hardeningDeps.generate = mock(async () => ({
+      testCode: 'test("AC-1", () => {})\ntest("AC-2", () => {})',
+      criteria: [
+        { id: "AC-1", text: "already promoted criterion", lineNumber: 1 },
+        { id: "AC-2", text: "new criterion", lineNumber: 2 },
+      ],
+      costUsd: 0,
+    }));
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    // Both tests pass
+    _hardeningDeps.spawn = mock(() => ({
+      exited: Promise.resolve(0),
+      stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+    } as ReturnType<typeof Bun.spawn>));
+
+    await runHardeningPass(ctx);
+
+    // "already promoted criterion" must not appear twice
+    const count = story.acceptanceCriteria.filter((ac) => ac === "already promoted criterion").length;
+    expect(count).toBe(1);
+    expect(story.acceptanceCriteria).toContain("new criterion");
+  });
+
   test("accumulates costUsd from refine and generate sub-calls (#336 gap 3)", async () => {
     const story = {
       id: "US-001",
