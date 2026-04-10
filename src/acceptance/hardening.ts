@@ -71,7 +71,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     const allRefined: RefinedCriterion[] = [];
     for (const story of storiesWithSuggested) {
       const criteria = story.suggestedCriteria ?? [];
-      const refined = await _hardeningDeps.refine(criteria, {
+      const refineResult = await _hardeningDeps.refine(criteria, {
         storyId: story.id,
         featureName: ctx.prd.feature,
         workdir: ctx.workdir,
@@ -80,7 +80,8 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
         storyTitle: story.title,
         storyDescription: story.description,
       });
-      allRefined.push(...refined);
+      allRefined.push(...refineResult.criteria);
+      result.costUsd += refineResult.costUsd;
     }
 
     // 3. Resolve test path
@@ -117,6 +118,8 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       language,
       targetTestFile: suggestedTestPath,
     });
+    result.costUsd += genResult.costUsd ?? 0;
+
     // 6. Write test file if returned as code (ACP writes directly)
     if (genResult.testCode) {
       await _hardeningDeps.writeFile(suggestedTestPath, genResult.testCode);

@@ -137,7 +137,7 @@ export const _acceptanceSetupDeps = {
     _context: import("../../acceptance/types").RefinementContext,
   ): Promise<RefinedCriterion[]> => {
     const { refineAcceptanceCriteria } = await import("../../acceptance/refinement");
-    return refineAcceptanceCriteria(_criteria, _context);
+    return (await refineAcceptanceCriteria(_criteria, _context)).criteria;
   },
   generate: async (
     _stories: UserStory[],

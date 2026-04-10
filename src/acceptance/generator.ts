@@ -239,6 +239,7 @@ Rules:
     featureName: options.featureName,
     sessionRole: "acceptance-gen",
   });
+  const genCostUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
   const rawOutput = typeof completeResult === "string" ? completeResult : completeResult.output;
   let testCode = extractTestCode(rawOutput);
 
@@ -366,6 +367,7 @@ Rules:
     return {
       testCode: generateSkeletonTests(options.featureName, skeletonCriteria, options.testFramework, options.language),
       criteria: skeletonCriteria,
+      costUsd: genCostUsd,
     };
   }
 
@@ -383,7 +385,7 @@ Rules:
 
   await _generatorPRDDeps.writeFile(join(options.featureDir, "acceptance-refined.json"), refinedJsonContent);
 
-  return { testCode, criteria };
+  return { testCode, criteria, costUsd: genCostUsd };
 }
 
 export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterion[] {
