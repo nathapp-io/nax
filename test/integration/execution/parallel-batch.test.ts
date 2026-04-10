@@ -758,17 +758,8 @@ describe("AC-17: groupStoriesByDependencies accessibility", () => {
 
 describe("AC-18: executeUnified function", () => {
   test("src/execution/unified-executor.ts exports executeUnified()", async () => {
-    try {
-      const { executeUnified } = await import("../../../src/execution/unified-executor");
-      expect(typeof executeUnified).toBe("function");
-    } catch {
-      try {
-        const { executeSequential } = await import("../../../src/execution/sequential-executor");
-        expect(typeof executeSequential).toBe("function");
-      } catch {
-        expect(true).toBe(true);
-      }
-    }
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    expect(typeof executeUnified).toBe("function");
   });
 
   test("executeUnified returns same type as former executeSequential", async () => {

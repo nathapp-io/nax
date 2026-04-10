@@ -1,13 +1,10 @@
 /**
- * RL-007: Fix duplicate stopHeartbeat/writeExitSummary in sequential-executor.ts (BUG-060)
+ * RL-007: Fix duplicate stopHeartbeat/writeExitSummary in unified-executor.ts (BUG-060)
  *
  * Acceptance Criteria Tested:
- * - AC #1: Exit summary is written once (sequential-executor does NOT call writeExitSummary)
- * - AC #2: Heartbeat protection remains active after executeSequential returns so
+ * - AC #1: Exit summary is written once (unified-executor does NOT call writeExitSummary)
+ * - AC #2: Heartbeat protection remains active after executeUnified returns so
  *          runner.ts regression gate runs with heartbeat still ticking
- *
- * These tests are RED (failing) until the RL-007 implementation removes
- * stopHeartbeat() and writeExitSummary() from sequential-executor.ts's finally block.
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
@@ -20,7 +17,7 @@ import {
   startHeartbeat,
   stopHeartbeat,
 } from "../../../src/execution/crash-recovery";
-import { type SequentialExecutionContext, executeSequential } from "../../../src/execution/sequential-executor";
+import { type SequentialExecutionContext, executeUnified } from "../../../src/execution/unified-executor";
 import type { LoadedHooksConfig } from "../../../src/hooks";
 import type { PRD, UserStory } from "../../../src/prd/types";
 
@@ -123,12 +120,12 @@ function extractFinallyBlocks(src: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// AC #1: Exit summary written once — sequential-executor must NOT call it
+// AC #1: Exit summary written once — unified-executor must NOT call it
 // ---------------------------------------------------------------------------
 
-describe("RL-007 AC#1: sequential-executor.ts does not call writeExitSummary", () => {
+describe("RL-007 AC#1: unified-executor.ts does not call writeExitSummary", () => {
   test("finally block does not contain writeExitSummary call", async () => {
-    const srcPath = join(__dirname, "../../../src/execution/sequential-executor.ts");
+    const srcPath = join(__dirname, "../../../src/execution/unified-executor.ts");
     const src = await Bun.file(srcPath).text();
 
     const finallyBlocks = extractFinallyBlocks(src);
@@ -141,10 +138,10 @@ describe("RL-007 AC#1: sequential-executor.ts does not call writeExitSummary", (
   });
 
   test("does not import writeExitSummary from crash-recovery", async () => {
-    const srcPath = join(__dirname, "../../../src/execution/sequential-executor.ts");
+    const srcPath = join(__dirname, "../../../src/execution/unified-executor.ts");
     const src = await Bun.file(srcPath).text();
 
-    // After fix: writeExitSummary should not be imported at all in sequential-executor.ts
+    // writeExitSummary should not be imported at all in unified-executor.ts
     const importPattern = /import\s*\{([^}]+)\}\s*from\s*["']\.\/crash-recovery["']/s;
     const importMatch = src.match(importPattern);
     if (importMatch) {
@@ -156,11 +153,11 @@ describe("RL-007 AC#1: sequential-executor.ts does not call writeExitSummary", (
 
 // ---------------------------------------------------------------------------
 // AC #2: Heartbeat active during regression gate
-// sequential-executor must NOT stop the heartbeat — runner.ts owns that
+// unified-executor must NOT stop the heartbeat — runner.ts owns that
 // ---------------------------------------------------------------------------
 
-describe("RL-007 AC#2: heartbeat remains active after executeSequential returns", () => {
-  test("heartbeat is still running after executeSequential completes normally", async () => {
+describe("RL-007 AC#2: heartbeat remains active after executeUnified returns", () => {
+  test("heartbeat is still running after executeUnified completes normally", async () => {
     const statusWriter = makeStatusWriter();
     // Simulate what runner.ts does: start heartbeat before delegating to executor
     startHeartbeat(statusWriter as unknown as Parameters<typeof startHeartbeat>[0], () => 0, () => 0);
@@ -170,10 +167,9 @@ describe("RL-007 AC#2: heartbeat remains active after executeSequential returns"
     const prd = makeCompletePRD([makeStory("US-001", "passed")]);
     const ctx = makeMinimalContext();
 
-    await executeSequential(ctx, prd);
+    await executeUnified(ctx, prd);
 
     // AC #2: heartbeat must still be active so runner.ts regression gate is protected.
-    // FAILS now: current finally block calls stopHeartbeat(), clearing the timer.
     expect(_isHeartbeatActive()).toBe(true);
   });
 
@@ -184,23 +180,25 @@ describe("RL-007 AC#2: heartbeat remains active after executeSequential returns"
     const prd = makeCompletePRD([makeStory("US-001", "skipped"), makeStory("US-002", "skipped")]);
     const ctx = makeMinimalContext();
 
-    const result = await executeSequential(ctx, prd);
+    const result = await executeUnified(ctx, prd);
 
     expect(result.exitReason).toBe("completed");
-    // FAILS now: stopHeartbeat() in finally clears the timer prematurely.
     expect(_isHeartbeatActive()).toBe(true);
   });
 
   test("finally block does not call stopHeartbeat", async () => {
-    const srcPath = join(__dirname, "../../../src/execution/sequential-executor.ts");
+    const srcPath = join(__dirname, "../../../src/execution/unified-executor.ts");
     const src = await Bun.file(srcPath).text();
 
     const finallyBlocks = extractFinallyBlocks(src);
     expect(finallyBlocks.length).toBeGreaterThan(0);
 
     for (const block of finallyBlocks) {
-      // AC #2: no finally block should stop the heartbeat — runner.ts owns lifecycle
-      expect(block).not.toContain("stopHeartbeat()");
+      // Strip single-line comments before checking — the comment may mention
+      // stopHeartbeat() to explain why it is NOT called, which is intentional.
+      const blockCode = block.replace(/\/\/[^\n]*/g, "");
+      // AC #2: no finally block should actually call stopHeartbeat — runner.ts owns lifecycle
+      expect(blockCode).not.toContain("stopHeartbeat()");
     }
   });
 });

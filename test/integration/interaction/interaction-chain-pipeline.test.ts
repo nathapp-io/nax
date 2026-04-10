@@ -20,7 +20,7 @@ import { CLIInteractionPlugin } from "../../../src/interaction/plugins/cli";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse, TriggerName } from "../../../src/interaction/types";
 import { TRIGGER_METADATA } from "../../../src/interaction/types";
 import type { PipelineContext } from "../../../src/pipeline/types";
-import type { SequentialExecutionContext } from "../../../src/execution/sequential-executor";
+import type { SequentialExecutionContext } from "../../../src/execution/unified-executor";
 import type { PRD, UserStory } from "../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     chain.register(plugin, 10);
 
     // When human-review returns 'skip', the story outcome should be 'skipped'
-    const { executeSequential } = await import("../../../src/execution/sequential-executor");
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
 
     const exhaustedStory: UserStory = {
       ...baseStory,
@@ -384,9 +384,9 @@ describe("AC2: max retries triggers human-review interaction", () => {
       status: "pending",
     };
 
-    // We cannot run full executeSequential (spawns agents, prechecks, etc.)
+    // We cannot run full executeUnified (spawns agents, prechecks, etc.)
     // Instead, verify the interactionChain is passed correctly and used
-    // This test serves as a sentinel: after BUG-025, executeSequential must accept interactionChain
+    // This test serves as a sentinel: executeUnified accepts interactionChain via SequentialExecutionContext
     const seqCtx = {
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",

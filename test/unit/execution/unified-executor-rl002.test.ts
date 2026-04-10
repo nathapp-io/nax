@@ -1,18 +1,15 @@
 /**
- * RL-002: sequential-executor.ts no longer emits run:completed
+ * RL-002: unified-executor.ts no longer emits run:completed
  *
  * Acceptance Criteria Tested:
- * - AC #2: sequential-executor.ts does NOT emit run:completed event
+ * - AC #2: unified-executor.ts does NOT emit run:completed event
  *   (the event must be emitted by runner.ts AFTER handleRunCompletion finishes)
- *
- * These tests are RED (failing) until the RL-002 implementation removes
- * the premature run:completed emission from sequential-executor.ts.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { type SequentialExecutionContext, executeSequential } from "../../../src/execution/sequential-executor";
+import { type SequentialExecutionContext, executeUnified } from "../../../src/execution/unified-executor";
 import { _runCompletionDeps, handleRunCompletion } from "../../../src/execution/lifecycle/run-completion";
 import type { LoadedHooksConfig } from "../../../src/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "../../../src/pipeline/event-bus";
@@ -124,19 +121,19 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("RL-002: sequential-executor does not emit run:completed", () => {
+describe("RL-002: unified-executor does not emit run:completed", () => {
   test("does not emit run:completed when PRD is complete at start of loop", async () => {
     const prd = makeCompletePRD([makeStory("US-001", "passed")]);
     const ctx = makeMinimalContext();
 
-    const result = await executeSequential(ctx, prd);
+    const result = await executeUnified(ctx, prd);
 
     expect(result.exitReason).toBe("completed");
 
     const runCompletedEvents = capturedEvents.filter(
       (ev): ev is RunCompletedEvent => ev.type === "run:completed",
     );
-    // AC #2: sequential-executor must NOT emit run:completed
+    // AC #2: unified-executor must NOT emit run:completed
     expect(runCompletedEvents).toHaveLength(0);
   });
 
@@ -144,7 +141,7 @@ describe("RL-002: sequential-executor does not emit run:completed", () => {
     const prd = makeCompletePRD([makeStory("US-001", "skipped"), makeStory("US-002", "skipped")]);
     const ctx = makeMinimalContext();
 
-    const result = await executeSequential(ctx, prd);
+    const result = await executeUnified(ctx, prd);
 
     expect(result.exitReason).toBe("completed");
 
@@ -160,7 +157,7 @@ describe("RL-002: sequential-executor does not emit run:completed", () => {
     ]);
     const ctx = makeMinimalContext();
 
-    const result = await executeSequential(ctx, prd);
+    const result = await executeUnified(ctx, prd);
 
     expect(result.exitReason).toBe("completed");
 
@@ -172,7 +169,7 @@ describe("RL-002: sequential-executor does not emit run:completed", () => {
     const prd = makeCompletePRD();
     const ctx = makeMinimalContext();
 
-    const result = await executeSequential(ctx, prd);
+    const result = await executeUnified(ctx, prd);
 
     // The executor should still return the correct exit reason
     expect(result.exitReason).toBe("completed");
@@ -197,6 +194,7 @@ describe("RL-002: run:completed event payload requirements", () => {
       passedTests: 2,
       rectificationAttempts: 0,
       affectedStories: [],
+      failedTestFiles: [],
     }));
 
     try {
@@ -245,6 +243,7 @@ describe("RL-002: run:completed event payload requirements", () => {
       passedTests: 2,
       rectificationAttempts: 0,
       affectedStories: ["US-003"],
+      failedTestFiles: [],
     }));
 
     try {
