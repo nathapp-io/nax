@@ -215,6 +215,66 @@ describe("PRD Auto-Default — missing fields are defaulted on load", () => {
     expect(afterLoadContent).toBe(originalContent);
   });
 
+  test("strips suggestedCriteria: [] to undefined in loadPRD (#336 gap 1)", async () => {
+    const prd: PRD = {
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "test-branch",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: ["AC1"],
+          suggestedCriteria: [] as string[],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        } as any,
+      ],
+    };
+
+    await savePRD(prd, prdPath);
+    const loaded = await loadPRD(prdPath);
+
+    expect(loaded.userStories[0].suggestedCriteria).toBeUndefined();
+  });
+
+  test("preserves non-empty suggestedCriteria in loadPRD", async () => {
+    const prd: PRD = {
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "test-branch",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: ["AC1"],
+          suggestedCriteria: ["edge case A", "edge case B"],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        } as any,
+      ],
+    };
+
+    await savePRD(prd, prdPath);
+    const loaded = await loadPRD(prdPath);
+
+    expect(loaded.userStories[0].suggestedCriteria).toEqual(["edge case A", "edge case B"]);
+  });
+
   test("loadPRD handles all missing fields simultaneously", async () => {
     const prd: PRD = {
       project: "test-project",
