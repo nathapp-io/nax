@@ -292,7 +292,6 @@ describe("autofixStage", () => {
         },
       }) as any;
     _autofixDeps.recheckReview = async () => false;
-    _autofixDeps.loadConfigForWorkdir = async () => null;
 
     const ctx = makeCtx({
       reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
