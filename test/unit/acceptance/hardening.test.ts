@@ -318,6 +318,56 @@ describe("runHardeningPass()", () => {
     expect(result.discarded).toEqual([]);
   });
 
+  test("mapping loop driven from allRefined prevents AC index drift when refine count changes (#336 gap 4)", async () => {
+    const story = {
+      id: "US-001",
+      title: "Story",
+      description: "Desc",
+      acceptanceCriteria: ["spec AC"],
+      // 3 suggested criteria, but refine deduplicates to 2
+      suggestedCriteria: ["dup criterion A", "dup criterion A", "passing criterion"],
+      tags: [],
+      dependencies: [],
+      status: "passed" as const,
+      passes: true,
+      escalations: [],
+      attempts: 1,
+    };
+    const prd = makePRD({ userStories: [story] });
+    const ctx = makeCtx({ prd });
+
+    // Refiner deduplicates: returns only 2 criteria instead of 3
+    _hardeningDeps.refine = mock(async () => ({
+      criteria: [
+        { original: "dup criterion A", refined: "dup criterion A", testable: true, storyId: "US-001" },
+        { original: "passing criterion", refined: "passing criterion", testable: true, storyId: "US-001" },
+      ],
+      costUsd: 0,
+    }));
+    _hardeningDeps.generate = mock(async () => ({
+      testCode: 'test("AC-1", () => {})\ntest("AC-2", () => {})',
+      criteria: [
+        { id: "AC-1", text: "dup criterion A", lineNumber: 1 },
+        { id: "AC-2", text: "passing criterion", lineNumber: 2 },
+      ],
+      costUsd: 0,
+    }));
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    // Both tests pass
+    _hardeningDeps.spawn = mock(() => ({
+      exited: Promise.resolve(0),
+      stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+    } as ReturnType<typeof Bun.spawn>));
+
+    const result = await runHardeningPass(ctx);
+
+    // Both refined criteria pass — only the 2 returned by refine are promoted
+    expect(result.promoted).toEqual(["dup criterion A", "passing criterion"]);
+    expect(result.discarded).toEqual([]);
+  });
+
   test("accumulates costUsd from refine and generate sub-calls (#336 gap 3)", async () => {
     const story = {
       id: "US-001",

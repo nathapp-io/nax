@@ -148,24 +148,31 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     const failedACs = parseTestFailures(output);
     const failedSet = new Set(failedACs.map((ac) => ac.toUpperCase()));
 
-    // Map AC indices back to suggested criteria
-    // allRefined is in the same iteration order, so allRefined[acIndex - 1] is the
-    // refined version of criterion at position acIndex (1-based).
+    // Group allRefined by storyId so the mapping loop is driven by the refined
+    // criteria (not the original suggestedCriteria). This prevents AC index drift
+    // if refineAcceptanceCriteria ever changes the criterion count (#336 gap 4).
+    const refinedByStory = new Map<string, RefinedCriterion[]>();
+    for (const r of allRefined) {
+      const list = refinedByStory.get(r.storyId) ?? [];
+      list.push(r);
+      refinedByStory.set(r.storyId, list);
+    }
+
     let acIndex = 0;
     for (const story of storiesWithSuggested) {
-      const suggested = story.suggestedCriteria ?? [];
+      const storyRefined = refinedByStory.get(story.id) ?? [];
       const toPromote: string[] = [];
       const toDiscard: string[] = [];
 
-      for (const criterion of suggested) {
+      for (const refinedCriterion of storyRefined) {
         acIndex++;
         const acId = `AC-${acIndex}`;
-        const nonTestable = allRefined[acIndex - 1]?.testable === false;
+        const nonTestable = refinedCriterion.testable === false;
         if (nonTestable || failedSet.has(acId) || (exitCode !== 0 && failedACs.length === 0)) {
           // Discard: non-testable implementation detail, failed, or test crashed
-          toDiscard.push(criterion);
+          toDiscard.push(refinedCriterion.original);
         } else {
-          toPromote.push(criterion);
+          toPromote.push(refinedCriterion.original);
         }
       }
 
