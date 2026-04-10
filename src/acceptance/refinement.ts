@@ -11,7 +11,7 @@ import { resolveModelForAgent } from "../config";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { extractJsonFromMarkdown, stripTrailingCommas, wrapJsonPrompt } from "../utils/llm-json";
-import type { RefinedCriterion, RefinementContext } from "./types";
+import type { RefineResult, RefinedCriterion, RefinementContext } from "./types";
 
 /**
  * Injectable dependencies — allows tests to mock adapter.complete()
@@ -187,12 +187,9 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
  * @param context - Refinement context (storyId, codebase context, config)
  * @returns Promise resolving to array of refined criteria
  */
-export async function refineAcceptanceCriteria(
-  criteria: string[],
-  context: RefinementContext,
-): Promise<RefinedCriterion[]> {
+export async function refineAcceptanceCriteria(criteria: string[], context: RefinementContext): Promise<RefineResult> {
   if (criteria.length === 0) {
-    return [];
+    return { criteria: [], costUsd: 0 };
   }
 
   const {
@@ -236,22 +233,22 @@ export async function refineAcceptanceCriteria(
       sessionRole: "refine",
       timeoutMs: config.acceptance?.timeoutMs ?? 120_000,
     });
+    const costUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
     response = typeof completeResult === "string" ? completeResult : completeResult.output;
+
+    const parsed = parseRefinementResponse(response, criteria);
+    return {
+      criteria: parsed.map((item) => ({ ...item, storyId: item.storyId || storyId })),
+      costUsd,
+    };
   } catch (error) {
     const reason = errorMessage(error);
     logger.warn("refinement", "adapter.complete() failed, falling back to original criteria", {
       storyId,
       error: reason,
     });
-    return fallbackCriteria(criteria, storyId);
+    return { criteria: fallbackCriteria(criteria, storyId), costUsd: 0 };
   }
-
-  const parsed = parseRefinementResponse(response, criteria);
-
-  return parsed.map((item) => ({
-    ...item,
-    storyId: item.storyId || storyId,
-  }));
 }
 
 /**

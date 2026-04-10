@@ -56,6 +56,9 @@ export async function loadPRD(path: string): Promise<PRD> {
     if (rawStatus === "done") story.status = "passed";
     story.status = story.status ?? "pending";
     story.acceptanceCriteria = story.acceptanceCriteria ?? [];
+    if (Array.isArray(story.suggestedCriteria) && story.suggestedCriteria.length === 0) {
+      story.suggestedCriteria = undefined;
+    }
     story.storyPoints = story.storyPoints ?? 1;
   }
 

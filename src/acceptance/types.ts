@@ -8,6 +8,14 @@ import type { AgentAdapter } from "../agents/types";
 import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
 /**
+ * Return value of refineAcceptanceCriteria — criteria plus cost metadata.
+ */
+export interface RefineResult {
+  criteria: RefinedCriterion[];
+  costUsd: number;
+}
+
+/**
  * A single refined acceptance criterion produced by the refinement module.
  */
 export interface RefinedCriterion {
@@ -153,6 +161,8 @@ export interface AcceptanceTestResult {
   testCode: string;
   /** Acceptance criteria that were processed */
   criteria: AcceptanceCriterion[];
+  /** LLM cost for this generation call in USD (0 when not available) */
+  costUsd?: number;
 }
 
 /**

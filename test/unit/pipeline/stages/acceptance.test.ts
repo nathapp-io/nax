@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { acceptanceStage } from "../../../../src/pipeline/stages/acceptance";
+import { acceptanceStage, parseTestFailures } from "../../../../src/pipeline/stages/acceptance";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 
@@ -199,5 +199,64 @@ describe("acceptanceStage.enabled()", () => {
       } as any,
     });
     expect(acceptanceStage.enabled(ctx)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseTestFailures — multi-framework failure marker support (#336 gap 2)
+// ---------------------------------------------------------------------------
+
+describe("parseTestFailures()", () => {
+  test("Bun/Jest: extracts AC IDs from (fail) lines", () => {
+    const output = [
+      "  ✓ AC-1: TTL expiry",
+      "  (fail) AC-2: handles empty input",
+      "  ✓ AC-3: validates format",
+      "  (fail) AC-4: rejects null",
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual(["AC-2", "AC-4"]);
+  });
+
+  test("Go: extracts AC IDs from --- FAIL: lines", () => {
+    const output = [
+      "--- PASS: TestAC1TTLExpiry (0.00s)",
+      "--- FAIL: TestAC-2_handles_empty (0.01s)",
+      "--- PASS: TestAC3ValidatesFormat (0.00s)",
+      "--- FAIL: TestAC_4_rejects_null (0.00s)",
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual(["AC-2", "AC-4"]);
+  });
+
+  test("pytest: extracts AC IDs from FAILED lines", () => {
+    const output = [
+      "tests/test_feature.py::test_AC_1_ttl_expiry PASSED",
+      "FAILED tests/test_feature.py::test_AC_2_empty_input - AssertionError",
+      "tests/test_feature.py::test_AC_3_validates PASSED",
+      "FAILED tests/test_feature.py::test_AC_4_null",
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual(["AC-2", "AC-4"]);
+  });
+
+  test("deduplicates AC IDs across multiple matching lines", () => {
+    const output = [
+      "  (fail) AC-1: first failure",
+      "--- FAIL: TestAC_1_something (0.00s)",
+      "FAILED tests::test_AC_1_other",
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual(["AC-1"]);
+  });
+
+  test("returns empty array when no failures", () => {
+    const output = [
+      "  ✓ AC-1: passes",
+      "--- PASS: TestAC1Something (0.00s)",
+      "tests::test_AC_1_thing PASSED",
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual([]);
   });
 });

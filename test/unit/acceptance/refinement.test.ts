@@ -312,10 +312,10 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       config,
     });
 
-    expect(Array.isArray(result)).toBe(true);
-    expect(result).toHaveLength(SAMPLE_CRITERIA.length);
+    expect(Array.isArray(result.criteria)).toBe(true);
+    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
     for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
-      expect(result[i].original).toBe(SAMPLE_CRITERIA[i]);
+      expect(result.criteria[i].original).toBe(SAMPLE_CRITERIA[i]);
     }
   });
 
@@ -332,7 +332,7 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       config,
     });
 
-    for (const item of result) {
+    for (const item of result.criteria) {
       expect(typeof item.refined).toBe("string");
       expect(item.refined.length).toBeGreaterThan(0);
     }
@@ -407,8 +407,8 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       config,
     });
 
-    expect(result).toHaveLength(SAMPLE_CRITERIA.length);
-    for (const item of result) {
+    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
+    for (const item of result.criteria) {
       expect(item.testable).toBe(false);
     }
   });
@@ -427,7 +427,7 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       config,
     });
 
-    for (const item of result) {
+    for (const item of result.criteria) {
       expect(item.storyId).toBe(customStoryId);
     }
   });
@@ -447,7 +447,7 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       config,
     });
 
-    expect(result).toHaveLength(0);
+    expect(result.criteria).toHaveLength(0);
     expect(adapterCalled).toBe(false);
   });
 
@@ -462,10 +462,10 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       config,
     });
 
-    expect(result).toHaveLength(SAMPLE_CRITERIA.length);
+    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
     for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
-      expect(result[i].original).toBe(SAMPLE_CRITERIA[i]);
-      expect(result[i].refined).toBe(SAMPLE_CRITERIA[i]);
+      expect(result.criteria[i].original).toBe(SAMPLE_CRITERIA[i]);
+      expect(result.criteria[i].refined).toBe(SAMPLE_CRITERIA[i]);
     }
   });
 
@@ -483,10 +483,10 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     });
 
     // Should return fallback results, not throw
-    expect(Array.isArray(result)).toBe(true);
-    expect(result).toHaveLength(SAMPLE_CRITERIA.length);
+    expect(Array.isArray(result.criteria)).toBe(true);
+    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
     for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
-      expect(result[i].original).toBe(SAMPLE_CRITERIA[i]);
+      expect(result.criteria[i].original).toBe(SAMPLE_CRITERIA[i]);
     }
   });
 });
