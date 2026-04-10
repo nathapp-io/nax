@@ -159,6 +159,31 @@ describe("completionStage — semantic verdict persistence (AC-4)", () => {
     });
   });
 
+  test("writes a verdict file for each story in a batch (2 stories → 2 calls)", async () => {
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+
+      const persistCalls: string[] = [];
+      _completionDeps.persistSemanticVerdict = mock(async (_dir, storyId) => {
+        persistCalls.push(storyId);
+      });
+
+      const story1 = makeStory("US-001");
+      const story2 = makeStory("US-002");
+      const prd: PRD = { ...makePRD(), userStories: [story1, story2] };
+      const ctx = makeCtx(tempDir, makeReviewResult({ semanticSuccess: true }));
+      ctx.story = story1;
+      (ctx as any).stories = [story1, story2];
+      (ctx as any).prd = prd;
+
+      await completionStage.execute(ctx);
+
+      expect(persistCalls).toHaveLength(2);
+      expect(persistCalls).toContain("US-001");
+      expect(persistCalls).toContain("US-002");
+    });
+  });
+
   test("passes verdict with correct storyId to persistSemanticVerdict", async () => {
     await withTempDir(async (tempDir) => {
       const { completionStage } = await import("../../../../src/pipeline/stages/completion");
