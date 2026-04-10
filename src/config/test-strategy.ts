@@ -152,6 +152,19 @@ export function getAcQualityRules(profile?: ProjectProfile): string {
   return `${AC_QUALITY_RULES}\n\n${extras}`;
 }
 
+/**
+ * Spec fidelity rules — injected into buildPlanningPrompt() when a spec is provided.
+ * Mirrors the synthesis anchor in session-plan.ts (debate mode) but for non-debate plan runs.
+ */
+export const SPEC_ANCHOR_RULES = `## Spec Fidelity Rules
+
+When a spec is provided, these rules govern acceptance criteria generation:
+
+1. **Preserve spec ACs.** Every acceptance criterion stated in the spec must appear in \`acceptanceCriteria\`, verbatim or lightly rephrased for testability. Never silently drop a spec AC.
+2. **Do not invent spec ACs.** If you identify useful behavioral edge cases or negative paths that the spec did not explicitly list, place them in \`suggestedCriteria\` (a string array on the same story object) — never in \`acceptanceCriteria\`. These go through a separate hardening pass.
+3. **Respect story scope.** Each story's criteria must only cover what the spec says for that story. Do not assign criteria that belong to a different story's scope (wrong feature area, wrong file, wrong dependency chain).
+4. **\`suggestedCriteria\` format.** Each element must be a plain behavioral assertion — an observable output, return value, state change, or error condition that a test can assert. Never include implementation details (imports, internal structure), design suggestions, or vague descriptions.`;
+
 export const GROUPING_RULES = `## Story Rules
 
 - Every story must produce code changes verifiable by tests or review.

@@ -610,3 +610,45 @@ describe("buildPlanningPrompt (ENH-006)", () => {
     expect(outputFormat).not.toContain("Step 1");
   });
 });
+
+// ─── fix #346: spec anchor rules (non-debate plan mode) ──────────────────────
+
+describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
+  const spec = "## Acceptance Criteria\n- AC-1: Returns 200 when project exists";
+  const ctx = "## Codebase Structure\nsrc/projects/projects.service.ts";
+
+  test("spec anchor rules included in taskContext when specContent is non-empty", () => {
+    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    expect(taskContext).toContain("Preserve spec ACs");
+  });
+
+  test("spec anchor rules NOT included when specContent is empty string", () => {
+    const { taskContext } = buildPlanningPrompt("", ctx);
+    expect(taskContext).not.toContain("Preserve spec ACs");
+  });
+
+  test("taskContext tells planner to put invented ACs in suggestedCriteria", () => {
+    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    expect(taskContext).toContain("suggestedCriteria");
+  });
+
+  test("outputFormat schema includes suggestedCriteria field when spec is provided", () => {
+    const { outputFormat } = buildPlanningPrompt(spec, ctx);
+    expect(outputFormat).toContain("suggestedCriteria");
+  });
+
+  test("outputFormat schema does NOT include suggestedCriteria when spec is empty", () => {
+    const { outputFormat } = buildPlanningPrompt("", ctx);
+    expect(outputFormat).not.toContain("suggestedCriteria");
+  });
+
+  test("taskContext instructs planner to never drop a spec AC", () => {
+    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    expect(taskContext).toContain("Never silently drop");
+  });
+
+  test("taskContext instructs planner to keep story scope — no cross-story ACs", () => {
+    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    expect(taskContext).toContain("story scope");
+  });
+});
