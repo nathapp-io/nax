@@ -25,7 +25,7 @@ import type { AgentGetFn } from "../../pipeline/types";
 import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
-import { loadPRD } from "../../prd";
+import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
@@ -252,7 +252,20 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       agentGetFn: options.agentGetFn,
     });
     prd = initResult.prd;
-    const counts = initResult.storyCounts;
+    // initializeRun calls loadPRD() internally, producing a new object.
+    // Re-prime statusWriter so crash handlers during the prompt window see current state (#356).
+    statusWriter.setPrd(prd);
+    let counts = initResult.storyCounts;
+
+    // Prompt user for each paused story — skip in headless mode
+    if (counts.paused > 0 && interactionChain !== null) {
+      const { promptForPausedStories } = await import("./paused-story-prompts");
+      const pausedSummary = await promptForPausedStories(prd, interactionChain, feature);
+      if (pausedSummary.resumed.length > 0 || pausedSummary.skipped.length > 0) {
+        await savePRD(prd, prdPath);
+        counts = countStories(prd);
+      }
+    }
 
     return {
       statusWriter,
