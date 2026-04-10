@@ -20,7 +20,13 @@ import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { ProjectProfile } from "../config/runtime-types";
-import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, getAcQualityRules } from "../config/test-strategy";
+import {
+  COMPLEXITY_GUIDE,
+  GROUPING_RULES,
+  SPEC_ANCHOR_RULES,
+  TEST_STRATEGY_GUIDE,
+  getAcQualityRules,
+} from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
 import { DebateSession } from "../debate";
 import type { DebateSessionOptions, DebateStageConfig } from "../debate";
@@ -635,6 +641,8 @@ export function buildPlanningPrompt(
     ? `\n      "workdir": "string — optional, relative path to package (e.g. \\"packages/api\\"). Omit for root-level stories.",`
     : "";
 
+  const specAnchorSection = specContent.trim() ? `\n\n${SPEC_ANCHOR_RULES}` : "";
+
   const taskContext = `You are a senior software architect generating a product requirements document (PRD) as JSON.
 
 ## Step 1: Understand the Spec
@@ -675,7 +683,7 @@ Based on your Step 2 analysis, create stories that produce CODE CHANGES.
 
 ${GROUPING_RULES}
 
-${getAcQualityRules(projectProfile)}
+${getAcQualityRules(projectProfile)}${specAnchorSection}
 
 For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference.
 
@@ -699,7 +707,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "id": "string — e.g. US-001",
       "title": "string — concise story title",
       "description": "string — detailed description of the story",
-      "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC. Never include quality gates."],
+      "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC. Never include quality gates."],${specContent.trim() ? `\n      "suggestedCriteria": ["string — optional. Behavioral edge cases or negative paths you identified that are NOT in the spec. Plain assertions only — observable outputs, return values, state changes, or error conditions. No implementation details or vague descriptions. Omit this field if empty."],` : ""}
       "contextFiles": ["string — key source files the agent should read (max 5, relative paths)"],
       "tags": ["string — routing tags, e.g. feature, security, api"],
       "dependencies": ["string — story IDs this story depends on"],${workdirField}
