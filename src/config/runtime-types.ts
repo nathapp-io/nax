@@ -249,8 +249,8 @@ export interface PlanConfig {
   outputPath: string;
   /** Timeout for plan sessions in seconds (default: 600) */
   timeoutSeconds?: number;
-  /** Override timeout for decompose calls in ms. Defaults to plan.timeoutSeconds * 1000. */
-  decomposeTimeoutMs?: number;
+  /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
+  decomposeTimeoutSeconds?: number;
 }
 
 /** Valid test strategy values for acceptance testing */

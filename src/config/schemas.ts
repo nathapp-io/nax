@@ -316,8 +316,8 @@ const PlanConfigSchema = z.object({
   model: ModelTierSchema,
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
   timeoutSeconds: z.number().int().positive().default(600),
-  /** Override timeout for decompose calls in ms. Defaults to plan.timeoutSeconds * 1000. */
-  decomposeTimeoutMs: z.number().int().min(30_000).max(1_800_000).optional(),
+  /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
+  decomposeTimeoutSeconds: z.number().int().min(30).max(1_800).optional(),
 });
 
 const AcceptanceFixConfigSchema = z.object({
