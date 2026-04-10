@@ -68,12 +68,33 @@ export function parseTestFailures(output: string): string[] {
   const lines = output.split("\n");
 
   for (const line of lines) {
-    // Look for Bun's (fail) marker followed by AC-N pattern
-    // Pattern: (fail) ... > AC-N: description
+    // Primary: Bun/Jest "(fail)" marker — "AC-N: description"
     if (line.includes("(fail)")) {
       const acMatch = line.match(/(AC-\d+):/i);
       if (acMatch) {
         const acId = acMatch[1].toUpperCase();
+        if (!failedACs.includes(acId)) {
+          failedACs.push(acId);
+        }
+      }
+    }
+
+    // Secondary: Go "--- FAIL: TestAC-1_desc (0.00s)" or "--- FAIL: TestAC1Desc"
+    if (line.includes("--- FAIL:")) {
+      const acMatch = line.match(/AC[-_]?(\d+)/i);
+      if (acMatch) {
+        const acId = `AC-${acMatch[1]}`;
+        if (!failedACs.includes(acId)) {
+          failedACs.push(acId);
+        }
+      }
+    }
+
+    // Secondary: pytest "FAILED tests/...::test_AC_1_desc"
+    if (/FAILED\s/.test(line)) {
+      const acMatch = line.match(/AC[-_]?(\d+)/i);
+      if (acMatch) {
+        const acId = `AC-${acMatch[1]}`;
         if (!failedACs.includes(acId)) {
           failedACs.push(acId);
         }
