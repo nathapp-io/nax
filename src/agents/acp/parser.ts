@@ -83,6 +83,20 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): void {
         }
       }
 
+      // JSON-RPC error response — capture the actual failure reason from acpx/codex
+      if (event.error && typeof event.error === "object") {
+        const err = event.error as Record<string, unknown>;
+        let errorMsg = typeof err.message === "string" ? err.message : JSON.stringify(event.error);
+        // Append acpxCode/detailCode from data for richer context
+        if (err.data && typeof err.data === "object") {
+          const data = err.data as Record<string, unknown>;
+          const suffix = [data.acpxCode, data.detailCode].filter(Boolean).join("/");
+          if (suffix) errorMsg = `${errorMsg} [${suffix}]`;
+        }
+        // First error wins — preserves the root cause if acpx emits a cascade of errors
+        if (!state.error) state.error = errorMsg;
+      }
+
       return;
     }
 

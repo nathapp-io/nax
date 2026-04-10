@@ -590,7 +590,10 @@ export class AcpAgentAdapter implements AgentAdapter {
         const result = await this._runWithClient(options, startTime, currentAgent);
 
         if (!result.success) {
-          getSafeLogger()?.warn("acp-adapter", `Run failed for ${currentAgent}`, { exitCode: result.exitCode });
+          getSafeLogger()?.warn("acp-adapter", `Run failed for ${currentAgent}`, {
+            exitCode: result.exitCode,
+            ...(result.output ? { output: result.output.slice(0, 500) } : {}),
+          });
 
           // BUG-122: session error (acpx exit code 4 — stale/locked session) — retry once
           // with a fresh session when _acpAdapterDeps.shouldRetrySessionError is set.

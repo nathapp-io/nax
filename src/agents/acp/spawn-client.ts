@@ -201,13 +201,22 @@ class SpawnAcpSession implements AcpSession {
       ]);
 
       if (exitCode !== 0) {
+        // Prefer parsed stdout error (JSON-RPC error response from acpx) over raw stderr.
+        // stderr at this point is typically the acpx session banner ("agent needs reconnect")
+        // which describes connection state, not the actual failure reason.
+        const parsedOnError = finalizeParseState(parseState);
+        // Prefer the parsed JSON-RPC error from stdout over raw stderr.
+        // Do NOT fall back to parsedOnError.text — it may be partial streaming content
+        // accumulated before the crash and would mislead error classification callers.
+        const errorContent = parsedOnError.error || stderr || `Exit code ${exitCode}`;
         getSafeLogger()?.warn("acp-adapter", `Session prompt exited with code ${exitCode}`, {
           exitCode,
-          stderr: stderr.slice(0, 500),
+          error: errorContent.slice(0, 500),
+          ...(stderr && stderr !== errorContent ? { banner: stderr.trim().slice(0, 200) } : {}),
         });
         // Return error response so the adapter can handle it
         return {
-          messages: [{ role: "assistant", content: stderr || `Exit code ${exitCode}` }],
+          messages: [{ role: "assistant", content: errorContent }],
           stopReason: "error",
         };
       }
