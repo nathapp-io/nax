@@ -90,27 +90,89 @@ A **completely different approach** is required. Do not repeat what you have alr
   });
 }
 
+/** Number of failing files above which rectification falls back to a full-suite run instead of per-file commands. */
+const DEFAULT_SCOPE_FILE_THRESHOLD = 10;
+
+/**
+ * Deduplicate TestFailure[] by (file, testName).
+ * When the same suite is parsed twice (e.g. run output + regression detector),
+ * identical entries are concatenated without dedup. This ensures each distinct
+ * failure appears only once in the rectification prompt.
+ */
+function deduplicateFailures(failures: TestFailure[]): TestFailure[] {
+  const seen = new Set<string>();
+  return failures.filter((f) => {
+    const key = `${f.file}\0${f.testName}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Normalize a failure file path to repo-root-relative form.
+ * Strips leading "../" sequences that appear when a sub-package test runner
+ * (e.g. running from apps/api/) reports paths relative to its own cwd.
+ */
+function normalizeFailurePath(file: string): string {
+  let normalized = file;
+  while (normalized.startsWith("../")) {
+    normalized = normalized.slice(3);
+  }
+  return normalized;
+}
+
 /**
  * Create a rectification prompt with failure context.
  *
  * Includes:
  * - Progressive escalation preamble when attempt >= rethinkAtAttempt (or urgencyAtAttempt)
  * - Clear instructions about test regressions
- * - Formatted failure summary
- * - Specific test commands for failing files
+ * - Formatted failure summary (duplicates removed)
+ * - Per-file test commands when failing files ≤ scopeFileThreshold; full-suite command otherwise
+ *   (mirrors the ScopedStrategy fallback pattern from quality.scopeTestThreshold)
+ * - testScopedTemplate (e.g. "jest --testPathPattern={{files}}") is used for per-file commands
+ *   when set; falls back to "${testCommand} <file>" (mirrors scoped.ts buildScopedCommand)
  */
 export function createRectificationPrompt(
   failures: TestFailure[],
   story: UserStory,
   config?: RectificationConfig,
+  /** Attempt number for progressive escalation preamble. Pass undefined to suppress. */
   attempt?: number,
+  /** Full-suite test command (quality.commands.test). Used for full-suite fallback and as base for scoped commands. */
+  testCommand?: string,
+  /** Max failing files before falling back to full suite (quality.scopeTestThreshold). */
+  scopeFileThreshold?: number,
+  /** Scoped test command template with {{files}} placeholder (quality.commands.testScoped). Used for per-file commands when set. */
+  testScopedTemplate?: string,
 ): string {
+  const uniqueFailures = deduplicateFailures(failures);
   const maxChars = config?.maxFailureSummaryChars ?? 2000;
-  const failureSummary = formatFailureSummary(failures, maxChars);
+  const failureSummary = formatFailureSummary(uniqueFailures, maxChars);
 
-  // Extract unique failing test files
-  const failingFiles = Array.from(new Set(failures.map((f) => f.file)));
-  const testCommands = failingFiles.map((file) => `  bun test ${file}`).join("\n");
+  const cmd = testCommand ?? "bun test";
+  const threshold = scopeFileThreshold ?? DEFAULT_SCOPE_FILE_THRESHOLD;
+
+  // Extract unique failing test files (normalized)
+  const allFiles = Array.from(new Set(uniqueFailures.map((f) => normalizeFailurePath(f.file))));
+
+  let testCommands: string;
+  let filterNote: string;
+  if (allFiles.length > threshold) {
+    // Full-suite fallback: too many failing files — scoped commands would mislead the agent
+    testCommands = `  ${cmd}`;
+    filterNote = `- ${allFiles.length} files are failing — run the full suite to catch all regressions at once.`;
+  } else {
+    // Scoped commands: one per unique failing file, using testScopedTemplate when available
+    testCommands = allFiles
+      .map((file) => {
+        const scopedCmd = testScopedTemplate ? testScopedTemplate.replace("{{files}}", file) : `${cmd} ${file}`;
+        return `  ${scopedCmd}`;
+      })
+      .join("\n");
+    filterNote = `- When running tests, run ONLY the failing test files shown above — NEVER run \`${cmd}\` without a file filter.`;
+  }
 
   // Progressive escalation preamble (empty string on attempt 1 or when thresholds not met)
   const preamble = config && attempt !== undefined && attempt > 1 ? buildEscalationPreamble(attempt, config) : "";
@@ -152,7 +214,7 @@ ${testCommands}
 - Do NOT modify test files unless there is a legitimate bug in the test itself.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.
-- When running tests, run ONLY the failing test files shown above — NEVER run \`bun test\` without a file filter.
+${filterNote}
 `;
 }
 
@@ -174,13 +236,24 @@ export function createEscalatedRectificationPrompt(
   originalTier: string,
   targetTier: string,
   config?: RectificationConfig,
+  /** Full-suite test command (quality.commands.test). */
+  testCommand?: string,
+  /** Scoped test command template with {{files}} placeholder (quality.commands.testScoped). Used for per-file commands when set. */
+  testScopedTemplate?: string,
 ): string {
   const maxChars = config?.maxFailureSummaryChars ?? 2000;
   const failureSummary = formatFailureSummary(failures, maxChars);
 
+  const cmd = testCommand ?? "bun test";
+
   // Extract unique failing test files
   const failingFiles = Array.from(new Set(failures.map((f) => f.file)));
-  const testCommands = failingFiles.map((file) => `  bun test ${file}`).join("\n");
+  const testCommands = failingFiles
+    .map((file) => {
+      const scopedCmd = testScopedTemplate ? testScopedTemplate.replace("{{files}}", file) : `${cmd} ${file}`;
+      return `  ${scopedCmd}`;
+    })
+    .join("\n");
 
   // Build failing tests list with "and N more" truncation
   const failingTestNames = failures.map((f) => f.testName);
@@ -249,7 +322,7 @@ ${testCommands}
 - Do NOT modify test files unless there is a legitimate bug in the test itself.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.
-- When running tests, run ONLY the failing test files shown above — NEVER run \`bun test\` without a file filter.
+- When running tests, run ONLY the failing test files shown above — NEVER run \`${cmd}\` without a file filter.
 `;
 }
 

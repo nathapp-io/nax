@@ -12,7 +12,9 @@
  * - `escalate`                 — max retries exhausted
  */
 
+import { join } from "node:path";
 import { getLogger } from "../../logger";
+import { isMonorepoOrchestratorCommand } from "../../verification/strategies/scoped";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -60,7 +62,32 @@ export const rectifyStage: PipelineStage = {
     });
 
     const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test ?? "bun test";
-    const { succeeded, cost } = await _rectifyDeps.runRectificationLoop(ctx, { testCommand, testOutput });
+    const rawScopedTemplate = ctx.config.quality.commands.testScoped;
+
+    // Resolve {{package}} in testScoped template for monorepo stories (mirrors verify.ts).
+    // ctx.workdir is already the resolved package directory (MW-006).
+    let resolvedScopedTemplate = rawScopedTemplate;
+    if (rawScopedTemplate?.includes("{{package}}") && ctx.story.workdir) {
+      const pkgName = await _rectifyDeps.readPackageName(ctx.workdir);
+      resolvedScopedTemplate = pkgName !== null ? rawScopedTemplate.replaceAll("{{package}}", pkgName) : undefined;
+    }
+
+    // Monorepo orchestrators (turbo/nx) handle scoping natively via --filter.
+    // The resolved scoped template IS the run command; per-file expansion would break their syntax.
+    let effectiveTestCommand = testCommand;
+    let testScopedTemplate = resolvedScopedTemplate;
+    if (isMonorepoOrchestratorCommand(testCommand)) {
+      if (resolvedScopedTemplate && ctx.story.workdir) {
+        effectiveTestCommand = resolvedScopedTemplate;
+      }
+      testScopedTemplate = undefined; // no per-file expansion for orchestrators
+    }
+
+    const { succeeded, cost } = await _rectifyDeps.runRectificationLoop(ctx, {
+      testCommand: effectiveTestCommand,
+      testOutput,
+      testScopedTemplate,
+    });
 
     pipelineEventBus.emit({
       type: "rectify:completed",
@@ -86,7 +113,23 @@ export const rectifyStage: PipelineStage = {
 };
 
 /**
+ * Read the npm package name from <dir>/package.json.
+ * Returns null if not found or file has no name field.
+ */
+async function readPackageName(dir: string): Promise<string | null> {
+  try {
+    const content = await Bun.file(join(dir, "package.json")).json();
+    return typeof content.name === "string" ? content.name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Injectable deps for testing.
  */
 import { runRectificationLoopFromCtx } from "../../verification/rectification-loop";
-export const _rectifyDeps = { runRectificationLoop: runRectificationLoopFromCtx };
+export const _rectifyDeps = {
+  runRectificationLoop: runRectificationLoopFromCtx,
+  readPackageName,
+};

@@ -44,6 +44,12 @@ export interface RectificationLoopOptions {
   agentGetFn?: AgentGetFn;
   /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
   projectDir?: string;
+  /**
+   * Scoped test command template with {{files}} placeholder (quality.commands.testScoped).
+   * Already resolved: {{package}} substituted by the caller (rectify stage).
+   * Undefined for monorepo orchestrators (turbo/nx) — they do not support per-file expansion.
+   */
+  testScopedTemplate?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +139,7 @@ export async function runRectificationLoop(
     featureName,
     agentGetFn,
     projectDir,
+    testScopedTemplate,
   } = opts;
   const logger = getSafeLogger();
   const rectificationConfig = config.execution.rectification;
@@ -195,7 +202,15 @@ export async function runRectificationLoop(
         }
       }
 
-      let rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig, attempt);
+      let rectificationPrompt = createRectificationPrompt(
+        testSummary.failures,
+        story,
+        rectificationConfig,
+        attempt,
+        testCommand,
+        config.quality?.scopeTestThreshold,
+        testScopedTemplate,
+      );
       if (diagnosisPrefix) {
         rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;
       }
@@ -375,6 +390,8 @@ export async function runRectificationLoop(
         currentTier,
         escalatedTier,
         rectificationConfig,
+        testCommand,
+        testScopedTemplate,
       );
       if (promptPrefix) {
         escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
@@ -446,7 +463,7 @@ export async function runRectificationLoop(
  */
 export function runRectificationLoopFromCtx(
   ctx: PipelineContext,
-  opts: { testCommand: string; testOutput: string; promptPrefix?: string },
+  opts: { testCommand: string; testOutput: string; promptPrefix?: string; testScopedTemplate?: string },
 ): Promise<{ succeeded: boolean; cost: number }> {
   return runRectificationLoop({
     config: ctx.config,
@@ -459,5 +476,6 @@ export function runRectificationLoopFromCtx(
     featureName: ctx.prd.feature,
     agentGetFn: ctx.agentGetFn,
     projectDir: ctx.projectDir,
+    testScopedTemplate: opts.testScopedTemplate,
   });
 }

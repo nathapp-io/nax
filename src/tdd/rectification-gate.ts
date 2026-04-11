@@ -6,6 +6,7 @@
  * rectification retries if regressions are detected.
  */
 
+import { join } from "node:path";
 import type { AgentAdapter } from "../agents";
 import { buildSessionName } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
@@ -21,6 +22,7 @@ import {
   shouldRetryRectification as _shouldRetryRectification,
   runSharedRectificationLoop,
 } from "../verification";
+import { isMonorepoOrchestratorCommand } from "../verification/strategies/scoped";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
 import { buildImplementerRectificationPrompt } from "./prompts";
@@ -30,6 +32,14 @@ export const _rectificationGateDeps = {
   executeWithTimeout: _executeWithTimeout,
   parseTestOutput: _parseTestOutput,
   shouldRetryRectification: _shouldRetryRectification,
+  readPackageName: async (dir: string): Promise<string | null> => {
+    try {
+      const content = await Bun.file(join(dir, "package.json")).json();
+      return typeof content.name === "string" ? content.name : null;
+    } catch {
+      return null;
+    }
+  },
 };
 
 /**
@@ -53,15 +63,38 @@ export async function runFullSuiteGate(
   const rectificationConfig = config.execution.rectification;
   const testCmd = config.quality?.commands?.test ?? "bun test";
   const fullSuiteTimeout = rectificationConfig.fullSuiteTimeoutSeconds;
+  const rawScopedTemplate = config.quality?.commands?.testScoped;
+
+  // Resolve {{package}} in testScoped template for monorepo stories (mirrors verify.ts).
+  // workdir is already the resolved package directory.
+  let resolvedScopedTemplate = rawScopedTemplate;
+  if (rawScopedTemplate?.includes("{{package}}") && story.workdir) {
+    const pkgName = await _rectificationGateDeps.readPackageName(workdir);
+    resolvedScopedTemplate = pkgName !== null ? rawScopedTemplate.replaceAll("{{package}}", pkgName) : undefined;
+  }
+
+  // Monorepo orchestrators (turbo/nx): the resolved scoped template IS the run command.
+  // Per-file expansion would break their filter syntax.
+  let effectiveTestCmd = testCmd;
+  let effectiveScopedTemplate = resolvedScopedTemplate;
+  if (isMonorepoOrchestratorCommand(testCmd)) {
+    if (resolvedScopedTemplate && story.workdir) {
+      effectiveTestCmd = resolvedScopedTemplate;
+    }
+    effectiveScopedTemplate = undefined;
+  }
 
   logger.info("tdd", "-> Running full test suite gate (before Verifier)", {
     storyId: story.id,
     timeout: fullSuiteTimeout,
   });
 
-  const fullSuiteResult = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
-    cwd: workdir,
-  });
+  const fullSuiteResult = await _rectificationGateDeps.executeWithTimeout(
+    effectiveTestCmd,
+    fullSuiteTimeout,
+    undefined,
+    { cwd: workdir },
+  );
   const fullSuitePassed = fullSuiteResult.success && fullSuiteResult.exitCode === 0;
 
   if (!fullSuitePassed && fullSuiteResult.output) {
@@ -79,10 +112,11 @@ export async function runFullSuiteGate(
         logger,
         testSummary,
         rectificationConfig,
-        testCmd,
+        effectiveTestCmd,
         fullSuiteTimeout,
         featureName,
         projectDir,
+        effectiveScopedTemplate,
       );
     }
 
@@ -126,7 +160,6 @@ async function runRectificationLoop(
   config: NaxConfig,
   workdir: string,
   agent: AgentAdapter,
-
   implementerTier: ModelTier,
   contextMarkdown: string | undefined,
   lite: boolean,
@@ -137,6 +170,7 @@ async function runRectificationLoop(
   fullSuiteTimeout: number,
   featureName?: string,
   projectDir?: string,
+  testScopedTemplate?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationState: RectificationState = {
     attempt: 0,
@@ -184,7 +218,15 @@ async function runRectificationLoop(
     canContinue: (state) =>
       state.isolationPassed && _rectificationGateDeps.shouldRetryRectification(state, rectificationConfig),
     buildPrompt: () =>
-      buildImplementerRectificationPrompt(testSummary.failures, story, contextMarkdown, rectificationConfig),
+      buildImplementerRectificationPrompt(
+        testSummary.failures,
+        story,
+        contextMarkdown,
+        rectificationConfig,
+        testCmd,
+        config.quality?.scopeTestThreshold,
+        testScopedTemplate,
+      ),
     runAttempt: async (attempt, rectificationPrompt) => {
       const isLastAttempt = attempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";

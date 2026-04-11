@@ -202,9 +202,15 @@ function parseJestOutput(output: string): TestSummary {
     }
 
     // Jest failure marker: "  ● test suite name > test name"
+    // Skip "● Console" — Jest uses this as a section header for captured console output,
+    // not as a test failure. It is not a real failure and must not enter the failure list.
     const bulletMatch = line.match(/^\s+●\s+(.+)$/);
     if (bulletMatch) {
       const testName = bulletMatch[1].trim();
+      if (testName === "Console") {
+        i++;
+        continue;
+      }
       let error = "";
       for (let j = i + 1; j < lines.length && j < i + 10; j++) {
         const next = lines[j].trim();
