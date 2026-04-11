@@ -7,9 +7,9 @@
  */
 
 import type { NaxConfig } from "../config";
+import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
-import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,

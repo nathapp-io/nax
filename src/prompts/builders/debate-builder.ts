@@ -1,14 +1,19 @@
 /**
- * DebatePromptBuilder — Phase 3
+ * DebatePromptBuilder — centralises all debate and review-dialogue prompt construction.
  *
- * Centralizes all debate prompt construction behind a single class.
  * Owns shared formatting logic as private methods and exposes one public
- * method per prompt phase (proposal, critique, rebuttal, synthesis, judge, close).
+ * method per prompt phase (proposal, critique, rebuttal, synthesis, judge, close)
+ * plus review-specific methods (review, re-review, resolver, re-resolver).
+ *
+ * Moved from: src/debate/prompt-builder.ts
+ * Imports from debate internals directly (not via src/debate barrel) to
+ * avoid a circular dependency: src/debate/index.ts re-exports this class
+ * from src/prompts, so importing the barrel here would form a cycle.
  */
 
-import type { ReviewFinding } from "../plugins/types";
-import { PERSONA_FRAGMENTS } from "./personas";
-import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "./types";
+import { PERSONA_FRAGMENTS } from "../../debate/personas";
+import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "../../debate/types";
+import type { ReviewFinding } from "../../plugins/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -184,7 +189,7 @@ ${this.stageContext.outputFormat}`;
     return debater.persona ? `${debater.agent} (${debater.persona})` : debater.agent;
   }
 
-  // ─── Review-specific public methods (Phase 4) ─────────────────────────────
+  // ─── Review-specific public methods ───────────────────────────────────────
 
   /** Standard (non-debate) review prompt. */
   buildReviewPrompt(diff: string, story: ReviewStoryContext): string {

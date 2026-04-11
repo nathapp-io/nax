@@ -7,9 +7,9 @@
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { ModelDef } from "../config";
+import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
-import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
