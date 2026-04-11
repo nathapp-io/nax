@@ -542,6 +542,8 @@ export async function runSemanticReview(
         modelTier: semanticConfig.modelTier,
         modelDef: resolvedModelDef,
         config: naxConfig ?? DEFAULT_CONFIG,
+        featureName,
+        storyId: story.id,
       });
       runOutput = runResult.output;
       llmCost = runResult.estimatedCost ?? 0;
@@ -560,6 +562,8 @@ export async function runSemanticReview(
         timeoutMs: semanticConfig.timeoutMs,
         modelTier: semanticConfig.modelTier,
         config: naxConfig ?? DEFAULT_CONFIG,
+        featureName,
+        storyId: story.id,
       });
       rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
       llmCost = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);

@@ -292,6 +292,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
         testOutput: currentTestOutput,
         promptPrefix: `# DEFERRED REGRESSION: Full-Suite Failures\n\nYour story ${story.id} broke tests in the full suite. Fix these regressions.`,
         agentGetFn,
+        featureName: prd.feature,
       });
 
       if (fixed) {
