@@ -725,7 +725,6 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       ACP_WORKDIR,
       adapter,
       "balanced",
-      undefined,
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
@@ -760,7 +759,6 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       ACP_WORKDIR,
       adapter,
       "balanced",
-      undefined,
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
@@ -826,7 +824,6 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       ACP_WORKDIR,
       adapter,
       "balanced",
-      undefined,
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
@@ -881,7 +878,6 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       ACP_WORKDIR,
       adapter,
       "balanced",
-      undefined,
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,

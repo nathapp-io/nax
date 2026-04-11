@@ -44,7 +44,6 @@ export async function runFullSuiteGate(
   workdir: string,
   agent: AgentAdapter,
   implementerTier: ModelTier,
-  contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
   featureName?: string,
@@ -57,8 +56,11 @@ export async function runFullSuiteGate(
   const fullSuiteTimeout = rectificationConfig.fullSuiteTimeoutSeconds;
 
   // Resolve test commands via SSOT — handles priority, {{package}}, and orchestrator promotion.
-  const { testCommand: resolvedTestCmd, testScopedTemplate: effectiveScopedTemplate } =
-    await _rectificationGateDeps.resolveTestCommands(config, workdir, story.workdir);
+  const { testCommand: resolvedTestCmd } = await _rectificationGateDeps.resolveTestCommands(
+    config,
+    workdir,
+    story.workdir,
+  );
   const effectiveTestCmd = resolvedTestCmd ?? "bun test";
 
   logger.info("tdd", "-> Running full test suite gate (before Verifier)", {
@@ -84,7 +86,6 @@ export async function runFullSuiteGate(
         workdir,
         agent,
         implementerTier,
-        contextMarkdown,
         lite,
         logger,
         testSummary,
@@ -93,7 +94,6 @@ export async function runFullSuiteGate(
         fullSuiteTimeout,
         featureName,
         projectDir,
-        effectiveScopedTemplate,
       );
     }
 
@@ -138,7 +138,6 @@ async function runRectificationLoop(
   workdir: string,
   agent: AgentAdapter,
   implementerTier: ModelTier,
-  _contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
   testSummary: ReturnType<typeof _parseTestOutput>,
@@ -147,7 +146,6 @@ async function runRectificationLoop(
   fullSuiteTimeout: number,
   featureName?: string,
   projectDir?: string,
-  _testScopedTemplate?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationState: RectificationState = {
     attempt: 0,
