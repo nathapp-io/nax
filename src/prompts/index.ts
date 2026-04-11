@@ -24,9 +24,9 @@ export { ReviewPromptBuilder } from "./builders/review-builder";
 export { AcceptancePromptBuilder } from "./builders/acceptance-builder";
 export type { AcceptanceRole } from "./builders/acceptance-builder";
 
-// Rectifier prompt builder — centralises all rectification prompt construction.
+// Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { RectifierPromptBuilder } from "./builders/rectifier-builder";
-export type { RectifierTrigger } from "./builders/rectifier-builder";
+export type { RectifierTrigger, FailureRecord, ReviewFinding } from "./builders/rectifier-builder";
 
 // Core types — re-exported for callsites that need them
 export type { PromptRole, PromptSection, PromptOptions } from "./core/types";

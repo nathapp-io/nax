@@ -7,3 +7,6 @@
 
 export { priorFailuresSection } from "./prior-failures";
 export type { FailureRecord } from "./prior-failures";
+
+export { findingsSection } from "./findings";
+export type { ReviewFinding } from "./findings";

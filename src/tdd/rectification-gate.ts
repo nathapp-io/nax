@@ -14,6 +14,7 @@ import { resolvePermissions } from "../config/permissions";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
+import type { FailureRecord } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
@@ -146,7 +147,7 @@ async function runRectificationLoop(
   fullSuiteTimeout: number,
   featureName?: string,
   projectDir?: string,
-  testScopedTemplate?: string,
+  _testScopedTemplate?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationState: RectificationState = {
     attempt: 0,
@@ -193,14 +194,21 @@ async function runRectificationLoop(
     }),
     canContinue: (state) =>
       state.isolationPassed && _rectificationGateDeps.shouldRetryRectification(state, rectificationConfig),
-    buildPrompt: () =>
-      RectifierPromptBuilder.for("tdd-suite-failure")
+    buildPrompt: async () => {
+      const failureRecords: FailureRecord[] = testSummary.failures.map((f) => ({
+        test: f.testName,
+        file: f.file,
+        message: f.error,
+        output: f.stackTrace.length > 0 ? f.stackTrace.join("\n") : undefined,
+      }));
+      return RectifierPromptBuilder.for("tdd-suite-failure")
         .story(story)
-        .priorFailures(testSummary.failures, rectificationConfig)
+        .priorFailures(failureRecords)
         .testCommand(testCmd)
-        .scopeThreshold(config.quality?.scopeTestThreshold)
-        .testScopedTemplate(testScopedTemplate)
-        .build(),
+        .conventions()
+        .task()
+        .build();
+    },
     runAttempt: async (attempt, rectificationPrompt) => {
       const isLastAttempt = attempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";

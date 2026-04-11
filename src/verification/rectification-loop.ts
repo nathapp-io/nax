@@ -21,6 +21,7 @@ import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
+import type { FailureRecord } from "../prompts";
 import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
 import { type RectificationState, createEscalatedRectificationPrompt, shouldRetryRectification } from "./rectification";
@@ -198,13 +199,18 @@ export async function runRectificationLoop(
         }
       }
 
+      const failureRecords: FailureRecord[] = testSummary.failures.map((f) => ({
+        test: f.testName,
+        file: f.file,
+        message: f.error,
+        output: f.stackTrace.length > 0 ? f.stackTrace.join("\n") : undefined,
+      }));
       let rectificationPrompt = await RectifierPromptBuilder.for("verify-failure")
         .story(story)
-        .priorFailures(testSummary.failures, rectificationConfig)
-        .attempt(attempt)
+        .priorFailures(failureRecords)
         .testCommand(testCommand)
-        .scopeThreshold(config.quality?.scopeTestThreshold)
-        .testScopedTemplate(testScopedTemplate)
+        .conventions()
+        .task()
         .build();
       if (diagnosisPrefix) {
         rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;

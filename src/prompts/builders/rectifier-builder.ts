@@ -1,20 +1,30 @@
 /**
- * RectifierPromptBuilder
+ * RectifierPromptBuilder — prompt builder for rectification sessions.
  *
- * Centralises all rectification prompt construction across:
- *   - src/tdd/rectification-gate.ts (tdd-suite-failure)
- *   - src/verification/rectification-loop.ts (verify-failure)
+ * Cross-domain: needs TDD context (story, isolation, role task) AND review context
+ * (prior failures, findings). A dedicated builder avoids forcing rectification prompts
+ * into either TddPromptBuilder or ReviewPromptBuilder.
  *
- * Wraps createRectificationPrompt from verification/rectification to provide
- * a consistent fluent API across all rectification triggers.
+ * Four triggers cover all rectification entry points:
+ *   tdd-test-failure  — implementer fixes tests written by the test-writer
+ *   tdd-suite-failure — implementer fixes regressions after the full-suite gate
+ *   verify-failure    — post-verify rectification loop (autofix)
+ *   review-findings   — review surfaced critical findings; rectifier addresses them
  *
- * Replaces: src/tdd/prompts.ts (deleted in Phase 5)
+ * Replaces: buildImplementerRectificationPrompt / buildRectificationPrompt from src/tdd/prompts.ts
  */
 
-import type { RectificationConfig } from "../../config";
 import type { UserStory } from "../../prd";
-import type { TestFailure } from "../../test-runners/types";
-import { createRectificationPrompt } from "../../verification/rectification";
+import { SectionAccumulator } from "../core/section-accumulator";
+import { findingsSection } from "../core/sections/findings";
+import type { ReviewFinding } from "../core/sections/findings";
+import { priorFailuresSection } from "../core/sections/prior-failures";
+import type { FailureRecord } from "../core/sections/prior-failures";
+import type { PromptSection } from "../core/types";
+import { universalConstitutionSection, universalContextSection } from "../core/universal-sections";
+import { buildConventionsSection } from "../sections/conventions";
+import { buildIsolationSection } from "../sections/isolation";
+import { buildStorySection } from "../sections/story";
 
 export type RectifierTrigger =
   | "tdd-test-failure" // tests written by test-writer fail; implementer rectifies
@@ -22,72 +32,155 @@ export type RectifierTrigger =
   | "verify-failure" // post-verify rectification (autofix loop)
   | "review-findings"; // review surfaced critical findings; rectifier addresses them
 
-export class RectifierPromptBuilder {
-  private story_: UserStory | undefined;
-  private failures_: TestFailure[] = [];
-  private rectConfig_: RectificationConfig | undefined;
-  private attempt_: number | undefined;
-  private testCommand_: string | undefined;
-  private scopeFileThreshold_: number | undefined;
-  private testScopedTemplate_: string | undefined;
+export type { FailureRecord, ReviewFinding };
 
-  // _trigger accepted for API symmetry; reserved for future per-trigger task text.
-  private constructor(_trigger: RectifierTrigger) {}
+export class RectifierPromptBuilder {
+  private acc = new SectionAccumulator();
+  private trigger: RectifierTrigger;
+
+  private constructor(trigger: RectifierTrigger) {
+    this.trigger = trigger;
+  }
 
   static for(trigger: RectifierTrigger): RectifierPromptBuilder {
     return new RectifierPromptBuilder(trigger);
   }
 
+  constitution(c: string | undefined): this {
+    this.acc.add(universalConstitutionSection(c));
+    return this;
+  }
+
+  context(md: string | undefined): this {
+    this.acc.add(universalContextSection(md));
+    return this;
+  }
+
   story(s: UserStory): this {
-    this.story_ = s;
+    this.acc.add(this.s("story", buildStorySection(s)));
     return this;
   }
 
-  /**
-   * Provide the test failures and optional rectification config.
-   * Config controls maxFailureSummaryChars, progressive escalation thresholds, etc.
-   */
-  priorFailures(failures: TestFailure[], config?: RectificationConfig): this {
-    this.failures_ = failures;
-    if (config) this.rectConfig_ = config;
+  priorFailures(failures: FailureRecord[]): this {
+    this.acc.add(priorFailuresSection(failures));
     return this;
   }
 
-  /**
-   * Attempt number for progressive escalation preamble.
-   * Pass undefined (or omit) to suppress escalation messaging.
-   */
-  attempt(n: number): this {
-    this.attempt_ = n;
+  findings(fs: ReviewFinding[]): this {
+    this.acc.add(findingsSection(fs));
     return this;
   }
 
   testCommand(cmd: string | undefined): this {
-    if (cmd) this.testCommand_ = cmd;
+    if (!cmd) return this;
+    this.acc.add({
+      id: "test-command",
+      overridable: false,
+      content: `# TEST COMMAND\n\n\`${cmd}\``,
+    });
     return this;
   }
 
-  scopeThreshold(n: number | undefined): this {
-    if (n !== undefined) this.scopeFileThreshold_ = n;
+  isolation(mode?: "strict" | "lite"): this {
+    this.acc.add(this.s("isolation", buildIsolationSection("implementer", mode, undefined)));
     return this;
   }
 
-  testScopedTemplate(tmpl: string | undefined): this {
-    if (tmpl) this.testScopedTemplate_ = tmpl;
+  conventions(): this {
+    this.acc.add(this.s("conventions", buildConventionsSection()));
     return this;
   }
 
-  async build(): Promise<string> {
-    if (!this.story_) throw new Error("RectifierPromptBuilder: story() is required");
+  task(): this {
+    this.acc.add(rectifierTaskFor(this.trigger));
+    return this;
+  }
 
-    return createRectificationPrompt(
-      this.failures_,
-      this.story_,
-      this.rectConfig_,
-      this.attempt_,
-      this.testCommand_,
-      this.scopeFileThreshold_,
-      this.testScopedTemplate_,
-    );
+  build(): Promise<string> {
+    return Promise.resolve(this.acc.join());
+  }
+
+  private s(id: string, content: string): PromptSection {
+    return { id, content, overridable: false };
   }
 }
+
+function rectifierTaskFor(trigger: RectifierTrigger): PromptSection {
+  switch (trigger) {
+    case "tdd-test-failure":
+      return { id: "task", overridable: false, content: TDD_TEST_FAILURE_TASK };
+    case "tdd-suite-failure":
+      return { id: "task", overridable: false, content: TDD_SUITE_FAILURE_TASK };
+    case "verify-failure":
+      return { id: "task", overridable: false, content: VERIFY_FAILURE_TASK };
+    case "review-findings":
+      return { id: "task", overridable: false, content: REVIEW_FINDINGS_TASK };
+  }
+}
+
+const TDD_TEST_FAILURE_TASK = `# Rectification Required
+
+The tests written for this story are failing. Fix the implementation to make them pass without modifying the test files.
+
+## Instructions
+
+1. Review the failures listed above carefully.
+2. Identify the root cause of each failure.
+3. Fix the implementation WITHOUT modifying test files.
+4. Run the test command shown above to verify your fixes.
+5. Ensure ALL tests pass before completing.
+
+**IMPORTANT:**
+- Do NOT modify test files — they were written by the test-writer and define the expected behavior.
+- Do NOT loosen assertions to mask implementation bugs.
+- Focus on fixing the source code to meet the test requirements.`;
+
+const TDD_SUITE_FAILURE_TASK = `# Rectification Required
+
+Your changes caused test regressions. Fix these without breaking existing logic.
+
+## Instructions
+
+1. Review the failures above carefully.
+2. Identify the root cause of each failure.
+3. Fix the implementation WITHOUT loosening test assertions.
+4. Run the test command shown above to verify your fixes.
+5. Ensure ALL tests pass before completing.
+
+**IMPORTANT:**
+- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT loosen assertions to mask implementation bugs.
+- Focus on fixing the source code to meet the test requirements.`;
+
+const VERIFY_FAILURE_TASK = `# Rectification Required
+
+The verification step failed. Fix the implementation to pass all tests.
+
+## Instructions
+
+1. Review the failures above carefully.
+2. Identify the root cause of each failure.
+3. Fix the implementation WITHOUT loosening test assertions.
+4. Run the test command shown above to verify your fixes.
+5. Ensure ALL tests pass before completing.
+
+**IMPORTANT:**
+- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT loosen assertions to mask implementation bugs.
+- Focus on fixing the source code to meet the test requirements.`;
+
+const REVIEW_FINDINGS_TASK = `# Rectification Required
+
+The code review surfaced critical findings that must be addressed before this story can proceed.
+
+## Instructions
+
+1. Review the findings listed above carefully.
+2. Verify each finding is a real issue by reading the relevant files.
+3. Fix only valid issues — do NOT add code that already exists in the codebase.
+4. Do NOT change test files or test behavior.
+5. Do NOT add new features — only fix the identified issues.
+
+**IMPORTANT:**
+- The reviewer may have flagged false positives based on the diff. Verify before acting.
+- Commit your fixes when done.`;
