@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildTddLanguageSection } from "../../../../src/prompts/sections/tdd-conventions";
-import { PromptBuilder } from "../../../../src/prompts/builder";
+import { PromptBuilder } from "../../../../src/prompts";
 import type { NaxConfig } from "../../../../src/config/types";
 
 describe("buildTddLanguageSection", () => {
