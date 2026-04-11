@@ -20,5 +20,10 @@ export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "./b
 // Review prompt builder — semantic review prompt construction.
 export { ReviewPromptBuilder } from "./builders/review-builder";
 
+// Acceptance prompt builder — generator, diagnoser, and fix-executor prompt construction.
+export { AcceptancePromptBuilder } from "./builders/acceptance-builder";
+// AcceptanceRole reserved for Phase 5 (RectifierPromptBuilder) dispatch.
+export type { AcceptanceRole } from "./builders/acceptance-builder";
+
 // Core types — re-exported for callsites that need them
 export type { PromptRole, PromptSection, PromptOptions } from "./core/types";

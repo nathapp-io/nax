@@ -9,6 +9,7 @@ import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import { type ModelTier, resolveModelForAgent } from "../config/schema-types";
+import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { DiagnosisResult, SemanticVerdict } from "./types";
 
@@ -90,29 +91,14 @@ export function buildDiagnosisPrompt(options: {
     previousFailureSection = `\nPREVIOUS FIX ATTEMPTS:\n${options.previousFailure}\n`;
   }
 
-  return `You are a debugging expert. An acceptance test has failed.
-
-TASK: Diagnose whether the failure is due to a bug in the SOURCE CODE or a bug in the TEST CODE.
-
-FAILING TEST OUTPUT:
-${truncatedOutput}
-
-ACCEPTANCE TEST FILE CONTENT:
-\`\`\`typescript
-${options.testFileContent}
-\`\`\`
-
-SOURCE FILES (auto-detected from imports, up to ${MAX_FILE_LINES} lines each):
-${sourceFilesSection}
-${verdictSection}${previousFailureSection}
-Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
-{
-  "verdict": "source_bug" | "test_bug" | "both",
-  "reasoning": "Your analysis explaining why this is a source_bug, test_bug, or both",
-  "confidence": 0.0-1.0,
-  "testIssues": ["Issue in test code if any"],
-  "sourceIssues": ["Issue in source code if any"]
-}`;
+  return new AcceptancePromptBuilder().buildDiagnosisPromptTemplate({
+    truncatedOutput,
+    testFileContent: options.testFileContent,
+    sourceFilesSection,
+    verdictSection,
+    previousFailureSection,
+    maxFileLines: MAX_FILE_LINES,
+  });
 }
 
 export async function diagnoseAcceptanceFailure(

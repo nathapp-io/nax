@@ -10,6 +10,7 @@ import type { AgentAdapter, AgentRunOptions } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import type { ModelTier } from "../config/schema-types";
 import { resolveModelForAgent } from "../config/schema-types";
+import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
 import type { DiagnosisResult } from "./types";
 
 export interface ExecuteSourceFixOptions {
@@ -29,23 +30,12 @@ export interface ExecuteSourceFixResult {
 }
 
 export function buildSourceFixPrompt(options: ExecuteSourceFixOptions): string {
-  const { testOutput, diagnosis, acceptanceTestPath, testFileContent } = options;
-
-  let prompt = `ACCEPTANCE TEST FAILURE:\n${testOutput}\n\n`;
-
-  if (diagnosis.reasoning) {
-    prompt += `DIAGNOSIS:\n${diagnosis.reasoning}\n\n`;
-  }
-
-  prompt += `ACCEPTANCE TEST FILE: ${acceptanceTestPath}\n\n`;
-
-  if (testFileContent && testFileContent.length > 0) {
-    prompt += `\`\`\`typescript\n${testFileContent}\n\`\`\`\n\n`;
-  }
-
-  prompt += "Fix the source implementation. Do NOT modify the test file.";
-
-  return prompt;
+  return new AcceptancePromptBuilder().buildSourceFixPrompt({
+    testOutput: options.testOutput,
+    diagnosisReasoning: options.diagnosis.reasoning,
+    acceptanceTestPath: options.acceptanceTestPath,
+    testFileContent: options.testFileContent,
+  });
 }
 
 export async function executeSourceFix(
@@ -115,27 +105,14 @@ export interface ExecuteTestFixResult {
 }
 
 export function buildTestFixPrompt(options: ExecuteTestFixOptions): string {
-  const { testOutput, diagnosis, acceptanceTestPath, testFileContent, failedACs, previousFailure } = options;
-
-  let prompt = "ACCEPTANCE TEST BUG — surgical fix required.\n\n";
-  prompt += `FAILING ACS: ${failedACs.join(", ")}\n\n`;
-  prompt += `TEST OUTPUT:\n${testOutput}\n\n`;
-
-  if (diagnosis.reasoning) {
-    prompt += `DIAGNOSIS:\n${diagnosis.reasoning}\n\n`;
-  }
-
-  if (previousFailure && previousFailure.length > 0) {
-    prompt += `PREVIOUS FAILED ATTEMPTS:\n${previousFailure}\n\n`;
-  }
-
-  prompt += `ACCEPTANCE TEST FILE: ${acceptanceTestPath}\n\n`;
-  prompt += `\`\`\`typescript\n${testFileContent}\n\`\`\`\n\n`;
-  prompt += "Fix ONLY the failing test assertions for the ACs listed above. ";
-  prompt += "Do NOT modify passing tests. Do NOT modify source code. ";
-  prompt += "Edit the test file in place.";
-
-  return prompt;
+  return new AcceptancePromptBuilder().buildTestFixPrompt({
+    testOutput: options.testOutput,
+    diagnosisReasoning: options.diagnosis.reasoning,
+    failedACs: options.failedACs,
+    previousFailure: options.previousFailure,
+    acceptanceTestPath: options.acceptanceTestPath,
+    testFileContent: options.testFileContent,
+  });
 }
 
 export async function executeTestFix(
