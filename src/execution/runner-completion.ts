@@ -59,6 +59,10 @@ export interface RunnerCompletionOptions {
 export interface RunnerCompletionResult {
   durationMs: number;
   runCompletedAt: string;
+  /** False when the acceptance loop exhausted retries for any package. True when acceptance
+   *  passed, was skipped, or was already passed on a prior run. Used by runner.ts to set
+   *  RunResult.success — regression-gate outcome cannot override an acceptance failure. */
+  acceptancePassed: boolean;
 }
 
 /**
@@ -92,6 +96,10 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     acceptanceEnabled: options.config.acceptance?.enabled,
     isComplete: isComplete(options.prd),
   });
+
+  // Track whether acceptance passed (or was skipped/already-passed) — surfaced in
+  // RunnerCompletionResult so runner.ts can include it in RunResult.success.
+  let acceptancePassed = true;
 
   // Check post-run status to determine if phases can be skipped on rerun
   const postRunStatus = options.statusWriter.getPostRunStatus?.();
@@ -143,6 +151,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       if (acceptanceResult.success) {
         options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
       } else {
+        acceptancePassed = false;
         options.statusWriter.setPostRunPhase("acceptance", {
           status: "failed",
           failedACs: acceptanceResult.failedACs ?? [],
@@ -234,5 +243,6 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   return {
     durationMs,
     runCompletedAt,
+    acceptancePassed,
   };
 }

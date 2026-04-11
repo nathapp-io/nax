@@ -8,6 +8,7 @@
 
 import path from "node:path";
 import { getLogger } from "../../logger";
+import { parseTestFailures } from "../../test-runners/ac-parser";
 import { spawn } from "../../utils/bun-deps";
 import { killProcessGroup } from "../../utils/process-kill";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
@@ -15,20 +16,6 @@ import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrat
 
 /** Injectable deps for testability */
 export const _acceptanceDeps = { spawn };
-
-function parseFailedACs(output: string): string[] {
-  const failed: string[] = [];
-  for (const line of output.split("\n")) {
-    if (line.includes("(fail)")) {
-      const m = line.match(/(AC-\d+):/i);
-      if (m) {
-        const id = m[1].toUpperCase();
-        if (!failed.includes(id)) failed.push(id);
-      }
-    }
-  }
-  return failed;
-}
 
 export class AcceptanceStrategy implements IVerificationStrategy {
   readonly name = "acceptance" as const;
@@ -95,7 +82,7 @@ export class AcceptanceStrategy implements IVerificationStrategy {
     }
     const output = `${stdout}\n${stderr}`;
 
-    const failedACs = parseFailedACs(output);
+    const failedACs = parseTestFailures(output);
 
     if (exitCode === 0 && failedACs.length === 0) {
       logger.info("verify[acceptance]", "All acceptance tests passed", { storyId: ctx.storyId });

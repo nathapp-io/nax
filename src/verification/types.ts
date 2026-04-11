@@ -27,14 +27,8 @@ export interface TestExecutionResult {
   countsTowardEscalation: boolean;
 }
 
-/** Test output analysis (parsed) */
-export interface TestOutputAnalysis {
-  allTestsPassed: boolean;
-  passCount: number;
-  failCount: number;
-  isEnvironmentalFailure: boolean;
-  error?: string;
-}
+/** Test output analysis (parsed) — implementation in src/test-runners/types */
+export type { TestOutputAnalysis } from "../test-runners/types";
 
 /** Asset verification result */
 export interface AssetVerificationResult {
@@ -43,27 +37,8 @@ export interface AssetVerificationResult {
   error?: string;
 }
 
-/** Structured test failure information */
-export interface TestFailure {
-  /** File path where the test failed */
-  file: string;
-  /** Full test name (including nested describe blocks) */
-  testName: string;
-  /** Error message */
-  error: string;
-  /** Stack trace lines (truncated to first 5 lines) */
-  stackTrace: string[];
-}
-
-/** Test run summary */
-export interface TestSummary {
-  /** Number of tests that passed */
-  passed: number;
-  /** Number of tests that failed */
-  failed: number;
-  /** Structured failure details */
-  failures: TestFailure[];
-}
+/** Structured test failure information — implementation in src/test-runners/types */
+export type { TestFailure, TestSummary } from "../test-runners/types";
 
 /** Complete verification result */
 export interface VerificationResult {
