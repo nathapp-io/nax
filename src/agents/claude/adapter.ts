@@ -10,7 +10,8 @@ import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getLogger } from "../../logger";
 import { sleep, typedSpawn } from "../../utils/bun-deps";
 import { estimateCostByDuration } from "../cost/calculate";
-import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
+import { parseDecomposeOutput } from "../shared/decompose";
+import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -173,7 +174,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
     const { resolveBalancedModelDef } = await import("../shared/model-resolution");
 
-    const prompt = buildDecomposePrompt(options);
+    const prompt = await buildDecomposePromptAsync(options);
 
     let modelDef = options.modelDef;
     if (!modelDef) {

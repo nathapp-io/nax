@@ -12,7 +12,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createAgentRegistry, getAgent } from "../agents/registry";
-import { buildDecomposePrompt, parseDecomposeOutput } from "../agents/shared/decompose";
+import { parseDecomposeOutput } from "../agents/shared/decompose";
+import { buildDecomposePromptAsync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
@@ -820,7 +821,7 @@ export async function planDecomposeCommand(
   for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
     if (attempt === 0 && debateDecompEnabled) {
       const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
-      const prompt = buildDecomposePrompt({
+      const prompt = await buildDecomposePromptAsync({
         specContent: "",
         codebaseContext,
         workdir,

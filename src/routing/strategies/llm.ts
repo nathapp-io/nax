@@ -11,19 +11,74 @@ import type { NaxConfig } from "../../config";
 import { resolveModelForAgent } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
+import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "../../prompts";
 import { typedSpawn } from "../../utils/bun-deps";
 import type { RoutingContext, RoutingDecision } from "../router";
 import { determineTestStrategy } from "../router";
-import { buildBatchRoutingPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
+import { parseBatchResponse, parseRoutingResponse } from "./llm-parsing";
 
-// Re-export for backward compatibility
-export {
-  buildRoutingPrompt,
-  buildBatchRoutingPrompt as buildBatchPrompt,
-  validateRoutingDecision,
-  stripCodeFences,
-  parseRoutingResponse,
-} from "./llm-prompts";
+// Re-export parse/validate utilities for callers that import from this module
+export { validateRoutingDecision, stripCodeFences, parseRoutingResponse } from "./llm-parsing";
+
+// ─── Routing prompt constants ─────────────────────────────────────────────────
+
+const ROUTING_INSTRUCTIONS = `Classify the user story's complexity and select the cheapest model tier that will succeed.
+
+## Complexity Levels
+- simple: Typos, config updates, boilerplate, barrel exports, re-exports. <30 min.
+- medium: Standard features, moderate logic, straightforward tests. 30-90 min.
+- complex: Multi-file refactors, new subsystems, integration work. >90 min.
+- expert: Security-critical, novel algorithms, complex architecture decisions.
+
+## Rules
+- Default to the CHEAPEST tier that will succeed.
+- Simple barrel exports, re-exports, or index files → always simple + fast.
+- Many files ≠ complex — copy-paste refactors across files are simple.
+- Pure refactoring/deletion with no new behavior → simple.`;
+
+const ROUTING_CANDIDATES: RoutingCandidate[] = [
+  { tier: "fast", description: "For simple tasks. Cheapest." },
+  { tier: "balanced", description: "For medium tasks. Standard cost." },
+  { tier: "powerful", description: "For complex/expert tasks. Most capable, highest cost." },
+];
+
+const ROUTING_SCHEMA: SchemaDescriptor = {
+  name: "RoutingDecision",
+  description: "Respond with JSON only — no explanation text before or after.",
+  example: { complexity: "simple|medium|complex|expert", modelTier: "fast|balanced|powerful", reasoning: "<one line>" },
+};
+
+const BATCH_ROUTING_SCHEMA: SchemaDescriptor = {
+  name: "BatchRoutingDecision[]",
+  description: "Respond with a JSON array — no explanation, no markdown.",
+  example: [{ id: "US-001", complexity: "simple", modelTier: "fast", reasoning: "<one line>" }],
+};
+
+async function buildRoutingPromptAsync(story: UserStory): Promise<string> {
+  const criteria = story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
+  const storyMd = `Title: ${story.title}\nDescription: ${story.description}\nAcceptance Criteria:\n${criteria}\nTags: ${story.tags.join(", ")}`;
+  return OneShotPromptBuilder.for("router")
+    .instructions(ROUTING_INSTRUCTIONS)
+    .inputData("Story", storyMd)
+    .candidates(ROUTING_CANDIDATES)
+    .jsonSchema(ROUTING_SCHEMA)
+    .build();
+}
+
+async function buildBatchRoutingPromptAsync(stories: UserStory[]): Promise<string> {
+  const storyBlocks = stories
+    .map((story, idx) => {
+      const criteria = story.acceptanceCriteria.map((c, i) => `   ${i + 1}. ${c}`).join("\n");
+      return `${idx + 1}. ${story.id}: ${story.title}\n   Description: ${story.description}\n   Acceptance Criteria:\n${criteria}\n   Tags: ${story.tags.join(", ")}`;
+    })
+    .join("\n\n");
+  return OneShotPromptBuilder.for("router")
+    .instructions(ROUTING_INSTRUCTIONS)
+    .inputData("Stories", storyBlocks)
+    .candidates(ROUTING_CANDIDATES)
+    .jsonSchema(BATCH_ROUTING_SCHEMA)
+    .build();
+}
 
 /** Module-level cache for routing decisions (PERF-1 fix: max 100 entries LRU) */
 const cachedDecisions = new Map<string, RoutingDecision>();
@@ -162,7 +217,7 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
   }
 
   const modelTier = llmConfig.model ?? "fast";
-  const prompt = buildBatchRoutingPrompt(stories, config);
+  const prompt = await buildBatchRoutingPromptAsync(stories);
 
   try {
     const output = await callLlm(adapter, modelTier, prompt, config);
@@ -238,7 +293,7 @@ export async function classifyWithLlm(
   }
 
   const modelTier = llmConfig.model ?? "fast";
-  const prompt = buildRoutingPrompt(story, config);
+  const prompt = await buildRoutingPromptAsync(story);
 
   let decision: RoutingDecision;
   try {
