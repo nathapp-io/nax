@@ -17,7 +17,8 @@ import { resolvePermissions } from "../../config/permissions";
 import { AllAgentsUnavailableError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
-import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
+import { parseDecomposeOutput } from "../shared/decompose";
+import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
 import { writePromptAudit } from "./prompt-audit";
 import { createSpawnAcpClient } from "./spawn-client";
@@ -1189,7 +1190,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
     const model = options.modelDef?.model;
-    const prompt = buildDecomposePrompt(options);
+    const prompt = await buildDecomposePromptAsync(options);
 
     let output: string;
     try {

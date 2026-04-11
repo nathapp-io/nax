@@ -425,15 +425,8 @@ describe("Internal prompts: not migrated, still accessible", () => {
     expect(importError).not.toBeNull();
   });
 
-  test("buildRoutingPrompt still exported from src/routing/strategies/llm-prompts", async () => {
-    const mod = await import("../../../src/routing/strategies/llm-prompts");
-    expect(typeof mod.buildRoutingPrompt).toBe("function");
-  });
-
-  test("buildBatchRoutingPrompt still exported from src/routing/strategies/llm-prompts", async () => {
-    const mod = await import("../../../src/routing/strategies/llm-prompts");
-    expect(typeof mod.buildBatchRoutingPrompt).toBe("function");
-  });
+  // buildRoutingPrompt / buildBatchRoutingPrompt parity tests removed in Phase 6:
+  // llm-prompts.ts was deleted; prompts now built via OneShotPromptBuilder in llm.ts.
 });
 
 // ---------------------------------------------------------------------------

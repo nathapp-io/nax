@@ -9,7 +9,37 @@ import { z } from "zod";
 import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
+import { OneShotPromptBuilder, type SchemaDescriptor } from "../../prompts";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
+
+const AUTO_APPROVER_SCHEMA: SchemaDescriptor = {
+  name: "ApprovalDecision",
+  description: "Respond with ONLY this JSON — no markdown, no explanation.",
+  example: {
+    action: "approve|reject|choose|input|skip|abort",
+    value: "<optional>",
+    confidence: 0.0,
+    reasoning: "<one line>",
+  },
+};
+
+const AUTO_APPROVER_INSTRUCTIONS = `Given this code orchestration interaction request, decide the best action.
+
+## Available Actions
+- approve: Proceed with the operation
+- reject: Deny the operation
+- choose: Select an option (requires value field)
+- input: Provide text input (requires value field)
+- skip: Skip this interaction
+- abort: Abort execution
+
+## Rules
+1. For "red" safety tier (security-review, cost-exceeded, merge-conflict): ALWAYS return confidence 0 to escalate to human
+2. For "yellow" safety tier (cost-warning, max-retries, pre-merge): High confidence (0.8+) ONLY if clearly safe
+3. For "green" safety tier (story-ambiguity, review-gate): Can approve with moderate confidence (0.6+)
+4. Default to the fallback behavior if unsure
+5. Never auto-approve security issues
+6. If the summary mentions "critical" or "security", confidence MUST be < 0.5`;
 
 /** Auto plugin configuration */
 interface AutoConfig {
@@ -132,7 +162,7 @@ export class AutoInteractionPlugin implements InteractionPlugin {
    * Call LLM to make decision
    */
   private async callLlm(request: InteractionRequest): Promise<DecisionResponse> {
-    const prompt = this.buildPrompt(request);
+    const prompt = await this.buildPrompt(request);
 
     // Get adapter from dependency injection or throw
     const adapter = _autoPluginDeps.adapter;
@@ -172,52 +202,33 @@ export class AutoInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Build LLM prompt for decision
+   * Build LLM prompt for decision using OneShotPromptBuilder.
    */
-  private buildPrompt(request: InteractionRequest): string {
-    let prompt = `You are an AI decision assistant for a code orchestration system. Given an interaction request, decide the best action.
-
-## Interaction Request
-Type: ${request.type}
-Stage: ${request.stage}
-Feature: ${request.featureName}
-${request.storyId ? `Story: ${request.storyId}` : ""}
-
-Summary: ${request.summary.replace(/`/g, "\\`").replace(/\$/g, "\\$")}
-${request.detail ? `\nDetail: ${request.detail.replace(/`/g, "\\`").replace(/\$/g, "\\$")}` : ""}
-`;
+  private async buildPrompt(request: InteractionRequest): Promise<string> {
+    const requestLines = [
+      `Type: ${request.type}`,
+      `Stage: ${request.stage}`,
+      `Feature: ${request.featureName}`,
+      ...(request.storyId ? [`Story: ${request.storyId}`] : []),
+      `Summary: ${request.summary.replace(/`/g, "\\`").replace(/\$/g, "\\$")}`,
+      ...(request.detail ? [`Detail: ${request.detail.replace(/`/g, "\\`").replace(/\$/g, "\\$")}`] : []),
+      `Fallback behavior on timeout: ${request.fallback}`,
+      `Safety tier: ${request.metadata?.safety ?? "unknown"}`,
+    ];
 
     if (request.options && request.options.length > 0) {
-      prompt += "\nOptions:\n";
+      requestLines.push("\nOptions:");
       for (const opt of request.options) {
         const desc = opt.description ? ` — ${opt.description}` : "";
-        prompt += `  [${opt.key}] ${opt.label}${desc}\n`;
+        requestLines.push(`  [${opt.key}] ${opt.label}${desc}`);
       }
     }
 
-    prompt += `\nFallback behavior on timeout: ${request.fallback}
-Safety tier: ${request.metadata?.safety ?? "unknown"}
-
-## Available Actions
-- approve: Proceed with the operation
-- reject: Deny the operation
-- choose: Select an option (requires value field)
-- input: Provide text input (requires value field)
-- skip: Skip this interaction
-- abort: Abort execution
-
-## Rules
-1. For "red" safety tier (security-review, cost-exceeded, merge-conflict): ALWAYS return confidence 0 to escalate to human
-2. For "yellow" safety tier (cost-warning, max-retries, pre-merge): High confidence (0.8+) ONLY if clearly safe
-3. For "green" safety tier (story-ambiguity, review-gate): Can approve with moderate confidence (0.6+)
-4. Default to the fallback behavior if unsure
-5. Never auto-approve security issues
-6. If the summary mentions "critical" or "security", confidence MUST be < 0.5
-
-Respond with ONLY this JSON (no markdown, no explanation):
-{"action":"approve|reject|choose|input|skip|abort","value":"<optional>","confidence":0.0-1.0,"reasoning":"<one line>"}`;
-
-    return prompt;
+    return OneShotPromptBuilder.for("auto-approver")
+      .instructions(AUTO_APPROVER_INSTRUCTIONS)
+      .inputData("Interaction Request", requestLines.join("\n"))
+      .jsonSchema(AUTO_APPROVER_SCHEMA)
+      .build();
   }
 
   /**

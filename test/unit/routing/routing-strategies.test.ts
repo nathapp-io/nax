@@ -3,18 +3,18 @@
  * LLM Routing Strategy Tests
  *
  * Tests for LLM routing utilities:
- * - Prompt building (buildRoutingPrompt, buildBatchPrompt)
  * - Response parsing (parseRoutingResponse)
  * - Code fence handling (stripCodeFences)
  * - Decision validation (validateRoutingDecision)
+ *
+ * Note: Prompt-building tests (buildRoutingPrompt, buildBatchPrompt) were
+ * parity tests removed in Phase 6 when prompts migrated to OneShotPromptBuilder.
  */
 
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
 import {
-  buildBatchPrompt,
-  buildRoutingPrompt,
   parseRoutingResponse,
   stripCodeFences,
   validateRoutingDecision,
@@ -45,31 +45,6 @@ const complexStory: UserStory = {
   escalations: [],
   attempts: 0,
 };
-
-describe("LLM Routing Strategy - Prompt Building", () => {
-  test("buildRoutingPrompt formats story correctly", () => {
-    const prompt = buildRoutingPrompt(simpleStory, DEFAULT_CONFIG);
-
-    expect(prompt).toContain("Title: Fix typo in README");
-    expect(prompt).toContain("Description: Correct spelling mistake");
-    expect(prompt).toContain("1. Update README.md with correct spelling");
-    expect(prompt).toContain("Tags: docs");
-    expect(prompt).toContain("fast: For simple tasks");
-    expect(prompt).toContain("balanced: For medium tasks");
-    expect(prompt).toContain("powerful: For complex/expert tasks");
-  });
-
-  test("buildBatchPrompt formats multiple stories", () => {
-    const stories = [simpleStory, complexStory];
-    const prompt = buildBatchPrompt(stories, DEFAULT_CONFIG);
-
-    expect(prompt).toContain("1. US-001: Fix typo in README");
-    expect(prompt).toContain("2. US-002: Add JWT authentication");
-    expect(prompt).toContain("Tags: docs");
-    expect(prompt).toContain("Tags: security, auth");
-    expect(prompt).toContain('{"id":"US-001"');
-  });
-});
 
 describe("LLM Routing Strategy - Response Parsing", () => {
   test("parseRoutingResponse handles valid JSON", () => {
