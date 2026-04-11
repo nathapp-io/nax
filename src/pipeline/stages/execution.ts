@@ -222,12 +222,16 @@ export const executionStage: PipelineStage = {
       return { action: "fail", reason: "Prompt not built (prompt stage skipped?)" };
     }
 
-    // Validate agent supports the requested tier
+    // Validate agent supports the requested tier; clamp to first supported if not (issue #369)
+    let effectiveTier = ctx.routing.modelTier;
     if (!_executionDeps.validateAgentForTier(agent, ctx.routing.modelTier)) {
-      logger.warn("execution", "Agent tier mismatch", {
+      effectiveTier =
+        (agent.capabilities.supportedTiers[0] as typeof ctx.routing.modelTier | undefined) ?? ctx.routing.modelTier;
+      logger.debug("execution", "Agent tier mismatch — clamping to supported tier", {
         storyId: ctx.story.id,
         agentName: agent.name,
         requestedTier: ctx.routing.modelTier,
+        effectiveTier,
         supportedTiers: agent.capabilities.supportedTiers,
       });
     }
@@ -240,11 +244,11 @@ export const executionStage: PipelineStage = {
     const result = await agent.run({
       prompt: ctx.prompt,
       workdir: ctx.workdir,
-      modelTier: ctx.routing.modelTier,
+      modelTier: effectiveTier,
       modelDef: resolveModelForAgent(
         ctx.rootConfig.models,
         ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
-        ctx.routing.modelTier,
+        effectiveTier,
         ctx.rootConfig.autoMode.defaultAgent,
       ),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,

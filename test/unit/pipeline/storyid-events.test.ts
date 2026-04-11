@@ -161,9 +161,9 @@ describe("storyId is present in JSONL event payloads", () => {
   // ── Execution stage ─────────────────────────────────────────────────────────
 
   describe("execution stage", () => {
-    test("agent tier mismatch warn includes storyId", async () => {
+    test("agent tier mismatch debug log includes storyId", async () => {
       const logger = getLogger();
-      const warnSpy = spyOn(logger, "warn").mockImplementation(() => {});
+      const debugSpy = spyOn(logger, "debug").mockImplementation(() => {});
       spyOn(logger, "info").mockImplementation(() => {});
       spyOn(logger, "error").mockImplementation(() => {});
 
@@ -171,7 +171,7 @@ describe("storyId is present in JSONL event payloads", () => {
       ctx.prompt = "implement the feature";
       await executionStage.execute(ctx);
 
-      const call = warnSpy.mock.calls.find(([, msg]) => msg === "Agent tier mismatch");
+      const call = debugSpy.mock.calls.find(([, msg]) => msg === "Agent tier mismatch — clamping to supported tier");
       expect(call).toBeDefined();
       expect(call![2]).toEqual(
         expect.objectContaining({

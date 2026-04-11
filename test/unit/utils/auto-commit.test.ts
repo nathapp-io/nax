@@ -126,4 +126,31 @@ describe("autoCommitIfDirty", () => {
 
     expect(commands.some((c) => c.includes("commit"))).toBe(false);
   });
+
+  // Issue 5 (#369): warn→debug when auto-committing after agent session
+  test("logs at debug level (not warn) when auto-committing dirty files", async () => {
+    const gitRoot = "/repo";
+    _gitDeps.spawn = mock((cmd: string[]) => {
+      commands.push(cmd);
+      if (cmd.includes("rev-parse")) return makeProc(gitRoot + "\n");
+      if (cmd.includes("status")) return makeProc(" M src/foo.ts\n");
+      return makeProc("");
+    }) as typeof _gitDeps.spawn;
+
+    let warnCalled = false;
+    let debugCalled = false;
+    const origGetSafeLogger = _gitDeps.getSafeLogger;
+    _gitDeps.getSafeLogger = mock(() => ({
+      warn: () => { warnCalled = true; },
+      debug: () => { debugCalled = true; },
+    })) as typeof _gitDeps.getSafeLogger;
+
+    try {
+      await autoCommitIfDirty(gitRoot, "tdd", "implementer", "US-001");
+      expect(warnCalled).toBe(false);
+      expect(debugCalled).toBe(true);
+    } finally {
+      _gitDeps.getSafeLogger = origGetSafeLogger;
+    }
+  });
 });

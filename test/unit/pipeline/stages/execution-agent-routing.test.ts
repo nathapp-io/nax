@@ -177,3 +177,57 @@ describe("execution stage — routing.agent overrides default agent for model re
     expect(capturedModelDef?.model).toBe("claude-opus");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue 6 — tier mismatch: clamp to first supported tier (issue #369)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("execution stage — tier mismatch clamps to first supported tier", () => {
+  test("passes first supported tier to agent.run() when requested tier is unsupported", async () => {
+    let capturedTier: string | undefined;
+
+    _executionDeps.getAgent = () =>
+      ({
+        name: "opencode",
+        capabilities: { supportedTiers: ["balanced"] },
+        run: async (opts: { modelTier?: string }) => {
+          capturedTier = opts.modelTier;
+          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
+        },
+      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+
+    // validateAgentForTier returns false → tier mismatch
+    _executionDeps.validateAgentForTier = () => false;
+    _executionDeps.detectMergeConflict = () => false;
+
+    const ctx = makeCtx({}, { modelTier: "fast" });
+    await executionStage.execute(ctx);
+
+    // Should be clamped to "balanced", not the original "fast"
+    expect(capturedTier).toBe("balanced");
+  });
+
+  test("no clamping occurs when tier is supported", async () => {
+    let capturedTier: string | undefined;
+
+    _executionDeps.getAgent = () =>
+      ({
+        name: "claude",
+        capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
+        run: async (opts: { modelTier?: string }) => {
+          capturedTier = opts.modelTier;
+          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
+        },
+      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+
+    // validateAgentForTier returns true → no mismatch
+    _executionDeps.validateAgentForTier = () => true;
+    _executionDeps.detectMergeConflict = () => false;
+
+    const ctx = makeCtx({}, { modelTier: "fast" });
+    await executionStage.execute(ctx);
+
+    // Original tier is preserved
+    expect(capturedTier).toBe("fast");
+  });
+});
