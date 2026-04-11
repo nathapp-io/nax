@@ -228,11 +228,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
       agentGetFn,
     });
 
-    const { durationMs } = completionResult;
+    const { durationMs, acceptancePassed } = completionResult;
     runCompleted = true;
 
     return {
-      success: isComplete(prd),
+      success: isComplete(prd) && acceptancePassed,
       iterations,
       storiesCompleted,
       totalCost,
