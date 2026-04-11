@@ -248,6 +248,64 @@ test/minimal.test.ts:
     expect(result.failures[0].stackTrace).toHaveLength(0);
   });
 
+  describe("Jest output — Console pseudo-failure filtering", () => {
+    test("does not capture '● Console' group header as a failure", () => {
+      const output = `
+FAIL src/commands/comment.spec.ts
+  ● Console
+
+    console.error
+      Some error logged during a test
+
+Tests:       1 passed, 0 failed, 1 total
+      `.trim();
+
+      const result = parseTestOutput(output);
+      expect(result.failures).toHaveLength(0);
+      expect(result.passed).toBe(1);
+      expect(result.failed).toBe(0);
+    });
+
+    test("does not capture '● Console' when mixed with real failures", () => {
+      const output = `
+FAIL src/commands/kb-import.spec.ts
+  ● Console
+
+    console.error
+      error during test
+
+  ● kb import > AC1 › exits 0 and prints success
+
+    Error: expected 0, got 1
+
+Tests:       0 passed, 1 failed, 1 total
+      `.trim();
+
+      const result = parseTestOutput(output);
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0].testName).toBe("kb import > AC1 › exits 0 and prints success");
+    });
+
+    test("does not capture '● Console' across multiple files", () => {
+      const output = `
+FAIL src/commands/comment.spec.ts
+  ● Console
+
+    console.error
+
+FAIL src/commands/label.spec.ts
+  ● Console
+
+    console.log
+
+Tests:       0 passed, 0 failed, 2 total
+      `.trim();
+
+      const result = parseTestOutput(output);
+      expect(result.failures).toHaveLength(0);
+    });
+  });
+
   test("handles alternative check marks (✔ and ✘)", () => {
     const output = `
 bun test v1.0.0

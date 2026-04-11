@@ -14,10 +14,21 @@ export function buildImplementerRectificationPrompt(
   story: UserStory,
   _contextMarkdown?: string,
   config?: RectificationConfig,
+  testCommand?: string,
+  scopeFileThreshold?: number,
+  testScopedTemplate?: string,
 ): string {
-  // Reuse the existing rectification prompt builder from R2
-  // It already includes story context, failure details, and instructions
-  return createRectificationPrompt(failures, story, config);
+  // Reuse the existing rectification prompt builder from R2.
+  // attempt is undefined: the TDD gate does not use progressive escalation preambles.
+  return createRectificationPrompt(
+    failures,
+    story,
+    config,
+    undefined,
+    testCommand,
+    scopeFileThreshold,
+    testScopedTemplate,
+  );
 }
 
 /**
@@ -29,12 +40,27 @@ export function buildImplementerRectificationPrompt(
  * @param story - User story being implemented
  * @param failures - Array of test failures from test output parser
  * @param config - Optional rectification config (for maxFailureSummaryChars)
+ * @param testCommand - Full-suite test command (quality.commands.test)
+ * @param scopeFileThreshold - Max failing files before falling back to full suite
+ * @param testScopedTemplate - Scoped command template with {{files}} placeholder (quality.commands.testScoped)
  * @returns Formatted rectification prompt with failure details
  */
 export function buildRectificationPrompt(
   story: UserStory,
   failures: TestFailure[],
   config?: RectificationConfig,
+  testCommand?: string,
+  scopeFileThreshold?: number,
+  testScopedTemplate?: string,
 ): string {
-  return createRectificationPrompt(failures, story, config);
+  // attempt is undefined: callers of buildRectificationPrompt do not track attempt numbers.
+  return createRectificationPrompt(
+    failures,
+    story,
+    config,
+    undefined,
+    testCommand,
+    scopeFileThreshold,
+    testScopedTemplate,
+  );
 }

@@ -21,6 +21,9 @@ describe("shouldRetryRectification", () => {
     fullSuiteTimeoutSeconds: 120,
     maxFailureSummaryChars: 2000,
     abortOnIncreasingFailures: true,
+    escalateOnExhaustion: true,
+    rethinkAtAttempt: 2,
+    urgencyAtAttempt: 3,
   };
 
   test("should retry when attempt < maxRetries and failures exist", () => {
@@ -176,10 +179,17 @@ describe("createRectificationPrompt", () => {
     expect(prompt).toContain("Expected 403, got 200");
   });
 
-  test("should include specific bun test commands for failing files", () => {
+  test("should include per-file test commands for failing files (default bun test)", () => {
     const prompt = createRectificationPrompt(mockFailures, mockStory);
     expect(prompt).toContain("bun test test/auth.test.ts");
     expect(prompt).toContain("bun test test/middleware.test.ts");
+  });
+
+  test("uses configured testCommand instead of hardcoded bun test", () => {
+    const prompt = createRectificationPrompt(mockFailures, mockStory, undefined, undefined, "jest");
+    expect(prompt).toContain("jest test/auth.test.ts");
+    expect(prompt).toContain("jest test/middleware.test.ts");
+    expect(prompt).not.toContain("bun test test/");
   });
 
   test("should include clear instructions about fixing regressions", () => {
@@ -205,6 +215,9 @@ describe("createRectificationPrompt", () => {
       fullSuiteTimeoutSeconds: 120,
       maxFailureSummaryChars: 100, // very small limit
       abortOnIncreasingFailures: true,
+      escalateOnExhaustion: true,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
     };
 
     const manyFailures: TestFailure[] = Array.from({ length: 20 }, (_, i) => ({
@@ -278,10 +291,102 @@ describe("createRectificationPrompt", () => {
     // Should not crash, just show empty list
   });
 
-  test("should include instructions to run ONLY failing tests", () => {
+  test("scoped mode includes NEVER run without filter instruction", () => {
+    // mockFailures has 2 files — well within default threshold of 10
     const prompt = createRectificationPrompt(mockFailures, mockStory);
     expect(prompt).toContain("run ONLY the failing test files shown above");
     expect(prompt).toContain("NEVER run `bun test` without a file filter");
+  });
+
+  test("deduplicates failures by (file, testName) before building prompt", () => {
+    const dupeFailures: TestFailure[] = [
+      { file: "test/auth.test.ts", testName: "should pass", error: "err", stackTrace: [] },
+      { file: "test/auth.test.ts", testName: "should pass", error: "err", stackTrace: [] }, // exact dupe
+      { file: "test/auth.test.ts", testName: "other test", error: "err", stackTrace: [] },
+    ];
+    const prompt = createRectificationPrompt(dupeFailures, mockStory);
+    // Only 2 distinct (file, testName) pairs — failure list should not show 3 items
+    const occurrences = (prompt.match(/should pass/g) ?? []).length;
+    expect(occurrences).toBe(1);
+  });
+
+  test("falls back to full-suite command when failing files exceed scopeFileThreshold", () => {
+    const manyFiles: TestFailure[] = Array.from({ length: 15 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}`,
+      stackTrace: [],
+    }));
+    // 15 files > default threshold (10) → full-suite fallback
+    const prompt = createRectificationPrompt(manyFiles, mockStory);
+    expect(prompt).not.toMatch(/bun test test\/file/); // no per-file commands
+    expect(prompt).toContain("  bun test"); // full suite
+    expect(prompt).toMatch(/15 files are failing/);
+  });
+
+  test("emits per-file commands when failing files are within scopeFileThreshold", () => {
+    const fewFiles: TestFailure[] = Array.from({ length: 5 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}`,
+      stackTrace: [],
+    }));
+    // 5 files ≤ default threshold (10) → scoped commands
+    const prompt = createRectificationPrompt(fewFiles, mockStory);
+    for (let i = 0; i < 5; i++) {
+      expect(prompt).toContain(`bun test test/file${i}.test.ts`);
+    }
+    expect(prompt).toContain("NEVER run");
+  });
+
+  test("full-suite fallback uses configured testCommand", () => {
+    const manyFiles: TestFailure[] = Array.from({ length: 15 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}`,
+      stackTrace: [],
+    }));
+    const prompt = createRectificationPrompt(manyFiles, mockStory, undefined, undefined, "jest");
+    expect(prompt).toContain("  jest");
+    expect(prompt).not.toContain("bun test");
+    expect(prompt).toMatch(/15 files are failing/);
+  });
+
+  test("uses testScopedTemplate for per-file commands when provided", () => {
+    const prompt = createRectificationPrompt(
+      mockFailures,
+      mockStory,
+      undefined,
+      undefined,
+      "jest",
+      undefined,
+      "jest --testPathPattern={{files}}",
+    );
+    expect(prompt).toContain("jest --testPathPattern=test/auth.test.ts");
+    expect(prompt).toContain("jest --testPathPattern=test/middleware.test.ts");
+    expect(prompt).not.toContain("jest test/auth.test.ts");
+  });
+
+  test("custom scopeFileThreshold overrides the default", () => {
+    const files: TestFailure[] = Array.from({ length: 3 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}`,
+      stackTrace: [],
+    }));
+    // 3 files > threshold of 2 → full-suite fallback
+    const prompt = createRectificationPrompt(files, mockStory, undefined, undefined, undefined, 2);
+    expect(prompt).not.toMatch(/bun test test\/file/);
+    expect(prompt).toMatch(/3 files are failing/);
+  });
+
+  test("normalizes leading ../ from failure file paths in test commands", () => {
+    const pathFailures: TestFailure[] = [
+      { file: "../test/e2e/import.e2e.spec.ts", testName: "AC1", error: "err", stackTrace: [] },
+    ];
+    const prompt = createRectificationPrompt(pathFailures, mockStory);
+    expect(prompt).not.toContain("bun test ../test");
+    expect(prompt).toContain("bun test test/e2e/import.e2e.spec.ts");
   });
 
   describe("progressive prompt escalation", () => {
@@ -429,6 +534,9 @@ describe("createEscalatedRectificationPrompt", () => {
     fullSuiteTimeoutSeconds: 120,
     maxFailureSummaryChars: 2000,
     abortOnIncreasingFailures: true,
+    escalateOnExhaustion: true,
+    rethinkAtAttempt: 2,
+    urgencyAtAttempt: 3,
   };
 
   test("should include 'Previous Rectification Attempts' section header", () => {
@@ -557,6 +665,9 @@ describe("createEscalatedRectificationPrompt", () => {
       fullSuiteTimeoutSeconds: 120,
       maxFailureSummaryChars: 100,
       abortOnIncreasingFailures: true,
+      escalateOnExhaustion: true,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
     };
 
     const manyFailures: TestFailure[] = Array.from({ length: 10 }, (_, i) => ({
@@ -615,5 +726,31 @@ describe("createEscalatedRectificationPrompt", () => {
     );
     // Should have some guidance for the escalated attempt
     expect(prompt.toLowerCase()).toMatch(/fix|implement|correct/);
+  });
+
+  test("uses configured testCommand in NEVER run filter instruction", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+      "jest",
+    );
+    expect(prompt).toContain("NEVER run `jest` without a file filter");
+    expect(prompt).not.toContain("NEVER run `bun test`");
+  });
+
+  test("defaults to bun test in filter instruction when no testCommand provided", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+    expect(prompt).toContain("NEVER run `bun test` without a file filter");
   });
 });
