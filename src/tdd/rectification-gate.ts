@@ -13,6 +13,8 @@ import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
+import { RectifierPromptBuilder } from "../prompts";
+import type { FailureRecord } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
@@ -24,7 +26,6 @@ import {
 } from "../verification";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
-import { buildImplementerRectificationPrompt } from "./prompts";
 
 /** Injectable deps for testability — avoids mock.module() contamination */
 export const _rectificationGateDeps = {
@@ -137,7 +138,7 @@ async function runRectificationLoop(
   workdir: string,
   agent: AgentAdapter,
   implementerTier: ModelTier,
-  contextMarkdown: string | undefined,
+  _contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
   testSummary: ReturnType<typeof _parseTestOutput>,
@@ -146,7 +147,7 @@ async function runRectificationLoop(
   fullSuiteTimeout: number,
   featureName?: string,
   projectDir?: string,
-  testScopedTemplate?: string,
+  _testScopedTemplate?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationState: RectificationState = {
     attempt: 0,
@@ -193,16 +194,21 @@ async function runRectificationLoop(
     }),
     canContinue: (state) =>
       state.isolationPassed && _rectificationGateDeps.shouldRetryRectification(state, rectificationConfig),
-    buildPrompt: () =>
-      buildImplementerRectificationPrompt(
-        testSummary.failures,
-        story,
-        contextMarkdown,
-        rectificationConfig,
-        testCmd,
-        config.quality?.scopeTestThreshold,
-        testScopedTemplate,
-      ),
+    buildPrompt: async () => {
+      const failureRecords: FailureRecord[] = testSummary.failures.map((f) => ({
+        test: f.testName,
+        file: f.file,
+        message: f.error,
+        output: f.stackTrace.length > 0 ? f.stackTrace.join("\n") : undefined,
+      }));
+      return RectifierPromptBuilder.for("tdd-suite-failure")
+        .story(story)
+        .priorFailures(failureRecords)
+        .testCommand(testCmd)
+        .conventions()
+        .task()
+        .build();
+    },
     runAttempt: async (attempt, rectificationPrompt) => {
       const isLastAttempt = attempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";

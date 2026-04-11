@@ -393,18 +393,24 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
 });
 
 // ---------------------------------------------------------------------------
-// 4. Internal prompts remain unchanged (regression guard — expected to PASS)
+// 4. Internal prompts — migration status (regression guard — expected to PASS)
 // ---------------------------------------------------------------------------
 
 describe("Internal prompts: not migrated, still accessible", () => {
-  test("buildImplementerRectificationPrompt still exported from src/tdd/prompts", async () => {
-    const mod = await import("../../../src/tdd/prompts");
-    expect(typeof mod.buildImplementerRectificationPrompt).toBe("function");
+  test("src/tdd/prompts.ts has been deleted (Phase 5 — RectifierPromptBuilder replaces it)", async () => {
+    // After Phase 5, src/tdd/prompts.ts must not exist.
+    let importError: unknown = null;
+    try {
+      await import("../../../src/tdd/prompts");
+    } catch (err) {
+      importError = err;
+    }
+    expect(importError).not.toBeNull();
   });
 
-  test("buildRectificationPrompt still exported from src/tdd/prompts", async () => {
-    const mod = await import("../../../src/tdd/prompts");
-    expect(typeof mod.buildRectificationPrompt).toBe("function");
+  test("RectifierPromptBuilder is exported from src/prompts (Phase 5)", async () => {
+    const mod = await import("../../../src/prompts");
+    expect(typeof mod.RectifierPromptBuilder).toBe("function");
   });
 
   test("src/execution/prompts.ts has been deleted (buildBatchPrompt and buildSingleSessionPrompt are now dead code)", async () => {

@@ -20,14 +20,11 @@ import { getSafeLogger } from "../logger";
 import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
+import { RectifierPromptBuilder } from "../prompts";
+import type { FailureRecord } from "../prompts";
 import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
-import {
-  type RectificationState,
-  createEscalatedRectificationPrompt,
-  createRectificationPrompt,
-  shouldRetryRectification,
-} from "./rectification";
+import { type RectificationState, createEscalatedRectificationPrompt, shouldRetryRectification } from "./rectification";
 import { fullSuite as _fullSuite } from "./runners";
 import { runSharedRectificationLoop } from "./shared-rectification-loop";
 
@@ -202,15 +199,19 @@ export async function runRectificationLoop(
         }
       }
 
-      let rectificationPrompt = createRectificationPrompt(
-        testSummary.failures,
-        story,
-        rectificationConfig,
-        attempt,
-        testCommand,
-        config.quality?.scopeTestThreshold,
-        testScopedTemplate,
-      );
+      const failureRecords: FailureRecord[] = testSummary.failures.map((f) => ({
+        test: f.testName,
+        file: f.file,
+        message: f.error,
+        output: f.stackTrace.length > 0 ? f.stackTrace.join("\n") : undefined,
+      }));
+      let rectificationPrompt = await RectifierPromptBuilder.for("verify-failure")
+        .story(story)
+        .priorFailures(failureRecords)
+        .testCommand(testCommand)
+        .conventions()
+        .task()
+        .build();
       if (diagnosisPrefix) {
         rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;
       }
