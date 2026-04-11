@@ -1,0 +1,117 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`ReviewPromptBuilder.buildSemanticReviewPrompt() snapshot stability no custom rules — output is stable 1`] = `
+"IMPORTANT: Your entire response must be a single JSON object or array. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON.
+
+You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
+
+## Story: Add semantic review
+
+### Description
+Implement LLM-based semantic review for story diffs.
+
+### Acceptance Criteria
+1. LLM is called with story diff
+2. Findings are returned as structured JSON
+
+## Git Diff (production code only — test files excluded)
+
+\`\`\`diff
+diff --git a/src/review/semantic.ts b/src/review/semantic.ts
++export async function runSemanticReview() {}\`\`\`
+
+## Instructions
+
+For each acceptance criterion, verify the diff implements it correctly.
+
+**Before reporting any finding as "error", you MUST verify it using your tools:**
+- If you suspect a key, function, import, or variable is missing, READ the relevant file to confirm before flagging.
+- If you suspect a code path is not wired in, GREP for its usage to confirm.
+- Do NOT flag something as missing based solely on its absence from the diff — it may already exist in the codebase. Check the actual file first.
+- If you cannot verify a claim even after checking, use "unverifiable" severity instead of "error".
+
+Flag issues only when you have confirmed:
+1. An AC is not implemented or partially implemented (verified by reading the actual files)
+2. The implementation contradicts what the AC specifies
+3. New code has dead paths that will never execute (stubs, noops, unreachable branches)
+4. New code is not wired into callers/exports (verified by grepping for usage)
+
+Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
+Respond with JSON only — no explanation text before or after:
+{
+  "passed": boolean,
+  "findings": [
+    {
+      "severity": "error" | "warn" | "info" | "unverifiable",
+      "file": "path/to/file",
+      "line": 42,
+      "issue": "description of the issue",
+      "suggestion": "how to fix it"
+    }
+  ]
+}
+
+If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
+
+YOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text."
+`;
+
+exports[`ReviewPromptBuilder.buildSemanticReviewPrompt() snapshot stability with custom rules — output is stable 1`] = `
+"IMPORTANT: Your entire response must be a single JSON object or array. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON.
+
+You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
+
+## Story: Add semantic review
+
+### Description
+Implement LLM-based semantic review for story diffs.
+
+### Acceptance Criteria
+1. LLM is called with story diff
+2. Findings are returned as structured JSON
+
+## Additional Review Rules
+1. Do not flag style issues
+2. Verify AC 1 using GREP before flagging
+
+## Git Diff (production code only — test files excluded)
+
+\`\`\`diff
+diff --git a/src/review/semantic.ts b/src/review/semantic.ts
++export async function runSemanticReview() {}\`\`\`
+
+## Instructions
+
+For each acceptance criterion, verify the diff implements it correctly.
+
+**Before reporting any finding as "error", you MUST verify it using your tools:**
+- If you suspect a key, function, import, or variable is missing, READ the relevant file to confirm before flagging.
+- If you suspect a code path is not wired in, GREP for its usage to confirm.
+- Do NOT flag something as missing based solely on its absence from the diff — it may already exist in the codebase. Check the actual file first.
+- If you cannot verify a claim even after checking, use "unverifiable" severity instead of "error".
+
+Flag issues only when you have confirmed:
+1. An AC is not implemented or partially implemented (verified by reading the actual files)
+2. The implementation contradicts what the AC specifies
+3. New code has dead paths that will never execute (stubs, noops, unreachable branches)
+4. New code is not wired into callers/exports (verified by grepping for usage)
+
+Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
+Respond with JSON only — no explanation text before or after:
+{
+  "passed": boolean,
+  "findings": [
+    {
+      "severity": "error" | "warn" | "info" | "unverifiable",
+      "file": "path/to/file",
+      "line": 42,
+      "issue": "description of the issue",
+      "suggestion": "how to fix it"
+    }
+  ]
+}
+
+If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
+
+YOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text."
+`;

@@ -18,17 +18,13 @@ import { DebateSession } from "../debate";
 import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
+import { ReviewPromptBuilder } from "../prompts";
 import { getMergeBase, isGitRefValid } from "../utils/git";
-import { tryParseLLMJson, wrapJsonPrompt } from "../utils/llm-json";
-import type { ReviewCheckResult, SemanticReviewConfig } from "./types";
+import { tryParseLLMJson } from "../utils/llm-json";
+import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
-/** Story fields required for semantic review */
-export interface SemanticStory {
-  id: string;
-  title: string;
-  description: string;
-  acceptanceCriteria: string[];
-}
+// Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
+export type { SemanticStory };
 
 /** Function that resolves an AgentAdapter for a given model tier */
 export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined;
@@ -122,72 +118,6 @@ function truncateDiff(diff: string, stat?: string): string {
     : "";
 
   return `${statPreamble}${truncated}\n... (truncated at ${DIFF_CAP_BYTES} bytes, showing ${visibleFiles}/${totalFiles} files)`;
-}
-
-/**
- * Build the LLM prompt for semantic review.
- * @param stat - Optional git diff --stat output (all files, including tests). Always included
- *               as context so the LLM knows which test files were modified even when their
- *               content is excluded from the diff.
- */
-function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig, diff: string, _stat?: string): string {
-  const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
-
-  const customRulesSection =
-    semanticConfig.rules.length > 0
-      ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
-      : "";
-
-  const core = `You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
-
-## Story: ${story.title}
-
-### Description
-${story.description}
-
-### Acceptance Criteria
-${acList}
-${customRulesSection}
-## Git Diff (production code only — test files excluded)
-
-\`\`\`diff
-${diff}\`\`\`
-
-## Instructions
-
-For each acceptance criterion, verify the diff implements it correctly.
-
-**Before reporting any finding as "error", you MUST verify it using your tools:**
-- If you suspect a key, function, import, or variable is missing, READ the relevant file to confirm before flagging.
-- If you suspect a code path is not wired in, GREP for its usage to confirm.
-- Do NOT flag something as missing based solely on its absence from the diff — it may already exist in the codebase. Check the actual file first.
-- If you cannot verify a claim even after checking, use "unverifiable" severity instead of "error".
-
-Flag issues only when you have confirmed:
-1. An AC is not implemented or partially implemented (verified by reading the actual files)
-2. The implementation contradicts what the AC specifies
-3. New code has dead paths that will never execute (stubs, noops, unreachable branches)
-4. New code is not wired into callers/exports (verified by grepping for usage)
-
-Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
-
-Respond with JSON only — no explanation text before or after:
-{
-  "passed": boolean,
-  "findings": [
-    {
-      "severity": "error" | "warn" | "info" | "unverifiable",
-      "file": "path/to/file",
-      "line": 42,
-      "issue": "description of the issue",
-      "suggestion": "how to fix it"
-    }
-  ]
-}
-
-If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.`;
-
-  return wrapJsonPrompt(core);
 }
 
 interface LLMFinding {
@@ -358,9 +288,8 @@ export async function runSemanticReview(
     };
   }
 
-  // Build prompt — pass stat so LLM can see which test files changed even though
-  // test file content is excluded from the diff (satisfies test-only AC verification)
-  const prompt = buildPrompt(story, semanticConfig, diff, stat || undefined);
+  // Build prompt — stat is already incorporated into diff via truncateDiff() when needed.
+  const prompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(story, semanticConfig, diff);
 
   // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;

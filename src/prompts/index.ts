@@ -17,5 +17,8 @@ export { TddPromptBuilder as PromptBuilder } from "./builders/tdd-builder";
 export { DebatePromptBuilder } from "./builders/debate-builder";
 export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "./builders/debate-builder";
 
+// Review prompt builder — semantic review prompt construction.
+export { ReviewPromptBuilder } from "./builders/review-builder";
+
 // Core types — re-exported for callsites that need them
 export type { PromptRole, PromptSection, PromptOptions } from "./core/types";
