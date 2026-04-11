@@ -7,6 +7,14 @@
 /** Review check name */
 export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic";
 
+/** Story fields required for semantic review */
+export interface SemanticStory {
+  id: string;
+  title: string;
+  description: string;
+  acceptanceCriteria: string[];
+}
+
 /** Semantic review configuration */
 export interface SemanticReviewConfig {
   /** Model tier for semantic review (default: 'balanced') */
