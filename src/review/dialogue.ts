@@ -152,6 +152,30 @@ function compactHistory(history: DialogueMessage[]): string {
   return summary;
 }
 
+/**
+ * Map a raw LLM finding object to a ReviewFinding.
+ * The dialogue reviewer LLM may return `issue`/`suggestion` (matching the semantic.ts prompt schema)
+ * or may return `message`/`ruleId` directly. Both shapes are normalized here so that
+ * ReviewFinding.ruleId and ReviewFinding.message are always populated.
+ */
+function mapLLMFindingToReviewFinding(f: Record<string, unknown>): ReviewFinding {
+  const rawSeverity = typeof f.severity === "string" ? f.severity : "info";
+  let severity: ReviewFinding["severity"] = "info";
+  if (rawSeverity === "warn" || rawSeverity === "warning") severity = "warning";
+  else if (rawSeverity === "critical" || rawSeverity === "error" || rawSeverity === "low") severity = rawSeverity;
+  else if (rawSeverity === "unverifiable") severity = "info";
+  else if (rawSeverity === "info") severity = "info";
+
+  return {
+    ruleId: typeof f.ruleId === "string" && f.ruleId ? f.ruleId : "semantic",
+    severity,
+    file: typeof f.file === "string" ? f.file : "",
+    line: typeof f.line === "number" ? f.line : 0,
+    message: typeof f.message === "string" && f.message ? f.message : typeof f.issue === "string" ? f.issue : "",
+    source: typeof f.source === "string" ? f.source : "semantic-review",
+  };
+}
+
 function parseReviewResponse(output: string): ReviewDialogueResult {
   let parsed: Record<string, unknown>;
   try {
@@ -170,7 +194,8 @@ function parseReviewResponse(output: string): ReviewDialogueResult {
     });
   }
   const success = Boolean(parsed.passed);
-  const findings = Array.isArray(parsed.findings) ? (parsed.findings as ReviewFinding[]) : [];
+  const rawFindings = Array.isArray(parsed.findings) ? (parsed.findings as Record<string, unknown>[]) : [];
+  const findings: ReviewFinding[] = rawFindings.map((f) => mapLLMFindingToReviewFinding(f));
   const reasoningObj =
     parsed.findingReasoning && typeof parsed.findingReasoning === "object"
       ? (parsed.findingReasoning as Record<string, string>)
