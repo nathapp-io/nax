@@ -4,22 +4,24 @@
  * Responsibilities:
  *   - Accumulate PromptSection objects in insertion order (call-order = section order).
  *   - Join sections into a final prompt string using the canonical separator.
- *   - Delegate disk-based override loading to the prompt loader.
  *   - Expose a read-only snapshot for debugging and audit.
  *
  * Builders wrap this via composition — no inheritance.
+ *
+ * Design notes:
+ *   - Disk-based override loading is NOT handled here. Each builder is responsible
+ *     for resolving overrides before calling add(), keeping this class focused
+ *     and free of cross-module dependencies.
+ *   - Instances are intended to be single-use (one build() per instance). Builders
+ *     should create a fresh SectionAccumulator per build() call to prevent
+ *     double-section accumulation if build() is called more than once.
  */
 
-import type { NaxConfig } from "../../config/types";
-import type { PromptRole } from "./types";
 import type { PromptSection } from "./types";
 import { SECTION_SEP } from "./wrappers";
 
 export class SectionAccumulator {
   private readonly sections: PromptSection[] = [];
-  private workdir: string | undefined;
-  private config: NaxConfig | undefined;
-  private overrideRole: PromptRole | undefined;
 
   /**
    * Append a section. Null/undefined sections are silently skipped,
@@ -31,33 +33,12 @@ export class SectionAccumulator {
   }
 
   /**
-   * Configure disk-based override loading. When set, `resolveOverride()`
-   * will check config.prompts.overrides[role] for a file path.
-   */
-  withLoader(workdir: string, config: NaxConfig, role: PromptRole): this {
-    this.workdir = workdir;
-    this.config = config;
-    this.overrideRole = role;
-    return this;
-  }
-
-  /**
-   * Try to load a disk override for the configured role.
-   * Returns the file content if an override exists and is readable, otherwise null.
-   * Must be called inside an async context (e.g. inside build()).
-   */
-  async resolveOverride(): Promise<string | null> {
-    if (!this.workdir || !this.config || !this.overrideRole) return null;
-    const { loadOverride } = await import("../loader");
-    return loadOverride(this.overrideRole, this.workdir, this.config);
-  }
-
-  /**
    * Join all accumulated sections into the final prompt string.
    * Sections appear in insertion order, separated by SECTION_SEP.
-   * Empty-content sections are filtered out to avoid blank separator blocks.
+   * Sections with empty content are skipped to avoid blank separator blocks —
+   * this guards against section builders that return "" for certain configurations.
    */
-  async join(): Promise<string> {
+  join(): string {
     return this.sections
       .filter((s) => s.content.length > 0)
       .map((s) => s.content)

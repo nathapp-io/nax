@@ -23,21 +23,23 @@
 
 import type { NaxConfig } from "../../config/types";
 import type { UserStory } from "../../prd";
-import { SectionAccumulator } from "../core/section-accumulator";
-import type { PromptOptions, PromptRole, PromptSection } from "../core/types";
-import { universalConstitutionSection, universalContextSection } from "../core/universal-sections";
-import type { AcceptanceEntry } from "../sections/acceptance";
-import { buildAcceptanceSection } from "../sections/acceptance";
-import { buildConventionsSection } from "../sections/conventions";
-import { buildHermeticSection } from "../sections/hermetic";
-import { buildIsolationSection } from "../sections/isolation";
-import { buildRoleTaskSection } from "../sections/role-task";
-import { buildBatchStorySection, buildStorySection } from "../sections/story";
-import { buildTddLanguageSection } from "../sections/tdd-conventions";
-import { buildVerdictSection } from "../sections/verdict";
+import { SectionAccumulator } from "../core";
+import type { PromptOptions, PromptRole, PromptSection } from "../core";
+import { universalConstitutionSection, universalContextSection } from "../core";
+import type { AcceptanceEntry } from "../sections";
+import {
+  buildAcceptanceSection,
+  buildBatchStorySection,
+  buildConventionsSection,
+  buildHermeticSection,
+  buildIsolationSection,
+  buildRoleTaskSection,
+  buildStorySection,
+  buildTddLanguageSection,
+  buildVerdictSection,
+} from "../sections";
 
 export class TddPromptBuilder {
-  private readonly acc: SectionAccumulator;
   private readonly role: PromptRole;
   private readonly options: PromptOptions;
 
@@ -46,6 +48,7 @@ export class TddPromptBuilder {
   private constitution_: string | undefined;
   private contextMd_: string | undefined;
   private overridePath_: string | undefined;
+  private loaderWorkdir_: string | undefined;
   private loaderConfig_: NaxConfig | undefined;
   private testCommand_: string | undefined;
   private hermeticConfig_: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
@@ -55,7 +58,6 @@ export class TddPromptBuilder {
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this.role = role;
     this.options = options;
-    this.acc = new SectionAccumulator();
   }
 
   static for(role: PromptRole, options?: PromptOptions): TddPromptBuilder {
@@ -94,12 +96,13 @@ export class TddPromptBuilder {
 
   /**
    * Configure disk-based prompt override loading.
-   * The config is also stored locally for tddLanguage and hermetic sections
-   * which need access to config.project.
+   * Both workdir and config are stored on the builder so they are available
+   * to tddLanguage and hermetic sections (which need config.project) as well
+   * as to the override loader.
    */
   withLoader(workdir: string, config: NaxConfig): this {
+    this.loaderWorkdir_ = workdir;
     this.loaderConfig_ = config;
-    this.acc.withLoader(workdir, config, this.role);
     return this;
   }
 
@@ -120,38 +123,46 @@ export class TddPromptBuilder {
     return this;
   }
 
+  /**
+   * Compose and return the final prompt string.
+   *
+   * A fresh SectionAccumulator is created on each call so that calling build()
+   * more than once on the same instance is safe and idempotent.
+   */
   async build(): Promise<string> {
+    const acc = new SectionAccumulator();
+
     // (1) Constitution
-    this.acc.add(universalConstitutionSection(this.constitution_));
+    acc.add(universalConstitutionSection(this.constitution_));
 
     // (2) Role task body — disk override or default template
-    this.acc.add(this.s("role-task", await this.resolveRoleBody()));
+    acc.add(this.s("role-task", await this.resolveRoleBody()));
 
     // (3) Story context
     if (this.role === "batch" && this.stories_ && this.stories_.length > 0) {
-      this.acc.add(this.s("story", buildBatchStorySection(this.stories_)));
+      acc.add(this.s("story", buildBatchStorySection(this.stories_)));
     } else if (this.story_) {
-      this.acc.add(this.s("story", buildStorySection(this.story_)));
+      acc.add(this.s("story", buildStorySection(this.story_)));
     }
 
     // (3.5) Acceptance test context
     if (this.acceptanceEntries_ && this.acceptanceEntries_.length > 0) {
       const content = buildAcceptanceSection(this.acceptanceEntries_);
-      if (content) this.acc.add(this.s("acceptance", content));
+      if (content) acc.add(this.s("acceptance", content));
     }
 
     // (4) Verdict — verifier only
     if (this.role === "verifier" && this.story_) {
-      this.acc.add(this.s("verdict", buildVerdictSection(this.story_)));
+      acc.add(this.s("verdict", buildVerdictSection(this.story_)));
     }
 
     // (5) Isolation rules
     const isolation = this.options.isolation as "strict" | "lite" | undefined;
-    this.acc.add(this.s("isolation", buildIsolationSection(this.role, isolation, this.testCommand_)));
+    acc.add(this.s("isolation", buildIsolationSection(this.role, isolation, this.testCommand_)));
 
     // (5.5) TDD language convention
     const tddLang = buildTddLanguageSection(this.loaderConfig_?.project?.language);
-    if (tddLang) this.acc.add(this.s("tdd-language", tddLang));
+    if (tddLang) acc.add(this.s("tdd-language", tddLang));
 
     // (5.6) Hermetic test rules
     if (this.hermeticConfig_ !== undefined && this.hermeticConfig_.hermetic !== false) {
@@ -161,16 +172,16 @@ export class TddPromptBuilder {
         this.hermeticConfig_.mockGuidance,
         this.loaderConfig_?.project,
       );
-      if (hermeticSection) this.acc.add(this.s("hermetic", hermeticSection));
+      if (hermeticSection) acc.add(this.s("hermetic", hermeticSection));
     }
 
     // (6) Context markdown
-    this.acc.add(universalContextSection(this.contextMd_));
+    acc.add(universalContextSection(this.contextMd_));
 
     // (7) Conventions footer — always last
-    this.acc.add(this.s("conventions", buildConventionsSection()));
+    acc.add(this.s("conventions", buildConventionsSection()));
 
-    return this.acc.join();
+    return acc.join();
   }
 
   /** Wrap a string-returning section builder into a PromptSection for the accumulator. */
@@ -180,8 +191,11 @@ export class TddPromptBuilder {
 
   private async resolveRoleBody(): Promise<string> {
     // Disk override via withLoader takes priority
-    const override = await this.acc.resolveOverride();
-    if (override !== null) return override;
+    if (this.loaderWorkdir_ && this.loaderConfig_) {
+      const { loadOverride } = await import("../loader");
+      const content = await loadOverride(this.role, this.loaderWorkdir_, this.loaderConfig_);
+      if (content !== null) return content;
+    }
 
     // Explicit override path fallback
     if (this.overridePath_) {
