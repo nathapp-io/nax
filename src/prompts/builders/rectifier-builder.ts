@@ -15,16 +15,11 @@
  */
 
 import type { UserStory } from "../../prd";
-import { SectionAccumulator } from "../core/section-accumulator";
-import { findingsSection } from "../core/sections/findings";
-import type { ReviewFinding } from "../core/sections/findings";
-import { priorFailuresSection } from "../core/sections/prior-failures";
-import type { FailureRecord } from "../core/sections/prior-failures";
-import type { PromptSection } from "../core/types";
-import { universalConstitutionSection, universalContextSection } from "../core/universal-sections";
-import { buildConventionsSection } from "../sections/conventions";
-import { buildIsolationSection } from "../sections/isolation";
-import { buildStorySection } from "../sections/story";
+import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
+import type { PromptSection } from "../core";
+import { findingsSection, priorFailuresSection } from "../core/sections";
+import type { FailureRecord, ReviewFinding } from "../core/sections";
+import { buildConventionsSection, buildIsolationSection, buildStorySection } from "../sections";
 
 export type RectifierTrigger =
   | "tdd-test-failure" // tests written by test-writer fail; implementer rectifies
