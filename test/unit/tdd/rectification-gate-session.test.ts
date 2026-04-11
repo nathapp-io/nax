@@ -23,7 +23,12 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
     title: "Test story",
     description: "Desc",
     acceptanceCriteria: ["AC-1"],
+    tags: [],
+    dependencies: [],
     status: "pending",
+    passes: false,
+    escalations: [],
+    attempts: 0,
     ...overrides,
   };
 }
@@ -83,6 +88,7 @@ beforeEach(() => {
     executeWithTimeout: _rectificationGateDeps.executeWithTimeout,
     parseTestOutput: _rectificationGateDeps.parseTestOutput,
     shouldRetryRectification: _rectificationGateDeps.shouldRetryRectification,
+    resolveTestCommands: _rectificationGateDeps.resolveTestCommands,
   };
 
   // Mock via injectable deps
@@ -123,7 +129,7 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 2 (final check)
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", undefined, true, {
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
@@ -150,7 +156,7 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 3 (final)
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", undefined, true, {
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
@@ -177,7 +183,7 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", undefined, true, {
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
@@ -200,7 +206,7 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir-2", agent as any, "balanced", undefined, true, {
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir-2", agent as any, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
