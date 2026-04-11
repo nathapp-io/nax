@@ -62,6 +62,13 @@ export const _acceptanceStageDeps = {
  * const failed = parseTestFailures(output);
  * // Returns: ["AC-2"]
  * ```
+ *
+ * Hook timeouts (bun `beforeAll`/`beforeEach` timing out) are reported as:
+ *   `(fail) ... > (unnamed) [Xms]`
+ *   `  ^ a beforeEach/afterEach hook timed out for this test.`
+ * These produce no `AC-N:` label so the parser would otherwise return [].
+ * In this case "AC-HOOK" is emitted so callers can distinguish a lifecycle
+ * failure from a genuine parse error ("AC-ERROR").
  */
 export function parseTestFailures(output: string): string[] {
   const failedACs: string[] = [];
@@ -100,6 +107,16 @@ export function parseTestFailures(output: string): string[] {
         }
       }
     }
+  }
+
+  // Hook-timeout detection: bun reports lifecycle hook failures as "(unnamed)" with no
+  // AC label. Detect via the "hook timed out" / "hook failed" marker emitted on the
+  // following line. Emit "AC-HOOK" so callers can distinguish this from "AC-ERROR"
+  // (parse failure) and skip the semantic-verdict fast-path in diagnosis.
+  const hasUnnamedFail = lines.some((l) => l.includes("(fail)") && l.includes("(unnamed)"));
+  const hasHookTimeout = lines.some((l) => /hook timed out|hook failed/i.test(l));
+  if (hasUnnamedFail && hasHookTimeout && !failedACs.includes("AC-HOOK")) {
+    failedACs.push("AC-HOOK");
   }
 
   return failedACs;

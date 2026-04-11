@@ -58,7 +58,11 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
   }
 
   // Fast path 2: all semantic verdicts passed → test bug
-  if (semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
+  // Skip when failedACs contains only hook/parse sentinels: stale verdicts cannot confirm
+  // whether a beforeAll hook timed out or the runner crashed (no test body ever ran).
+  const SENTINELS = ["AC-ERROR", "AC-HOOK"];
+  const hasOnlySentinels = failures.failedACs.length > 0 && failures.failedACs.every((ac) => SENTINELS.includes(ac));
+  if (!hasOnlySentinels && semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
     logger?.info("acceptance.diagnosis", "Fast path: all semantic verdicts passed → test_bug", {
       storyId,
       verdictCount: semanticVerdicts.length,
