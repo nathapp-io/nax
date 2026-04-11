@@ -16,6 +16,7 @@ import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { VerificationResult } from "../../../../src/verification";
+import type { ResolvedTestCommands } from "../../../../src/quality/command-resolver";
 
 const WORKDIR = `/tmp/nax-test-verify-${randomUUID()}`;
 
@@ -321,9 +322,18 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
 
     let capturedCommand: string | undefined;
     const origRegression = _verifyDeps.regression;
-    const origReadPkgName = _verifyDeps.readPackageName;
+    const origResolve = _verifyDeps.resolveTestCommands;
 
-    _verifyDeps.readPackageName = mock(() => Promise.resolve("@koda/cli"));
+    // Simulate SSOT returning a promoted orchestrator command (package found)
+    _verifyDeps.resolveTestCommands = mock((): Promise<ResolvedTestCommands> =>
+      Promise.resolve({
+        rawTestCommand: "bunx turbo test",
+        testCommand: "bunx turbo test --filter=@koda/cli",
+        testScopedTemplate: undefined,
+        isMonorepoOrchestrator: true,
+        scopeFileThreshold: 10,
+      }),
+    );
     _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
       capturedCommand = opts.command;
       return Promise.resolve(SUCCESS_RESULT);
@@ -331,32 +341,33 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
 
     try {
       const ctx = makeMonorepoContext();
-      await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
+      await verifyStage.execute(ctx as unknown as Parameters<typeof verifyStage.execute>[0]);
       expect(capturedCommand).toBe("bunx turbo test --filter=@koda/cli");
     } finally {
       _verifyDeps.regression = origRegression;
-      _verifyDeps.readPackageName = origReadPkgName;
+      _verifyDeps.resolveTestCommands = origResolve;
     }
   });
 
-  test("no package.json (non-JS project) — skips testScoped template, falls to full suite", async () => {
+  test("no package.json (non-JS project) — skips testScoped template, falls to deferred", async () => {
     const { verifyStage, _verifyDeps } = await import(
       "../../../../src/pipeline/stages/verify"
-    );
-    const { _smartRunnerDeps } = await import(
-      "../../../../src/verification/smart-runner"
     );
 
     let capturedCommand: string | undefined;
     const origRegression = _verifyDeps.regression;
-    const origReadPkgName = _verifyDeps.readPackageName;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
-    const origMapSource = _smartRunnerDeps.mapSourceToTests;
+    const origResolve = _verifyDeps.resolveTestCommands;
 
-    // No package.json → readPackageName returns null
-    _verifyDeps.readPackageName = mock(() => Promise.resolve(null));
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
-    _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
+    // Simulate SSOT returning no promotion (package.json absent → no resolved template)
+    _verifyDeps.resolveTestCommands = mock((): Promise<ResolvedTestCommands> =>
+      Promise.resolve({
+        rawTestCommand: "bunx turbo test",
+        testCommand: "bunx turbo test", // same as raw — no promotion
+        testScopedTemplate: undefined,
+        isMonorepoOrchestrator: true,
+        scopeFileThreshold: 10,
+      }),
+    );
     _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
       capturedCommand = opts.command;
       return Promise.resolve(SUCCESS_RESULT);
@@ -364,16 +375,14 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
 
     try {
       const ctx = makeMonorepoContext(null);
-      // mode is deferred by default → full suite deferred → continue without regression
-      const result = await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
-      // No package.json → template skipped → no scoped turbo command, falls to deferred
+      // mode is deferred → full suite skipped → continue without regression
+      const result = await verifyStage.execute(ctx as unknown as Parameters<typeof verifyStage.execute>[0]);
+      // No promotion → isFullSuite=true → deferred mode → skip
       expect(result.action).toBe("continue");
       expect(capturedCommand).toBeUndefined();
     } finally {
       _verifyDeps.regression = origRegression;
-      _verifyDeps.readPackageName = origReadPkgName;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
-      _smartRunnerDeps.mapSourceToTests = origMapSource;
+      _verifyDeps.resolveTestCommands = origResolve;
     }
   });
 
@@ -381,26 +390,28 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     const { verifyStage, _verifyDeps } = await import(
       "../../../../src/pipeline/stages/verify"
     );
-    const { _smartRunnerDeps } = await import(
-      "../../../../src/verification/smart-runner"
-    );
 
     let capturedCommand: string | undefined;
     const origRegression = _verifyDeps.regression;
-    const origReadPkgName = _verifyDeps.readPackageName;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
-    const origMapSource = _smartRunnerDeps.mapSourceToTests;
+    const origResolve = _verifyDeps.resolveTestCommands;
 
-    _verifyDeps.readPackageName = mock(() => Promise.resolve(null));
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
-    _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
+    // No workdir on story → SSOT returns no promotion
+    _verifyDeps.resolveTestCommands = mock((): Promise<ResolvedTestCommands> =>
+      Promise.resolve({
+        rawTestCommand: "bunx turbo test",
+        testCommand: "bunx turbo test", // same as raw — no promotion
+        testScopedTemplate: undefined,
+        isMonorepoOrchestrator: true,
+        scopeFileThreshold: 10,
+      }),
+    );
     _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
       capturedCommand = opts.command;
       return Promise.resolve(SUCCESS_RESULT);
     });
 
     try {
-      // No workdir on story — uses root turbo test, deferred mode skips
+      // No workdir on story — mode per-story forces full suite run
       const story = makeStory(); // no workdir
       const config: NaxConfig = {
         ...DEFAULT_CONFIG,
@@ -425,14 +436,12 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
         workdir: WORKDIR,
         hooks: { hooks: {} },
       };
-      await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
-      // No workdir → falls to full suite path, runs "bunx turbo test"
+      await verifyStage.execute(ctx as unknown as Parameters<typeof verifyStage.execute>[0]);
+      // No promotion → isFullSuite=true → per-story mode → runs "bunx turbo test"
       expect(capturedCommand).toBe("bunx turbo test");
     } finally {
       _verifyDeps.regression = origRegression;
-      _verifyDeps.readPackageName = origReadPkgName;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
-      _smartRunnerDeps.mapSourceToTests = origMapSource;
+      _verifyDeps.resolveTestCommands = origResolve;
     }
   });
 });
