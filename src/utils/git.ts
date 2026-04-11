@@ -11,7 +11,7 @@ import { spawn } from "./bun-deps";
  *
  * @internal
  */
-export const _gitDeps = { spawn };
+export const _gitDeps = { spawn, getSafeLogger };
 
 /**
  * Default timeout for git subprocess calls.
@@ -200,7 +200,7 @@ export function detectMergeConflict(output: string): boolean {
  * @param storyId - Story ID for the commit message
  */
 export async function autoCommitIfDirty(workdir: string, stage: string, role: string, storyId: string): Promise<void> {
-  const logger = getSafeLogger();
+  const logger = _gitDeps.getSafeLogger();
   try {
     // Guard: only auto-commit if workdir IS the git repository root.
     // Without this, a workdir nested inside another git repo (e.g. a temp dir
@@ -246,7 +246,7 @@ export async function autoCommitIfDirty(workdir: string, stage: string, role: st
 
     if (!statusOutput.trim()) return;
 
-    logger?.warn(stage, `Agent did not commit after ${role} session — auto-committing`, {
+    logger?.debug(stage, `Agent did not commit after ${role} session — auto-committing`, {
       role,
       storyId,
       dirtyFiles: statusOutput.trim().split("\n").length,

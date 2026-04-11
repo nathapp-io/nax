@@ -30,6 +30,14 @@ import { getLogger } from "../../logger/index.js";
 import { resolveOptimizer } from "../../optimizer/index.js";
 import type { PipelineContext, PipelineStage, StageResult } from "../types.js";
 
+/**
+ * Injectable dependencies for optimizer stage — allows tests to mock the logger
+ * without using mock.module() which leaks in Bun 1.x.
+ *
+ * @internal
+ */
+export const _optimizerDeps = { getLogger };
+
 export const optimizerStage: PipelineStage = {
   name: "optimizer",
   enabled: (_ctx) => {
@@ -38,11 +46,11 @@ export const optimizerStage: PipelineStage = {
   },
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
-    const logger = getLogger();
+    const logger = _optimizerDeps.getLogger();
 
     // Ensure prompt exists
     if (!ctx.prompt) {
-      logger.warn("optimizer", "No prompt to optimize, skipping");
+      logger.debug("optimizer", "No prompt to optimize, skipping");
       return { action: "continue" };
     }
 
