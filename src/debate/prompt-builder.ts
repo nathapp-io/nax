@@ -10,6 +10,15 @@ import type { ReviewFinding } from "../plugins/types";
 import { PERSONA_FRAGMENTS } from "./personas";
 import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "./types";
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Canonical ReviewFinding schema for all LLM-facing JSON directives (issue #368). */
+const FINDING_SCHEMA = `{ ruleId: string; severity: "critical" | "error" | "warning" | "info" | "low"; file: string; line: number; message: string }`;
+
+const REVIEW_JSON_DIRECTIVE = `Respond with JSON: { passed: boolean; findings: Array<${FINDING_SCHEMA}>; findingReasoning: { [ruleId: string]: string } }`;
+
+const RE_REVIEW_JSON_DIRECTIVE = `Respond with JSON: { passed: boolean; findings: Array<${FINDING_SCHEMA}>; findingReasoning: { [ruleId: string]: string }; deltaSummary: string }`;
+
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 /** Story fields required by review-specific prompt methods. */
@@ -55,21 +64,22 @@ export class DebatePromptBuilder {
   /**
    * Panel-mode critique (round 1+).
    * Excludes the calling debater's own proposal. No outputFormat block.
+   * Assembly order: persona → task → proposals (no prose directive after JSON-only gate).
    */
   buildCritiquePrompt(debaterIndex: number, proposals: Proposal[]): string {
     const otherProposals = proposals.filter((_, i) => i !== debaterIndex);
     const proposalsSection = this.buildProposalsSection(otherProposals);
     const personaBlock = this.buildPersonaBlock(debaterIndex);
 
-    return `You are reviewing proposals for a ${this.stageContext.stage} task.
+    // Issue 7: persona first, then task, then proposals.
+    // taskContext owns the output format — do not append a contradictory prose directive.
+    return `You are reviewing proposals for a ${this.stageContext.stage} task.${personaBlock}
 
 ## Task
-${this.stageContext.taskContext}${personaBlock}
+${this.stageContext.taskContext}
 
 ## Other Agents' Proposals
-${proposalsSection}
-
-Please critique these proposals and provide your refined analysis, identifying strengths, weaknesses, and your own updated position.`;
+${proposalsSection}`;
   }
 
   /**
@@ -189,7 +199,7 @@ ${this.stageContext.outputFormat}`;
       diff,
       "",
       "Also flag any changes in the diff not required by the acceptance criteria above as out-of-scope findings.",
-      "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string } }",
+      REVIEW_JSON_DIRECTIVE,
     ].join("\n");
   }
 
@@ -206,7 +216,7 @@ ${this.stageContext.outputFormat}`;
       "## Updated Diff",
       updatedDiff,
       "",
-      "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string }, deltaSummary: string }",
+      RE_REVIEW_JSON_DIRECTIVE,
       "deltaSummary should describe which previous findings are resolved vs still present.",
     ].join("\n");
   }
@@ -241,7 +251,7 @@ ${this.stageContext.outputFormat}`;
       diff,
       voteTally,
       "",
-      "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string } }",
+      REVIEW_JSON_DIRECTIVE,
     ]
       .filter((line) => line !== undefined)
       .join("\n");
@@ -274,7 +284,7 @@ ${this.stageContext.outputFormat}`;
       "## Updated Diff",
       updatedDiff,
       "",
-      "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string }, deltaSummary: string }",
+      RE_REVIEW_JSON_DIRECTIVE,
       "deltaSummary should describe which previous findings are resolved vs still present.",
     ]
       .filter((line) => line !== undefined)
@@ -308,7 +318,7 @@ ${this.stageContext.outputFormat}`;
   }
 
   private buildLabeledProposalsSection(proposals: Array<{ debater: string; output: string }>): string {
-    return proposals.map((p) => `### ${p.debater}\n${p.output}`).join("\n\n");
+    return proposals.map((p) => `### ${p.debater}\n\`\`\`json\n${p.output}\n\`\`\``).join("\n\n");
   }
 
   private buildLabeledCritiquesSection(critiques: string[]): string {
