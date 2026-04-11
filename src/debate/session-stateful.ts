@@ -9,9 +9,9 @@ import type { AgentAdapter } from "../agents/types";
 import type { ModelDef, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
+import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
-import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,

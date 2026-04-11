@@ -13,5 +13,9 @@ export { TddPromptBuilder } from "./builders/tdd-builder";
 // Migrate to TddPromptBuilder when touching adjacent code.
 export { TddPromptBuilder as PromptBuilder } from "./builders/tdd-builder";
 
+// Debate prompt builder — centralises all debate and review-dialogue prompt construction.
+export { DebatePromptBuilder } from "./builders/debate-builder";
+export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "./builders/debate-builder";
+
 // Core types — re-exported for callsites that need them
 export type { PromptRole, PromptSection, PromptOptions } from "./core/types";

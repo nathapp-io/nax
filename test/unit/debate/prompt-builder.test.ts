@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DebatePromptBuilder } from "../../../src/debate/prompt-builder";
+import { DebatePromptBuilder } from "../../../src/prompts";
 import { PERSONA_FRAGMENTS } from "../../../src/debate/personas";
 import type { Debater, Proposal, Rebuttal } from "../../../src/debate/types";
 
@@ -322,7 +322,7 @@ describe("buildClosePrompt()", () => {
 
 import type { DebateResolverContext } from "../../../src/debate/types";
 import type { ReviewFinding } from "../../../src/plugins/types";
-import type { ReviewStoryContext } from "../../../src/debate/prompt-builder";
+import type { ReviewStoryContext } from "../../../src/prompts";
 
 const REVIEW_STORY: ReviewStoryContext = {
   id: "US-001",
