@@ -552,3 +552,70 @@ describe("buildReResolverPrompt()", () => {
     expect(prompt).toContain("deltaSummary");
   });
 });
+
+// ─── Issue 7: critique prompt assembly order ──────────────────────────────────
+
+describe("buildCritiquePrompt() — issue 7: assembly order", () => {
+  const proposals: Proposal[] = [
+    makeProposal("agent-a", "proposal A"),
+    makeProposal("agent-b", "proposal B"),
+  ];
+
+  test("persona block appears before taskContext", () => {
+    const debater = makeDebater("claude", "challenger");
+    const builder = makeBuilder("TASK_CTX", "OUTPUT_FMT", [debater]);
+    const prompt = builder.buildCritiquePrompt(0, proposals);
+    const roleIdx = prompt.indexOf("## Your Role");
+    const taskIdx = prompt.indexOf("TASK_CTX");
+    expect(roleIdx).toBeGreaterThan(-1);
+    expect(roleIdx).toBeLessThan(taskIdx);
+  });
+
+  test("does not append prose critique instruction after JSON-only gate in taskContext", () => {
+    const taskCtxWithJsonGate =
+      "IMPORTANT: Your entire response must be a single JSON object.\nOutput ONLY the JSON.";
+    const builder = makeBuilder(taskCtxWithJsonGate, "OUTPUT_FMT", []);
+    const prompt = builder.buildCritiquePrompt(0, proposals);
+    expect(prompt).not.toContain("Please critique these proposals");
+  });
+});
+
+// ─── Issue 8: explicit finding schema ────────────────────────────────────────
+
+describe("finding schema — issue 8: explicit fields", () => {
+  const ctx: DebateResolverContext = { resolverType: "synthesis" };
+
+  test("buildReviewPrompt includes ruleId, severity, message in schema", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
+    expect(prompt).toContain("ruleId");
+    expect(prompt).toContain("severity");
+    expect(prompt).toContain("message");
+  });
+
+  test("buildResolverPrompt includes ruleId, severity, message in schema", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, [], DIFF, REVIEW_STORY, ctx);
+    expect(prompt).toContain("ruleId");
+    expect(prompt).toContain("severity");
+    expect(prompt).toContain("message");
+  });
+
+  test("findingReasoning key references ruleId not bare [id]", () => {
+    const builder = makeBuilder();
+    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
+    expect(prompt).toContain("[ruleId");
+  });
+});
+
+// ─── Issue 9: consistent JSON fencing in proposals section ───────────────────
+
+describe("buildResolverPrompt() — issue 9: consistent JSON fencing", () => {
+  test("each debater proposal is wrapped in ```json fencing", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, [], DIFF, REVIEW_STORY, ctx);
+    const fenceCount = (prompt.match(/```json/g) ?? []).length;
+    expect(fenceCount).toBe(LABELED_PROPOSALS.length);
+  });
+});
