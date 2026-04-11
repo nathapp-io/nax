@@ -10,6 +10,7 @@ import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
+import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
   resolveAcceptanceTestFile as defaultResolveAcceptanceTestFile,
@@ -180,54 +181,22 @@ export async function generateFromPRD(
     ? `\n[FRAMEWORK OVERRIDE: Use ${options.testFramework} as the test framework regardless of what you detect.]`
     : "";
 
-  const basePrompt = `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${options.featureName}" feature.
-
-## Step 1: Understand and Classify the Acceptance Criteria
-
-Read each AC below and classify its verification type (prefer runtime-check):
-- **runtime-check** (PREFERRED): Import the module, call the function, assert on return values, thrown errors, or observable side effects. This is the strongest verification — use it whenever possible.
-- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, database query succeeds). Use setup blocks.
-- **file-check** (LAST RESORT): Only for ACs that genuinely cannot be verified at runtime (e.g. "no banned imports in file X", "config file exists"). Never use file-check when a runtime import + assertion would work.
-
-ACCEPTANCE CRITERIA:
-${criteriaList}
-
-## Step 2: Explore the Project
-
-Before writing any tests, examine the project to understand:
-1. **Language and test framework** — check dependency manifests (package.json, go.mod, Gemfile, pyproject.toml, Cargo.toml, build.gradle, etc.) to identify the language and test runner
-2. **Existing test patterns** — read 1-2 existing test files to understand import style, describe/test/it conventions, and available helpers
-3. **Project structure** — identify relevant source directories to determine correct import or load paths
-
-${frameworkOverrideLine}
-
-## Step 3: Generate the Acceptance Test File
-
-Write the complete acceptance test file using the framework identified in Step 2.
-
-Rules:
-- **One test per AC**, named exactly "AC-N: <description>"
-- **runtime-check ACs** (default) → import the module directly, call functions with test inputs, assert on return values or observable side effects (log calls, thrown errors, state changes)
-- **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
-- **file-check ACs** (last resort only) → read source files using the language's standard file I/O, assert with string or regex checks. Only use when the AC explicitly asks about file contents or imports — never use file-check to verify behavior that can be tested by calling the function
-- **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
-- Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
-- **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
-- **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
-- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${options.targetTestFile ?? join(options.workdir, ".nax", "features", options.featureName, resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath))}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).
-- **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the **package root** (\`join(import.meta.dir, "../../..")\`) as your default — unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.`;
-
-  const implementationSection =
-    options.implementationContext && options.implementationContext.length > 0
-      ? `\n\n## Implementation (already exists)\n\n${options.implementationContext.map((f) => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")}`
-      : "";
-
-  const previousFailureSection =
-    options.previousFailure && options.previousFailure.length > 0
-      ? `\n\nPrevious test failed because: ${options.previousFailure}`
-      : "";
-
-  const prompt = basePrompt + implementationSection + previousFailureSection;
+  const prompt = new AcceptancePromptBuilder().buildGeneratorFromPRDPrompt({
+    featureName: options.featureName,
+    criteriaList,
+    frameworkOverrideLine,
+    targetTestFilePath:
+      options.targetTestFile ??
+      join(
+        options.workdir,
+        ".nax",
+        "features",
+        options.featureName,
+        resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath),
+      ),
+    implementationContext: options.implementationContext,
+    previousFailure: options.previousFailure,
+  });
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
@@ -446,40 +415,11 @@ export function buildAcceptanceTestPrompt(
   const criteriaList = criteria.map((ac) => `${ac.id}: ${ac.text}`).join("\n");
   const resolvedTestPath = resolveAcceptanceTestFile(language, testPathConfig);
 
-  return `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${featureName}" feature.
-
-## Step 1: Understand and Classify the Acceptance Criteria
-
-Read each AC below and classify its verification type (prefer runtime-check):
-- **runtime-check** (PREFERRED): Import the module, call the function, assert on return values, thrown errors, or observable side effects. This is the strongest verification — use it whenever possible.
-- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, database query succeeds). Use setup blocks.
-- **file-check** (LAST RESORT): Only for ACs that genuinely cannot be verified at runtime (e.g. "no banned imports in file X", "config file exists"). Never use file-check when a runtime import + assertion would work.
-
-ACCEPTANCE CRITERIA:
-${criteriaList}
-
-## Step 2: Explore the Project
-
-Before writing any tests, examine the project to understand:
-1. **Language and test framework** — check dependency manifests (package.json, go.mod, Gemfile, pyproject.toml, Cargo.toml, build.gradle, etc.) to identify the language and test runner
-2. **Existing test patterns** — read 1-2 existing test files to understand import style, describe/test/it conventions, and available helpers
-3. **Project structure** — identify relevant source directories to determine correct import or load paths
-
-
-## Step 3: Generate the Acceptance Test File
-
-Write the complete acceptance test file using the framework identified in Step 2.
-
-Rules:
-- **One test per AC**, named exactly "AC-N: <description>"
-- **runtime-check ACs** (default) → import the module directly, call functions with test inputs, assert on return values or observable side effects (log calls, thrown errors, state changes)
-- **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
-- **file-check ACs** (last resort only) → read source files using the language's standard file I/O, assert with string or regex checks. Only use when the AC explicitly asks about file contents or imports — never use file-check to verify behavior that can be tested by calling the function
-- **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
-- Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
-- **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
-- Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${featureName}/${resolvedTestPath}\` and will ALWAYS run from the repo root. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
+  return new AcceptancePromptBuilder().buildGeneratorFromSpecPrompt({
+    featureName,
+    criteriaList,
+    resolvedTestPath,
+  });
 }
 
 /**
