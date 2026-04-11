@@ -6,7 +6,6 @@
  * rectification retries if regressions are detected.
  */
 
-import { join } from "node:path";
 import type { AgentAdapter } from "../agents";
 import { buildSessionName } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
@@ -14,6 +13,7 @@ import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
+import { resolveQualityTestCommands } from "../quality/command-resolver";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
   type RectificationState,
@@ -22,7 +22,6 @@ import {
   shouldRetryRectification as _shouldRetryRectification,
   runSharedRectificationLoop,
 } from "../verification";
-import { isMonorepoOrchestratorCommand } from "../verification/strategies/scoped";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
 import { buildImplementerRectificationPrompt } from "./prompts";
@@ -32,14 +31,7 @@ export const _rectificationGateDeps = {
   executeWithTimeout: _executeWithTimeout,
   parseTestOutput: _parseTestOutput,
   shouldRetryRectification: _shouldRetryRectification,
-  readPackageName: async (dir: string): Promise<string | null> => {
-    try {
-      const content = await Bun.file(join(dir, "package.json")).json();
-      return typeof content.name === "string" ? content.name : null;
-    } catch {
-      return null;
-    }
-  },
+  resolveTestCommands: resolveQualityTestCommands,
 };
 
 /**
@@ -61,28 +53,12 @@ export async function runFullSuiteGate(
   if (!rectificationEnabled) return { passed: false, cost: 0 };
 
   const rectificationConfig = config.execution.rectification;
-  const testCmd = config.quality?.commands?.test ?? "bun test";
   const fullSuiteTimeout = rectificationConfig.fullSuiteTimeoutSeconds;
-  const rawScopedTemplate = config.quality?.commands?.testScoped;
 
-  // Resolve {{package}} in testScoped template for monorepo stories (mirrors verify.ts).
-  // workdir is already the resolved package directory.
-  let resolvedScopedTemplate = rawScopedTemplate;
-  if (rawScopedTemplate?.includes("{{package}}") && story.workdir) {
-    const pkgName = await _rectificationGateDeps.readPackageName(workdir);
-    resolvedScopedTemplate = pkgName !== null ? rawScopedTemplate.replaceAll("{{package}}", pkgName) : undefined;
-  }
-
-  // Monorepo orchestrators (turbo/nx): the resolved scoped template IS the run command.
-  // Per-file expansion would break their filter syntax.
-  let effectiveTestCmd = testCmd;
-  let effectiveScopedTemplate = resolvedScopedTemplate;
-  if (isMonorepoOrchestratorCommand(testCmd)) {
-    if (resolvedScopedTemplate && story.workdir) {
-      effectiveTestCmd = resolvedScopedTemplate;
-    }
-    effectiveScopedTemplate = undefined;
-  }
+  // Resolve test commands via SSOT — handles priority, {{package}}, and orchestrator promotion.
+  const { testCommand: resolvedTestCmd, testScopedTemplate: effectiveScopedTemplate } =
+    await _rectificationGateDeps.resolveTestCommands(config, workdir, story.workdir);
+  const effectiveTestCmd = resolvedTestCmd ?? "bun test";
 
   logger.info("tdd", "-> Running full test suite gate (before Verifier)", {
     storyId: story.id,
