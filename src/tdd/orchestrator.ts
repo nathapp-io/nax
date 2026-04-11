@@ -289,7 +289,6 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     workdir,
     agent,
     implementerTier,
-    contextMarkdown,
     lite,
     logger,
     featureName,

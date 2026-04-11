@@ -15,10 +15,14 @@
  */
 
 import type { UserStory } from "../../prd";
-import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
-import type { PromptSection } from "../core";
-import { findingsSection, priorFailuresSection } from "../core/sections";
-import type { FailureRecord, ReviewFinding } from "../core/sections";
+import {
+  SectionAccumulator,
+  findingsSection,
+  priorFailuresSection,
+  universalConstitutionSection,
+  universalContextSection,
+} from "../core";
+import type { FailureRecord, PromptSection, ReviewFinding } from "../core";
 import { buildConventionsSection, buildIsolationSection, buildStorySection } from "../sections";
 
 export type RectifierTrigger =

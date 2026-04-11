@@ -9,22 +9,33 @@
  * here, promote the prompt to its own dedicated builder instead.
  */
 
-import { SectionAccumulator, universalConstitutionSection } from "../core";
-import type { SchemaDescriptor } from "../core/sections";
-import { instructionsSection } from "../core/sections/instructions";
-import { jsonSchemaSection } from "../core/sections/json-schema";
-import { routingCandidatesSection } from "../core/sections/routing-candidates";
-import type { RoutingCandidate } from "../core/sections/routing-candidates";
+import {
+  SectionAccumulator,
+  instructionsSection,
+  jsonSchemaSection,
+  routingCandidatesSection,
+  universalConstitutionSection,
+} from "../core";
+import type { RoutingCandidate, SchemaDescriptor } from "../core";
 
 export type OneShotRole = "router" | "decomposer" | "auto-approver";
 
 export class OneShotPromptBuilder {
   private acc = new SectionAccumulator();
+  /** Preserved for observability and future role-gating. Does not affect output today. */
+  readonly role: OneShotRole;
 
-  private constructor() {}
+  private constructor(role: OneShotRole) {
+    this.role = role;
+  }
 
-  static for(_role: OneShotRole): OneShotPromptBuilder {
-    return new OneShotPromptBuilder();
+  static for(role: OneShotRole): OneShotPromptBuilder {
+    return new OneShotPromptBuilder(role);
+  }
+
+  /** Returns the role this builder was created for (for observability and future role-gating). */
+  getRole(): OneShotRole {
+    return this.role;
   }
 
   /** Optional constitution — benefits decomposer and auto-approver; router does not use it. */
@@ -65,7 +76,7 @@ export class OneShotPromptBuilder {
     return this;
   }
 
-  async build(): Promise<string> {
+  build(): string {
     return this.acc.join();
   }
 }

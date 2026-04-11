@@ -125,6 +125,11 @@ function normalizeFailurePath(file: string): string {
 /**
  * Create a rectification prompt with failure context.
  *
+ * @deprecated Superseded by {@link RectifierPromptBuilder} (Phase 5 refactor).
+ * Production callers now use `RectifierPromptBuilder.for("verify-failure")` from `src/prompts`.
+ * This function is retained only while existing unit tests and acceptance tests are migrated.
+ * Do not add new callers — use RectifierPromptBuilder instead.
+ *
  * Includes:
  * - Progressive escalation preamble when attempt >= rethinkAtAttempt (or urgencyAtAttempt)
  * - Clear instructions about test regressions
