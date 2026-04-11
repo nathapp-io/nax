@@ -33,6 +33,7 @@ import type { HardeningContext } from "../../acceptance/hardening";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
+import { parseTestFailures as _parseTestFailures } from "../../test-runners/ac-parser";
 import { logTestOutput } from "../../utils/log-test-output";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -70,57 +71,12 @@ export const _acceptanceStageDeps = {
  * In this case "AC-HOOK" is emitted so callers can distinguish a lifecycle
  * failure from a genuine parse error ("AC-ERROR").
  */
-export function parseTestFailures(output: string): string[] {
-  const failedACs: string[] = [];
-  const lines = output.split("\n");
-
-  for (const line of lines) {
-    // Primary: Bun/Jest "(fail)" marker — "AC-N: description"
-    if (line.includes("(fail)")) {
-      const acMatch = line.match(/(AC-\d+):/i);
-      if (acMatch) {
-        const acId = acMatch[1].toUpperCase();
-        if (!failedACs.includes(acId)) {
-          failedACs.push(acId);
-        }
-      }
-    }
-
-    // Secondary: Go "--- FAIL: TestAC-1_desc (0.00s)" or "--- FAIL: TestAC1Desc"
-    if (line.includes("--- FAIL:")) {
-      const acMatch = line.match(/AC[-_]?(\d+)/i);
-      if (acMatch) {
-        const acId = `AC-${acMatch[1]}`;
-        if (!failedACs.includes(acId)) {
-          failedACs.push(acId);
-        }
-      }
-    }
-
-    // Secondary: pytest "FAILED tests/...::test_AC_1_desc"
-    if (/FAILED\s/.test(line)) {
-      const acMatch = line.match(/AC[-_]?(\d+)/i);
-      if (acMatch) {
-        const acId = `AC-${acMatch[1]}`;
-        if (!failedACs.includes(acId)) {
-          failedACs.push(acId);
-        }
-      }
-    }
-  }
-
-  // Hook-timeout detection: bun reports lifecycle hook failures as "(unnamed)" with no
-  // AC label. Detect via the "hook timed out" / "hook failed" marker emitted on the
-  // following line. Emit "AC-HOOK" so callers can distinguish this from "AC-ERROR"
-  // (parse failure) and skip the semantic-verdict fast-path in diagnosis.
-  const hasUnnamedFail = lines.some((l) => l.includes("(fail)") && l.includes("(unnamed)"));
-  const hasHookTimeout = lines.some((l) => /hook timed out|hook failed/i.test(l));
-  if (hasUnnamedFail && hasHookTimeout && !failedACs.includes("AC-HOOK")) {
-    failedACs.push("AC-HOOK");
-  }
-
-  return failedACs;
-}
+/**
+ * Parse test runner output to extract failed AC IDs.
+ * Implementation lives in src/test-runners/ac-parser — re-exported here for
+ * backward compatibility with existing importers.
+ */
+export const parseTestFailures = _parseTestFailures;
 
 /**
  * Check if all stories in the PRD are complete.
