@@ -14,9 +14,5 @@ export {
 } from "./isolation";
 export { runThreeSessionTdd, runThreeSessionTddFromCtx } from "./orchestrator";
 export { cleanupProcessTree, getPgid } from "./cleanup";
-export {
-  buildImplementerRectificationPrompt,
-  buildRectificationPrompt,
-} from "./prompts";
 export type { VerifierVerdict, VerdictCategorization } from "./verdict";
 export { VERDICT_FILE, readVerdict, cleanupVerdict, categorizeVerdict } from "./verdict";

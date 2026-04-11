@@ -13,6 +13,7 @@ import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
+import { RectifierPromptBuilder } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
@@ -24,7 +25,6 @@ import {
 } from "../verification";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
-import { buildImplementerRectificationPrompt } from "./prompts";
 
 /** Injectable deps for testability — avoids mock.module() contamination */
 export const _rectificationGateDeps = {
@@ -137,7 +137,7 @@ async function runRectificationLoop(
   workdir: string,
   agent: AgentAdapter,
   implementerTier: ModelTier,
-  contextMarkdown: string | undefined,
+  _contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
   testSummary: ReturnType<typeof _parseTestOutput>,
@@ -194,15 +194,13 @@ async function runRectificationLoop(
     canContinue: (state) =>
       state.isolationPassed && _rectificationGateDeps.shouldRetryRectification(state, rectificationConfig),
     buildPrompt: () =>
-      buildImplementerRectificationPrompt(
-        testSummary.failures,
-        story,
-        contextMarkdown,
-        rectificationConfig,
-        testCmd,
-        config.quality?.scopeTestThreshold,
-        testScopedTemplate,
-      ),
+      RectifierPromptBuilder.for("tdd-suite-failure")
+        .story(story)
+        .priorFailures(testSummary.failures, rectificationConfig)
+        .testCommand(testCmd)
+        .scopeThreshold(config.quality?.scopeTestThreshold)
+        .testScopedTemplate(testScopedTemplate)
+        .build(),
     runAttempt: async (attempt, rectificationPrompt) => {
       const isLastAttempt = attempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";

@@ -20,14 +20,10 @@ import { getSafeLogger } from "../logger";
 import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
+import { RectifierPromptBuilder } from "../prompts";
 import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
-import {
-  type RectificationState,
-  createEscalatedRectificationPrompt,
-  createRectificationPrompt,
-  shouldRetryRectification,
-} from "./rectification";
+import { type RectificationState, createEscalatedRectificationPrompt, shouldRetryRectification } from "./rectification";
 import { fullSuite as _fullSuite } from "./runners";
 import { runSharedRectificationLoop } from "./shared-rectification-loop";
 
@@ -202,15 +198,14 @@ export async function runRectificationLoop(
         }
       }
 
-      let rectificationPrompt = createRectificationPrompt(
-        testSummary.failures,
-        story,
-        rectificationConfig,
-        attempt,
-        testCommand,
-        config.quality?.scopeTestThreshold,
-        testScopedTemplate,
-      );
+      let rectificationPrompt = await RectifierPromptBuilder.for("verify-failure")
+        .story(story)
+        .priorFailures(testSummary.failures, rectificationConfig)
+        .attempt(attempt)
+        .testCommand(testCommand)
+        .scopeThreshold(config.quality?.scopeTestThreshold)
+        .testScopedTemplate(testScopedTemplate)
+        .build();
       if (diagnosisPrefix) {
         rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;
       }
