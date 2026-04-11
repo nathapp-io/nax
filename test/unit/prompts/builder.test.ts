@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { UserStory } from "../../../src/prd";
-import { PromptBuilder } from "../../../src/prompts/builder";
+import { PromptBuilder } from "../../../src/prompts";
 import type { PromptRole } from "../../../src/prompts/types";
 import { makeTempDir } from "../../helpers/temp";
 

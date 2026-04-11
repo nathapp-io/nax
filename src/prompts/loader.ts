@@ -6,7 +6,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config/types";
-import type { PromptRole } from "./types";
+import type { PromptRole } from "./core/types";
 
 /**
  * Load a user override for the given role from the path specified in config.
