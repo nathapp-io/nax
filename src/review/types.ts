@@ -7,6 +7,15 @@
 /** Review check name */
 export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic";
 
+/**
+ * Diff context passed to debate resolver and prompt builders.
+ * Discriminated on `mode` — prevents ambiguous routing when both
+ * `diff` and `storyGitRef` might be present in a ResolverContext spread.
+ */
+export type DiffContext =
+  | { mode: "embedded"; diff: string; storyGitRef?: never; stat?: never }
+  | { mode: "ref"; storyGitRef: string; stat?: string; diff?: never };
+
 /** Story fields required for semantic review */
 export interface SemanticStory {
   id: string;
@@ -19,6 +28,18 @@ export interface SemanticStory {
 export interface SemanticReviewConfig {
   /** Model tier for semantic review (default: 'balanced') */
   modelTier: import("../config/schema-types").ModelTier;
+  /**
+   * How the semantic reviewer accesses the git diff.
+   * "embedded" (default): pre-collected diff truncated at 50KB and embedded in prompt.
+   * "ref": only stat summary + storyGitRef passed; reviewer fetches full diff via tools.
+   */
+  diffMode: "embedded" | "ref";
+  /**
+   * When true, clears storyGitRef on failed stories during re-run initialization so
+   * the ref is re-captured at the next story start. Prevents cross-story diff pollution
+   * when multiple stories exhaust all tiers and are re-run. Default false.
+   */
+  resetRefOnRerun: boolean;
   /** Custom semantic review rules */
   rules: string[];
   /** Timeout in milliseconds for the LLM call (default: 600_000) */

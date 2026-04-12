@@ -27,7 +27,14 @@ const STORY: SemanticStory = {
   acceptanceCriteria: ["ctx.reviewFindings is populated when semantic fails"],
 };
 
-const CFG: SemanticReviewConfig = { modelTier: "balanced", rules: [], excludePatterns: [":!test/"] };
+const CFG: SemanticReviewConfig = {
+  modelTier: "balanced",
+  diffMode: "embedded",
+  resetRefOnRerun: false,
+  rules: [],
+  excludePatterns: [":!test/"],
+  timeoutMs: 60_000,
+};
 
 function makeMockAgent(response: string): AgentAdapter {
   return {
@@ -36,7 +43,7 @@ function makeMockAgent(response: string): AgentAdapter {
     binary: "mock",
     capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
     isInstalled: mock(async () => true),
-    run: mock(async () => { throw new Error("not used"); }),
+    run: mock(async () => ({ output: response, estimatedCost: 0 })),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),

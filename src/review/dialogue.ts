@@ -15,7 +15,7 @@ import type { ReviewFinding } from "../plugins/types";
 import { DebatePromptBuilder } from "../prompts";
 import { parseLLMJson, tryParseLLMJson } from "../utils/llm-json";
 import type { SemanticStory } from "./semantic";
-import type { SemanticReviewConfig } from "./types";
+import type { DiffContext, SemanticReviewConfig } from "./types";
 
 export type { SemanticVerdict };
 export type { DebateResolverContext } from "../debate/types";
@@ -79,7 +79,7 @@ export interface ReviewerSession {
   resolveDebate(
     proposals: Array<{ debater: string; output: string }>,
     critiques: string[],
-    diff: string,
+    diffContext: DiffContext,
     story: SemanticStory,
     semanticConfig: SemanticReviewConfig,
     resolverContext: DebateResolverContext,
@@ -91,7 +91,7 @@ export interface ReviewerSession {
   reReviewDebate(
     proposals: Array<{ debater: string; output: string }>,
     critiques: string[],
-    updatedDiff: string,
+    diffContext: DiffContext,
     resolverContext: DebateResolverContext,
   ): Promise<ReviewDialogueResult>;
   /**
@@ -394,7 +394,14 @@ export function createReviewerSession(
 
       const effectiveSemanticConfig =
         lastSemanticConfig ??
-        ({ modelTier: "balanced", rules: [], timeoutMs: 60_000, excludePatterns: [] } as SemanticReviewConfig);
+        ({
+          modelTier: "balanced",
+          diffMode: "embedded",
+          resetRefOnRerun: false,
+          rules: [],
+          timeoutMs: 60_000,
+          excludePatterns: [],
+        } as SemanticReviewConfig);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(effectiveSemanticConfig);
       const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(question);
 
@@ -421,7 +428,7 @@ export function createReviewerSession(
     async resolveDebate(
       proposals: Array<{ debater: string; output: string }>,
       critiques: string[],
-      diff: string,
+      diffContext: DiffContext,
       story: SemanticStory,
       semanticConfig: SemanticReviewConfig,
       resolverContext: DebateResolverContext,
@@ -434,7 +441,7 @@ export function createReviewerSession(
         );
       }
 
-      const prompt = promptBuilder.buildResolverPrompt(proposals, critiques, diff, story, resolverContext);
+      const prompt = promptBuilder.buildResolverPrompt(proposals, critiques, diffContext, story, resolverContext);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
       const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
 
@@ -467,7 +474,7 @@ export function createReviewerSession(
     async reReviewDebate(
       proposals: Array<{ debater: string; output: string }>,
       critiques: string[],
-      updatedDiff: string,
+      diffContext: DiffContext,
       resolverContext: DebateResolverContext,
     ): Promise<ReviewDialogueResult> {
       if (!active) {
@@ -489,7 +496,7 @@ export function createReviewerSession(
       const prompt = promptBuilder.buildReResolverPrompt(
         proposals,
         critiques,
-        updatedDiff,
+        diffContext,
         previousFindings,
         resolverContext,
       );

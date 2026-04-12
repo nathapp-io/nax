@@ -34,11 +34,14 @@ const STORY: SemanticStory = {
 
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   modelTier: "balanced",
+  diffMode: "embedded",
+  resetRefOnRerun: false,
   rules: [],
+  timeoutMs: 60_000,
   excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
 };
 
-/** Build a mock AgentAdapter whose complete() resolves to the supplied JSON string */
+/** Build a mock AgentAdapter whose run() resolves to the supplied JSON string */
 function makeMockAgent(response: string): AgentAdapter {
   return {
     name: "mock",
@@ -46,7 +49,7 @@ function makeMockAgent(response: string): AgentAdapter {
     binary: "mock",
     capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
     isInstalled: mock(async () => true),
-    run: mock(async () => { throw new Error("not used"); }),
+    run: mock(async () => ({ output: response, estimatedCost: 0 })),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
@@ -220,8 +223,12 @@ describe("runSemanticReview — git diff invocation", () => {
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
     expect(spawnMock).toHaveBeenCalled();
-    const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
-    const spawnOpts = call[0] as { cmd: string[] };
+    // Find the unified diff call (stat call is first, unified diff call follows)
+    const allCalls = (spawnMock as ReturnType<typeof mock>).mock.calls;
+    const unifiedCallOpts = allCalls.map((c) => c[0] as { cmd: string[] })
+      .find((opts) => opts.cmd?.includes("--unified=3"));
+    expect(unifiedCallOpts).toBeDefined();
+    const spawnOpts = unifiedCallOpts!;
     expect(spawnOpts.cmd).toContain("git");
     expect(spawnOpts.cmd).toContain("diff");
     expect(spawnOpts.cmd).toContain("--unified=3");
@@ -297,9 +304,9 @@ describe("runSemanticReview — diff truncation", () => {
     _semanticDeps.spawn = makeSpawnMock(smallDiff, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
-    (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return PASSING_LLM_RESPONSE;
+    (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
+      capturedPrompt = args.prompt;
+      return { output: PASSING_LLM_RESPONSE, estimatedCost: 0 };
     });
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -313,9 +320,9 @@ describe("runSemanticReview — diff truncation", () => {
     _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
-    (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return PASSING_LLM_RESPONSE;
+    (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
+      capturedPrompt = args.prompt;
+      return { output: PASSING_LLM_RESPONSE, estimatedCost: 0 };
     });
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -332,9 +339,9 @@ describe("runSemanticReview — diff truncation", () => {
     _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
-    (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return PASSING_LLM_RESPONSE;
+    (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
+      capturedPrompt = args.prompt;
+      return { output: PASSING_LLM_RESPONSE, estimatedCost: 0 };
     });
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -377,9 +384,9 @@ describe("runSemanticReview — LLM prompt construction", () => {
     _semanticDeps.spawn = makeSpawnMock(diff, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
-    (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return PASSING_LLM_RESPONSE;
+    (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
+      capturedPrompt = args.prompt;
+      return { output: PASSING_LLM_RESPONSE, estimatedCost: 0 };
     });
     await runSemanticReview("/tmp/wd", "abc123", story, config, () => agent);
     return capturedPrompt;
@@ -414,6 +421,9 @@ describe("runSemanticReview — LLM prompt construction", () => {
   test("prompt includes custom rules from semanticConfig.rules", async () => {
     const config: SemanticReviewConfig = {
       modelTier: "balanced",
+      diffMode: "embedded",
+      resetRefOnRerun: false,
+      timeoutMs: 60_000,
       rules: ["Never use console.log", "All exports must be typed"],
       excludePatterns: [":!test/"],
     };

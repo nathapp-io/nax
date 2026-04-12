@@ -42,7 +42,14 @@ export interface ResolveOutcome {
 
 /** Context required by resolveOutcome() when a ReviewerSession is used. Only populated from semantic.ts debate path. */
 export interface ResolverContext {
-  diff: string;
+  /** How the diff is provided — drives DiffContext construction for the dialogue path */
+  diffMode: "embedded" | "ref";
+  /** Pre-collected diff (embedded mode) */
+  diff?: string;
+  /** Git baseline ref (ref mode) */
+  storyGitRef?: string;
+  /** Git diff --stat summary (ref mode) */
+  stat?: string;
   story: { id: string; title: string; acceptanceCriteria: string[] };
   semanticConfig: import("../review/types").SemanticReviewConfig;
   labeledProposals: Array<{ debater: string; output: string }>;
@@ -246,19 +253,25 @@ export async function resolveOutcome(
         acceptanceCriteria: resolverContext.story.acceptanceCriteria,
       };
 
+      // Build diffContext from resolverContext — discriminated on diffMode.
+      const diffContext: import("../review/types").DiffContext =
+        resolverContext.diffMode === "ref"
+          ? { mode: "ref", storyGitRef: resolverContext.storyGitRef ?? "", stat: resolverContext.stat }
+          : { mode: "embedded", diff: resolverContext.diff ?? "" };
+
       let dialogueResult: import("../review/dialogue").ReviewDialogueResult;
       if (resolverContext.isReReview) {
         dialogueResult = await reviewerSession.reReviewDebate(
           resolverContext.labeledProposals,
           critiqueOutputs,
-          resolverContext.diff,
+          diffContext,
           debateCtx,
         );
       } else {
         dialogueResult = await reviewerSession.resolveDebate(
           resolverContext.labeledProposals,
           critiqueOutputs,
-          resolverContext.diff,
+          diffContext,
           story,
           resolverContext.semanticConfig,
           debateCtx,

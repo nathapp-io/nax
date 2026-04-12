@@ -13,12 +13,12 @@ Implement LLM-based semantic review for story diffs.
 ### Acceptance Criteria
 1. LLM is called with story diff
 2. Findings are returned as structured JSON
-
 ## Git Diff (production code only — test files excluded)
 
 \`\`\`diff
 diff --git a/src/review/semantic.ts b/src/review/semantic.ts
 +export async function runSemanticReview() {}\`\`\`
+
 
 ## Instructions
 
@@ -73,12 +73,12 @@ Implement LLM-based semantic review for story diffs.
 ## Additional Review Rules
 1. Do not flag style issues
 2. Verify AC 1 using GREP before flagging
-
 ## Git Diff (production code only — test files excluded)
 
 \`\`\`diff
 diff --git a/src/review/semantic.ts b/src/review/semantic.ts
 +export async function runSemanticReview() {}\`\`\`
+
 
 ## Instructions
 

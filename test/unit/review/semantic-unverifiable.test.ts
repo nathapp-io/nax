@@ -30,6 +30,8 @@ const STORY: SemanticStory = {
 
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   modelTier: "balanced",
+  diffMode: "embedded",
+  resetRefOnRerun: false,
   rules: [],
   excludePatterns: [":!test/", ":!tests/"],
   timeoutMs: 600_000,
@@ -42,7 +44,7 @@ function makeMockAgent(response: string): AgentAdapter {
     binary: "mock",
     capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
     isInstalled: mock(async () => true),
-    run: mock(async () => { throw new Error("not used"); }),
+    run: mock(async () => ({ output: response, estimatedCost: 0 })),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
@@ -189,13 +191,11 @@ describe("unverifiable finding handling", () => {
 describe("semantic prompt includes tool-access instructions", () => {
   test("prompt instructs agent to verify with tools before flagging", async () => {
     let capturedPrompt = "";
-    const agent = {
-      ...makeMockAgent(JSON.stringify({ passed: true, findings: [] })),
-      complete: mock(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return JSON.stringify({ passed: true, findings: [] });
-      }),
-    } as unknown as AgentAdapter;
+    const agent = makeMockAgent(JSON.stringify({ passed: true, findings: [] }));
+    (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
+      capturedPrompt = args.prompt;
+      return { output: JSON.stringify({ passed: true, findings: [] }), estimatedCost: 0 };
+    });
 
     await runSemanticReview(
       "/tmp/repo",

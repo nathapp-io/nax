@@ -184,7 +184,8 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   // Reset failed stories to pending so they are retried on re-run.
   // reconcileState runs first to promote failed→passed for git-committed stories;
   // remaining failed stories (incomplete work) are reset here so they re-enter the queue.
-  const hadFailedStories = resetFailedStoriesToPending(prd);
+  const resetRef = ctx.config.review?.semantic?.resetRefOnRerun ?? false;
+  const hadFailedStories = resetFailedStoriesToPending(prd, resetRef);
   if (hadFailedStories) {
     const resetIds = prd.userStories.filter((s) => s.status === "pending" && (s.attempts ?? 0) > 0).map((s) => s.id);
     logger?.info("run-initialization", "Reset failed stories to pending for re-run", { storyIds: resetIds });
