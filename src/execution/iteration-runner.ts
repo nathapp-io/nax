@@ -112,11 +112,14 @@ export async function runIteration(
       )
     : ctx.config;
 
-  // EXEC-002: In worktree mode, effectiveWorkdir is the worktree path.
-  // In shared mode (or when story.workdir is set), resolve relative to project root.
+  // EXEC-002: In worktree mode, effectiveWorkdir is the worktree root.
+  // Monorepo subpackages (story.workdir) are resolved relative to the worktree root so
+  // the agent operates in the correct package directory within the isolated worktree.
   const resolvedWorkdir =
     ctx.config.execution.storyIsolation === "worktree"
-      ? effectiveWorkdir
+      ? story.workdir
+        ? join(effectiveWorkdir, story.workdir)
+        : effectiveWorkdir
       : story.workdir
         ? join(ctx.workdir, story.workdir)
         : ctx.workdir;

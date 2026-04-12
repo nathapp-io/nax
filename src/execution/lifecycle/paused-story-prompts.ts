@@ -69,7 +69,7 @@ export async function promptForPausedStories(
     // Apply fallback so timeout → "approve" instead of "skip" (#356).
     // Without this, a timed-out prompt hits case "skip" and permanently skips the story.
     const effectiveAction = chain.applyFallback(response, "continue");
-    const resolvedKey = effectiveAction === "approve" ? "keep" : (response.action as string);
+    const resolvedKey = effectiveAction === "approve" ? "keep" : (effectiveAction as string);
 
     switch (resolvedKey) {
       case "resume": {
