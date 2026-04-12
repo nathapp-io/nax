@@ -93,19 +93,47 @@ describe("resetFailedStoriesToPending()", () => {
     expect(prd.userStories[0].status).toBe("regression-failed");
   });
 
-  test("returns true when at least one story was reset", () => {
+  test("returns array of reset stories (non-empty when at least one was reset)", () => {
     const prd = makePrd([makeStory("US-001", { status: "failed", attempts: 1 })]);
-    expect(resetFailedStoriesToPending(prd)).toBe(true);
+    const result = resetFailedStoriesToPending(prd);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("US-001");
   });
 
-  test("returns false when no stories were reset", () => {
+  test("returns empty array when no stories were reset", () => {
     const prd = makePrd([makeStory("US-001", { status: "pending" })]);
-    expect(resetFailedStoriesToPending(prd)).toBe(false);
+    expect(resetFailedStoriesToPending(prd)).toHaveLength(0);
   });
 
-  test("returns false for empty PRD", () => {
+  test("returns empty array for empty PRD", () => {
     const prd = makePrd([]);
-    expect(resetFailedStoriesToPending(prd)).toBe(false);
+    expect(resetFailedStoriesToPending(prd)).toHaveLength(0);
+  });
+
+  test("worktree mode: clears storyGitRef for each reset story", () => {
+    const prd = makePrd([
+      makeStory("US-001", { status: "failed", storyGitRef: "abc123" }),
+      makeStory("US-002", { status: "failed", storyGitRef: "def456" }),
+    ]);
+    resetFailedStoriesToPending(prd, false, "worktree");
+    expect(prd.userStories[0].storyGitRef).toBeUndefined();
+    expect(prd.userStories[1].storyGitRef).toBeUndefined();
+  });
+
+  test("worktree mode: does not clear storyGitRef for non-failed stories", () => {
+    const prd = makePrd([
+      makeStory("US-001", { status: "passed", passes: true, storyGitRef: "abc123" }),
+      makeStory("US-002", { status: "failed", storyGitRef: "def456" }),
+    ]);
+    resetFailedStoriesToPending(prd, false, "worktree");
+    expect(prd.userStories[0].storyGitRef).toBe("abc123");
+    expect(prd.userStories[1].storyGitRef).toBeUndefined();
+  });
+
+  test("shared mode: does not clear storyGitRef (legacy behaviour)", () => {
+    const prd = makePrd([makeStory("US-001", { status: "failed", storyGitRef: "abc123" })]);
+    resetFailedStoriesToPending(prd, false, "shared");
+    expect(prd.userStories[0].storyGitRef).toBe("abc123");
   });
 
   test("mixed statuses — only failed stories are reset", () => {

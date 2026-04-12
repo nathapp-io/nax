@@ -142,6 +142,14 @@ export interface ExecutionConfig {
   agent?: string;
   /** Git HEAD ref captured before agent ran — passed through pipeline for plugin reviewers (FEAT-010) */
   storyGitRef?: string;
+  /**
+   * Story isolation mode (EXEC-002).
+   * "shared": all stories run on the project root branch (current behaviour).
+   * "worktree": each story runs in its own git worktree (.nax-wt/<storyId>/).
+   *   Passed stories merge into main; failed commits never reach main.
+   * Default: "shared"
+   */
+  storyIsolation: "shared" | "worktree";
 }
 
 /** Quality gate config */

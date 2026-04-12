@@ -18,6 +18,7 @@ import { countStories, loadPRD, markStoryPassed, resetFailedStoriesToPending, sa
 import type { PRD } from "../../prd/types";
 import { runReview } from "../../review/runner";
 import type { ReviewConfig } from "../../review/types";
+import { spawn } from "../../utils/bun-deps";
 import { hasCommitsForStory } from "../../utils/git";
 
 /**
@@ -29,6 +30,7 @@ export const _reconcileDeps = {
   hasCommitsForStory: (workdir: string, storyId: string) => hasCommitsForStory(workdir, storyId),
   runReview: (reviewConfig: ReviewConfig, workdir: string, executionConfig: NaxConfig["execution"]) =>
     runReview(reviewConfig, workdir, executionConfig),
+  spawn,
 };
 
 export interface InitializationContext {
@@ -177,6 +179,11 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   // Check agent installation
   await checkAgentInstalled(ctx.config, ctx.dryRun, ctx.agentGetFn);
 
+  // EXEC-002: Log the story isolation mode for observability
+  logger?.info("execution", "Story isolation mode", {
+    storyIsolation: ctx.config.execution.storyIsolation,
+  });
+
   // Load and reconcile PRD
   let prd = await loadPRD(ctx.prdPath);
   prd = await reconcileState(prd, ctx.prdPath, ctx.workdir, ctx.config);
@@ -185,10 +192,30 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   // reconcileState runs first to promote failed→passed for git-committed stories;
   // remaining failed stories (incomplete work) are reset here so they re-enter the queue.
   const resetRef = ctx.config.review?.semantic?.resetRefOnRerun ?? false;
-  const hadFailedStories = resetFailedStoriesToPending(prd, resetRef);
-  if (hadFailedStories) {
-    const resetIds = prd.userStories.filter((s) => s.status === "pending" && (s.attempts ?? 0) > 0).map((s) => s.id);
+  const storyIsolation = ctx.config.execution.storyIsolation;
+  const resetStories = resetFailedStoriesToPending(prd, resetRef, storyIsolation);
+  if (resetStories.length > 0) {
+    const resetIds = resetStories.map((s) => s.id);
     logger?.info("run-initialization", "Reset failed stories to pending for re-run", { storyIds: resetIds });
+
+    // EXEC-002: In worktree mode, delete old nax/<storyId> branches so worktreeManager.create()
+    // starts from a clean slate (fresh branch from current main HEAD).
+    if (storyIsolation === "worktree") {
+      for (const story of resetStories) {
+        try {
+          const proc = _reconcileDeps.spawn(["git", "branch", "-D", `nax/${story.id}`], {
+            cwd: ctx.workdir,
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+          await proc.exited;
+          logger?.info("worktree", "Cleaned up old branch for re-run", { storyId: story.id });
+        } catch {
+          // Branch may not exist (e.g. story failed before worktree was created) — non-fatal
+        }
+      }
+    }
+
     await savePRD(prd, ctx.prdPath);
   }
 

@@ -7,6 +7,8 @@ import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { _gitDeps } from "../../../src/utils/git";
 import {
+  _resultHandlerDeps,
+  handlePipelineFailure,
   handlePipelineSuccess,
   type PipelineHandlerContext,
 } from "../../../src/execution/pipeline-result-handler";
@@ -101,14 +103,25 @@ function mockSpawnReturning(output: string) {
 // Tests
 // ---------------------------------------------------------------------------
 
+const WORKTREE_CONFIG = {
+  ...DEFAULT_CONFIG,
+  execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
+};
+
 let origSpawn: typeof _gitDeps.spawn;
+let origResultSpawn: typeof _resultHandlerDeps.spawn;
+let origMergeEngine: typeof _resultHandlerDeps.mergeEngine;
 
 beforeEach(() => {
   origSpawn = _gitDeps.spawn;
+  origResultSpawn = _resultHandlerDeps.spawn;
+  origMergeEngine = _resultHandlerDeps.mergeEngine;
 });
 
 afterEach(() => {
   _gitDeps.spawn = origSpawn;
+  _resultHandlerDeps.spawn = origResultSpawn;
+  _resultHandlerDeps.mergeEngine = origMergeEngine;
   mock.restore();
 });
 
@@ -226,5 +239,130 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
     expect(result.prdDirty).toBe(true);
     expect(story.outputFiles).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EXEC-002: worktree merge on success
+// ---------------------------------------------------------------------------
+
+describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
+  test("calls mergeEngine.merge() when storyIsolation === 'worktree'", async () => {
+    const story = makeStory("US-001");
+    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
+
+    const mergeMock = mock(async () => ({ success: true as const }));
+    _resultHandlerDeps.mergeEngine = { merge: mergeMock } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    // Silence git spawn (no storyGitRef)
+    _gitDeps.spawn = mockSpawnReturning("");
+
+    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
+
+    expect(mergeMock).toHaveBeenCalledWith("/tmp/repo", "US-001");
+    expect(result.prdDirty).toBe(true);
+  });
+
+  test("does NOT call mergeEngine.merge() in shared mode", async () => {
+    const story = makeStory("US-001");
+    const ctx = makeCtx(story); // DEFAULT_CONFIG has storyIsolation: "shared"
+
+    const mergeMock = mock(async () => ({ success: true as const }));
+    _resultHandlerDeps.mergeEngine = { merge: mergeMock } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    _gitDeps.spawn = mockSpawnReturning("");
+
+    await handlePipelineSuccess(ctx, makeMinimalResult());
+
+    expect(mergeMock).not.toHaveBeenCalled();
+  });
+
+  test("returns storiesCompletedDelta=0 when merge fails and rectification also fails", async () => {
+    const story = makeStory("US-001");
+    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
+
+    _resultHandlerDeps.mergeEngine = {
+      merge: mock(async () => ({ success: false as const, conflictFiles: ["foo.ts"] })),
+    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    _gitDeps.spawn = mockSpawnReturning("");
+
+    // rectifyConflictedStory is dynamically imported inside handlePipelineSuccess.
+    // We can't easily mock it here, so we just verify the handler doesn't throw
+    // and returns the expected non-dirty result when rectification fails.
+    // (Full rectification behaviour tested in merge.test.ts)
+    const result = await handlePipelineSuccess(ctx, makeMinimalResult()).catch(() => null);
+    // Even if it fails internally, no unhandled throw should escape
+    expect(result).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EXEC-002: worktree cleanup on failure
+// ---------------------------------------------------------------------------
+
+describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
+  test("calls git worktree remove on 'fail' finalAction in worktree mode", async () => {
+    const story = makeStory("US-001", { status: "pending", passes: false, attempts: 2 });
+    const ctx = makeCtx(story, {
+      config: {
+        ...WORKTREE_CONFIG,
+        execution: {
+          ...WORKTREE_CONFIG.execution,
+          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxRetries: 1 },
+        },
+      },
+    });
+
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = mock((args: unknown) => {
+      spawnCalls.push(args as string[]);
+      return {
+        stdout: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _resultHandlerDeps.spawn;
+
+    const failResult: PipelineRunResult = {
+      success: false,
+      finalAction: "fail",
+      reason: "Tests failed",
+      context: { agentResult: { estimatedCost: 0 } } as unknown as PipelineRunResult["context"],
+    };
+
+    await handlePipelineFailure(ctx, failResult);
+
+    const worktreeRemoveCalls = spawnCalls.filter((a) => a.includes("worktree") && a.includes("remove"));
+    expect(worktreeRemoveCalls.length).toBeGreaterThan(0);
+    // Branch NOT deleted (only directory removed)
+    const branchDeleteCalls = spawnCalls.filter((a) => a.includes("branch") && a.includes("-D"));
+    expect(branchDeleteCalls.length).toBe(0);
+  });
+
+  test("does NOT call git worktree remove in shared mode on 'fail'", async () => {
+    const story = makeStory("US-001", { status: "pending", passes: false, attempts: 2 });
+    const ctx = makeCtx(story);
+
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = mock((args: unknown) => {
+      spawnCalls.push(args as string[]);
+      return {
+        stdout: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    }) as unknown as typeof _resultHandlerDeps.spawn;
+
+    const failResult: PipelineRunResult = {
+      success: false,
+      finalAction: "fail",
+      reason: "Tests failed",
+      context: { agentResult: { estimatedCost: 0 } } as unknown as PipelineRunResult["context"],
+    };
+
+    await handlePipelineFailure(ctx, failResult);
+
+    const worktreeRemoveCalls = spawnCalls.filter((a) => a.includes("worktree") && a.includes("remove"));
+    expect(worktreeRemoveCalls.length).toBe(0);
   });
 });

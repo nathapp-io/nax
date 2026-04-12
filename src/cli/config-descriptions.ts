@@ -82,6 +82,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
   "execution.regressionGate.timeoutSeconds": "Timeout for regression run in seconds",
+  "execution.storyIsolation":
+    'Story isolation mode. "shared" (default): all stories run on the main branch. "worktree": each story runs in an isolated git worktree (.nax-wt/<storyId>/); passed stories merge into main, failed commits never reach main.',
 
   // Quality
   quality: "Quality gate configuration",

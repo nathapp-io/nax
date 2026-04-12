@@ -6,6 +6,7 @@
  * applyCachedRouting: removed (P4-001 — pipeline routing stage is sole source)
  */
 
+import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";
@@ -18,9 +19,43 @@ import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd"
 import type { PostRunStatusWriter } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
+import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
+import { WorktreeManager } from "../worktree/manager";
+import { MergeEngine } from "../worktree/merge";
 import { handleTierEscalation } from "./escalation";
 import { appendProgress } from "./progress";
+
+/** Injectable deps for testability */
+export const _resultHandlerDeps = {
+  spawn,
+  worktreeManager: new WorktreeManager(),
+  mergeEngine: new MergeEngine(new WorktreeManager()),
+};
+
+/**
+ * EXEC-002: Remove a worktree directory from git's worktree tracking without deleting
+ * the branch. This preserves `nax/<storyId>` in git for diagnostics and re-run cleanup
+ * while reclaiming disk space. Best-effort — errors are logged but not thrown.
+ */
+async function removeWorktreeDirectory(projectRoot: string, storyId: string): Promise<void> {
+  const logger = getSafeLogger();
+  const worktreePath = join(projectRoot, ".nax-wt", storyId);
+  try {
+    const proc = _resultHandlerDeps.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await proc.exited;
+  } catch (error) {
+    logger?.warn("worktree", "Failed to remove worktree directory (non-fatal)", {
+      storyId,
+      worktreePath,
+      error: String(error),
+    });
+  }
+}
 
 /** Filter noise from output files (test files, lock files, nax runtime files) */
 function filterOutputFiles(files: string[]): string[] {
@@ -120,6 +155,35 @@ export async function handlePipelineSuccess(
     }
   }
 
+  // EXEC-002: In worktree mode, merge the story's branch into main after pipeline passes.
+  if (ctx.config.execution.storyIsolation === "worktree") {
+    const story = ctx.story;
+    const mergeResult = await _resultHandlerDeps.mergeEngine.merge(ctx.workdir, story.id);
+    if (!mergeResult.success) {
+      // Merge conflict after the story passed all checks — attempt rectification.
+      const { rectifyConflictedStory } = await import("./merge-conflict-rectify");
+      const rectifyResult = await rectifyConflictedStory({
+        storyId: story.id,
+        conflictFiles: mergeResult.conflictFiles ?? [],
+        originalCost: costDelta,
+        workdir: ctx.workdir,
+        config: ctx.config,
+        hooks: ctx.hooks,
+        pluginRegistry: ctx.pluginRegistry,
+        prd,
+      });
+      if (!rectifyResult.success) {
+        logger?.error("worktree", "Merge conflict could not be rectified — marking story as failed", {
+          storyId: story.id,
+          conflictFiles: mergeResult.conflictFiles,
+        });
+        // Return as failure: story passed review but can't land on main
+        return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: false };
+      }
+    }
+    logger?.info("worktree", "Merged story to main", { storyId: story.id });
+  }
+
   const updatedCounts = countStories(prd);
   logger?.info("progress", "Progress update", {
     totalStories: updatedCounts.total,
@@ -157,6 +221,10 @@ export async function handlePipelineFailure(
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
       logger?.warn("pipeline", "Story paused", { storyId: ctx.story.id, reason: pipelineResult.reason });
+      // EXEC-002: Remove worktree directory on pause (keep branch for diagnostics).
+      if (ctx.config.execution.storyIsolation === "worktree") {
+        await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
+      }
       pipelineEventBus.emit({
         type: "story:paused",
         storyId: ctx.story.id,
@@ -181,6 +249,15 @@ export async function handlePipelineFailure(
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
+      // EXEC-002: All tiers exhausted — remove the worktree directory but keep the branch
+      // (nax/<storyId>) so the failed commits are preserved for diagnostics and re-run cleanup.
+      if (ctx.config.execution.storyIsolation === "worktree") {
+        await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
+        logger?.info("worktree", "Kept failed story branch", {
+          storyId: ctx.story.id,
+          branch: `nax/${ctx.story.id}`,
+        });
+      }
 
       if (ctx.featureDir) {
         await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${pipelineResult.reason}`);

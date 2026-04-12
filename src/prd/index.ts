@@ -223,20 +223,27 @@ export function markStoryFailed(
  * @param resetRef - When true, also clears `storyGitRef` so it is re-captured at the
  *   next story start. Prevents cross-story diff pollution when multiple stories exhausted
  *   all tiers across a run and are now re-queued. Default: false (current behaviour).
- * @returns true if any stories were reset (PRD is dirty and should be saved)
+ * @param storyIsolation - When `"worktree"`, also clears `storyGitRef` for all reset stories
+ *   regardless of `resetRef` (each story will get a fresh ref in its new worktree). Callers
+ *   are responsible for deleting the old `nax/<storyId>` branches after this returns.
+ * @returns the list of stories that were reset (empty = no changes, PRD is clean)
  */
-export function resetFailedStoriesToPending(prd: PRD, resetRef = false): boolean {
-  let modified = false;
+export function resetFailedStoriesToPending(
+  prd: PRD,
+  resetRef = false,
+  storyIsolation?: "shared" | "worktree",
+): UserStory[] {
+  const reset: UserStory[] = [];
   for (const story of prd.userStories) {
     if (story.status === "failed") {
       story.status = "pending";
-      if (resetRef) {
+      if (resetRef || storyIsolation === "worktree") {
         story.storyGitRef = undefined;
       }
-      modified = true;
+      reset.push(story);
     }
   }
-  return modified;
+  return reset;
 }
 
 /** Mark a story as skipped */

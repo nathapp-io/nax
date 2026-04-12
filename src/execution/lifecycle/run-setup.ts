@@ -260,7 +260,12 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // Prompt user for each paused story — skip in headless mode
     if (counts.paused > 0 && interactionChain !== null) {
       const { promptForPausedStories } = await import("./paused-story-prompts");
-      const pausedSummary = await promptForPausedStories(prd, interactionChain, feature);
+      const pausedSummary = await promptForPausedStories(
+        prd,
+        interactionChain,
+        feature,
+        config.execution.storyIsolation,
+      );
       if (pausedSummary.resumed.length > 0 || pausedSummary.skipped.length > 0) {
         await savePRD(prd, prdPath);
         counts = countStories(prd);

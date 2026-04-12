@@ -224,4 +224,70 @@ describe("reconcileState", () => {
     expect(result.userStories[0].status).toBe("passed");
     expect(result.userStories[0].passes).toBe(true);
   });
+
+  test("worktree mode: calls git branch -D nax/<storyId> for each reset story", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const spawnCalls: string[][] = [];
+    _reconcileDeps.spawn = mock((args: unknown) => {
+      spawnCalls.push(args as string[]);
+      return {
+        stdout: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: () => {},
+      };
+    }) as unknown as typeof _reconcileDeps.spawn;
+
+    const prd = makePrd({ status: "failed", failureStage: "execution", storyGitRef: "abc123" });
+    const prdPath = join(tmpDir, "prd-worktree.json");
+    await Bun.write(prdPath, JSON.stringify(prd));
+
+    const worktreeConfig = {
+      ...DEFAULT_CONFIG,
+      execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
+    };
+
+    const { prd: result } = await initializeRun({
+      config: worktreeConfig,
+      prdPath,
+      workdir: tmpDir,
+      dryRun: true,
+    });
+
+    // Story should be reset to pending
+    expect(result.userStories[0].status).toBe("pending");
+    // storyGitRef should be cleared in worktree mode
+    expect(result.userStories[0].storyGitRef).toBeUndefined();
+    // git branch -D should have been called for nax/US-001
+    const branchDeleteCalls = spawnCalls.filter(
+      (a) => a.includes("branch") && a.includes("-D") && a.includes("nax/US-001"),
+    );
+    expect(branchDeleteCalls.length).toBe(1);
+  });
+
+  test("shared mode: does NOT call git branch -D on re-run", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const spawnCalls: string[][] = [];
+    _reconcileDeps.spawn = mock((args: unknown) => {
+      spawnCalls.push(args as string[]);
+      return {
+        stdout: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: () => {},
+      };
+    }) as unknown as typeof _reconcileDeps.spawn;
+
+    const prd = makePrd({ status: "failed", failureStage: "execution" });
+    await runReconcile(prd, "-shared");
+
+    const branchDeleteCalls = spawnCalls.filter(
+      (a) => a.includes("branch") && a.includes("-D"),
+    );
+    expect(branchDeleteCalls.length).toBe(0);
+  });
 });
