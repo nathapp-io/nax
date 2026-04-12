@@ -28,6 +28,19 @@ export type ModelEntry = ModelDef | string;
 export type ModelMap = Record<ModelTier, ModelEntry>;
 export type ModelsConfig = Record<string, Record<ModelTier, ModelEntry>>;
 
+export interface ConfiguredModelObject {
+  agent: string;
+  model: string;
+}
+
+export type ConfiguredModel = ModelTier | ConfiguredModelObject;
+
+export interface ResolvedConfiguredModel {
+  agent: string;
+  modelDef: ModelDef;
+  modelTier?: ModelTier;
+}
+
 export interface TierConfig {
   tier: string;
   attempts: number;
@@ -37,6 +50,63 @@ export interface TierConfig {
 export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "custom";
 
 export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
+
+/** Common model shorthand aliases → tier mapping for config and debate convenience. */
+export const MODEL_SHORTHAND_TIERS: Record<string, ModelTier> = {
+  haiku: "fast",
+  sonnet: "balanced",
+  opus: "powerful",
+};
+
+export function isBuiltinModelTier(value: string): value is "fast" | "balanced" | "powerful" {
+  return value === "fast" || value === "balanced" || value === "powerful";
+}
+
+/**
+ * Resolve a config-level model selector into an effective agent + model definition.
+ *
+ * String selectors are always treated as tier labels and resolved through config.models.
+ * Object selectors use the embedded agent and interpret `model` as:
+ * - shorthand alias (haiku/sonnet/opus) -> mapped tier via config.models
+ * - builtin tier (fast/balanced/powerful) -> resolved via config.models
+ * - otherwise -> raw model id via resolveModel()
+ */
+export function resolveConfiguredModel(
+  models: ModelsConfig,
+  preferredAgent: string,
+  selection: ConfiguredModel,
+  defaultAgent: string,
+): ResolvedConfiguredModel {
+  if (typeof selection === "string") {
+    return {
+      agent: preferredAgent,
+      modelDef: resolveModelForAgent(models, preferredAgent, selection, defaultAgent),
+      modelTier: selection,
+    };
+  }
+
+  const aliasedTier = MODEL_SHORTHAND_TIERS[selection.model.toLowerCase()];
+  if (aliasedTier) {
+    return {
+      agent: selection.agent,
+      modelDef: resolveModelForAgent(models, selection.agent, aliasedTier, defaultAgent),
+      modelTier: aliasedTier,
+    };
+  }
+
+  if (isBuiltinModelTier(selection.model)) {
+    return {
+      agent: selection.agent,
+      modelDef: resolveModelForAgent(models, selection.agent, selection.model, defaultAgent),
+      modelTier: selection.model,
+    };
+  }
+
+  return {
+    agent: selection.agent,
+    modelDef: resolveModel(selection.model),
+  };
+}
 
 /** Resolve the correct ModelEntry for a given agent and tier, with defaultAgent fallback */
 export function resolveModelForAgent(

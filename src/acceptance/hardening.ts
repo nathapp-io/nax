@@ -6,7 +6,7 @@
  */
 
 import type { AgentAdapter } from "../agents/types";
-import { type ModelDef, resolveModelForAgent } from "../config";
+import { type ModelDef, resolveConfiguredModel } from "../config";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import { savePRD } from "../prd";
@@ -95,13 +95,16 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
 
     // 4. Resolve model
     let modelDef: ModelDef;
+    let modelTier = "fast";
     try {
-      modelDef = resolveModelForAgent(
+      const resolvedModel = resolveConfiguredModel(
         ctx.config.models,
         ctx.config.autoMode?.defaultAgent ?? "claude",
         ctx.config.acceptance?.model ?? "fast",
         ctx.config.autoMode?.defaultAgent ?? "claude",
       );
+      modelDef = resolvedModel.modelDef;
+      modelTier = resolvedModel.modelTier ?? "fast";
     } catch {
       modelDef = { provider: "anthropic", model: "claude-haiku-4-5-20251001" };
     }
@@ -112,7 +115,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       workdir: ctx.workdir,
       featureDir: ctx.featureDir,
       codebaseContext: "",
-      modelTier: ctx.config.acceptance?.model ?? "fast",
+      modelTier,
       modelDef,
       config: ctx.config,
       language,

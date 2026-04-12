@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { ModelsConfig, ModelTier } from "../../../src/config/schema-types";
-import { resolveModelForAgent } from "../../../src/config/schema-types";
+import { resolveConfiguredModel, resolveModelForAgent } from "../../../src/config/schema-types";
 import type { TierConfig } from "../../../src/config/schema-types";
 import type { StoryRouting } from "../../../src/prd/types";
 import { NaxError } from "../../../src/errors";
@@ -171,5 +171,51 @@ describe("resolveModelForAgent", () => {
 
   test("throws NaxError when defaultAgent itself is missing", () => {
     expect(() => resolveModelForAgent(models, "unknown-agent", "fast", "no-such-default")).toThrow(NaxError);
+  });
+});
+
+describe("resolveConfiguredModel", () => {
+  const models: ModelsConfig = {
+    claude: {
+      fast: "claude-haiku-4-5",
+      balanced: "claude-sonnet-4-5",
+      powerful: "claude-opus-4-5",
+    },
+    codex: {
+      fast: { provider: "openai", model: "gpt-5.4-mini" },
+      balanced: { provider: "openai", model: "gpt-5.4" },
+    },
+  };
+
+  test("resolves string selectors via resolveModelForAgent using the preferred agent", () => {
+    const result = resolveConfiguredModel(models, "claude", "balanced", "claude");
+
+    expect(result.agent).toBe("claude");
+    expect(result.modelTier).toBe("balanced");
+    expect(result.modelDef).toEqual({ provider: "anthropic", model: "claude-sonnet-4-5" });
+  });
+
+  test("resolves object selectors with tier labels through the object agent", () => {
+    const result = resolveConfiguredModel(models, "claude", { agent: "codex", model: "fast" }, "claude");
+
+    expect(result.agent).toBe("codex");
+    expect(result.modelTier).toBe("fast");
+    expect(result.modelDef).toEqual({ provider: "openai", model: "gpt-5.4-mini" });
+  });
+
+  test("resolves shorthand aliases to builtin tiers", () => {
+    const result = resolveConfiguredModel(models, "claude", { agent: "claude", model: "sonnet" }, "claude");
+
+    expect(result.agent).toBe("claude");
+    expect(result.modelTier).toBe("balanced");
+    expect(result.modelDef).toEqual({ provider: "anthropic", model: "claude-sonnet-4-5" });
+  });
+
+  test("passes through raw model ids from object selectors", () => {
+    const result = resolveConfiguredModel(models, "claude", { agent: "codex", model: "gpt-5.4" }, "claude");
+
+    expect(result.agent).toBe("codex");
+    expect(result.modelTier).toBeUndefined();
+    expect(result.modelDef).toEqual({ provider: "openai", model: "gpt-5.4" });
   });
 });

@@ -261,6 +261,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
     const diagnosis = await resolveAcceptanceDiagnosis({
       agent,
+      getAgent: (name: string) => (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(name),
       failures,
       totalACs,
       strategy,

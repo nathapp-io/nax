@@ -8,19 +8,22 @@
 // Schema types
 export type {
   Complexity,
+  ConfiguredModel,
+  ConfiguredModelObject,
   LlmRoutingMode,
   ModelDef,
   ModelEntry,
   ModelMap,
   ModelsConfig,
   ModelTier,
+  ResolvedConfiguredModel,
   RoutingStrategyName,
   TddStrategy,
   TestStrategy,
   TierConfig,
   TokenPricing,
 } from "./schema-types";
-export { resolveModel, resolveModelForAgent } from "./schema-types";
+export { MODEL_SHORTHAND_TIERS, isBuiltinModelTier, resolveConfiguredModel, resolveModel, resolveModelForAgent } from "./schema-types";
 
 // Debate types
 export type {

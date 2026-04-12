@@ -331,6 +331,53 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   });
 });
 
+describe("configured model selector schema", () => {
+  test("accepts object form for plan.model", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      plan: {
+        ...(DEFAULT_CONFIG.plan as Record<string, unknown>),
+        model: { agent: "codex", model: "gpt-5.4" },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.plan.model).toEqual({ agent: "codex", model: "gpt-5.4" });
+  });
+
+  test("accepts object form for acceptance.model", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      acceptance: {
+        ...(DEFAULT_CONFIG.acceptance as Record<string, unknown>),
+        model: { agent: "codex", model: "fast" },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.acceptance.model).toEqual({ agent: "codex", model: "fast" });
+  });
+
+  test("accepts object form for routing.llm.model", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      routing: {
+        ...(DEFAULT_CONFIG.routing as Record<string, unknown>),
+        llm: {
+          ...((DEFAULT_CONFIG.routing.llm as Record<string, unknown>) ?? {}),
+          model: { agent: "claude", model: "sonnet" },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.routing.llm?.model).toEqual({ agent: "claude", model: "sonnet" });
+  });
+});
+
 describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
   test("DEFAULT_CONFIG (legacy flat format) parses successfully after migration", () => {
     const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);

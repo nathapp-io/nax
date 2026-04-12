@@ -8,7 +8,7 @@
 
 import type { AgentAdapter } from "../../agents";
 import type { NaxConfig } from "../../config";
-import { resolveModelForAgent } from "../../config";
+import { resolveConfiguredModel } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "../../prompts";
@@ -133,18 +133,17 @@ export const _llmStrategyDeps = {
  */
 async function callLlmOnce(
   adapter: AgentAdapter,
-  modelTier: string,
+  modelSelection: string | { agent: string; model: string },
   prompt: string,
   config: NaxConfig,
   timeoutMs: number,
 ): Promise<string> {
-  const modelDef = resolveModelForAgent(
+  const resolvedModel = resolveConfiguredModel(
     config.models,
-    config.autoMode.defaultAgent,
-    modelTier,
+    adapter.name,
+    modelSelection,
     config.autoMode.defaultAgent,
   );
-  const modelArg = modelDef.model;
 
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -154,7 +153,7 @@ async function callLlmOnce(
   });
   timeoutPromise.catch(() => {});
 
-  const outputPromise = adapter.complete(prompt, { model: modelArg, config });
+  const outputPromise = adapter.complete(prompt, { model: resolvedModel.modelDef.model, config });
 
   try {
     const result = await Promise.race([outputPromise, timeoutPromise]);
@@ -170,7 +169,12 @@ async function callLlmOnce(
 /**
  * Call LLM via adapter.complete() with timeout and retry (BUG-033).
  */
-async function callLlm(adapter: AgentAdapter, modelTier: string, prompt: string, config: NaxConfig): Promise<string> {
+async function callLlm(
+  adapter: AgentAdapter,
+  modelSelection: string | { agent: string; model: string },
+  prompt: string,
+  config: NaxConfig,
+): Promise<string> {
   const llmConfig = config.routing.llm;
   const timeoutMs = llmConfig?.timeoutMs ?? 30000;
   const maxRetries = llmConfig?.retries ?? 1;
@@ -180,7 +184,7 @@ async function callLlm(adapter: AgentAdapter, modelTier: string, prompt: string,
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callLlmOnce(adapter, modelTier, prompt, config, timeoutMs);
+      return await callLlmOnce(adapter, modelSelection, prompt, config, timeoutMs);
     } catch (err) {
       lastError = err as Error;
       if (attempt < maxRetries) {
@@ -216,11 +220,11 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
     throw new Error("No agent adapter available for batch routing (AA-003)");
   }
 
-  const modelTier = llmConfig.model ?? "fast";
+  const modelSelection = llmConfig.model ?? "fast";
   const prompt = await buildBatchRoutingPromptAsync(stories);
 
   try {
-    const output = await callLlm(adapter, modelTier, prompt, config);
+    const output = await callLlm(adapter, modelSelection, prompt, config);
     const decisions = parseBatchResponse(output, stories, config);
 
     if (llmConfig.cacheDecisions) {
@@ -292,12 +296,12 @@ export async function classifyWithLlm(
     throw new Error("No agent adapter available for LLM routing (AA-003)");
   }
 
-  const modelTier = llmConfig.model ?? "fast";
+  const modelSelection = llmConfig.model ?? "fast";
   const prompt = await buildRoutingPromptAsync(story);
 
   let decision: RoutingDecision;
   try {
-    const output = await callLlm(effectiveAdapter, modelTier, prompt, config);
+    const output = await callLlm(effectiveAdapter, modelSelection, prompt, config);
     decision = parseRoutingResponse(output, story, config);
   } catch (err) {
     if (llmConfig.fallbackToKeywords) {

@@ -7,7 +7,7 @@
 
 import type { AgentAdapter } from "../agents";
 import { createAgentRegistry } from "../agents/registry";
-import { resolveModelForAgent } from "../config";
+import { resolveConfiguredModel } from "../config";
 import { getLogger } from "../logger";
 import { AcceptancePromptBuilder } from "../prompts";
 import { errorMessage } from "../utils/errors";
@@ -27,8 +27,14 @@ export const _refineDeps = {
       const config = options?.config;
       if (!config) throw new Error("Refinement adapter requires config");
 
-      const adapter = createAgentRegistry(config).getAgent(config.autoMode.defaultAgent);
-      if (!adapter) throw new Error(`Agent "${config.autoMode.defaultAgent}" not found`);
+      const resolvedModel = resolveConfiguredModel(
+        config.models,
+        config.autoMode.defaultAgent,
+        config.acceptance?.model ?? "fast",
+        config.autoMode.defaultAgent,
+      );
+      const adapter = createAgentRegistry(config).getAgent(resolvedModel.agent);
+      if (!adapter) throw new Error(`Agent "${resolvedModel.agent}" not found`);
 
       return adapter.complete(...args);
     },
@@ -95,11 +101,10 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
   } = context;
   const logger = getLogger();
 
-  const modelTier = config.acceptance?.model ?? "fast";
-  const modelDef = resolveModelForAgent(
+  const resolvedModel = resolveConfiguredModel(
     config.models,
     config.autoMode.defaultAgent,
-    modelTier,
+    config.acceptance?.model ?? "fast",
     config.autoMode.defaultAgent,
   );
   const prompt = new AcceptancePromptBuilder().buildRefinementPrompt(criteria, codebaseContext, {
@@ -115,7 +120,7 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
     const completeResult = await _refineDeps.adapter.complete(prompt, {
       jsonMode: true,
       maxTokens: 4096,
-      model: modelDef.model,
+      model: resolvedModel.modelDef.model,
       config,
       featureName,
       storyId,

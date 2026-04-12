@@ -8,8 +8,7 @@
 import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter, AgentRunOptions } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
-import type { ModelTier } from "../config/schema-types";
-import { resolveModelForAgent } from "../config/schema-types";
+import { resolveConfiguredModel } from "../config/schema-types";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { DiagnosisResult } from "./types";
 
@@ -39,7 +38,7 @@ export async function executeSourceFix(
 
   const { config, workdir, featureName, storyId } = options;
 
-  const modelDef = resolveModelForAgent(
+  const resolvedModel = resolveConfiguredModel(
     config.models,
     config.autoMode.defaultAgent,
     config.acceptance.fix.fixModel,
@@ -60,8 +59,8 @@ export async function executeSourceFix(
   const runOptions: AgentRunOptions = {
     prompt,
     workdir,
-    modelTier: undefined as unknown as ModelTier,
-    modelDef,
+    modelTier: resolvedModel.modelTier ?? "balanced",
+    modelDef: resolvedModel.modelDef,
     timeoutSeconds,
     sessionRole: "source-fix",
     acpSessionName: sessionName,
@@ -110,7 +109,7 @@ export async function executeTestFix(
 
   const { config, workdir, featureName, storyId } = options;
 
-  const modelDef = resolveModelForAgent(
+  const resolvedModel = resolveConfiguredModel(
     config.models,
     config.autoMode.defaultAgent,
     config.acceptance.fix.fixModel,
@@ -133,8 +132,8 @@ export async function executeTestFix(
   const runOptions: AgentRunOptions = {
     prompt,
     workdir,
-    modelTier: undefined as unknown as ModelTier,
-    modelDef,
+    modelTier: resolvedModel.modelTier ?? "balanced",
+    modelDef: resolvedModel.modelDef,
     timeoutSeconds,
     sessionRole: "test-fix",
     acpSessionName: sessionName,

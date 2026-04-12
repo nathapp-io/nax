@@ -7,6 +7,7 @@
 
 import { join } from "node:path";
 import { createAgentRegistry } from "../agents/registry";
+import { resolveConfiguredModel } from "../config";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
@@ -77,8 +78,14 @@ export const _generatorPRDDeps = {
       const config = options?.config;
       if (!config) throw new Error("Acceptance generator adapter requires config");
 
-      const adapter = createAgentRegistry(config).getAgent(config.autoMode.defaultAgent);
-      if (!adapter) throw new Error(`Agent "${config.autoMode.defaultAgent}" not found`);
+      const resolvedModel = resolveConfiguredModel(
+        config.models,
+        config.autoMode.defaultAgent,
+        config.acceptance?.model ?? "fast",
+        config.autoMode.defaultAgent,
+      );
+      const adapter = createAgentRegistry(config).getAgent(resolvedModel.agent);
+      if (!adapter) throw new Error(`Agent "${resolvedModel.agent}" not found`);
 
       return adapter.complete(...args);
     },

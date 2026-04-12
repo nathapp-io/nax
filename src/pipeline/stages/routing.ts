@@ -12,6 +12,7 @@
  */
 
 import { isGreenfieldStory } from "../../context/greenfield";
+import { resolveConfiguredModel } from "../../config";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
 import { complexityToModelTier, resolveRouting } from "../../routing";
@@ -25,7 +26,17 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    const agentName = ctx.config.execution?.agent ?? "claude";
+    const defaultRoutingAgent = ctx.config.execution?.agent ?? "claude";
+    const routingModelSelection = ctx.config.routing.llm?.model ?? "fast";
+    const agentName =
+      ctx.config.routing.strategy === "llm"
+        ? resolveConfiguredModel(
+            ctx.config.models,
+            defaultRoutingAgent,
+            routingModelSelection,
+            ctx.config.autoMode.defaultAgent,
+          ).agent
+        : defaultRoutingAgent;
     // Only use adapter when explicitly provided via agentGetFn — prevents real LLM calls in tests
     const adapter = ctx.agentGetFn ? ctx.agentGetFn(agentName) : undefined;
 
