@@ -1,5 +1,11 @@
 # nax
 
+[![npm](https://img.shields.io/npm/v/@nathapp/nax?style=flat-square)](https://npmjs.com/@nathapp/nax)
+[![CI](https://img.shields.io/github/actions/workflow/status/nathapp-io/nax/ci.yml?style=flat-square)](https://github.com/nathapp-io/nax/actions)
+[![Bun](https://img.shields.io/badge/Bun-1.3.7%2B-eeffff?style=flat-square)](https://bun.sh)
+[![Node](https://img.shields.io/badge/Node-22%2B-green?style=flat-square)](https://nodejs.org)
+[![License](https://img.shields.io/npm/l/@nathapp/nax?style=flat-square)](LICENSE)
+
 **AI Coding Agent Orchestrator** — loops until done.
 
 Give it a spec. It writes tests, implements code, verifies quality, and retries until everything passes.
@@ -25,7 +31,7 @@ npm install -g @nathapp/nax
 bun install -g @nathapp/nax
 ```
 
-Requires: Node 18+ or Bun 1.0+. Git must be initialized.
+Requires: Bun 1.3.7+ or Node 22+. Git must be initialized.
 
 ## Quick Start
 
