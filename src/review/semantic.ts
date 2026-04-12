@@ -290,6 +290,7 @@ export async function runSemanticReview(
   const agent = modelResolver(semanticConfig.modelTier);
   if (!agent) {
     logger?.warn("semantic", "No agent available for semantic review — skipping", {
+      storyId: story.id,
       modelTier: semanticConfig.modelTier,
     });
     return {
@@ -329,6 +330,7 @@ export async function runSemanticReview(
       reviewerSession: resolverSession,
       resolverContextInput: resolverSession
         ? {
+            diffMode,
             ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat } : { diff }),
             story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
             semanticConfig,
@@ -487,6 +489,7 @@ export async function runSemanticReview(
       timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
       modelTier: semanticConfig.modelTier,
       modelDef: resolvedModelDef,
+      pipelineStage: "review",
       config: naxConfig ?? DEFAULT_CONFIG,
       featureName,
       storyId: story.id,
@@ -494,7 +497,7 @@ export async function runSemanticReview(
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
   } catch (err) {
-    logger?.warn("semantic", "LLM call failed — fail-open", { cause: String(err) });
+    logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
     return {
       check: "semantic",
       success: true,
@@ -514,6 +517,7 @@ export async function runSemanticReview(
     const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
     if (looksLikeFail) {
       logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+        storyId: story.id,
         rawResponse: rawResponse.slice(0, 200),
       });
       return {
@@ -528,7 +532,7 @@ export async function runSemanticReview(
       };
     }
 
-    logger?.warn("semantic", "LLM returned invalid JSON — fail-open", { rawResponse: rawResponse.slice(0, 200) });
+    logger?.warn("semantic", "LLM returned invalid JSON — fail-open", { storyId: story.id, rawResponse: rawResponse.slice(0, 200) });
     return {
       check: "semantic",
       success: true,

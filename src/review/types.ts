@@ -9,16 +9,12 @@ export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semanti
 
 /**
  * Diff context passed to debate resolver and prompt builders.
- * Exactly one of diff (embedded mode) or storyGitRef+stat (ref mode) is present.
+ * Discriminated on `mode` — prevents ambiguous routing when both
+ * `diff` and `storyGitRef` might be present in a ResolverContext spread.
  */
-export interface DiffContext {
-  /** Pre-collected diff (embedded mode) */
-  diff?: string;
-  /** Git baseline ref (ref mode) */
-  storyGitRef?: string;
-  /** Git diff --stat summary (ref mode) */
-  stat?: string;
-}
+export type DiffContext =
+  | { mode: "embedded"; diff: string; storyGitRef?: never; stat?: never }
+  | { mode: "ref"; storyGitRef: string; stat?: string; diff?: never };
 
 /** Story fields required for semantic review */
 export interface SemanticStory {

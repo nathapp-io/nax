@@ -341,7 +341,7 @@ ${this.stageContext.outputFormat}`;
  * ref mode: emits stat summary + git ref + self-serve commands.
  */
 function buildDebateDiffSection(ctx: DiffContext): string {
-  if (ctx.storyGitRef) {
+  if (ctx.mode === "ref") {
     // ref mode: reviewer self-serves the full diff via tools
     const stat = ctx.stat ?? "(no stat available)";
     const ref = ctx.storyGitRef;
@@ -362,5 +362,5 @@ function buildDebateDiffSection(ctx: DiffContext): string {
     ].join("\n");
   }
   // embedded mode: emit the diff block
-  return ["## Diff", ctx.diff ?? ""].join("\n");
+  return ["## Diff", ctx.diff].join("\n");
 }

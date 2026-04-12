@@ -42,9 +42,11 @@ export interface ResolveOutcome {
 
 /** Context required by resolveOutcome() when a ReviewerSession is used. Only populated from semantic.ts debate path. */
 export interface ResolverContext {
-  /** Pre-collected diff (embedded mode — mutually exclusive with storyGitRef/stat) */
+  /** How the diff is provided — drives DiffContext construction for the dialogue path */
+  diffMode: "embedded" | "ref";
+  /** Pre-collected diff (embedded mode) */
   diff?: string;
-  /** Git baseline ref (ref mode — mutually exclusive with diff) */
+  /** Git baseline ref (ref mode) */
   storyGitRef?: string;
   /** Git diff --stat summary (ref mode) */
   stat?: string;
@@ -251,12 +253,11 @@ export async function resolveOutcome(
         acceptanceCriteria: resolverContext.story.acceptanceCriteria,
       };
 
-      // Build diffContext from resolverContext — one of diff (embedded) or storyGitRef+stat (ref).
-      const diffContext: import("../review/types").DiffContext = {
-        diff: resolverContext.diff,
-        storyGitRef: resolverContext.storyGitRef,
-        stat: resolverContext.stat,
-      };
+      // Build diffContext from resolverContext — discriminated on diffMode.
+      const diffContext: import("../review/types").DiffContext =
+        resolverContext.diffMode === "ref"
+          ? { mode: "ref", storyGitRef: resolverContext.storyGitRef ?? "", stat: resolverContext.stat }
+          : { mode: "embedded", diff: resolverContext.diff ?? "" };
 
       let dialogueResult: import("../review/dialogue").ReviewDialogueResult;
       if (resolverContext.isReReview) {
