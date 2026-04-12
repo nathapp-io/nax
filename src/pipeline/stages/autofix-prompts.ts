@@ -8,8 +8,11 @@
  */
 
 import type { UserStory } from "../../prd";
+import { CONTRADICTION_ESCAPE_HATCH } from "../../prompts";
 import type { DialogueMessage } from "../../review/dialogue";
 import type { ReviewCheckResult } from "../../review/types";
+
+export { CONTRADICTION_ESCAPE_HATCH };
 
 export interface DialogueAwarePromptOptions {
   findingReasoning: Map<string, string>;
@@ -17,19 +20,6 @@ export interface DialogueAwarePromptOptions {
   /** Max number of history messages to include (default: all) */
   maxHistoryMessages?: number;
 }
-
-/**
- * Reviewer contradiction escape hatch (REVIEW-003).
- *
- * Appended to all rectification prompts so the implementer can signal
- * when two findings cannot both be satisfied. The autofix stage detects
- * "UNRESOLVED: <explanation>" in the agent output and escalates instead
- * of retrying — avoiding an infinite loop on an unresolvable conflict.
- */
-export const CONTRADICTION_ESCAPE_HATCH = `
-If two findings in this list contradict each other and you cannot satisfy both, do not guess.
-Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>`;
 
 function formatCheckErrors(checks: ReviewCheckResult[]): string {
   return checks.map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``).join("\n\n");

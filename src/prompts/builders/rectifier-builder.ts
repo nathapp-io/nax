@@ -15,6 +15,7 @@
  */
 
 import type { UserStory } from "../../prd";
+import type { ReviewCheckResult } from "../../review/types";
 import {
   SectionAccumulator,
   findingsSection,
@@ -24,6 +25,19 @@ import {
 } from "../core";
 import type { FailureRecord, PromptSection, ReviewFinding } from "../core";
 import { buildConventionsSection, buildIsolationSection, buildStorySection } from "../sections";
+
+/**
+ * Reviewer contradiction escape hatch (REVIEW-003).
+ *
+ * Appended to all rectification prompts so the implementer can signal
+ * when two findings cannot both be satisfied. The autofix stage detects
+ * "UNRESOLVED: <explanation>" in the agent output and escalates instead
+ * of retrying — avoiding an infinite loop on an unresolvable conflict.
+ */
+export const CONTRADICTION_ESCAPE_HATCH = `
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>`;
 
 export type RectifierTrigger =
   | "tdd-test-failure" // tests written by test-writer fail; implementer rectifies
@@ -97,6 +111,54 @@ export class RectifierPromptBuilder {
 
   build(): Promise<string> {
     return Promise.resolve(this.acc.join());
+  }
+
+  /**
+   * Builds a delta-only continuation prompt for autofix retry attempts (PROMPT-001).
+   *
+   * Sent on attempt 2+ when the implementer session is confirmed open.
+   * Contains ONLY new error output + escalation preamble — NOT the full prompt.
+   * This keeps retry tokens ~70% lower than re-sending the full rectification prompt.
+   */
+  static continuation(
+    failedChecks: ReviewCheckResult[],
+    attempt: number,
+    rethinkAtAttempt: number,
+    urgencyAtAttempt: number,
+  ): string {
+    const parts: string[] = [];
+
+    parts.push("Your previous fix attempt did not resolve all issues. Here are the remaining failures:\n");
+
+    for (const check of failedChecks) {
+      parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
+      const truncated = check.output.length > 4000;
+      const output = truncated
+        ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
+        : check.output;
+      parts.push(`\`\`\`\n${output}\n\`\`\`\n`);
+      if (check.findings?.length) {
+        parts.push("Structured findings:\n");
+        for (const f of check.findings) {
+          parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
+        }
+      }
+    }
+
+    if (attempt >= rethinkAtAttempt) {
+      parts.push(
+        "\n**Rethink your approach.** The same strategy has failed multiple times. Consider a fundamentally different fix.\n",
+      );
+    }
+    if (attempt >= urgencyAtAttempt) {
+      parts.push(
+        "\n**URGENT: This is your final attempt.** If you cannot fix all issues, emit `UNRESOLVED: <reason>` to escalate.\n",
+      );
+    }
+
+    parts.push(CONTRADICTION_ESCAPE_HATCH);
+
+    return parts.join("\n");
   }
 
   private s(id: string, content: string): PromptSection {
