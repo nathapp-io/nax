@@ -153,17 +153,25 @@ export async function executeUnified(
           ctx.onBeforeStory?.();
           // Emit story:started for each batch story before dispatch (AC-5)
           for (const story of batch) {
+            const modelTier =
+              story.routing?.modelTier ??
+              ctx.config.autoMode.complexityRouting?.[story.routing?.complexity ?? "medium"] ??
+              "balanced";
             pipelineEventBus.emit({
               type: "story:started",
               storyId: story.id,
               story: { id: story.id, title: story.title, status: story.status, attempts: story.attempts },
               workdir: ctx.workdir,
-              modelTier:
-                story.routing?.modelTier ??
-                ctx.config.autoMode.complexityRouting?.[story.routing?.complexity ?? "medium"] ??
-                "balanced",
+              modelTier,
               agent: ctx.config.autoMode.defaultAgent,
               iteration: iterations,
+            });
+            logger?.info("story.start", `${story.title}`, {
+              storyId: story.id,
+              storyTitle: story.title,
+              complexity: story.routing?.complexity ?? "unknown",
+              modelTier,
+              attempt: story.attempts + 1,
             });
           }
 
@@ -328,6 +336,7 @@ export async function executeUnified(
           }
 
           ctx.onBeforeStory?.();
+          const modelTier = singleSelection.routing.modelTier;
           pipelineEventBus.emit({
             type: "story:started",
             storyId: singleStory.id,
@@ -338,9 +347,16 @@ export async function executeUnified(
               attempts: singleStory.attempts,
             },
             workdir: ctx.workdir,
-            modelTier: singleSelection.routing.modelTier,
+            modelTier,
             agent: ctx.config.autoMode.defaultAgent,
             iteration: iterations,
+          });
+          logger?.info("story.start", `${singleStory.title}`, {
+            storyId: singleStory.id,
+            storyTitle: singleStory.title,
+            complexity: singleSelection.routing.complexity ?? "unknown",
+            modelTier,
+            attempt: singleStory.attempts + 1,
           });
 
           const singleIter = await _unifiedExecutorDeps.runIteration(
@@ -410,6 +426,7 @@ export async function executeUnified(
       }
 
       ctx.onBeforeStory?.();
+      const modelTier = selection.routing.modelTier;
       pipelineEventBus.emit({
         type: "story:started",
         storyId: selection.story.id,
@@ -420,9 +437,16 @@ export async function executeUnified(
           attempts: selection.story.attempts,
         },
         workdir: ctx.workdir,
-        modelTier: selection.routing.modelTier,
+        modelTier,
         agent: ctx.config.autoMode.defaultAgent,
         iteration: iterations,
+      });
+      logger?.info("story.start", `${selection.story.title}`, {
+        storyId: selection.story.id,
+        storyTitle: selection.story.title,
+        complexity: selection.routing.complexity ?? "unknown",
+        modelTier,
+        attempt: selection.story.attempts + 1,
       });
 
       const iter = await _unifiedExecutorDeps.runIteration(ctx, prd, selection, iterations, totalCost, allStoryMetrics);
