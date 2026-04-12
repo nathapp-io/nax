@@ -162,6 +162,13 @@ export interface PipelineContext {
    * Only checks that were NOT the cause of the retry are eligible to be skipped.
    */
   retrySkipChecks?: Set<string>;
+  /**
+   * True when only mechanical checks failed (build/typecheck/lint) but LLM checks
+   * (semantic/adversarial) passed in the most recent review pass. Signals to autofix
+   * that the code is functionally correct — UNRESOLVED should not trigger tier escalation
+   * for mechanical failures in files the agent cannot modify (e.g. lint in test files).
+   */
+  mechanicalFailedOnly?: boolean;
 }
 
 /**

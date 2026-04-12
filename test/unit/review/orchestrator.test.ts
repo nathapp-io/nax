@@ -15,8 +15,8 @@ import type { NaxConfig } from "../../../src/config";
 import type { PluginRegistry } from "../../../src/plugins";
 import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import { ReviewOrchestrator, _orchestratorDeps } from "../../../src/review/orchestrator";
-import { _reviewGitDeps as _runnerDeps } from "../../../src/review/runner";
-import type { ReviewConfig } from "../../../src/review/types";
+import { _reviewAdversarialDeps, _reviewGitDeps as _runnerDeps, _reviewSemanticDeps } from "../../../src/review/runner";
+import type { ReviewCheckResult, ReviewConfig } from "../../../src/review/types";
 import { withDepsRestore } from "../../helpers/deps";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +25,8 @@ import { withDepsRestore } from "../../helpers/deps";
 
 withDepsRestore(_runnerDeps, ["getUncommittedFiles"]);
 withDepsRestore(_orchestratorDeps, ["spawn"]);
+withDepsRestore(_reviewSemanticDeps, ["runSemanticReview"]);
+withDepsRestore(_reviewAdversarialDeps, ["runAdversarialReview"]);
 
 function makeReviewConfig(pluginMode?: "per-story" | "deferred"): ReviewConfig {
   // pluginMode is added by DR-001 — cast until the type is updated
@@ -182,5 +184,133 @@ describe("ReviewOrchestrator — pluginMode undefined (no regression)", () => {
     await orchestrator.review(makeReviewConfig(undefined), "/tmp/workdir", minimalExecConfig, registry);
 
     expect(reviewer.check).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mechanical / LLM isolation (nathapp-io/nax#405)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeSemanticCheckResult(passed: boolean): ReviewCheckResult {
+  return {
+    check: "semantic",
+    success: passed,
+    command: "semantic-review",
+    exitCode: passed ? 0 : 1,
+    output: passed ? "" : "AC compliance issue",
+    durationMs: 100,
+  };
+}
+
+function makeConfigWithSemantic(mechanicalChecks: string[] = ["lint"]): ReviewConfig {
+  return {
+    enabled: true,
+    checks: [...mechanicalChecks, "semantic"],
+    commands: { lint: "biome check" },
+    pluginMode: "deferred",
+  } as unknown as ReviewConfig;
+}
+
+describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
+  beforeEach(() => {
+    // Default: semantic passes
+    _reviewSemanticDeps.runSemanticReview = mock(async () => makeSemanticCheckResult(true));
+    _reviewAdversarialDeps.runAdversarialReview = mock(async () => makeSemanticCheckResult(true));
+  });
+
+  test("semantic review runs even when mechanical check fails", async () => {
+    // Simulate lint failure via dirty tree (forces runner to fail before running checks)
+    // Then override runner so lint actually fails
+    _runnerDeps.getUncommittedFiles = mock(async () => []);
+    // No lint command configured so it will be skipped — use a failing typecheck instead
+    const config: ReviewConfig = {
+      enabled: true,
+      checks: ["semantic"],
+      commands: {},
+      pluginMode: "deferred",
+    } as unknown as ReviewConfig;
+
+    // With no mechanical checks, semantic should still run
+    const orchestrator = new ReviewOrchestrator();
+    const result = await orchestrator.review(config, "/tmp/workdir", minimalExecConfig);
+
+    expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+  });
+
+  test("mechanicalFailedOnly is true when mechanical fails but semantic passes", async () => {
+    // Dirty tree on the first call (mechanical run) → mechanical fails.
+    // Clean on the second call (LLM run) → LLM proceeds and runs semantic.
+    let callCount = 0;
+    _runnerDeps.getUncommittedFiles = mock(async () => {
+      callCount++;
+      return callCount === 1 ? ["src/changed.ts"] : [];
+    });
+    const orchestrator = new ReviewOrchestrator();
+
+    const result = await orchestrator.review(
+      makeConfigWithSemantic(["lint"]),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    // Mechanical failed (dirty tree), semantic mocked to pass
+    expect(result.success).toBe(false);
+    expect(result.mechanicalFailedOnly).toBe(true);
+    // Semantic should have been attempted despite mechanical failure
+    expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+  });
+
+  test("mechanicalFailedOnly is false when semantic also fails", async () => {
+    // Same call-counter trick: dirty for mechanical, clean for LLM so semantic actually runs.
+    let callCount = 0;
+    _runnerDeps.getUncommittedFiles = mock(async () => {
+      callCount++;
+      return callCount === 1 ? ["src/changed.ts"] : [];
+    });
+    _reviewSemanticDeps.runSemanticReview = mock(async () => makeSemanticCheckResult(false));
+    const orchestrator = new ReviewOrchestrator();
+
+    const result = await orchestrator.review(
+      makeConfigWithSemantic(["lint"]),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.mechanicalFailedOnly).toBe(false);
+  });
+
+  test("mechanicalFailedOnly is undefined when no LLM checks configured", async () => {
+    _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
+    const config: ReviewConfig = {
+      enabled: true,
+      checks: ["lint"],
+      commands: { lint: "biome check" },
+      pluginMode: "deferred",
+    } as unknown as ReviewConfig;
+    const orchestrator = new ReviewOrchestrator();
+
+    const result = await orchestrator.review(config, "/tmp/workdir", minimalExecConfig);
+
+    expect(result.mechanicalFailedOnly).toBeUndefined();
+  });
+
+  test("both mechanical and semantic results appear in checks array", async () => {
+    _runnerDeps.getUncommittedFiles = mock(async () => []);
+    // No mechanical commands → mechanical phase produces no checks; semantic passes
+    const config: ReviewConfig = {
+      enabled: true,
+      checks: ["semantic"],
+      commands: {},
+      pluginMode: "deferred",
+    } as unknown as ReviewConfig;
+    const orchestrator = new ReviewOrchestrator();
+
+    const result = await orchestrator.review(config, "/tmp/workdir", minimalExecConfig);
+
+    const checkNames = result.builtIn.checks.map((c) => c.check);
+    expect(checkNames).toContain("semantic");
+    expect(result.success).toBe(true);
   });
 });

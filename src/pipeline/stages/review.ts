@@ -144,6 +144,7 @@ export const reviewStage: PipelineStage = {
     const result = await reviewOrchestrator.reviewFromContext(ctx);
 
     ctx.reviewResult = result.builtIn;
+    ctx.mechanicalFailedOnly = result.mechanicalFailedOnly;
 
     // Sum LLM costs from checks (populated by semantic review)
     const reviewCost = (result.builtIn.checks ?? []).reduce((sum, c) => sum + (c.cost ?? 0), 0) || undefined;
