@@ -532,7 +532,10 @@ export async function runSemanticReview(
       };
     }
 
-    logger?.warn("semantic", "LLM returned invalid JSON — fail-open", { storyId: story.id, rawResponse: rawResponse.slice(0, 200) });
+    logger?.warn("semantic", "LLM returned invalid JSON — fail-open", {
+      storyId: story.id,
+      rawResponse: rawResponse.slice(0, 200),
+    });
     return {
       check: "semantic",
       success: true,
