@@ -220,13 +220,19 @@ export function markStoryFailed(
  * Reset all failed stories to pending so they are eligible for re-execution
  * on a fresh run. Keeps `attempts` intact so the history is preserved.
  *
+ * @param resetRef - When true, also clears `storyGitRef` so it is re-captured at the
+ *   next story start. Prevents cross-story diff pollution when multiple stories exhausted
+ *   all tiers across a run and are now re-queued. Default: false (current behaviour).
  * @returns true if any stories were reset (PRD is dirty and should be saved)
  */
-export function resetFailedStoriesToPending(prd: PRD): boolean {
+export function resetFailedStoriesToPending(prd: PRD, resetRef = false): boolean {
   let modified = false;
   for (const story of prd.userStories) {
     if (story.status === "failed") {
       story.status = "pending";
+      if (resetRef) {
+        story.storyGitRef = undefined;
+      }
       modified = true;
     }
   }

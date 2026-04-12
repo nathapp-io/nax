@@ -203,6 +203,7 @@ export async function runSemanticReview(
   naxConfig?: NaxConfig,
   featureName?: string,
   resolverSession?: import("./dialogue").ReviewerSession,
+  priorFailures?: Array<{ stage: string; modelTier: string }>,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -244,32 +245,45 @@ export async function runSemanticReview(
     };
   }
 
+  const diffMode = semanticConfig.diffMode ?? "embedded";
   logger?.info("review", "Running semantic check", {
     storyId: story.id,
     modelTier: semanticConfig.modelTier,
+    diffMode,
     configProvided: !!naxConfig,
   });
 
-  // Collect production-only diff (test files excluded at git level via configurable patterns)
-  // Collect stat summary (all files including tests) unconditionally so the LLM can verify
-  // test-related ACs even though test file content is excluded from the diff.
-  const [rawDiff, stat] = await Promise.all([
-    collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns),
-    collectDiffStat(workdir, effectiveRef),
-  ]);
+  // Collect stat summary (used by both modes).
+  // In embedded mode: also collect full diff, truncate if needed.
+  // In ref mode: pass stat + ref to reviewer; reviewer self-serves the full diff via tools.
+  const stat = await collectDiffStat(workdir, effectiveRef);
 
-  // Truncate diff if over cap — stat summary is always included for context
-  const diff = truncateDiff(rawDiff, rawDiff.length > DIFF_CAP_BYTES ? stat : undefined);
-
-  if (!diff) {
-    return {
-      check: "semantic",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "skipped: no production code changes",
-      durationMs: Date.now() - startTime,
-    };
+  let diff: string | undefined;
+  if (diffMode === "embedded") {
+    const rawDiff = await collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns);
+    diff = truncateDiff(rawDiff, rawDiff.length > DIFF_CAP_BYTES ? stat : undefined);
+    if (!diff) {
+      return {
+        check: "semantic",
+        success: true,
+        command: "",
+        exitCode: 0,
+        output: "skipped: no production code changes",
+        durationMs: Date.now() - startTime,
+      };
+    }
+  } else {
+    // ref mode: if stat is empty there are no changes at all
+    if (!stat) {
+      return {
+        check: "semantic",
+        success: true,
+        command: "",
+        exitCode: 0,
+        output: "skipped: no changes detected",
+        durationMs: Date.now() - startTime,
+      };
+    }
   }
 
   // Resolve agent
@@ -288,8 +302,15 @@ export async function runSemanticReview(
     };
   }
 
-  // Build prompt — stat is already incorporated into diff via truncateDiff() when needed.
-  const prompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(story, semanticConfig, diff);
+  // Build prompt — mode determines whether diff is embedded or reviewer self-serves via tools.
+  const prompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(story, semanticConfig, {
+    mode: diffMode,
+    diff,
+    storyGitRef: effectiveRef,
+    stat,
+    priorFailures,
+    excludePatterns: semanticConfig.excludePatterns,
+  });
 
   // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
@@ -308,7 +329,7 @@ export async function runSemanticReview(
       reviewerSession: resolverSession,
       resolverContextInput: resolverSession
         ? {
-            diff,
+            ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat } : { diff }),
             story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
             semanticConfig,
             resolverType: reviewStageConfig.resolver.type,
@@ -458,46 +479,20 @@ export async function runSemanticReview(
   let rawResponse: string;
   let llmCost = 0;
   try {
-    let runErr: unknown;
-    let runSucceeded = false;
-    let runOutput = "";
-    try {
-      const runResult = await agent.run({
-        prompt,
-        workdir,
-        acpSessionName: implementerSessionName,
-        keepSessionOpen: false,
-        timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
-        modelTier: semanticConfig.modelTier,
-        modelDef: resolvedModelDef,
-        config: naxConfig ?? DEFAULT_CONFIG,
-        featureName,
-        storyId: story.id,
-      });
-      runOutput = runResult.output;
-      llmCost = runResult.estimatedCost ?? 0;
-      runSucceeded = true;
-    } catch (err) {
-      runErr = err;
-    }
-
-    if (runSucceeded) {
-      rawResponse = runOutput;
-    } else {
-      // Fallback to complete() when run() is unavailable (e.g. CLI adapter without run() support)
-      const completeResult = await agent.complete(prompt, {
-        sessionName: buildSessionName(workdir, featureName, story.id, "semantic"),
-        workdir,
-        timeoutMs: semanticConfig.timeoutMs,
-        modelTier: semanticConfig.modelTier,
-        config: naxConfig ?? DEFAULT_CONFIG,
-        featureName,
-        storyId: story.id,
-      });
-      rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
-      llmCost = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
-      void runErr;
-    }
+    const runResult = await agent.run({
+      prompt,
+      workdir,
+      acpSessionName: implementerSessionName,
+      keepSessionOpen: false,
+      timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
+      modelTier: semanticConfig.modelTier,
+      modelDef: resolvedModelDef,
+      config: naxConfig ?? DEFAULT_CONFIG,
+      featureName,
+      storyId: story.id,
+    });
+    rawResponse = runResult.output;
+    llmCost = runResult.estimatedCost ?? 0;
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { cause: String(err) });
     return {

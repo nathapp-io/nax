@@ -486,6 +486,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       undefined,
       undefined,
       undefined,
+      undefined,
     );
   });
 
@@ -504,7 +505,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
 
     const configWithSemantic: ReviewConfig = {
       ...semanticConfig,
-      semantic: { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"] },
+      semantic: { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded" as const, resetRefOnRerun: false },
     };
 
     await runReview(configWithSemantic, "/tmp/fake-workdir");
@@ -513,8 +514,9 @@ describe("runReview — semantic check integration (AC-9)", () => {
       "/tmp/fake-workdir",
       undefined,
       expect.any(Object),
-      { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"] },
+      { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded", resetRefOnRerun: false },
       expect.any(Function),
+      undefined,
       undefined,
       undefined,
       undefined,

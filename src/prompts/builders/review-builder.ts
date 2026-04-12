@@ -51,22 +51,60 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
 
 If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.`;
 
+// ─── Options ──────────────────────────────────────────────────────────────────
+
+/** Prior failure entry for attempt context */
+export interface PriorFailure {
+  stage: string;
+  modelTier: string;
+}
+
+/** Options for buildSemanticReviewPrompt */
+export interface SemanticReviewPromptOptions {
+  /** Diff mode: embedded includes diff in prompt, ref includes git ref + stat */
+  mode: "embedded" | "ref";
+  /** Pre-collected diff (used when mode = "embedded") */
+  diff?: string;
+  /** Git baseline ref (used when mode = "ref") */
+  storyGitRef?: string;
+  /** Git diff --stat output (used when mode = "ref") */
+  stat?: string;
+  /** Prior failure context for attempt awareness */
+  priorFailures?: PriorFailure[];
+  /** Exclude patterns for the self-serve diff command (mode = "ref") */
+  excludePatterns?: string[];
+}
+
 // ─── Class ────────────────────────────────────────────────────────────────────
 
 export class ReviewPromptBuilder {
   /**
    * Build the LLM prompt for a one-shot semantic review.
    *
-   * Produces output byte-identical to the old inline `buildPrompt()` in
-   * src/review/semantic.ts. The `_stat` parameter that existed there was
-   * never used (diff already incorporates the stat preamble via truncateDiff).
+   * Supports two modes:
+   * - "embedded": diff is embedded in the prompt (truncated at DIFF_CAP_BYTES in semantic.ts)
+   * - "ref": stat summary + storyGitRef + self-serve diff commands; reviewer fetches full diff via tools
+   *
+   * Both modes include an attempt context section when priorFailures is non-empty.
    */
-  buildSemanticReviewPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig, diff: string): string {
+  buildSemanticReviewPrompt(
+    story: SemanticStory,
+    semanticConfig: SemanticReviewConfig,
+    options: SemanticReviewPromptOptions,
+  ): string {
     const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
     const customRulesBlock =
       semanticConfig.rules.length > 0
         ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
         : "";
+    const attemptContextBlock = buildAttemptContextBlock(options.priorFailures);
+
+    let diffSection: string;
+    if (options.mode === "ref") {
+      diffSection = buildRefDiffSection(options.storyGitRef ?? "", options.stat ?? "", options.excludePatterns ?? []);
+    } else {
+      diffSection = buildEmbeddedDiffSection(options.diff ?? "");
+    }
 
     const core = `${SEMANTIC_ROLE}
 
@@ -77,15 +115,69 @@ ${story.description}
 
 ### Acceptance Criteria
 ${acList}
-${customRulesBlock}
-## Git Diff (production code only — test files excluded)
-
-\`\`\`diff
-${diff}\`\`\`
-
+${customRulesBlock}${attemptContextBlock}${diffSection}
 ${SEMANTIC_INSTRUCTIONS}
 ${SEMANTIC_OUTPUT_SCHEMA}`;
 
     return wrapJsonPrompt(core);
   }
+}
+
+// ─── Private helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Build the attempt context section.
+ * Emitted only when priorFailures is non-empty.
+ */
+function buildAttemptContextBlock(priorFailures?: PriorFailure[]): string {
+  if (!priorFailures || priorFailures.length === 0) return "";
+
+  const attemptNumber = priorFailures.length + 1;
+  const stages = priorFailures.map((f) => f.stage).join(", ");
+
+  return `## Attempt Context
+This is escalation attempt ${attemptNumber}. Prior attempts failed at stages: ${stages}.
+The diff shows the NET result of all changes since story start — verify against the current codebase state.
+
+`;
+}
+
+/**
+ * Build the diff section for "embedded" mode.
+ */
+function buildEmbeddedDiffSection(diff: string): string {
+  return `## Git Diff (production code only — test files excluded)
+
+\`\`\`diff
+${diff}\`\`\`
+
+`;
+}
+
+/**
+ * Build the diff section for "ref" mode.
+ * Includes stat summary, git baseline ref, and pre-built self-serve commands.
+ */
+function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns: string[]): string {
+  const merged = [...new Set([...excludePatterns, ":!.nax/", ":!.nax-pids"])];
+  const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
+  const productionDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD -- . ${excludeArgs}`;
+  const fullDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD`;
+  const logCmd = `git log --oneline ${storyGitRef}..HEAD`;
+
+  return `## Changed Files
+\`\`\`
+${stat}
+\`\`\`
+
+## Git Baseline: \`${storyGitRef}\`
+
+To inspect the implementation:
+- Full production diff: \`${productionDiffCmd}\`
+- Full diff (including tests): \`${fullDiffCmd}\`
+- Commit history: \`${logCmd}\`
+
+Use these commands to inspect the code. Do NOT rely solely on the file list above — read the actual diff and files to verify each AC.
+
+`;
 }

@@ -27,6 +27,8 @@ const STORY: SemanticStory = {
 
 const CONFIG: SemanticReviewConfig = {
   modelTier: "balanced",
+  diffMode: "embedded",
+  resetRefOnRerun: false,
   rules: [],
   excludePatterns: [],
   timeoutMs: 60_000,
@@ -39,7 +41,7 @@ function makeMockAgent(response: string): AgentAdapter {
     binary: "mock",
     capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
     isInstalled: mock(async () => true),
-    run: mock(async () => { throw new Error("not used"); }),
+    run: mock(async () => ({ output: response, estimatedCost: 0 })),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),

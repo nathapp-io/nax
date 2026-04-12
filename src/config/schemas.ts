@@ -274,6 +274,18 @@ const AnalyzeConfigSchema = z.object({
 
 const SemanticReviewConfigSchema = z.object({
   modelTier: ModelTierSchema.default("balanced"),
+  /**
+   * How the semantic reviewer accesses the git diff.
+   * "embedded" (default): pre-collected diff truncated at 50KB and embedded in prompt.
+   * "ref": only stat summary + storyGitRef passed; reviewer fetches full diff via tools.
+   */
+  diffMode: z.enum(["embedded", "ref"]).default("embedded"),
+  /**
+   * When true, clears storyGitRef on failed stories during re-run initialization so
+   * the ref is re-captured at the next story start. Prevents cross-story diff pollution
+   * when multiple stories exhaust all tiers and are re-run. Default false (current behaviour).
+   */
+  resetRefOnRerun: z.boolean().default(false),
   rules: z.array(z.string()).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
   excludePatterns: z
@@ -729,6 +741,8 @@ export const NaxConfigSchema = z
       pluginMode: "per-story",
       semantic: {
         modelTier: "balanced",
+        diffMode: "embedded",
+        resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
         excludePatterns: [

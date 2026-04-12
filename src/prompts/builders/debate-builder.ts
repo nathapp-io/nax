@@ -14,6 +14,7 @@
 import { PERSONA_FRAGMENTS } from "../../debate/personas";
 import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "../../debate/types";
 import type { ReviewFinding } from "../../plugins/types";
+import type { DiffContext } from "../../review/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -230,7 +231,7 @@ ${this.stageContext.outputFormat}`;
   buildResolverPrompt(
     proposals: Array<{ debater: string; output: string }>,
     critiques: string[],
-    diff: string,
+    diffContext: DiffContext,
     story: ReviewStoryContext,
     resolverContext: DebateResolverContext,
   ): string {
@@ -239,6 +240,7 @@ ${this.stageContext.outputFormat}`;
     const voteTally = this.buildVoteTallyLine(resolverContext);
     const proposalsSection = this.buildLabeledProposalsSection(proposals);
     const critiquesSection = this.buildLabeledCritiquesSection(critiques);
+    const diffSection = buildDebateDiffSection(diffContext);
 
     return [
       framing,
@@ -252,8 +254,7 @@ ${this.stageContext.outputFormat}`;
       proposalsSection,
       critiquesSection,
       "",
-      "## Diff",
-      diff,
+      diffSection,
       voteTally,
       "",
       REVIEW_JSON_DIRECTIVE,
@@ -266,7 +267,7 @@ ${this.stageContext.outputFormat}`;
   buildReResolverPrompt(
     proposals: Array<{ debater: string; output: string }>,
     critiques: string[],
-    updatedDiff: string,
+    diffContext: DiffContext,
     previousFindings: ReviewFinding[],
     resolverContext: DebateResolverContext,
   ): string {
@@ -275,6 +276,7 @@ ${this.stageContext.outputFormat}`;
       previousFindings.length > 0 ? previousFindings.map((f) => `- ${f.ruleId}: ${f.message}`).join("\n") : "(none)";
     const proposalsSection = this.buildLabeledProposalsSection(proposals);
     const critiquesSection = this.buildLabeledCritiquesSection(critiques);
+    const diffSection = buildDebateDiffSection(diffContext);
 
     return [
       `${framing} This is a re-review after implementer changes.`,
@@ -286,8 +288,7 @@ ${this.stageContext.outputFormat}`;
       proposalsSection,
       critiquesSection,
       "",
-      "## Updated Diff",
-      updatedDiff,
+      diffSection,
       "",
       RE_REVIEW_JSON_DIRECTIVE,
       "deltaSummary should describe which previous findings are resolved vs still present.",
@@ -330,4 +331,36 @@ ${this.stageContext.outputFormat}`;
     if (critiques.length === 0) return "";
     return `\n\n## Critiques\n${critiques.map((c, i) => `### Critique ${i + 1}\n${c}`).join("\n\n")}`;
   }
+}
+
+// ─── Private helpers ─────────────────────────────────────────────────────────���
+
+/**
+ * Build the diff section for debate resolver prompts.
+ * embedded mode: emits the diff block (same as original behaviour).
+ * ref mode: emits stat summary + git ref + self-serve commands.
+ */
+function buildDebateDiffSection(ctx: DiffContext): string {
+  if (ctx.storyGitRef) {
+    // ref mode: reviewer self-serves the full diff via tools
+    const stat = ctx.stat ?? "(no stat available)";
+    const ref = ctx.storyGitRef;
+    return [
+      "## Changed Files",
+      "```",
+      stat,
+      "```",
+      "",
+      `## Git Baseline: \`${ref}\``,
+      "",
+      "To inspect the implementation:",
+      `- Full diff: \`git diff --unified=3 ${ref}..HEAD\``,
+      `- Production diff: \`git diff --unified=3 ${ref}..HEAD -- . ':!test/' ':!tests/' ':!*.test.ts' ':!*.spec.ts' ':!.nax/' ':!.nax-pids'\``,
+      `- Commit history: \`git log --oneline ${ref}..HEAD\``,
+      "",
+      "Use these commands to inspect the code. Do NOT rely solely on the file list above.",
+    ].join("\n");
+  }
+  // embedded mode: emit the diff block
+  return ["## Diff", ctx.diff ?? ""].join("\n");
 }

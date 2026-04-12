@@ -50,6 +50,8 @@ describe("SemanticReviewConfig", () => {
   test("SemanticReviewConfig has modelTier field of type ModelTier", () => {
     const config: SemanticReviewConfig = {
       modelTier: "balanced",
+      diffMode: "embedded",
+      resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       excludePatterns: [],
@@ -61,6 +63,8 @@ describe("SemanticReviewConfig", () => {
   test("SemanticReviewConfig has rules field of type string[]", () => {
     const config: SemanticReviewConfig = {
       modelTier: "balanced",
+      diffMode: "embedded",
+      resetRefOnRerun: false,
       rules: ["rule1", "rule2"],
       timeoutMs: 600_000,
       excludePatterns: [],
@@ -79,6 +83,8 @@ describe("SemanticReviewConfig", () => {
     tiers.forEach((tier) => {
       const config: SemanticReviewConfig = {
         modelTier: tier,
+        diffMode: "embedded",
+        resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
         excludePatterns: [],
@@ -105,6 +111,8 @@ describe("ReviewConfig semantic field", () => {
     if (result.success) {
       expect(result.data.review.semantic).toEqual({
         modelTier: "balanced",
+        diffMode: "embedded",
+        resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
         excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
@@ -219,6 +227,8 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
   test("DEFAULT_CONFIG.review.semantic has correct defaults", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
       modelTier: "balanced",
+      diffMode: "embedded",
+      resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],

@@ -31,6 +31,8 @@ const STORY: SemanticStory = {
 
 const SEMANTIC_CONFIG: SemanticReviewConfig = {
   modelTier: "balanced",
+  diffMode: "embedded",
+  resetRefOnRerun: false,
   rules: [],
   timeoutMs: 30000,
   excludePatterns: [":!test/", ":!*.test.ts"],
@@ -203,7 +205,7 @@ function makeMockAgent(response: string): AgentAdapter {
     binary: "mock",
     capabilities: {} as AgentAdapter["capabilities"],
     isInstalled: mock(async () => true),
-    run: mock(async () => { throw new Error("not used"); }),
+    run: mock(async () => ({ output: response, estimatedCost: 0 })),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
@@ -297,15 +299,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     expect(agentCompleteMock).not.toHaveBeenCalled();
   });
 
-  test("AC3: agent.complete() called once when debate is disabled", async () => {
+  test("AC3: agent.run() called once when debate is disabled", async () => {
     const createDebateMock = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
     }));
     _semanticDeps.createDebateSession = createDebateMock;
 
-    const agentCompleteMock = mock(async () => PROPOSAL_PASS);
     const mockAgent = makeMockAgent(PROPOSAL_PASS);
-    (mockAgent.complete as ReturnType<typeof mock>) = agentCompleteMock;
+    const agentRunMock = mockAgent.run as ReturnType<typeof mock>;
 
     await runSemanticReview(
       WORKDIR,
@@ -316,7 +317,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
     );
 
-    expect(agentCompleteMock).toHaveBeenCalledTimes(1);
+    expect(agentRunMock).toHaveBeenCalledTimes(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 

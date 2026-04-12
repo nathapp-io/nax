@@ -88,6 +88,7 @@ export class ReviewOrchestrator {
     retrySkipChecks?: Set<string>,
     featureName?: string,
     resolverSession?: import("./dialogue").ReviewerSession,
+    priorFailures?: Array<{ stage: string; modelTier: string }>,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -104,6 +105,7 @@ export class ReviewOrchestrator {
       retrySkipChecks,
       featureName,
       resolverSession,
+      priorFailures,
     );
 
     if (!builtIn.success) {
@@ -218,6 +220,7 @@ export class ReviewOrchestrator {
       retrySkipChecks,
       ctx.prd.feature,
       resolverSession,
+      ctx.story.priorFailures,
     );
   }
 }

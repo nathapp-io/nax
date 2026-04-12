@@ -204,6 +204,7 @@ export async function runReview(
   retrySkipChecks?: Set<string>,
   featureName?: string,
   resolverSession?: import("./dialogue").ReviewerSession,
+  priorFailures?: Array<{ stage: string; modelTier: string }>,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -268,6 +269,8 @@ export async function runReview(
       };
       const semanticCfg = config.semantic ?? {
         modelTier: "balanced" as const,
+        diffMode: "embedded" as const,
+        resetRefOnRerun: false,
         rules: [] as string[],
         timeoutMs: 600_000,
         excludePatterns: [
@@ -291,6 +294,7 @@ export async function runReview(
         naxConfig,
         featureName,
         resolverSession,
+        priorFailures,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
