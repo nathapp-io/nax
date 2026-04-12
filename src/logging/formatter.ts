@@ -70,10 +70,9 @@ function shouldDisplay(entry: LogEntry, mode: string): boolean {
   }
   if (mode === "verbose") return true;
 
-  // Normal mode: filter out debug logs, but always show story.start
-  if (entry.level === "debug") return false;
+  // Normal mode: filter out debug logs, but always show story.start/iteration.start
   if (entry.stage === "story.start" || entry.stage === "iteration.start") return true;
-  return true;
+  return entry.level !== "debug";
 }
 
 /**
