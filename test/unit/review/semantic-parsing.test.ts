@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
@@ -62,7 +63,7 @@ function makeSpawnMock(stdout: string, exitCode = 0) {
       start(controller) { controller.close(); },
     }),
     kill: () => {},
-  })) as unknown as typeof _semanticDeps.spawn;
+  })) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,27 +71,27 @@ function makeSpawnMock(stdout: string, exitCode = 0) {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — multi-tier JSON parsing", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   // Failure mode 2: preamble + fenced JSON (production log pattern)
   test("parses passed=true from preamble + ```json fence", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response =
       "I'll verify each acceptance criterion by reading the actual implementation files.\n" +
       "```json\n" +
@@ -102,7 +103,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   });
 
   test("parses passed=false with findings from preamble + fence", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
       findings: [{ severity: "error", file: "src/foo.ts", line: 10, issue: "missing impl", suggestion: "implement it" }],
@@ -115,7 +116,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   });
 
   test("parses from preamble + plain ``` fence", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response =
       "After reviewing the diff:\n" +
       "```\n" +
@@ -128,7 +129,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
 
   // Bare JSON embedded in narration (tier 3)
   test("parses passed=true from JSON embedded in narration", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response =
       'After analysis: {"passed":true,"findings":[]} All ACs are correctly implemented.';
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
@@ -137,7 +138,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   });
 
   test("parses passed=false from JSON embedded in narration", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
       findings: [{ severity: "error", file: "src/bar.ts", line: 5, issue: "stub", suggestion: "implement" }],
@@ -149,7 +150,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
 
   // Trailing commas
   test("parses JSON with trailing commas in fence", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response = '```json\n{"passed":true,"findings":[],}\n```';
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
     expect(result.success).toBe(true);
@@ -158,7 +159,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
 
   // Failure mode 1: pure narration — must still fail-open
   test("still fails-open on pure narration with no JSON", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response =
       "I'll verify each acceptance criterion by examining the actual files to ensure all i18n keys exist and are correctly wired.";
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
@@ -168,7 +169,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
 
   // Tier 1: clean JSON still works
   test("tier 1 still parses clean JSON directly", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response = JSON.stringify({ passed: true, findings: [] });
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
     expect(result.success).toBe(true);

@@ -11,6 +11,7 @@ import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { runQualityCommand } from "../quality";
 import { autoCommitIfDirty } from "../utils/git";
+import { runAdversarialReview as _runAdversarialReviewImpl } from "./adversarial";
 import { resolveLanguageCommand } from "./language-commands";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { SemanticStory } from "./semantic";
@@ -27,6 +28,16 @@ export { resolveLanguageCommand };
  */
 export const _reviewSemanticDeps = {
   runSemanticReview: _runSemanticReviewImpl,
+};
+
+/**
+ * Injectable dependency for the adversarial review call — allows tests to
+ * intercept runAdversarialReview() without mock.module() (BUG-035 pattern).
+ *
+ * @internal
+ */
+export const _reviewAdversarialDeps = {
+  runAdversarialReview: _runAdversarialReviewImpl,
 };
 
 /**
@@ -81,8 +92,8 @@ export async function resolveCommand(
   qualityCommands?: QualityConfig["commands"],
   profile?: { language?: string },
 ): Promise<string | null> {
-  // Semantic checks don't have CLI commands — they're handled separately by the review orchestrator
-  if (check === "semantic") {
+  // Semantic and adversarial checks are LLM-based — handled separately by the review orchestrator
+  if (check === "semantic" || check === "adversarial") {
     return null;
   }
 
@@ -294,6 +305,44 @@ export async function runReview(
         naxConfig,
         featureName,
         resolverSession,
+        priorFailures,
+      );
+      checks.push(result);
+      if (!result.success && !firstFailure) {
+        firstFailure = `${checkName} failed`;
+      }
+      if (!result.success) {
+        break;
+      }
+      continue;
+    }
+
+    // Adversarial check: delegate to LLM-based adversarial runner
+    if (checkName === "adversarial") {
+      const adversarialStory: SemanticStory = {
+        id: storyId ?? "",
+        title: story?.title ?? "",
+        description: story?.description ?? "",
+        acceptanceCriteria: story?.acceptanceCriteria ?? [],
+      };
+      const adversarialCfg = config.adversarial ?? {
+        modelTier: "balanced" as const,
+        diffMode: "ref" as const,
+        rules: [] as string[],
+        timeoutMs: 180_000,
+        excludePatterns: [] as string[],
+        parallel: false,
+        maxConcurrentSessions: 2,
+      };
+      const runAdversarial = _reviewAdversarialDeps.runAdversarialReview;
+      const result = await runAdversarial(
+        workdir,
+        storyGitRef,
+        adversarialStory,
+        adversarialCfg,
+        modelResolver ?? (() => null),
+        naxConfig,
+        featureName,
         priorFailures,
       );
       checks.push(result);

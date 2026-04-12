@@ -18,6 +18,19 @@ export interface DialogueAwarePromptOptions {
   maxHistoryMessages?: number;
 }
 
+/**
+ * Reviewer contradiction escape hatch (REVIEW-003).
+ *
+ * Appended to all rectification prompts so the implementer can signal
+ * when two findings cannot both be satisfied. The autofix stage detects
+ * "UNRESOLVED: <explanation>" in the agent output and escalates instead
+ * of retrying — avoiding an infinite loop on an unresolvable conflict.
+ */
+const CONTRADICTION_ESCAPE_HATCH = `
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>`;
+
 function formatCheckErrors(checks: ReviewCheckResult[]): string {
   return checks.map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``).join("\n\n");
 }
@@ -47,7 +60,7 @@ ${errors}
 
 Do NOT change test files or test behavior.
 Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}`;
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 }
 
 function buildMechanicalRectificationPrompt(
@@ -67,7 +80,7 @@ ${errors}
 
 Fix ALL errors listed above. Do NOT change test files or test behavior.
 Do NOT add new features — only fix the quality check errors.
-Commit your fixes when done.${scopeConstraint}`;
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 }
 
 export function buildReviewRectificationPrompt(failedChecks: ReviewCheckResult[], story: UserStory): string {
@@ -76,8 +89,9 @@ export function buildReviewRectificationPrompt(failedChecks: ReviewCheckResult[]
     ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
     : "";
 
-  const semanticChecks = failedChecks.filter((c) => c.check === "semantic");
-  const mechanicalChecks = failedChecks.filter((c) => c.check !== "semantic");
+  // Both semantic and adversarial failures need AC-aware rectification — not the mechanical prompt.
+  const semanticChecks = failedChecks.filter((c) => c.check === "semantic" || c.check === "adversarial");
+  const mechanicalChecks = failedChecks.filter((c) => c.check !== "semantic" && c.check !== "adversarial");
 
   // Pure semantic failure — use AC-focused prompt
   if (semanticChecks.length > 0 && mechanicalChecks.length === 0) {
@@ -116,7 +130,7 @@ ${semanticSection}
 
 Do NOT change test files or test behavior.
 Do NOT add new features — only fix the identified issues.
-Commit your fixes when done.${scopeConstraint}`;
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 }
 
 export function buildDialogueAwareRectificationPrompt(
@@ -162,5 +176,5 @@ ${errors}${reasoningSection}${historySection}
 
 Do NOT change test files or test behavior.
 Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}`;
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 }

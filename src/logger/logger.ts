@@ -82,13 +82,24 @@ export class Logger {
    * Internal log method — writes to console (if level permits) and file (always)
    */
   private log(level: LogLevel, stage: string, message: string, data?: Record<string, unknown>, storyId?: string): void {
+    // Promote sessionRole from data to first-class LogEntry field for parallel log correlation.
+    // Callers pass sessionRole in data: { storyId, sessionRole: "reviewer-adversarial", ... }
+    let sessionRole: string | undefined;
+    let strippedData = data;
+    if (data?.sessionRole !== undefined && typeof data.sessionRole === "string") {
+      sessionRole = data.sessionRole;
+      const { sessionRole: _omit, ...rest } = data;
+      strippedData = Object.keys(rest).length > 0 ? rest : undefined;
+    }
+
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
       stage,
       message,
       ...(storyId && { storyId }),
-      ...(data && { data }),
+      ...(sessionRole && { sessionRole }),
+      ...(strippedData && { data: strippedData }),
     };
 
     // Console output (level-gated)

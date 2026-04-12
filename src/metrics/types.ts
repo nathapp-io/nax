@@ -96,6 +96,27 @@ export interface StoryMetrics {
   tokens?: TokenUsage;
   /** When ScopedStrategy.verify() falls back to full suite due to threshold (US-002) */
   scopeTestFallback?: boolean;
+  /**
+   * Per-reviewer metrics for the review stage.
+   * Populated when semantic or adversarial review runs.
+   * Both sub-buckets are optional — callers only populate the ones they ran.
+   */
+  reviewMetrics?: {
+    semantic?: {
+      cost: number;
+      wallClockMs: number;
+      findingsCount: number;
+      findingsBySeverity: Record<string, number>;
+    };
+    adversarial?: {
+      cost: number;
+      wallClockMs: number;
+      findingsCount: number;
+      findingsBySeverity: Record<string, number>;
+      /** Adversarial-only: findings broken down by heuristic category */
+      findingsByCategory: Record<string, number>;
+    };
+  };
 }
 
 /**

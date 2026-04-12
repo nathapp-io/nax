@@ -57,6 +57,7 @@ export type {
   QualityConfig,
   RectificationConfig,
   RegressionGateConfig,
+  AdversarialReviewConfig,
   ReviewConfig,
   RoutingConfig,
   SmartTestRunnerConfig,

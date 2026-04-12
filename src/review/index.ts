@@ -4,5 +4,7 @@
  * Post-implementation quality verification
  */
 
+export * from "./adversarial";
+export * from "./diff-utils";
 export * from "./types";
 export * from "./runner";

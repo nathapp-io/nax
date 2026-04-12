@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
@@ -59,7 +60,7 @@ function makeSpawnMock(stdout = "diff output", exitCode = 0) {
     }),
     stderr: new ReadableStream({ start(c) { c.close(); } }),
     kill: () => {},
-  })) as unknown as typeof _semanticDeps.spawn;
+  })) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,25 +68,25 @@ function makeSpawnMock(stdout = "diff output", exitCode = 0) {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — structured findings in result (US-003 AC-2)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("result.findings is defined and non-empty when LLM returns passed=false with findings", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -101,7 +102,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("maps finding.issue to ReviewFinding.message", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -116,7 +117,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("sets source='semantic-review' on each ReviewFinding", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -134,7 +135,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("sets ruleId='semantic' on each ReviewFinding", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -149,7 +150,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("maps finding.file to ReviewFinding.file", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -164,7 +165,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("maps finding.line to ReviewFinding.line", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -179,7 +180,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("maps finding.severity 'error' directly to ReviewFinding.severity", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -194,7 +195,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("normalises severity 'warn' to 'warning' in ReviewFinding", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -209,7 +210,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("maps 'info' severity as-is to ReviewFinding.severity", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -224,7 +225,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("populates findings for all LLM findings when multiple are returned", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -244,7 +245,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("result.findings is empty or absent when LLM returns passed=true", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const agent = makeMockAgent(JSON.stringify({ passed: true, findings: [] }));
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
@@ -253,7 +254,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("result.findings is empty or absent on fail-open (invalid JSON)", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff");
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const agent = makeMockAgent("not valid json {{");
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
@@ -262,7 +263,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   });
 
   test("result.findings is empty or absent when storyGitRef is missing (skipped)", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
 
     const result = await runSemanticReview("/tmp/wd", undefined, STORY, CFG, () => null);
 

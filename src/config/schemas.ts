@@ -309,9 +309,39 @@ export const ReviewDialogueConfigSchema = z.object({
   maxDialogueMessages: z.number().int().min(5).max(100).default(20),
 });
 
+/**
+ * Adversarial review config — ships off by default (opt-in via review.checks).
+ * Destructive heuristics: finds what is missing or broken, not what is present.
+ */
+export const AdversarialReviewConfigSchema = z.object({
+  modelTier: ModelTierSchema.default("balanced"),
+  /**
+   * "ref" (default): reviewer self-serves the full diff via git tools — no 50KB cap,
+   *   test files included. Instructs reviewer to run git diff commands.
+   * "embedded": pre-collected full diff (no excludePatterns) embedded in prompt.
+   */
+  diffMode: z.enum(["embedded", "ref"]).default("ref"),
+  /** Custom adversarial heuristic rules to append to the prompt. */
+  rules: z.array(z.string()).default([]),
+  /** LLM call timeout in milliseconds. Default 180s (shorter than semantic, no debate path). */
+  timeoutMs: z.number().int().positive().default(180_000),
+  /**
+   * Pathspec exclusions applied only in embedded mode.
+   * Default empty — adversarial sees test files (unlike semantic).
+   */
+  excludePatterns: z.array(z.string()).default([]),
+  /**
+   * When true, run semantic and adversarial reviewers concurrently via Promise.all.
+   * Default false (conservative rollout). Only activates when session count is within cap.
+   */
+  parallel: z.boolean().default(false),
+  /** Maximum combined reviewer sessions before falling back to sequential. Default 2. */
+  maxConcurrentSessions: z.number().int().min(1).max(4).default(2),
+});
+
 const ReviewConfigSchema = z.object({
   enabled: z.boolean(),
-  checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic"])),
+  checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic", "adversarial"])),
   commands: z.object({
     typecheck: z.string().optional(),
     lint: z.string().optional(),
@@ -322,6 +352,7 @@ const ReviewConfigSchema = z.object({
   }),
   pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
   semantic: SemanticReviewConfigSchema.optional(),
+  adversarial: AdversarialReviewConfigSchema.optional(),
   dialogue: ReviewDialogueConfigSchema.default({
     enabled: false,
     maxClarificationsPerAttempt: 2,

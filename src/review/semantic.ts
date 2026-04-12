@@ -7,7 +7,6 @@
  * is handled by lint/typecheck, not semantic review.
  */
 
-import { spawn } from "bun";
 import { buildSessionName, readAcpSession } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
@@ -19,8 +18,8 @@ import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { ReviewPromptBuilder } from "../prompts";
-import { getMergeBase, isGitRefValid } from "../utils/git";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
@@ -29,96 +28,11 @@ export type { SemanticStory };
 /** Function that resolves an AgentAdapter for a given model tier */
 export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined;
 
-/** Injectable dependencies for semantic.ts — allows tests to mock spawn without mock.module() */
+/** Injectable dependencies for semantic.ts — allows tests to mock without mock.module() */
 export const _semanticDeps = {
-  spawn: spawn as typeof spawn,
-  isGitRefValid,
-  getMergeBase,
   createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
   readAcpSession,
 };
-
-/**
- * Maximum diff size in bytes before truncation.
- * 50KB keeps the prompt well within LLM context and reduces output truncation risk.
- * Test files are excluded from the diff, so the budget goes entirely to production code.
- */
-const DIFF_CAP_BYTES = 51_200;
-
-/** Patterns always excluded from semantic diff — nax metadata is never production code. */
-const ALWAYS_EXCLUDED = [":!.nax/", ":!.nax-pids"];
-
-/**
- * Collect git diff for the story range (production code only).
- * Excludes test files via configurable pathspec patterns — semantic review
- * validates behavior against ACs, not test style or conventions.
- * Always excludes .nax/ metadata regardless of user config.
- */
-async function collectDiff(workdir: string, storyGitRef: string, excludePatterns: string[]): Promise<string> {
-  const merged = [...new Set([...excludePatterns, ...ALWAYS_EXCLUDED])];
-  const cmd = ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged];
-  const proc = _semanticDeps.spawn({
-    cmd,
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stdout] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-
-  if (exitCode !== 0) {
-    return "";
-  }
-
-  return stdout;
-}
-
-/**
- * Collect git diff --stat summary (all files including tests — for context).
- * Used as a preamble when the full diff is truncated so the reviewer
- * always knows which files changed even if the content is cut off.
- */
-async function collectDiffStat(workdir: string, storyGitRef: string): Promise<string> {
-  const proc = _semanticDeps.spawn({
-    cmd: ["git", "diff", "--stat", `${storyGitRef}..HEAD`],
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stdout] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-
-  return exitCode === 0 ? stdout.trim() : "";
-}
-
-/**
- * Truncate diff to stay within token budget.
- * When truncated, prepends a --stat summary so the reviewer knows all changed files.
- */
-function truncateDiff(diff: string, stat?: string): string {
-  if (diff.length <= DIFF_CAP_BYTES) {
-    return diff;
-  }
-
-  const truncated = diff.slice(0, DIFF_CAP_BYTES);
-  // Count files visible vs total
-  const visibleFiles = (truncated.match(/^diff --git/gm) ?? []).length;
-  const totalFiles = (diff.match(/^diff --git/gm) ?? []).length;
-
-  const statPreamble = stat
-    ? `## File Summary (all changed files)\n${stat}\n\n## Diff (truncated — ${visibleFiles}/${totalFiles} files shown)\n`
-    : "";
-
-  return `${statPreamble}${truncated}\n... (truncated at ${DIFF_CAP_BYTES} bytes, showing ${visibleFiles}/${totalFiles} files)`;
-}
 
 interface LLMFinding {
   severity: string;
@@ -214,25 +128,8 @@ export async function runSemanticReview(
     });
   }
 
-  // BUG-114: Resolve effective git ref for the diff range.
-  // Priority 1: use the supplied ref if valid (persisted from story start).
-  // Priority 2: fall back to merge-base with the default remote branch so that
-  //   the semantic reviewer always sees the full story diff even after a restart.
-  // Priority 3: skip review when no ref can be resolved (non-git workdir, etc.).
-  let effectiveRef: string | undefined;
-  if (storyGitRef && (await _semanticDeps.isGitRefValid(workdir, storyGitRef))) {
-    effectiveRef = storyGitRef;
-  } else {
-    const fallback = await _semanticDeps.getMergeBase(workdir);
-    if (fallback) {
-      logger?.info("review", "storyGitRef missing or invalid — using merge-base fallback", {
-        storyId: story.id,
-        storyGitRef,
-        fallback,
-      });
-      effectiveRef = fallback;
-    }
-  }
+  // BUG-114: Resolve effective git ref via shared fallback chain (diff-utils.ts).
+  const effectiveRef = await resolveEffectiveRef(workdir, storyGitRef, story.id);
 
   if (!effectiveRef) {
     return {
@@ -493,6 +390,7 @@ export async function runSemanticReview(
       config: naxConfig ?? DEFAULT_CONFIG,
       featureName,
       storyId: story.id,
+      sessionRole: "reviewer-semantic",
     });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;

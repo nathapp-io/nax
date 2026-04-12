@@ -5,7 +5,7 @@
  */
 
 /** Review check name */
-export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic";
+export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic" | "adversarial";
 
 /**
  * Diff context passed to debate resolver and prompt builders.
@@ -108,6 +108,28 @@ export interface ReviewDialogueConfig {
   maxDialogueMessages: number;
 }
 
+/** Adversarial review configuration (when 'adversarial' is in checks) */
+export interface AdversarialReviewConfig {
+  /** Model tier for adversarial review (default: 'balanced') */
+  modelTier: import("../config/schema-types").ModelTier;
+  /**
+   * "ref" (default): reviewer self-serves the full diff via git tools — no 50KB cap,
+   *   test files included.
+   * "embedded": full diff (no excludePatterns) embedded in prompt.
+   */
+  diffMode: "embedded" | "ref";
+  /** Custom adversarial heuristic rules to append to the prompt */
+  rules: string[];
+  /** Timeout in milliseconds (default: 180_000) */
+  timeoutMs: number;
+  /** Pathspec exclusions for embedded mode. Default empty (adversarial sees test files). */
+  excludePatterns: string[];
+  /** When true, run semantic and adversarial concurrently. Default false. */
+  parallel: boolean;
+  /** Maximum combined reviewer sessions before falling back to sequential. Default 2. */
+  maxConcurrentSessions: number;
+}
+
 /** Review configuration */
 export interface ReviewConfig {
   /** Enable review phase */
@@ -129,6 +151,8 @@ export interface ReviewConfig {
   pluginMode?: "per-story" | "deferred";
   /** Semantic review configuration (when 'semantic' is in checks) */
   semantic?: SemanticReviewConfig;
+  /** Adversarial review configuration (when 'adversarial' is in checks) */
+  adversarial?: AdversarialReviewConfig;
   /** Reviewer-implementer dialogue configuration */
   dialogue?: ReviewDialogueConfig;
 }

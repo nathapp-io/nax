@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentAdapter } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import type { DebateResult } from "../../../src/debate/types";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
@@ -171,9 +172,9 @@ const DEBATE_DUPLICATE_FINDINGS_RESULT: DebateResult = {
 // Save originals
 // ─────────────────────────────────────────────────────────────────────────────
 
-const origSpawn = _semanticDeps.spawn;
-const origIsGitRefValid = _semanticDeps.isGitRefValid;
-const origGetMergeBase = _semanticDeps.getMergeBase;
+const origSpawn = _diffUtilsDeps.spawn;
+const origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+const origGetMergeBase = _diffUtilsDeps.getMergeBase;
 const origCreateDebateSession = _semanticDeps.createDebateSession;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,7 +196,7 @@ function makeSpawnMock(stdout = "", exitCode = 0) {
       },
     }),
     kill: () => {},
-  })) as unknown as typeof _semanticDeps.spawn;
+  })) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
 function makeMockAgent(response: string): AgentAdapter {
@@ -222,17 +223,17 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   const STORY_GIT_REF = "abc123";
 
   beforeEach(() => {
-    _semanticDeps.spawn = makeSpawnMock("diff content");
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => null);
+    _diffUtilsDeps.spawn = makeSpawnMock("diff content");
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => null);
     _semanticDeps.createDebateSession = origCreateDebateSession;
   });
 
   afterEach(() => {
     mock.restore();
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
     _semanticDeps.createDebateSession = origCreateDebateSession;
   });
 
