@@ -10,7 +10,7 @@ import {
   groupACsByRelatedStories,
   parseACTextFromSpec,
 } from "../../../src/acceptance/fix-generator";
-import { AcceptancePromptBuilder } from "../../../src/prompts/builders/acceptance-builder";
+import { AcceptancePromptBuilder } from "../../../src/prompts";
 
 function buildFixPrompt(
   batchedACs: string[],

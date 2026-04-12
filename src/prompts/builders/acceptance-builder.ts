@@ -261,14 +261,10 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
         ? p.sourceFiles.map((f) => `FILE: ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")
         : "(No source files could be resolved from imports)";
 
-    let verdictSection = "";
-    if (p.semanticVerdicts && p.semanticVerdicts.length > 0) {
-      const lines = p.semanticVerdicts.map((v) => {
-        const status = v.passed ? "likely test bug (semantic review confirmed AC implementation)" : "unconfirmed";
-        return `- ${v.storyId}: ${status}`;
-      });
-      verdictSection = `\nSEMANTIC VERDICTS:\n${lines.join("\n")}\n`;
-    }
+    const verdictSection =
+      p.semanticVerdicts && p.semanticVerdicts.length > 0
+        ? `\nSEMANTIC VERDICTS:\n${p.semanticVerdicts.map((v) => `- ${v.storyId}: ${v.passed ? "likely test bug (semantic review confirmed AC implementation)" : "unconfirmed"}`).join("\n")}\n`
+        : "";
 
     const previousFailureSection =
       p.previousFailure && p.previousFailure.length > 0 ? `\nPREVIOUS FIX ATTEMPTS:\n${p.previousFailure}\n` : "";

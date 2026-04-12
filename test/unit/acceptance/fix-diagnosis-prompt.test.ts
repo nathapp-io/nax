@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AcceptancePromptBuilder } from "../../../src/prompts/builders/acceptance-builder";
+import { AcceptancePromptBuilder } from "../../../src/prompts";
 import type { SemanticVerdict } from "../../../src/acceptance/types";
 
 const builder = new AcceptancePromptBuilder();

@@ -679,7 +679,7 @@ describe("Edge cases", () => {
 // ---------------------------------------------------------------------------
 
 import { type ExecuteTestFixOptions, executeTestFix } from "../../../src/acceptance/fix-executor";
-import { AcceptancePromptBuilder } from "../../../src/prompts/builders/acceptance-builder";
+import { AcceptancePromptBuilder } from "../../../src/prompts";
 
 function callBuildTestFixPrompt(options: ExecuteTestFixOptions): string {
   return new AcceptancePromptBuilder().buildTestFixPrompt({

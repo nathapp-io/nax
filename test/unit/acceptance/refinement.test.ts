@@ -17,7 +17,7 @@ import {
   parseRefinementResponse,
   refineAcceptanceCriteria,
 } from "../../../src/acceptance/refinement";
-import { AcceptancePromptBuilder } from "../../../src/prompts/builders/acceptance-builder";
+import { AcceptancePromptBuilder } from "../../../src/prompts";
 
 const buildRefinementPrompt = (
   criteria: string[],
