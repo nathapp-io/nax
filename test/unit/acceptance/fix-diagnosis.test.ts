@@ -230,7 +230,7 @@ describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveMode
     expect(runCall.modelDef).toEqual(expectedModelDef);
   });
 
-  test("never passes raw tier name to adapter — always resolved via resolveModelForAgent", async () => {
+  test("passes resolved model metadata to adapter rather than a raw unresolved tier string", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -242,7 +242,7 @@ describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveMode
       storyId: "US-001",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.modelTier).toBeUndefined();
+    expect(runCall.modelTier).toBe("fast");
     expect(runCall.modelDef.provider).toBeDefined();
     expect(runCall.modelDef.model).toBeDefined();
   });

@@ -66,7 +66,13 @@ export type {
   ProjectProfile,
 } from "./types";
 
-export { MODEL_SHORTHAND_TIERS, isBuiltinModelTier, resolveConfiguredModel, resolveModel, resolveModelForAgent } from "./types";
+export {
+  MODEL_SHORTHAND_TIERS,
+  isBuiltinModelTier,
+  resolveConfiguredModel,
+  resolveModel,
+  resolveModelForAgent,
+} from "./types";
 
 // Zod schemas
 export { NaxConfigSchema, AcceptanceConfigSchema } from "./schemas";

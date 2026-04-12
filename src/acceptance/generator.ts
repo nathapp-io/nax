@@ -7,8 +7,8 @@
 
 import { join } from "node:path";
 import { createAgentRegistry } from "../agents/registry";
-import { resolveConfiguredModel } from "../config";
 import type { AgentAdapter } from "../agents/types";
+import { resolveConfiguredModel } from "../config";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";

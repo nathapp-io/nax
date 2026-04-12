@@ -306,7 +306,10 @@ export const acceptanceSetupStage: PipelineStage = {
           modelDef = resolvedAcceptanceModel.modelDef;
         } else {
           const selection = ctx.config.acceptance.model ?? "fast";
-          modelDef = { provider: "unknown", model: typeof selection === "string" ? selection : selection.model } as ModelDef;
+          modelDef = {
+            provider: "unknown",
+            model: typeof selection === "string" ? selection : selection.model,
+          } as ModelDef;
         }
 
         const result = await _acceptanceSetupDeps.generate(group.stories, groupRefined, {

@@ -165,7 +165,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "acceptance.command":
     "Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path (default: 'bun test {{FILE}} --timeout=60000')",
   "acceptance.model":
-    'Model selector for acceptance generation/refinement LLM calls. Accepts a tier string or an explicit object like { agent: "codex", model: "gpt-5.4" }. Default: "fast".',
+    'Model selector for acceptance generation/refinement LLM calls. Accepts a tier string such as "fast", "balanced", or "powerful", or an explicit object like { agent: "codex", model: "gpt-5.4" }. Default: "fast".',
   "acceptance.refinement":
     "Enable acceptance criteria refinement step before execution (default: true). Disable to skip refinement and use generated criteria as-is.",
   "acceptance.timeoutMs": "Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min)",
