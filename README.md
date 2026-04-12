@@ -31,7 +31,7 @@ npm install -g @nathapp/nax
 bun install -g @nathapp/nax
 ```
 
-Requires: Node 18+ or Bun 1.0+. Git must be initialized.
+Requires: Bun 1.3.7+ or Node 22+. Git must be initialized.
 
 ## Quick Start
 
