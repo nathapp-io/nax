@@ -382,7 +382,7 @@ export async function runSemanticReview(
       prompt,
       workdir,
       acpSessionName: implementerSessionName,
-      keepSessionOpen: false,
+      keepSessionOpen: true,
       timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
       modelTier: semanticConfig.modelTier,
       modelDef: resolvedModelDef,

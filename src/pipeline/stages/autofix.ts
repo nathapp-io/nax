@@ -19,6 +19,7 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
+import { buildSessionName } from "../../agents/acp/adapter";
 import { createAgentRegistry } from "../../agents/registry";
 import { resolveModelForAgent } from "../../config";
 import type { NaxConfig } from "../../config";
@@ -32,6 +33,9 @@ import {
 } from "../../verification/shared-rectification-loop";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { buildReviewRectificationContinuation } from "./autofix-continuation";
+import { buildReviewRectificationPrompt } from "./autofix-prompts";
+export { buildReviewRectificationPrompt };
 
 const CLARIFY_REGEX = /^CLARIFY:\s*(.+)$/ms;
 /** Matches the REVIEW-003 reviewer contradiction escape hatch emitted by the implementer. */
@@ -200,10 +204,6 @@ function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
   return (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
 }
 
-// Re-export from extracted module for backward compatibility
-import { buildReviewRectificationPrompt } from "./autofix-prompts";
-export { buildReviewRectificationPrompt };
-
 function buildAutofixEscalationPreamble(
   attempt: number,
   maxAttempts: number,
@@ -276,6 +276,10 @@ async function runAgentRectification(
   let autofixCostAccum = 0;
   let unresolvedReason: string | undefined;
 
+  // Session continuity: execution + review came before us, so the implementer session is open.
+  const implementerSession = buildSessionName(ctx.workdir, ctx.prd.feature, ctx.story.id, "implementer");
+  let sessionConfirmedOpen = true; // execution + review came before us
+
   const succeeded = await runSharedRectificationLoop({
     stage: "autofix",
     storyId: ctx.story.id,
@@ -294,6 +298,21 @@ async function runAgentRectification(
     attemptData: { storyId: ctx.story.id },
     canContinue: (state) => state.failedChecks.length > 0 && state.attempt < maxAttempts,
     buildPrompt: (attempt, state) => {
+      // runSharedRectificationLoop increments attempt before calling buildPrompt,
+      // so attempt=1 on the first call. Continuation mode starts from attempt=2.
+      const isSessionContinuation = attempt > 1 && sessionConfirmedOpen;
+
+      if (isSessionContinuation) {
+        // Apply the same capping as buildProgressivePromptPreamble so the last attempt
+        // always triggers urgency even when urgencyAtAttempt > maxAttempts.
+        return buildReviewRectificationContinuation(
+          state.failedChecks,
+          attempt,
+          Math.min(rethinkAtAttempt, maxAttempts),
+          Math.min(urgencyAtAttempt, maxAttempts),
+        );
+      }
+
       let prompt = buildReviewRectificationPrompt(state.failedChecks, ctx.story);
       const escalationPreamble = buildAutofixEscalationPreamble(
         attempt,
@@ -322,21 +341,31 @@ async function runAgentRectification(
         modelTier,
         ctx.rootConfig.autoMode.defaultAgent,
       );
-      const result = await agent.run({
-        prompt,
-        workdir: ctx.workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-        dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
-        pipelineStage: "rectification",
-        config: ctx.config,
-        projectDir: ctx.projectDir,
-        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-        featureName: ctx.prd.feature,
-        storyId: ctx.story.id,
-        sessionRole: "implementer",
-      });
+      const isLastAttempt = attempt >= maxAttempts;
+      let result: Awaited<ReturnType<typeof agent.run>>;
+      try {
+        result = await agent.run({
+          prompt,
+          workdir: ctx.workdir,
+          modelTier,
+          modelDef,
+          timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+          dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
+          pipelineStage: "rectification",
+          config: ctx.config,
+          projectDir: ctx.projectDir,
+          maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+          featureName: ctx.prd.feature,
+          storyId: ctx.story.id,
+          sessionRole: "implementer",
+          acpSessionName: implementerSession,
+          keepSessionOpen: !isLastAttempt,
+        });
+        sessionConfirmedOpen = true;
+      } catch (err) {
+        sessionConfirmedOpen = false; // Session state unknown — next attempt uses full prompt
+        throw err;
+      }
 
       autofixCostAccum += result.estimatedCost ?? 0;
 

@@ -8,6 +8,7 @@
  */
 
 import { getAgent as _getAgent } from "../agents";
+import { buildSessionName } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
 import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
@@ -151,6 +152,7 @@ export async function runRectificationLoop(
   };
 
   let costAccum = 0;
+  const rectificationSessionName = buildSessionName(workdir, featureName, story.id, "implementer");
 
   const succeeded = await runSharedRectificationLoop({
     stage: "rectification",
@@ -239,6 +241,8 @@ export async function runRectificationLoop(
         config.autoMode.defaultAgent,
       );
 
+      const isLastAttempt = attempt >= rectificationConfig.maxRetries;
+
       const agentResult = await agent.run({
         prompt: rectificationPrompt,
         workdir,
@@ -253,6 +257,8 @@ export async function runRectificationLoop(
         featureName,
         storyId: story.id,
         sessionRole: "implementer",
+        acpSessionName: rectificationSessionName,
+        keepSessionOpen: !isLastAttempt,
       });
 
       costAccum += agentResult.estimatedCost ?? 0;
