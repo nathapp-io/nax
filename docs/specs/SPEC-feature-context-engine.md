@@ -2,9 +2,11 @@
 
 ## Summary
 
-Add a **feature-scoped context engine** that accumulates decisions, constraints, and gotchas discovered during a multi-story feature build, and feeds that context back into every subsequent story in the same feature. Context is stored per-feature (not globally), grows during the feature's lifecycle, and is archived when the feature merges. A promotion gate surfaces genuinely-general learnings as candidates for permanent project rules.
+Add a **feature-scoped context engine** that accumulates decisions, constraints, and gotchas discovered during a multi-story feature build, **classifies each learning by audience role**, and feeds role-filtered context back into every subsequent story in the same feature. Context is stored per-feature (not globally), grows during the feature's lifecycle, and is archived when the feature merges. A promotion gate surfaces genuinely-general learnings as candidates for permanent project rules.
 
 The goal is to close the **pre-coding context gap**: fresh nax sessions start without the accumulated "why" from prior phases of the same feature, and re-discover constraints the hard way — sometimes taking the wrong path before being corrected by review. Review-stage fixes catch the symptom after the code is written; the context engine prevents the wrong path from being taken in the first place.
+
+A secondary goal is **role-targeted injection**: not every learning is relevant to every role. A constraint like "never modify test files" matters to the implementer but is irrelevant to the test-writer. A pattern like "use `test.each()` for parametric tests" matters to the test-writer but not the reviewer. By tagging each learning with its audience and filtering at injection time, each role receives only the context it needs — reducing prompt noise and improving compliance.
 
 ## Motivation
 
@@ -135,33 +137,36 @@ _Last updated: 2026-04-12. Source: extractor + manual. Entries: 14._
 
 ## Decisions
 
-- **Barrel imports for builders.** All builders under `src/prompts/builders/`
-  are imported via the barrel at `src/prompts/index.ts`, never via deep paths
-  like `src/prompts/builders/review-builder.ts`. Reason: avoids a circular
+- **Barrel imports for builders.** `[all]`
+  All builders under `src/prompts/builders/` are imported via the barrel
+  at `src/prompts/index.ts`, never via deep paths like
+  `src/prompts/builders/review-builder.ts`. Reason: avoids a circular
   import between `semantic.ts` → `review-builder.ts` → `review/types.ts`.
   _Established in: US-001 (commit a1b2c3)_
 
-- **Types live in `review/types.ts`, not `review/semantic.ts`.** Builder
-  files import types from `review/types.ts` to prevent cycles when
-  semantic.ts imports the builder.
+- **Types live in `review/types.ts`, not `review/semantic.ts`.** `[implementer]`
+  Builder files import types from `review/types.ts` to prevent cycles when
+  semantic.ts imports the builder. The test-writer does not need to know this
+  (tests import from barrels anyway).
   _Established in: US-001_
 
 ## Constraints
 
-- **Biome `noStaticOnlyClass` rule is enabled.** Classes containing only
-  static methods are rejected by lint. Use top-level functions instead,
-  or mix at least one instance method into the class.
+- **Biome `noStaticOnlyClass` rule is enabled.** `[implementer]`
+  Classes containing only static methods are rejected by lint. Use top-level
+  functions instead, or mix at least one instance method into the class.
   _Discovered in: US-002 (during rectification loop)_
 
-- **`_deps` injection pattern is mandatory for spawn/fs/fetch in new code.**
+- **`_deps` injection pattern is mandatory for spawn/fs/fetch in new code.** `[implementer, test-writer]`
   See `docs/architecture/design-patterns.md` §7. Tests mock via `_deps`,
-  not `mock.module()`.
+  not `mock.module()`. Implementer creates the `_deps` export; test-writer
+  uses it in test setup/teardown.
   _Discovered in: US-003_
 
 ## Patterns Established
 
-- **Builder test co-location.** Each new builder under
-  `src/prompts/builders/<name>.ts` gets a matching
+- **Builder test co-location.** `[test-writer]`
+  Each new builder under `src/prompts/builders/<name>.ts` gets a matching
   `test/unit/prompts/<name>-builder.test.ts`. This pattern was established
   in US-001 and should be followed by subsequent phases.
   _Established in: US-001_
@@ -169,9 +174,15 @@ _Last updated: 2026-04-12. Source: extractor + manual. Entries: 14._
 ## Gotchas for Future Phases
 
 - **Do not rename files in `src/prompts/` without updating the barrel
-  `index.ts`.** The barrel is a single source of truth for exports;
-  forgetting to update it causes a runtime failure that typecheck misses.
+  `index.ts`.** `[implementer]`
+  The barrel is a single source of truth for exports; forgetting to update
+  it causes a runtime failure that typecheck misses.
   _Flagged in: US-002_
+
+- **Check for `_`-prefixed unused params — may indicate abandoned work.** `[reviewer]`
+  Prior phases left `_`-prefixed parameters that turned out to be needed.
+  Flag these during review rather than assuming they're intentionally unused.
+  _Flagged in: US-004_
 
 ## Rationale Archive
 
@@ -182,7 +193,71 @@ _Last updated: 2026-04-12. Source: extractor + manual. Entries: 14._
   methods, not static-only. See US-001 for the full argument.
 ```
 
-Five sections, stable headings: `Decisions`, `Constraints`, `Patterns Established`, `Gotchas for Future Phases`, `Rationale Archive`. The extractor agent writes into these sections; the read path injects the full file as-is.
+Five sections, stable headings: `Decisions`, `Constraints`, `Patterns Established`, `Gotchas for Future Phases`, `Rationale Archive`. The extractor agent writes into these sections; the read path filters by audience role before injection.
+
+### Role-Routed Injection
+
+Each entry in `context.md` carries an **audience tag** — a list of roles that should receive this entry. The tag is a Markdown inline annotation at the end of the entry headline:
+
+```markdown
+## Constraints
+
+- **`_deps` injection pattern is mandatory for spawn/fs/fetch in new code.** `[all]`
+  See `docs/architecture/design-patterns.md` §7. Tests mock via `_deps`,
+  not `mock.module()`.
+  _Discovered in: US-003_
+
+- **Never modify test files during implementation.** `[implementer]`
+  The test-writer owns test files. The implementer must only change source files.
+  If a test file has a bug, flag it for the test-writer role.
+  _Discovered in: US-002 (during rectification loop)_
+
+- **Use `test.each()` for parametric test cases.** `[test-writer]`
+  Avoid duplicated test bodies with different inputs. The codebase convention
+  is parametric tests via `test.each()`.
+  _Discovered in: US-001_
+
+- **Check for `_`-prefixed unused params (abandonment signal).** `[reviewer-semantic, reviewer-adversarial]`
+  Prior phases left `_`-prefixed parameters that were later needed. Flag these
+  during review as potential abandonment.
+  _Flagged in: US-004_
+```
+
+**Audience values** map to the existing `PromptRole` type in `src/prompts/core/types.ts`, plus the review session roles:
+
+| Audience tag | Receives entry | Maps to |
+|:---|:---|:---|
+| `all` | Every role | Always injected |
+| `implementer` | Implementer sessions only | `PromptRole: "implementer"`, `"single-session"`, `"tdd-simple"`, `"no-test"` |
+| `test-writer` | Test-writer sessions only | `PromptRole: "test-writer"` |
+| `verifier` | Verifier sessions only | `PromptRole: "verifier"` |
+| `reviewer-semantic` | Semantic review only | `sessionRole: "reviewer-semantic"` |
+| `reviewer-adversarial` | Adversarial review only | `sessionRole: "reviewer-adversarial"` |
+| `reviewer` | All reviewer roles | Both semantic and adversarial |
+
+**Filtering logic in `FeatureContextProvider`:**
+
+```typescript
+function filterByAudience(contextMd: string, role: PromptRole | string): string {
+  // Parse entries, keep entries tagged [all] or matching the current role
+  // role mapping: "implementer" matches [implementer] and [all]
+  //               "single-session" matches [implementer] and [test-writer] and [all]
+  //                 (because single-session does both implementation and testing)
+  // Entries with no tag default to [all]
+}
+```
+
+The `single-session` and `tdd-simple` roles receive entries tagged for both `implementer` and `test-writer`, since those roles do both jobs.
+
+**Why filter at injection, not at extraction?** A learning may be relevant to multiple roles. The extractor captures the learning once with an audience list; the read path filters per-invocation. This avoids duplicating entries across role-specific files and keeps `context.md` as the single source.
+
+**Why inline tags, not separate files per role?** Considered `context-implementer.md`, `context-test-writer.md`, etc. Rejected because:
+- Fragment merger would need to route entries to multiple files
+- Manual editing becomes harder (which file do I put this in?)
+- Entries tagged `[all]` would need to appear in every file (duplication)
+- A single file with inline tags is simpler to read, edit, and summarize
+
+**Backward compatibility.** Entries without an audience tag default to `[all]`. Existing manually-written `context.md` files (from Phase 0 or Phase 1 read-only mode) work unchanged — every entry is injected for every role.
 
 ### Feature-ID Resolution
 
@@ -206,42 +281,92 @@ Cache the result per-run in `ctx` to avoid re-walking the feature directory. If 
 
 ### Read Path — Pre-Story Context Injection
 
-Integrates into the existing `src/context/` stage. A new context provider implements the `IContextProvider` interface:
+Integrates into the existing `src/context/` stage. A new context provider implements the `IContextProvider` interface.
+
+**Key design constraint:** The `IContextProvider.getContext()` interface currently receives `UserStory`, which has no role information. The `PromptRole` is only available at prompt-build time in `TddPromptBuilder.for(role)`. Two options:
+
+1. **Extend `IContextProvider`** to accept an optional `role` parameter. Backward-compatible — existing providers ignore it.
+2. **Filter at prompt-build time** — provider returns full context, builder filters by role.
+
+Option 2 is cleaner: the context provider stays role-agnostic (returns everything), and the `TddPromptBuilder` applies the audience filter when it calls `.context(md)`. This keeps the provider interface simple and puts role-awareness where role information is already available.
 
 ```typescript
 // src/context/providers/feature-context.ts
 export class FeatureContextProvider implements IContextProvider {
-  async getContext(ctx: PipelineContext): Promise<string | null> {
-    if (!ctx.config.context?.featureEngine?.enabled) return null
+  async getContext(story: UserStory, workdir: string, config: NaxConfig): Promise<ContextProviderResult | null> {
+    if (!config.context?.featureEngine?.enabled) return null
 
-    const featureId = resolveFeatureId(ctx.story, ctx.workdir)
+    const featureId = resolveFeatureId(story, workdir)
     if (!featureId) return null
 
     const contextPath = `.nax/features/${featureId}/context.md`
-    const file = Bun.file(`${ctx.workdir}/${contextPath}`)
+    const file = Bun.file(`${workdir}/${contextPath}`)
     if (!(await file.exists())) return null
 
     const content = await file.text()
     if (content.trim().length === 0) return null
 
-    return formatForInjection(content, featureId)
+    // Return FULL context — role filtering happens at prompt-build time
+    return {
+      content: formatForInjection(content, featureId),
+      estimatedTokens: estimateTokens(content),
+      label: `feature-context:${featureId}`,
+    }
   }
 }
+```
 
-function formatForInjection(content: string, featureId: string): string {
-  return `## Feature Context (${featureId})
+```typescript
+// src/context/feature-context-filter.ts
+import type { PromptRole } from "../prompts/core/types";
 
-The following context was accumulated by prior stories in this feature.
-Read it carefully — it contains decisions, constraints, and gotchas that
-should inform your work. Do not contradict these decisions without a
-documented reason.
+/** Audience tags recognized in context.md entries */
+type AudienceTag = "all" | "implementer" | "test-writer" | "verifier"
+  | "reviewer" | "reviewer-semantic" | "reviewer-adversarial";
 
-${content}
+/** Map PromptRole to which audience tags it should receive */
+const ROLE_AUDIENCE_MAP: Record<PromptRole, AudienceTag[]> = {
+  "implementer":     ["all", "implementer"],
+  "test-writer":     ["all", "test-writer"],
+  "verifier":        ["all", "verifier"],
+  "single-session":  ["all", "implementer", "test-writer"],  // does both
+  "tdd-simple":      ["all", "implementer", "test-writer"],  // does both
+  "no-test":         ["all", "implementer"],
+  "batch":           ["all", "implementer", "test-writer"],
+};
 
----
-End of feature context.
-`
+/**
+ * Filter context.md entries by audience tag for the current role.
+ * Entries without a tag default to [all].
+ * Also accepts sessionRole strings for reviewer filtering.
+ */
+export function filterContextByRole(
+  contextMd: string,
+  role: PromptRole | string,
+): string {
+  // Parse Markdown entries, match [tag] annotations against role map
+  // Return filtered Markdown with only matching entries
 }
+```
+
+**Integration point in `TddPromptBuilder`:**
+
+```typescript
+// src/prompts/builders/tdd-builder.ts — in build() method
+if (this.contextMarkdown) {
+  const filtered = filterContextByRole(this.contextMarkdown, this.role);
+  this.acc.add(buildContextSection(filtered));
+}
+```
+
+**Integration for review prompts:** The review prompt builders (`ReviewPromptBuilder`, `AdversarialReviewPromptBuilder`) don't use `PromptRole` — they have `sessionRole` as a string. `filterContextByRole` accepts both:
+
+```typescript
+// In semantic review prompt builder
+const filtered = filterContextByRole(featureContext, "reviewer-semantic");
+
+// In adversarial review prompt builder
+const filtered = filterContextByRole(featureContext, "reviewer-adversarial");
 ```
 
 This provider registers in the default provider chain and runs alongside the existing `CLAUDE.md` / rules / constitution providers. The injected block appears in the agent prompt before the story brief, so the agent reads it as background.
@@ -338,6 +463,21 @@ Assign each entry to ONE of:
 - "pattern" — a structural convention established for this feature
 - "gotcha" — a trap future phases should avoid
 
+## Audience
+
+Assign each entry an "audience" array — who needs to know this.
+Audience values: "all", "implementer", "test-writer", "verifier",
+"reviewer", "reviewer-semantic", "reviewer-adversarial".
+
+Use the narrowest audience that fits:
+- A constraint about not modifying test files → ["implementer"]
+- A pattern about test structure → ["test-writer"]
+- A decision about API design → ["implementer", "test-writer"] (both need to know)
+- A gotcha about barrel imports → ["all"] (everyone encounters this)
+- A review heuristic about checking error paths → ["reviewer", "reviewer-adversarial"]
+
+When in doubt, use "all". Over-narrowing is worse than over-broadcasting.
+
 ## Output
 
 Respond with JSON only:
@@ -345,6 +485,7 @@ Respond with JSON only:
   "entries": [
     {
       "category": "decision" | "constraint" | "pattern" | "gotcha",
+      "audience": ["all"] | ["implementer"] | ["test-writer", "implementer"] | ...,
       "title": "short headline",
       "body": "1-3 sentences of detail",
       "evidence": "file path, line, or symptom citation",
@@ -376,7 +517,8 @@ Nax supports parallel story execution. If two stories in the same feature finish
 Merge logic is deterministic:
 
 - Entries are grouped by category and appended to the corresponding section.
-- Duplicates (same `title` or high text overlap) are deduped — keep the earlier one.
+- Audience tags from the extractor JSON (`"audience": ["implementer", "test-writer"]`) are formatted as inline `[implementer, test-writer]` annotations in the Markdown entry headline.
+- Duplicates (same `title` or high text overlap) are deduped — keep the earlier one. If the two duplicates have different audience tags, take the union.
 - Ordering within a section is chronological by story ID.
 
 The merger runs inside the single-threaded run completion phase, so it has no concurrency of its own to worry about.
@@ -402,6 +544,8 @@ Rules:
   and `Gotchas for Future Phases` sections. Never drop an entry.
 - Compress the body text of each entry to 1-2 sentences maximum.
 - Preserve the citation for each entry (file path, story ID, commit).
+- Preserve the audience tag (e.g. `[implementer]`, `[all]`) for each entry.
+  Do not change, widen, or narrow audience tags during summarization.
 - Move the "body" or explanatory detail of older entries into the
   `Rationale Archive` section if it's no longer load-bearing.
 - Keep the overall file under {budget} tokens.
@@ -527,17 +671,19 @@ The **read-only** level is the important one for rollout: it lets users manually
 
 - `src/context/providers/feature-context.ts` — the `IContextProvider` implementation (read path)
 - `src/context/feature-resolver.ts` — `resolveFeatureId(story, workdir)` helper with caching
+- `src/context/feature-context-filter.ts` — **NEW** — `filterContextByRole()` audience tag parser and role-based entry filter
 - `src/context/feature-writer.ts` — fragment writer (write path)
-- `src/context/feature-merger.ts` — fragment merger (runs at phase boundary / run completion)
+- `src/context/feature-merger.ts` — fragment merger (runs at phase boundary / run completion); formats audience arrays as inline tags
 - `src/context/feature-summarizer.ts` — summarization gate
 - `src/context/feature-promotion.ts` — promotion gate (runs at archival)
-- `src/prompts/builders/context-extractor-builder.ts` — extractor prompt builder
-- `src/prompts/builders/context-summarizer-builder.ts` — summarizer prompt builder
+- `src/prompts/builders/context-extractor-builder.ts` — extractor prompt builder (includes audience classification instructions)
+- `src/prompts/builders/context-summarizer-builder.ts` — summarizer prompt builder (preserves audience tags)
 - `src/prompts/builders/context-promotion-builder.ts` — promotion-gate prompt builder
 - `test/unit/context/feature-context.test.ts` — read-path unit tests with `_deps` mocking
+- `test/unit/context/feature-context-filter.test.ts` — **NEW** — audience tag parsing, role mapping, edge cases (no tag → all, unknown tag → all, multi-tag entries)
 - `test/unit/context/feature-resolver.test.ts` — resolver tests (cache, edge cases)
-- `test/unit/context/feature-merger.test.ts` — fragment merge logic
-- `test/unit/context/feature-summarizer.test.ts` — summarization invariants (never drops entries)
+- `test/unit/context/feature-merger.test.ts` — fragment merge logic, audience tag formatting, dedup with audience union
+- `test/unit/context/feature-summarizer.test.ts` — summarization invariants (never drops entries, preserves audience tags)
 - `test/integration/context/feature-engine-end-to-end.test.ts` — full feature lifecycle
 - `test/integration/context/feature-engine-parallel.test.ts` — parallel story fragment merge
 
@@ -547,6 +693,9 @@ The **read-only** level is the important one for rollout: it lets users manually
 - `src/config/types.ts` — re-export new types
 - `src/context/index.ts` — register `FeatureContextProvider` in the provider chain
 - `src/context/types.ts` — extend `IContextProvider` surface if needed for ordering
+- `src/prompts/builders/tdd-builder.ts` — call `filterContextByRole(contextMd, this.role)` in `build()` before adding context section
+- `src/review/semantic.ts` — call `filterContextByRole(featureContext, "reviewer-semantic")` when injecting feature context into review prompt
+- `src/review/adversarial.ts` — call `filterContextByRole(featureContext, "reviewer-adversarial")` when injecting feature context into review prompt
 - `src/execution/lifecycle/run-completion.ts` — run the fragment merger and summarization gate at run end
 - `src/pipeline/stages/capture.ts` — new post-review stage that runs the extractor on passing stories (see **New pipeline stage** below)
 - `src/pipeline/default-pipeline.ts` — register the capture stage after review
@@ -724,6 +873,15 @@ The extractor reads diffs; diffs can contain secrets, API responses, user data. 
 
 Adversarial review catches abandonment signals post-hoc. Context engine prevents some of those signals by giving the agent better starting context. There's no conflict — they're complementary. But there is a risk that the engine captures advice like "always use `_` prefix for unused parameters" based on a misread of past work, which would actively train agents to produce the wrong pattern. **Mitigation:** the extractor prompt should exclude capturing workarounds as patterns. `_` prefixes in particular are an anti-pattern and should never appear in `context.md`.
 
+### Over-narrowing audience tags
+
+The extractor may assign overly narrow audience tags, causing a role to miss relevant context. For example, tagging a barrel-import constraint as `[implementer]` when the test-writer also imports from barrels. **Mitigations:**
+
+- Extractor prompt instructs: "When in doubt, use `all`. Over-narrowing is worse than over-broadcasting."
+- Manual editing can always widen an audience tag.
+- The `single-session` and `tdd-simple` roles receive both `[implementer]` and `[test-writer]` entries — the most common dual-audience case is handled automatically.
+- Phase 6 measurement can track "role received context entry that would have prevented a mistake but was filtered out" by correlating review findings with filtered-out entries.
+
 ### `context.md` becomes a second CLAUDE.md
 
 If users start writing project-wide conventions into `context.md` instead of `CLAUDE.md`, the feature-scoped design is undermined. **Mitigation:** the read path's injection header is explicit that context is feature-scoped: *"The following context was accumulated by prior stories in this feature."* The extractor prompt explicitly rejects capturing project-wide rules. Documentation in CLAUDE.md explains the distinction.
@@ -760,34 +918,46 @@ If users start writing project-wide conventions into `context.md` instead of `CL
 
 4. **Read path — present file:** When `enabled: true` and `context.md` exists, the provider returns a formatted block containing the file contents wrapped in the injection header. The block is placed between project context and story context in the final prompt.
 
-5. **Budget enforcement:** When `context.md` exceeds `budgetTokens`, the read path truncates to the budget and logs a warning. Truncation is tail-biased (most recent entries preserved).
+5. **Role filtering — implementer:** When the current `PromptRole` is `"implementer"`, the injected context contains only entries tagged `[all]` or `[implementer]`. Entries tagged `[test-writer]` only are excluded.
 
-6. **Write path — disabled:** When `write.enabled: false`, the capture stage runs as a no-op and produces no fragment files.
+6. **Role filtering — test-writer:** When the current `PromptRole` is `"test-writer"`, the injected context contains only entries tagged `[all]` or `[test-writer]`. Entries tagged `[implementer]` only are excluded.
 
-7. **Write path — enabled, successful extraction:** When `write.enabled: true` and a story passes review, the capture stage calls the extractor, receives a valid JSON response, writes a fragment file to `.nax/features/<id>/context-fragments/<storyId>-<ts>-<sha>.md`, and logs the contribution to `context.lock.json`.
+7. **Role filtering — single-session:** When the current `PromptRole` is `"single-session"` or `"tdd-simple"`, the injected context contains entries tagged `[all]`, `[implementer]`, or `[test-writer]` (union of both, since the role does both jobs).
 
-8. **Write path — extractor failure:** When the extractor returns invalid JSON, times out, or fails, the story is not failed; a warning is logged and no fragment file is written.
+8. **Role filtering — reviewer:** When `sessionRole` is `"reviewer-semantic"`, entries tagged `[all]`, `[reviewer]`, or `[reviewer-semantic]` are included. Same pattern for `"reviewer-adversarial"`.
 
-9. **Fragment merge — sequential:** In sequential mode, fragments are merged into `context.md` immediately after each story. `context.md` reflects the latest state before the next story reads it.
+9. **Role filtering — no tag:** Entries without an audience tag are treated as `[all]` and included for every role. This provides backward compatibility with manually-written `context.md` files.
 
-10. **Fragment merge — parallel:** In parallel mode, fragments from concurrent stories are written independently without conflicts, and the run-completion merger integrates all fragments at run end. No fragments are lost; no fragment is merged twice.
+10. **Extractor audience output:** The extractor LLM response includes an `audience` array per entry. The fragment merger formats this as an inline `[tag1, tag2]` annotation in the Markdown headline.
 
-11. **Merge — dedup:** If two fragments contain entries with identical titles or near-identical bodies, the merger keeps the earlier one (by story ID order) and discards the later.
+11. **Budget enforcement:** When `context.md` exceeds `budgetTokens`, the read path truncates to the budget and logs a warning. Truncation is tail-biased (most recent entries preserved). Budget is checked _after_ role filtering (only filtered entries count toward budget).
 
-12. **Summarization gate:** When `context.md` exceeds `triggerFraction * budgetTokens` at phase boundary, the summarizer runs and rewrites the file. After summarization, no entry is dropped from `Decisions`, `Constraints`, `Patterns Established`, or `Gotchas for Future Phases`; older rationale is moved to `Rationale Archive`.
+12. **Write path — disabled:** When `write.enabled: false`, the capture stage runs as a no-op and produces no fragment files.
 
-13. **Summarization invariant:** Summarization is a property test — for any valid `context.md`, the summarized version contains every entry from the input (verified by title + citation), and the total token count is below budget.
+13. **Write path — enabled, successful extraction:** When `write.enabled: true` and a story passes review, the capture stage calls the extractor, receives a valid JSON response with `audience` arrays, writes a fragment file to `.nax/features/<id>/context-fragments/<storyId>-<ts>-<sha>.md`, and logs the contribution to `context.lock.json`.
 
-14. **Metrics:** `StoryMetrics.contextEngine` is populated with `cost`, `tokens`, `wallClockMs`, `entriesWritten`, and `summarizationsRun` after a run with the engine enabled.
+14. **Write path — extractor failure:** When the extractor returns invalid JSON, times out, or fails, the story is not failed; a warning is logged and no fragment file is written.
 
-15. **Promotion gate — disabled:** When `promotion.enabled: false`, archival does not run the promotion gate and does not produce candidate files.
+15. **Fragment merge — sequential:** In sequential mode, fragments are merged into `context.md` immediately after each story. `context.md` reflects the latest state before the next story reads it. Audience arrays are formatted as inline `[tag]` annotations.
 
-16. **Promotion gate — enabled:** When `promotion.enabled: true` and a feature is archived, the promotion gate runs and produces a `candidate-promotions.md` file (or PR comment / issue, per config) listing candidate entries for global rules. The gate never writes directly to `CLAUDE.md` or `.claude/rules/`.
+16. **Fragment merge — parallel:** In parallel mode, fragments from concurrent stories are written independently without conflicts, and the run-completion merger integrates all fragments at run end. No fragments are lost; no fragment is merged twice.
 
-17. **Archival:** On feature archival, `context.md`, `context.lock.json`, and `context-fragments/` are moved to `.nax/features/_archive/<feature-id>/`. The original directory's context files are removed. Non-context files (`prd.json`, etc.) are handled by existing nax archival logic, unchanged by this feature.
+17. **Merge — dedup:** If two fragments contain entries with identical titles or near-identical bodies, the merger keeps the earlier one (by story ID order) and discards the later. If the two entries have different audience tags, the merger takes the union of both audiences.
 
-18. **Sessions differentiated:** The capture, summarization, and promotion LLM calls use distinct `sessionRole` values (`"context-extractor"`, `"context-summarizer"`, `"context-promoter"`) and are correlatable in logs via the first-class `sessionRole` field introduced by the adversarial review SPEC.
+18. **Summarization gate:** When `context.md` exceeds `triggerFraction * budgetTokens` at phase boundary, the summarizer runs and rewrites the file. After summarization, no entry is dropped from `Decisions`, `Constraints`, `Patterns Established`, or `Gotchas for Future Phases`; older rationale is moved to `Rationale Archive`. Audience tags are preserved through summarization.
 
-19. **No impact when disabled:** With `enabled: false` at every level, the pipeline's wall-clock time, cost, and output are indistinguishable from a run without this feature. Verified by diff on a reference run.
+19. **Summarization invariant:** Summarization is a property test — for any valid `context.md`, the summarized version contains every entry from the input (verified by title + citation + audience tag), and the total token count is below budget.
 
-20. **Self-referential dogfooding:** This feature's own implementation, developed across multiple nax stories, uses the context engine (at `read-only` level initially) and `context.md` is manually maintained. The first real-world validation of the read path is the feature's own development.
+20. **Metrics:** `StoryMetrics.contextEngine` is populated with `cost`, `tokens`, `wallClockMs`, `entriesWritten`, and `summarizationsRun` after a run with the engine enabled.
+
+21. **Promotion gate — disabled:** When `promotion.enabled: false`, archival does not run the promotion gate and does not produce candidate files.
+
+22. **Promotion gate — enabled:** When `promotion.enabled: true` and a feature is archived, the promotion gate runs and produces a `candidate-promotions.md` file (or PR comment / issue, per config) listing candidate entries for global rules. The gate never writes directly to `CLAUDE.md` or `.claude/rules/`.
+
+23. **Archival:** On feature archival, `context.md`, `context.lock.json`, and `context-fragments/` are moved to `.nax/features/_archive/<feature-id>/`. The original directory's context files are removed. Non-context files (`prd.json`, etc.) are handled by existing nax archival logic, unchanged by this feature.
+
+24. **Sessions differentiated:** The capture, summarization, and promotion LLM calls use distinct `sessionRole` values (`"context-extractor"`, `"context-summarizer"`, `"context-promoter"`) and are correlatable in logs via the first-class `sessionRole` field introduced by the adversarial review SPEC.
+
+25. **No impact when disabled:** With `enabled: false` at every level, the pipeline's wall-clock time, cost, and output are indistinguishable from a run without this feature. Verified by diff on a reference run.
+
+26. **Self-referential dogfooding:** This feature's own implementation, developed across multiple nax stories, uses the context engine (at `read-only` level initially) and `context.md` is manually maintained. The first real-world validation of the read path is the feature's own development.
