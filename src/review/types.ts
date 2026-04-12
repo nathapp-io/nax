@@ -120,7 +120,7 @@ export interface AdversarialReviewConfig {
   diffMode: "embedded" | "ref";
   /** Custom adversarial heuristic rules to append to the prompt */
   rules: string[];
-  /** Timeout in milliseconds (default: 180_000) */
+  /** Timeout in milliseconds (default: 600_000) */
   timeoutMs: number;
   /** Pathspec exclusions for embedded mode. Default empty (adversarial sees test files). */
   excludePatterns: string[];

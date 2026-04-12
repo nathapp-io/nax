@@ -329,7 +329,7 @@ export async function runReview(
         modelTier: "balanced" as const,
         diffMode: "ref" as const,
         rules: [] as string[],
-        timeoutMs: 180_000,
+        timeoutMs: 600_000,
         excludePatterns: [] as string[],
         parallel: false,
         maxConcurrentSessions: 2,
