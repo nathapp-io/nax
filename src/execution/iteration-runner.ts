@@ -5,6 +5,7 @@
  * Extracted from sequential-executor.ts to slim it below 120 lines.
  */
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfigForWorkdir } from "../config/loader";
 import type { StoryMetrics } from "../metrics";
@@ -14,6 +15,7 @@ import type { PipelineContext } from "../pipeline/types";
 import { savePRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { captureGitRef, isGitRefValid } from "../utils/git";
+import { WorktreeManager } from "../worktree/manager";
 import { handleDryRun } from "./dry-run";
 import type { SequentialExecutionContext } from "./executor-types";
 import { handlePipelineFailure, handlePipelineSuccess } from "./pipeline-result-handler";
@@ -62,15 +64,33 @@ export async function runIteration(
 
   const storyStartTime = Date.now();
 
+  // EXEC-002: Resolve the effective workdir for this story.
+  // In "worktree" mode, each story runs in its own git worktree at .nax-wt/<storyId>/.
+  // In "shared" mode (default), use the project root as-is.
+  let effectiveWorkdir = ctx.workdir;
+  if (ctx.config.execution.storyIsolation === "worktree") {
+    const worktreePath = join(ctx.workdir, ".nax-wt", story.id);
+    const worktreeExists = _iterationRunnerDeps.existsSync(worktreePath);
+    if (!worktreeExists) {
+      // First attempt for this story — create a fresh worktree.
+      await _iterationRunnerDeps.worktreeManager.ensureGitExcludes(ctx.workdir);
+      await _iterationRunnerDeps.worktreeManager.create(ctx.workdir, story.id);
+    }
+    // Escalation reuse: if the worktree already exists (story retried in same worktree),
+    // skip creation and continue in the existing worktree directory.
+    effectiveWorkdir = worktreePath;
+  }
+
   // BUG-114: Persist storyGitRef in prd.json so it survives crashes and restarts.
   // On the first attempt we capture HEAD and save it. On resume we reuse the stored
   // ref (after validating it still exists in git history), so semantic review always
   // diffs from the true start of this story regardless of how many times nax restarted.
+  // EXEC-002: In worktree mode, capture/validate the ref inside the worktree (effectiveWorkdir).
   let storyGitRef: string | undefined;
-  if (story.storyGitRef && (await isGitRefValid(ctx.workdir, story.storyGitRef))) {
+  if (story.storyGitRef && (await isGitRefValid(effectiveWorkdir, story.storyGitRef))) {
     storyGitRef = story.storyGitRef;
   } else {
-    storyGitRef = await captureGitRef(ctx.workdir);
+    storyGitRef = await captureGitRef(effectiveWorkdir);
     if (storyGitRef) {
       story.storyGitRef = storyGitRef;
       await savePRD(prd, ctx.prdPath);
@@ -92,6 +112,15 @@ export async function runIteration(
       )
     : ctx.config;
 
+  // EXEC-002: In worktree mode, effectiveWorkdir is the worktree path.
+  // In shared mode (or when story.workdir is set), resolve relative to project root.
+  const resolvedWorkdir =
+    ctx.config.execution.storyIsolation === "worktree"
+      ? effectiveWorkdir
+      : story.workdir
+        ? join(ctx.workdir, story.workdir)
+        : ctx.workdir;
+
   const pipelineContext: PipelineContext = {
     config: effectiveConfig,
     rootConfig: ctx.config,
@@ -100,7 +129,7 @@ export async function runIteration(
     stories: storiesToExecute,
     routing,
     projectDir: ctx.workdir,
-    workdir: story.workdir ? join(ctx.workdir, story.workdir) : ctx.workdir,
+    workdir: resolvedWorkdir,
     prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,
@@ -194,4 +223,6 @@ export async function runIteration(
  */
 export const _iterationRunnerDeps = {
   loadConfigForWorkdir,
+  existsSync,
+  worktreeManager: new WorktreeManager(),
 };

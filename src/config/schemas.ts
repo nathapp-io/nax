@@ -143,6 +143,7 @@ const ExecutionConfigSchema = z.object({
     )
     .optional(),
   smartTestRunner: smartTestRunnerFieldSchema,
+  storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
 });
 
 const QualityConfigSchema = z.object({
@@ -655,6 +656,7 @@ export const NaxConfigSchema = z
       dangerouslySkipPermissions: true,
       permissionProfile: "unrestricted",
       smartTestRunner: true,
+      storyIsolation: "shared",
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     quality: QualityConfigSchema.default({
       requireTypecheck: true,

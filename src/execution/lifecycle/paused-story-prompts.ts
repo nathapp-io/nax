@@ -24,11 +24,15 @@ export interface PausedStoryPromptSummary {
  * Prompt the user for each paused story on re-run.
  * Mutates prd.userStories statuses in place.
  * Returns a summary of decisions so the caller can save + recount.
+ *
+ * @param storyIsolation - When `"worktree"`, clears `storyGitRef` for resumed stories so a
+ *   fresh ref is captured in the new worktree on the next run.
  */
 export async function promptForPausedStories(
   prd: PRD,
   chain: InteractionChain,
   featureName: string,
+  storyIsolation?: "shared" | "worktree",
 ): Promise<PausedStoryPromptSummary> {
   const logger = getSafeLogger();
   const summary: PausedStoryPromptSummary = { resumed: [], skipped: [], kept: [] };
@@ -70,6 +74,10 @@ export async function promptForPausedStories(
     switch (resolvedKey) {
       case "resume": {
         story.status = "pending";
+        // EXEC-002: Clear storyGitRef so it is re-captured in the fresh worktree.
+        if (storyIsolation === "worktree") {
+          story.storyGitRef = undefined;
+        }
         summary.resumed.push(story.id);
         logger?.info("run-initialization", "User resumed paused story", { storyId: story.id });
         break;
