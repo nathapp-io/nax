@@ -15,9 +15,15 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
   _refineDeps,
-  buildRefinementPrompt,
   refineAcceptanceCriteria,
 } from "../../../src/acceptance/refinement";
+import { AcceptancePromptBuilder } from "../../../src/prompts/builders/acceptance-builder";
+
+const buildRefinementPrompt = (
+  criteria: string[],
+  ctx: string,
+  opts?: Parameters<AcceptancePromptBuilder["buildRefinementPrompt"]>[2],
+) => new AcceptancePromptBuilder().buildRefinementPrompt(criteria, ctx, opts);
 import type { RefinementContext } from "../../../src/acceptance/types";
 import type { NaxConfig } from "../../../src/config";
 

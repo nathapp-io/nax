@@ -10,7 +10,16 @@
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
  */
 
+import type { PRD } from "../../prd/types";
+import { wrapJsonPrompt } from "../../utils/llm-json";
+
 export type AcceptanceRole = "generator" | "diagnoser" | "fix-executor";
+
+/**
+ * Maximum source file lines included in the diagnosis prompt.
+ * Exported so fix-diagnosis.ts can use the same cap when reading files.
+ */
+export const MAX_FILE_LINES = 500;
 
 // ─── Shared generator step text ───────────────────────────────────────────────
 
@@ -41,6 +50,33 @@ const STEP3_SHARED_RULES = `- **One test per AC**, named exactly "AC-N: <descrip
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.`;
+
+// ─── Additional parameter interfaces (moved from acceptance domain) ───────────
+
+export interface FixGeneratorParams {
+  batchedACs: string[];
+  acTextMap: Record<string, string>;
+  testOutput: string;
+  relatedStories: string[];
+  prd: PRD;
+  testFilePath?: string;
+}
+
+export interface DiagnosisPromptParams {
+  testOutput: string;
+  testFileContent: string;
+  sourceFiles: Array<{ path: string; content: string }>;
+  /** Minimal shape — avoids importing SemanticVerdict across layers */
+  semanticVerdicts?: Array<{ storyId: string; passed: boolean }>;
+  previousFailure?: string;
+}
+
+export interface RefinementPromptOptions {
+  testStrategy?: "unit" | "component" | "cli" | "e2e" | "snapshot";
+  testFramework?: string;
+  storyTitle?: string;
+  storyDescription?: string;
+}
 
 // ─── Parameter interfaces ─────────────────────────────────────────────────────
 
@@ -168,6 +204,164 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
     }
     prompt += "Fix the source implementation. Do NOT modify the test file.";
     return prompt;
+  }
+
+  /**
+   * Prompt for generateFixStories() — asks the LLM to produce a fix description
+   * for a batch of failed acceptance criteria.
+   */
+  buildFixGeneratorPrompt(p: FixGeneratorParams): string {
+    const acList = p.batchedACs.map((ac) => `${ac}: ${p.acTextMap[ac] || "No description available"}`).join("\n");
+
+    const relatedStoriesText = p.relatedStories
+      .map((id) => {
+        const story = p.prd.userStories.find((s) => s.id === id);
+        if (!story) return "";
+        return `${story.id}: ${story.title}\n  ${story.description}`;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+
+    const testFileSection = p.testFilePath
+      ? `\nACCEPTANCE TEST FILE: ${p.testFilePath}\n(Read this file first to understand what each test expects)\n`
+      : "";
+
+    return `You are a debugging expert. Feature acceptance tests have failed.${testFileSection}
+FAILED ACCEPTANCE CRITERIA (${p.batchedACs.length} total):
+${acList}
+
+TEST FAILURE OUTPUT:
+${p.testOutput.slice(0, 2000)}
+
+RELATED STORIES (implemented this functionality):
+${relatedStoriesText}
+
+Your task: Generate a fix description that will make these acceptance tests pass.
+
+Requirements:
+1. Read the acceptance test file first to understand what each failing test expects
+2. Identify the root cause based on the test failure output
+3. Find and fix the relevant implementation code (do NOT modify the test file)
+4. Write a clear, actionable fix description (2-4 sentences)
+5. Reference the relevant story IDs if needed
+
+Respond with ONLY the fix description (no JSON, no markdown, just the description text).`;
+  }
+
+  /**
+   * Prompt for diagnoseAcceptanceFailure() — pre-processes raw data and assembles
+   * the full diagnosis prompt via buildDiagnosisPromptTemplate().
+   */
+  buildDiagnosisPrompt(p: DiagnosisPromptParams): string {
+    const MAX_TEST_OUTPUT_CHARS = 2000;
+    const truncatedOutput = p.testOutput.slice(0, MAX_TEST_OUTPUT_CHARS);
+
+    const sourceFilesSection =
+      p.sourceFiles.length > 0
+        ? p.sourceFiles.map((f) => `FILE: ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")
+        : "(No source files could be resolved from imports)";
+
+    let verdictSection = "";
+    if (p.semanticVerdicts && p.semanticVerdicts.length > 0) {
+      const lines = p.semanticVerdicts.map((v) => {
+        const status = v.passed ? "likely test bug (semantic review confirmed AC implementation)" : "unconfirmed";
+        return `- ${v.storyId}: ${status}`;
+      });
+      verdictSection = `\nSEMANTIC VERDICTS:\n${lines.join("\n")}\n`;
+    }
+
+    const previousFailureSection =
+      p.previousFailure && p.previousFailure.length > 0 ? `\nPREVIOUS FIX ATTEMPTS:\n${p.previousFailure}\n` : "";
+
+    return this.buildDiagnosisPromptTemplate({
+      truncatedOutput,
+      testFileContent: p.testFileContent,
+      sourceFilesSection,
+      verdictSection,
+      previousFailureSection,
+      maxFileLines: MAX_FILE_LINES,
+    });
+  }
+
+  /**
+   * Prompt for refineAcceptanceCriteria() — converts raw ACs into concrete
+   * machine-verifiable assertions, with optional strategy-specific instructions.
+   */
+  buildRefinementPrompt(criteria: string[], codebaseContext: string, options?: RefinementPromptOptions): string {
+    const criteriaList = criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
+    const strategySection = this.buildStrategySection(options);
+    const refinedExample = this.buildRefinedExample(options?.testStrategy);
+
+    const storyLines: string[] = [];
+    if (options?.storyTitle) storyLines.push(`Title: ${options.storyTitle}`);
+    if (options?.storyDescription) storyLines.push(`Description: ${options.storyDescription}`);
+    const storySection = storyLines.length > 0 ? `STORY CONTEXT:\n${storyLines.join("\n")}\n\n` : "";
+
+    const codebaseSection = codebaseContext ? `CODEBASE CONTEXT:\n${codebaseContext}\n` : "";
+
+    const core = `You are an acceptance criteria refinement assistant. Your task is to convert raw acceptance criteria into concrete, machine-verifiable assertions.
+
+${storySection}${codebaseSection}${strategySection}ACCEPTANCE CRITERIA TO REFINE:
+${criteriaList}
+
+For each criterion, produce a refined version that is concrete and automatically testable where possible.
+Respond with a JSON array:
+[{
+  "original": "<exact original criterion text>",
+  "refined": "<concrete, machine-verifiable description>",
+  "testable": true,
+  "storyId": ""
+}]
+
+Rules:
+- "original" must match the input criterion text exactly
+- "refined" must be a concrete assertion (e.g., ${refinedExample})
+- "testable" is false only if the criterion cannot be automatically verified (e.g., "UX feels responsive", "design looks good")
+- "storyId" leave as empty string — it will be assigned by the caller`;
+
+    return wrapJsonPrompt(core);
+  }
+
+  private buildStrategySection(options?: RefinementPromptOptions): string {
+    if (!options?.testStrategy) return "";
+
+    const framework = options.testFramework ? ` Use ${options.testFramework} testing library syntax.` : "";
+
+    switch (options.testStrategy) {
+      case "component":
+        return `
+TEST STRATEGY: component
+Focus assertions on rendered output visible on screen — text content, visible elements, and screen state.
+Assert what the user sees rendered in the component, not what internal functions produce.${framework}
+`;
+      case "cli":
+        return `
+TEST STRATEGY: cli
+Focus assertions on stdout and stderr text output from the CLI command.
+Assert about terminal output content, exit codes, and standard output/standard error streams.${framework}
+`;
+      case "e2e":
+        return `
+TEST STRATEGY: e2e
+Focus assertions on HTTP response content — status codes, response bodies, and endpoint behavior.
+Assert about HTTP responses, status codes, and API endpoint output.${framework}
+`;
+      default:
+        return framework ? `\nTEST FRAMEWORK: ${options.testFramework}\n` : "";
+    }
+  }
+
+  private buildRefinedExample(testStrategy?: RefinementPromptOptions["testStrategy"]): string {
+    switch (testStrategy) {
+      case "component":
+        return '"Text content visible on screen matches expected", "Rendered output contains expected element"';
+      case "cli":
+        return '"stdout contains expected text", "stderr is empty on success", "exit code is 0"';
+      case "e2e":
+        return '"HTTP status 200 returned", "Response body contains expected field", "Endpoint returns JSON"';
+      default:
+        return '"Array of length N returned", "HTTP status 200 returned"';
+    }
   }
 
   /** Prompt for executeTestFix() — instructs agent to fix failing test assertions. */
