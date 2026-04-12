@@ -70,7 +70,8 @@ function shouldDisplay(entry: LogEntry, mode: string): boolean {
   }
   if (mode === "verbose") return true;
 
-  // Normal mode: filter out debug logs
+  // Normal mode: filter out debug logs, but always show story.start/iteration.start
+  if (entry.stage === "story.start" || entry.stage === "iteration.start") return true;
   return entry.level !== "debug";
 }
 
@@ -255,9 +256,27 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
 
   let output = parts.join(" ");
 
-  // Include data in verbose mode
-  if (mode === "verbose" && entry.data && Object.keys(entry.data).length > 0) {
-    output += `\n${c.gray(JSON.stringify(entry.data, null, 2))}`;
+  // Always show key data fields (cost, duration, action, reason) in normal+ modes
+  const data = entry.data;
+  if (data && typeof data === "object") {
+    const meta: string[] = [];
+    if (typeof data.cost === "number" && data.cost > 0) meta.push(`${EMOJI.cost} ${formatCost(data.cost)}`);
+    if (typeof data.durationMs === "number" && data.durationMs > 0)
+      meta.push(`${EMOJI.duration} ${formatDuration(data.durationMs)}`);
+    if (typeof data.action === "string") meta.push(`action: ${data.action}`);
+    if (typeof data.reason === "string" && mode !== "quiet") meta.push(data.reason);
+    if (meta.length > 0) {
+      output += `  ${c.gray(meta.join("  "))}`;
+    }
+
+    // Full data dump only in verbose mode
+    if (mode === "verbose") {
+      // biome-ignore lint/suspicious/noExplicitAny: Intentional spread to filter known fields
+      const { cost: _c, durationMs: _d, action: _a, reason: _r, ...filtered } = data as any;
+      if (Object.keys(filtered).length > 0) {
+        output += `\n${c.gray(JSON.stringify(filtered, null, 2))}`;
+      }
+    }
   }
 
   return {
