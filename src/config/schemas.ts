@@ -271,13 +271,6 @@ const ConstitutionConfigSchema = z.object({
   skipGlobal: z.boolean().optional(),
 });
 
-const AnalyzeConfigSchema = z.object({
-  llmEnhanced: z.boolean(),
-  model: ConfiguredModelSchema,
-  fallbackToKeywords: z.boolean(),
-  maxCodebaseSummaryTokens: z.number().int().positive(),
-});
-
 const SemanticReviewConfigSchema = z.object({
   modelTier: ModelTierSchema.default("balanced"),
   /**
@@ -765,12 +758,6 @@ export const NaxConfigSchema = z
       enabled: true,
       path: "constitution.md",
       maxTokens: 2000,
-    }),
-    analyze: AnalyzeConfigSchema.default({
-      llmEnhanced: true,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 5000,
     }),
     review: ReviewConfigSchema.default({
       enabled: true,

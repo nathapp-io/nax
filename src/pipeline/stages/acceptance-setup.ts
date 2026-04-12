@@ -25,7 +25,7 @@ import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import { groupStoriesByPackage } from "../../acceptance/test-path";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
-import { type ModelDef, resolveConfiguredModel } from "../../config";
+import { type ModelDef, type ResolvedConfiguredModel, resolveConfiguredModel } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -225,13 +225,7 @@ export const acceptanceSetupStage: PipelineStage = {
     if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
-      let resolvedAcceptanceModel:
-        | {
-            agent: string;
-            modelDef: ModelDef;
-            modelTier?: string;
-          }
-        | undefined;
+      let resolvedAcceptanceModel: ResolvedConfiguredModel | undefined;
       try {
         resolvedAcceptanceModel = resolveConfiguredModel(
           ctx.rootConfig.models,

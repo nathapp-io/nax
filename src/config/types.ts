@@ -47,7 +47,6 @@ export type {
   AcceptanceConfig,
   AcceptanceFixConfig,
   AcceptanceTestStrategy,
-  AnalyzeConfig,
   AutoModeConfig,
   ConstitutionConfig,
   ContextAutoDetectConfig,

@@ -125,14 +125,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "constitution.maxTokens": "Maximum tokens allowed for constitution content",
   "constitution.skipGlobal": "Skip loading global constitution",
 
-  // Analyze
-  analyze: "Feature analysis settings",
-  "analyze.llmEnhanced": "Enable LLM-enhanced analysis",
-  "analyze.model":
-    'Model selector for decompose and classify. Accepts a tier string or an explicit object like { agent: "codex", model: "gpt-5.4" }.',
-  "analyze.fallbackToKeywords": "Fall back to keyword matching on LLM failure",
-  "analyze.maxCodebaseSummaryTokens": "Max tokens for codebase summary",
-
   // Review
   review: "Review phase configuration",
   "review.enabled": "Enable review phase",

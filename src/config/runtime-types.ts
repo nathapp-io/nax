@@ -238,18 +238,6 @@ export interface TddConfig {
 // Re-exported from constitution/types.ts to maintain single source of truth
 export type { ConstitutionConfig } from "../constitution/types";
 
-/** Analyze config */
-export interface AnalyzeConfig {
-  /** Enable LLM-enhanced analysis */
-  llmEnhanced: boolean;
-  /** Model selector for decompose+classify (tier string or explicit { agent, model }) */
-  model: ConfiguredModel;
-  /** Fall back to keyword matching on LLM failure */
-  fallbackToKeywords: boolean;
-  /** Max tokens for codebase summary */
-  maxCodebaseSummaryTokens: number;
-}
-
 // Re-exported from review/types.ts to maintain single source of truth
 export type { AdversarialReviewConfig, ReviewConfig } from "../review/types";
 
@@ -528,8 +516,6 @@ export interface NaxConfig {
   tdd: TddConfig;
   /** Constitution settings */
   constitution: ConstitutionConfig;
-  /** Analyze settings */
-  analyze: AnalyzeConfig;
   /** Review settings */
   review: ReviewConfig;
   /** Plan settings */

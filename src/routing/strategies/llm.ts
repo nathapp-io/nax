@@ -7,7 +7,7 @@
  */
 
 import type { AgentAdapter } from "../../agents";
-import type { NaxConfig } from "../../config";
+import type { ConfiguredModel, NaxConfig } from "../../config";
 import { resolveConfiguredModel } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
@@ -133,7 +133,7 @@ export const _llmStrategyDeps = {
  */
 async function callLlmOnce(
   adapter: AgentAdapter,
-  modelSelection: string | { agent: string; model: string },
+  modelSelection: ConfiguredModel,
   prompt: string,
   config: NaxConfig,
   timeoutMs: number,
@@ -171,7 +171,7 @@ async function callLlmOnce(
  */
 async function callLlm(
   adapter: AgentAdapter,
-  modelSelection: string | { agent: string; model: string },
+  modelSelection: ConfiguredModel,
   prompt: string,
   config: NaxConfig,
 ): Promise<string> {

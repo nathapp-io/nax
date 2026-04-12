@@ -41,13 +41,21 @@ import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
+import { errorMessage } from "../utils/errors";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
 
 function resolvePlanModelSelection(config: NaxConfig, preferredAgent: string) {
   const selection = config.plan?.model ?? "balanced";
   const defaultAgent = config.autoMode?.defaultAgent ?? preferredAgent;
-  return resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, preferredAgent, selection, defaultAgent);
+  try {
+    return resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, preferredAgent, selection, defaultAgent);
+  } catch (err) {
+    getLogger()?.warn("plan", "Failed to resolve plan model from config, falling back to defaults", {
+      error: errorMessage(err),
+    });
+    return resolveConfiguredModel(DEFAULT_CONFIG.models, preferredAgent, "balanced", defaultAgent);
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection (_planDeps) — override in tests

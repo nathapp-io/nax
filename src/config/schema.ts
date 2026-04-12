@@ -40,7 +40,6 @@ export type {
   QualityConfig,
   TddConfig,
   ConstitutionConfig,
-  AnalyzeConfig,
   ReviewConfig,
   PlanConfig,
   AcceptanceConfig,

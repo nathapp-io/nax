@@ -1,15 +1,8 @@
 /**
  * Analyze Module
  *
- * LLM-enhanced story classification with codebase scanning.
+ * Codebase scanning utilities used by planning.
  */
 
-export type {
-  CodebaseScan,
-  StoryClassification,
-  ClassifierResponse,
-  ClassificationMethod,
-  ClassificationResult,
-} from "./types";
-
+export type { CodebaseScan } from "./types";
 export { scanCodebase } from "./scanner";

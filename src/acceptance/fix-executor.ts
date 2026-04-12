@@ -7,8 +7,8 @@
 
 import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter, AgentRunOptions } from "../agents/types";
-import type { NaxConfig } from "../config/schema";
-import { resolveConfiguredModel } from "../config/schema-types";
+import type { NaxConfig } from "../config";
+import { resolveConfiguredModel } from "../config";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { DiagnosisResult } from "./types";
 

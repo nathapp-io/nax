@@ -16,6 +16,8 @@ export type {
   ModelDef,
   ModelEntry,
   ModelMap,
+  ConfiguredModel,
+  ConfiguredModelObject,
   ResolvedConfiguredModel,
   AutoModeConfig,
   ExecutionConfig,
