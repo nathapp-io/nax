@@ -25,6 +25,7 @@ import { resolveModelForAgent } from "../../config";
 import type { NaxConfig } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
+import { RectifierPromptBuilder } from "../../prompts";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
 import {
@@ -33,7 +34,6 @@ import {
 } from "../../verification/shared-rectification-loop";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
-import { buildReviewRectificationContinuation } from "./autofix-continuation";
 import { buildReviewRectificationPrompt } from "./autofix-prompts";
 export { buildReviewRectificationPrompt };
 
@@ -305,7 +305,7 @@ async function runAgentRectification(
       if (isSessionContinuation) {
         // Apply the same capping as buildProgressivePromptPreamble so the last attempt
         // always triggers urgency even when urgencyAtAttempt > maxAttempts.
-        return buildReviewRectificationContinuation(
+        return RectifierPromptBuilder.continuation(
           state.failedChecks,
           attempt,
           Math.min(rethinkAtAttempt, maxAttempts),

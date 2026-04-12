@@ -1,5 +1,5 @@
 /**
- * Unit tests for src/pipeline/stages/autofix-continuation.ts
+ * Unit tests for RectifierPromptBuilder.continuation (PROMPT-001).
  *
  * Tests cover:
  * 1. Continuation prompt contains error output from failedChecks
@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildReviewRectificationContinuation } from "../../../../src/pipeline/stages/autofix-continuation";
+import { RectifierPromptBuilder } from "../../../../src/prompts/builders/rectifier-builder";
 import type { ReviewCheckResult } from "../../../../src/review/types";
 
 // ---------------------------------------------------------------------------
@@ -56,9 +56,9 @@ const DEFAULTS = {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("buildReviewRectificationContinuation", () => {
+describe("RectifierPromptBuilder.continuation", () => {
   test("contains opening signal that this is a follow-up attempt", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "Unexpected token at line 10")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -72,7 +72,7 @@ describe("buildReviewRectificationContinuation", () => {
       makeCheck("typecheck", "src/index.ts(10,3): error TS2304: Cannot find name 'foo'"),
     ];
 
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       checks,
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -82,7 +82,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("contains check name and exit code in section header", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "some lint error", 2)],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -91,7 +91,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("contains structured findings when present", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheckWithFindings("semantic", "Semantic review failed")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -101,7 +101,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("does NOT include findings section when findings are absent", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "some lint error")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -110,7 +110,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("does NOT include rethink preamble before rethinkAtAttempt", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       1, // attempt 1 — below rethinkAtAttempt (2)
       2,
@@ -121,7 +121,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("includes rethink preamble at rethinkAtAttempt", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       2, // attempt == rethinkAtAttempt
       2,
@@ -132,7 +132,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("includes rethink preamble after rethinkAtAttempt", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       3, // attempt > rethinkAtAttempt
       2,
@@ -143,7 +143,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("does NOT include urgency preamble before urgencyAtAttempt", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       1, // attempt 1 — below urgencyAtAttempt (3)
       2,
@@ -154,7 +154,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("includes urgency preamble at urgencyAtAttempt", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       3, // attempt == urgencyAtAttempt
       2,
@@ -168,7 +168,7 @@ describe("buildReviewRectificationContinuation", () => {
   test("CONTRADICTION_ESCAPE_HATCH is present in every continuation prompt", () => {
     const attempts = [1, 2, 3];
     for (const attempt of attempts) {
-      const prompt = buildReviewRectificationContinuation(
+      const prompt = RectifierPromptBuilder.continuation(
         [makeCheck("lint", "error")],
         attempt,
         2,
@@ -180,7 +180,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("continuation prompt does NOT contain constitution", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -189,7 +189,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("continuation prompt does NOT contain 'acceptance criteria' section header", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("semantic", "AC-1 missing")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -199,7 +199,7 @@ describe("buildReviewRectificationContinuation", () => {
   });
 
   test("continuation prompt does NOT contain story title section", () => {
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -210,7 +210,7 @@ describe("buildReviewRectificationContinuation", () => {
 
   test("truncates long output to 4000 chars per check", () => {
     const longOutput = "z".repeat(10_000);
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", longOutput)],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
@@ -229,7 +229,7 @@ describe("buildReviewRectificationContinuation", () => {
       makeCheck("semantic", "semantic error output"),
     ];
 
-    const prompt = buildReviewRectificationContinuation(
+    const prompt = RectifierPromptBuilder.continuation(
       checks,
       ...Object.values(DEFAULTS) as [number, number, number],
     );

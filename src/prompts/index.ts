@@ -25,7 +25,7 @@ export { AcceptancePromptBuilder } from "./builders/acceptance-builder";
 export type { AcceptanceRole } from "./builders/acceptance-builder";
 
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
-export { RectifierPromptBuilder } from "./builders/rectifier-builder";
+export { RectifierPromptBuilder, CONTRADICTION_ESCAPE_HATCH } from "./builders/rectifier-builder";
 export type { RectifierTrigger, FailureRecord, ReviewFinding } from "./builders/rectifier-builder";
 
 // One-shot prompt builder — escape hatch for structurally trivial prompts.
