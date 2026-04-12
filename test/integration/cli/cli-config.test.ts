@@ -397,17 +397,6 @@ describe("Config Command", () => {
       expect(output).toContain("path:");
     });
 
-    test("covers analyze section", async () => {
-      const config = await loadConfig(tempDir);
-      await configCommand(config, { explain: true });
-
-      const output = consoleOutput.join("\n");
-
-      expect(output).toContain("analyze:");
-      expect(output).toContain("llmEnhanced:");
-      expect(output).toContain("model:");
-    });
-
     test("covers review section", async () => {
       const config = await loadConfig(tempDir);
       await configCommand(config, { explain: true });
@@ -1345,7 +1334,6 @@ describe("nax config (default view) - edge cases", () => {
     expect(parsed).toHaveProperty("quality");
     expect(parsed).toHaveProperty("tdd");
     expect(parsed).toHaveProperty("constitution");
-    expect(parsed).toHaveProperty("analyze");
     expect(parsed).toHaveProperty("review");
     expect(parsed).toHaveProperty("plan");
     expect(parsed).toHaveProperty("acceptance");

@@ -11,6 +11,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _planDeps, buildPlanningPrompt, planCommand } from "../../../src/cli/plan";
+import { DEFAULT_CONFIG } from "../../../src/config";
 import type { PRD } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
 
@@ -177,6 +178,50 @@ describe("planCommand", () => {
     const prompt = capturedCompleteArgs[0];
     expect(prompt).toContain("Codebase");
     expect(prompt).toContain("express");
+  });
+
+  test("uses explicit plan model selector to choose adapter and raw model id", async () => {
+    let receivedAgentName: string | undefined;
+    let receivedModel: string | undefined;
+
+    _planDeps.getAgent = mock((name: string) => {
+      receivedAgentName = name;
+      return {
+        complete: mock(async (_prompt: string, options?: { model?: string }) => {
+          receivedModel = options?.model;
+          return JSON.stringify(SAMPLE_PRD);
+        }),
+      } as ReturnType<typeof makeFakeAdapter> as never;
+    });
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      agent: {
+        ...DEFAULT_CONFIG.agent,
+        protocol: "cli",
+      },
+      models: {
+        ...DEFAULT_CONFIG.models,
+        codex: {
+          fast: { provider: "openai", model: "gpt-5.4-mini" },
+          balanced: { provider: "openai", model: "gpt-5.4" },
+          powerful: { provider: "openai", model: "gpt-5.5" },
+        },
+      },
+      plan: {
+        ...DEFAULT_CONFIG.plan,
+        model: { agent: "codex", model: "gpt-5.3-codex" },
+      },
+    } as const;
+
+    await planCommand(tmpDir, config as never, {
+      from: "/spec.md",
+      feature: "url-shortener",
+      auto: true,
+    });
+
+    expect(receivedAgentName).toBe("codex");
+    expect(receivedModel).toBe("gpt-5.3-codex");
   });
 
   test("AC-2: prompt includes output schema with prd.json structure", async () => {

@@ -21,6 +21,8 @@ export type {
 // Types and resolveModel
 export type {
   Complexity,
+  ConfiguredModel,
+  ConfiguredModelObject,
   TestStrategy,
   TddStrategy,
   EscalationEntry,
@@ -29,6 +31,7 @@ export type {
   ModelDef,
   ModelEntry,
   ModelMap,
+  ResolvedConfiguredModel,
   TierConfig,
   AutoModeConfig,
   RectificationConfig,
@@ -37,7 +40,6 @@ export type {
   QualityConfig,
   TddConfig,
   ConstitutionConfig,
-  AnalyzeConfig,
   ReviewConfig,
   PlanConfig,
   AcceptanceConfig,
@@ -63,7 +65,13 @@ export type {
   ProjectProfile,
 } from "./types";
 
-export { resolveModel, resolveModelForAgent } from "./types";
+export {
+  MODEL_SHORTHAND_TIERS,
+  isBuiltinModelTier,
+  resolveConfiguredModel,
+  resolveModel,
+  resolveModelForAgent,
+} from "./types";
 
 // Zod schemas
 export { NaxConfigSchema, AcceptanceConfigSchema } from "./schemas";

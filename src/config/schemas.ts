@@ -43,6 +43,11 @@ const ModelMapSchema = z.preprocess((val) => {
 }, PerAgentModelMapSchema);
 
 const ModelTierSchema = z.string().min(1, "Tier name must be non-empty");
+const ConfiguredModelObjectSchema = z.object({
+  agent: z.string().min(1, "agent must be non-empty"),
+  model: z.string().min(1, "model must be non-empty"),
+});
+const ConfiguredModelSchema = z.union([ModelTierSchema, ConfiguredModelObjectSchema]);
 
 const TierConfigSchema = z.object({
   tier: z.string().min(1, "Tier name must be non-empty"),
@@ -266,13 +271,6 @@ const ConstitutionConfigSchema = z.object({
   skipGlobal: z.boolean().optional(),
 });
 
-const AnalyzeConfigSchema = z.object({
-  llmEnhanced: z.boolean(),
-  model: ModelTierSchema,
-  fallbackToKeywords: z.boolean(),
-  maxCodebaseSummaryTokens: z.number().int().positive(),
-});
-
 const SemanticReviewConfigSchema = z.object({
   modelTier: ModelTierSchema.default("balanced"),
   /**
@@ -361,7 +359,7 @@ const ReviewConfigSchema = z.object({
 });
 
 const PlanConfigSchema = z.object({
-  model: ModelTierSchema,
+  model: ConfiguredModelSchema,
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
   timeoutSeconds: z.number().int().positive().default(600),
   /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
@@ -369,8 +367,8 @@ const PlanConfigSchema = z.object({
 });
 
 const AcceptanceFixConfigSchema = z.object({
-  diagnoseModel: z.string().min(1, "acceptance.fix.diagnoseModel must be non-empty").default("fast"),
-  fixModel: z.string().min(1, "acceptance.fix.fixModel must be non-empty").default("balanced"),
+  diagnoseModel: ConfiguredModelSchema.default("fast"),
+  fixModel: ConfiguredModelSchema.default("balanced"),
   strategy: z.enum(["diagnose-first", "implement-only"]).default("diagnose-first"),
   maxRetries: z.number().int().nonnegative().default(2),
 });
@@ -381,7 +379,7 @@ export const AcceptanceConfigSchema = z.object({
   generateTests: z.boolean(),
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
   command: z.string().optional(),
-  model: z.enum(["fast", "balanced", "powerful"]).default("fast"),
+  model: ConfiguredModelSchema.default("fast"),
   refinement: z.boolean().default(true),
   refinementConcurrency: z.number().int().min(1).max(10).default(3),
   redGate: z.boolean().default(true),
@@ -425,7 +423,7 @@ const ContextConfigSchema = z.object({
 });
 
 const LlmRoutingConfigSchema = z.object({
-  model: z.string().optional(),
+  model: ConfiguredModelSchema.optional(),
   fallbackToKeywords: z.boolean().optional(),
   cacheDecisions: z.boolean().optional(),
   mode: z.enum(["one-shot", "per-story", "hybrid"]).optional(),
@@ -760,12 +758,6 @@ export const NaxConfigSchema = z
       enabled: true,
       path: "constitution.md",
       maxTokens: 2000,
-    }),
-    analyze: AnalyzeConfigSchema.default({
-      llmEnhanced: true,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 5000,
     }),
     review: ReviewConfigSchema.default({
       enabled: true,

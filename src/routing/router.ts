@@ -9,6 +9,7 @@
 import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
+import { resolveConfiguredModel } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
@@ -283,7 +284,14 @@ export async function tryLlmBatchRoute(
   // PRD wins: skip stories that already have routing set (from plan or previous run)
   const needsRouting = stories.filter((s) => !(s.routing?.complexity && s.routing?.testStrategy));
   if (needsRouting.length === 0) return;
-  const resolvedAdapter = _deps.getAgent(config.execution?.agent ?? "claude", config);
+  const preferredAgent = config.execution?.agent ?? "claude";
+  const routingAgent = resolveConfiguredModel(
+    config.models,
+    preferredAgent,
+    config.routing.llm?.model ?? "fast",
+    config.autoMode.defaultAgent,
+  ).agent;
+  const resolvedAdapter = _deps.getAgent(routingAgent, config);
   if (!resolvedAdapter) return;
 
   const logger = getSafeLogger();

@@ -19,6 +19,7 @@ import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
+import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { ProjectProfile } from "../config/runtime-types";
 import {
@@ -40,8 +41,22 @@ import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
+import { errorMessage } from "../utils/errors";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
+
+function resolvePlanModelSelection(config: NaxConfig, preferredAgent: string) {
+  const selection = config.plan?.model ?? "balanced";
+  const defaultAgent = config.autoMode?.defaultAgent ?? preferredAgent;
+  try {
+    return resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, preferredAgent, selection, defaultAgent);
+  } catch (err) {
+    getLogger()?.warn("plan", "Failed to resolve plan model from config, falling back to defaults", {
+      error: errorMessage(err),
+    });
+    return resolveConfiguredModel(DEFAULT_CONFIG.models, preferredAgent, "balanced", defaultAgent);
+  }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection (_planDeps) — override in tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,7 +177,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const outputPath = join(outputDir, "prd.json");
   await _planDeps.mkdirp(outputDir);
 
-  const agentName = config?.autoMode?.defaultAgent ?? "claude";
+  const defaultAgentName = config?.autoMode?.defaultAgent ?? "claude";
 
   // Timeout: from plan config, or DEFAULT_TIMEOUT_SECONDS
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
@@ -237,25 +252,15 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     );
     const prompt = `${autoTaskCtx}\n\n${autoOutputFmt}`;
 
+    const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
+    const agentName = resolvedPlanModel.agent;
     const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-
-    let autoModel: string | undefined;
-    try {
-      const planTier = config?.plan?.model ?? "balanced";
-      const { resolveModelForAgent } = await import("../config/schema");
-      if (config?.models) {
-        const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
-        autoModel = resolveModelForAgent(config.models, defaultAgent, planTier, defaultAgent).model;
-      }
-    } catch {
-      // fall through — adapter will use its own fallback
-    }
 
     if (isAcp) {
       logger?.info("plan", "Starting ACP auto planning session", {
         agent: agentName,
-        model: autoModel ?? config?.plan?.model ?? "balanced",
+        model: resolvedPlanModel.modelDef.model,
         workdir,
         feature: options.feature,
         timeoutSeconds,
@@ -270,7 +275,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
             interactive: false,
             timeoutSeconds,
             config,
-            modelTier: config?.plan?.model ?? "balanced",
+            modelTier: resolvedPlanModel.modelTier,
+            modelDef: resolvedPlanModel.modelDef,
             dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
             maxInteractionTurns: config?.agent?.maxInteractionTurns,
             featureName: options.feature,
@@ -305,7 +311,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       // CLI: one-shot complete() — simple and fast, no session overhead
       const timeoutMs = (config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
       const completeResult = await adapter.complete(prompt, {
-        model: autoModel,
+        model: resolvedPlanModel.modelDef.model,
         jsonMode: true,
         workdir,
         config,
@@ -341,6 +347,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       config?.project,
     );
     const prompt = `${interactiveTaskCtx}\n\n${interactiveOutputFmt}`;
+    const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
+    const agentName = resolvedPlanModel.agent;
     const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     // Use configured interaction plugin (telegram/webhook/auto) if available;
@@ -356,10 +364,9 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
     const pidRegistry = new PidRegistry(workdir);
     const resolvedPerm = resolvePermissions(config, "plan");
-    const resolvedModel = config?.plan?.model ?? "balanced";
     logger?.info("plan", "Starting interactive planning session", {
       agent: agentName,
-      model: resolvedModel,
+      model: resolvedPlanModel.modelDef.model,
       permission: resolvedPerm.mode,
       workdir,
       feature: options.feature,
@@ -376,7 +383,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           timeoutSeconds,
           interactionBridge,
           config,
-          modelTier: resolvedModel,
+          modelTier: resolvedPlanModel.modelTier,
+          modelDef: resolvedPlanModel.modelDef,
           dangerouslySkipPermissions: resolvedPerm.skipPermissions,
           maxInteractionTurns: config?.agent?.maxInteractionTurns,
           featureName: options.feature,
@@ -784,7 +792,9 @@ export async function planDecomposeCommand(
 
   const siblings = prd.userStories.filter((s) => s.id !== options.storyId);
 
-  const agentName = config?.autoMode?.defaultAgent ?? "claude";
+  const defaultAgentName = config?.autoMode?.defaultAgent ?? "claude";
+  const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
+  const agentName = resolvedPlanModel.agent;
   const adapter = _planDeps.getAgent(agentName, config);
   if (!adapter) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
 
@@ -792,17 +802,7 @@ export async function planDecomposeCommand(
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
   const maxReplanAttempts = config?.precheck?.storySizeGate?.maxReplanAttempts ?? 3;
 
-  let decomposeModelDef: import("../config").ModelDef | undefined;
-  try {
-    const decomposeTier = config?.plan?.model ?? "balanced";
-    const { resolveModelForAgent } = await import("../config/schema");
-    if (config?.models) {
-      const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
-      decomposeModelDef = resolveModelForAgent(config.models, agentName, decomposeTier, defaultAgent);
-    }
-  } catch {
-    // fall through — adapter will use its own fallback
-  }
+  const decomposeModelDef: import("../config").ModelDef | undefined = resolvedPlanModel.modelDef;
 
   if (typeof (adapter as { decompose?: unknown }).decompose !== "function") {
     throw new NaxError(

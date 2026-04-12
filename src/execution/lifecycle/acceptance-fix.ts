@@ -16,6 +16,7 @@ import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import type { DiagnosisResult, SemanticVerdict } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import type { AgentAdapter } from "../../agents/types";
+import { resolveConfiguredModel } from "../../config";
 import { getSafeLogger } from "../../logger";
 import { isTestLevelFailure } from "./acceptance-helpers";
 import type { AcceptanceLoopContext } from "./acceptance-loop";
@@ -24,6 +25,7 @@ import type { AcceptanceLoopContext } from "./acceptance-loop";
 
 export interface ResolveAcceptanceDiagnosisOptions {
   agent: AgentAdapter;
+  getAgent?: (name: string) => AgentAdapter | undefined;
   failures: { failedACs: string[]; testOutput: string };
   totalACs: number;
   strategy: "diagnose-first" | "implement-only";
@@ -89,7 +91,14 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
   }
 
   // Slow path: full LLM diagnosis with previousFailure context
-  return await diagnoseAcceptanceFailure(agent, {
+  const diagnosisAgentName = resolveConfiguredModel(
+    diagnosisOpts.config.models,
+    diagnosisOpts.config.autoMode.defaultAgent,
+    diagnosisOpts.config.acceptance.fix.diagnoseModel,
+    diagnosisOpts.config.autoMode.defaultAgent,
+  ).agent;
+  const diagnosisAgent = opts.getAgent?.(diagnosisAgentName) ?? agent;
+  return await diagnoseAcceptanceFailure(diagnosisAgent, {
     ...diagnosisOpts,
     semanticVerdicts,
     previousFailure,
@@ -132,10 +141,15 @@ export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
   const { ctx, failures, diagnosis, previousFailure } = opts;
   const storyId = ctx.prd.userStories[0]?.id ?? "unknown";
 
-  const agentName = ctx.config.autoMode.defaultAgent;
-  const agent = (ctx.agentGetFn ?? _applyFixDeps.getAgent)(agentName);
+  const fixAgentName = resolveConfiguredModel(
+    ctx.config.models,
+    ctx.config.autoMode.defaultAgent,
+    ctx.config.acceptance.fix.fixModel,
+    ctx.config.autoMode.defaultAgent,
+  ).agent;
+  const agent = (ctx.agentGetFn ?? _applyFixDeps.getAgent)(fixAgentName);
   if (!agent) {
-    logger?.error("acceptance.applyFix", "Agent not found", { storyId, agentName });
+    logger?.error("acceptance.applyFix", "Agent not found", { storyId, agentName: fixAgentName });
     return { cost: 0 };
   }
 

@@ -7,8 +7,8 @@
 
 import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
-import type { NaxConfig } from "../config/schema";
-import { type ModelTier, resolveModelForAgent } from "../config/schema-types";
+import type { NaxConfig } from "../config";
+import { resolveConfiguredModel } from "../config";
 import { AcceptancePromptBuilder, MAX_FILE_LINES } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { DiagnosisResult, SemanticVerdict } from "./types";
@@ -73,11 +73,10 @@ export async function diagnoseAcceptanceFailure(
 
   const sessionName = buildSessionName(workdir, featureName, storyId, "diagnose");
 
-  const diagnoseModelTier = config.acceptance.fix.diagnoseModel;
-  const modelDef = resolveModelForAgent(
+  const resolvedModel = resolveConfiguredModel(
     config.models,
     config.autoMode.defaultAgent,
-    diagnoseModelTier as ModelTier,
+    config.acceptance.fix.diagnoseModel,
     config.autoMode.defaultAgent,
   );
 
@@ -100,15 +99,15 @@ export async function diagnoseAcceptanceFailure(
     const result = await agent.run({
       prompt,
       workdir,
-      modelTier: undefined as unknown as "fast" | "balanced" | "powerful",
-      modelDef,
+      modelTier: resolvedModel.modelTier ?? "fast",
+      modelDef: resolvedModel.modelDef,
       timeoutSeconds,
       sessionRole: "diagnose",
       acpSessionName: sessionName,
       featureName,
       storyId,
       config,
-    } as Parameters<AgentAdapter["run"]>[0]);
+    });
 
     const diagnosis = parseDiagnosisResult(result.output);
     if (diagnosis) {

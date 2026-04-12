@@ -25,7 +25,7 @@ import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import { groupStoriesByPackage } from "../../acceptance/test-path";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
-import { type ModelDef, resolveModelForAgent } from "../../config";
+import { type ModelDef, type ResolvedConfiguredModel, resolveConfiguredModel } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -225,7 +225,19 @@ export const acceptanceSetupStage: PipelineStage = {
     if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
-      const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(ctx.rootConfig.autoMode.defaultAgent);
+      let resolvedAcceptanceModel: ResolvedConfiguredModel | undefined;
+      try {
+        resolvedAcceptanceModel = resolveConfiguredModel(
+          ctx.rootConfig.models,
+          ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+          ctx.config.acceptance.model ?? "fast",
+          ctx.rootConfig.autoMode.defaultAgent,
+        );
+      } catch {
+        resolvedAcceptanceModel = undefined;
+      }
+      const agentName = resolvedAcceptanceModel?.agent ?? ctx.rootConfig.autoMode.defaultAgent;
+      const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(agentName);
 
       // Refine criteria per-story (preserves storyId association for per-group filtering)
       let allRefinedCriteria: RefinedCriterion[];
@@ -284,16 +296,14 @@ export const acceptanceSetupStage: PipelineStage = {
         const groupRefined = allRefinedCriteria.filter((r) => groupStoryIds.has(r.storyId));
 
         let modelDef: ModelDef;
-        try {
-          modelDef = resolveModelForAgent(
-            ctx.rootConfig.models,
-            ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
-            ctx.config.acceptance.model ?? "fast",
-            ctx.rootConfig.autoMode.defaultAgent,
-          );
-        } catch {
-          const tier = ctx.config.acceptance.model ?? "fast";
-          modelDef = { provider: "anthropic", model: tier } as ModelDef;
+        if (resolvedAcceptanceModel) {
+          modelDef = resolvedAcceptanceModel.modelDef;
+        } else {
+          const selection = ctx.config.acceptance.model ?? "fast";
+          modelDef = {
+            provider: "unknown",
+            model: typeof selection === "string" ? selection : selection.model,
+          } as ModelDef;
         }
 
         const result = await _acceptanceSetupDeps.generate(group.stories, groupRefined, {
@@ -301,7 +311,7 @@ export const acceptanceSetupStage: PipelineStage = {
           workdir: packageDir,
           featureDir: ctx.featureDir,
           codebaseContext: "",
-          modelTier: ctx.config.acceptance.model ?? "fast",
+          modelTier: resolvedAcceptanceModel?.modelTier ?? "fast",
           modelDef,
           config: ctx.config,
           testStrategy: ctx.config.acceptance.testStrategy,

@@ -49,7 +49,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "routing.adaptive.costThreshold": "Cost threshold for strategy switching (0-1)",
   "routing.adaptive.fallbackStrategy": "Fallback strategy if adaptive fails",
   "routing.llm": "LLM-based routing settings",
-  "routing.llm.model": "Model tier for routing decisions",
+  "routing.llm.model":
+    'Model selector for routing decisions. Accepts a tier string (for example "fast") or an explicit object like { agent: "codex", model: "gpt-5.4" }.',
   "routing.llm.fallbackToKeywords": "Fall back to keyword routing on LLM failure",
   "routing.llm.cacheDecisions": "Cache routing decisions per story ID",
   "routing.llm.mode": "Routing mode: one-shot | per-story | hybrid",
@@ -124,13 +125,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "constitution.maxTokens": "Maximum tokens allowed for constitution content",
   "constitution.skipGlobal": "Skip loading global constitution",
 
-  // Analyze
-  analyze: "Feature analysis settings",
-  "analyze.llmEnhanced": "Enable LLM-enhanced analysis",
-  "analyze.model": "Model tier for decompose and classify",
-  "analyze.fallbackToKeywords": "Fall back to keyword matching on LLM failure",
-  "analyze.maxCodebaseSummaryTokens": "Max tokens for codebase summary",
-
   // Review
   review: "Review phase configuration",
   "review.enabled": "Enable review phase",
@@ -150,7 +144,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Plan
   plan: "Planning phase configuration",
-  "plan.model": "Model tier for planning",
+  "plan.model":
+    'Model selector for planning. Accepts a tier string or an explicit object like { agent: "codex", model: "gpt-5.4" }.',
   "plan.outputPath": "Output path for generated spec (relative to nax/)",
 
   // Acceptance
@@ -162,7 +157,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "acceptance.command":
     "Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path (default: 'bun test {{FILE}} --timeout=60000')",
   "acceptance.model":
-    "Model tier for acceptance generation/refinement LLM calls (fast | balanced | powerful). Default: fast.",
+    'Model selector for acceptance generation/refinement LLM calls. Accepts a tier string such as "fast", "balanced", or "powerful", or an explicit object like { agent: "codex", model: "gpt-5.4" }. Default: "fast".',
   "acceptance.refinement":
     "Enable acceptance criteria refinement step before execution (default: true). Disable to skip refinement and use generated criteria as-is.",
   "acceptance.timeoutMs": "Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min)",

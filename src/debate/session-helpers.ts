@@ -1,8 +1,8 @@
 import { buildSessionName } from "../agents/acp/adapter";
 import { createAgentRegistry, getAgent } from "../agents/registry";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
-import type { ModelTier, NaxConfig } from "../config";
-import { DEFAULT_CONFIG, resolveModel, resolveModelForAgent } from "../config";
+import type { ModelTier, NaxConfig, ResolvedConfiguredModel } from "../config";
+import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelDef } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
@@ -91,12 +91,11 @@ export const _debateSessionDeps = {
 
 /** Resolve the model string for a debater. Defaults to "fast" tier; falls back to raw model string on config error. */
 export function resolveDebaterModel(debater: Debater, config: NaxConfig): string | undefined {
-  const tier = debater.model ?? "fast";
+  const modelSelection = { agent: debater.agent, model: debater.model ?? "fast" };
   if (!config?.models) return debater.model;
   try {
     const defaultAgent = config.autoMode?.defaultAgent ?? debater.agent;
-    const modelDef = resolveModelForAgent(config.models, debater.agent, tier, defaultAgent);
-    return modelDef.model;
+    return resolveConfiguredModel(config.models, debater.agent, modelSelection, defaultAgent).modelDef.model;
   } catch {
     // Config resolution failed — return raw model string as fallback (backward compat)
     return debater.model;
@@ -130,10 +129,6 @@ export function modelTierFromDebater(debater: Debater): ModelTier {
   return "fast";
 }
 
-export function isTierLabel(value: string): value is ModelTier {
-  return value === "fast" || value === "balanced" || value === "powerful";
-}
-
 export async function runComplete(
   adapter: AgentAdapter,
   prompt: string,
@@ -160,45 +155,28 @@ export function pipelineStageForDebate(stage: string): PipelineStage {
   }
 }
 
-/** Common model shorthand aliases → tier mapping for debater config convenience */
-const MODEL_SHORTHAND_TIERS: Record<string, ModelTier> = {
-  haiku: "fast",
-  sonnet: "balanced",
-  opus: "powerful",
-};
-
 export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, config: NaxConfig): ModelDef {
-  const modelOverride = debater.model;
-  let effectiveTier = tier;
-  if (modelOverride) {
-    // Check alias first (haiku/sonnet/opus → fast/balanced/powerful).
-    const aliasedTier = MODEL_SHORTHAND_TIERS[modelOverride.toLowerCase()];
-    if (aliasedTier) {
-      // Shorthand alias — resolve through config.models with the mapped tier.
-      effectiveTier = aliasedTier;
-    } else if (!isTierLabel(modelOverride)) {
-      // Full model ID (e.g. "claude-haiku-4-5-20251001") — pass through directly.
-      return resolveModel(modelOverride);
-    }
-    // Explicit tier label (fast/balanced/powerful) — fall through to config-based resolution.
-  }
-
   const configModels = config?.models ?? DEFAULT_CONFIG.models;
   const configDefaultAgent = config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
 
   try {
-    return resolveModelForAgent(configModels, debater.agent, effectiveTier, configDefaultAgent);
+    return resolveConfiguredModel(
+      configModels,
+      debater.agent,
+      { agent: debater.agent, model: debater.model ?? tier },
+      configDefaultAgent,
+    ).modelDef;
   } catch {
     // Fall through to secondary fallback strategies.
   }
 
   try {
-    return resolveModelForAgent(
+    return resolveConfiguredModel(
       DEFAULT_CONFIG.models,
+      debater.agent,
+      { agent: debater.agent, model: debater.model ?? tier },
       DEFAULT_CONFIG.autoMode.defaultAgent,
-      effectiveTier,
-      DEFAULT_CONFIG.autoMode.defaultAgent,
-    );
+    ).modelDef;
   } catch {
     return resolveModelForAgent(configModels, debater.agent, "fast", configDefaultAgent);
   }
@@ -320,19 +298,29 @@ export async function resolveOutcome(
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
     const adapter = _debateSessionDeps.getAgent(agentName, config);
     if (adapter) {
+      const configModels = config?.models ?? DEFAULT_CONFIG.models;
+      const configDefaultAgent = config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
       const synthesisSessionName =
         workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "synthesis") : undefined;
       const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
-      const resolverTier: ModelTier =
-        (resolverConfig.model && MODEL_SHORTHAND_TIERS[resolverConfig.model.toLowerCase()]) ||
-        modelTierFromDebater(resolverDebater);
-      const resolverModelDef = resolveModelDefForDebater(resolverDebater, resolverTier, config);
+      const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
+      let resolvedResolverModel: ResolvedConfiguredModel;
+      try {
+        resolvedResolverModel = resolveConfiguredModel(configModels, agentName, resolverSelection, configDefaultAgent);
+      } catch {
+        resolvedResolverModel = {
+          agent: agentName,
+          modelDef: { provider: "unknown", model: resolverSelection.model } as ModelDef,
+          modelTier: modelTierFromDebater(resolverDebater),
+        };
+      }
+      const resolverTier = resolvedResolverModel.modelTier ?? modelTierFromDebater(resolverDebater);
       const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
         adapter,
         promptSuffix,
         debaters,
         completeOptions: {
-          model: resolverModelDef.model,
+          model: resolvedResolverModel.modelDef.model,
           modelTier: resolverTier,
           config,
           storyId,
@@ -354,19 +342,29 @@ export async function resolveOutcome(
 
   if (resolverConfig.type === "custom") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
+    const configModels = config?.models ?? DEFAULT_CONFIG.models;
+    const configDefaultAgent = config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
     const judgeSessionName =
       workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "judge") : undefined;
     const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
-    const resolverTier: ModelTier =
-      (resolverConfig.model && MODEL_SHORTHAND_TIERS[resolverConfig.model.toLowerCase()]) ||
-      modelTierFromDebater(resolverDebater);
-    const resolverModelDef = resolveModelDefForDebater(resolverDebater, resolverTier, config);
+    const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
+    let resolvedResolverModel: ResolvedConfiguredModel;
+    try {
+      resolvedResolverModel = resolveConfiguredModel(configModels, agentName, resolverSelection, configDefaultAgent);
+    } catch {
+      resolvedResolverModel = {
+        agent: agentName,
+        modelDef: { provider: "unknown", model: resolverSelection.model } as ModelDef,
+        modelTier: modelTierFromDebater(resolverDebater),
+      };
+    }
+    const resolverTier = resolvedResolverModel.modelTier ?? modelTierFromDebater(resolverDebater);
     const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
       getAgent: (name: string) => _debateSessionDeps.getAgent(name, config),
       defaultAgentName: RESOLVER_FALLBACK_AGENT,
       debaters,
       completeOptions: {
-        model: resolverModelDef.model,
+        model: resolvedResolverModel.modelDef.model,
         modelTier: resolverTier,
         config,
         storyId,

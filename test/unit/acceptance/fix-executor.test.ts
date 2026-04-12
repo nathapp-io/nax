@@ -304,7 +304,7 @@ describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", ()
     expect(runCall.modelDef).toEqual(expectedModelDef);
   });
 
-  test("never passes raw tier name to adapter — always resolved via resolveModelForAgent", async () => {
+  test("passes resolved model metadata to adapter rather than a raw unresolved tier string", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -318,7 +318,7 @@ describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", ()
       acceptanceTestPath: "/tmp/test/acceptance.test.ts",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.modelTier).toBeUndefined();
+    expect(runCall.modelTier).toBe("balanced");
     expect(runCall.modelDef.provider).toBeDefined();
     expect(runCall.modelDef.model).toBeDefined();
   });

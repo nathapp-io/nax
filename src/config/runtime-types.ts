@@ -9,6 +9,7 @@ import type { ConstitutionConfig } from "../constitution/types";
 import type { ReviewConfig } from "../review/types";
 import type {
   Complexity,
+  ConfiguredModel,
   LlmRoutingMode,
   ModelTier,
   ModelsConfig,
@@ -237,25 +238,13 @@ export interface TddConfig {
 // Re-exported from constitution/types.ts to maintain single source of truth
 export type { ConstitutionConfig } from "../constitution/types";
 
-/** Analyze config */
-export interface AnalyzeConfig {
-  /** Enable LLM-enhanced analysis */
-  llmEnhanced: boolean;
-  /** Model tier for decompose+classify (default: balanced) */
-  model: ModelTier;
-  /** Fall back to keyword matching on LLM failure */
-  fallbackToKeywords: boolean;
-  /** Max tokens for codebase summary */
-  maxCodebaseSummaryTokens: number;
-}
-
 // Re-exported from review/types.ts to maintain single source of truth
 export type { AdversarialReviewConfig, ReviewConfig } from "../review/types";
 
 /** Plan config */
 export interface PlanConfig {
-  /** Model tier for planning (default: balanced) */
-  model: ModelTier;
+  /** Model selector for planning (tier string or explicit { agent, model }) */
+  model: ConfiguredModel;
   /** Output path for generated spec (relative to nax/ directory) */
   outputPath: string;
   /** Timeout for plan sessions in seconds (default: 600) */
@@ -269,10 +258,10 @@ export type AcceptanceTestStrategy = "unit" | "component" | "cli" | "e2e" | "sna
 
 /** Acceptance fix config (US-001) */
 export interface AcceptanceFixConfig {
-  /** Model tier for diagnosis (default: "fast") */
-  diagnoseModel: string;
-  /** Model tier for fix implementation (default: "balanced") */
-  fixModel: string;
+  /** Model selector for diagnosis (tier string or explicit { agent, model }) */
+  diagnoseModel: ConfiguredModel;
+  /** Model selector for fix implementation (tier string or explicit { agent, model }) */
+  fixModel: ConfiguredModel;
   /** Fix strategy (default: "diagnose-first") */
   strategy: "diagnose-first" | "implement-only";
   /** @deprecated Ignored — outer loop controls retries via acceptance.maxRetries. Kept for backward compat. */
@@ -289,8 +278,8 @@ export interface AcceptanceConfig {
   generateTests: boolean;
   /** Path to acceptance test file (relative to feature directory) */
   testPath: string;
-  /** Model tier for AC refinement LLM calls (default: "fast") */
-  model: ModelTier;
+  /** Model selector for AC refinement/generation calls (tier string or explicit { agent, model }) */
+  model: ConfiguredModel;
   /** Whether to LLM-refine acceptance criteria before generating tests (default: true) */
   refinement: boolean;
   /** Max concurrent refinement LLM calls (default: 3) */
@@ -429,8 +418,8 @@ export interface AdaptiveRoutingConfig {
 
 /** LLM routing config */
 export interface LlmRoutingConfig {
-  /** Model tier for routing call (default: "fast") */
-  model?: string;
+  /** Model selector for routing call (tier string or explicit { agent, model }) */
+  model?: ConfiguredModel;
   /** Fall back to keyword strategy on LLM failure (default: true) */
   fallbackToKeywords?: boolean;
   /** Max input tokens for story context (default: 2000) */
@@ -527,8 +516,6 @@ export interface NaxConfig {
   tdd: TddConfig;
   /** Constitution settings */
   constitution: ConstitutionConfig;
-  /** Analyze settings */
-  analyze: AnalyzeConfig;
   /** Review settings */
   review: ReviewConfig;
   /** Plan settings */
