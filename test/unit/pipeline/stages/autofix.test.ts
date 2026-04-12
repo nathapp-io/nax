@@ -366,7 +366,7 @@ describe("autofixStage", () => {
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toContain("Rethink your approach");
     expect(prompts[1]).toContain("Rethink your approach");
-    expect(prompts[1]).toContain("Final Autofix Attempt Before Escalation");
+    expect(prompts[1]).toContain("URGENT");
   });
 
   test("injects urgency and rethink when urgencyAtAttempt is reached", async () => {
@@ -402,7 +402,7 @@ describe("autofixStage", () => {
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toContain("Rethink your approach");
     expect(prompts[1]).toContain("Rethink your approach");
-    expect(prompts[1]).toContain("Final Autofix Attempt Before Escalation");
+    expect(prompts[1]).toContain("URGENT");
   });
 
   test("uses default rethink and urgency thresholds when autofix escalation config is not set", async () => {
@@ -439,6 +439,6 @@ describe("autofixStage", () => {
     expect(prompts[0]).not.toContain("Rethink your approach");
     expect(prompts[0]).not.toContain("Final Autofix Attempt Before Escalation");
     expect(prompts[1]).toContain("Rethink your approach");
-    expect(prompts[1]).toContain("Final Autofix Attempt Before Escalation");
+    expect(prompts[1]).toContain("URGENT");
   });
 });

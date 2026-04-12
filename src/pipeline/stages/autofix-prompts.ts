@@ -26,7 +26,7 @@ export interface DialogueAwarePromptOptions {
  * "UNRESOLVED: <explanation>" in the agent output and escalates instead
  * of retrying — avoiding an infinite loop on an unresolvable conflict.
  */
-const CONTRADICTION_ESCAPE_HATCH = `
+export const CONTRADICTION_ESCAPE_HATCH = `
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>`;
