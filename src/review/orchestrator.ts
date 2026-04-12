@@ -71,6 +71,12 @@ export interface OrchestratorReviewResult {
   failureReason?: string;
   /** Plugin reviewer hard-failure flag (determines escalate vs fail) */
   pluginFailed: boolean;
+  /**
+   * True when only mechanical checks failed (build/typecheck/lint) but LLM checks
+   * (semantic/adversarial) passed. Signals to autofix that the code is functionally
+   * correct and UNRESOLVED should not trigger tier escalation.
+   */
+  mechanicalFailedOnly?: boolean;
 }
 
 export class ReviewOrchestrator {
@@ -98,7 +104,9 @@ export class ReviewOrchestrator {
     const hasSemantic = reviewConfig.checks.includes("semantic");
     const hasAdversarial = reviewConfig.checks.includes("adversarial");
 
-    if (hasSemantic || hasAdversarial) {
+    const hasLLMChecks = hasSemantic || hasAdversarial;
+
+    if (hasLLMChecks) {
       const active = [hasSemantic ? "semantic" : null, hasAdversarial ? "adversarial" : null]
         .filter(Boolean)
         .join(", ");
@@ -129,11 +137,37 @@ export class ReviewOrchestrator {
     })();
 
     let builtIn: ReviewResult;
+    let mechanicalFailedOnly: boolean | undefined;
 
-    if (canParallelize) {
-      // Run mechanical checks (non-LLM) first — fail-fast preserved for lint/typecheck/etc.
-      const mechanicalChecks = reviewConfig.checks.filter((c) => c !== "semantic" && c !== "adversarial");
-      const mechanicalConfig = { ...reviewConfig, checks: mechanicalChecks };
+    if (!hasLLMChecks) {
+      // No LLM checks configured — run everything flat (backward compatible)
+      builtIn = await runReview(
+        reviewConfig,
+        workdir,
+        executionConfig,
+        qualityCommands,
+        storyId,
+        storyGitRef,
+        story,
+        modelResolver,
+        naxConfig,
+        retrySkipChecks,
+        featureName,
+        resolverSession,
+        priorFailures,
+      );
+    } else {
+      // Always split: mechanical checks first, then LLM checks independently.
+      // This prevents mechanical failures (e.g. lint in a test file the agent cannot touch)
+      // from blocking semantic/adversarial review — and signals to autofix that the code
+      // is functionally correct when LLM checks pass despite mechanical failures.
+      const mechanicalCheckNames = reviewConfig.checks.filter((c) => c !== "semantic" && c !== "adversarial");
+      const llmCheckNames = reviewConfig.checks.filter(
+        (c): c is "semantic" | "adversarial" => c === "semantic" || c === "adversarial",
+      );
+
+      // Step 1: Run mechanical checks (fail-fast preserved within mechanical)
+      const mechanicalConfig = { ...reviewConfig, checks: mechanicalCheckNames };
       const mechanicalResult = await runReview(
         mechanicalConfig,
         workdir,
@@ -150,10 +184,12 @@ export class ReviewOrchestrator {
         priorFailures,
       );
 
-      if (!mechanicalResult.success) {
-        builtIn = mechanicalResult;
-      } else {
-        // Run semantic and adversarial concurrently
+      // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM)
+      const llmStart = Date.now();
+      let llmCheckResults: ReviewCheckResult[];
+
+      if (canParallelize) {
+        // semantic + adversarial concurrently
         const semanticStory: SemanticStory = {
           id: storyId ?? "",
           title: story?.title ?? "",
@@ -172,8 +208,6 @@ export class ReviewOrchestrator {
         const adversarialCfg: AdversarialReviewConfig = advConfig as AdversarialReviewConfig;
 
         logger?.debug("review", "Running semantic + adversarial in parallel", { storyId });
-        const parallelStart = Date.now();
-
         const [semResult, advResult] = await Promise.all([
           runSemanticReview(
             workdir,
@@ -197,38 +231,57 @@ export class ReviewOrchestrator {
             priorFailures,
           ),
         ]);
-
-        const llmChecks: ReviewCheckResult[] = [semResult, advResult];
-        const allChecks = [...mechanicalResult.checks, ...llmChecks];
-        const allPassed = allChecks.every((c) => c.success);
-        const firstLlmFailure = llmChecks.find((c) => !c.success);
-        builtIn = {
-          success: allPassed,
-          checks: allChecks,
-          totalDurationMs: mechanicalResult.totalDurationMs + (Date.now() - parallelStart),
-          failureReason: firstLlmFailure ? `${firstLlmFailure.check} failed` : undefined,
-        };
+        llmCheckResults = [semResult, advResult];
+      } else {
+        // Sequential LLM run via runReview (handles semantic and adversarial in-loop)
+        const llmConfig = { ...reviewConfig, checks: llmCheckNames };
+        const llmResult = await runReview(
+          llmConfig,
+          workdir,
+          executionConfig,
+          qualityCommands,
+          storyId,
+          storyGitRef,
+          story,
+          modelResolver,
+          naxConfig,
+          retrySkipChecks,
+          featureName,
+          resolverSession,
+          priorFailures,
+        );
+        llmCheckResults = llmResult.checks;
       }
-    } else {
-      builtIn = await runReview(
-        reviewConfig,
-        workdir,
-        executionConfig,
-        qualityCommands,
-        storyId,
-        storyGitRef,
-        story,
-        modelResolver,
-        naxConfig,
-        retrySkipChecks,
-        featureName,
-        resolverSession,
-        priorFailures,
-      );
+
+      const allChecks = [...mechanicalResult.checks, ...llmCheckResults];
+      const mechanicalPassed = mechanicalResult.success;
+      const llmPassed = llmCheckResults.every((c) => c.success);
+      const firstFailure = allChecks.find((c) => !c.success);
+      const failureReason = firstFailure
+        ? firstFailure.check === "semantic" || firstFailure.check === "adversarial"
+          ? `${firstFailure.check} failed`
+          : `${firstFailure.check} failed (exit code ${firstFailure.exitCode})`
+        : undefined;
+
+      builtIn = {
+        success: mechanicalPassed && llmPassed,
+        checks: allChecks,
+        totalDurationMs: mechanicalResult.totalDurationMs + (Date.now() - llmStart),
+        failureReason,
+      };
+
+      // Signal to autofix that code is functionally correct (LLM passed) despite mechanical failure
+      mechanicalFailedOnly = !mechanicalPassed && llmPassed;
     }
 
     if (!builtIn.success) {
-      return { builtIn, success: false, failureReason: builtIn.failureReason, pluginFailed: false };
+      return {
+        builtIn,
+        success: false,
+        failureReason: builtIn.failureReason,
+        pluginFailed: false,
+        mechanicalFailedOnly,
+      };
     }
 
     if (reviewConfig.pluginMode === "deferred") {

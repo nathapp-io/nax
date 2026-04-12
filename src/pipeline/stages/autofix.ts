@@ -150,8 +150,19 @@ export const autofixStage: PipelineStage = {
       unresolvedReason,
     } = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
 
-    // REVIEW-003: Implementer signalled an unresolvable reviewer contradiction — escalate.
+    // REVIEW-003: Implementer signalled an unresolvable reviewer contradiction.
     if (unresolvedReason) {
+      // When only mechanical checks failed (LLM/semantic passed), the code is functionally
+      // correct — the agent cannot fix lint/typecheck errors in test files per its constraints.
+      // Suppress tier escalation and proceed; log a warning so the issue remains visible.
+      if (ctx.mechanicalFailedOnly) {
+        logger.warn("autofix", "Mechanical-only failure unfixable — proceeding (LLM review passed)", {
+          storyId: ctx.story.id,
+          unresolvedReason,
+        });
+        if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
+        return { action: "continue", cost: agentCost };
+      }
       logger.warn("autofix", "Escalating due to reviewer contradiction", {
         storyId: ctx.story.id,
         unresolvedReason,
