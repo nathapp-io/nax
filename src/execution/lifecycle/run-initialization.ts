@@ -208,10 +208,24 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
             stdout: "pipe",
             stderr: "pipe",
           });
-          await proc.exited;
-          logger?.info("worktree", "Cleaned up old branch for re-run", { storyId: story.id });
+          const exitCode = await proc.exited;
+          if (exitCode === 0) {
+            logger?.info("worktree", "Cleaned up old branch for re-run", { storyId: story.id });
+          } else {
+            const stderr = await new Response(proc.stderr).text();
+            if (!stderr.includes("not found")) {
+              // Unexpected failure — warn but continue. If branch still exists, worktreeManager.create()
+              // will crash on the next run with "branch already exists".
+              logger?.warn("worktree", "Failed to clean up old branch for re-run (non-fatal)", {
+                storyId: story.id,
+                branch: `nax/${story.id}`,
+                stderr: stderr.trim(),
+              });
+            }
+            // "not found" → branch never existed (story failed before worktree creation) — silently skip
+          }
         } catch {
-          // Branch may not exist (e.g. story failed before worktree was created) — non-fatal
+          // Spawn failure — non-fatal, log nothing (branch may not exist)
         }
       }
     }
