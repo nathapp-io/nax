@@ -15,6 +15,12 @@ export interface LogEntry {
   stage: string;
   /** Optional story identifier for context */
   storyId?: string;
+  /**
+   * Optional session role for parallel review log correlation.
+   * Set to "reviewer-semantic" or "reviewer-adversarial" on review-stage log entries
+   * so parallel sessions can be attributed in JSONL output without ambiguity.
+   */
+  sessionRole?: string;
   /** Human-readable message */
   message: string;
   /** Optional structured metadata */

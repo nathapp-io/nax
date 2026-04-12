@@ -34,6 +34,8 @@ import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 const CLARIFY_REGEX = /^CLARIFY:\s*(.+)$/ms;
+/** Matches the REVIEW-003 reviewer contradiction escape hatch emitted by the implementer. */
+const UNRESOLVED_REGEX = /^UNRESOLVED:\s*(.+)$/ms;
 
 export const autofixStage: PipelineStage = {
   name: "autofix",
@@ -138,12 +140,21 @@ export const autofixStage: PipelineStage = {
     }
 
     // Phase 2: Agent rectification — spawn agent with review error context
-    const { succeeded: agentFixed, cost: agentCost } = await _autofixDeps.runAgentRectification(
-      ctx,
-      lintFixCmd,
-      formatFixCmd,
-      ctx.workdir,
-    );
+    const {
+      succeeded: agentFixed,
+      cost: agentCost,
+      unresolvedReason,
+    } = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
+
+    // REVIEW-003: Implementer signalled an unresolvable reviewer contradiction — escalate.
+    if (unresolvedReason) {
+      logger.warn("autofix", "Escalating due to reviewer contradiction", {
+        storyId: ctx.story.id,
+        unresolvedReason,
+      });
+      return { action: "escalate", reason: `Reviewer contradiction: ${unresolvedReason}`, cost: agentCost };
+    }
+
     if (agentFixed) {
       if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
       // #136: Skip checks that already passed — only re-run checks that originally failed.
@@ -229,7 +240,7 @@ async function runAgentRectification(
   lintFixCmd: string | undefined,
   formatFixCmd: string | undefined,
   effectiveWorkdir: string,
-): Promise<{ succeeded: boolean; cost: number }> {
+): Promise<{ succeeded: boolean; cost: number; unresolvedReason?: string }> {
   const logger = getLogger();
   const maxPerCycle = ctx.config.quality.autofix?.maxAttempts ?? 2;
   const maxTotal = ctx.config.quality.autofix?.maxTotalAttempts ?? 10;
@@ -263,6 +274,7 @@ async function runAgentRectification(
     failedChecks,
   };
   let autofixCostAccum = 0;
+  let unresolvedReason: string | undefined;
 
   const succeeded = await runSharedRectificationLoop({
     stage: "autofix",
@@ -327,6 +339,20 @@ async function runAgentRectification(
       });
 
       autofixCostAccum += result.estimatedCost ?? 0;
+
+      // REVIEW-003: Detect UNRESOLVED signal — reviewer findings contradict each other.
+      // Escalate immediately rather than retrying an unresolvable conflict.
+      if (result.output) {
+        const unresolvedMatch = UNRESOLVED_REGEX.exec(result.output);
+        if (unresolvedMatch) {
+          unresolvedReason = (unresolvedMatch[1] ?? "reviewer findings contradicted each other").trim();
+          logger.warn("autofix", "Implementer signalled reviewer contradiction — escalating", {
+            storyId: ctx.story.id,
+            unresolvedReason,
+          });
+          throw new Error("AUTOFIX_UNRESOLVED");
+        }
+      }
 
       // AC5/AC6/AC10: Detect CLARIFY blocks and relay to reviewerSession
       if (ctx.reviewerSession && result.output) {
@@ -416,10 +442,13 @@ async function runAgentRectification(
     if (error instanceof Error && error.message === "AUTOFIX_AGENT_NOT_FOUND") {
       return false;
     }
+    if (error instanceof Error && error.message === "AUTOFIX_UNRESOLVED") {
+      return false;
+    }
     throw error;
   });
 
-  return { succeeded, cost: autofixCostAccum };
+  return { succeeded, cost: autofixCostAccum, unresolvedReason };
 }
 
 /**
@@ -435,5 +464,6 @@ export const _autofixDeps = {
     lintFixCmd: string | undefined,
     formatFixCmd: string | undefined,
     effectiveWorkdir: string,
-  ) => runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir),
+  ): Promise<{ succeeded: boolean; cost: number; unresolvedReason?: string }> =>
+    runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir),
 };

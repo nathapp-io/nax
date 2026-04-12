@@ -16,9 +16,11 @@ import { getSafeLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import { errorMessage } from "../utils/errors";
+import { runAdversarialReview } from "./adversarial";
 import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
-import type { ReviewConfig, ReviewResult } from "./types";
+import { runSemanticReview } from "./semantic";
+import type { AdversarialReviewConfig, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 /**
  * Injectable dependencies for getChangedFiles() — allows tests to intercept
@@ -92,21 +94,138 @@ export class ReviewOrchestrator {
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
-    const builtIn = await runReview(
-      reviewConfig,
-      workdir,
-      executionConfig,
-      qualityCommands,
-      storyId,
-      storyGitRef,
-      story,
-      modelResolver,
-      naxConfig,
-      retrySkipChecks,
-      featureName,
-      resolverSession,
-      priorFailures,
-    );
+    // Detect which LLM-based reviewers are active (groundwork for Phase 4 parallel dispatch).
+    const hasSemantic = reviewConfig.checks.includes("semantic");
+    const hasAdversarial = reviewConfig.checks.includes("adversarial");
+
+    if (hasSemantic || hasAdversarial) {
+      const active = [hasSemantic ? "semantic" : null, hasAdversarial ? "adversarial" : null]
+        .filter(Boolean)
+        .join(", ");
+      logger?.debug("review", `LLM reviewers active: ${active}`, { storyId });
+    }
+
+    // Phase 4: Parallel dispatch for semantic + adversarial when advConfig.parallel === true
+    // and the combined session count does not exceed maxConcurrentSessions.
+    const advConfig = reviewConfig.adversarial;
+    const canParallelize = (() => {
+      if (!hasSemantic || !hasAdversarial || !advConfig?.parallel) return false;
+      const semSessions =
+        naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled
+          ? (naxConfig.debate.stages.review.debaters?.length ?? 2) + 1
+          : 1;
+      const advSessions = 1;
+      const cap = advConfig.maxConcurrentSessions ?? 2;
+      if (semSessions + advSessions > cap) {
+        logger?.warn("review", "Parallel mode disabled — session cap exceeded", {
+          storyId,
+          semSessions,
+          advSessions,
+          cap,
+        });
+        return false;
+      }
+      return true;
+    })();
+
+    let builtIn: ReviewResult;
+
+    if (canParallelize) {
+      // Run mechanical checks (non-LLM) first — fail-fast preserved for lint/typecheck/etc.
+      const mechanicalChecks = reviewConfig.checks.filter((c) => c !== "semantic" && c !== "adversarial");
+      const mechanicalConfig = { ...reviewConfig, checks: mechanicalChecks };
+      const mechanicalResult = await runReview(
+        mechanicalConfig,
+        workdir,
+        executionConfig,
+        qualityCommands,
+        storyId,
+        storyGitRef,
+        story,
+        modelResolver,
+        naxConfig,
+        retrySkipChecks,
+        featureName,
+        resolverSession,
+        priorFailures,
+      );
+
+      if (!mechanicalResult.success) {
+        builtIn = mechanicalResult;
+      } else {
+        // Run semantic and adversarial concurrently
+        const semanticStory: SemanticStory = {
+          id: storyId ?? "",
+          title: story?.title ?? "",
+          description: story?.description ?? "",
+          acceptanceCriteria: story?.acceptanceCriteria ?? [],
+        };
+        const semanticCfg = reviewConfig.semantic ?? {
+          modelTier: "balanced" as const,
+          diffMode: "embedded" as const,
+          resetRefOnRerun: false,
+          rules: [] as string[],
+          timeoutMs: 600_000,
+          excludePatterns: [] as string[],
+        };
+        // advConfig is guaranteed non-null here: canParallelize required advConfig?.parallel === true
+        const adversarialCfg: AdversarialReviewConfig = advConfig as AdversarialReviewConfig;
+
+        logger?.debug("review", "Running semantic + adversarial in parallel", { storyId });
+        const parallelStart = Date.now();
+
+        const [semResult, advResult] = await Promise.all([
+          runSemanticReview(
+            workdir,
+            storyGitRef,
+            semanticStory,
+            semanticCfg,
+            modelResolver ?? (() => null),
+            naxConfig,
+            featureName,
+            resolverSession,
+            priorFailures,
+          ),
+          runAdversarialReview(
+            workdir,
+            storyGitRef,
+            semanticStory,
+            adversarialCfg,
+            modelResolver ?? (() => null),
+            naxConfig,
+            featureName,
+            priorFailures,
+          ),
+        ]);
+
+        const llmChecks: ReviewCheckResult[] = [semResult, advResult];
+        const allChecks = [...mechanicalResult.checks, ...llmChecks];
+        const allPassed = allChecks.every((c) => c.success);
+        const firstLlmFailure = llmChecks.find((c) => !c.success);
+        builtIn = {
+          success: allPassed,
+          checks: allChecks,
+          totalDurationMs: mechanicalResult.totalDurationMs + (Date.now() - parallelStart),
+          failureReason: firstLlmFailure ? `${firstLlmFailure.check} failed` : undefined,
+        };
+      }
+    } else {
+      builtIn = await runReview(
+        reviewConfig,
+        workdir,
+        executionConfig,
+        qualityCommands,
+        storyId,
+        storyGitRef,
+        story,
+        modelResolver,
+        naxConfig,
+        retrySkipChecks,
+        featureName,
+        resolverSession,
+        priorFailures,
+      );
+    }
 
     if (!builtIn.success) {
       return { builtIn, success: false, failureReason: builtIn.failureReason, pluginFailed: false };

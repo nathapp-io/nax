@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { buildSessionName } from "../../../src/agents/acp/adapter";
 import type { AgentResult } from "../../../src/agents/types";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
@@ -73,7 +74,7 @@ function makeSpawnMock(stdout: string, exitCode = 0) {
       },
     }),
     kill: () => {},
-  })) as unknown as typeof _semanticDeps.spawn;
+  })) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
 const PASSING_LLM_RESPONSE = JSON.stringify({ passed: true, findings: [] });
@@ -118,27 +119,27 @@ describe("runSemanticReview — signature", () => {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — missing storyGitRef", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // No valid ref — getMergeBase also returns undefined so review is skipped
-    _semanticDeps.isGitRefValid = mock(async () => false);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => false);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("returns success=true when storyGitRef is undefined", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -147,7 +148,7 @@ describe("runSemanticReview — missing storyGitRef", () => {
   });
 
   test("returns output containing 'skipped: no git ref' when storyGitRef is undefined", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -156,7 +157,7 @@ describe("runSemanticReview — missing storyGitRef", () => {
   });
 
   test("returns success=true when storyGitRef is empty string", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -165,7 +166,7 @@ describe("runSemanticReview — missing storyGitRef", () => {
   });
 
   test("returns output containing 'skipped: no git ref' when storyGitRef is empty string", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -175,7 +176,7 @@ describe("runSemanticReview — missing storyGitRef", () => {
 
   test("does not invoke spawn when storyGitRef is undefined", async () => {
     const spawnMock = makeSpawnMock("", 0);
-    _semanticDeps.spawn = spawnMock;
+    _diffUtilsDeps.spawn = spawnMock;
 
     await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
 
@@ -183,7 +184,7 @@ describe("runSemanticReview — missing storyGitRef", () => {
   });
 
   test("result.check is 'semantic' when storyGitRef is undefined", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
 
     const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
 
@@ -196,28 +197,28 @@ describe("runSemanticReview — missing storyGitRef", () => {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — git diff invocation", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // Mark supplied storyGitRef as valid so tests proceed without a real git repo
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("calls spawn with git diff --unified=3 <storyGitRef>..HEAD and test exclusions", async () => {
     const spawnMock = makeSpawnMock("diff output", 0);
-    _semanticDeps.spawn = spawnMock;
+    _diffUtilsDeps.spawn = spawnMock;
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -241,7 +242,7 @@ describe("runSemanticReview — git diff invocation", () => {
 
   test("passes workdir as cwd to spawn", async () => {
     const spawnMock = makeSpawnMock("diff output", 0);
-    _semanticDeps.spawn = spawnMock;
+    _diffUtilsDeps.spawn = spawnMock;
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/my/project", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -276,32 +277,32 @@ function makeSpawnMockWithStat(diffStdout: string, statStdout: string, exitCode 
       }),
       kill: () => {},
     };
-  }) as unknown as typeof _semanticDeps.spawn;
+  }) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
 describe("runSemanticReview — diff truncation", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // Mark supplied storyGitRef as valid so tests proceed without a real git repo
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("passes full diff to LLM prompt when diff is under 51200 bytes", async () => {
     const smallDiff = "a".repeat(100);
-    _semanticDeps.spawn = makeSpawnMock(smallDiff, 0);
+    _diffUtilsDeps.spawn = makeSpawnMock(smallDiff, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
@@ -317,7 +318,7 @@ describe("runSemanticReview — diff truncation", () => {
   test("truncates diff and appends truncation marker when diff exceeds 51200 bytes", async () => {
     const largeDiff = "x".repeat(60_000);
     const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
-    _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
+    _diffUtilsDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
@@ -336,7 +337,7 @@ describe("runSemanticReview — diff truncation", () => {
   test("truncation includes file summary from git diff --stat", async () => {
     const largeDiff = "y".repeat(60_000);
     const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
-    _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
+    _diffUtilsDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
@@ -357,23 +358,23 @@ describe("runSemanticReview — diff truncation", () => {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — LLM prompt construction", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // Mark supplied storyGitRef as valid so tests proceed without a real git repo
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   async function capturePrompt(
@@ -381,7 +382,7 @@ describe("runSemanticReview — LLM prompt construction", () => {
     config: SemanticReviewConfig = DEFAULT_SEMANTIC_CONFIG,
     diff = "- old line\n+ new line\n",
   ): Promise<string> {
-    _semanticDeps.spawn = makeSpawnMock(diff, 0);
+    _diffUtilsDeps.spawn = makeSpawnMock(diff, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.run as ReturnType<typeof mock>).mockImplementation(async (args: { prompt: string }) => {
@@ -458,27 +459,27 @@ describe("runSemanticReview — LLM prompt construction", () => {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — LLM response parsing (passed=false)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // Mark supplied storyGitRef as valid so tests proceed without a real git repo
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("returns success=false when LLM returns passed=false", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(FAILING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -487,7 +488,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
   });
 
   test("output contains finding's file", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(FAILING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -496,7 +497,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
   });
 
   test("output contains finding's line number", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(FAILING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -505,7 +506,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
   });
 
   test("output contains finding's severity", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(FAILING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -514,7 +515,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
   });
 
   test("output contains finding's issue description", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(FAILING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -523,7 +524,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
   });
 
   test("output contains finding's suggestion", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(FAILING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -532,7 +533,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
   });
 
   test("returns success=true when LLM returns passed=true with empty findings", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -548,7 +549,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
         { severity: "error", file: "src/b.ts", line: 99, issue: "Issue B", suggestion: "Fix B" },
       ],
     });
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(multiFindings);
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -565,27 +566,27 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — fail-open on invalid JSON", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // Mark supplied storyGitRef as valid so tests proceed without a real git repo
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("returns success=true when LLM returns invalid JSON", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent("this is not json at all }{");
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -594,7 +595,7 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
   });
 
   test("returns success=true when LLM returns empty string", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent("");
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -603,7 +604,7 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
   });
 
   test("returns success=true when LLM returns JSON missing 'passed' field", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent(JSON.stringify({ findings: [] }));
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -612,7 +613,7 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
   });
 
   test("result check is 'semantic' on invalid JSON", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agent = makeMockAgent("not json");
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -625,27 +626,27 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — fail-closed on truncated JSON with passed:false (#105)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // Mark supplied storyGitRef as valid so tests proceed without a real git repo
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("returns success=false when truncated JSON contains passed:false", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     // Simulates LLM output cut off mid-response — JSON is invalid but clearly says passed:false
     const truncatedResponse = '```json\n{"passed": false, "findings": [{"severity": "error", "file": "test.ts", "line": 1, "issue": "Test file is 78';
     const agent = makeMockAgent(truncatedResponse);
@@ -656,7 +657,7 @@ describe("runSemanticReview — fail-closed on truncated JSON with passed:false 
   });
 
   test("output mentions truncated response on fail-closed", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const truncatedResponse = '{"passed": false, "findings": [{"severity": "error"';
     const agent = makeMockAgent(truncatedResponse);
 
@@ -667,7 +668,7 @@ describe("runSemanticReview — fail-closed on truncated JSON with passed:false 
   });
 
   test("still fail-open when truncated JSON contains passed:true", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const truncatedResponse = '{"passed": true, "findings": [';
     const agent = makeMockAgent(truncatedResponse);
 
@@ -681,27 +682,27 @@ describe("runSemanticReview — fail-closed on truncated JSON with passed:false 
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     // Mark supplied storyGitRef as valid so tests proceed without a real git repo
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("parses JSON wrapped in ```json fences", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const fencedResponse = "```json\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
     const agent = makeMockAgent(fencedResponse);
 
@@ -712,7 +713,7 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
   });
 
   test("parses JSON wrapped in plain ``` fences", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const fencedResponse = "```\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
     const agent = makeMockAgent(fencedResponse);
 
@@ -723,7 +724,7 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
   });
 
   test("parses fenced JSON with findings and returns success=false", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
       findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "bad code", suggestion: "fix it" }],
@@ -742,27 +743,27 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
   test("uses effectiveRef = storyGitRef when ref is valid", async () => {
     const spawnMock = makeSpawnMock("diff content", 0);
-    _semanticDeps.spawn = spawnMock;
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => "merge-base-sha");
+    _diffUtilsDeps.spawn = spawnMock;
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => "merge-base-sha");
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/tmp/wd", "valid-sha", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -772,14 +773,14 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     const spawnOpts = call[0] as { cmd: string[] };
     // Should use the valid storyGitRef, not the merge-base
     expect(spawnOpts.cmd).toContain("valid-sha..HEAD");
-    expect(_semanticDeps.getMergeBase).not.toHaveBeenCalled();
+    expect(_diffUtilsDeps.getMergeBase).not.toHaveBeenCalled();
   });
 
   test("falls back to merge-base when storyGitRef is undefined", async () => {
     const spawnMock = makeSpawnMock("diff content", 0);
-    _semanticDeps.spawn = spawnMock;
-    _semanticDeps.isGitRefValid = mock(async () => false);
-    _semanticDeps.getMergeBase = mock(async () => "abc-merge-base");
+    _diffUtilsDeps.spawn = spawnMock;
+    _diffUtilsDeps.isGitRefValid = mock(async () => false);
+    _diffUtilsDeps.getMergeBase = mock(async () => "abc-merge-base");
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -792,9 +793,9 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
 
   test("falls back to merge-base when storyGitRef is invalid (e.g. after rebase)", async () => {
     const spawnMock = makeSpawnMock("diff content", 0);
-    _semanticDeps.spawn = spawnMock;
-    _semanticDeps.isGitRefValid = mock(async () => false);
-    _semanticDeps.getMergeBase = mock(async () => "fallback-merge-base-sha");
+    _diffUtilsDeps.spawn = spawnMock;
+    _diffUtilsDeps.isGitRefValid = mock(async () => false);
+    _diffUtilsDeps.getMergeBase = mock(async () => "fallback-merge-base-sha");
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/tmp/wd", "stale-sha-after-rebase", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
@@ -803,13 +804,13 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
     const spawnOpts = call[0] as { cmd: string[] };
     expect(spawnOpts.cmd).toContain("fallback-merge-base-sha..HEAD");
-    expect(_semanticDeps.isGitRefValid).toHaveBeenCalledWith("/tmp/wd", "stale-sha-after-rebase");
+    expect(_diffUtilsDeps.isGitRefValid).toHaveBeenCalledWith("/tmp/wd", "stale-sha-after-rebase");
   });
 
   test("skips review (success=true) when storyGitRef is undefined and merge-base is also unavailable", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
-    _semanticDeps.isGitRefValid = mock(async () => false);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.isGitRefValid = mock(async () => false);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
 
     const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
 
@@ -818,9 +819,9 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
   });
 
   test("skips review (success=true) when storyGitRef is invalid and merge-base is also unavailable", async () => {
-    _semanticDeps.spawn = makeSpawnMock("", 0);
-    _semanticDeps.isGitRefValid = mock(async () => false);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
+    _diffUtilsDeps.isGitRefValid = mock(async () => false);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
 
     const result = await runSemanticReview("/tmp/wd", "bad-sha", STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
 
@@ -862,26 +863,26 @@ function makeRunMockAgent(output: string, success = true): AgentAdapter {
 }
 
 describe("runSemanticReview — uses agent.run() instead of agent.complete() (US-003)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
   let origReadAcpSession: typeof _semanticDeps.readAcpSession;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     origReadAcpSession = _semanticDeps.readAcpSession;
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
-    _semanticDeps.spawn = makeSpawnMock("some diff content", 0);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff content", 0);
     _semanticDeps.readAcpSession = mock(async () => "nax-abc123-feature-us-003-implementer");
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
     _semanticDeps.readAcpSession = origReadAcpSession;
   });
 
@@ -1034,25 +1035,25 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — reads implementer session sidecar before run() (US-003 AC-5)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origSpawn: typeof _diffUtilsDeps.spawn;
+  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
   let origReadAcpSession: typeof _semanticDeps.readAcpSession;
 
   beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-    origIsGitRefValid = _semanticDeps.isGitRefValid;
-    origGetMergeBase = _semanticDeps.getMergeBase;
+    origSpawn = _diffUtilsDeps.spawn;
+    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+    origGetMergeBase = _diffUtilsDeps.getMergeBase;
     origReadAcpSession = _semanticDeps.readAcpSession;
-    _semanticDeps.isGitRefValid = mock(async () => true);
-    _semanticDeps.getMergeBase = mock(async () => undefined);
-    _semanticDeps.spawn = makeSpawnMock("some diff content", 0);
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+    _diffUtilsDeps.spawn = makeSpawnMock("some diff content", 0);
   });
 
   afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-    _semanticDeps.isGitRefValid = origIsGitRefValid;
-    _semanticDeps.getMergeBase = origGetMergeBase;
+    _diffUtilsDeps.spawn = origSpawn;
+    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+    _diffUtilsDeps.getMergeBase = origGetMergeBase;
     _semanticDeps.readAcpSession = origReadAcpSession;
   });
 

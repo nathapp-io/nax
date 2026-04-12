@@ -129,7 +129,7 @@ ${SEMANTIC_OUTPUT_SCHEMA}`;
  * Build the attempt context section.
  * Emitted only when priorFailures is non-empty.
  */
-function buildAttemptContextBlock(priorFailures?: PriorFailure[]): string {
+export function buildAttemptContextBlock(priorFailures?: PriorFailure[]): string {
   if (!priorFailures || priorFailures.length === 0) return "";
 
   const attemptNumber = priorFailures.length + 1;

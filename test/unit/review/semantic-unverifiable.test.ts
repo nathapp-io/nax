@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
@@ -65,31 +66,31 @@ function makeSpawnMock(stdout: string, exitCode = 0) {
       start(controller) { controller.close(); },
     }),
     kill: () => {},
-  })) as unknown as typeof _semanticDeps.spawn;
+  })) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
 
-let origSpawn: typeof _semanticDeps.spawn;
-let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
-let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+let origSpawn: typeof _diffUtilsDeps.spawn;
+let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 
 beforeEach(() => {
-  origSpawn = _semanticDeps.spawn;
-  origIsGitRefValid = _semanticDeps.isGitRefValid;
-  origGetMergeBase = _semanticDeps.getMergeBase;
+  origSpawn = _diffUtilsDeps.spawn;
+  origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+  origGetMergeBase = _diffUtilsDeps.getMergeBase;
 
-  _semanticDeps.isGitRefValid = mock(async () => true);
-  _semanticDeps.getMergeBase = mock(async () => "abc123");
-  _semanticDeps.spawn = makeSpawnMock("diff --git a/foo.vue b/foo.vue\n+import { useI18n } from 'vue-i18n'");
+  _diffUtilsDeps.isGitRefValid = mock(async () => true);
+  _diffUtilsDeps.getMergeBase = mock(async () => "abc123");
+  _diffUtilsDeps.spawn = makeSpawnMock("diff --git a/foo.vue b/foo.vue\n+import { useI18n } from 'vue-i18n'");
 });
 
 afterEach(() => {
-  _semanticDeps.spawn = origSpawn;
-  _semanticDeps.isGitRefValid = origIsGitRefValid;
-  _semanticDeps.getMergeBase = origGetMergeBase;
+  _diffUtilsDeps.spawn = origSpawn;
+  _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+  _diffUtilsDeps.getMergeBase = origGetMergeBase;
 });
 
 // ---------------------------------------------------------------------------

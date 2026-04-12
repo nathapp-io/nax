@@ -250,7 +250,7 @@ export interface AnalyzeConfig {
 }
 
 // Re-exported from review/types.ts to maintain single source of truth
-export type { ReviewConfig } from "../review/types";
+export type { AdversarialReviewConfig, ReviewConfig } from "../review/types";
 
 /** Plan config */
 export interface PlanConfig {
