@@ -9,7 +9,7 @@ import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import { type ModelTier, resolveModelForAgent } from "../config/schema-types";
-import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
+import { AcceptancePromptBuilder, MAX_FILE_LINES } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { DiagnosisResult, SemanticVerdict } from "./types";
 
@@ -26,8 +26,6 @@ export interface DiagnoseOptions {
 }
 
 const MAX_SOURCE_FILES = 5;
-const MAX_FILE_LINES = 500;
-const MAX_TEST_OUTPUT_CHARS = 2000;
 
 function parseImportStatements(content: string): string[] {
   const importRegex = /import\s+(?:{[^}]+}|[^;]+)\s+from\s+["']([^"']+)["']/g;
@@ -63,44 +61,6 @@ async function readSourceFileContent(
   }
 }
 
-export function buildDiagnosisPrompt(options: {
-  testOutput: string;
-  testFileContent: string;
-  sourceFiles: Array<{ path: string; content: string }>;
-  semanticVerdicts?: SemanticVerdict[];
-  previousFailure?: string;
-}): string {
-  const truncatedOutput = options.testOutput.slice(0, MAX_TEST_OUTPUT_CHARS);
-
-  const sourceFilesSection =
-    options.sourceFiles.length > 0
-      ? options.sourceFiles.map((f) => `FILE: ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")
-      : "(No source files could be resolved from imports)";
-
-  let verdictSection = "";
-  if (options.semanticVerdicts && options.semanticVerdicts.length > 0) {
-    const lines = options.semanticVerdicts.map((v) => {
-      const status = v.passed ? "likely test bug (semantic review confirmed AC implementation)" : "unconfirmed";
-      return `- ${v.storyId}: ${status}`;
-    });
-    verdictSection = `\nSEMANTIC VERDICTS:\n${lines.join("\n")}\n`;
-  }
-
-  let previousFailureSection = "";
-  if (options.previousFailure && options.previousFailure.length > 0) {
-    previousFailureSection = `\nPREVIOUS FIX ATTEMPTS:\n${options.previousFailure}\n`;
-  }
-
-  return new AcceptancePromptBuilder().buildDiagnosisPromptTemplate({
-    truncatedOutput,
-    testFileContent: options.testFileContent,
-    sourceFilesSection,
-    verdictSection,
-    previousFailureSection,
-    maxFileLines: MAX_FILE_LINES,
-  });
-}
-
 export async function diagnoseAcceptanceFailure(
   agent: AgentAdapter,
   options: DiagnoseOptions,
@@ -126,7 +86,7 @@ export async function diagnoseAcceptanceFailure(
   const sourceFiles = await Promise.all(relativeImports.map((imp) => readSourceFileContent(imp, workdir)));
   const validSourceFiles = sourceFiles.filter((f): f is { path: string; content: string } => f !== null);
 
-  const prompt = buildDiagnosisPrompt({
+  const prompt = new AcceptancePromptBuilder().buildDiagnosisPrompt({
     testOutput,
     testFileContent,
     sourceFiles: validSourceFiles,

@@ -21,8 +21,13 @@ export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "./b
 export { ReviewPromptBuilder } from "./builders/review-builder";
 
 // Acceptance prompt builder — generator, diagnoser, and fix-executor prompt construction.
-export { AcceptancePromptBuilder } from "./builders/acceptance-builder";
-export type { AcceptanceRole } from "./builders/acceptance-builder";
+export { AcceptancePromptBuilder, MAX_FILE_LINES } from "./builders/acceptance-builder";
+export type {
+  AcceptanceRole,
+  FixGeneratorParams,
+  DiagnosisPromptParams,
+  RefinementPromptOptions,
+} from "./builders/acceptance-builder";
 
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { RectifierPromptBuilder, CONTRADICTION_ESCAPE_HATCH } from "./builders/rectifier-builder";

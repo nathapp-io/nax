@@ -14,7 +14,6 @@ export type {
 } from "./types";
 
 export {
-  buildRefinementPrompt,
   parseRefinementResponse,
   refineAcceptanceCriteria,
   _refineDeps,

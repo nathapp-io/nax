@@ -10,8 +10,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildDiagnosisPrompt } from "../../../src/acceptance/fix-diagnosis";
+import { AcceptancePromptBuilder } from "../../../src/prompts";
 import type { SemanticVerdict } from "../../../src/acceptance/types";
+
+const builder = new AcceptancePromptBuilder();
+const buildDiagnosisPrompt = (opts: Parameters<AcceptancePromptBuilder["buildDiagnosisPrompt"]>[0]) =>
+  builder.buildDiagnosisPrompt(opts);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -678,7 +678,19 @@ describe("Edge cases", () => {
 // executeTestFix() — surgical test fix (US-001)
 // ---------------------------------------------------------------------------
 
-import { type ExecuteTestFixOptions, buildTestFixPrompt, executeTestFix } from "../../../src/acceptance/fix-executor";
+import { type ExecuteTestFixOptions, executeTestFix } from "../../../src/acceptance/fix-executor";
+import { AcceptancePromptBuilder } from "../../../src/prompts";
+
+function callBuildTestFixPrompt(options: ExecuteTestFixOptions): string {
+  return new AcceptancePromptBuilder().buildTestFixPrompt({
+    testOutput: options.testOutput,
+    diagnosisReasoning: options.diagnosis.reasoning,
+    failedACs: options.failedACs,
+    previousFailure: options.previousFailure,
+    acceptanceTestPath: options.acceptanceTestPath,
+    testFileContent: options.testFileContent,
+  });
+}
 
 function makeTestFixOptions(overrides: Partial<ExecuteTestFixOptions> = {}): ExecuteTestFixOptions {
   return {
@@ -795,17 +807,17 @@ describe("executeTestFix()", () => {
 
 describe("buildTestFixPrompt()", () => {
   test("includes failing ACs in 'FAILING ACS:' section", () => {
-    const prompt = buildTestFixPrompt(makeTestFixOptions({ failedACs: ["AC-1", "AC-2"] }));
+    const prompt = callBuildTestFixPrompt(makeTestFixOptions({ failedACs: ["AC-1", "AC-2"] }));
     expect(prompt).toContain("FAILING ACS: AC-1, AC-2");
   });
 
   test("omits previousFailure section when not provided", () => {
-    const prompt = buildTestFixPrompt(makeTestFixOptions({ previousFailure: undefined }));
+    const prompt = callBuildTestFixPrompt(makeTestFixOptions({ previousFailure: undefined }));
     expect(prompt).not.toContain("PREVIOUS FAILED ATTEMPTS");
   });
 
   test("includes previousFailure section when provided", () => {
-    const prompt = buildTestFixPrompt(makeTestFixOptions({ previousFailure: "attempt 1 failed" }));
+    const prompt = callBuildTestFixPrompt(makeTestFixOptions({ previousFailure: "attempt 1 failed" }));
     expect(prompt).toContain("PREVIOUS FAILED ATTEMPTS:\nattempt 1 failed");
   });
 });

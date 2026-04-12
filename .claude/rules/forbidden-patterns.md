@@ -16,6 +16,63 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | Hardcoded timeouts in logic | Config values from schema | Hardcoded values can't be tuned per-environment |
 | `import from "src/module/internal-file"` | `import from "src/module"` (barrel) | Prevents singleton fragmentation (BUG-035) |
 | Files > 400 lines | Split by concern | Unmaintainable; violates project convention |
+| Prompt-building functions outside `src/prompts/builders/` | Add a method to the appropriate builder class | Orphan prompts scatter LLM instruction logic across subsystems, making them impossible to audit, test, or optimise centrally (see Prompt Builder Convention below) |
+
+## Prompt Builder Convention
+
+**All LLM prompt-building logic lives in `src/prompts/builders/` — no exceptions.**
+
+An "orphan prompt" is any function or template string outside `src/prompts/builders/` that:
+- Returns a multi-line string sent to an LLM agent
+- Contains `You are`, `## Instructions`, `Fix `, `Your task`, `IMPORTANT:`, or similar instructional text
+- Is named `build*Prompt`, `create*Prompt`, `make*Prompt`, or similar
+
+### ❌ Wrong — prompt assembled in a pipeline stage
+
+```typescript
+// src/pipeline/stages/autofix.ts
+function buildFixPrompt(checks: ReviewCheckResult[]): string {
+  return `You are fixing lint errors.\n\n${checks.map(...).join("\n")}`;
+}
+```
+
+### ✅ Correct — static method on the relevant builder
+
+```typescript
+// src/prompts/builders/rectifier-builder.ts
+export class RectifierPromptBuilder {
+  static continuation(checks: ReviewCheckResult[], ...): string {
+    // prompt assembly lives here
+  }
+}
+```
+
+### Builder registry
+
+| Builder class | Handles |
+|:---|:---|
+| `RectifierPromptBuilder` | All rectification prompts: TDD failures, verify failures, review findings, autofix retries |
+| `ReviewPromptBuilder` | Semantic and adversarial review prompts |
+| `TddPromptBuilder` | TDD session prompts (test-writer, implementer, verifier) |
+| `AcceptancePromptBuilder` | Acceptance test generation, diagnosis, refinement, fix execution |
+| `DebatePromptBuilder` | Multi-agent debate and review-dialogue prompts |
+| `OneShotPromptBuilder` | Single-turn utility prompts (router, decomposer, auto-approver) |
+
+If no existing builder fits, create `src/prompts/builders/<domain>-builder.ts` and export from `src/prompts/index.ts`.
+
+### Wrapper functions are also banned
+
+Thin wrappers that do nothing but delegate to a builder add indirection without value:
+
+```typescript
+// ❌ Wrong — pointless wrapper in src/acceptance/fix-executor.ts
+function buildSourceFixPrompt(...): string {
+  return new AcceptancePromptBuilder().buildSourceFixPrompt(...);
+}
+
+// ✅ Correct — call the builder directly at the use site
+const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
+```
 
 ## Test Files
 

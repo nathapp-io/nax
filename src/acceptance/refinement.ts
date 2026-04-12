@@ -9,8 +9,9 @@ import type { AgentAdapter } from "../agents";
 import { createAgentRegistry } from "../agents/registry";
 import { resolveModelForAgent } from "../config";
 import { getLogger } from "../logger";
+import { AcceptancePromptBuilder } from "../prompts";
 import { errorMessage } from "../utils/errors";
-import { extractJsonFromMarkdown, stripTrailingCommas, wrapJsonPrompt } from "../utils/llm-json";
+import { extractJsonFromMarkdown, stripTrailingCommas } from "../utils/llm-json";
 import type { RefineResult, RefinedCriterion, RefinementContext } from "./types";
 
 /**
@@ -33,117 +34,6 @@ export const _refineDeps = {
     },
   } satisfies Pick<AgentAdapter, "complete">,
 };
-
-/**
- * Strategy-specific context for the refinement prompt.
- */
-export interface RefinementPromptOptions {
-  /** Test strategy — controls strategy-specific prompt instructions */
-  testStrategy?: "unit" | "component" | "cli" | "e2e" | "snapshot";
-  /** Test framework — informs LLM which testing library syntax to use */
-  testFramework?: string;
-  /** Story title — anchors the refiner to the correct subject function/entity */
-  storyTitle?: string;
-  /** Story description — provides additional function/entity context */
-  storyDescription?: string;
-}
-
-/**
- * Build the LLM prompt for refining acceptance criteria.
- *
- * @param criteria - Raw AC strings from PRD
- * @param codebaseContext - File tree / dependency context
- * @param options - Optional strategy/framework context
- * @returns Formatted prompt string
- */
-export function buildRefinementPrompt(
-  criteria: string[],
-  codebaseContext: string,
-  options?: RefinementPromptOptions,
-): string {
-  const criteriaList = criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
-  const strategySection = buildStrategySection(options);
-  const refinedExample = buildRefinedExample(options?.testStrategy);
-
-  const storyLines: string[] = [];
-  if (options?.storyTitle) storyLines.push(`Title: ${options.storyTitle}`);
-  if (options?.storyDescription) storyLines.push(`Description: ${options.storyDescription}`);
-  const storySection = storyLines.length > 0 ? `STORY CONTEXT:\n${storyLines.join("\n")}\n\n` : "";
-
-  const codebaseSection = codebaseContext ? `CODEBASE CONTEXT:\n${codebaseContext}\n` : "";
-
-  const core = `You are an acceptance criteria refinement assistant. Your task is to convert raw acceptance criteria into concrete, machine-verifiable assertions.
-
-${storySection}${codebaseSection}${strategySection}ACCEPTANCE CRITERIA TO REFINE:
-${criteriaList}
-
-For each criterion, produce a refined version that is concrete and automatically testable where possible.
-Respond with a JSON array:
-[{
-  "original": "<exact original criterion text>",
-  "refined": "<concrete, machine-verifiable description>",
-  "testable": true,
-  "storyId": ""
-}]
-
-Rules:
-- "original" must match the input criterion text exactly
-- "refined" must be a concrete assertion (e.g., ${refinedExample})
-- "testable" is false only if the criterion cannot be automatically verified (e.g., "UX feels responsive", "design looks good")
-- "storyId" leave as empty string — it will be assigned by the caller`;
-
-  return wrapJsonPrompt(core);
-}
-
-/**
- * Build strategy-specific instructions section for the prompt.
- */
-function buildStrategySection(options?: RefinementPromptOptions): string {
-  if (!options?.testStrategy) {
-    return "";
-  }
-
-  const framework = options.testFramework ? ` Use ${options.testFramework} testing library syntax.` : "";
-
-  switch (options.testStrategy) {
-    case "component":
-      return `
-TEST STRATEGY: component
-Focus assertions on rendered output visible on screen — text content, visible elements, and screen state.
-Assert what the user sees rendered in the component, not what internal functions produce.${framework}
-`;
-    case "cli":
-      return `
-TEST STRATEGY: cli
-Focus assertions on stdout and stderr text output from the CLI command.
-Assert about terminal output content, exit codes, and standard output/standard error streams.${framework}
-`;
-    case "e2e":
-      return `
-TEST STRATEGY: e2e
-Focus assertions on HTTP response content — status codes, response bodies, and endpoint behavior.
-Assert about HTTP responses, status codes, and API endpoint output.${framework}
-`;
-    default:
-      return framework ? `\nTEST FRAMEWORK: ${options.testFramework}\n` : "";
-  }
-}
-
-/**
- * Build the "refined" example string based on the test strategy.
- */
-function buildRefinedExample(testStrategy?: RefinementPromptOptions["testStrategy"]): string {
-  switch (testStrategy) {
-    case "component":
-      return '"Text content visible on screen matches expected", "Rendered output contains expected element"';
-    case "cli":
-      return '"stdout contains expected text", "stderr is empty on success", "exit code is 0"';
-    case "e2e":
-      return '"HTTP status 200 returned", "Response body contains expected field", "Endpoint returns JSON"';
-    default:
-      return '"Array of length N returned", "HTTP status 200 returned"';
-  }
-}
 
 /**
  * Parse the LLM JSON response into RefinedCriterion[].
@@ -212,7 +102,7 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
     modelTier,
     config.autoMode.defaultAgent,
   );
-  const prompt = buildRefinementPrompt(criteria, codebaseContext, {
+  const prompt = new AcceptancePromptBuilder().buildRefinementPrompt(criteria, codebaseContext, {
     testStrategy,
     testFramework,
     storyTitle,

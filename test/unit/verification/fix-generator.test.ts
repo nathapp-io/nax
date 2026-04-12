@@ -5,12 +5,30 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-  buildFixPrompt,
   convertFixStoryToUserStory,
   findRelatedStories,
   groupACsByRelatedStories,
   parseACTextFromSpec,
 } from "../../../src/acceptance/fix-generator";
+import { AcceptancePromptBuilder } from "../../../src/prompts";
+
+function buildFixPrompt(
+  batchedACs: string[],
+  acTextMap: Record<string, string>,
+  testOutput: string,
+  relatedStories: string[],
+  prd: PRD,
+  testFilePath?: string,
+): string {
+  return new AcceptancePromptBuilder().buildFixGeneratorPrompt({
+    batchedACs,
+    acTextMap,
+    testOutput,
+    relatedStories,
+    prd,
+    testFilePath,
+  });
+}
 import type { PRD, UserStory } from "../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

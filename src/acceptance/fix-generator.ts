@@ -11,6 +11,7 @@ import type { AgentAdapter } from "../agents/types";
 import type { ModelDef, NaxConfig } from "../config/schema";
 import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd/types";
+import { AcceptancePromptBuilder } from "../prompts";
 import { resolveAcceptanceTestFile } from "./test-path";
 
 const MAX_FIX_STORIES = 8;
@@ -185,62 +186,6 @@ export function groupACsByRelatedStories(
 }
 
 /**
- * Build LLM prompt for generating a batched fix story.
- *
- * @param batchedACs - Batch of failed AC identifiers
- * @param acTextMap - Map of AC ID to text from spec
- * @param testOutput - Test failure output
- * @param relatedStories - Related story IDs
- * @param prd - Current PRD
- * @param testFilePath - Path to acceptance test file (P1-A)
- * @returns Formatted prompt string
- */
-export function buildFixPrompt(
-  batchedACs: string[],
-  acTextMap: Record<string, string>,
-  testOutput: string,
-  relatedStories: string[],
-  prd: PRD,
-  testFilePath?: string,
-): string {
-  const acList = batchedACs.map((ac) => `${ac}: ${acTextMap[ac] || "No description available"}`).join("\n");
-
-  const relatedStoriesText = relatedStories
-    .map((id) => {
-      const story = prd.userStories.find((s) => s.id === id);
-      if (!story) return "";
-      return `${story.id}: ${story.title}\n  ${story.description}`;
-    })
-    .filter(Boolean)
-    .join("\n\n");
-
-  const testFileSection = testFilePath
-    ? `\nACCEPTANCE TEST FILE: ${testFilePath}\n(Read this file first to understand what each test expects)\n`
-    : "";
-
-  return `You are a debugging expert. Feature acceptance tests have failed.${testFileSection}
-FAILED ACCEPTANCE CRITERIA (${batchedACs.length} total):
-${acList}
-
-TEST FAILURE OUTPUT:
-${testOutput.slice(0, 2000)}
-
-RELATED STORIES (implemented this functionality):
-${relatedStoriesText}
-
-Your task: Generate a fix description that will make these acceptance tests pass.
-
-Requirements:
-1. Read the acceptance test file first to understand what each failing test expects
-2. Identify the root cause based on the test failure output
-3. Find and fix the relevant implementation code (do NOT modify the test file)
-4. Write a clear, actionable fix description (2-4 sentences)
-5. Reference the relevant story IDs if needed
-
-Respond with ONLY the fix description (no JSON, no markdown, just the description text).`;
-}
-
-/**
  * Generate fix stories from failed acceptance criteria.
  *
  * Groups ACs by related stories (D1), generates one fix story per group,
@@ -287,7 +232,14 @@ export async function generateFixStories(
 
     logger.info("acceptance", "Generating fix for AC group", { batchedACs });
 
-    const prompt = buildFixPrompt(batchedACs, acTextMap, testOutput, relatedStories, prd, testFilePath);
+    const prompt = new AcceptancePromptBuilder().buildFixGeneratorPrompt({
+      batchedACs,
+      acTextMap,
+      testOutput,
+      relatedStories,
+      prd,
+      testFilePath,
+    });
 
     // D4: inherit workdir from first related story that has one set
     const relatedStory = prd.userStories.find((s) => relatedStories.includes(s.id) && s.workdir);

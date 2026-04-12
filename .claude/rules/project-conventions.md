@@ -53,6 +53,12 @@ logger.error("acceptance", "Tests failed", { failedACs, packageDir, storyId: ctx
 
 **Scope:** Applies to `src/pipeline/stages/` and `src/review/`. Utility modules (`src/quality/runner.ts`, `src/verification/`) use `storyId` when it is passed in via options — no requirement to thread it independently.
 
+## Prompt Building
+
+- **All LLM prompt-building logic lives in `src/prompts/builders/`.** Never write `build*Prompt` functions in pipeline stages, verification, execution, review, or any other subsystem directory.
+- Import from the barrel (`src/prompts`), never from internal paths (`src/prompts/builders/rectifier-builder`).
+- See `forbidden-patterns.md` → **Prompt Builder Convention** for the full builder registry and examples.
+
 ## Commits
 
 - Conventional commits: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`.

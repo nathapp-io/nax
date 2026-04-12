@@ -10,7 +10,7 @@ import type { AgentAdapter, AgentRunOptions } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import type { ModelTier } from "../config/schema-types";
 import { resolveModelForAgent } from "../config/schema-types";
-import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
+import { AcceptancePromptBuilder } from "../prompts";
 import type { DiagnosisResult } from "./types";
 
 export interface ExecuteSourceFixOptions {
@@ -27,15 +27,6 @@ export interface ExecuteSourceFixOptions {
 export interface ExecuteSourceFixResult {
   success: boolean;
   cost: number;
-}
-
-export function buildSourceFixPrompt(options: ExecuteSourceFixOptions): string {
-  return new AcceptancePromptBuilder().buildSourceFixPrompt({
-    testOutput: options.testOutput,
-    diagnosisReasoning: options.diagnosis.reasoning,
-    acceptanceTestPath: options.acceptanceTestPath,
-    testFileContent: options.testFileContent,
-  });
 }
 
 export async function executeSourceFix(
@@ -57,7 +48,12 @@ export async function executeSourceFix(
 
   const sessionName = buildSessionName(workdir, featureName, storyId, "source-fix");
 
-  const prompt = buildSourceFixPrompt(options);
+  const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
+    testOutput: options.testOutput,
+    diagnosisReasoning: options.diagnosis.reasoning,
+    acceptanceTestPath: options.acceptanceTestPath,
+    testFileContent: options.testFileContent,
+  });
 
   const timeoutSeconds = config.execution?.sessionTimeoutSeconds ?? 3600;
 
@@ -104,17 +100,6 @@ export interface ExecuteTestFixResult {
   cost: number;
 }
 
-export function buildTestFixPrompt(options: ExecuteTestFixOptions): string {
-  return new AcceptancePromptBuilder().buildTestFixPrompt({
-    testOutput: options.testOutput,
-    diagnosisReasoning: options.diagnosis.reasoning,
-    failedACs: options.failedACs,
-    previousFailure: options.previousFailure,
-    acceptanceTestPath: options.acceptanceTestPath,
-    testFileContent: options.testFileContent,
-  });
-}
-
 export async function executeTestFix(
   agent: AgentAdapter,
   options: ExecuteTestFixOptions,
@@ -134,7 +119,14 @@ export async function executeTestFix(
 
   const sessionName = buildSessionName(workdir, featureName, storyId, "test-fix");
 
-  const prompt = buildTestFixPrompt(options);
+  const prompt = new AcceptancePromptBuilder().buildTestFixPrompt({
+    testOutput: options.testOutput,
+    diagnosisReasoning: options.diagnosis.reasoning,
+    failedACs: options.failedACs,
+    previousFailure: options.previousFailure,
+    acceptanceTestPath: options.acceptanceTestPath,
+    testFileContent: options.testFileContent,
+  });
 
   const timeoutSeconds = config.execution?.sessionTimeoutSeconds ?? 3600;
 
