@@ -201,6 +201,96 @@ See [Language & Project-Type Awareness](language-awareness.md) for full details.
 
 ---
 
+### Semantic Review Diff Mode
+
+Controls how the production diff is provided to the semantic reviewer:
+
+```json
+{
+  "review": {
+    "semantic": {
+      "diffMode": "embedded",
+      "resetRefOnRerun": false
+    }
+  }
+}
+```
+
+| Value | Behaviour |
+|:------|:----------|
+| `"embedded"` (default) | Diff is inlined in the prompt (~50KB cap). Simple, works everywhere. |
+| `"ref"` | Reviewer self-serves via git tools. No diff cap. Better for large changes. |
+
+`resetRefOnRerun`: when `true`, clears `storyGitRef` on re-run so it is re-captured fresh. Default: `false`.
+
+---
+
+### Adversarial Review
+
+LLM-based adversarial code review that asks "Where does this break?" rather than "Does this satisfy the ACs?":
+
+```json
+{
+  "review": {
+    "checks": ["typecheck", "lint", "semantic", "adversarial"],
+    "adversarial": {
+      "modelTier": "balanced",
+      "diffMode": "ref",
+      "rules": [],
+      "timeoutMs": 120000,
+      "excludePatterns": [],
+      "parallel": false,
+      "maxConcurrentSessions": 2
+    }
+  }
+}
+```
+
+See [Semantic Review — Adversarial Review](semantic-review.md#adversarial-review-review-003) for details.
+
+---
+
+### Session Error Retries
+
+Controls how many times the ACP adapter retries on session errors:
+
+```json
+{
+  "execution": {
+    "sessionErrorMaxRetries": 1,
+    "sessionErrorRetryableMaxRetries": 3
+  }
+}
+```
+
+| Field | Default | Description |
+|:------|:--------|:------------|
+| `sessionErrorMaxRetries` | `1` | Retries for non-retryable session errors (stale/locked) |
+| `sessionErrorRetryableMaxRetries` | `3` | Retries for retryable errors (queue disconnect) |
+
+---
+
+### Story Isolation
+
+Controls whether stories get their own git worktree in sequential mode:
+
+```json
+{
+  "execution": {
+    "storyIsolation": "worktree"
+  }
+}
+```
+
+| Value | Behaviour |
+|:------|:----------|
+| `"shared"` (default) | Stories execute in the main working directory |
+| `"worktree"` | Each story gets an isolated git worktree (EXEC-002) |
+
+See [Parallel Execution — Sequential Worktree Isolation](parallel-execution.md#sequential-worktree-isolation-exec-002) for details.
+
+---
+
 ### Rectification Escalation
 
 When rectification retries are exhausted at the current model tier, nax can escalate to the next tier for one additional attempt before escalating the story.

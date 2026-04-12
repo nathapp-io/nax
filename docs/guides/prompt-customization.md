@@ -333,8 +333,30 @@ Project-level overrides take precedence.
 
 ---
 
+## Architecture Note
+
+The prompt system is built on **domain-specific prompt builders** (`src/prompts/builders/`). Each builder is a composable class that wraps a `SectionAccumulator` from `src/prompts/core/`. Template overrides are loaded per-role via `src/prompts/loader.ts` and injected as the role-body section.
+
+**7 builders** handle all prompt construction:
+
+| Builder | Roles |
+|:--------|:------|
+| `TddPromptBuilder` | test-writer, implementer, verifier, single-session, tdd-simple, batch |
+| `DebatePromptBuilder` | propose, critique, rebut, synthesize |
+| `ReviewPromptBuilder` | dialogue, semantic |
+| `AcceptancePromptBuilder` | generator, diagnoser, fix-executor |
+| `RectifierPromptBuilder` | tdd-test-failure, verify-failure, review-findings |
+| `OneShotPromptBuilder` | router, decomposer, auto-approver |
+| `AdversarialReviewPromptBuilder` | adversarial |
+
+Only the TDD builder roles (test-writer, implementer, verifier, single-session, tdd-simple) support user-facing template overrides via `prompts.overrides`. Other builders are internal.
+
+See [design-patterns.md §11](../architecture/design-patterns.md) for the full prompt builder pattern.
+
+---
+
 ## See Also
 
-- [Test Strategies](README.md#test-strategies) — How nax selects a test strategy per story
-- [Three-Session TDD](README.md#three-session-tdd) — Role separation and isolation rules
-- [Configuration Reference](README.md#configuration) — All nax config options
+- [Test Strategies](../../README.md#test-strategies) — How nax selects a test strategy per story
+- [Three-Session TDD](../../README.md#three-session-tdd) — Role separation and isolation rules
+- [Configuration Reference](../../README.md#configuration) — All nax config options

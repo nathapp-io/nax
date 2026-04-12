@@ -192,11 +192,30 @@ Each agent adapter lives in its own subfolder under `src/agents/`. The depth mat
 | File | Purpose | Used by |
 |:-----|:--------|:--------|
 | `shared/decompose.ts` | PRD decomposition prompt + parser | `claude/adapter.ts`, `acp/adapter.ts` |
+| `shared/decompose-prompt.ts` | Async decompose prompt builder (spec + plan modes) | `acp/adapter.ts` |
 | `shared/env.ts` | Secure environment variable construction for spawned agents | All adapters via `buildAllowedEnv()` |
 | `shared/model-resolution.ts` | Resolve ModelDef from config | `claude/plan.ts`, `claude/adapter.ts` |
 | `shared/validation.ts` | Agent capability + tier validation | `registry.ts`, pipeline stages |
 | `shared/version-detection.ts` | Binary version detection | `cli/agents.ts`, `precheck/checks-agents.ts` |
 | `shared/types-extended.ts` | Plan/decompose/interactive types | `claude/plan.ts`, `acp/adapter.ts`, `types.ts` |
+
+### ACP Session Error Retry Tiers
+
+The ACP adapter uses tiered retry logic for session errors, configurable via `execution` config:
+
+| Error type | Config key | Default | Example |
+|:-----------|:-----------|:--------|:--------|
+| Non-retryable (stale/locked session) | `sessionErrorMaxRetries` | 1 | Session state corruption |
+| Retryable (queue disconnect) | `sessionErrorRetryableMaxRetries` | 3 | `QUEUE_DISCONNECTED_BEFORE_COMPLETION` |
+
+The adapter detects retryable errors via the `retryable?: boolean` flag in the ACP response. Error logs include the first 500 chars of output for diagnostics.
+
+### Async Decompose Prompts
+
+`src/agents/shared/decompose-prompt.ts`:
+- `buildDecomposePromptAsync()` — async decompose prompt builder using `OneShotPromptBuilder`
+- Two modes: **spec decomposition** (spec → user stories) and **plan sub-story splitting** (single story → sub-stories)
+- Includes `DECOMPOSE_SPEC_SCHEMA` and `DECOMPOSE_PLAN_SCHEMA` for structured JSON output
 
 ### ACP Cost Alignment
 

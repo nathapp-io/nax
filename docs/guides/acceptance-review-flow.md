@@ -9,8 +9,9 @@ This document maps how four subsystems connect across the nax pipeline:
 
 1. **Acceptance test generation** — creates tests from acceptance criteria
 2. **Semantic review** — LLM-verified behavioral check against ACs
-3. **Acceptance loop** — post-run gate with diagnose/fix retry
-4. **Debate + dialogue** — multi-agent resolution with tool access
+3. **Adversarial review** — LLM-based adversarial code review (REVIEW-003)
+4. **Acceptance loop** — post-run gate with diagnose/fix retry
+5. **Debate + dialogue** — multi-agent resolution with tool access
 
 ---
 
@@ -31,12 +32,20 @@ PRD loaded (stories with acceptance criteria)
  │   │
  │   ├─ ... implement, typecheck, lint, test ...
  │   │
- │   ├─ 3. SEMANTIC REVIEW (review pipeline stage)
- │   │   reviewStage.execute()
- │   │   ├─ PATH A: dialogue only → ReviewerSession.review()
- │   │   ├─ PATH B: debate only → DebateSession + stateless resolver
- │   │   ├─ PATH C: debate + dialogue → DebateSession + resolveDebate()
- │   │   └─ PATH D: stateless → agent.run() or agent.complete()
+ │   ├─ 3. REVIEW (review pipeline stage)
+ │   │   reviewStage.execute() → orchestrator.ts
+ │   │   ├─ SEMANTIC REVIEW (behavioral AC check)
+ │   │   │   ├─ PATH A: dialogue only → ReviewerSession.review()
+ │   │   │   ├─ PATH B: debate only → DebateSession + stateless resolver
+ │   │   │   ├─ PATH C: debate + dialogue → DebateSession + resolveDebate()
+ │   │   │   └─ PATH D: stateless → agent.run() or agent.complete()
+ │   │   │
+ │   │   ├─ ADVERSARIAL REVIEW (REVIEW-003, own ACP session)
+ │   │   │   ├─ Checks: input handling, error paths, abandonment, test gaps, conventions, assumptions
+ │   │   │   ├─ Default diffMode: "ref" (no 50KB cap)
+ │   │   │   └─ Parallel/sequential execution (configurable)
+ │   │   │
+ │   │   └─ Orchestrator coordinates semantic + adversarial execution
  │   │
  │   │   On failure → autofix stage
  │   │   ├─ Mechanical fix (lint --fix, format)
@@ -98,10 +107,11 @@ PRD loaded (stories with acceptance criteria)
 **Files:**
 - `src/pipeline/stages/review.ts` — pipeline stage entry
 - `src/review/semantic.ts` — LLM-based semantic check
+- `src/review/adversarial.ts` — LLM-based adversarial review (REVIEW-003)
+- `src/review/diff-utils.ts` — shared diff utilities (collectDiff, truncateDiff, resolveEffectiveRef)
 - `src/review/dialogue.ts` — ReviewerSession (persistent, tool-capable)
-- `src/review/dialogue-prompts.ts` — prompt builders for dialogue/debate
-- `src/review/runner.ts` — check orchestration (lint, typecheck, semantic)
-- `src/review/orchestrator.ts` — plugin reviewer coordination
+- `src/review/runner.ts` — check orchestration (lint, typecheck, semantic, adversarial)
+- `src/review/orchestrator.ts` — review coordination (semantic + adversarial + plugin)
 
 **Four review paths** (selected by `debate.enabled`, `dialogue.enabled`):
 

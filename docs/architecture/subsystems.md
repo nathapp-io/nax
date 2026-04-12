@@ -109,9 +109,27 @@ The shared mutable state passed through all stages. Acts as the single source of
 
 | Strategy | Description | Key file |
 |:---------|:-----------|:---------|
-| Sequential | One story at a time | `sequential-executor.ts` |
+| Sequential | One story at a time, optional per-story worktree isolation (EXEC-002) | `iteration-runner.ts`, `pipeline-result-handler.ts` |
 | Parallel | Stories in separate git worktrees | `parallel-coordinator.ts`, `parallel-worker.ts` |
 | Parallel batch | Group compatible stories in one session | `parallel-batch.ts` |
+
+### Sequential Worktree Isolation (EXEC-002)
+
+When `execution.storyIsolation === "worktree"`, each story in sequential mode gets its own git worktree:
+
+```
+Per-story worktree lifecycle:
+1. Create .nax-wt/<storyId> via git worktree add (at story start)
+2. Execute story in isolated worktree (no cross-story state leakage)
+3. Merge to main (if successful)
+4. Remove worktree directory via git worktree remove (reclaim disk)
+5. Keep branch nax/<storyId> for diagnostics and re-run cleanup
+```
+
+`src/execution/pipeline-result-handler.ts`:
+- `handlePipelineSuccess()` — marks story passed, captures diff summary, records metrics, removes worktree
+- `handlePipelineFailure()` — manages escalation, merging, pausing
+- `removeWorktreeDirectory()` — removes `.nax-wt/<storyId>` from git worktree tracking (preserves branch)
 
 ### Parallel Execution Flow
 
@@ -147,11 +165,12 @@ ParallelCoordinator
 | Phase | File | Purpose |
 |:------|:-----|:--------|
 | Setup | `run-setup.ts` | Load PRD, init loggers, crash handlers |
-| Init | `run-initialization.ts` | Reconcile story state, resume from crash |
+| Init | `run-initialization.ts` | Reconcile story state, resume from crash, review re-run for reconciled stories |
 | Completion | `run-completion.ts` | Final metrics, hooks, cleanup |
 | Cleanup | `run-cleanup.ts` | Remove temp files, worktrees |
 | Regression | `run-regression.ts` | Full-suite regression after all stories |
 | Acceptance | `acceptance-loop.ts` | Feature-level acceptance test loop |
+| Paused prompts | `paused-story-prompts.ts` | Interactive re-run prompts for paused stories (resume, skip, keep paused) |
 
 ---
 
@@ -230,7 +249,7 @@ The `acceptanceSetupStage` generates tests and verifies they fail (RED) before i
 
 ---
 
-## §21 Verification System
+## §21 Verification & Test Runners
 
 ### Orchestrator
 
@@ -249,19 +268,37 @@ The `acceptanceSetupStage` generates tests and verifies they fail (RED) before i
 - Maps changed files to relevant test files
 - Runs only the scoped subset for faster feedback
 
+### Test Runners Module (SSOT)
+
+`src/test-runners/` — centralized test output parsing extracted from `src/verification/parser.ts`:
+
+| File | Purpose |
+|:-----|:--------|
+| `types.ts` | `TestFailure`, `TestSummary`, `TestOutputAnalysis` types |
+| `detector.ts` | `detectFramework()` — identifies test runner (Bun, Jest, Vitest, etc.) |
+| `parser.ts` | `parseTestOutput()`, `analyzeBunTestOutput()`, `formatFailureSummary()`, `analyzeTestExitCode()` |
+| `ac-parser.ts` | `parseTestFailures()` — AC-ID extraction for the acceptance loop |
+
+All verification strategies and the rectification loop import from `test-runners` instead of maintaining their own parsing logic.
+
 ### Rectification Loop
 
-`src/verification/rectification-loop.ts` + `shared-rectification-loop.ts`:
+`src/verification/rectification-loop.ts`:
 - Auto-fixes failing tests inline (fixture, mock, implementation errors)
 - Crash detection and recovery
 - Configurable max attempts
+
+`src/verification/rectification.ts` — shared rectification utilities:
+- `shouldRetryRectification()` — retry decision logic (attempt count, failure count, regression spiral detection)
+- `buildEscalationPreamble()` — progressive prompt escalation (rethink phase, urgency phase)
+- Deduplication of `TestFailure[]` by (file, testName)
 
 ### VerifyResult
 
 ```typescript
 interface VerifyResult {
   status: "passed" | "failed" | "skipped" | "timeout";
-  failures: TestFailure[];   // Parsed test failure context
+  failures: TestFailure[];   // Parsed test failure context (from test-runners)
   duration: number;
   coverage?: CoverageMetrics;
 }
@@ -398,20 +435,51 @@ loadPlugins() → plugin.setup(config, logger)
 ### Review Orchestrator
 
 `src/review/orchestrator.ts`:
-- Built-in checks: typecheck, lint, test, format
+- Orchestrates semantic + adversarial review execution
+- Built-in checks: typecheck, lint, test, format, semantic, adversarial
 - Plugin reviewers: custom quality checks (semgrep, security, etc.)
+- Supports concurrent review execution (configurable via `adversarial.maxConcurrentSessions`)
 
 ### Semantic Review
 
 `src/review/semantic.ts`:
-- LLM-powered code review
-- Analyzes git diff for quality, security, correctness
+- LLM-powered behavioral review against story acceptance criteria
+- Configurable diff modes: `"embedded"` (diff inlined in prompt, ~50KB cap) or `"ref"` (reviewer self-serves via git tools, no cap)
+- `resetRefOnRerun` option to clear `storyGitRef` on re-run
+
+### Adversarial Review (REVIEW-003)
+
+`src/review/adversarial.ts`:
+- LLM-based adversarial code review, distinct from semantic review
+- Semantic asks: "Does this satisfy the ACs?" / Adversarial asks: "Where does this break? What is missing?"
+- Own ACP session (`reviewer-adversarial`), NOT the implementer session
+- Default diffMode: `"ref"` (reviewer self-serves via git tools)
+- Finding categories: `input`, `error-path`, `abandonment`, `test-gap`, `convention`, `assumption`
+- Configurable parallel/sequential execution
+
+### Diff Utilities (SSOT)
+
+`src/review/diff-utils.ts` — shared diff utilities for semantic + adversarial:
+- `collectDiff()` — git diff with configurable `excludePatterns`
+- `collectDiffStat()` — diff --stat summary
+- `computeTestInventory()` — test file audit for adversarial review
+- `truncateDiff()` — 50KB cap for embedded mode
+- `resolveEffectiveRef()` — BUG-114 ref fallback chain (supplied ref → merge-base → undefined)
 
 ### Quality Runner
 
 `src/quality/runner.ts`:
 - Executes lint, typecheck, build, lintFix commands
 - Supports command chaining and failure handling
+
+### Quality Test Command Resolver (SSOT)
+
+`src/quality/command-resolver.ts`:
+- `resolveQualityTestCommands()` — single source of truth for test command resolution across the pipeline
+- Priority: `review.commands.test` ?? `quality.commands.test`
+- `{{package}}` substitution in `testScoped` template for monorepo stories
+- Monorepo orchestrator promotion (turbo/nx filter syntax replaces per-file expansion)
+- Scope file threshold tracking (default 10, configurable)
 
 ---
 
@@ -532,6 +600,24 @@ interface StoryMetrics {
   completedAt: string;
   fullSuiteGatePassed?: boolean;
   runtimeCrashes: number;
+  reviewMetrics?: {            // Semantic + adversarial sub-buckets
+    semantic?: ReviewMetrics;
+    adversarial?: ReviewMetrics;
+  };
+  findingsByCategory?: Record<string, number>;  // Adversarial finding category breakdown
+}
+```
+
+### Token Usage
+
+`src/metrics/types.ts`:
+
+```typescript
+interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedReadTokens?: number;
+  cachedWriteTokens?: number;
 }
 ```
 
@@ -555,7 +641,8 @@ interface StoryMetrics {
 
 `src/debate/`:
 - Multi-agent debate for complex decisions
-- Configurable resolver strategies: synthesis, majority-fail-closed, custom
+- Configurable resolver strategies: synthesis, majority-fail-closed, majority-fail-open, custom
+- `ResolverConfig` supports optional `model` field for asymmetric tier routing (resolver can use a different model tier than debaters)
 
 ### Debate Flow
 

@@ -33,7 +33,7 @@ Patterns you'll use in every file.
 
 Architectural patterns and security rules — referenced when designing new modules.
 
-- **§11 Design Patterns** — Builder, Adapter, Registry, Strategy, Chain, Singleton; agent protocol modes; LLM fallback rule
+- **§11 Design Patterns** — Prompt Builders (composition), Adapter, Registry, Strategy, Chain, Singleton; agent protocol modes; LLM fallback rule
 - **§12 Security Standards** — Path security, command construction, process lifecycle, type safety for security
 - **§13 Test Performance** — Injectable sleep, zero-delay config, shared `beforeAll`, event-driven waits
 
@@ -50,14 +50,14 @@ How agents are configured, permissioned, and organized.
 Deep reference for each subsystem — consult when working on a specific module.
 
 - **§17 Pipeline Architecture** — 15 stages, stage contract, `PipelineContext`, `StageResult` actions
-- **§18 Execution Modes & Batching** — Sequential/parallel/batch, escalation, crash recovery, lifecycle phases
+- **§18 Execution Modes & Batching** — Parallel/batch, sequential worktree isolation, escalation, crash recovery, lifecycle phases
 - **§19 TDD Orchestration** — Three-session workflow, session roles, isolation, failure categories, verdict
 - **§20 Acceptance Test System** — Generator, refinement, fix stories, templates, RED gate
-- **§21 Verification System** — Orchestrator, strategies (scoped/regression/acceptance), smart runner, rectification
+- **§21 Verification & Test Runners** — Orchestrator, strategies (scoped/regression/acceptance), smart runner, rectification, test-runners module (framework detection, output parsing SSOT)
 - **§22 Routing & Classification** — `classifyComplexity()`, `determineTestStrategy()`, pluggable strategies
 - **§23 Plugin System** — Plugin interface, 7 extension points, lifecycle
 - **§24 Context & Constitution** — Token-budgeted context, auto-detect, 7 agent generators, constitution
-- **§25 Review & Quality** — Review orchestrator, semantic review, quality runner
+- **§25 Review & Quality** — Review orchestrator, semantic review, adversarial review, diff utilities, quality runner, test command resolver
 - **§26 Interaction & Human-in-the-Loop** — Interaction chain, 8 triggers, bridge, plugins
 - **§27 Hooks & Lifecycle** — 11 hook events, `HookDef`, `HookContext`
 - **§28 Metrics & Cost Tracking** — `StoryMetrics`, aggregator, cost system
@@ -92,6 +92,7 @@ Deep reference for each subsystem — consult when working on a specific module.
 
 | Pattern | When to use | Entry point |
 |:--------|:-----------|:------------|
+| Prompt Builder | Domain-specific prompt construction (composition) | `TddPromptBuilder`, `ReviewPromptBuilder`, etc. |
 | Builder | Multi-step object construction | `static for()` → chain → `.build()` |
 | Adapter | Multiple backends, one contract | Interface in `types.ts`, class per backend |
 | Registry | Lookup by name/capability | Class (lifecycle) or function (pure lookup) |
@@ -104,4 +105,4 @@ Deep reference for each subsystem — consult when working on a specific module.
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-04-07. Maintained by nax-dev.*
+*Created: 2026-03-10. Last updated: 2026-04-12. Maintained by nax-dev.*

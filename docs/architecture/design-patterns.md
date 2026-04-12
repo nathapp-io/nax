@@ -15,7 +15,8 @@ nax is primarily functional (~90% exported functions, ~10% classes). Use pattern
 |:---------|:----|:--------|
 | Stateless transformation or computation | **Plain function** | `estimateTokens()`, `coerceVerdict()`, `buildStorySection()` |
 | Single-use utility with no variants | **Plain function** | `loadConstitution()`, `runReview()`, `autoCommitIfDirty()` |
-| Multi-step construction with optional config | **Builder** | `PromptBuilder`, `DecomposeBuilder` |
+| Domain-specific prompt construction (composable) | **Prompt Builder** | `TddPromptBuilder`, `ReviewPromptBuilder`, `AcceptancePromptBuilder`, etc. |
+| Multi-step construction with optional config | **Builder** | `DecomposeBuilder` |
 | Multiple backends sharing a contract | **Adapter** | `AgentAdapter` → Claude, Codex, Gemini |
 | Collection with typed lookup/lifecycle | **Registry** | `PluginRegistry`, agent registry |
 | Interchangeable algorithms for same task | **Strategy** | Verification strategies, routing strategies |
@@ -25,18 +26,57 @@ nax is primarily functional (~90% exported functions, ~10% classes). Use pattern
 
 **Rule: prefer plain functions.** Only introduce a class/pattern when you need state, multiple implementations, or complex construction. Never wrap a simple function in a class just to "follow patterns."
 
+### Prompt Builders (Composition over Inheritance)
+
+Domain-specific prompt construction using composable section functions. Replaces the former monolithic `PromptBuilder` class (deleted).
+
+```typescript
+// ✅ Each domain has its own builder — composed from reusable sections
+const builder = new TddPromptBuilder(role, story, config);
+builder.addConstitution(constitution);
+builder.addContext(contextMd);
+builder.addIsolationRules(changedFiles);
+const prompt = builder.build();
+
+// ✅ One-shot prompts for routing, decomposition
+const builder = new OneShotPromptBuilder();
+builder.addInstruction(routingInstruction);
+builder.addJsonSchema(routingSchema);
+const prompt = builder.build();
+```
+
+**7 domain-specific builders** (`src/prompts/builders/`):
+
+| Builder | Roles | Purpose |
+|:--------|:------|:--------|
+| `TddPromptBuilder` | implementer, test-writer, verifier, single-session, tdd-simple, batch | TDD execution pipeline |
+| `DebatePromptBuilder` | propose, critique, rebut, synthesize | Debate persona/proposal sections |
+| `ReviewPromptBuilder` | dialogue, semantic | Semantic review, AC verification |
+| `AcceptancePromptBuilder` | generator, diagnoser, fix-executor | Acceptance test generation/diagnosis |
+| `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings | Fix prompts with escalation preambles |
+| `OneShotPromptBuilder` | router, decomposer, auto-approver | Trivial instruction + schema combos |
+| `AdversarialReviewPromptBuilder` | adversarial | Adversarial heuristics + findings schema |
+
+**Core engine** (`src/prompts/core/`):
+
+- `SectionAccumulator` — shared engine for joining sections, separator loading, override resolution
+- `universal-sections.ts` — null-guarded section constructors used by all builders
+- `core/sections/` — pure section functions (findings, instructions, json-schema, prior-failures, routing-candidates)
+
+**Rules:**
+- **Composition only** — builders wrap `SectionAccumulator`, never inherit from each other
+- **Section delegation** — builder methods are one-line delegations to section functions in `core/sections/`
+- **Call-order = section order** — fluent chain in callsite determines prompt structure
+- **Override loading** — disk overrides loaded per-role via `loader.ts`
+- **File size limits** — section files ≤80 lines, builder files ≤200 lines
+
+**Reference:** `src/prompts/builders/`, `src/prompts/core/`, `src/prompts/README.md`
+
 ### Builder (Fluent API)
 
 For multi-step object construction with optional configuration:
 
 ```typescript
-// ✅ Static .for() entry point, method chaining, terminal .build()
-const prompt = await PromptBuilder.for("implementer")
-  .story(story)
-  .constitution(constitutionContent)
-  .context(contextMd)
-  .build();
-
 const result = await DecomposeBuilder.for(story)
   .prd(prd)
   .config(builderConfig)
@@ -49,7 +89,7 @@ const result = await DecomposeBuilder.for(story)
 - Terminal method (`.build()`, `.decompose()`) produces the result
 - Setters are optional — builder has sensible defaults
 
-**Reference:** `src/prompts/builder.ts`, `src/decompose/builder.ts`
+**Reference:** `src/decompose/builder.ts`
 
 ### Adapter (Interface + Implementations)
 

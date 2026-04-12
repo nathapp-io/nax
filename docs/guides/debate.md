@@ -116,6 +116,31 @@ Four resolver types are available. The resolver runs after all debater proposals
 | `synthesis` | `adapter.complete()` synthesises all proposals into one verdict | Yes | Good for nuanced decisions |
 | `custom` | `adapter.complete()` with a judge prompt; uses `resolver.agent` | Yes | Full control over resolver behaviour |
 
+### Asymmetric Resolver Model
+
+The resolver can use a different model tier than the debaters via the `model` field on `resolver`:
+
+```json
+{
+  "debate": {
+    "stages": {
+      "review": {
+        "debaters": [
+          { "agent": "claude", "model": "fast" },
+          { "agent": "claude", "model": "fast" }
+        ],
+        "resolver": {
+          "type": "synthesis",
+          "model": "powerful"
+        }
+      }
+    }
+  }
+}
+```
+
+This enables cost-effective configurations: cheap debaters for breadth, powerful resolver for final judgment.
+
 When `review.dialogue.enabled` is also `true`, all four resolver types are upgraded: they route through `reviewerSession.resolveDebate()` instead of the stateless path, gaining tool access (READ, GREP) and session continuity. See [Behavior Matrix — Review Stage](./semantic-review.md#behavior-matrix--review-stage).
 
 ---

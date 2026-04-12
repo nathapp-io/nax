@@ -21,7 +21,7 @@ src/
 │   ├── gemini/       # Gemini CLI adapter (adapter.ts)
 │   ├── opencode/     # OpenCode CLI adapter (adapter.ts)
 │   ├── cost/         # Centralized cost calculation (calculate, parse, pricing, types)
-│   ├── shared/       # Cross-adapter utilities (decompose, env, model-resolution, validation, version-detection, types-extended)
+│   ├── shared/       # Cross-adapter utilities (decompose, decompose-prompt, env, model-resolution, validation, version-detection, types-extended)
 │   ├── registry.ts   # Agent discovery, lookup, and protocol routing
 │   └── types.ts      # AgentAdapter interface, AgentResult, AgentRunOptions
 ├── analyze/          # Codebase scanning and LLM-enhanced story classification
@@ -33,9 +33,9 @@ src/
 ├── context/          # Context generation for agent prompts
 │   └── generators/   # Per-agent context generators (claude, codex, cursor, gemini, opencode, aider, windsurf)
 ├── debate/           # Multi-agent debate system (session, concurrency, resolvers, prompts)
-├── execution/        # Run orchestration (sequential, parallel, crash recovery)
+├── execution/        # Run orchestration (parallel, crash recovery, pipeline result handling)
 │   ├── escalation/   # Tier escalation on repeated failures (fast → balanced → powerful)
-│   └── lifecycle/    # Run lifecycle phases (setup, initialization, completion, cleanup, regression, acceptance-loop)
+│   └── lifecycle/    # Run lifecycle phases (setup, initialization, completion, cleanup, regression, acceptance-loop, paused-story-prompts)
 ├── hooks/            # Lifecycle hook system (script-based, 11 event types)
 ├── interaction/      # Human-in-the-loop plugins (telegram, auto, webhook)
 │   └── plugins/      # Interaction plugin implementations
@@ -50,19 +50,23 @@ src/
 ├── precheck/         # Pre-run validation (agents, CLI, config, git, system, story-size gate)
 ├── prd/              # PRD parsing, story state machine, story management
 ├── project/          # Auto-detect project type, language, frameworks
-├── prompts/          # Prompt building (builder, loader, types)
-│   └── sections/     # Prompt sections (conventions, hermetic, isolation, role-task, story, tdd-conventions, verdict)
-├── quality/          # Quality command runner (lint, typecheck, build)
+├── prompts/          # Prompt building (domain-specific builders, loader, core engine)
+│   ├── builders/     # 7 domain-specific prompt builders (tdd, debate, review, acceptance, rectifier, one-shot, adversarial-review)
+│   ├── core/         # Shared prompt engine (SectionAccumulator, universal sections, wrappers, types)
+│   │   └── sections/ # Pure section functions (findings, instructions, json-schema, prior-failures, routing-candidates)
+│   └── sections/     # Legacy prompt sections (conventions, hermetic, isolation, role-task, story, tdd-conventions, verdict)
+├── quality/          # Quality command runner (lint, typecheck, build) + test command resolver (SSOT)
 ├── queue/            # Mid-run queue control (PAUSE, ABORT, SKIP)
-├── review/           # Code review orchestration (built-in + plugin checks, semantic review)
+├── review/           # Code review orchestration (built-in + plugin checks, semantic review, adversarial review, diff utilities)
 ├── routing/          # Complexity classification and model-tier routing
-│   └── strategies/   # LLM-based routing strategy (llm.ts, llm-prompts.ts)
+│   └── strategies/   # LLM-based routing strategy (llm.ts, llm-parsing.ts)
 ├── tdd/              # TDD orchestration (three-session workflow, isolation, verdict, rectification-gate)
 ├── tui/              # React/Ink terminal UI
 │   ├── components/   # TUI React components
 │   └── hooks/        # TUI React hooks (useKeyboard, useLayout, usePipelineEvents, usePty)
 ├── utils/            # Shared utilities (git, paths, errors, processes)
-├── verification/     # Test execution and result parsing
+├── test-runners/     # Test framework detection and output parsing (SSOT for test parsing)
+├── verification/     # Test execution orchestration, rectification loop
 │   └── strategies/   # Verification strategies (scoped, regression, acceptance)
 ├── worktree/         # Git worktree management for parallel execution (manager, dispatcher, merge)
 ├── errors.ts         # NaxError base class + derived error classes

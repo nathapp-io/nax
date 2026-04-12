@@ -15,6 +15,7 @@ nax is an **orchestrator, not an agent** — it doesn't write code itself. It dr
 - **Extensible** — plugin system for routing, review, reporting, and post-run actions
 - **Language-aware** — auto-detects Go, Rust, Python, TypeScript from manifest files; adapts commands, test structure, and mocking patterns per language
 - **Semantic review** — LLM-based behavioral review against story acceptance criteria; catches stubs, placeholders, and out-of-scope changes
+- **Adversarial review** — LLM-based adversarial code review that probes for input handling, error paths, and abandoned implementations
 
 ## Install
 
@@ -46,7 +47,7 @@ See [docs/](docs/) for full guides on configuration, test strategies, monorepo s
 ## How It Works
 
 ```
-(plan →) acceptance setup → route → execute → verify → review → escalate → loop → regression gate → acceptance
+(plan →) acceptance setup → route → execute → verify → review (semantic + adversarial) → escalate → loop → regression gate → acceptance
 ```
 
 1. **Plan** *(optional)* — Generate `prd.json` from a spec file using an LLM
@@ -55,7 +56,7 @@ See [docs/](docs/) for full guides on configuration, test strategies, monorepo s
 4. **Context** — Gather relevant code, tests, and project standards per story
 5. **Execute** — Run agent session (Claude Code, Codex, Gemini CLI, or ACP)
 6. **Verify** — Run scoped tests; rectify on failure before escalating
-7. **Review** — Run lint + typecheck; autofix before escalating
+7. **Review** — Run lint + typecheck + semantic review + adversarial review; autofix before escalating
 8. **Escalate** — On repeated failure, retry with a higher model tier
 9. **Loop** — Repeat steps 3–8 per story until all pass or a cost/iteration limit is hit
 10. **Regression gate** — Run full test suite after all stories pass
@@ -142,9 +143,11 @@ After all stories pass, nax runs the full test suite once. If it fails, it retri
 
 See [Regression Gate Guide](docs/guides/regression-gate.md).
 
-### Parallel Execution
+### Parallel & Isolated Execution
 
 Stories are batched by compatibility (same model tier, similar complexity) and run in parallel within each batch. Use `--parallel <n>` to control concurrency. Sequential mode uses a deferred regression gate; parallel mode always runs regression at the end.
+
+Even in sequential mode, stories can be isolated in per-story git worktrees (`execution.storyIsolation: "worktree"`) to prevent cross-story state leakage.
 
 See [Parallel Execution Guide](docs/guides/parallel-execution.md).
 

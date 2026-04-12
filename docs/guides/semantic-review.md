@@ -100,6 +100,8 @@ Add `"semantic"` to `review.checks` in `.nax/config.json`:
   "review": {
     "semantic": {
       "modelTier": "fast",
+      "diffMode": "embedded",
+      "resetRefOnRerun": false,
       "rules": []
     }
   }
@@ -111,6 +113,21 @@ Add `"semantic"` to `review.checks` in `.nax/config.json`:
 Controls which model runs the semantic review. Options: `"fast"` (haiku), `"balanced"` (sonnet), `"powerful"` (opus). Default: `"balanced"`.
 
 **Recommendation:** Use `"fast"` (haiku) for most projects — semantic review is a lightweight behavioral check, not a deep reasoning task.
+
+### `diffMode` (REVIEW-002)
+
+Controls how the production diff is provided to the reviewer:
+
+| Mode | Description | Diff cap | Best for |
+|:-----|:-----------|:---------|:---------|
+| `"embedded"` (default) | Diff is inlined directly in the prompt | ~50KB | Small-to-medium diffs, simple review |
+| `"ref"` | Reviewer self-serves via git tools (READ, GREP) | No cap | Large diffs, adversarial review |
+
+In `"ref"` mode, the reviewer receives the story's `storyGitRef` and uses git commands to inspect the diff on demand. This removes the 50KB cap and lets the reviewer focus on specific files rather than scanning the entire diff.
+
+### `resetRefOnRerun`
+
+When `true`, clears `storyGitRef` on re-run so it is re-captured in the fresh execution. Default: `false`.
 
 ### Custom Rules
 
@@ -198,6 +215,55 @@ Semantic review failed:
 [warn] src/auth/session.ts:18 — createSession() is defined but never called from the login flow
   Suggestion: Wire createSession() into the login handler after successful auth
 ```
+
+---
+
+## Adversarial Review (REVIEW-003)
+
+Adversarial review is a separate LLM-based review that complements semantic review. While semantic review asks "Does this satisfy the ACs?", adversarial review asks "Where does this break? What is missing?"
+
+### Key Differences
+
+| Aspect | Semantic | Adversarial |
+|:-------|:---------|:------------|
+| Question | Does this implement the ACs? | Where could this fail? |
+| Session | Implementer session or ReviewerSession | Own session (`reviewer-adversarial`) |
+| Default diffMode | `"embedded"` (50KB cap) | `"ref"` (no cap) |
+| Findings | AC coverage, correctness | input handling, error paths, abandonment, test gaps, conventions, assumptions |
+
+### Enabling
+
+Add `"adversarial"` to `review.checks`:
+
+```json
+{
+  "review": {
+    "checks": ["typecheck", "lint", "semantic", "adversarial"],
+    "adversarial": {
+      "modelTier": "balanced",
+      "diffMode": "ref",
+      "rules": [],
+      "timeoutMs": 120000,
+      "excludePatterns": [],
+      "parallel": false,
+      "maxConcurrentSessions": 2
+    }
+  }
+}
+```
+
+### Finding Categories
+
+Adversarial findings are categorized by the type of issue:
+
+| Category | Description |
+|:---------|:-----------|
+| `input` | Missing input validation, boundary handling |
+| `error-path` | Unhandled error conditions, swallowed exceptions |
+| `abandonment` | Stubs, TODOs, partial implementations left behind |
+| `test-gap` | Missing test coverage for critical paths |
+| `convention` | Violations of project coding conventions |
+| `assumption` | Load-bearing assumptions that could break under change |
 
 ---
 
