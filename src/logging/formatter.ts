@@ -265,7 +265,7 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
     if (typeof data.durationMs === "number" && data.durationMs > 0)
       meta.push(`${EMOJI.duration} ${formatDuration(data.durationMs)}`);
     if (typeof data.action === "string") meta.push(`action: ${data.action}`);
-    if (typeof data.reason === "string" && mode !== "quiet") meta.push(c.gray(data.reason));
+    if (typeof data.reason === "string" && mode !== "quiet") meta.push(data.reason);
     if (meta.length > 0) {
       output += `  ${c.gray(meta.join("  "))}`;
     }
