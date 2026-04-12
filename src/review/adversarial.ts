@@ -235,7 +235,7 @@ export async function runAdversarialReview(
       workdir,
       acpSessionName: adversarialSessionName,
       keepSessionOpen: false,
-      timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 180,
+      timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
       modelTier: adversarialConfig.modelTier,
       modelDef: resolvedModelDef,
       pipelineStage: "review",

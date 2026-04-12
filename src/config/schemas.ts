@@ -323,8 +323,8 @@ export const AdversarialReviewConfigSchema = z.object({
   diffMode: z.enum(["embedded", "ref"]).default("ref"),
   /** Custom adversarial heuristic rules to append to the prompt. */
   rules: z.array(z.string()).default([]),
-  /** LLM call timeout in milliseconds. Default 180s (shorter than semantic, no debate path). */
-  timeoutMs: z.number().int().positive().default(180_000),
+  /** LLM call timeout in milliseconds. Default 600s (matches semantic — no debate path but ref mode may need full tool traversal). */
+  timeoutMs: z.number().int().positive().default(600_000),
   /**
    * Pathspec exclusions applied only in embedded mode.
    * Default empty — adversarial sees test files (unlike semantic).
