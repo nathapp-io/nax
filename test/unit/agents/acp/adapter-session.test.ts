@@ -370,9 +370,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return makeSession(); },
       };
 
-      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
-      expect(result.session).toBe(existingSession);
-      expect(result.resumed).toBe(true);
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(session).toBe(existingSession);
+      expect(resumed).toBe(true);
       expect(createCalled).toBe(false);
     });
 
@@ -386,9 +386,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
-      expect(result.session).toBe(newSession);
-      expect(result.resumed).toBe(false);
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(session).toBe(newSession);
+      expect(resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
 
@@ -401,9 +401,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "default");
-      expect(result.session).toBe(newSession);
-      expect(result.resumed).toBe(false);
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "default");
+      expect(session).toBe(newSession);
+      expect(resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
 
@@ -417,9 +417,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
-      expect(result.session).toBe(newSession);
-      expect(result.resumed).toBe(false);
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(session).toBe(newSession);
+      expect(resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
   });
