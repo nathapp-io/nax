@@ -121,6 +121,19 @@ ${SEMANTIC_OUTPUT_SCHEMA}`;
 
     return wrapJsonPrompt(core);
   }
+
+  /**
+   * Follow-up prompt sent in the same session when the first response could not
+   * be parsed as valid JSON. The LLM still has the full review context — this
+   * turn only asks it to re-emit the result in the correct format.
+   */
+  static jsonRetry(): string {
+    return (
+      "Your previous response could not be parsed as valid JSON.\n" +
+      "Output ONLY the JSON object from your review — no markdown fences, no explanation.\n" +
+      "The object must start with { and end with }."
+    );
+  }
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────

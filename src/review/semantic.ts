@@ -369,23 +369,24 @@ export async function runSemanticReview(
   } catch {
     // Use default model if resolution fails
   }
+
+  const runOpts = {
+    workdir,
+    acpSessionName: reviewerSessionName,
+    timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
+    modelTier: semanticConfig.modelTier,
+    modelDef: resolvedModelDef,
+    pipelineStage: "review",
+    config: naxConfig ?? DEFAULT_CONFIG,
+    featureName,
+    storyId: story.id,
+    sessionRole: "reviewer-semantic",
+  } as const;
+
   let rawResponse: string;
   let llmCost = 0;
   try {
-    const runResult = await agent.run({
-      prompt,
-      workdir,
-      acpSessionName: reviewerSessionName,
-      keepSessionOpen: false,
-      timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
-      modelTier: semanticConfig.modelTier,
-      modelDef: resolvedModelDef,
-      pipelineStage: "review",
-      config: naxConfig ?? DEFAULT_CONFIG,
-      featureName,
-      storyId: story.id,
-      sessionRole: "reviewer-semantic",
-    });
+    const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: true });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
   } catch (err) {
@@ -398,6 +399,25 @@ export async function runSemanticReview(
       output: `skipped: LLM call failed — ${String(err)}`,
       durationMs: Date.now() - startTime,
     };
+  }
+
+  // Retry once when the response cannot be parsed — the session has full context so
+  // a short follow-up asking for valid JSON is sufficient.
+  if (!parseLLMResponse(rawResponse)) {
+    try {
+      logger?.debug("semantic", "Response could not be parsed — retrying with JSON prompt", {
+        storyId: story.id,
+      });
+      const retryResult = await agent.run({
+        prompt: ReviewPromptBuilder.jsonRetry(),
+        ...runOpts,
+        keepSessionOpen: false,
+      });
+      rawResponse = retryResult.output;
+      llmCost += retryResult.estimatedCost ?? 0;
+    } catch (err) {
+      logger?.warn("semantic", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+    }
   }
 
   // Parse response — fail-closed when LLM clearly intended to fail,

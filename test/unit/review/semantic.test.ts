@@ -911,14 +911,14 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     expect(runOpts.acpSessionName).toBe(expectedSession);
   });
 
-  test("agent.run() receives keepSessionOpen: false (one-shot, stateless per cycle) (#414)", async () => {
+  test("agent.run() initial call uses keepSessionOpen: true to allow JSON retry (#414)", async () => {
     const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
     expect(agent.run).toHaveBeenCalled();
     const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.keepSessionOpen).toBe(false);
+    expect(runOpts.keepSessionOpen).toBe(true);
   });
 
   test("acpSessionName encodes workdir hash in session name", async () => {
