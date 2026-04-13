@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
-import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
@@ -262,7 +257,7 @@ describe("runThreeSessionTdd", () => {
       ["src/user.ts"],
     ];
 
-    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
+    mockAllSpawn(mock((cmd: string[], _spawnOpts?: any) => {
       // Intercept the post-TDD test command (bun test)
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
         testCommandCalled = true;
@@ -429,7 +424,7 @@ describe("runThreeSessionTdd", () => {
 
     const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
 
-    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
+    mockAllSpawn(mock((cmd: string[], _spawnOpts?: any) => {
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
         testCommandCalled = true;
         testRunCount++;
