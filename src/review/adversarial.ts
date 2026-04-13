@@ -14,6 +14,7 @@
  */
 
 import { buildSessionName, readAcpSession } from "../agents/acp/adapter";
+import { writeReviewAudit } from "./review-audit";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
@@ -266,6 +267,16 @@ export async function runAdversarialReview(
   const parsed = parseAdversarialResponse(rawResponse);
   if (!parsed) {
     const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+    void writeReviewAudit({
+      reviewer: "adversarial",
+      sessionName: adversarialSessionName,
+      workdir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail,
+      result: null,
+    });
     if (looksLikeFail) {
       logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
         storyId: story.id,
@@ -297,6 +308,16 @@ export async function runAdversarialReview(
       cost: llmCost,
     };
   }
+
+  void writeReviewAudit({
+    reviewer: "adversarial",
+    sessionName: adversarialSessionName,
+    workdir,
+    storyId: story.id,
+    featureName,
+    parsed: true,
+    result: { passed: parsed.passed, findings: parsed.findings },
+  });
 
   const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity));
   const nonBlockingFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity));

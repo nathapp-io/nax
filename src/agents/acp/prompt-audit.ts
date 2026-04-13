@@ -128,7 +128,7 @@ const MAX_NAX_WALK_DEPTH = 10;
  * This consolidates monorepo audit files at the project root even when individual
  * stories run with a package subdir as their workdir (e.g. apps/api/).
  */
-async function findNaxProjectRoot(startDir: string): Promise<string> {
+export async function findNaxProjectRoot(startDir: string): Promise<string> {
   let dir = resolve(startDir);
   for (let depth = 0; depth < MAX_NAX_WALK_DEPTH; depth++) {
     if (await _promptAuditDeps.exists(join(dir, ".nax", "config.json"))) {
