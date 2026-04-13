@@ -447,6 +447,10 @@ loadPlugins() → plugin.setup(config, logger)
 - Configurable diff modes: `"embedded"` (diff inlined in prompt, ~50KB cap) or `"ref"` (reviewer self-serves via git tools, no cap)
 - `resetRefOnRerun` option to clear `storyGitRef` on re-run
 
+### Mechanical vs LLM Check Classification
+
+The orchestrator splits checks into **mechanical** (typecheck, lint, build, format) and **LLM** (semantic, adversarial). When mechanical checks fail but LLM checks pass, `mechanicalFailedOnly: true` is set on the result — autofix uses this to suppress tier escalation for unfixable mechanical issues (e.g., lint errors in test files the implementer cannot modify).
+
 ### Adversarial Review (REVIEW-003)
 
 `src/review/adversarial.ts`:
@@ -456,6 +460,15 @@ loadPlugins() → plugin.setup(config, logger)
 - Default diffMode: `"ref"` (reviewer self-serves via git tools)
 - Finding categories: `input`, `error-path`, `abandonment`, `test-gap`, `convention`, `assumption`
 - Configurable parallel/sequential execution
+- **Scope-aware routing:** adversarial findings in test files are routed to a test-writer session via `autofix-adversarial.ts`, not the implementer (TDD isolation constraint)
+
+### Review Audit Trail
+
+`src/review/review-audit.ts`:
+- Fire-and-forget JSON audit writer for semantic and adversarial reviewer output
+- Directory: `.nax/review-audit/<featureName>/<epochMs>-<sessionName>.json`
+- Tracks parse success, `looksLikeFail` heuristic, and structured result
+- Errors warn but never throw — audit failures cannot interrupt a run
 
 ### Diff Utilities (SSOT)
 

@@ -237,7 +237,7 @@ LLM-based adversarial code review that asks "Where does this break?" rather than
       "modelTier": "balanced",
       "diffMode": "ref",
       "rules": [],
-      "timeoutMs": 120000,
+      "timeoutMs": 600000,
       "excludePatterns": [],
       "parallel": false,
       "maxConcurrentSessions": 2
@@ -245,6 +245,16 @@ LLM-based adversarial code review that asks "Where does this break?" rather than
   }
 }
 ```
+
+| Key | Default | Description |
+|:----|:--------|:-----------|
+| `modelTier` | `"balanced"` | Model tier for the adversarial reviewer (`"fast"`, `"balanced"`, `"powerful"`) |
+| `diffMode` | `"ref"` | How the diff is provided: `"embedded"` (inlined, ~50KB cap) or `"ref"` (self-serve via git tools, no cap) |
+| `rules` | `[]` | Project-specific rules passed verbatim to the adversarial prompt |
+| `timeoutMs` | `600000` | Session timeout in milliseconds (600s matches semantic review timeout) |
+| `excludePatterns` | `[]` | Git pathspec patterns to exclude from the diff |
+| `parallel` | `false` | When `true`, semantic and adversarial reviews run concurrently instead of sequentially |
+| `maxConcurrentSessions` | `2` | Maximum concurrent LLM review sessions when `parallel: true`. Higher values use more LLM quota but complete faster. |
 
 See [Semantic Review — Adversarial Review](semantic-review.md#adversarial-review-review-003) for details.
 

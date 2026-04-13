@@ -337,7 +337,7 @@ Project-level overrides take precedence.
 
 The prompt system is built on **domain-specific prompt builders** (`src/prompts/builders/`). Each builder is a composable class that wraps a `SectionAccumulator` from `src/prompts/core/`. Template overrides are loaded per-role via `src/prompts/loader.ts` and injected as the role-body section.
 
-**7 builders** handle all prompt construction:
+**8 builders** handle all prompt construction:
 
 | Builder | Roles |
 |:--------|:------|
@@ -345,8 +345,9 @@ The prompt system is built on **domain-specific prompt builders** (`src/prompts/
 | `DebatePromptBuilder` | propose, critique, rebut, synthesize |
 | `ReviewPromptBuilder` | dialogue, semantic |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor |
-| `RectifierPromptBuilder` | tdd-test-failure, verify-failure, review-findings |
+| `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings, test-writer-rectification |
 | `OneShotPromptBuilder` | router, decomposer, auto-approver |
+| `PlanPromptBuilder` | planner (story decomposition, complexity classification, AC generation) |
 | `AdversarialReviewPromptBuilder` | adversarial |
 
 Only the TDD builder roles (test-writer, implementer, verifier, single-session, tdd-simple) support user-facing template overrides via `prompts.overrides`. Other builders are internal.

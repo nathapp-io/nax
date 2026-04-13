@@ -125,17 +125,17 @@ See [Configuration Guide](docs/guides/configuration.md) for the full schema.
 
 ### Test Strategies
 
-nax supports four TDD strategies. Select per-feature in `config.json`:
+nax supports five test strategies. When `tdd.strategy` is `"auto"` (default), the planner selects the strategy per story based on complexity and content — security-critical stories always get `three-session-tdd` regardless of complexity.
 
 | Strategy | Sessions | When to use |
 |:---------|:---------|:------------|
-| `three-session-tdd` | 3 | Strict TDD — red/green/refactor in separate sessions |
-| `three-session-tdd-lite` | 3 | Flexible TDD — test-writer may add minimal stubs |
-| `tdd-simple` | 1 | Simple changes — single session, implementer writes tests |
-| `test-after` | 1 | Legacy / exploratory — implement first, add tests after |
-| `no-test` | 0 | Config-only, docs, CI, dependency bumps — requires justification |
+| `three-session-tdd` | 3 | Expert stories and security-critical code (auth, tokens, RBAC) — strict isolation: test-writer cannot touch `src/`, implementer cannot touch tests |
+| `three-session-tdd-lite` | 3 | Complex stories — relaxed isolation: test-writer may add minimal `src/` stubs |
+| `tdd-simple` | 1 | Simple and medium stories — single session, TDD discipline (red → green → refactor) |
+| `test-after` | 1 | Exploratory / prototyping — implement first, add tests after |
+| `no-test` | 0 | Config-only, docs, CI, dependency bumps — requires `noTestJustification` |
 
-See [Test Strategies Guide](docs/guides/test-strategies.md) for details.
+See [Test Strategies Guide](docs/guides/test-strategies.md) for the full routing decision tree and security override rules.
 
 ### Story Decomposition
 

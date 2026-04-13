@@ -218,6 +218,58 @@ Semantic review failed:
 
 ---
 
+## Mechanical vs LLM Check Splitting
+
+The review orchestrator classifies checks into two categories:
+
+| Category | Checks | Runs when |
+|:---------|:-------|:----------|
+| **Mechanical** | `typecheck`, `lint`, `build`, `format` | Always (command-based, deterministic) |
+| **LLM** | `semantic`, `adversarial` | After mechanical checks complete |
+
+When mechanical checks fail but all LLM checks pass, the orchestrator sets `mechanicalFailedOnly: true` on the review result. This signals to the **autofix stage** that the code is functionally correct — the agent satisfied the acceptance criteria — but has fixable style or build issues. Autofix uses this to:
+
+1. **Run `lintFix` first** — attempt automated lint fixes before spawning an agent
+2. **Suppress tier escalation** — if the agent reports `UNRESOLVED:` for a mechanical-only failure (e.g., lint errors in test files it cannot modify), the stage proceeds instead of escalating to a higher model tier
+
+When `mechanicalFailedOnly` is `false` or `undefined`, normal escalation behavior applies.
+
+---
+
+## Review Audit Trail
+
+Every semantic and adversarial review writes a JSON audit file to `.nax/review-audit/` so operators can inspect exactly what each reviewer decided, regardless of pass/fail.
+
+### Directory Layout
+
+```
+.nax/review-audit/
+└── <featureName>/
+    ├── 1718900000000-nax-abc12345-my-feature-US-001-reviewer-semantic.json
+    └── 1718900001000-nax-abc12345-my-feature-US-001-reviewer-adversarial.json
+```
+
+### Audit Entry Fields
+
+| Field | Description |
+|:------|:-----------|
+| `timestamp` | ISO 8601 timestamp of the audit write |
+| `storyId` | Story identifier for correlation |
+| `featureName` | Feature name (determines subfolder) |
+| `reviewer` | `"semantic"` or `"adversarial"` |
+| `sessionName` | ACP session name — correlates with prompt-audit entries |
+| `parsed` | `true` if the LLM response parsed into valid review JSON |
+| `looksLikeFail` | (only when `parsed: false`) Whether the raw response contained `"passed":false` |
+| `result` | Structured `{ passed, findings }` or `null` when parse failed |
+
+### Behavior
+
+- **Fire-and-forget** — errors warn via the logger but never throw, so an audit failure cannot interrupt a run
+- **Best-effort** — uses `_reviewAuditDeps` injectable deps for testability
+- **Automatic** — no configuration needed; audit files are written whenever semantic or adversarial review runs
+
+---
+
 ## Adversarial Review (REVIEW-003)
 
 Adversarial review is a separate LLM-based review that complements semantic review. While semantic review asks "Does this satisfy the ACs?", adversarial review asks "Where does this break? What is missing?"
@@ -264,6 +316,29 @@ Adversarial findings are categorized by the type of issue:
 | `test-gap` | Missing test coverage for critical paths |
 | `convention` | Violations of project coding conventions |
 | `assumption` | Load-bearing assumptions that could break under change |
+
+### Scope-Aware Adversarial Routing
+
+When adversarial review flags issues in test files, the **implementer session cannot fix them** — TDD isolation prevents the implementer from modifying tests. To handle this, the autofix stage splits adversarial findings by file scope:
+
+```
+adversarial findings
+  ├── source-file findings → implementer session (normal rectification)
+  └── test-file findings   → test-writer session (separate rectification)
+```
+
+**How it works:**
+
+1. `splitAdversarialFindingsByScope()` in `src/pipeline/stages/autofix-adversarial.ts` classifies each finding using `isTestFile()` from `src/test-runners/`
+2. Source-file findings are sent to the implementer via the normal `RectifierPromptBuilder` path
+3. Test-file findings are routed to `runTestWriterRectification()`, which:
+   - Spawns a **test-writer session** (session name: `nax-<hash8>-<feature>-<storyId>-test-writer`)
+   - Uses the TDD test-writer model tier from `config.tdd.sessionTiers.testWriter` (default: `"balanced"`)
+   - Builds the prompt via `RectifierPromptBuilder.testWriterRectification()`
+   - Keeps the session open (`keepOpen: true`) so subsequent autofix cycles can resume it
+4. If the test-writer agent is unavailable or fails, rectification logs a warning and falls back to the implementer
+
+This ensures adversarial findings are routed to the session role that has permission to modify the affected files.
 
 ---
 
