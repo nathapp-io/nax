@@ -10,7 +10,8 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _planDeps, buildPlanningPrompt, planCommand } from "../../../src/cli/plan";
+import { _planDeps, planCommand } from "../../../src/cli/plan";
+import { PlanPromptBuilder } from "../../../src/prompts";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { PRD } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
@@ -589,8 +590,8 @@ describe("buildPlanningPrompt (ENH-006)", () => {
   const ctx = "## Codebase Structure\nsrc/auth/auth.module.ts";
 
   /** Helper: concatenate both parts into a single string for content assertions. */
-  function fullPrompt(...args: Parameters<typeof buildPlanningPrompt>): string {
-    const { taskContext, outputFormat } = buildPlanningPrompt(...args);
+  function fullPrompt(...args: Parameters<typeof PlanPromptBuilder.build>): string {
+    const { taskContext, outputFormat } = new PlanPromptBuilder().build(...args);
     return `${taskContext}\n\n${outputFormat}`;
   }
 
@@ -643,13 +644,13 @@ describe("buildPlanningPrompt (ENH-006)", () => {
   });
 
   test("taskContext excludes output schema — no Output Schema header or JSON field listing", () => {
-    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).not.toContain("Output Schema");
     expect(taskContext).not.toContain('"analysis": "string');
   });
 
   test("outputFormat contains schema and format directive but not spec steps", () => {
-    const { outputFormat } = buildPlanningPrompt(spec, ctx);
+    const { outputFormat } = new PlanPromptBuilder().build(spec, ctx);
     expect(outputFormat).toContain("Output Schema");
     expect(outputFormat).toContain('"analysis"');
     expect(outputFormat).not.toContain("Step 1");
@@ -663,37 +664,37 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
   const ctx = "## Codebase Structure\nsrc/projects/projects.service.ts";
 
   test("spec anchor rules included in taskContext when specContent is non-empty", () => {
-    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).toContain("Preserve spec ACs");
   });
 
   test("spec anchor rules NOT included when specContent is empty string", () => {
-    const { taskContext } = buildPlanningPrompt("", ctx);
+    const { taskContext } = new PlanPromptBuilder().build("", ctx);
     expect(taskContext).not.toContain("Preserve spec ACs");
   });
 
   test("taskContext tells planner to put invented ACs in suggestedCriteria", () => {
-    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).toContain("suggestedCriteria");
   });
 
   test("outputFormat schema includes suggestedCriteria field when spec is provided", () => {
-    const { outputFormat } = buildPlanningPrompt(spec, ctx);
+    const { outputFormat } = new PlanPromptBuilder().build(spec, ctx);
     expect(outputFormat).toContain("suggestedCriteria");
   });
 
   test("outputFormat schema does NOT include suggestedCriteria when spec is empty", () => {
-    const { outputFormat } = buildPlanningPrompt("", ctx);
+    const { outputFormat } = new PlanPromptBuilder().build("", ctx);
     expect(outputFormat).not.toContain("suggestedCriteria");
   });
 
   test("taskContext instructs planner to never drop a spec AC", () => {
-    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).toContain("Never silently drop");
   });
 
   test("taskContext instructs planner to keep story scope — no cross-story ACs", () => {
-    const { taskContext } = buildPlanningPrompt(spec, ctx);
+    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).toContain("story scope");
   });
 });

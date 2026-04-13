@@ -5,12 +5,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { RectificationConfig } from "../../../src/config";
-import {
-  type RectificationState,
-  createRectificationPrompt,
-  createEscalatedRectificationPrompt,
-  shouldRetryRectification,
-} from "../../../src/verification/rectification";
+import { RectifierPromptBuilder } from "../../../src/prompts";
+import { type RectificationState, shouldRetryRectification } from "../../../src/verification/rectification";
 import type { TestFailure } from "../../../src/verification/parser";
 import type { UserStory } from "../../../src/prd";
 
@@ -125,375 +121,6 @@ describe("shouldRetryRectification", () => {
   });
 });
 
-describe("createRectificationPrompt", () => {
-  const mockStory: UserStory = {
-    id: "US-001",
-    title: "Add user authentication",
-    description: "Implement JWT-based authentication for API endpoints",
-    acceptanceCriteria: [
-      "Users can log in with email/password",
-      "JWT tokens are issued on successful login",
-      "Protected endpoints validate JWT tokens",
-    ],
-    tags: ["security"],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-  };
-
-  const mockFailures: TestFailure[] = [
-    {
-      file: "test/auth.test.ts",
-      testName: "login > should return JWT on valid credentials",
-      error: "Expected status 200, got 401",
-      stackTrace: ["at test/auth.test.ts:15:20", "at Object.test (test/auth.test.ts:10:3)"],
-    },
-    {
-      file: "test/middleware.test.ts",
-      testName: "JWT middleware > should reject invalid tokens",
-      error: "Expected 403, got 200",
-      stackTrace: ["at test/middleware.test.ts:25:10"],
-    },
-  ];
-
-  test("should include story title and description", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("Add user authentication");
-    expect(prompt).toContain("Implement JWT-based authentication for API endpoints");
-  });
-
-  test("should include all acceptance criteria", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("1. Users can log in with email/password");
-    expect(prompt).toContain("2. JWT tokens are issued on successful login");
-    expect(prompt).toContain("3. Protected endpoints validate JWT tokens");
-  });
-
-  test("should include formatted failure summary from R1's formatFailureSummary", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("test/auth.test.ts > login > should return JWT on valid credentials");
-    expect(prompt).toContain("Expected status 200, got 401");
-    expect(prompt).toContain("test/middleware.test.ts > JWT middleware > should reject invalid tokens");
-    expect(prompt).toContain("Expected 403, got 200");
-  });
-
-  test("should include per-file test commands for failing files (default bun test)", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("bun test test/auth.test.ts");
-    expect(prompt).toContain("bun test test/middleware.test.ts");
-  });
-
-  test("uses configured testCommand instead of hardcoded bun test", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory, undefined, undefined, "jest");
-    expect(prompt).toContain("jest test/auth.test.ts");
-    expect(prompt).toContain("jest test/middleware.test.ts");
-    expect(prompt).not.toContain("bun test test/");
-  });
-
-  test("should include clear instructions about fixing regressions", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("Your changes caused test regressions");
-    expect(prompt).toContain("Fix these without breaking existing logic");
-  });
-
-  test("should warn against loosening assertions", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("Do NOT loosen assertions to mask implementation bugs");
-  });
-
-  test("should warn against modifying tests unnecessarily", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("Do NOT modify test files unless there is a legitimate bug in the test itself");
-  });
-
-  test("should respect maxFailureSummaryChars config", () => {
-    const config: RectificationConfig = {
-      enabled: true,
-      maxRetries: 2,
-      fullSuiteTimeoutSeconds: 120,
-      maxFailureSummaryChars: 100, // very small limit
-      abortOnIncreasingFailures: true,
-      escalateOnExhaustion: true,
-      rethinkAtAttempt: 2,
-      urgencyAtAttempt: 3,
-    };
-
-    const manyFailures: TestFailure[] = Array.from({ length: 20 }, (_, i) => ({
-      file: `test/file${i}.test.ts`,
-      testName: `test ${i}`,
-      error: `Error ${i}: Some long error message that takes up space`,
-      stackTrace: [`at test/file${i}.test.ts:${i}:0`],
-    }));
-
-    const prompt = createRectificationPrompt(manyFailures, mockStory, config);
-    // Should contain truncation message
-    expect(prompt).toMatch(/truncated/i);
-  });
-
-  test("should handle single failure", () => {
-    const singleFailure: TestFailure[] = [mockFailures[0]];
-    const prompt = createRectificationPrompt(singleFailure, mockStory);
-    expect(prompt).toContain("test/auth.test.ts > login > should return JWT on valid credentials");
-    expect(prompt).toContain("bun test test/auth.test.ts");
-  });
-
-  test("should deduplicate test commands for same file", () => {
-    const duplicateFileFailures: TestFailure[] = [
-      {
-        file: "test/auth.test.ts",
-        testName: "test 1",
-        error: "error 1",
-        stackTrace: [],
-      },
-      {
-        file: "test/auth.test.ts",
-        testName: "test 2",
-        error: "error 2",
-        stackTrace: [],
-      },
-      {
-        file: "test/middleware.test.ts",
-        testName: "test 3",
-        error: "error 3",
-        stackTrace: [],
-      },
-    ];
-
-    const prompt = createRectificationPrompt(duplicateFileFailures, mockStory);
-
-    // Should only have 2 unique bun test commands
-    const testCommands = prompt.match(/bun test test\//g);
-    expect(testCommands).not.toBeNull();
-    expect(testCommands?.length).toBe(2);
-
-    // Should contain both unique files
-    expect(prompt).toContain("bun test test/auth.test.ts");
-    expect(prompt).toContain("bun test test/middleware.test.ts");
-  });
-
-  test("should use default maxChars when config not provided", () => {
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    // Should not be truncated with default 2000 chars for just 2 failures
-    expect(prompt).not.toMatch(/truncated/i);
-    expect(prompt).toContain("test/auth.test.ts");
-    expect(prompt).toContain("test/middleware.test.ts");
-  });
-
-  test("should handle empty acceptance criteria array", () => {
-    const storyNoAC: UserStory = {
-      ...mockStory,
-      acceptanceCriteria: [],
-    };
-    const prompt = createRectificationPrompt(mockFailures, storyNoAC);
-    expect(prompt).toContain("Acceptance Criteria:");
-    // Should not crash, just show empty list
-  });
-
-  test("scoped mode includes NEVER run without filter instruction", () => {
-    // mockFailures has 2 files — well within default threshold of 10
-    const prompt = createRectificationPrompt(mockFailures, mockStory);
-    expect(prompt).toContain("run ONLY the failing test files shown above");
-    expect(prompt).toContain("NEVER run `bun test` without a file filter");
-  });
-
-  test("deduplicates failures by (file, testName) before building prompt", () => {
-    const dupeFailures: TestFailure[] = [
-      { file: "test/auth.test.ts", testName: "should pass", error: "err", stackTrace: [] },
-      { file: "test/auth.test.ts", testName: "should pass", error: "err", stackTrace: [] }, // exact dupe
-      { file: "test/auth.test.ts", testName: "other test", error: "err", stackTrace: [] },
-    ];
-    const prompt = createRectificationPrompt(dupeFailures, mockStory);
-    // Only 2 distinct (file, testName) pairs — failure list should not show 3 items
-    const occurrences = (prompt.match(/should pass/g) ?? []).length;
-    expect(occurrences).toBe(1);
-  });
-
-  test("falls back to full-suite command when failing files exceed scopeFileThreshold", () => {
-    const manyFiles: TestFailure[] = Array.from({ length: 15 }, (_, i) => ({
-      file: `test/file${i}.test.ts`,
-      testName: `test ${i}`,
-      error: `Error ${i}`,
-      stackTrace: [],
-    }));
-    // 15 files > default threshold (10) → full-suite fallback
-    const prompt = createRectificationPrompt(manyFiles, mockStory);
-    expect(prompt).not.toMatch(/bun test test\/file/); // no per-file commands
-    expect(prompt).toContain("  bun test"); // full suite
-    expect(prompt).toMatch(/15 files are failing/);
-  });
-
-  test("emits per-file commands when failing files are within scopeFileThreshold", () => {
-    const fewFiles: TestFailure[] = Array.from({ length: 5 }, (_, i) => ({
-      file: `test/file${i}.test.ts`,
-      testName: `test ${i}`,
-      error: `Error ${i}`,
-      stackTrace: [],
-    }));
-    // 5 files ≤ default threshold (10) → scoped commands
-    const prompt = createRectificationPrompt(fewFiles, mockStory);
-    for (let i = 0; i < 5; i++) {
-      expect(prompt).toContain(`bun test test/file${i}.test.ts`);
-    }
-    expect(prompt).toContain("NEVER run");
-  });
-
-  test("full-suite fallback uses configured testCommand", () => {
-    const manyFiles: TestFailure[] = Array.from({ length: 15 }, (_, i) => ({
-      file: `test/file${i}.test.ts`,
-      testName: `test ${i}`,
-      error: `Error ${i}`,
-      stackTrace: [],
-    }));
-    const prompt = createRectificationPrompt(manyFiles, mockStory, undefined, undefined, "jest");
-    expect(prompt).toContain("  jest");
-    expect(prompt).not.toContain("bun test");
-    expect(prompt).toMatch(/15 files are failing/);
-  });
-
-  test("uses testScopedTemplate for per-file commands when provided", () => {
-    const prompt = createRectificationPrompt(
-      mockFailures,
-      mockStory,
-      undefined,
-      undefined,
-      "jest",
-      undefined,
-      "jest --testPathPattern={{files}}",
-    );
-    expect(prompt).toContain("jest --testPathPattern=test/auth.test.ts");
-    expect(prompt).toContain("jest --testPathPattern=test/middleware.test.ts");
-    expect(prompt).not.toContain("jest test/auth.test.ts");
-  });
-
-  test("custom scopeFileThreshold overrides the default", () => {
-    const files: TestFailure[] = Array.from({ length: 3 }, (_, i) => ({
-      file: `test/file${i}.test.ts`,
-      testName: `test ${i}`,
-      error: `Error ${i}`,
-      stackTrace: [],
-    }));
-    // 3 files > threshold of 2 → full-suite fallback
-    const prompt = createRectificationPrompt(files, mockStory, undefined, undefined, undefined, 2);
-    expect(prompt).not.toMatch(/bun test test\/file/);
-    expect(prompt).toMatch(/3 files are failing/);
-  });
-
-  test("normalizes leading ../ from failure file paths in test commands", () => {
-    const pathFailures: TestFailure[] = [
-      { file: "../test/e2e/import.e2e.spec.ts", testName: "AC1", error: "err", stackTrace: [] },
-    ];
-    const prompt = createRectificationPrompt(pathFailures, mockStory);
-    expect(prompt).not.toContain("bun test ../test");
-    expect(prompt).toContain("bun test test/e2e/import.e2e.spec.ts");
-  });
-
-  describe("progressive prompt escalation", () => {
-    const escalationConfig: RectificationConfig = {
-      enabled: true,
-      maxRetries: 4,
-      fullSuiteTimeoutSeconds: 120,
-      maxFailureSummaryChars: 2000,
-      abortOnIncreasingFailures: true,
-      escalateOnExhaustion: true,
-      rethinkAtAttempt: 2,
-      urgencyAtAttempt: 3,
-    };
-
-    test("attempt 1 — no preamble injected", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 1);
-      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
-      expect(prompt).not.toContain("Final Rectification Attempt");
-      expect(prompt).toContain("# Rectification Required");
-    });
-
-    test("attempt 2 (= rethinkAtAttempt) — rethink section injected, no urgency", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 2);
-      expect(prompt).toContain("Previous Attempt Did Not Fix");
-      expect(prompt).toContain("fundamentally different strategy");
-      expect(prompt).not.toContain("Final Rectification Attempt");
-    });
-
-    test("attempt 3 (= urgencyAtAttempt) — both rethink and urgency injected", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 3);
-      expect(prompt).toContain("Previous Attempt Did Not Fix");
-      expect(prompt).toContain("Final Rectification Attempt");
-      expect(prompt).toContain("escalate to a stronger model tier");
-    });
-
-    test("attempt 4 (> urgencyAtAttempt) — both sections still present", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 4);
-      expect(prompt).toContain("Previous Attempt Did Not Fix");
-      expect(prompt).toContain("Final Rectification Attempt");
-      expect(prompt).toContain("attempt 4");
-    });
-
-    test("attempt number appears in preamble context", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 2);
-      expect(prompt).toContain("attempt 2");
-    });
-
-    test("no injection when attempt is undefined (backward compat)", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, undefined);
-      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
-      expect(prompt).not.toContain("Final Rectification Attempt");
-    });
-
-    test("no injection when config is undefined", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, undefined, 3);
-      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
-      expect(prompt).not.toContain("Final Rectification Attempt");
-    });
-
-    test("rethink clamped to maxRetries when rethinkAtAttempt > maxRetries", () => {
-      // rethinkAtAttempt=99 > maxRetries=4 → clamped to 4 → fires on attempt 4
-      const highThresholdConfig: RectificationConfig = {
-        ...escalationConfig,
-        rethinkAtAttempt: 99,
-        urgencyAtAttempt: 99,
-      };
-      const promptAttempt3 = createRectificationPrompt(mockFailures, mockStory, highThresholdConfig, 3);
-      expect(promptAttempt3).not.toContain("Previous Attempt Did Not Fix");
-
-      const promptAttempt4 = createRectificationPrompt(mockFailures, mockStory, highThresholdConfig, 4);
-      expect(promptAttempt4).toContain("Previous Attempt Did Not Fix");
-      expect(promptAttempt4).toContain("Final Rectification Attempt"); // urgency also clamped to 4
-    });
-
-    test("default urgencyAtAttempt=3 fires on final attempt when maxRetries=2", () => {
-      // Key regression: with default maxRetries=2, urgencyAtAttempt=3 was dead — clamping fixes this
-      const defaultMaxConfig: RectificationConfig = {
-        ...escalationConfig,
-        maxRetries: 2,
-        rethinkAtAttempt: 2,
-        urgencyAtAttempt: 3, // > maxRetries=2 → clamped to 2
-      };
-      const prompt = createRectificationPrompt(mockFailures, mockStory, defaultMaxConfig, 2);
-      expect(prompt).toContain("Previous Attempt Did Not Fix");
-      expect(prompt).toContain("Final Rectification Attempt"); // urgency fires because clamped to 2
-    });
-
-    test("rethink but no urgency when urgencyAtAttempt > attempt", () => {
-      const lateUrgencyConfig: RectificationConfig = {
-        ...escalationConfig,
-        rethinkAtAttempt: 2,
-        urgencyAtAttempt: 10, // effectively disabled
-      };
-      const prompt = createRectificationPrompt(mockFailures, mockStory, lateUrgencyConfig, 3);
-      expect(prompt).toContain("Previous Attempt Did Not Fix");
-      expect(prompt).not.toContain("Final Rectification Attempt");
-    });
-
-    test("core prompt structure still present when preamble is injected", () => {
-      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 3);
-      expect(prompt).toContain("# Rectification Required");
-      expect(prompt).toContain("## Story Context");
-      expect(prompt).toContain("## Test Failures");
-      expect(prompt).toContain("## Instructions");
-    });
-  });
-});
 
 describe("createEscalatedRectificationPrompt", () => {
   const mockStory: UserStory = {
@@ -540,7 +167,7 @@ describe("createEscalatedRectificationPrompt", () => {
   };
 
   test("should include 'Previous Rectification Attempts' section header", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       2,
@@ -552,7 +179,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("should include prior attempt count and original tier in the section", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       2,
@@ -565,7 +192,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("should list all test names when failures <= 10", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       1,
@@ -585,7 +212,7 @@ describe("createEscalatedRectificationPrompt", () => {
       stackTrace: [],
     }));
 
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       manyFailures,
       mockStory,
       2,
@@ -604,7 +231,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("should include escalation direction with both source and target tiers", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       2,
@@ -619,7 +246,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("should handle escalation from fast to balanced", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       1,
@@ -632,7 +259,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("should include story context (title, description, acceptance criteria)", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       1,
@@ -646,7 +273,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("should include failure summary", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       1,
@@ -677,7 +304,7 @@ describe("createEscalatedRectificationPrompt", () => {
       stackTrace: [],
     }));
 
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       manyFailures,
       mockStory,
       1,
@@ -697,7 +324,7 @@ describe("createEscalatedRectificationPrompt", () => {
       stackTrace: [],
     }));
 
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       tenFailures,
       mockStory,
       1,
@@ -716,7 +343,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("should include instructions for the agent", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       1,
@@ -729,7 +356,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("uses configured testCommand in NEVER run filter instruction", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       1,
@@ -743,7 +370,7 @@ describe("createEscalatedRectificationPrompt", () => {
   });
 
   test("defaults to bun test in filter instruction when no testCommand provided", () => {
-    const prompt = createEscalatedRectificationPrompt(
+    const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
       1,

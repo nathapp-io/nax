@@ -37,8 +37,6 @@ import {
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { runTestWriterRectification, splitAdversarialFindingsByScope } from "./autofix-adversarial";
-import { buildReviewRectificationPrompt } from "./autofix-prompts";
-export { buildReviewRectificationPrompt };
 
 const CLARIFY_REGEX = /^CLARIFY:\s*(.+)$/ms;
 /** Matches the REVIEW-003 reviewer contradiction escape hatch emitted by the implementer. */
@@ -382,7 +380,7 @@ async function runAgentRectification(
         );
       }
 
-      let prompt = buildReviewRectificationPrompt(state.failedChecks, ctx.story);
+      let prompt = RectifierPromptBuilder.reviewRectification(state.failedChecks, ctx.story);
       const escalationPreamble = buildAutofixEscalationPreamble(
         attempt,
         maxAttempts,

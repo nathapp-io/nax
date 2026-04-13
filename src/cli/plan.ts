@@ -21,14 +21,6 @@ import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
-import type { ProjectProfile } from "../config/runtime-types";
-import {
-  COMPLEXITY_GUIDE,
-  GROUPING_RULES,
-  SPEC_ANCHOR_RULES,
-  TEST_STRATEGY_GUIDE,
-  getAcQualityRules,
-} from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
 import { DebateSession } from "../debate";
 import type { DebateSessionOptions, DebateStageConfig } from "../debate";
@@ -41,6 +33,8 @@ import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
+import { PlanPromptBuilder } from "../prompts";
+import type { PackageSummary } from "../prompts";
 import { errorMessage } from "../utils/errors";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
@@ -193,7 +187,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     // Debate path: run N agents in parallel via DebateSession.runPlan().
     // Each debater calls adapter.plan() writing to a temp path; resolver picks the best PRD.
     // taskContext is passed to the rebuttal loop; outputFormat is proposal-round only.
-    const { taskContext: planTaskContext, outputFormat: planOutputFormat } = buildPlanningPrompt(
+    const { taskContext: planTaskContext, outputFormat: planOutputFormat } = new PlanPromptBuilder().build(
       specContent,
       codebaseContext,
       undefined, // no file path — runPlan() appends per-debater temp path
@@ -242,7 +236,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     // #91: Respect agent.protocol — ACP protocol uses adapter.plan() (session-based),
     // CLI protocol uses adapter.complete() (one-shot). This matches how the run path works.
     const isAcp = config?.agent?.protocol === "acp";
-    const { taskContext: autoTaskCtx, outputFormat: autoOutputFmt } = buildPlanningPrompt(
+    const { taskContext: autoTaskCtx, outputFormat: autoOutputFmt } = new PlanPromptBuilder().build(
       specContent,
       codebaseContext,
       isAcp ? outputPath : undefined, // ACP writes directly to file; CLI returns inline
@@ -338,7 +332,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // ── Interactive plan helper (used by: interactive path + debate fallback) ──────────────────────
   async function runInteractivePlan(): Promise<string> {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
-    const { taskContext: interactiveTaskCtx, outputFormat: interactiveOutputFmt } = buildPlanningPrompt(
+    const { taskContext: interactiveTaskCtx, outputFormat: interactiveOutputFmt } = new PlanPromptBuilder().build(
       specContent,
       codebaseContext,
       outputPath,
@@ -493,16 +487,6 @@ function detectProjectName(workdir: string, pkg: Record<string, unknown> | null)
   return "unknown";
 }
 
-/** Compact per-package summary for the planning prompt. */
-interface PackageSummary {
-  path: string;
-  name: string;
-  runtime: string;
-  framework: string;
-  testRunner: string;
-  keyDeps: string[];
-}
-
 const FRAMEWORK_PATTERNS: [RegExp, string][] = [
   [/\bnext\b/, "Next.js"],
   [/\bnuxt\b/, "Nuxt"],
@@ -565,20 +549,6 @@ function buildPackageSummary(rel: string, pkg: Record<string, unknown> | null): 
 }
 
 /**
- * Render per-package summaries as a compact markdown table for the prompt.
- */
-function buildPackageDetailsSection(details: PackageSummary[]): string {
-  if (details.length === 0) return "";
-
-  const rows = details.map((d) => {
-    const stack = [d.framework, d.testRunner, ...d.keyDeps].filter(Boolean).join(", ") || "—";
-    return `| \`${d.path}\` | ${d.name} | ${stack} |`;
-  });
-
-  return `\n## Package Tech Stacks\n\n| Path | Package | Stack |\n|:-----|:--------|:------|\n${rows.join("\n")}\n`;
-}
-
-/**
  * Build codebase context markdown from scan results.
  */
 function buildCodebaseContext(scan: CodebaseScan): string {
@@ -607,140 +577,6 @@ function buildCodebaseContext(scan: CodebaseScan): string {
   }
 
   return sections.join("\n");
-}
-
-/**
- * Build the full planning prompt sent to the LLM.
- *
- * Structured as 3 explicit steps (ENH-006):
- *   Step 1: Understand the spec
- *   Step 2: Analyze codebase (existing) or architecture decisions (greenfield)
- *   Step 3: Generate implementation stories from analysis
- *
- * Includes:
- * - Spec content + codebase context
- * - Output schema with analysis + contextFiles fields
- * - Complexity + test strategy guides
- * - MW-007: Monorepo hint and package list when packages are detected
- */
-/** The two separable parts of the planning prompt. */
-export interface PlanningPromptParts {
-  /** Spec, codebase context, and analysis instructions — safe to include in rebuttal rounds. */
-  taskContext: string;
-  /** Output schema and format directive — proposal round only; omitted from rebuttal prompts. */
-  outputFormat: string;
-}
-
-export function buildPlanningPrompt(
-  specContent: string,
-  codebaseContext: string,
-  outputFilePath?: string,
-  packages?: string[],
-  packageDetails?: PackageSummary[],
-  projectProfile?: ProjectProfile,
-): PlanningPromptParts {
-  const isMonorepo = packages && packages.length > 0;
-  const packageDetailsSection =
-    packageDetails && packageDetails.length > 0 ? buildPackageDetailsSection(packageDetails) : "";
-  const monorepoHint = isMonorepo
-    ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${packages.map((p) => `- ${p}`).join("\n")}\n${packageDetailsSection}\nFor each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`
-    : "";
-
-  const workdirField = isMonorepo
-    ? `\n      "workdir": "string — optional, relative path to package (e.g. \\"packages/api\\"). Omit for root-level stories.",`
-    : "";
-
-  const specAnchorSection = specContent.trim() ? `\n\n${SPEC_ANCHOR_RULES}` : "";
-
-  const taskContext = `You are a senior software architect generating a product requirements document (PRD) as JSON.
-
-## Step 1: Understand the Spec
-
-Read the spec carefully. Identify the goal, scope, constraints, and what "done" looks like.
-
-## Spec
-
-${specContent}
-
-## Step 2: Analyze
-
-Examine the codebase context below.
-
-If the codebase has existing code (refactoring, enhancement, bug fix):
-- Which existing files need modification?
-- Which files import from or depend on them?
-- What tests cover the affected code?
-- What are the risks (breaking changes, backward compatibility)?
-- What is the migration path?
-
-If this is a greenfield project (empty or minimal codebase):
-- What is the target architecture?
-- What are the key technical decisions (framework, patterns, conventions)?
-- What should be built first (dependency order)?
-
-Record ALL findings in the "analysis" field of the output JSON. This analysis is provided to every implementation agent as context — be thorough.
-
-**Important:** The codebase context below contains file names and structure only — no file content. Do NOT assert specific line numbers. The implementer will read the actual files via contextFiles.
-
-## Codebase Context
-
-${codebaseContext}${monorepoHint}
-
-## Step 3: Generate Implementation Stories
-
-Based on your Step 2 analysis, create stories that produce CODE CHANGES.
-
-${GROUPING_RULES}
-
-${getAcQualityRules(projectProfile)}${specAnchorSection}
-
-For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference.
-
-${COMPLEXITY_GUIDE}
-
-${TEST_STRATEGY_GUIDE}`;
-
-  const outputFormat = `## Output Schema
-
-Generate a JSON object with this exact structure (no markdown, no explanation — JSON only):
-
-{
-  "project": "string — project name",
-  "feature": "string — feature name",
-  "analysis": "string — your Step 2 analysis: key files, impact areas, risks, architecture decisions, migration notes. All implementation agents will receive this.",
-  "branchName": "string — git branch (e.g. feat/my-feature)",
-  "createdAt": "ISO 8601 timestamp",
-  "updatedAt": "ISO 8601 timestamp",
-  "userStories": [
-    {
-      "id": "string — e.g. US-001",
-      "title": "string — concise story title",
-      "description": "string — detailed description of the story",
-      "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC. Never include quality gates."],${specContent.trim() ? `\n      "suggestedCriteria": ["string — optional. Behavioral edge cases or negative paths you identified that are NOT in the spec. Plain assertions only — observable outputs, return values, state changes, or error conditions. No implementation details or vague descriptions. Omit this field if empty."],` : ""}
-      "contextFiles": ["string — key source files the agent should read (max 5, relative paths)"],
-      "tags": ["string — routing tags, e.g. feature, security, api"],
-      "dependencies": ["string — story IDs this story depends on"],${workdirField}
-      "status": "pending",
-      "passes": false,
-      "routing": {
-        "complexity": "simple | medium | complex | expert",
-        "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
-        "noTestJustification": "string — REQUIRED when testStrategy is no-test, explains why tests are unnecessary",
-        "reasoning": "string — brief classification rationale"
-      },
-      "escalations": [],
-      "attempts": 0
-    }
-  ]
-}
-
-${
-  outputFilePath
-    ? `Write the PRD JSON directly to this file path: ${outputFilePath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`
-    : "Output ONLY the JSON object. Do not wrap in markdown code blocks."
-}`;
-
-  return { taskContext, outputFormat };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { _autofixDeps, autofixStage, buildReviewRectificationPrompt } from "../../../../src/pipeline/stages/autofix";
+import { _autofixDeps, autofixStage } from "../../../../src/pipeline/stages/autofix";
+import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
@@ -250,7 +251,7 @@ describe("autofixStage", () => {
     ];
     const story = { id: "US-002", title: "Add feature" } as any;
 
-    const prompt = buildReviewRectificationPrompt(failedChecks, story);
+    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
 
     expect(prompt).toContain(errorText);
     expect(prompt).toContain("US-002");
@@ -263,7 +264,7 @@ describe("autofixStage", () => {
     ];
     const story = { id: "US-002", title: "Add feature", workdir: "apps/api" } as any;
 
-    const prompt = buildReviewRectificationPrompt(failedChecks, story);
+    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
 
     expect(prompt).toContain("Only modify files within `apps/api/`");
     expect(prompt).toContain("Do NOT touch files outside this directory");
@@ -275,7 +276,7 @@ describe("autofixStage", () => {
     ];
     const story = { id: "US-002", title: "Add feature" } as any;
 
-    const prompt = buildReviewRectificationPrompt(failedChecks, story);
+    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
 
     expect(prompt).not.toContain("Only modify files within");
   });
@@ -506,7 +507,7 @@ describe("autofixStage", () => {
     ];
     const story = { id: "US-412", title: "My story", acceptanceCriteria: [] } as any;
 
-    const prompt = buildReviewRectificationPrompt(failedChecks, story);
+    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
 
     Object.assign(_autofixDeps, saved);
 

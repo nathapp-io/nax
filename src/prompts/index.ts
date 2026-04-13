@@ -40,5 +40,9 @@ export type { OneShotRole } from "./builders/one-shot-builder";
 export type { RoutingCandidate } from "./core/sections/routing-candidates";
 export type { SchemaDescriptor } from "./core/sections/json-schema";
 
+// Plan prompt builder — centralises planning prompt construction.
+export { PlanPromptBuilder } from "./builders/plan-builder";
+export type { PlanningPromptParts, PackageSummary } from "./builders/plan-builder";
+
 // Core types — re-exported for callsites that need them
 export type { PromptRole, PromptSection, PromptOptions } from "./core/types";

@@ -11,12 +11,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  buildReviewRectificationPrompt,
-  buildDialogueAwareRectificationPrompt,
-} from "../../../../src/pipeline/stages/autofix-prompts";
-import type { ReviewCheckResult } from "../../../../src/review/types";
+import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { DialogueMessage } from "../../../../src/review/dialogue";
+import type { ReviewCheckResult } from "../../../../src/review/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,7 +49,7 @@ describe("buildReviewRectificationPrompt", () => {
   describe("semantic-only failure", () => {
     test("uses AC-focused prompt framing", () => {
       const checks = [makeCheck("semantic", "Missing key foo.bar")];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_BASE);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_BASE);
 
       expect(prompt).toContain("acceptance criteria compliance issues");
       expect(prompt).toContain("AC1: uses t('foo.bar')");
@@ -62,7 +59,7 @@ describe("buildReviewRectificationPrompt", () => {
 
     test("includes false-positive verification instructions", () => {
       const checks = [makeCheck("semantic", "Key not in diff")];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_BASE);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_BASE);
 
       expect(prompt).toContain("may have flagged false positives");
       expect(prompt).toContain("Read the relevant files to verify");
@@ -71,7 +68,7 @@ describe("buildReviewRectificationPrompt", () => {
 
     test("includes scope constraint for monorepo stories", () => {
       const checks = [makeCheck("semantic", "Missing key")];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_MONOREPO);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_MONOREPO);
 
       expect(prompt).toContain("Only modify files within `apps/web/`");
     });
@@ -80,7 +77,7 @@ describe("buildReviewRectificationPrompt", () => {
   describe("mechanical-only failure (lint/typecheck)", () => {
     test("uses original lint/typecheck prompt framing", () => {
       const checks = [makeCheck("lint", "Unexpected console.log")];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_BASE);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_BASE);
 
       expect(prompt).toContain("lint/typecheck errors");
       expect(prompt).toContain("Unexpected console.log");
@@ -90,14 +87,14 @@ describe("buildReviewRectificationPrompt", () => {
 
     test("includes scope constraint for monorepo stories", () => {
       const checks = [makeCheck("lint", "error")];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_MONOREPO);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_MONOREPO);
 
       expect(prompt).toContain("Only modify files within `apps/web/`");
     });
 
     test("excludes scope constraint for non-monorepo stories", () => {
       const checks = [makeCheck("lint", "error")];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_BASE);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_BASE);
 
       expect(prompt).not.toContain("Only modify files within");
     });
@@ -109,7 +106,7 @@ describe("buildReviewRectificationPrompt", () => {
         makeCheck("lint", "console.log found"),
         makeCheck("semantic", "AC not implemented"),
       ];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_BASE);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_BASE);
 
       expect(prompt).toContain("Lint/Typecheck Errors");
       expect(prompt).toContain("console.log found");
@@ -124,7 +121,7 @@ describe("buildReviewRectificationPrompt", () => {
         makeCheck("lint", "error"),
         makeCheck("semantic", "missing key"),
       ];
-      const prompt = buildReviewRectificationPrompt(checks, STORY_MONOREPO);
+      const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_MONOREPO);
 
       expect(prompt).toContain("Only modify files within `apps/web/`");
     });
@@ -138,8 +135,8 @@ describe("buildReviewRectificationPrompt", () => {
 describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
   const FAILED_CHECKS_SEMANTIC = [makeCheck("semantic", "AC2 not implemented")];
 
-  test("is exported from autofix-prompts.ts", () => {
-    expect(typeof buildDialogueAwareRectificationPrompt).toBe("function");
+  test("is exported from src/prompts", () => {
+    expect(typeof RectifierPromptBuilder.dialogueAwareRectification).toBe("function");
   });
 
   test("includes findingReasoning entries in the prompt", () => {
@@ -148,7 +145,7 @@ describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
       ["AC2", "AC2 fails because the response format is wrong"],
     ]);
 
-    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+    const prompt = RectifierPromptBuilder.dialogueAwareRectification(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
       findingReasoning,
       history: [],
     });
@@ -167,7 +164,7 @@ describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
       { role: "reviewer", content: "Second reviewer response" },
     ];
 
-    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+    const prompt = RectifierPromptBuilder.dialogueAwareRectification(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
       findingReasoning: new Map(),
       history,
       maxHistoryMessages: 2,
@@ -186,7 +183,7 @@ describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
       { role: "reviewer", content: "Recent reviewer response" },
     ];
 
-    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+    const prompt = RectifierPromptBuilder.dialogueAwareRectification(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
       findingReasoning: new Map(),
       history,
       maxHistoryMessages: 2,
@@ -198,7 +195,7 @@ describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
   });
 
   test("works with empty findingReasoning and empty history", () => {
-    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+    const prompt = RectifierPromptBuilder.dialogueAwareRectification(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
       findingReasoning: new Map(),
       history: [],
     });
@@ -214,7 +211,7 @@ describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
       ["AC1", "The handler is missing"],
     ]);
 
-    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+    const prompt = RectifierPromptBuilder.dialogueAwareRectification(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
       findingReasoning,
       history: [],
     });
@@ -226,7 +223,7 @@ describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
   });
 
   test("includes scope constraint for monorepo stories", () => {
-    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_MONOREPO, {
+    const prompt = RectifierPromptBuilder.dialogueAwareRectification(FAILED_CHECKS_SEMANTIC, STORY_MONOREPO, {
       findingReasoning: new Map(),
       history: [],
     });

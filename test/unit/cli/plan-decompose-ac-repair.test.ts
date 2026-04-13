@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import { buildDecomposePrompt } from "../../../src/agents/shared/decompose";
+import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import type { NaxConfig } from "../../../src/config";
 import { NaxError } from "../../../src/errors";
@@ -406,24 +406,24 @@ describe("buildDecomposePrompt — maxAcCount prompt hardening (issue #227)", ()
     };
   }
 
-  test("prompt includes maxAcCount constraint when config has storySizeGate.maxAcCount", () => {
-    const prompt = buildDecomposePrompt(makeDecomposeOptions(8));
+  test("prompt includes maxAcCount constraint when config has storySizeGate.maxAcCount", async () => {
+    const prompt = await buildDecomposePromptAsync(makeDecomposeOptions(8));
     expect(prompt).toContain("8");
     expect(prompt).toContain("acceptance criteria");
   });
 
-  test("prompt includes explicit split instruction when maxAcCount is set", () => {
-    const prompt = buildDecomposePrompt(makeDecomposeOptions(6));
+  test("prompt includes explicit split instruction when maxAcCount is set", async () => {
+    const prompt = await buildDecomposePromptAsync(makeDecomposeOptions(6));
     expect(prompt).toContain("split");
     expect(prompt).toContain("6");
   });
 
-  test("prompt does not include AC constraint section when config is absent", () => {
-    const prompt = buildDecomposePrompt(makeDecomposeOptions(undefined));
+  test("prompt does not include AC constraint section when config is absent", async () => {
+    const prompt = await buildDecomposePromptAsync(makeDecomposeOptions(undefined));
     expect(prompt).not.toContain("Acceptance Criteria Constraint");
   });
 
-  test("prompt does not include AC constraint when maxAcCount is not set in config", () => {
+  test("prompt does not include AC constraint when maxAcCount is not set in config", async () => {
     const opts: DecomposeOptions = {
       specContent: "",
       codebaseContext: "context",
@@ -431,7 +431,7 @@ describe("buildDecomposePrompt — maxAcCount prompt hardening (issue #227)", ()
       targetStory: makeTargetStory(),
       config: {} as Partial<NaxConfig>,
     };
-    const prompt = buildDecomposePrompt(opts);
+    const prompt = await buildDecomposePromptAsync(opts);
     expect(prompt).not.toContain("Acceptance Criteria Constraint");
   });
 });

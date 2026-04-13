@@ -331,9 +331,57 @@ ${this.stageContext.outputFormat}`;
     if (critiques.length === 0) return "";
     return `\n\n## Critiques\n${critiques.map((c, i) => `### Critique ${i + 1}\n${c}`).join("\n\n")}`;
   }
+
+  // ─── Resolver static helpers ───────────────────────────────────────────────
+
+  /**
+   * Synthesis prompt for the simple resolver path (string[] proposals).
+   *
+   * Migrated from buildSynthesisPrompt() in src/debate/resolvers.ts.
+   */
+  static resolverSynthesisPrompt(proposals: string[], critiques: string[], debaters?: Debater[]): string {
+    const proposalsSection = proposals
+      .map((p, i) => {
+        const label = debaters?.[i]
+          ? debaters[i].persona
+            ? `${debaters[i].agent} (${debaters[i].persona})`
+            : debaters[i].agent
+          : String(i + 1);
+        return `### Proposal ${label}\n${p}`;
+      })
+      .join("\n\n");
+    const critiquesSection =
+      critiques.length > 0
+        ? `\n\n## Critiques\n${critiques.map((c, i) => `### Critique ${i + 1}\n${c}`).join("\n\n")}`
+        : "";
+    return `You are a synthesis agent. Your task is to synthesize the following proposals into a single coherent, high-quality response.\n\n## Proposals\n${proposalsSection}${critiquesSection}\n\nPlease synthesize these into the best possible unified response, incorporating the strongest elements from each proposal.`;
+  }
+
+  /**
+   * Judge prompt for the simple resolver path (string[] proposals).
+   *
+   * Migrated from buildJudgePrompt() in src/debate/resolvers.ts.
+   */
+  static resolverJudgePrompt(proposals: string[], critiques: string[], debaters?: Debater[]): string {
+    const proposalsSection = proposals
+      .map((p, i) => {
+        const label = debaters?.[i]
+          ? debaters[i].persona
+            ? `${debaters[i].agent} (${debaters[i].persona})`
+            : debaters[i].agent
+          : String(i + 1);
+        return `### Proposal ${label}\n${p}`;
+      })
+      .join("\n\n");
+    const critiquesSection =
+      critiques.length > 0
+        ? `\n\n## Critiques\n${critiques.map((c, i) => `### Critique ${i + 1}\n${c}`).join("\n\n")}`
+        : "";
+    return `You are a judge evaluating multiple proposals. Review each proposal carefully and make a final authoritative determination.\n\n## Proposals\n${proposalsSection}${critiquesSection}\n\nAs the judge, provide your final verdict with clear reasoning, selecting or synthesizing the best approach.`;
+  }
 }
 
-// ─── Private helpers ─────────────────────────────────────────────────────────���
+// ─── Private helpers ─────────────────────────────────────────────────────────
 
 /**
  * Build the diff section for debate resolver prompts.
