@@ -46,12 +46,16 @@ export function splitAdversarialFindingsByScope(check: ReviewCheckResult): {
 /**
  * Run a test-writer session to fix adversarial review findings scoped to test files (#409).
  * Returns the cost incurred, or 0 if the agent is unavailable.
+ *
+ * @param keepOpen - Whether to keep the ACP session open after this call so subsequent
+ *   autofix cycles can resume it (default: true). Pass false only on the final call.
  */
 export async function runTestWriterRectification(
   ctx: PipelineContext,
   testWriterChecks: ReviewCheckResult[],
   story: UserStory,
   agentGetFn: (name: string) => ReturnType<ReturnType<typeof createAgentRegistry>["getAgent"]>,
+  keepOpen = true,
 ): Promise<number> {
   const logger = getLogger();
   const twAgent = agentGetFn(ctx.rootConfig.autoMode.defaultAgent);
@@ -86,7 +90,7 @@ export async function runTestWriterRectification(
       storyId: ctx.story.id,
       sessionRole: "test-writer",
       acpSessionName: testWriterSession,
-      keepSessionOpen: false,
+      keepSessionOpen: keepOpen,
     });
     return twResult.estimatedCost ?? 0;
   } catch {
