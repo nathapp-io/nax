@@ -149,6 +149,8 @@ export interface ReviewConfig {
   };
   /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
   pluginMode?: "per-story" | "deferred";
+  /** Review audit configuration — saves parsed reviewer JSON to .nax/review-audit/ */
+  audit?: { enabled: boolean };
   /** Semantic review configuration (when 'semantic' is in checks) */
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */

@@ -186,12 +186,14 @@ let origSpawn: typeof _diffUtilsDeps.spawn;
 let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
 let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 let origReadAcpSession: typeof _adversarialDeps.readAcpSession;
+let origWriteReviewAudit: typeof _adversarialDeps.writeReviewAudit;
 
 function saveAllDeps() {
   origSpawn = _diffUtilsDeps.spawn;
   origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
   origGetMergeBase = _diffUtilsDeps.getMergeBase;
   origReadAcpSession = _adversarialDeps.readAcpSession;
+  origWriteReviewAudit = _adversarialDeps.writeReviewAudit;
 }
 
 function restoreAllDeps() {
@@ -199,6 +201,7 @@ function restoreAllDeps() {
   _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
   _diffUtilsDeps.getMergeBase = origGetMergeBase;
   _adversarialDeps.readAcpSession = origReadAcpSession;
+  _adversarialDeps.writeReviewAudit = origWriteReviewAudit;
 }
 
 /** Wire up a happy-path spawn (valid ref, stat returns content). */
@@ -769,5 +772,55 @@ describe("runAdversarialReview — cost propagation", () => {
     );
 
     expect(result.cost).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// review.audit gate — writeReviewAudit only called when audit.enabled === true
+// ---------------------------------------------------------------------------
+
+describe("runAdversarialReview — review audit gate", () => {
+  beforeEach(() => {
+    saveAllDeps();
+    setupHappyPathDeps();
+  });
+
+  afterEach(restoreAllDeps);
+
+  test("audit disabled (default) — writeReviewAudit not called on success", async () => {
+    const auditCalls: unknown[] = [];
+    _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
+    const agent = makeAgent(PASSING_RESPONSE);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+
+    expect(auditCalls).toHaveLength(0);
+  });
+
+  test("audit enabled — writeReviewAudit called with parsed:true on success", async () => {
+    const auditCalls: unknown[] = [];
+    _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
+    const agent = makeAgent(PASSING_RESPONSE);
+    const naxConfig = { review: { audit: { enabled: true } } } as any;
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent, naxConfig);
+
+    expect(auditCalls).toHaveLength(1);
+    expect((auditCalls[0] as any).parsed).toBe(true);
+    expect((auditCalls[0] as any).reviewer).toBe("adversarial");
+  });
+
+  test("audit enabled — writeReviewAudit called with parsed:false on parse failure", async () => {
+    const auditCalls: unknown[] = [];
+    _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
+    const agent = makeAgent("not json at all");
+    const naxConfig = { review: { audit: { enabled: true } } } as any;
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent, naxConfig);
+
+    expect(auditCalls).toHaveLength(1);
+    expect((auditCalls[0] as any).parsed).toBe(false);
+    expect((auditCalls[0] as any).looksLikeFail).toBe(false);
+    expect((auditCalls[0] as any).result).toBeNull();
   });
 });

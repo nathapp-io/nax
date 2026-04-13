@@ -22,8 +22,10 @@ import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
+import { ReviewPromptBuilder } from "../prompts/builders/review-builder";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
+import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
 /** Function that resolves an AgentAdapter for a given model tier */
@@ -32,6 +34,7 @@ export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
 export const _adversarialDeps = {
   readAcpSession,
+  writeReviewAudit,
 };
 
 interface AdversarialLLMFinding {
@@ -227,23 +230,23 @@ export async function runAdversarialReview(
   // Adversarial review uses its own session (NOT the implementer session).
   const adversarialSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-adversarial");
 
+  const runOpts = {
+    workdir,
+    acpSessionName: adversarialSessionName,
+    timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
+    modelTier: adversarialConfig.modelTier,
+    modelDef: resolvedModelDef,
+    pipelineStage: "review",
+    config: naxConfig ?? DEFAULT_CONFIG,
+    featureName,
+    storyId: story.id,
+    sessionRole: "reviewer-adversarial",
+  } as const;
+
   let rawResponse: string;
   let llmCost = 0;
   try {
-    const runResult = await agent.run({
-      prompt,
-      workdir,
-      acpSessionName: adversarialSessionName,
-      keepSessionOpen: false,
-      timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
-      modelTier: adversarialConfig.modelTier,
-      modelDef: resolvedModelDef,
-      pipelineStage: "review",
-      config: naxConfig ?? DEFAULT_CONFIG,
-      featureName,
-      storyId: story.id,
-      sessionRole: "reviewer-adversarial",
-    });
+    const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: true });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
   } catch (err) {
@@ -261,11 +264,42 @@ export async function runAdversarialReview(
     };
   }
 
+  // Retry once when the response cannot be parsed — the session has full context so
+  // a short follow-up asking for valid JSON is sufficient.
+  if (!parseAdversarialResponse(rawResponse)) {
+    try {
+      logger?.debug("adversarial", "Response could not be parsed — retrying with JSON prompt", {
+        storyId: story.id,
+      });
+      const retryResult = await agent.run({
+        prompt: ReviewPromptBuilder.jsonRetry(),
+        ...runOpts,
+        keepSessionOpen: false,
+      });
+      rawResponse = retryResult.output;
+      llmCost += retryResult.estimatedCost ?? 0;
+    } catch (err) {
+      logger?.warn("adversarial", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+    }
+  }
+
   // Parse response — fail-closed when LLM clearly intended to fail,
   // fail-open only when response is truly unparseable with no signal.
   const parsed = parseAdversarialResponse(rawResponse);
   if (!parsed) {
     const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+    if (naxConfig?.review?.audit?.enabled) {
+      void _adversarialDeps.writeReviewAudit({
+        reviewer: "adversarial",
+        sessionName: adversarialSessionName,
+        workdir,
+        storyId: story.id,
+        featureName,
+        parsed: false,
+        looksLikeFail,
+        result: null,
+      });
+    }
     if (looksLikeFail) {
       logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
         storyId: story.id,
@@ -296,6 +330,18 @@ export async function runAdversarialReview(
       durationMs: Date.now() - startTime,
       cost: llmCost,
     };
+  }
+
+  if (naxConfig?.review?.audit?.enabled) {
+    void _adversarialDeps.writeReviewAudit({
+      reviewer: "adversarial",
+      sessionName: adversarialSessionName,
+      workdir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      result: { passed: parsed.passed, findings: parsed.findings },
+    });
   }
 
   const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity));
