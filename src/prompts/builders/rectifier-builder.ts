@@ -338,6 +338,12 @@ ${testCommands}
   /**
    * Builds a rectification prompt for failed review checks (semantic, adversarial, or mechanical).
    *
+   * Routes to the correct prompt based on which check types failed:
+   *   - semantic only   → semanticRectification()
+   *   - adversarial only → adversarialRectification()
+   *   - mechanical only → mechanicalRectification()
+   *   - mixed           → combined prompt with labelled sections per check type
+   *
    * Migrated from buildReviewRectificationPrompt() in src/pipeline/stages/autofix-prompts.ts.
    */
   static reviewRectification(failedChecks: ReviewCheckResult[], story: UserStory): string {
@@ -345,20 +351,37 @@ ${testCommands}
       ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
       : "";
 
-    const semanticChecks = failedChecks.filter((c) => c.check === "semantic" || c.check === "adversarial");
+    const semanticChecks = failedChecks.filter((c) => c.check === "semantic");
+    const adversarialChecks = failedChecks.filter((c) => c.check === "adversarial");
     const mechanicalChecks = failedChecks.filter((c) => c.check !== "semantic" && c.check !== "adversarial");
 
-    if (semanticChecks.length > 0 && mechanicalChecks.length === 0) {
-      return RectifierPromptBuilder.semanticRectification(semanticChecks, story, scopeConstraint);
+    const llmChecks = [...semanticChecks, ...adversarialChecks];
+
+    if (llmChecks.length > 0 && mechanicalChecks.length === 0) {
+      if (adversarialChecks.length === 0) {
+        return RectifierPromptBuilder.semanticRectification(semanticChecks, story, scopeConstraint);
+      }
+      if (semanticChecks.length === 0) {
+        return RectifierPromptBuilder.adversarialRectification(adversarialChecks, story, scopeConstraint);
+      }
+      // Both semantic and adversarial failed — combined LLM reviewer prompt.
+      return RectifierPromptBuilder.combinedLlmRectification(semanticChecks, adversarialChecks, story, scopeConstraint);
     }
 
-    if (mechanicalChecks.length > 0 && semanticChecks.length === 0) {
+    if (mechanicalChecks.length > 0 && llmChecks.length === 0) {
       return RectifierPromptBuilder.mechanicalRectification(mechanicalChecks, story, scopeConstraint);
     }
 
+    // Mixed: mechanical + one or more LLM reviewer checks.
     const mechanicalSection = RectifierPromptBuilder.formatCheckErrors(mechanicalChecks);
-    const semanticSection = RectifierPromptBuilder.formatCheckErrors(semanticChecks);
     const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+
+    const llmSection =
+      semanticChecks.length > 0 && adversarialChecks.length > 0
+        ? `## Semantic Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(semanticChecks)}\n\n## Adversarial Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(adversarialChecks)}`
+        : semanticChecks.length > 0
+          ? `## Semantic Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(semanticChecks)}`
+          : `## Adversarial Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(adversarialChecks)}`;
 
     return `You are fixing issues from a code review.
 
@@ -370,17 +393,16 @@ ${mechanicalSection}
 
 Fix ALL lint/typecheck errors listed above.
 
-## Semantic Review Findings (AC Compliance)
+## LLM Review Findings (AC Compliance)
 
 ### Acceptance Criteria
 ${acList}
 
 ### Findings
-${semanticSection}
+${llmSection}
 
-**Important:** The semantic reviewer may have flagged false positives. Before making changes for semantic findings, read the relevant files to verify each finding is a real issue. Do NOT add keys, functions, or imports that already exist.
+**Important:** LLM reviewers may flag false positives. Before making changes for LLM review findings, read the relevant files to verify each finding is a real issue. Do NOT add keys, functions, or imports that already exist.
 
-Do NOT change test files or test behavior.
 Do NOT add new features — only fix the identified issues.
 Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
@@ -463,6 +485,65 @@ ${errors}
 3. Do NOT add keys, functions, or imports that already exist — check first
 
 Do NOT change test files or test behavior.
+Do NOT add new features — only fix valid issues.
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+  }
+
+  private static adversarialRectification(
+    checks: ReviewCheckResult[],
+    story: UserStory,
+    scopeConstraint: string,
+  ): string {
+    const errors = RectifierPromptBuilder.formatCheckErrors(checks);
+    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+
+    return `You are fixing issues found during an adversarial code review.
+
+Story: ${story.title} (${story.id})
+
+### Acceptance Criteria
+${acList}
+
+### Adversarial Review Findings
+${errors}
+
+**Important:** The adversarial reviewer probes for breakage, missing error paths, and edge cases. Before making any changes:
+1. Read the relevant files to verify each finding is a real issue
+2. Only fix findings that are actually valid problems
+3. Do NOT add keys, functions, or imports that already exist — check first
+
+Do NOT add new features — only fix valid issues.
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+  }
+
+  private static combinedLlmRectification(
+    semanticChecks: ReviewCheckResult[],
+    adversarialChecks: ReviewCheckResult[],
+    story: UserStory,
+    scopeConstraint: string,
+  ): string {
+    const semanticErrors = RectifierPromptBuilder.formatCheckErrors(semanticChecks);
+    const adversarialErrors = RectifierPromptBuilder.formatCheckErrors(adversarialChecks);
+    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+
+    return `You are fixing issues found during LLM code review.
+
+Story: ${story.title} (${story.id})
+
+### Acceptance Criteria
+${acList}
+
+### Semantic Review Findings
+${semanticErrors}
+
+### Adversarial Review Findings
+${adversarialErrors}
+
+**Important:** LLM reviewers may flag false positives. Before making any changes:
+1. Read the relevant files to verify each finding is a real issue
+2. Only fix findings that are actually valid problems
+3. Do NOT add keys, functions, or imports that already exist — check first
+
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
