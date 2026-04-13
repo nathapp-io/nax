@@ -7,7 +7,7 @@
  * is handled by lint/typecheck, not semantic review.
  */
 
-import { buildSessionName, readAcpSession } from "../agents/acp/adapter";
+import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
@@ -31,7 +31,6 @@ export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined
 /** Injectable dependencies for semantic.ts — allows tests to mock without mock.module() */
 export const _semanticDeps = {
   createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
-  readAcpSession,
 };
 
 interface LLMFinding {
@@ -355,17 +354,10 @@ export async function runSemanticReview(
     };
   }
 
-  // Check if implementer session exists (fail-open — proceed regardless)
-  const implementerSidecarKey = `${story.id}:implementer`;
-  const existingSession = await _semanticDeps.readAcpSession(workdir, featureName ?? "", implementerSidecarKey);
-  if (!existingSession) {
-    logger?.debug("semantic", "implementer session not found — semantic review running in new session", {
-      storyId: story.id,
-    });
-  }
-
-  // Call LLM via agent.run() targeting the implementer session
-  const implementerSessionName = buildSessionName(workdir, featureName, story.id, "implementer");
+  // Call LLM via agent.run() with own reviewer session (not the implementer session).
+  // The reviewer works from diff + tools, not from implementer conversation history.
+  // See #414: supersedes #262 US-003 session-sharing design.
+  const reviewerSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-semantic");
   const defaultAgent = naxConfig?.autoMode?.defaultAgent ?? "claude";
   let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
   try {
@@ -381,8 +373,8 @@ export async function runSemanticReview(
     const runResult = await agent.run({
       prompt,
       workdir,
-      acpSessionName: implementerSessionName,
-      keepSessionOpen: true,
+      acpSessionName: reviewerSessionName,
+      keepSessionOpen: false,
       timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
       modelTier: semanticConfig.modelTier,
       modelDef: resolvedModelDef,

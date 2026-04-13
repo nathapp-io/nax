@@ -28,6 +28,7 @@ import { getLogger } from "../../logger";
 import { RectifierPromptBuilder } from "../../prompts";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
+import { captureGitRef } from "../../utils/git";
 import {
   buildProgressivePromptPreamble,
   runSharedRectificationLoop,
@@ -286,6 +287,10 @@ async function runAgentRectification(
   };
   let autofixCostAccum = 0;
   let unresolvedReason: string | undefined;
+  // #411: Track git HEAD before each agent attempt so checkResult can detect
+  // whether the agent actually modified source files. When no files changed
+  // (e.g. UNRESOLVED signal, lint-only fix), passed LLM checks are skipped.
+  let refBeforeAttempt: string | undefined;
 
   // Session continuity: execution + review came before us, so the implementer session is open.
   const implementerSession = buildSessionName(ctx.workdir, ctx.prd.feature, ctx.story.id, "implementer");
@@ -337,6 +342,8 @@ async function runAgentRectification(
       return prompt;
     },
     runAttempt: async (attempt, prompt) => {
+      // #411: Capture HEAD before agent runs so checkResult can detect file changes.
+      refBeforeAttempt = await captureGitRef(ctx.workdir);
       ctx.autofixAttempt = consumed + attempt;
       const agent = agentGetFn(ctx.rootConfig.autoMode.defaultAgent);
       if (!agent) {
@@ -417,6 +424,22 @@ async function runAgentRectification(
       }
     },
     checkResult: async (attempt, state) => {
+      // #411: Detect whether the agent modified source files since the attempt started.
+      // When no files changed (e.g. UNRESOLVED signal, lint-only), skip LLM checks
+      // that already passed — they'll return the same result on the unchanged diff.
+      const refAfterAttempt = await captureGitRef(ctx.workdir);
+      const sourceFilesChanged = refBeforeAttempt !== refAfterAttempt;
+      if (!sourceFilesChanged) {
+        const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
+        if (passedChecks.length > 0) {
+          ctx.retrySkipChecks = new Set(passedChecks);
+          logger.debug("autofix", "No source changes — skipping already-passed checks on recheck", {
+            storyId: ctx.story.id,
+            skippedChecks: passedChecks,
+          });
+        }
+      }
+
       const passed = await _autofixDeps.recheckReview(ctx);
       if (passed) {
         logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${attempt}`, {
