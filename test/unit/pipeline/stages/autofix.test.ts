@@ -42,7 +42,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     rootConfig: DEFAULT_CONFIG,
     workdir: "/tmp",
     projectDir: "/tmp",
-    hooks: {},
+    hooks: { hooks: {} } as any,
     ...overrides,
   };
 }
@@ -258,7 +258,7 @@ describe("autofixStage", () => {
   });
 
   test("ENH-008: includes scope constraint when story.workdir is set", () => {
-    const failedChecks = [
+    const failedChecks: ReviewCheckResult[] = [
       { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
     ];
     const story = { id: "US-002", title: "Add feature", workdir: "apps/api" } as any;
@@ -270,7 +270,7 @@ describe("autofixStage", () => {
   });
 
   test("ENH-008: no scope constraint when story.workdir is not set", () => {
-    const failedChecks = [
+    const failedChecks: ReviewCheckResult[] = [
       { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
     ];
     const story = { id: "US-002", title: "Add feature" } as any;
@@ -487,7 +487,6 @@ describe("autofixStage", () => {
 
   test("#412: attempt===1 && sessionConfirmedOpen===false uses full prompt", async () => {
     const saved = { ..._autofixDeps };
-    const prompts: string[] = [];
 
     // Simulate a session that was NOT confirmed open (e.g. exception on first run):
     // We do this by forcing runAgentRectification to use the real implementation but
