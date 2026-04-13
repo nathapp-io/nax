@@ -23,12 +23,16 @@ import { runSemanticReview } from "./semantic";
 import type { AdversarialReviewConfig, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 /**
- * Injectable dependencies for getChangedFiles() — allows tests to intercept
- * spawn calls without requiring the git binary.
+ * Injectable dependencies for orchestrator internals — allows tests to intercept
+ * spawn and parallel LLM dispatch calls without mock.module() (BUG-035 pattern).
  *
  * @internal
  */
-export const _orchestratorDeps = { spawn };
+export const _orchestratorDeps = {
+  spawn,
+  runSemanticReview,
+  runAdversarialReview,
+};
 
 async function getChangedFiles(workdir: string, baseRef?: string): Promise<string[]> {
   try {
@@ -184,12 +188,24 @@ export class ReviewOrchestrator {
         priorFailures,
       );
 
-      // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM)
+      // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
+      // #136: Filter out checks that already passed in a previous review pass — retrySkipChecks
+      // must be honoured here in the parallel path, not just in runReview (sequential path).
+      const activeLlmCheckNames = llmCheckNames.filter((c) => !retrySkipChecks?.has(c));
+
       const llmStart = Date.now();
       let llmCheckResults: ReviewCheckResult[];
 
-      if (canParallelize) {
-        // semantic + adversarial concurrently
+      if (activeLlmCheckNames.length === 0) {
+        // All LLM checks already passed — skip Step 2 entirely.
+        logger?.debug("review", "Skipping LLM checks (all already passed in previous review pass)", { storyId });
+        llmCheckResults = [];
+      } else if (
+        canParallelize &&
+        activeLlmCheckNames.includes("semantic") &&
+        activeLlmCheckNames.includes("adversarial")
+      ) {
+        // semantic + adversarial concurrently (both active)
         const semanticStory: SemanticStory = {
           id: storyId ?? "",
           title: story?.title ?? "",
@@ -209,7 +225,7 @@ export class ReviewOrchestrator {
 
         logger?.debug("review", "Running semantic + adversarial in parallel", { storyId });
         const [semResult, advResult] = await Promise.all([
-          runSemanticReview(
+          _orchestratorDeps.runSemanticReview(
             workdir,
             storyGitRef,
             semanticStory,
@@ -220,7 +236,7 @@ export class ReviewOrchestrator {
             resolverSession,
             priorFailures,
           ),
-          runAdversarialReview(
+          _orchestratorDeps.runAdversarialReview(
             workdir,
             storyGitRef,
             semanticStory,
@@ -233,8 +249,9 @@ export class ReviewOrchestrator {
         ]);
         llmCheckResults = [semResult, advResult];
       } else {
-        // Sequential LLM run via runReview (handles semantic and adversarial in-loop)
-        const llmConfig = { ...reviewConfig, checks: llmCheckNames };
+        // Sequential LLM run via runReview — one or both reviewers active, or parallel disabled.
+        // retrySkipChecks is passed through so runner.ts skips already-passed checks.
+        const llmConfig = { ...reviewConfig, checks: activeLlmCheckNames };
         const llmResult = await runReview(
           llmConfig,
           workdir,
