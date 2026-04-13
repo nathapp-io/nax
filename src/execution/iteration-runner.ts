@@ -168,7 +168,7 @@ export async function runIteration(
     try {
       await reviewerSessionOnEscalate.destroy();
     } catch (err) {
-      getLogger()?.warn("iteration-runner", "Failed to destroy reviewerSession on escalation — continuing", {
+      getLogger().warn("iteration-runner", "Failed to destroy reviewerSession on escalation — continuing", {
         storyId: story.id,
         error: errorMessage(err),
       });

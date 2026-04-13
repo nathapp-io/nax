@@ -195,16 +195,21 @@ describe("writePromptAudit() — directory resolution", () => {
   const origMkdir = _promptAuditDeps.mkdir;
   const origWrite = _promptAuditDeps.writeFile;
   const origNow = _promptAuditDeps.now;
+  const origExists = _promptAuditDeps.exists;
 
   beforeEach(() => {
     _promptAuditDeps.now = mock(() => EPOCH);
     _promptAuditDeps.writeFile = mock(async () => {});
+    // Default: no .nax/config.json found anywhere — findNaxProjectRoot falls back to workdir.
+    // Prevents real filesystem I/O during directory-resolution tests.
+    _promptAuditDeps.exists = mock(async () => false);
   });
 
   afterEach(() => {
     _promptAuditDeps.mkdir = origMkdir;
     _promptAuditDeps.writeFile = origWrite;
     _promptAuditDeps.now = origNow;
+    _promptAuditDeps.exists = origExists;
     mock.restore();
   });
 

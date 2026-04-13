@@ -299,8 +299,9 @@ async function runAgentRectification(
         // adversarial entries don't all get replaced with the last iteration's sourceFindings.
         implementerChecks = implementerChecks.map((c) => (c === check ? sourceFindings : c));
       } else {
-        // All adversarial findings are in test files — remove from implementer checks
-        implementerChecks = implementerChecks.filter((c) => c.check !== "adversarial");
+        // All adversarial findings are in test files — remove only this check from implementer
+        // checks using reference equality so other adversarial entries (if present) are not dropped.
+        implementerChecks = implementerChecks.filter((c) => c !== check);
       }
     }
   }
