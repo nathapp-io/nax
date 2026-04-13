@@ -36,11 +36,10 @@ export function splitAdversarialFindingsByScope(check: ReviewCheckResult): {
 
   const toCheck = (findings: typeof testFs): ReviewCheckResult | null => {
     if (findings.length === 0) return null;
-    return {
-      ...check,
-      findings,
-      output: findings.map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.message}`).join("\n"),
-    };
+    // Preserve the raw tool output from the original check — it may contain structured
+    // diagnostics, stack traces, or indented blocks that the agent needs for accurate
+    // diagnosis. Only `findings` is scoped; output carries the full reviewer context.
+    return { ...check, findings };
   };
 
   return { testFindings: toCheck(testFs), sourceFindings: toCheck(sourceFs) };
@@ -64,10 +63,12 @@ export async function runTestWriterRectification(
   }
   const testWriterSession = buildSessionName(ctx.workdir, ctx.prd.feature, ctx.story.id, "test-writer");
   const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story);
-  const modelTier = ctx.story.routing?.modelTier ?? ctx.rootConfig.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
+  // Use the TDD test-writer tier from config — consistent with how the TDD orchestrator
+  // selects the tier for the test-writer session (tdd.orchestrator.ts:150).
+  const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
   const modelDef = resolveModelForAgent(
     ctx.rootConfig.models,
-    ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+    ctx.rootConfig.autoMode.defaultAgent,
     modelTier,
     ctx.rootConfig.autoMode.defaultAgent,
   );

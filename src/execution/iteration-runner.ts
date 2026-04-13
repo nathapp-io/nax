@@ -8,6 +8,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfigForWorkdir } from "../config/loader";
+import { getLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
@@ -165,8 +167,11 @@ export async function runIteration(
   if (pipelineResult.finalAction === "escalate" && reviewerSessionOnEscalate?.active) {
     try {
       await reviewerSessionOnEscalate.destroy();
-    } catch {
-      // cleanup is best-effort
+    } catch (err) {
+      getLogger()?.warn("iteration-runner", "Failed to destroy reviewerSession on escalation — continuing", {
+        storyId: story.id,
+        error: errorMessage(err),
+      });
     }
   }
 

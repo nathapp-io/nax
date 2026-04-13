@@ -128,6 +128,9 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // Saves ~3min per escalation by avoiding a no-op Claude Code session.
   // #410: Also skip when escalation came from review stage — tests were already written and
   // passing when review failed, so there is no need to re-run the test-writer on the new tier.
+  // stage === "review" covers both review-stage and autofix-stage escalations: buildEscalationFailure
+  // (tier-escalation.ts) records stage="review" whenever reviewFindings are present, which is true
+  // when autofix exhausts its attempts without fixing review failures.
   const hasReviewEscalation = (story.priorFailures ?? []).some((f) => f.stage === "review");
   const isRetry = (story.attempts ?? 0) > 0 || hasReviewEscalation;
   const session1Ref = initialRef;

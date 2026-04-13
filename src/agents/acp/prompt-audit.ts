@@ -16,7 +16,7 @@
  * an audit write failure can never interrupt an active run.
  */
 
-import { existsSync as fsExistsSync, mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { getSafeLogger } from "../../logger";
 
@@ -57,11 +57,11 @@ export interface PromptAuditEntry {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _promptAuditDeps = {
-  mkdirSync(path: string): void {
-    mkdirSync(path, { recursive: true });
+  async mkdir(path: string): Promise<void> {
+    await mkdir(path, { recursive: true });
   },
-  existsSync(path: string): boolean {
-    return fsExistsSync(path);
+  async exists(path: string): Promise<boolean> {
+    return Bun.file(path).exists();
   },
   async writeFile(path: string, content: string): Promise<void> {
     await Bun.write(path, content);
@@ -125,10 +125,10 @@ const MAX_NAX_WALK_DEPTH = 10;
  * This consolidates monorepo audit files at the project root even when individual
  * stories run with a package subdir as their workdir (e.g. apps/api/).
  */
-function findNaxProjectRoot(startDir: string): string {
+async function findNaxProjectRoot(startDir: string): Promise<string> {
   let dir = resolve(startDir);
   for (let depth = 0; depth < MAX_NAX_WALK_DEPTH; depth++) {
-    if (_promptAuditDeps.existsSync(join(dir, ".nax", "config.json"))) {
+    if (await _promptAuditDeps.exists(join(dir, ".nax", "config.json"))) {
       return dir;
     }
     const parent = dirname(dir);
@@ -168,7 +168,7 @@ export async function writePromptAudit(entry: PromptAuditEntry): Promise<void> {
       const wtMarker = `${sep}.nax-wt${sep}`;
       const wtIdx = entry.workdir.indexOf(wtMarker);
       const strippedWorkdir = wtIdx !== -1 ? entry.workdir.substring(0, wtIdx) : entry.workdir;
-      const projectRoot = findNaxProjectRoot(strippedWorkdir);
+      const projectRoot = await findNaxProjectRoot(strippedWorkdir);
       baseDir = join(projectRoot, ".nax", "prompt-audit");
     }
 
@@ -176,7 +176,7 @@ export async function writePromptAudit(entry: PromptAuditEntry): Promise<void> {
     // Falls back to "_unknown" when no featureName is available.
     const resolvedDir = join(baseDir, entry.featureName ?? "_unknown");
 
-    _promptAuditDeps.mkdirSync(resolvedDir);
+    await _promptAuditDeps.mkdir(resolvedDir);
 
     const epochMs = _promptAuditDeps.now();
     const filename = buildAuditFilename(entry, epochMs);
