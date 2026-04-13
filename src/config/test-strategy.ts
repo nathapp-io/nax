@@ -61,12 +61,17 @@ export const TEST_STRATEGY_GUIDE = `## Test Strategy Guide
 
 Assign testStrategy based on complexity and content:
 
-| Complexity | Default Strategy         | Override when                          |
-|------------|--------------------------|----------------------------------------|
-| simple     | tdd-simple               | —                                      |
-| medium     | tdd-simple               | —                                      |
-| complex    | three-session-tdd-lite   | three-session-tdd if security-critical |
-| expert     | three-session-tdd        | —                                      |
+| Complexity | Default Strategy         | Override when                                        |
+|------------|--------------------------|------------------------------------------------------|
+| simple     | tdd-simple               | three-session-tdd if security-critical (see below)   |
+| medium     | tdd-simple               | three-session-tdd if security-critical (see below)   |
+| complex    | three-session-tdd-lite   | three-session-tdd if security-critical (see below)   |
+| expert     | three-session-tdd        | —                                                    |
+
+**Security override (applies to ALL complexity levels):** If a story involves authentication,
+access control, role checks, credentials, tokens, sessions, cryptography, or password hashing,
+set testStrategy to three-session-tdd regardless of the default strategy for that complexity level.
+This ensures strict test-implementation isolation for security-critical code paths.
 
 ### Strategy descriptions
 
@@ -81,6 +86,7 @@ Assign testStrategy based on complexity and content:
 - three-session-tdd: 3 sessions with strict isolation: (1) test-writer writes failing tests —
   no src/ changes allowed, (2) implementer makes them pass without modifying test files,
   (3) verifier confirms correctness. Use for expert stories and security-critical code.
+  **Examples:** ADMIN-guarded endpoints, JWT validation, RBAC enforcement, password reset flows.
 - test-after: Write implementation first, then tests. Use only when the story is exploratory
   or prototyping and strict TDD would be counterproductive.`;
 
