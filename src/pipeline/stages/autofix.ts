@@ -295,10 +295,13 @@ async function runAgentRectification(
       const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
       if (testFindings) testWriterChecks = [...testWriterChecks, testFindings];
       if (sourceFindings) {
-        implementerChecks = implementerChecks.map((c) => (c.check === "adversarial" ? sourceFindings : c));
+        // Use reference equality (c === check) rather than type matching so that multiple
+        // adversarial entries don't all get replaced with the last iteration's sourceFindings.
+        implementerChecks = implementerChecks.map((c) => (c === check ? sourceFindings : c));
       } else {
-        // All adversarial findings are in test files — remove from implementer checks
-        implementerChecks = implementerChecks.filter((c) => c.check !== "adversarial");
+        // All adversarial findings are in test files — remove only this check from implementer
+        // checks using reference equality so other adversarial entries (if present) are not dropped.
+        implementerChecks = implementerChecks.filter((c) => c !== check);
       }
     }
   }
@@ -332,9 +335,11 @@ async function runAgentRectification(
   // (e.g. UNRESOLVED signal, lint-only fix), passed LLM checks are skipped.
   let refBeforeAttempt: string | undefined;
 
-  // Session continuity: execution + review came before us, so the implementer session is open.
+  // Session continuity: the implementer session is open only on the very first autofix call
+  // (consumed === 0). On subsequent cycles (after a review retry), the previous loop's last
+  // runAttempt used keepSessionOpen: false, so the session was closed before we re-enter.
   const implementerSession = buildSessionName(ctx.workdir, ctx.prd.feature, ctx.story.id, "implementer");
-  let sessionConfirmedOpen = true; // execution + review came before us
+  let sessionConfirmedOpen = consumed === 0;
 
   const succeeded = await runSharedRectificationLoop({
     stage: "autofix",

@@ -83,17 +83,17 @@ describe("buildAuditFilename()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("writePromptAudit() — file content", () => {
-  const origMkdir = _promptAuditDeps.mkdirSync;
+  const origMkdir = _promptAuditDeps.mkdir;
   const origWrite = _promptAuditDeps.writeFile;
   const origNow = _promptAuditDeps.now;
 
   beforeEach(() => {
-    _promptAuditDeps.mkdirSync = mock((_path: string) => {});
+    _promptAuditDeps.mkdir = mock(async (_path: string) => {});
     _promptAuditDeps.now = mock(() => EPOCH);
   });
 
   afterEach(() => {
-    _promptAuditDeps.mkdirSync = origMkdir;
+    _promptAuditDeps.mkdir = origMkdir;
     _promptAuditDeps.writeFile = origWrite;
     _promptAuditDeps.now = origNow;
     mock.restore();
@@ -192,25 +192,30 @@ describe("writePromptAudit() — file content", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("writePromptAudit() — directory resolution", () => {
-  const origMkdir = _promptAuditDeps.mkdirSync;
+  const origMkdir = _promptAuditDeps.mkdir;
   const origWrite = _promptAuditDeps.writeFile;
   const origNow = _promptAuditDeps.now;
+  const origExists = _promptAuditDeps.exists;
 
   beforeEach(() => {
     _promptAuditDeps.now = mock(() => EPOCH);
     _promptAuditDeps.writeFile = mock(async () => {});
+    // Default: no .nax/config.json found anywhere — findNaxProjectRoot falls back to workdir.
+    // Prevents real filesystem I/O during directory-resolution tests.
+    _promptAuditDeps.exists = mock(async () => false);
   });
 
   afterEach(() => {
-    _promptAuditDeps.mkdirSync = origMkdir;
+    _promptAuditDeps.mkdir = origMkdir;
     _promptAuditDeps.writeFile = origWrite;
     _promptAuditDeps.now = origNow;
+    _promptAuditDeps.exists = origExists;
     mock.restore();
   });
 
   test("absent auditDir defaults to <workdir>/.nax/prompt-audit/<featureName>/", async () => {
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
 
@@ -221,7 +226,7 @@ describe("writePromptAudit() — directory resolution", () => {
 
   test("absent featureName falls back to _unknown subfolder", async () => {
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
 
@@ -232,7 +237,7 @@ describe("writePromptAudit() — directory resolution", () => {
 
   test("absolute auditDir is combined with featureName", async () => {
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
 
@@ -243,7 +248,7 @@ describe("writePromptAudit() — directory resolution", () => {
 
   test("relative auditDir is joined with workdir then featureName", async () => {
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
 
@@ -256,32 +261,32 @@ describe("writePromptAudit() — directory resolution", () => {
     const projectRoot = "/project/koda";
     const packageWorkdir = `${projectRoot}/apps/api`;
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
-    const origExistsSync = _promptAuditDeps.existsSync;
-    _promptAuditDeps.existsSync = mock((path: string) =>
+    const origExistsSync = _promptAuditDeps.exists;
+    _promptAuditDeps.exists = mock(async (path: string) =>
       path === `${projectRoot}/.nax/config.json`,
     );
 
     await writePromptAudit(makeEntry({ workdir: packageWorkdir, auditDir: undefined, featureName: "my-feature" }));
 
-    _promptAuditDeps.existsSync = origExistsSync;
+    _promptAuditDeps.exists = origExistsSync;
     expect(capturedDir).toBe(join(projectRoot, ".nax", "prompt-audit", "my-feature"));
   });
 
   test("monorepo — no .nax/config.json found anywhere, falls back to workdir", async () => {
     const packageWorkdir = "/project/koda/apps/web";
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
-    const origExistsSync = _promptAuditDeps.existsSync;
-    _promptAuditDeps.existsSync = mock(() => false);
+    const origExistsSync = _promptAuditDeps.exists;
+    _promptAuditDeps.exists = mock(async () => false);
 
     await writePromptAudit(makeEntry({ workdir: packageWorkdir, auditDir: undefined, featureName: "my-feature" }));
 
-    _promptAuditDeps.existsSync = origExistsSync;
+    _promptAuditDeps.exists = origExistsSync;
     expect(capturedDir).toBe(join(packageWorkdir, ".nax", "prompt-audit", "my-feature"));
   });
 
@@ -289,7 +294,7 @@ describe("writePromptAudit() — directory resolution", () => {
     const projectRoot = "/project/my-app";
     const worktreeWorkdir = `${projectRoot}/.nax-wt/vcs-p2-001`;
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
 
@@ -302,7 +307,7 @@ describe("writePromptAudit() — directory resolution", () => {
     const projectRoot = "/home/user/project";
     const worktreeWorkdir = `${projectRoot}/.nax-wt/feat-story-id`;
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
 
@@ -314,7 +319,7 @@ describe("writePromptAudit() — directory resolution", () => {
   test("absolute auditDir in worktree context — still uses the explicit absolute dir", async () => {
     const worktreeWorkdir = "/project/.nax-wt/some-story";
     let capturedDir = "";
-    _promptAuditDeps.mkdirSync = mock((path: string) => {
+    _promptAuditDeps.mkdir = mock(async (path: string) => {
       capturedDir = path;
     });
 
@@ -327,7 +332,7 @@ describe("writePromptAudit() — directory resolution", () => {
 
   test("writeFile is called with path inside resolved dir", async () => {
     let capturedPath = "";
-    _promptAuditDeps.mkdirSync = mock(() => {});
+    _promptAuditDeps.mkdir = mock(async () => {});
     _promptAuditDeps.writeFile = mock(async (path: string) => {
       capturedPath = path;
     });
@@ -347,11 +352,11 @@ describe("writePromptAudit() — directory resolution", () => {
 describe("writePromptAudit() — early return when disabled", () => {
   test("enabled:false \u2192 writeFile is never called", async () => {
     const origWrite = _promptAuditDeps.writeFile;
-    const origMkdir = _promptAuditDeps.mkdirSync;
+    const origMkdir = _promptAuditDeps.mkdir;
     let writeCalls = 0;
     let mkdirCalls = 0;
     _promptAuditDeps.writeFile = mock(async () => { writeCalls++; });
-    _promptAuditDeps.mkdirSync = mock(() => { mkdirCalls++; });
+    _promptAuditDeps.mkdir = mock(async () => { mkdirCalls++; });
 
     // writePromptAudit itself doesn't know about enabled — the adapter guards it.
     // Test that when the guard condition is false, nothing is dispatched.
@@ -364,7 +369,7 @@ describe("writePromptAudit() — early return when disabled", () => {
     expect(writeCalls).toBe(1);
 
     _promptAuditDeps.writeFile = origWrite;
-    _promptAuditDeps.mkdirSync = origMkdir;
+    _promptAuditDeps.mkdir = origMkdir;
     mock.restore();
   });
 });
@@ -376,9 +381,9 @@ describe("writePromptAudit() — early return when disabled", () => {
 describe("writePromptAudit() — error resilience", () => {
   test("writeFile throwing does not throw to caller", async () => {
     const origWrite = _promptAuditDeps.writeFile;
-    const origMkdir = _promptAuditDeps.mkdirSync;
+    const origMkdir = _promptAuditDeps.mkdir;
     const origNow = _promptAuditDeps.now;
-    _promptAuditDeps.mkdirSync = mock(() => {});
+    _promptAuditDeps.mkdir = mock(async () => {});
     _promptAuditDeps.now = mock(() => EPOCH);
     _promptAuditDeps.writeFile = mock(async () => {
       throw new Error("disk full");
@@ -388,17 +393,17 @@ describe("writePromptAudit() — error resilience", () => {
     expect(await writePromptAudit(makeEntry())).toBeUndefined();
 
     _promptAuditDeps.writeFile = origWrite;
-    _promptAuditDeps.mkdirSync = origMkdir;
+    _promptAuditDeps.mkdir = origMkdir;
     _promptAuditDeps.now = origNow;
     mock.restore();
   });
 
-  test("mkdirSync throwing does not throw to caller", async () => {
+  test("mkdir throwing does not throw to caller", async () => {
     const origWrite = _promptAuditDeps.writeFile;
-    const origMkdir = _promptAuditDeps.mkdirSync;
+    const origMkdir = _promptAuditDeps.mkdir;
     const origNow = _promptAuditDeps.now;
     _promptAuditDeps.now = mock(() => EPOCH);
-    _promptAuditDeps.mkdirSync = mock(() => {
+    _promptAuditDeps.mkdir = mock(async () => {
       throw new Error("permission denied");
     });
     _promptAuditDeps.writeFile = mock(async () => {});
@@ -406,7 +411,7 @@ describe("writePromptAudit() — error resilience", () => {
     expect(await writePromptAudit(makeEntry())).toBeUndefined();
 
     _promptAuditDeps.writeFile = origWrite;
-    _promptAuditDeps.mkdirSync = origMkdir;
+    _promptAuditDeps.mkdir = origMkdir;
     _promptAuditDeps.now = origNow;
     mock.restore();
   });

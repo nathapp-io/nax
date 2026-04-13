@@ -668,6 +668,48 @@ describe("#409 scope-aware adversarial routing", () => {
     expect(implementerRunCalled).toBe(true);
   });
 
+  test("two adversarial entries: first all-test, second has source findings → second entry reaches implementer", async () => {
+    const saved = { ..._autofixDeps };
+    let testWriterCalled = false;
+    let implementerRunCalled = false;
+
+    _autofixDeps.runTestWriterRectification = async () => {
+      testWriterCalled = true;
+      return 0;
+    };
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async () => {
+          implementerRunCalled = true;
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    const testOnlyCheck = makeAdversarialCheck([{ file: "src/foo.test.ts" }]);
+    const sourceCheck = makeAdversarialCheck([{ file: "src/impl.ts" }]);
+    const ctx = makeCtx({
+      reviewResult: { success: false, checks: [testOnlyCheck, sourceCheck], summary: "" } as any,
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 1 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    // First adversarial entry (all-test) goes to test-writer and is removed from implementer.
+    // Second adversarial entry (source) must still reach the implementer loop.
+    expect(testWriterCalled).toBe(true);
+    expect(implementerRunCalled).toBe(true);
+  });
+
   test("all source findings → only implementer invoked (existing behavior)", async () => {
     const saved = { ..._autofixDeps };
     let testWriterCalled = false;
