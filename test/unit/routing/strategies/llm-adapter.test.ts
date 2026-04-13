@@ -38,7 +38,7 @@ function makeConfig(overrides: Partial<NaxConfig["routing"]["llm"]> = {}): NaxCo
 // Note: parseRoutingResponse derives testStrategy via determineTestStrategy() (BUG-045),
 // so the testStrategy field in the adapter response is ignored.
 // For complexity="simple", determineTestStrategy returns "tdd-simple"
-// For complexity="complex", determineTestStrategy returns "three-session-tdd" (by default)
+// For complexity="complex", determineTestStrategy returns "three-session-tdd-lite" (#408)
 const VALID_ROUTING_RESPONSE = JSON.stringify({
   complexity: "simple",
   modelTier: "fast",
@@ -197,7 +197,7 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     expect(result).not.toBeNull();
     expect(result?.complexity).toBe("complex");
     expect(result?.modelTier).toBe("powerful");
-    expect(result?.testStrategy).toBe("three-session-tdd");
+    expect(result?.testStrategy).toBe("three-session-tdd-lite"); // #408: complex → three-session-tdd-lite
   });
 
   test("caches decision on second call when cacheDecisions is true", async () => {

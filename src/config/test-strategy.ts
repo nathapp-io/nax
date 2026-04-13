@@ -43,13 +43,14 @@ export function resolveTestStrategy(raw: string | undefined): TestStrategy {
 
 export const COMPLEXITY_GUIDE = `## Complexity Classification Guide
 
-- no-test: Config-only changes, documentation, CI/build files, dependency bumps, pure refactors
-  with NO behavioral change. MUST include noTestJustification explaining why tests are unnecessary.
-  If any user-facing behavior changes, use tdd-simple or higher.
-- simple: ≤50 LOC, single-file change, purely additive, no new dependencies → tdd-simple
-- medium: 50–200 LOC, 2–5 files, standard patterns, clear requirements → three-session-tdd-lite
-- complex: 200–500 LOC, multiple modules, new abstractions or integrations → three-session-tdd
-- expert: 500+ LOC, architectural changes, cross-cutting concerns, high risk → three-session-tdd
+Classify each story's complexity based on scope and risk — NOT acceptance criteria count.
+A story with 10 simple "add field" ACs is simpler than one with 3 ACs involving concurrent
+state management. Classify by content, not quantity.
+
+- simple: Single-file change, purely additive, no new dependencies, standard patterns
+- medium: 2–5 files, standard patterns, clear requirements, no new abstractions
+- complex: Multiple modules, new abstractions or integrations, cross-module dependencies
+- expert: Architectural changes, cross-cutting concerns, high risk, novel patterns
 
 ### Security Override
 
@@ -58,13 +59,30 @@ password hashing, access control) must use three-session-tdd regardless of compl
 
 export const TEST_STRATEGY_GUIDE = `## Test Strategy Guide
 
-- no-test: Stories with zero behavioral change — config files, documentation, CI/build changes,
-  dependency bumps, pure structural refactors. REQUIRES noTestJustification field. If any runtime
-  behavior changes, use tdd-simple or higher. When in doubt, use tdd-simple.
-- tdd-simple: Simple stories (≤50 LOC). Write failing tests first, then implement to pass them — all in one session.
-- three-session-tdd-lite: Medium stories, or complex stories involving UI/CLI/integration. 3 sessions: (1) test-writer writes failing tests and may create minimal src/ stubs for imports, (2) implementer makes tests pass and may replace stubs, (3) verifier confirms correctness.
-- three-session-tdd: Complex/expert stories or security-critical code. 3 sessions with strict isolation: (1) test-writer writes failing tests — no src/ changes allowed, (2) implementer makes them pass without modifying test files, (3) verifier confirms correctness.
-- test-after: Only when explicitly configured (tddStrategy: "off"). Write tests after implementation. Not auto-assigned.`;
+Assign testStrategy based on complexity and content:
+
+| Complexity | Default Strategy         | Override when                          |
+|------------|--------------------------|----------------------------------------|
+| simple     | tdd-simple               | —                                      |
+| medium     | tdd-simple               | —                                      |
+| complex    | three-session-tdd-lite   | three-session-tdd if security-critical |
+| expert     | three-session-tdd        | —                                      |
+
+### Strategy descriptions
+
+- no-test: Zero behavioral change — config files, documentation, CI/build changes, dependency bumps,
+  pure structural refactors. REQUIRES noTestJustification field. If ANY runtime behavior changes,
+  use tdd-simple or higher. When in doubt, use tdd-simple.
+- tdd-simple: Write failing tests first, then implement to pass them — all in one session.
+  Use for simple and medium complexity stories.
+- three-session-tdd-lite: 3 sessions: (1) test-writer writes failing tests and may create minimal
+  src/ stubs for imports, (2) implementer makes tests pass and may replace stubs, (3) verifier
+  confirms correctness. Use for complex stories.
+- three-session-tdd: 3 sessions with strict isolation: (1) test-writer writes failing tests —
+  no src/ changes allowed, (2) implementer makes them pass without modifying test files,
+  (3) verifier confirms correctness. Use for expert stories and security-critical code.
+- test-after: Write implementation first, then tests. Use only when the story is exploratory
+  or prototyping and strict TDD would be counterproductive.`;
 
 export const AC_QUALITY_RULES = `## Acceptance Criteria Rules
 
