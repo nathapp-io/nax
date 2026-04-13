@@ -48,6 +48,8 @@ export interface PromptAuditEntry {
   callType: "run" | "complete";
   /** 1-indexed turn number — only set for run() multi-turn entries. */
   turn?: number;
+  /** Whether the ACP session was resumed (true) or freshly created (false/undefined). */
+  resumed?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +105,7 @@ function buildAuditContent(entry: PromptAuditEntry, epochMs: number): string {
     `StoryId:   ${entry.storyId ?? "(none)"}`,
     `Feature:   ${entry.featureName ?? "(none)"}`,
     `Stage:     ${entry.pipelineStage ?? entry.callType}`,
+    `Resumed:   ${entry.resumed === true ? "yes" : "no"}`,
     "---",
     entry.prompt,
   ];
