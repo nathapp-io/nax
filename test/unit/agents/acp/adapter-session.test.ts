@@ -370,8 +370,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return makeSession(); },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
       expect(session).toBe(existingSession);
+      expect(resumed).toBe(true);
       expect(createCalled).toBe(false);
     });
 
@@ -385,8 +386,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
       expect(session).toBe(newSession);
+      expect(resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
 
@@ -399,8 +401,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "default");
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "default");
       expect(session).toBe(newSession);
+      expect(resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
 
@@ -414,8 +417,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      const { session, resumed } = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
       expect(session).toBe(newSession);
+      expect(resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
   });
