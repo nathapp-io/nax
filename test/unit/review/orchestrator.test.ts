@@ -15,6 +15,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { PluginRegistry } from "../../../src/plugins";
 import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import { ReviewOrchestrator, _orchestratorDeps } from "../../../src/review/orchestrator";
+import type { AdversarialReviewConfig } from "../../../src/review/types";
 import { _reviewAdversarialDeps, _reviewGitDeps as _runnerDeps, _reviewSemanticDeps } from "../../../src/review/runner";
 import type { ReviewCheckResult, ReviewConfig } from "../../../src/review/types";
 import { withDepsRestore } from "../../helpers/deps";
@@ -24,7 +25,7 @@ import { withDepsRestore } from "../../helpers/deps";
 // ─────────────────────────────────────────────────────────────────────────────
 
 withDepsRestore(_runnerDeps, ["getUncommittedFiles"]);
-withDepsRestore(_orchestratorDeps, ["spawn"]);
+withDepsRestore(_orchestratorDeps, ["spawn", "runSemanticReview", "runAdversarialReview"]);
 withDepsRestore(_reviewSemanticDeps, ["runSemanticReview"]);
 withDepsRestore(_reviewAdversarialDeps, ["runAdversarialReview"]);
 
@@ -312,5 +313,149 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     const checkNames = result.builtIn.checks.map((c) => c.check);
     expect(checkNames).toContain("semantic");
     expect(result.success).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// retrySkipChecks — parallel LLM dispatch (#136 / issue-9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeParallelConfig(): ReviewConfig {
+  return {
+    enabled: true,
+    checks: ["semantic", "adversarial"],
+    commands: {},
+    pluginMode: "deferred",
+    adversarial: {
+      enabled: true,
+      parallel: true,
+      maxConcurrentSessions: 2,
+    } as unknown as AdversarialReviewConfig,
+  } as unknown as ReviewConfig;
+}
+
+function makePassedCheck(check: "semantic" | "adversarial"): ReviewCheckResult {
+  return { check, success: true, command: "", exitCode: 0, output: "", durationMs: 50 };
+}
+
+describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)", () => {
+  beforeEach(() => {
+    _runnerDeps.getUncommittedFiles = mock(async () => []);
+    _orchestratorDeps.runSemanticReview = mock(async () => makePassedCheck("semantic"));
+    _orchestratorDeps.runAdversarialReview = mock(async () => makePassedCheck("adversarial"));
+  });
+
+  test("skips both LLM reviewers when both are in retrySkipChecks", async () => {
+    const orchestrator = new ReviewOrchestrator();
+    const retrySkipChecks = new Set(["semantic", "adversarial"]);
+
+    const result = await orchestrator.review(
+      makeParallelConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      retrySkipChecks,
+    );
+
+    expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
+    expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  test("skips only semantic when semantic is in retrySkipChecks — adversarial runs via sequential path", async () => {
+    // Only adversarial is active → canParallelize condition (needs both) fails → sequential path.
+    // Sequential path calls _reviewAdversarialDeps.runAdversarialReview (runner.ts), not _orchestratorDeps.
+    _reviewAdversarialDeps.runAdversarialReview = mock(async () => makePassedCheck("adversarial"));
+    const orchestrator = new ReviewOrchestrator();
+    const retrySkipChecks = new Set(["semantic"]);
+
+    await orchestrator.review(
+      makeParallelConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      retrySkipChecks,
+    );
+
+    expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
+    expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
+    expect(_reviewAdversarialDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
+  });
+
+  test("skips only adversarial when adversarial is in retrySkipChecks — semantic runs via sequential path", async () => {
+    // Only semantic is active → canParallelize condition (needs both) fails → sequential path.
+    // Sequential path calls _reviewSemanticDeps.runSemanticReview (runner.ts), not _orchestratorDeps.
+    _reviewSemanticDeps.runSemanticReview = mock(async () => makePassedCheck("semantic"));
+    const orchestrator = new ReviewOrchestrator();
+    const retrySkipChecks = new Set(["adversarial"]);
+
+    await orchestrator.review(
+      makeParallelConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      retrySkipChecks,
+    );
+
+    expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
+    expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
+    expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+  });
+
+  test("runs both reviewers when retrySkipChecks is empty", async () => {
+    const orchestrator = new ReviewOrchestrator();
+
+    await orchestrator.review(
+      makeParallelConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
+  });
+
+  test("runs both reviewers when retrySkipChecks does not include LLM checks", async () => {
+    const orchestrator = new ReviewOrchestrator();
+    const retrySkipChecks = new Set(["lint", "build"]);
+
+    await orchestrator.review(
+      makeParallelConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      retrySkipChecks,
+    );
+
+    expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
   });
 });
