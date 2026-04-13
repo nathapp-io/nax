@@ -8,7 +8,6 @@
  */
 
 import { buildSessionName } from "../agents/acp/adapter";
-import { writeReviewAudit } from "./review-audit";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
@@ -21,6 +20,7 @@ import type { ReviewFinding } from "../plugins/types";
 import { ReviewPromptBuilder } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
+import { writeReviewAudit } from "./review-audit";
 import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
@@ -32,6 +32,7 @@ export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined
 /** Injectable dependencies for semantic.ts — allows tests to mock without mock.module() */
 export const _semanticDeps = {
   createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
+  writeReviewAudit,
 };
 
 interface LLMFinding {
@@ -406,16 +407,18 @@ export async function runSemanticReview(
     // Check if truncated response contains "passed": false — LLM intended to fail
     // but output was cut off mid-response. Treating this as a pass is incorrect (#105).
     const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
-    void writeReviewAudit({
-      reviewer: "semantic",
-      sessionName: reviewerSessionName,
-      workdir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail,
-      result: null,
-    });
+    if (naxConfig?.review?.audit?.enabled) {
+      void _semanticDeps.writeReviewAudit({
+        reviewer: "semantic",
+        sessionName: reviewerSessionName,
+        workdir,
+        storyId: story.id,
+        featureName,
+        parsed: false,
+        looksLikeFail,
+        result: null,
+      });
+    }
     if (looksLikeFail) {
       logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
         storyId: story.id,
@@ -448,15 +451,17 @@ export async function runSemanticReview(
     };
   }
 
-  void writeReviewAudit({
-    reviewer: "semantic",
-    sessionName: reviewerSessionName,
-    workdir,
-    storyId: story.id,
-    featureName,
-    parsed: true,
-    result: { passed: parsed.passed, findings: parsed.findings },
-  });
+  if (naxConfig?.review?.audit?.enabled) {
+    void _semanticDeps.writeReviewAudit({
+      reviewer: "semantic",
+      sessionName: reviewerSessionName,
+      workdir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      result: { passed: parsed.passed, findings: parsed.findings },
+    });
+  }
 
   // Split findings into blocking (error/warn) and non-blocking (unverifiable/info)
   const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity));

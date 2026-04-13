@@ -349,6 +349,7 @@ const ReviewConfigSchema = z.object({
     formatFix: z.string().optional(),
   }),
   pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
+  audit: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   semantic: SemanticReviewConfigSchema.optional(),
   adversarial: AdversarialReviewConfigSchema.optional(),
   dialogue: ReviewDialogueConfigSchema.default({
@@ -764,6 +765,7 @@ export const NaxConfigSchema = z
       checks: ["typecheck", "lint"],
       commands: {},
       pluginMode: "per-story",
+      audit: { enabled: false },
       semantic: {
         modelTier: "balanced",
         diffMode: "embedded",
