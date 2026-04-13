@@ -756,3 +756,150 @@ describe("#409 scope-aware adversarial routing", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// STRAT-001: no-test strategy adversarial skip (#429)
+// ---------------------------------------------------------------------------
+
+describe("STRAT-001 no-test adversarial skip", () => {
+  function makeAdversarialCheck(findings: Array<{ file: string }>): ReviewCheckResult {
+    return {
+      check: "adversarial",
+      success: false,
+      command: "adversarial-review",
+      exitCode: 1,
+      output: "adversarial review output",
+      durationMs: 100,
+      findings: findings.map((f) => ({
+        ruleId: "adversarial",
+        severity: "error" as const,
+        file: f.file,
+        line: 1,
+        message: "adversarial finding",
+        source: "adversarial-review",
+      })),
+    };
+  }
+
+  function makeNoTestCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
+    return makeCtx({
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "no-test", reasoning: "" },
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 2 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+      ...overrides,
+    });
+  }
+
+  test("all adversarial test-file findings → returns continue, marks review passed, skips agent", async () => {
+    const saved = { ..._autofixDeps };
+    let agentRectificationCalled = false;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
+    };
+
+    const adversarialCheck = makeAdversarialCheck([
+      { file: "test/unit/foo.test.ts" },
+      { file: "src/bar.spec.ts" },
+    ]);
+    const ctx = makeNoTestCtx({
+      reviewResult: { success: false, checks: [adversarialCheck], summary: "" } as any,
+    });
+
+    const result = await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.reviewResult?.success).toBe(true);
+    expect(agentRectificationCalled).toBe(false);
+  });
+
+  test("adversarial test-file findings + lint failure → early exit skipped, agent rectification runs", async () => {
+    const saved = { ..._autofixDeps };
+    let agentRectificationCalled = false;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
+    };
+    _autofixDeps.recheckReview = async () => false;
+
+    const adversarialCheck = makeAdversarialCheck([{ file: "test/unit/foo.test.ts" }]);
+    const lintCheck: ReviewCheckResult = {
+      check: "lint",
+      success: false,
+      command: "biome check",
+      exitCode: 1,
+      output: "lint error",
+      durationMs: 50,
+    };
+    const ctx = makeNoTestCtx({
+      reviewResult: { success: false, checks: [adversarialCheck, lintCheck], summary: "" } as any,
+    });
+
+    await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    // Mixed failures → early exit guard does not trigger → agent rectification runs
+    expect(agentRectificationCalled).toBe(true);
+  });
+
+  test("adversarial source-file findings → early exit skipped, agent rectification runs", async () => {
+    const saved = { ..._autofixDeps };
+    let agentRectificationCalled = false;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
+    };
+
+    const adversarialCheck = makeAdversarialCheck([{ file: "src/rag/rag.service.ts" }]);
+    const ctx = makeNoTestCtx({
+      reviewResult: { success: false, checks: [adversarialCheck], summary: "" } as any,
+    });
+
+    await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    expect(agentRectificationCalled).toBe(true);
+  });
+
+  test("safety-net: mixed findings with no-test → test-writer skipped, implementer runs for source findings", async () => {
+    const saved = { ..._autofixDeps };
+    let testWriterCalled = false;
+    let implementerCalled = false;
+
+    _autofixDeps.runTestWriterRectification = async () => {
+      testWriterCalled = true;
+      return 0;
+    };
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async () => {
+          implementerCalled = true;
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    // Mixed findings: early exit does not fire (source + test), but safety-net blocks test-writer
+    const mixedCheck = makeAdversarialCheck([
+      { file: "test/unit/foo.test.ts" },
+      { file: "src/implementation.ts" },
+    ]);
+    const ctx = makeNoTestCtx({
+      reviewResult: { success: false, checks: [mixedCheck], summary: "" } as any,
+    });
+
+    await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    expect(testWriterCalled).toBe(false);
+    expect(implementerCalled).toBe(true);
+  });
+});
+
