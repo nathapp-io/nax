@@ -27,6 +27,7 @@ import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import { type ModelDef, type ResolvedConfiguredModel, resolveConfiguredModel } from "../../config";
 import { getSafeLogger } from "../../logger";
+import { autoCommitIfDirty as _autoCommitIfDirty } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
@@ -113,6 +114,7 @@ export const _acceptanceSetupDeps = {
   writeMeta: async (metaPath: string, meta: AcceptanceMeta): Promise<void> => {
     await Bun.write(metaPath, JSON.stringify(meta, null, 2));
   },
+  autoCommitIfDirty: _autoCommitIfDirty,
   runTest: async (
     _testPath: string,
     _workdir: string,
@@ -337,6 +339,18 @@ export const acceptanceSetupStage: PipelineStage = {
         acCount: totalCriteria,
         generator: "nax",
       });
+
+      // Commit the generated acceptance test file(s) and meta before any story's
+      // storyGitRef is captured. Without this commit, the acceptance test file lands
+      // in the working tree as untracked, the implementer agent may stage it with
+      // "git add .", and it then appears in git diff storyGitRef..HEAD — causing the
+      // adversarial reviewer to flag future-story ACs as abandonment findings.
+      await _acceptanceSetupDeps.autoCommitIfDirty(
+        ctx.workdir,
+        "acceptance-setup",
+        "pre-run",
+        ctx.prd.feature ?? "feature",
+      );
     }
 
     // Store per-package test paths in context for the acceptance runner (US-002)
