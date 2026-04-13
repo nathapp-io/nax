@@ -414,7 +414,18 @@ export class SpawnAcpClient implements AcpClient {
     const sessionName = opts.sessionName || `nax-${Date.now()}`;
 
     // Ensure session exists via CLI — --format json surfaces the session UUID in stdout
-    const cmd = ["acpx", "--cwd", this.cwd, "--format", "json", opts.agentName, "sessions", "ensure", "--name", sessionName];
+    const cmd = [
+      "acpx",
+      "--cwd",
+      this.cwd,
+      "--format",
+      "json",
+      opts.agentName,
+      "sessions",
+      "ensure",
+      "--name",
+      sessionName,
+    ];
     getSafeLogger()?.debug("acp-adapter", `Ensuring session: ${sessionName}`);
 
     const { exitCode, stdout, stderr } = await this.trackedSpawn(cmd);
