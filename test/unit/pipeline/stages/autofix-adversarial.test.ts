@@ -282,4 +282,55 @@ describe("runTestWriterRectification", () => {
 
     expect(capturedModelTier).toBe("balanced");
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Session continuity (#437)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  test("keepSessionOpen defaults to true so session survives across autofix cycles", async () => {
+    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
+    let capturedKeepSessionOpen: boolean | undefined;
+    const mockRun = mock(async (opts: any) => {
+      capturedKeepSessionOpen = opts.keepSessionOpen;
+      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+    });
+    const agentGetFn = mock(() => ({ run: mockRun }));
+    const ctx = makeCtx();
+
+    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+
+    expect(capturedKeepSessionOpen).toBe(true);
+  });
+
+  test("keepSessionOpen is false when caller passes keepOpen=false", async () => {
+    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
+    let capturedKeepSessionOpen: boolean | undefined;
+    const mockRun = mock(async (opts: any) => {
+      capturedKeepSessionOpen = opts.keepSessionOpen;
+      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+    });
+    const agentGetFn = mock(() => ({ run: mockRun }));
+    const ctx = makeCtx();
+
+    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any, false);
+
+    expect(capturedKeepSessionOpen).toBe(false);
+  });
+
+  test("uses the same acpSessionName across two calls (session resumability)", async () => {
+    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
+    const capturedSessionNames: string[] = [];
+    const mockRun = mock(async (opts: any) => {
+      capturedSessionNames.push(opts.acpSessionName);
+      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+    });
+    const agentGetFn = mock(() => ({ run: mockRun }));
+    const ctx = makeCtx();
+
+    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+
+    expect(capturedSessionNames).toHaveLength(2);
+    expect(capturedSessionNames[0]).toBe(capturedSessionNames[1]);
+  });
 });
