@@ -56,6 +56,122 @@ const DEFAULTS = {
 // Tests
 // ---------------------------------------------------------------------------
 
+describe("RectifierPromptBuilder.firstAttemptDelta", () => {
+  test("contains the failed check output", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", "Unexpected token at line 10")],
+      2,
+    );
+
+    expect(prompt).toContain("Unexpected token at line 10");
+  });
+
+  test("contains check name and exit code in section header", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("typecheck", "TS2345 error", 2)],
+      2,
+    );
+
+    expect(prompt).toContain("### typecheck (exit 2)");
+  });
+
+  test("contains maxAttempts count in singular form when maxAttempts === 1", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", "error")],
+      1,
+    );
+
+    expect(prompt).toContain("1 attempt");
+    expect(prompt).not.toContain("1 attempts");
+  });
+
+  test("contains maxAttempts count in plural form when maxAttempts > 1", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", "error")],
+      3,
+    );
+
+    expect(prompt).toContain("3 attempts");
+  });
+
+  test("truncates long output to 4000 chars per check", () => {
+    const longOutput = "Q".repeat(10_000);
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", longOutput)],
+      2,
+    );
+
+    const qCount = (prompt.match(/Q/g) ?? []).length;
+    expect(qCount).toBeLessThanOrEqual(4000);
+    expect(qCount).toBeLessThan(10_000);
+    expect(prompt).toContain("truncated");
+    expect(prompt).toContain("10000 chars total");
+  });
+
+  test("includes structured findings when present", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheckWithFindings("semantic", "Semantic review failed")],
+      2,
+    );
+
+    expect(prompt).toContain("Structured findings:");
+    expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
+  });
+
+  test("does NOT include findings section when findings are absent", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", "some lint error")],
+      2,
+    );
+
+    expect(prompt).not.toContain("Structured findings:");
+  });
+
+  test("CONTRADICTION_ESCAPE_HATCH is present", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", "error")],
+      2,
+    );
+
+    expect(prompt).toContain("UNRESOLVED:");
+  });
+
+  test("instructs agent to fix ALL issues and commit", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", "error")],
+      2,
+    );
+
+    expect(prompt).toContain("Fix ALL issues listed");
+    expect(prompt).toContain("Commit your fixes when done");
+  });
+
+  test("does NOT include story title or acceptance criteria sections", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", "error")],
+      2,
+    );
+
+    expect(prompt.toLowerCase()).not.toContain("acceptance criteria");
+    expect(prompt).not.toMatch(/^Story:/m);
+    expect(prompt.toLowerCase()).not.toContain("constitution");
+  });
+
+  test("handles multiple failed checks", () => {
+    const checks = [
+      makeCheck("lint", "lint error output"),
+      makeCheck("typecheck", "typecheck error output"),
+    ];
+
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 2);
+
+    expect(prompt).toContain("### lint");
+    expect(prompt).toContain("### typecheck");
+    expect(prompt).toContain("lint error output");
+    expect(prompt).toContain("typecheck error output");
+  });
+});
+
 describe("RectifierPromptBuilder.continuation", () => {
   test("contains opening signal that this is a follow-up attempt", () => {
     const prompt = RectifierPromptBuilder.continuation(

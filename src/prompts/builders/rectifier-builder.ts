@@ -114,6 +114,43 @@ export class RectifierPromptBuilder {
   }
 
   /**
+   * Lean transition prompt for the first autofix attempt when the implementer
+   * session is confirmed open (PROMPT-001 / #412).
+   *
+   * The agent already has full story context from the execution session — only
+   * the review findings need to be delivered. Avoids re-sending story title, ACs,
+   * and other context that is already in the conversation history.
+   */
+  static firstAttemptDelta(failedChecks: ReviewCheckResult[], maxAttempts: number): string {
+    const parts: string[] = [];
+    const attemptWord = maxAttempts === 1 ? "1 attempt" : `${maxAttempts} attempts`;
+
+    parts.push(
+      `Review failed after your implementation. Fix the following issues (${attemptWord} available before escalation):\n`,
+    );
+
+    for (const check of failedChecks) {
+      parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
+      const truncated = check.output.length > 4000;
+      const output = truncated
+        ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
+        : check.output;
+      parts.push(`\`\`\`\n${output}\n\`\`\`\n`);
+      if (check.findings?.length) {
+        parts.push("Structured findings:\n");
+        for (const f of check.findings) {
+          parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
+        }
+      }
+    }
+
+    parts.push("\nFix ALL issues listed. Do NOT change test files or test behavior. Commit your fixes when done.");
+    parts.push(CONTRADICTION_ESCAPE_HATCH);
+
+    return parts.join("\n");
+  }
+
+  /**
    * Builds a delta-only continuation prompt for autofix retry attempts (PROMPT-001).
    *
    * Sent on attempt 2+ when the implementer session is confirmed open.

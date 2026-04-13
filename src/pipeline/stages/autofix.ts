@@ -316,6 +316,14 @@ async function runAgentRectification(
     buildPrompt: (attempt, state) => {
       // runSharedRectificationLoop increments attempt before calling buildPrompt,
       // so attempt=1 on the first call. Continuation mode starts from attempt=2.
+
+      // #412: First attempt uses a lean delta prompt when the implementer session is
+      // already open — the agent has full story context from execution, so we only
+      // need to send the review findings, not re-state the full prompt.
+      if (attempt === 1 && sessionConfirmedOpen) {
+        return RectifierPromptBuilder.firstAttemptDelta(state.failedChecks, maxAttempts);
+      }
+
       const isSessionContinuation = attempt > 1 && sessionConfirmedOpen;
 
       if (isSessionContinuation) {
