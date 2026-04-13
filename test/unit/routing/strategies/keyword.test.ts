@@ -113,25 +113,30 @@ describe("TS-001: keyword strategy routes simple complexity to tdd-simple", () =
 // TS-001: other complexities retain their existing strategies
 // ---------------------------------------------------------------------------
 
-describe("TS-001: other complexities retain their strategies", () => {
-  test("medium complexity story routes to three-session-tdd-lite", () => {
+// #408: keyword fallback no longer produces "medium" (AC count removed).
+// "medium" only comes from the plan LLM. keyword: simple | complex | expert.
+describe("TS-001: other complexities retain their strategies (#408 thresholds)", () => {
+  // #408: many ACs without keywords still routes to simple (AC count removed)
+  test("story with many ACs but no keywords → simple + tdd-simple (#408)", () => {
     const story = makeStory({
       acceptanceCriteria: ["AC1", "AC2", "AC3", "AC4", "AC5"],
     });
     const result = keywordRoute(story, cfg);
 
-    expect(result.complexity).toBe("medium");
-    expect(result.testStrategy).toBe("three-session-tdd-lite");
+    expect(result.complexity).toBe("simple");
+    expect(result.testStrategy).toBe("tdd-simple");
   });
 
-  test("complex keyword story routes to three-session-tdd", () => {
+  // #408: complex keyword (non-security) → three-session-tdd-lite (was three-session-tdd)
+  test("complex keyword story routes to three-session-tdd-lite (#408)", () => {
     const story = makeStory({
-      title: "Refactor authentication module",
+      title: "Redesign data pipeline module",
       acceptanceCriteria: ["AC1"],
     });
     const result = keywordRoute(story, cfg);
 
-    expect(result.testStrategy).toBe("three-session-tdd");
+    expect(result.complexity).toBe("complex");
+    expect(result.testStrategy).toBe("three-session-tdd-lite");
   });
 
   test("security keyword story routes to three-session-tdd regardless of complexity", () => {

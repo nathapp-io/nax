@@ -14,62 +14,62 @@ import { escalateTier } from "../../../src/execution/runner";
 import { classifyComplexity, determineTestStrategy, routeTask } from "../../../src/routing";
 
 describe("classifyComplexity", () => {
-  test("simple: few criteria, no keywords", () => {
+  test("simple: no complexity keywords", () => {
     expect(classifyComplexity("Fix typo", "Fix a typo in error message", ["Typo is fixed"], [])).toBe("simple");
   });
 
-  test("medium: moderate criteria count", () => {
-    expect(classifyComplexity("Add validation", "Add DTO validation", ["a", "b", "c", "d", "e"], [])).toBe("medium");
-  });
-
-  test("complex: security keyword", () => {
+  test("complex: security keyword in tag", () => {
     expect(classifyComplexity("Auth refactor", "Refactor JWT authentication", ["Token works"], ["security"])).toBe(
       "complex",
     );
+  });
+
+  test("complex: complex keyword in title", () => {
+    expect(classifyComplexity("Refactor auth module", "", ["AC1"], [])).toBe("complex");
   });
 
   test("expert: distributed keyword", () => {
     expect(classifyComplexity("Real-time sync", "Real-time distributed consensus", ["Sync works"], [])).toBe("expert");
   });
 
-  test("4 ACs should classify as simple (BUG-19 regression)", () => {
+  // #408: AC count no longer drives complexity — content (keywords) is the only signal.
+  // These tests replace the BUG-19 regression tests which verified AC-count thresholds
+  // that have been intentionally removed.
+  test("many ACs without complexity keywords → simple (#408)", () => {
     const complexity = classifyComplexity(
       "Add validation",
-      "Add basic input validation",
-      ["AC1", "AC2", "AC3", "AC4"],
+      "Add comprehensive input validation",
+      ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
       [],
     );
     expect(complexity).toBe("simple");
   });
 
-  test("5 ACs should classify as medium (BUG-19 regression)", () => {
-    const complexity = classifyComplexity(
-      "Add validation",
-      "Add comprehensive input validation",
-      ["AC1", "AC2", "AC3", "AC4", "AC5"],
-      [],
-    );
-    expect(complexity).toBe("medium");
-  });
-
-  test("9 ACs should classify as complex (BUG-19 regression)", () => {
-    const complexity = classifyComplexity(
-      "Add validation",
-      "Add extensive input validation",
-      ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
-      [],
-    );
+  test("few ACs with complex keyword → complex (#408)", () => {
+    const complexity = classifyComplexity("Refactor validation module", "", ["AC1", "AC2"], []);
     expect(complexity).toBe("complex");
   });
 });
 
 describe("determineTestStrategy", () => {
-  test("simple → tdd-simple (TS-001)", () => {
+  test("simple → tdd-simple", () => {
     expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [])).toBe("tdd-simple");
   });
 
-  test("complex → three-session-tdd", () => {
-    expect(determineTestStrategy("complex", "Refactor module", "Complex refactor", [])).toBe("three-session-tdd");
+  // #408: medium now routes to tdd-simple (was three-session-tdd-lite)
+  test("medium → tdd-simple (#408)", () => {
+    expect(determineTestStrategy("medium", "Add schema fields", "Add DTO fields", [])).toBe("tdd-simple");
+  });
+
+  // #408: complex now routes to three-session-tdd-lite (was three-session-tdd)
+  test("complex → three-session-tdd-lite (#408)", () => {
+    expect(determineTestStrategy("complex", "Refactor module", "Complex refactor", [])).toBe("three-session-tdd-lite");
+  });
+
+  test("expert → three-session-tdd", () => {
+    expect(determineTestStrategy("expert", "Redesign architecture", "Architectural overhaul", [])).toBe(
+      "three-session-tdd",
+    );
   });
 
   test("security keyword → three-session-tdd even if simple", () => {
@@ -80,6 +80,13 @@ describe("determineTestStrategy", () => {
 
   test("public api keyword → three-session-tdd even if simple", () => {
     expect(determineTestStrategy("simple", "Add endpoint", "New public api endpoint for users", [])).toBe(
+      "three-session-tdd",
+    );
+  });
+
+  // security keyword overrides complex → still three-session-tdd, not three-session-tdd-lite
+  test("security keyword on complex → three-session-tdd (override wins)", () => {
+    expect(determineTestStrategy("complex", "Auth UI", "JWT token security screen", ["security"], "auto")).toBe(
       "three-session-tdd",
     );
   });
@@ -110,31 +117,6 @@ describe("determineTestStrategy", () => {
       expect(determineTestStrategy("complex", "Refactor auth", "JWT refactor", ["security"], "off")).toBe("test-after");
       expect(determineTestStrategy("expert", "Real-time sync", "Distributed consensus", [], "off")).toBe("test-after");
     });
-
-    test("strategy='auto' returns three-session-tdd-lite for UI-tagged complex stories", () => {
-      expect(determineTestStrategy("complex", "Redesign dashboard", "UI overhaul", ["ui"], "auto")).toBe(
-        "three-session-tdd-lite",
-      );
-    });
-
-    test("strategy='auto' returns three-session-tdd-lite for layout-tagged stories", () => {
-      expect(determineTestStrategy("complex", "Fix layout", "Responsive layout fix", ["layout"], "auto")).toBe(
-        "three-session-tdd-lite",
-      );
-    });
-
-    test("strategy='auto' security-critical stories always return three-session-tdd even with ui tag", () => {
-      expect(determineTestStrategy("complex", "Auth UI", "JWT token security screen", ["ui", "security"], "auto")).toBe(
-        "three-session-tdd",
-      );
-    });
-
-    test("strategy='auto' lite tags are case-insensitive", () => {
-      expect(determineTestStrategy("complex", "Build UI", "Create UI", ["UI"], "auto")).toBe("three-session-tdd-lite");
-      expect(determineTestStrategy("complex", "Build CLI", "Create CLI", ["CLI"], "auto")).toBe(
-        "three-session-tdd-lite",
-      );
-    });
   });
 });
 
@@ -153,20 +135,13 @@ describe("routeTask", () => {
     expect(result.testStrategy).toBe("three-session-tdd");
   });
 
-  test("routes all complexity levels correctly", () => {
+  // #408: keyword fallback no longer produces "medium" — AC count removed.
+  // medium only comes from the plan LLM. Keyword fallback: simple | complex | expert.
+  test("routes all keyword-detectable complexity levels correctly (#408)", () => {
     const simpleResult = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
     expect(simpleResult.complexity).toBe("simple");
     expect(simpleResult.modelTier).toBe("fast");
-
-    const mediumResult = routeTask(
-      "Add validation",
-      "Add DTO validation",
-      ["a", "b", "c", "d", "e"],
-      [],
-      DEFAULT_CONFIG,
-    );
-    expect(mediumResult.complexity).toBe("medium");
-    expect(mediumResult.modelTier).toBe("balanced");
+    expect(simpleResult.testStrategy).toBe("tdd-simple");
 
     const complexResult = routeTask(
       "Auth refactor",
@@ -177,6 +152,7 @@ describe("routeTask", () => {
     );
     expect(complexResult.complexity).toBe("complex");
     expect(complexResult.modelTier).toBe("powerful");
+    expect(complexResult.testStrategy).toBe("three-session-tdd"); // security override
 
     const expertResult = routeTask(
       "Real-time sync",
@@ -187,32 +163,28 @@ describe("routeTask", () => {
     );
     expect(expertResult.complexity).toBe("expert");
     expect(expertResult.modelTier).toBe("powerful");
+    expect(expertResult.testStrategy).toBe("three-session-tdd");
   });
 
-  test("complexity → modelTier mapping respects config (BUG-19 regression)", () => {
-    const simpleResult = routeTask("Simple task", "Simple description", ["AC1"], [], DEFAULT_CONFIG);
-    expect(simpleResult.complexity).toBe("simple");
-    expect(simpleResult.modelTier).toBe("fast");
-
-    const mediumResult = routeTask(
-      "Medium task",
-      "Medium description",
-      ["AC1", "AC2", "AC3", "AC4", "AC5"],
-      [],
-      DEFAULT_CONFIG,
-    );
-    expect(mediumResult.complexity).toBe("medium");
-    expect(mediumResult.modelTier).toBe("balanced");
-
-    const complexResult = routeTask(
-      "Complex task",
-      "Complex description",
+  // #408: many ACs without complexity keywords → simple (AC count no longer drives complexity)
+  test("many ACs without keywords → simple, not complex (#408)", () => {
+    const result = routeTask(
+      "Add fields",
+      "Add schema fields",
       ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
       [],
       DEFAULT_CONFIG,
     );
-    expect(complexResult.complexity).toBe("complex");
-    expect(complexResult.modelTier).toBe("powerful");
+    expect(result.complexity).toBe("simple");
+    expect(result.modelTier).toBe("fast");
+    expect(result.testStrategy).toBe("tdd-simple");
+  });
+
+  // #408: complex without security keyword → three-session-tdd-lite (not three-session-tdd)
+  test("complex story without security keyword → three-session-tdd-lite (#408)", () => {
+    const result = routeTask("Refactor module", "Refactor core module", ["AC1"], [], DEFAULT_CONFIG);
+    expect(result.complexity).toBe("complex");
+    expect(result.testStrategy).toBe("three-session-tdd-lite");
   });
 
   describe("tddStrategy config integration", () => {

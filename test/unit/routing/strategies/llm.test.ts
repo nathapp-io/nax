@@ -267,7 +267,8 @@ describe("LLM cache hit: testStrategy recomputed from complexity", () => {
     clearCache();
   });
 
-  test("cache hit for medium story returns three-session-tdd-lite", async () => {
+  // #408: medium now maps to tdd-simple (was three-session-tdd-lite)
+  test("cache hit for medium story returns tdd-simple (#408)", async () => {
     const { classifyWithLlm, clearCache, injectCacheEntry } = await import(
       "../../../../src/routing/strategies/llm"
     );
@@ -289,15 +290,16 @@ describe("LLM cache hit: testStrategy recomputed from complexity", () => {
     injectCacheEntry(story.id, {
       complexity: "medium",
       modelTier: "balanced",
-      testStrategy: "three-session-tdd-lite",
+      testStrategy: "tdd-simple",
       reasoning: "cached medium result",
     });
 
     // Cache hit: adapter not needed since result comes from cache
     const result = await classifyWithLlm(story, makeConfig({ cacheDecisions: true }), undefined);
 
+    // Must recompute: medium → tdd-simple (#408)
     expect(result?.complexity).toBe("medium");
-    expect(result?.testStrategy).toBe("three-session-tdd-lite");
+    expect(result?.testStrategy).toBe("tdd-simple");
 
     clearCache();
   });
