@@ -126,13 +126,21 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // Session 1: Test Writer
   // BUG-018 Fix: Skip test-writer on retry iterations — tests already exist from first attempt.
   // Saves ~3min per escalation by avoiding a no-op Claude Code session.
-  const isRetry = (story.attempts ?? 0) > 0;
+  // #410: Also skip when escalation came from review stage — tests were already written and
+  // passing when review failed, so there is no need to re-run the test-writer on the new tier.
+  const hasReviewEscalation = (story.priorFailures ?? []).some((f) => f.stage === "review");
+  const isRetry = (story.attempts ?? 0) > 0 || hasReviewEscalation;
   const session1Ref = initialRef;
 
   if (isRetry) {
-    logger.info("tdd", "Skipping test-writer on retry (attempt > 0, tests already exist)", {
+    const skipReason =
+      (story.attempts ?? 0) > 0
+        ? "attempt > 0, tests already exist"
+        : "escalation from review stage, tests already passed";
+    logger.info("tdd", "Skipping test-writer on retry", {
       storyId: story.id,
       attempt: story.attempts,
+      reason: skipReason,
     });
   }
 

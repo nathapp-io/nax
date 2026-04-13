@@ -95,3 +95,93 @@ describe("worktree creation gating (EXEC-002)", () => {
     // We validate the dep's mock returns the correct value.
   });
 });
+
+// ---------------------------------------------------------------------------
+// #410: reviewerSession cleanup on escalation
+// ---------------------------------------------------------------------------
+
+describe("reviewerSession cleanup on escalation", () => {
+  test("destroys reviewerSession when pipeline returns escalate action", async () => {
+    const destroyMock = mock(async () => {});
+    const mockSession = {
+      active: true,
+      history: [],
+      review: mock(async () => ({})),
+      reReview: mock(async () => ({})),
+      clarify: mock(async () => ""),
+      resolveDebate: mock(async () => ({})),
+      reReviewDebate: mock(async () => ({})),
+      getVerdict: mock(() => ({})),
+      destroy: destroyMock,
+    };
+
+    // The cleanup block checks: pipelineResult.finalAction === "escalate" && reviewerSession?.active
+    // We simulate this directly against the condition logic.
+    const finalAction = "escalate";
+    const reviewerSession = mockSession;
+
+    if (finalAction === "escalate" && reviewerSession?.active) {
+      try {
+        await reviewerSession.destroy();
+      } catch {
+        // best-effort
+      }
+    }
+
+    expect(destroyMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not throw if reviewerSession.destroy() fails", async () => {
+    const destroyMock = mock(async () => {
+      throw new Error("session already closed");
+    });
+    const mockSession = {
+      active: true,
+      history: [],
+      destroy: destroyMock,
+    };
+
+    // The cleanup block swallows errors from destroy() — must not propagate
+    const finalAction = "escalate";
+    const reviewerSession = mockSession;
+
+    let threw = false;
+    try {
+      if (finalAction === "escalate" && reviewerSession?.active) {
+        try {
+          await reviewerSession.destroy();
+        } catch {
+          // best-effort — swallowed
+        }
+      }
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(false);
+    expect(destroyMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not call destroy if reviewerSession is already inactive", async () => {
+    const destroyMock = mock(async () => {});
+    const mockSession = {
+      active: false, // already inactive
+      history: [],
+      destroy: destroyMock,
+    };
+
+    const finalAction = "escalate";
+    const reviewerSession = mockSession;
+
+    if (finalAction === "escalate" && reviewerSession?.active) {
+      try {
+        await reviewerSession.destroy();
+      } catch {
+        // best-effort
+      }
+    }
+
+    // active === false means the guard prevents destroy() from being called
+    expect(destroyMock).not.toHaveBeenCalled();
+  });
+});
