@@ -4,7 +4,7 @@
  * Covers:
  * - run-turn filename uses epochMs prefix and -t01 suffix
  * - complete filename uses epochMs prefix, no turn suffix
- * - File content contains all 6 header fields + raw prompt
+ * - File content contains all 7 header fields + raw prompt (incl. Resumed field)
  * - enabled:false → writeFile never called (zero I/O)
  * - Custom absolute dir is used verbatim without joining workdir
  * - Absent dir defaults to <workdir>/.nax/prompt-audit/
@@ -99,7 +99,7 @@ describe("writePromptAudit() — file content", () => {
     mock.restore();
   });
 
-  test("writes file with all 6 header fields present", async () => {
+  test("writes file with all 7 header fields present", async () => {
     let capturedContent = "";
     _promptAuditDeps.writeFile = mock(async (_path: string, content: string) => {
       capturedContent = content;
@@ -113,6 +113,7 @@ describe("writePromptAudit() — file content", () => {
     expect(capturedContent).toContain("StoryId:   us-001");
     expect(capturedContent).toContain("Feature:   my-feature");
     expect(capturedContent).toContain("Stage:     run");
+    expect(capturedContent).toContain("Resumed:   no");
   });
 
   test("writes raw prompt text after the separator", async () => {
@@ -150,6 +151,39 @@ describe("writePromptAudit() — file content", () => {
 
     expect(capturedContent).toContain("StoryId:   (none)");
     expect(capturedContent).toContain("Feature:   (none)");
+  });
+
+  test("resumed:true renders as 'Resumed:   yes'", async () => {
+    let capturedContent = "";
+    _promptAuditDeps.writeFile = mock(async (_path: string, content: string) => {
+      capturedContent = content;
+    });
+
+    await writePromptAudit(makeEntry({ resumed: true }));
+
+    expect(capturedContent).toContain("Resumed:   yes");
+  });
+
+  test("resumed:false renders as 'Resumed:   no'", async () => {
+    let capturedContent = "";
+    _promptAuditDeps.writeFile = mock(async (_path: string, content: string) => {
+      capturedContent = content;
+    });
+
+    await writePromptAudit(makeEntry({ resumed: false }));
+
+    expect(capturedContent).toContain("Resumed:   no");
+  });
+
+  test("resumed:undefined renders as 'Resumed:   no'", async () => {
+    let capturedContent = "";
+    _promptAuditDeps.writeFile = mock(async (_path: string, content: string) => {
+      capturedContent = content;
+    });
+
+    await writePromptAudit(makeEntry({ resumed: undefined }));
+
+    expect(capturedContent).toContain("Resumed:   no");
   });
 });
 

@@ -370,8 +370,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return makeSession(); },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
-      expect(session).toBe(existingSession);
+      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(result.session).toBe(existingSession);
+      expect(result.resumed).toBe(true);
       expect(createCalled).toBe(false);
     });
 
@@ -385,8 +386,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
-      expect(session).toBe(newSession);
+      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(result.session).toBe(newSession);
+      expect(result.resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
 
@@ -399,8 +401,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "default");
-      expect(session).toBe(newSession);
+      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "default");
+      expect(result.session).toBe(newSession);
+      expect(result.resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
 
@@ -414,8 +417,9 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         createSession: async () => { createCalled = true; return newSession; },
       };
 
-      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
-      expect(session).toBe(newSession);
+      const result = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(result.session).toBe(newSession);
+      expect(result.resumed).toBe(false);
       expect(createCalled).toBe(true);
     });
   });

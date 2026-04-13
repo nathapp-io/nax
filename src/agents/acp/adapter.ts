@@ -214,7 +214,7 @@ export async function ensureAcpSession(
   sessionName: string,
   agentName: string,
   permissionMode: string,
-): Promise<AcpSession> {
+): Promise<{ session: AcpSession; resumed: boolean }> {
   if (!agentName) {
     throw new Error("[acp-adapter] agentName is required for ensureAcpSession");
   }
@@ -225,7 +225,7 @@ export async function ensureAcpSession(
       const existing = await client.loadSession(sessionName, agentName, permissionMode);
       if (existing) {
         getSafeLogger()?.debug("acp-adapter", `Resumed existing session: ${sessionName}`);
-        return existing;
+        return { session: existing, resumed: true };
       }
     } catch {
       // loadSession failed — fall through to createSession
@@ -234,7 +234,7 @@ export async function ensureAcpSession(
 
   // Create a new named session
   getSafeLogger()?.debug("acp-adapter", `Creating new session: ${sessionName}`);
-  return client.createSession({ agentName, permissionMode, sessionName });
+  return { session: await client.createSession({ agentName, permissionMode, sessionName }), resumed: false };
 }
 
 /**
@@ -747,7 +747,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     // 3. Ensure session (resume existing or create new)
-    const session = await ensureAcpSession(client, sessionName, agentName, permissionMode);
+    const { session, resumed: sessionResumed } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
 
     // 4. Persist for plan→run continuity
     if (options.featureName && options.storyId) {
@@ -792,6 +792,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             pipelineStage: options.pipelineStage ?? "run",
             callType: "run",
             turn: turnCount,
+            resumed: sessionResumed,
           });
         }
 
@@ -984,6 +985,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             featureName: _options?.featureName,
             pipelineStage: _options?.pipelineStage ?? "complete",
             callType: "complete",
+            resumed: false,
           });
         }
 
