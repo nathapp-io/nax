@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
-import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
@@ -262,7 +257,7 @@ describe("runThreeSessionTdd", () => {
       ["src/user.ts"],
     ];
 
-    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
+    mockAllSpawn(mock((cmd: string[], _spawnOpts?: any) => {
       // Intercept the post-TDD test command (bun test)
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
         testCommandCalled = true;
@@ -429,7 +424,7 @@ describe("runThreeSessionTdd", () => {
 
     const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
 
-    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
+    mockAllSpawn(mock((cmd: string[], _spawnOpts?: any) => {
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
         testCommandCalled = true;
         testRunCount++;
@@ -491,13 +486,152 @@ describe("runThreeSessionTdd", () => {
   });
 });
 
-// ─── Lite-mode prompt tests ───────────────────────────────────────────────────
+// ─── #410: test-writer skip on review escalation ─────────────────────────────
 
-import {
-  buildImplementerLitePrompt,
-  buildImplementerPrompt,
-  buildTestWriterLitePrompt,
-  buildTestWriterPrompt,
-  buildVerifierPrompt,
-} from "../../../src/tdd/prompts";
+describe("test-writer skip on review escalation", () => {
+  test("skips test-writer when story has priorFailures with stage=review", async () => {
+    // When escalation came from review stage, hasReviewEscalation=true → isRetry=true
+    // so the test-writer session is skipped and we go directly to implementer.
+    // Only 2 git diff calls (implementer isolation + getChangedFiles) plus verifier.
+    mockGitSpawn({
+      diffFiles: [
+        // implementer isolation: OK
+        ["src/user.ts"],
+        // implementer getChangedFiles
+        ["src/user.ts"],
+        // verifier getChangedFiles
+        ["src/user.ts"],
+      ],
+    });
+
+    const storyWithReviewEscalation: UserStory = {
+      ...story,
+      attempts: 0, // reset to 0 after tier escalation
+      priorFailures: [
+        {
+          attempt: 1,
+          modelTier: "balanced",
+          stage: "review",
+          summary: "Semantic review found issues",
+          cost: 0.05,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    };
+
+    // 2 agent calls: implementer + verifier (no test-writer)
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.02 }, // implementer
+      { success: true, estimatedCost: 0.01 }, // verifier
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story: storyWithReviewEscalation,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "powerful",
+    });
+
+    // Should succeed with 2 sessions (implementer + verifier), not 3
+    expect(result.success).toBe(true);
+    expect(result.sessions).toHaveLength(2);
+    expect(result.sessions[0].role).toBe("implementer");
+    expect(result.sessions[1].role).toBe("verifier");
+    // agent.run was called exactly twice (no test-writer session)
+    expect(agent.run).toHaveBeenCalledTimes(2);
+  });
+
+  test("does not skip test-writer when priorFailures is empty (first attempt)", async () => {
+    // Fresh story with no prior failures — test-writer must run.
+    mockGitSpawn({
+      diffFiles: [
+        // Session 1 isolation + getChangedFiles
+        ["test/user.test.ts"],
+        ["test/user.test.ts"],
+        // Session 2 isolation + getChangedFiles
+        ["src/user.ts"],
+        ["src/user.ts"],
+        // Session 3 getChangedFiles
+        ["src/user.ts"],
+      ],
+    });
+
+    const freshStory: UserStory = {
+      ...story,
+      attempts: 0,
+      priorFailures: [],
+    };
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // test-writer
+      { success: true, estimatedCost: 0.02 }, // implementer
+      { success: true, estimatedCost: 0.01 }, // verifier
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story: freshStory,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.sessions).toHaveLength(3);
+    expect(result.sessions[0].role).toBe("test-writer");
+    expect(agent.run).toHaveBeenCalledTimes(3);
+  });
+
+  test("does not skip test-writer when priorFailures only have stage=escalation", async () => {
+    // Escalation from non-review stage — tests may not exist, must not skip test-writer.
+    mockGitSpawn({
+      diffFiles: [
+        // Session 1 isolation + getChangedFiles
+        ["test/user.test.ts"],
+        ["test/user.test.ts"],
+        // Session 2 isolation + getChangedFiles
+        ["src/user.ts"],
+        ["src/user.ts"],
+        // Session 3 getChangedFiles
+        ["src/user.ts"],
+      ],
+    });
+
+    const storyWithEscalationFailure: UserStory = {
+      ...story,
+      attempts: 0,
+      priorFailures: [
+        {
+          attempt: 1,
+          modelTier: "fast",
+          stage: "escalation",
+          summary: "Failed at verify stage, escalating",
+          cost: 0.03,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    };
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // test-writer
+      { success: true, estimatedCost: 0.02 }, // implementer
+      { success: true, estimatedCost: 0.01 }, // verifier
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story: storyWithEscalationFailure,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.sessions).toHaveLength(3);
+    expect(result.sessions[0].role).toBe("test-writer");
+    expect(agent.run).toHaveBeenCalledTimes(3);
+  });
+});
+
 

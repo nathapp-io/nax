@@ -158,6 +158,18 @@ export async function runIteration(
   await ctx.statusWriter.update(totalCost, iterations);
 
   const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
+
+  // #410: Destroy reviewerSession on escalation — completion stage is bypassed when the pipeline
+  // returns escalate, so we must clean up here to avoid leaking the ACP reviewer session.
+  const reviewerSessionOnEscalate = pipelineResult.context.reviewerSession;
+  if (pipelineResult.finalAction === "escalate" && reviewerSessionOnEscalate?.active) {
+    try {
+      await reviewerSessionOnEscalate.destroy();
+    } catch {
+      // cleanup is best-effort
+    }
+  }
+
   const currentPrd = pipelineResult.context.prd;
 
   const handlerCtx = {
