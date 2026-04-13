@@ -144,6 +144,30 @@ export const autofixStage: PipelineStage = {
       });
     }
 
+    // STRAT-001: no-test stories never write tests, so adversarial findings scoped to test
+    // files are irrelevant and unresolvable within the story's scope.  When every failing
+    // check is an adversarial check whose findings are all test-file scoped, treat the
+    // review as passed (with a warning) rather than launching any agent session.
+    if (ctx.routing.testStrategy === "no-test") {
+      const failedChecks = (reviewResult.checks ?? []).filter((c) => !c.success);
+      if (
+        failedChecks.length > 0 &&
+        failedChecks.every((c) => {
+          if (c.check !== "adversarial") return false;
+          const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(c);
+          return testFindings !== null && sourceFindings === null;
+        })
+      ) {
+        const skippedFindingCount = failedChecks.flatMap((c) => c.findings ?? []).length;
+        logger.warn("autofix", "Adversarial review found test-file issues — skipped (no-test strategy)", {
+          storyId: ctx.story.id,
+          skippedFindingCount,
+        });
+        if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
+        return { action: "continue" };
+      }
+    }
+
     // Phase 2: Agent rectification — spawn agent with review error context
     const {
       succeeded: agentFixed,
@@ -307,11 +331,21 @@ async function runAgentRectification(
   let autofixCostAccum = 0;
 
   if (testWriterChecks.length > 0) {
-    logger.info("autofix", "Routing test-file adversarial findings to test-writer session", {
-      storyId: ctx.story.id,
-      findingCount: testWriterChecks.flatMap((c) => c.findings ?? []).length,
-    });
-    autofixCostAccum += await _autofixDeps.runTestWriterRectification(ctx, testWriterChecks, ctx.story, agentGetFn);
+    if (ctx.routing.testStrategy === "no-test") {
+      // STRAT-001: no-test stories must not modify test files — skip test-writer session.
+      // The execute()-level early exit handles the common case; this guard is a safety net
+      // for mixed failures (adversarial test-file + other checks) that bypass the early exit.
+      logger.warn("autofix", "Skipping test-writer rectification (no-test strategy)", {
+        storyId: ctx.story.id,
+        skippedFindingCount: testWriterChecks.flatMap((c) => c.findings ?? []).length,
+      });
+    } else {
+      logger.info("autofix", "Routing test-file adversarial findings to test-writer session", {
+        storyId: ctx.story.id,
+        findingCount: testWriterChecks.flatMap((c) => c.findings ?? []).length,
+      });
+      autofixCostAccum += await _autofixDeps.runTestWriterRectification(ctx, testWriterChecks, ctx.story, agentGetFn);
+    }
   }
 
   // If all adversarial findings were test-file scoped and no other checks failed,

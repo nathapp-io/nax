@@ -6,22 +6,18 @@
  * - Session 2 (implementer): no test/ files modified
  */
 
+import { isTestFile } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
 import type { IsolationCheck } from "./types";
 
 /** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */
 export const _isolationDeps = { spawn };
 
-/** Common test directory patterns */
-const TEST_PATTERNS = [/^test\//, /^tests\//, /^__tests__\//, /\.spec\.\w+$/, /\.test\.\w+$/, /\.e2e-spec\.\w+$/];
+// Re-export so existing callers (src/tdd/index.ts, tests) don't need to change imports.
+export { isTestFile };
 
 /** Common source directory patterns */
 const SRC_PATTERNS = [/^src\//, /^lib\//, /^packages\//];
-
-/** Check if a file path is a test file */
-export function isTestFile(filePath: string): boolean {
-  return TEST_PATTERNS.some((pattern) => pattern.test(filePath));
-}
 
 /** Check if a file path is a source file */
 export function isSourceFile(filePath: string): boolean {

@@ -10,10 +10,10 @@
 
 import { describe, expect, mock, test, afterEach } from "bun:test";
 import {
-  TEST_FILE_PATTERN,
   splitAdversarialFindingsByScope,
   runTestWriterRectification,
 } from "../../../../src/pipeline/stages/autofix-adversarial";
+import { isTestFile } from "../../../../src/test-runners";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
@@ -69,15 +69,18 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 // TEST_FILE_PATTERN
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("TEST_FILE_PATTERN", () => {
+describe("isTestFile", () => {
   test.each([
     "src/foo.test.ts",
     "src/bar.spec.ts",
     "test/unit/foo.test.js",
     "src/foo.test.tsx",
     "src/bar.spec.jsx",
+    "rag_service_test.go",
+    "tests/integration/foo_test.rs",
+    "test_rag_service.py",
   ])("matches test file: %s", (file) => {
-    expect(TEST_FILE_PATTERN.test(file)).toBe(true);
+    expect(isTestFile(file)).toBe(true);
   });
 
   test.each([
@@ -87,7 +90,7 @@ describe("TEST_FILE_PATTERN", () => {
     "src/test-utils.ts",
     "src/testing/helpers.ts",
   ])("does not match source file: %s", (file) => {
-    expect(TEST_FILE_PATTERN.test(file)).toBe(false);
+    expect(isTestFile(file)).toBe(false);
   });
 });
 

@@ -3,9 +3,36 @@
  *
  * Single source of truth for identifying which test runner produced a given output.
  * Used by both parseTestOutput() (structured summary) and parseTestFailures() (AC-ID extraction).
+ *
+ * Also exports isTestFile() — language-agnostic test file classification used across
+ * the pipeline (autofix scope routing, TDD isolation, diff analysis).
  */
 
 export type Framework = "bun" | "jest" | "vitest" | "pytest" | "go" | "unknown";
+
+/**
+ * Language-agnostic patterns that identify test files. Covers:
+ * - Directory segments: test/, tests/, __tests__/, spec/, specs/
+ * - Extension-based: .test.<ext>, .spec.<ext>, .e2e-spec.<ext>
+ * - Go suffix: _test.go
+ * - Python prefix: test_<name>.py
+ */
+const TEST_FILE_PATTERNS = [
+  /(?:^|\/)(?:test|tests|__tests__|specs?)(?:\/|$)/, // dir segment — any language
+  /\.test\.\w+$/, // foo.test.ts, foo.test.py
+  /\.spec\.\w+$/, // foo.spec.ts, foo.spec.rb
+  /\.e2e-spec\.\w+$/, // foo.e2e-spec.ts
+  /_test\.go$/, // Go: foo_test.go
+  /(?:^|\/)test_[^/]+$/, // Python: test_foo.py
+];
+
+/**
+ * Returns true when the given file path looks like a test file across any
+ * supported language (TypeScript, Python, Go, Ruby, Rust, Java, etc.).
+ */
+export function isTestFile(filePath: string): boolean {
+  return TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
+}
 
 /**
  * Detect the test framework that produced the given output.

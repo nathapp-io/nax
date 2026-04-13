@@ -7,6 +7,7 @@
 
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
+import { isTestFile } from "../test-runners";
 import { getMergeBase, isGitRefValid } from "../utils/git";
 
 /** Maximum diff size in bytes before truncation. 50KB keeps prompts within LLM context. */
@@ -152,15 +153,6 @@ export async function computeTestInventory(workdir: string, storyGitRef: string)
   }
 
   const addedFiles = stdout.trim().split("\n").filter(Boolean);
-
-  const TEST_PATTERNS = [
-    /\.test\.(ts|js|tsx|jsx)$/,
-    /\.spec\.(ts|js|tsx|jsx)$/,
-    /_test\.go$/,
-    /(?:^|\/)(?:test|tests|__tests__)\//,
-  ];
-
-  const isTestFile = (f: string): boolean => TEST_PATTERNS.some((p) => p.test(f));
 
   const addedTestFiles = addedFiles.filter(isTestFile);
   const addedSourceFiles = addedFiles.filter((f) => !isTestFile(f));

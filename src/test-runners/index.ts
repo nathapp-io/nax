@@ -9,7 +9,7 @@
  * - analyzeTestExitCode(): environmental failure detection
  */
 
-export { detectFramework } from "./detector";
+export { detectFramework, isTestFile } from "./detector";
 export type { Framework } from "./detector";
 export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTestOutput } from "./parser";
 export { parseTestFailures } from "./ac-parser";

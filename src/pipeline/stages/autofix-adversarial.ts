@@ -14,10 +14,8 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
 import type { ReviewCheckResult } from "../../review/types";
+import { isTestFile } from "../../test-runners";
 import type { PipelineContext } from "../types";
-
-/** Pattern matching test/spec files by extension. */
-export const TEST_FILE_PATTERN = /\.(test|spec)\.(ts|js|tsx|jsx)$/;
 
 /**
  * Split adversarial findings in a check result into test-file vs source-file buckets.
@@ -31,8 +29,8 @@ export function splitAdversarialFindingsByScope(check: ReviewCheckResult): {
     return { testFindings: null, sourceFindings: null };
   }
 
-  const testFs = check.findings.filter((f) => TEST_FILE_PATTERN.test(f.file ?? ""));
-  const sourceFs = check.findings.filter((f) => !TEST_FILE_PATTERN.test(f.file ?? ""));
+  const testFs = check.findings.filter((f) => isTestFile(f.file ?? ""));
+  const sourceFs = check.findings.filter((f) => !isTestFile(f.file ?? ""));
 
   const toCheck = (findings: typeof testFs): ReviewCheckResult | null => {
     if (findings.length === 0) return null;
