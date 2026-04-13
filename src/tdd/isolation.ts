@@ -6,8 +6,8 @@
  * - Session 2 (implementer): no test/ files modified
  */
 
-import { spawn } from "../utils/bun-deps";
 import { isTestFile } from "../test-runners";
+import { spawn } from "../utils/bun-deps";
 import type { IsolationCheck } from "./types";
 
 /** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */

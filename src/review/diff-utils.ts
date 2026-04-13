@@ -154,7 +154,6 @@ export async function computeTestInventory(workdir: string, storyGitRef: string)
 
   const addedFiles = stdout.trim().split("\n").filter(Boolean);
 
-
   const addedTestFiles = addedFiles.filter(isTestFile);
   const addedSourceFiles = addedFiles.filter((f) => !isTestFile(f));
 
