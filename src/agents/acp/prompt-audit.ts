@@ -48,7 +48,7 @@ export interface PromptAuditEntry {
   callType: "run" | "complete";
   /** 1-indexed turn number — only set for run() multi-turn entries. */
   turn?: number;
-  /** Whether the ACP session was resumed (true) or freshly created (false/undefined). */
+  /** Whether the ACP session was resumed from a prior run (true) or freshly created (false/undefined). */
   resumed?: boolean;
 }
 

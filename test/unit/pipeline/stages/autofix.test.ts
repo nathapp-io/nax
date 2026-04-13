@@ -555,3 +555,161 @@ describe("autofixStage", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// #409: Scope-aware adversarial rectification
+// ---------------------------------------------------------------------------
+
+describe("#409 scope-aware adversarial routing", () => {
+  function makeAdversarialCheck(findings: Array<{ file: string; severity?: string; message?: string }>): ReviewCheckResult {
+    return {
+      check: "adversarial",
+      success: false,
+      command: "adversarial-review",
+      exitCode: 1,
+      output: "adversarial review output",
+      durationMs: 100,
+      findings: findings.map((f) => ({
+        ruleId: "adversarial",
+        severity: (f.severity ?? "error") as "error",
+        file: f.file,
+        line: 1,
+        message: f.message ?? "finding",
+        source: "adversarial-review",
+      })),
+    };
+  }
+
+  test("adversarial findings in test files only → test-writer session invoked, implementer skipped", async () => {
+    const saved = { ..._autofixDeps };
+    let testWriterCalled = false;
+    let agentRunCalled = false;
+
+    _autofixDeps.runTestWriterRectification = async () => {
+      testWriterCalled = true;
+      return 0;
+    };
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async () => {
+          agentRunCalled = true;
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    const adversarialCheck = makeAdversarialCheck([
+      { file: "test/unit/foo.test.ts" },
+      { file: "src/bar.spec.ts" },
+    ]);
+    const ctx = makeCtx({
+      // Pass reviewResult directly to preserve findings (makeFailedReviewResult drops them)
+      reviewResult: { success: false, checks: [adversarialCheck], summary: "" } as any,
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 1 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(testWriterCalled).toBe(true);
+    // implementer loop is skipped when all adversarial findings are test-scoped
+    expect(agentRunCalled).toBe(false);
+  });
+
+  test("mixed findings (test + source) → both test-writer and implementer sessions invoked", async () => {
+    const saved = { ..._autofixDeps };
+    let testWriterCalled = false;
+    let implementerRunCalled = false;
+
+    _autofixDeps.runTestWriterRectification = async () => {
+      testWriterCalled = true;
+      return 0;
+    };
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async () => {
+          implementerRunCalled = true;
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    const adversarialCheck = makeAdversarialCheck([
+      { file: "test/unit/foo.test.ts" },   // test file → test-writer
+      { file: "src/implementation.ts" },    // source file → implementer
+    ]);
+    const ctx = makeCtx({
+      // Pass reviewResult directly to preserve findings (makeFailedReviewResult drops them)
+      reviewResult: { success: false, checks: [adversarialCheck], summary: "" } as any,
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 1 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(testWriterCalled).toBe(true);
+    expect(implementerRunCalled).toBe(true);
+  });
+
+  test("all source findings → only implementer invoked (existing behavior)", async () => {
+    const saved = { ..._autofixDeps };
+    let testWriterCalled = false;
+    let implementerRunCalled = false;
+
+    _autofixDeps.runTestWriterRectification = async () => {
+      testWriterCalled = true;
+      return 0;
+    };
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async () => {
+          implementerRunCalled = true;
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    const adversarialCheck = makeAdversarialCheck([
+      { file: "src/foo.ts" },
+      { file: "src/bar.ts" },
+    ]);
+    const ctx = makeCtx({
+      // Pass reviewResult directly to preserve findings (makeFailedReviewResult drops them)
+      reviewResult: { success: false, checks: [adversarialCheck], summary: "" } as any,
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 1 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(testWriterCalled).toBe(false);
+    expect(implementerRunCalled).toBe(true);
+  });
+});
+

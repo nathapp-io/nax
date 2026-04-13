@@ -985,6 +985,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             featureName: _options?.featureName,
             pipelineStage: _options?.pipelineStage ?? "complete",
             callType: "complete",
+            resumed: false,
           });
         }
 

@@ -62,7 +62,7 @@ export function makeClient(
   session: MockAcpSession,
   overrides: {
     startFn?: () => Promise<void>;
-    createSessionFn?: (opts: { agentName: string; permissionMode: string }) => Promise<MockAcpSession>;
+    createSessionFn?: (opts: { agentName: string; permissionMode: string; sessionName?: string }) => Promise<MockAcpSession>;
   } = {},
 ): MockAcpClient {
   return {
