@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import { buildDecomposePrompt } from "../../../src/agents/shared/decompose";
+import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import type { NaxConfig } from "../../../src/config";
 import { NaxError } from "../../../src/errors";
@@ -187,7 +187,7 @@ describe("planDecomposeCommand", () => {
 
     const fakeAdapter = {
       decompose: mock(async (options: DecomposeOptions) => {
-        capturedCompleteArgs.push(buildDecomposePrompt(options));
+        capturedCompleteArgs.push(await buildDecomposePromptAsync(options));
         return { stories: stories.map(toDecomposedStory) };
       }),
       complete: mock(async (prompt: string) => {
