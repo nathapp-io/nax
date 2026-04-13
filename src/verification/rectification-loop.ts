@@ -25,7 +25,7 @@ import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
 import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
-import { type RectificationState, createEscalatedRectificationPrompt, shouldRetryRectification } from "./rectification";
+import { type RectificationState, shouldRetryRectification } from "./rectification";
 import { fullSuite as _fullSuite } from "./runners";
 import { runSharedRectificationLoop } from "./shared-rectification-loop";
 
@@ -390,7 +390,7 @@ export async function runRectificationLoop(
         escalatedTier,
         config.autoMode.defaultAgent,
       );
-      let escalationPrompt = createEscalatedRectificationPrompt(
+      let escalationPrompt = RectifierPromptBuilder.escalated(
         testSummary.failures,
         story,
         state.attempt,

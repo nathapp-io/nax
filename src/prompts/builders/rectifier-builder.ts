@@ -14,8 +14,11 @@
  * Replaces: buildImplementerRectificationPrompt / buildRectificationPrompt from src/tdd/prompts.ts
  */
 
+import type { RectificationConfig } from "../../config";
 import type { UserStory } from "../../prd";
 import type { ReviewCheckResult } from "../../review/types";
+import { formatFailureSummary } from "../../verification/parser";
+import type { TestFailure } from "../../verification/types";
 import {
   SectionAccumulator,
   findingsSection,
@@ -232,6 +235,256 @@ ${findingLines}
 3. Do NOT modify source implementation files
 
 Commit your fixes when done.${scopeConstraint}`;
+  }
+
+  /**
+   * Prompt for escalation to a higher-tier model after exhausting retries.
+   *
+   * Migrated from createEscalatedRectificationPrompt() in src/verification/rectification.ts.
+   */
+  static escalated(
+    failures: TestFailure[],
+    story: UserStory,
+    priorAttempts: number,
+    originalTier: string,
+    targetTier: string,
+    config?: RectificationConfig,
+    testCommand?: string,
+    testScopedTemplate?: string,
+  ): string {
+    const maxChars = config?.maxFailureSummaryChars ?? 2000;
+    const failureSummary = formatFailureSummary(failures, maxChars);
+
+    const cmd = testCommand ?? "bun test";
+
+    const failingFiles = Array.from(new Set(failures.map((f) => f.file)));
+    const testCommands = failingFiles
+      .map((file) => {
+        const scopedCmd = testScopedTemplate ? testScopedTemplate.replace("{{files}}", file) : `${cmd} ${file}`;
+        return `  ${scopedCmd}`;
+      })
+      .join("\n");
+
+    const failingTestNames = failures.map((f) => f.testName);
+    let failingTestsSection: string;
+    if (failingTestNames.length <= 10) {
+      failingTestsSection = failingTestNames.map((name) => `- ${name}`).join("\n");
+    } else {
+      const first10 = failingTestNames
+        .slice(0, 10)
+        .map((name) => `- ${name}`)
+        .join("\n");
+      const remaining = failingTestNames.length - 10;
+      failingTestsSection = `${first10}\n- and ${remaining} more`;
+    }
+
+    return `# Escalated Rectification Required
+
+This is an escalated attempt after exhausting standard retries. The previous model tier was unable to fix the issues, so a more powerful model is attempting the fix.
+
+## Previous Rectification Attempts
+
+- **Prior Attempts:** ${priorAttempts}
+- **Original Model Tier:** ${originalTier}
+- **Escalated to:** ${targetTier} (escalated from ${originalTier} to ${targetTier})
+
+### Still Failing Tests
+
+${failingTestsSection}
+
+---
+
+## Story Context
+
+**Title:** ${story.title}
+
+**Description:**
+${story.description}
+
+**Acceptance Criteria:**
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+---
+
+## Test Failures
+
+${failureSummary}
+
+---
+
+## Instructions for Escalated Attempt
+
+1. Review the failure context above and note the previous tier's attempts.
+2. The ${originalTier} model could not resolve these issues — try a fundamentally different approach.
+3. Consider:
+   - Are there architectural issues or design flaws causing multiple failures?
+   - Could the implementation be incomplete or missing core functionality?
+   - Are there concurrency, state management, or ordering issues?
+4. Fix the implementation WITHOUT loosening test assertions.
+5. Run the failing tests to verify your fixes:
+
+${testCommands}
+
+6. Ensure ALL tests pass before completing.
+
+**IMPORTANT:**
+- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT loosen assertions to mask implementation bugs.
+- Focus on fixing the source code to meet the test requirements.
+- When running tests, run ONLY the failing test files shown above — NEVER run \`${cmd}\` without a file filter.
+`;
+  }
+
+  /**
+   * Builds a rectification prompt for failed review checks (semantic, adversarial, or mechanical).
+   *
+   * Migrated from buildReviewRectificationPrompt() in src/pipeline/stages/autofix-prompts.ts.
+   */
+  static reviewRectification(failedChecks: ReviewCheckResult[], story: UserStory): string {
+    const scopeConstraint = story.workdir
+      ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
+      : "";
+
+    const semanticChecks = failedChecks.filter((c) => c.check === "semantic" || c.check === "adversarial");
+    const mechanicalChecks = failedChecks.filter((c) => c.check !== "semantic" && c.check !== "adversarial");
+
+    if (semanticChecks.length > 0 && mechanicalChecks.length === 0) {
+      return RectifierPromptBuilder.semanticRectification(semanticChecks, story, scopeConstraint);
+    }
+
+    if (mechanicalChecks.length > 0 && semanticChecks.length === 0) {
+      return RectifierPromptBuilder.mechanicalRectification(mechanicalChecks, story, scopeConstraint);
+    }
+
+    const mechanicalSection = RectifierPromptBuilder.formatCheckErrors(mechanicalChecks);
+    const semanticSection = RectifierPromptBuilder.formatCheckErrors(semanticChecks);
+    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+
+    return `You are fixing issues from a code review.
+
+Story: ${story.title} (${story.id})
+
+## Lint/Typecheck Errors
+
+${mechanicalSection}
+
+Fix ALL lint/typecheck errors listed above.
+
+## Semantic Review Findings (AC Compliance)
+
+### Acceptance Criteria
+${acList}
+
+### Findings
+${semanticSection}
+
+**Important:** The semantic reviewer may have flagged false positives. Before making changes for semantic findings, read the relevant files to verify each finding is a real issue. Do NOT add keys, functions, or imports that already exist.
+
+Do NOT change test files or test behavior.
+Do NOT add new features — only fix the identified issues.
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+  }
+
+  /**
+   * Builds a rectification prompt that includes dialogue history and finding reasoning.
+   *
+   * Migrated from buildDialogueAwareRectificationPrompt() in src/pipeline/stages/autofix-prompts.ts.
+   */
+  static dialogueAwareRectification(
+    failedChecks: ReviewCheckResult[],
+    story: UserStory,
+    opts: {
+      findingReasoning: Map<string, string>;
+      history: Array<{ role: string; content: string }>;
+      maxHistoryMessages?: number;
+    },
+  ): string {
+    const scopeConstraint = story.workdir
+      ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
+      : "";
+
+    const errors = RectifierPromptBuilder.formatCheckErrors(failedChecks);
+
+    let reasoningSection = "";
+    if (opts.findingReasoning.size > 0) {
+      const entries = Array.from(opts.findingReasoning.entries())
+        .map(([key, reason]) => `**${key}:** ${reason}`)
+        .join("\n");
+      reasoningSection = `\n\n### Finding Reasoning\n${entries}`;
+    }
+
+    let historySection = "";
+    if (opts.history.length > 0) {
+      const slice = opts.maxHistoryMessages !== undefined ? opts.history.slice(-opts.maxHistoryMessages) : opts.history;
+      const lines = slice.map((m) => `**${m.role}:** ${m.content}`).join("\n\n");
+      historySection = `\n\n### Dialogue History\n${lines}`;
+    }
+
+    return `You are fixing acceptance criteria compliance issues found during semantic review.
+
+Story: ${story.title} (${story.id})
+
+### Semantic Review Findings
+${errors}${reasoningSection}${historySection}
+
+**Important:** The semantic reviewer only analyzed the git diff and may have flagged false positives. Before making any changes:
+1. Read the relevant files to verify each finding is a real issue
+2. Only fix findings that are actually valid problems
+3. Do NOT add keys, functions, or imports that already exist — check first
+
+Do NOT change test files or test behavior.
+Do NOT add new features — only fix valid issues.
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+  }
+
+  private static formatCheckErrors(checks: ReviewCheckResult[]): string {
+    return checks
+      .map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``)
+      .join("\n\n");
+  }
+
+  private static semanticRectification(checks: ReviewCheckResult[], story: UserStory, scopeConstraint: string): string {
+    const errors = RectifierPromptBuilder.formatCheckErrors(checks);
+    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+
+    return `You are fixing acceptance criteria compliance issues found during semantic review.
+
+Story: ${story.title} (${story.id})
+
+### Acceptance Criteria
+${acList}
+
+### Semantic Review Findings
+${errors}
+
+**Important:** The semantic reviewer only analyzed the git diff and may have flagged false positives (e.g., claiming a key or function is "missing" when it already exists in the codebase). Before making any changes:
+1. Read the relevant files to verify each finding is a real issue
+2. Only fix findings that are actually valid problems
+3. Do NOT add keys, functions, or imports that already exist — check first
+
+Do NOT change test files or test behavior.
+Do NOT add new features — only fix valid issues.
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+  }
+
+  private static mechanicalRectification(
+    checks: ReviewCheckResult[],
+    story: UserStory,
+    scopeConstraint: string,
+  ): string {
+    const errors = RectifierPromptBuilder.formatCheckErrors(checks);
+
+    return `You are fixing lint/typecheck errors from a code review.
+
+Story: ${story.title} (${story.id})
+
+The following quality checks failed after implementation:
+
+${errors}
+
+Fix ALL errors listed above. Do NOT change test files or test behavior.
+Do NOT add new features — only fix the quality check errors.
+Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
 
   private s(id: string, content: string): PromptSection {
