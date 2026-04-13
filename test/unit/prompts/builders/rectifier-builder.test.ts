@@ -355,3 +355,117 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(prompt).toContain("### semantic");
   });
 });
+
+// ---------------------------------------------------------------------------
+// RectifierPromptBuilder.testWriterRectification (#409)
+// ---------------------------------------------------------------------------
+
+describe("RectifierPromptBuilder.testWriterRectification", () => {
+  function makeTestFileCheck(file: string, message: string): import("../../../../src/review/types").ReviewCheckResult {
+    return {
+      check: "adversarial",
+      success: false,
+      command: "adversarial-review",
+      exitCode: 1,
+      output: "adversarial output",
+      durationMs: 100,
+      findings: [
+        {
+          ruleId: "adversarial",
+          severity: "error",
+          file,
+          line: 10,
+          message,
+          source: "adversarial-review",
+        },
+      ],
+    };
+  }
+
+  function makeStory(
+    overrides: Partial<{ id: string; title: string; workdir: string; acceptanceCriteria: string[] }> = {},
+  ) {
+    return {
+      id: overrides.id ?? "US-409",
+      title: overrides.title ?? "Fix deadlock",
+      workdir: overrides.workdir,
+      acceptanceCriteria: overrides.acceptanceCriteria ?? ["AC-1: Does the thing", "AC-2: Handles edge case"],
+    } as any;
+  }
+
+  test("contains the finding message", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "Missing assertion for edge case")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("Missing assertion for edge case");
+  });
+
+  test("contains the file path and severity in finding line", () => {
+    const checks = [makeTestFileCheck("test/unit/bar.test.ts", "Incomplete test coverage")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("[error] test/unit/bar.test.ts:10 — Incomplete test coverage");
+  });
+
+  test("contains 'Only modify test files' constraint without workdir", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir: undefined }));
+
+    expect(prompt).toContain("Only modify test files");
+    expect(prompt).toContain("Do NOT touch source implementation files");
+  });
+
+  test("contains workdir-scoped constraint when story.workdir is set", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir: "packages/api" }));
+
+    expect(prompt).toContain("Only modify test files within `packages/api/`");
+    expect(prompt).toContain("Do NOT touch source files");
+  });
+
+  test("contains the acceptance criteria list", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const story = makeStory({ acceptanceCriteria: ["AC-1: First criterion", "AC-2: Second criterion"] });
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
+
+    expect(prompt).toContain("1. AC-1: First criterion");
+    expect(prompt).toContain("2. AC-2: Second criterion");
+  });
+
+  test("contains the story id and title", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const story = makeStory({ id: "US-409", title: "Resolve deadlock" });
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
+
+    expect(prompt).toContain("US-409");
+    expect(prompt).toContain("Resolve deadlock");
+  });
+
+  test("instructs not to remove tests or modify source files", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("do NOT remove tests");
+    expect(prompt).toContain("Do NOT modify source implementation files");
+  });
+
+  test("instructs to commit fixes when done", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("Commit your fixes when done");
+  });
+
+  test("handles multiple findings across multiple checks", () => {
+    const checks = [
+      makeTestFileCheck("test/unit/foo.test.ts", "First finding"),
+      makeTestFileCheck("test/unit/bar.test.ts", "Second finding"),
+    ];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("First finding");
+    expect(prompt).toContain("Second finding");
+    expect(prompt).toContain("test/unit/foo.test.ts");
+    expect(prompt).toContain("test/unit/bar.test.ts");
+  });
+});

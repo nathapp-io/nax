@@ -25,6 +25,7 @@ import { resolveModelForAgent } from "../../config";
 import type { NaxConfig } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
+import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
@@ -35,6 +36,7 @@ import {
 } from "../../verification/shared-rectification-loop";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { runTestWriterRectification, splitAdversarialFindingsByScope } from "./autofix-adversarial";
 import { buildReviewRectificationPrompt } from "./autofix-prompts";
 export { buildReviewRectificationPrompt };
 
@@ -281,11 +283,49 @@ async function runAgentRectification(
   const maxAttempts = Math.min(maxPerCycle, remainingBudget);
 
   const agentGetFn = ctx.agentGetFn ?? ((name: string) => _autofixDeps.getAgent(name, ctx.rootConfig));
+
+  // #409: Split adversarial findings by file scope.
+  // Test-file findings cannot be fixed by the implementer (isolation constraint) —
+  // route them to a separate test-writer rectification call before the implementer loop.
+  let implementerChecks = failedChecks;
+  let testWriterChecks: ReviewCheckResult[] = [];
+
+  for (const check of failedChecks) {
+    if (check.check === "adversarial" && check.findings?.length) {
+      const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+      if (testFindings) testWriterChecks = [...testWriterChecks, testFindings];
+      if (sourceFindings) {
+        implementerChecks = implementerChecks.map((c) => (c.check === "adversarial" ? sourceFindings : c));
+      } else {
+        // All adversarial findings are in test files — remove from implementer checks
+        implementerChecks = implementerChecks.filter((c) => c.check !== "adversarial");
+      }
+    }
+  }
+
+  let autofixCostAccum = 0;
+
+  if (testWriterChecks.length > 0) {
+    logger.info("autofix", "Routing test-file adversarial findings to test-writer session", {
+      storyId: ctx.story.id,
+      findingCount: testWriterChecks.flatMap((c) => c.findings ?? []).length,
+    });
+    autofixCostAccum += await _autofixDeps.runTestWriterRectification(ctx, testWriterChecks, ctx.story, agentGetFn);
+  }
+
+  // If all adversarial findings were test-file scoped and no other checks failed,
+  // skip the implementer loop — return for recheck after test-writer fixed the issues.
+  if (implementerChecks.length === 0) {
+    logger.info("autofix", "All adversarial findings routed to test-writer — skipping implementer loop", {
+      storyId: ctx.story.id,
+    });
+    return { succeeded: false, cost: autofixCostAccum };
+  }
+
   const loopState = {
     attempt: 0,
-    failedChecks,
+    failedChecks: implementerChecks,
   };
-  let autofixCostAccum = 0;
   let unresolvedReason: string | undefined;
   // #411: Track git HEAD before each agent attempt so checkResult can detect
   // whether the agent actually modified source files. When no files changed
@@ -305,7 +345,7 @@ async function runAgentRectification(
     startMessage: "Starting agent rectification for review failures",
     startData: {
       storyId: ctx.story.id,
-      failedChecks: failedChecks.map((check) => check.check),
+      failedChecks: implementerChecks.map((check) => check.check),
       maxAttempts,
       totalUsed: consumed,
       maxTotalAttempts: maxTotal,
@@ -537,4 +577,10 @@ export const _autofixDeps = {
     effectiveWorkdir: string,
   ): Promise<{ succeeded: boolean; cost: number; unresolvedReason?: string }> =>
     runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir),
+  runTestWriterRectification: (
+    ctx: PipelineContext,
+    testWriterChecks: ReviewCheckResult[],
+    story: UserStory,
+    agentGetFn: (name: string) => ReturnType<ReturnType<typeof createAgentRegistry>["getAgent"]>,
+  ): Promise<number> => runTestWriterRectification(ctx, testWriterChecks, story, agentGetFn),
 };
