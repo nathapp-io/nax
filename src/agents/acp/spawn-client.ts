@@ -98,6 +98,7 @@ class SpawnAcpSession implements AcpSession {
   private readonly env: Record<string, string | undefined>;
   private readonly pidRegistry?: PidRegistry;
   private activeProc: { pid: number; kill(signal?: number): void } | null = null;
+  readonly id?: string;
 
   constructor(opts: {
     agentName: string;
@@ -108,6 +109,7 @@ class SpawnAcpSession implements AcpSession {
     permissionMode: string;
     env: Record<string, string | undefined>;
     pidRegistry?: PidRegistry;
+    id?: string;
   }) {
     this.agentName = opts.agentName;
     this.sessionName = opts.sessionName;
@@ -117,6 +119,7 @@ class SpawnAcpSession implements AcpSession {
     this.permissionMode = opts.permissionMode;
     this.env = opts.env;
     this.pidRegistry = opts.pidRegistry;
+    this.id = opts.id;
   }
 
   async prompt(text: string): Promise<AcpSessionResponse> {
@@ -317,6 +320,33 @@ class SpawnAcpSession implements AcpSession {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Session ID parser
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parse the session UUID from `acpx --format json sessions ensure` stdout.
+ *
+ * acpx --format json outputs a JSON line:
+ *   {"action":"session_ensured","created":true,"acpxSessionId":"<uuid>","name":"<name>"}
+ *
+ * Returns the UUID string, or undefined if the output doesn't contain valid JSON with acpxSessionId.
+ */
+function parseSessionId(stdout: string): string | undefined {
+  for (const line of stdout.split("\n").reverse()) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const id = parsed.acpxSessionId;
+      if (typeof id === "string" && id.length > 0) return id;
+    } catch {
+      // not valid JSON — skip
+    }
+  }
+  return undefined;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SpawnAcpClient
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -383,11 +413,11 @@ export class SpawnAcpClient implements AcpClient {
   }): Promise<AcpSession> {
     const sessionName = opts.sessionName || `nax-${Date.now()}`;
 
-    // Ensure session exists via CLI
-    const cmd = ["acpx", "--cwd", this.cwd, opts.agentName, "sessions", "ensure", "--name", sessionName];
+    // Ensure session exists via CLI — --format json surfaces the session UUID in stdout
+    const cmd = ["acpx", "--cwd", this.cwd, "--format", "json", opts.agentName, "sessions", "ensure", "--name", sessionName];
     getSafeLogger()?.debug("acp-adapter", `Ensuring session: ${sessionName}`);
 
-    const { exitCode, stderr } = await this.trackedSpawn(cmd);
+    const { exitCode, stdout, stderr } = await this.trackedSpawn(cmd);
 
     if (exitCode !== 0) {
       throw new Error(`[acp-adapter] Failed to create session: ${stderr || `exit code ${exitCode}`}`);
@@ -402,14 +432,15 @@ export class SpawnAcpClient implements AcpClient {
       permissionMode: opts.permissionMode,
       env: this.env,
       pidRegistry: this.pidRegistry,
+      id: parseSessionId(stdout),
     });
   }
 
   async loadSession(sessionName: string, agentName: string, permissionMode: string): Promise<AcpSession | null> {
-    // Try to ensure session exists — if it does, acpx returns success
-    const cmd = ["acpx", "--cwd", this.cwd, agentName, "sessions", "ensure", "--name", sessionName];
+    // Try to ensure session exists — --format json surfaces the session UUID in stdout
+    const cmd = ["acpx", "--cwd", this.cwd, "--format", "json", agentName, "sessions", "ensure", "--name", sessionName];
 
-    const { exitCode } = await this.trackedSpawn(cmd);
+    const { exitCode, stdout } = await this.trackedSpawn(cmd);
 
     if (exitCode !== 0) {
       return null; // Session doesn't exist or can't be resumed
@@ -424,6 +455,7 @@ export class SpawnAcpClient implements AcpClient {
       permissionMode,
       env: this.env,
       pidRegistry: this.pidRegistry,
+      id: parseSessionId(stdout),
     });
   }
 

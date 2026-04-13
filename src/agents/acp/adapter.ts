@@ -102,6 +102,8 @@ export interface AcpSession {
   prompt(text: string): Promise<AcpSessionResponse>;
   close(options?: { forceTerminate?: boolean }): Promise<void>;
   cancelActivePrompt(): Promise<void>;
+  /** Session ID returned by the ACP provider (e.g. acpx UUID). Undefined when not available. */
+  readonly id?: string;
 }
 
 export interface AcpClient {
@@ -784,6 +786,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           void writePromptAudit({
             prompt: currentPrompt,
             sessionName,
+            sessionId: session.id,
             workdir: options.workdir,
             projectDir: options.projectDir,
             auditDir: _runAuditConfig.agent.promptAudit.dir,
@@ -979,6 +982,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           void writePromptAudit({
             prompt,
             sessionName: completeSessionName,
+            sessionId: session.id,
             workdir: workdir ?? process.cwd(),
             auditDir: _completeAuditConfig.agent.promptAudit.dir,
             storyId: _options?.storyId,
