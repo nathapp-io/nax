@@ -568,31 +568,22 @@ describe("execution runner — lite mode routing", () => {
     expect(routing.testStrategy).toBe("three-session-tdd");
   });
 
-  test("config tdd.strategy='auto' routes complex UI-tagged stories to three-session-tdd-lite", async () => {
+  // #408: complex (non-security) always routes to three-session-tdd-lite regardless of tags.
+  // LITE_TAGS logic removed — tags no longer affect strategy selection.
+  test("config tdd.strategy='auto' routes complex stories to three-session-tdd-lite (#408)", async () => {
     const { routeTask } = await import("../../../src/routing");
 
-    // With auto strategy + ui tag + complex story → three-session-tdd-lite
-    // (T3: complex/expert with lite tags → three-session-tdd-lite)
-    // Force 'complex' story: large number of ACs + complex description keywords
+    // complex keyword in title → complex complexity → three-session-tdd-lite
     const routing = routeTask(
-      "Build complex UI dashboard system",
-      "Build a comprehensive dashboard with multiple widget types, live data streaming, " +
-        "complex state management, custom chart rendering, drag-and-drop layout, " +
-        "theme engine, and accessibility compliance",
-      [
-        "Dashboard renders all widget types correctly",
-        "Live data updates every 200ms without performance degradation",
-        "Responsive layout works on all screen sizes",
-        "Accessibility compliance (WCAG 2.1 AA)",
-        "Drag-and-drop widget positioning works",
-        "Custom chart rendering is accurate",
-        "Theme switching works without page reload",
-      ],
+      "Redesign dashboard layout system",
+      "Overhaul the dashboard layout",
+      ["Layout renders correctly", "Responsive on all screen sizes"],
       ["ui", "layout"],
       TEST_CONFIG, // default is strategy='auto'
     );
 
-    // auto + complex + ui → three-session-tdd-lite
+    expect(routing.complexity).toBe("complex");
+    // auto + complex (no security keyword) → three-session-tdd-lite
     expect(routing.testStrategy).toBe("three-session-tdd-lite");
   });
 
