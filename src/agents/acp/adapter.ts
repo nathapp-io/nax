@@ -296,8 +296,19 @@ function acpSessionsPath(workdir: string, featureName: string): string {
   return join(workdir, ".nax", "features", featureName, "acp-sessions.json");
 }
 
-/** Sidecar entry — session name + agent name for correct sweep/close. */
-type SidecarEntry = string | { sessionName: string; agentName: string };
+/**
+ * Sidecar entry — session name, agent name, and lifecycle status.
+ *
+ * status:
+ *   "in-flight"  — session is actively running. If found on the next run, the
+ *                  previous process crashed without reaching the finally block.
+ *                  Treat as stale: discard and create a fresh session.
+ *   "open"       — session was intentionally kept open for retry (e.g. rectification
+ *                  loop). Safe to resume on the next run.
+ *   (absent)     — legacy entry written before this field existed. Treat as "open".
+ */
+type SidecarStatus = "in-flight" | "open";
+type SidecarEntry = string | { sessionName: string; agentName: string; status?: SidecarStatus };
 
 /** Extract sessionName from a sidecar entry (handles legacy string format). */
 function sidecarSessionName(entry: SidecarEntry): string {
@@ -309,6 +320,12 @@ function sidecarAgentName(entry: SidecarEntry): string {
   return typeof entry === "string" ? "claude" : entry.agentName;
 }
 
+/** Extract status from a sidecar entry (absent/legacy entries treated as "open"). */
+function sidecarStatus(entry: SidecarEntry): SidecarStatus {
+  if (typeof entry === "string") return "open";
+  return entry.status ?? "open";
+}
+
 /** Persist a session name to the sidecar file. Best-effort — errors are swallowed. */
 export async function saveAcpSession(
   workdir: string,
@@ -316,6 +333,7 @@ export async function saveAcpSession(
   storyId: string,
   sessionName: string,
   agentName = "claude",
+  status: SidecarStatus = "open",
 ): Promise<void> {
   try {
     const path = acpSessionsPath(workdir, featureName);
@@ -326,7 +344,7 @@ export async function saveAcpSession(
     } catch {
       // File doesn't exist yet — start fresh
     }
-    data[storyId] = { sessionName, agentName };
+    data[storyId] = { sessionName, agentName, status };
     await Bun.write(path, JSON.stringify(data, null, 2));
   } catch (err) {
     getSafeLogger()?.warn("acp-adapter", "Failed to save session to sidecar", { error: String(err) });
@@ -342,7 +360,7 @@ export async function clearAcpSession(
 ): Promise<void> {
   try {
     const path = acpSessionsPath(workdir, featureName);
-    let data: Record<string, string> = {};
+    let data: Record<string, SidecarEntry> = {};
     try {
       const existing = await Bun.file(path).text();
       data = JSON.parse(existing);
@@ -359,12 +377,24 @@ export async function clearAcpSession(
 
 /** Read a persisted session name from the sidecar file. Returns null if not found. */
 export async function readAcpSession(workdir: string, featureName: string, storyId: string): Promise<string | null> {
+  const entry = await readAcpSessionEntry(workdir, featureName, storyId);
+  return entry ? sidecarSessionName(entry) : null;
+}
+
+/**
+ * Read a full sidecar entry (name + agent + status). Returns null if not found.
+ * Use this when you need to inspect the lifecycle status of a persisted session.
+ */
+export async function readAcpSessionEntry(
+  workdir: string,
+  featureName: string,
+  storyId: string,
+): Promise<SidecarEntry | null> {
   try {
     const path = acpSessionsPath(workdir, featureName);
     const existing = await Bun.file(path).text();
     const data: Record<string, SidecarEntry> = JSON.parse(existing);
-    const entry = data[storyId];
-    return entry ? sidecarSessionName(entry) : null;
+    return data[storyId] ?? null;
   } catch {
     return null;
   }
@@ -742,11 +772,26 @@ export class AcpAgentAdapter implements AgentAdapter {
     await client.start();
 
     // 1. Resolve session name: explicit > sidecar > derived
+    // BUG-456: Guard against crash-orphaned sessions. A sidecar entry with
+    // status "in-flight" means the previous run never reached its finally block
+    // (process crashed). Resuming such a session is unsafe — the agent's prior
+    // turn may claim success, causing the implementer to skip re-implementation.
+    // Discard the entry and start with a fresh session name instead.
     let sessionName = options.acpSessionName;
     if (!sessionName && options.featureName && options.storyId) {
       // #90: Key sidecar by storyId:role to prevent verifier resuming implementer's session
       const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
-      sessionName = (await readAcpSession(options.workdir, options.featureName, sidecarKey)) ?? undefined;
+      const existingEntry = await readAcpSessionEntry(options.workdir, options.featureName, sidecarKey);
+      if (existingEntry && sidecarStatus(existingEntry) === "in-flight") {
+        getSafeLogger()?.warn("acp-adapter", "Discarding crash-orphaned session — previous run never completed", {
+          sessionName: sidecarSessionName(existingEntry),
+          storyId: options.storyId,
+          sessionRole: options.sessionRole,
+        });
+        await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
+      } else if (existingEntry) {
+        sessionName = sidecarSessionName(existingEntry);
+      }
     }
     sessionName ??= buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
@@ -758,14 +803,16 @@ export class AcpAgentAdapter implements AgentAdapter {
       stage: options.pipelineStage ?? "run",
     });
 
-    // 3. Ensure session (resume existing or create new)
-    const { session, resumed: sessionResumed } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
-
-    // 4. Persist for plan→run continuity
+    // 3. Write "in-flight" marker BEFORE the session starts. If the process
+    // crashes, the finally block never runs, leaving this marker intact.
+    // On the next run the guard above detects "in-flight" and discards the entry.
     if (options.featureName && options.storyId) {
       const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
-      await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName);
+      await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName, "in-flight");
     }
+
+    // 5. Ensure session (resume existing or create new)
+    const { session, resumed: sessionResumed } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
 
     let lastResponse: AcpSessionResponse | null = null;
     let timedOut = false;
@@ -884,10 +931,26 @@ export class AcpAgentAdapter implements AgentAdapter {
       } else if (isSessionBroken) {
         getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         await closeAcpSession(session);
+        // Clear the sidecar so the next run does not see an "in-flight" marker and
+        // emit a misleading crash-orphan warning — a broken session is a clean exit.
+        if (options.featureName && options.storyId) {
+          await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
+        }
       } else if (!runState.succeeded) {
+        // BUG-456: Promote from "in-flight" → "open" so the next run knows this
+        // is a legitimate retry (not a crash survivor) and safely resumes the session.
         getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
+        if (options.featureName && options.storyId) {
+          const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
+          await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName, "open");
+        }
       } else {
+        // keepSessionOpen=true success: also promote to "open" so the next turn resumes safely.
         getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepSessionOpen=true)", { sessionName });
+        if (options.featureName && options.storyId) {
+          const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
+          await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName, "open");
+        }
       }
       await client.close().catch(() => {});
     }
