@@ -177,9 +177,7 @@ export async function runTddSession(
   // return a stale name from a prior run, causing the implementer to resume the wrong session
   // and breaking session continuity with the TDD gate and autofix. (ADR-008)
   const acpSessionName =
-    role === "implementer" && featureName
-      ? buildSessionName(workdir, featureName, story.id, "implementer")
-      : undefined;
+    role === "implementer" && featureName ? buildSessionName(workdir, featureName, story.id, "implementer") : undefined;
 
   // Run the agent
   const result = await agent.run({
