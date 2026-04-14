@@ -212,6 +212,26 @@ export const autofixStage: PipelineStage = {
       return { action: "retry", fromStage: "review", cost: agentCost };
     }
 
+    // Partial-progress retry: if the agent cleared at least one check this cycle but not all,
+    // and the global budget has not been exhausted, retry from review with cleared checks
+    // added to the skip list. The next cycle then targets only the remaining failures.
+    // Zero-progress → escalate immediately (stuck rule: no point burning more budget).
+    const maxTotal = ctx.config.quality.autofix?.maxTotalAttempts ?? 10;
+    const totalUsed = ctx.autofixAttempt ?? 0;
+    const currentlyFailing = new Set((ctx.reviewResult?.checks ?? []).filter((c) => !c.success).map((c) => c.check));
+    const nowPassing = [...failedCheckNames].filter((c) => !currentlyFailing.has(c));
+
+    if (nowPassing.length > 0 && totalUsed < maxTotal) {
+      ctx.retrySkipChecks = new Set([...(ctx.retrySkipChecks ?? []), ...nowPassing]);
+      logger.info("autofix", "Partial progress — retrying review with updated skip list", {
+        storyId: ctx.story.id,
+        nowPassing,
+        remaining: [...currentlyFailing],
+        budgetUsed: `${totalUsed}/${maxTotal}`,
+      });
+      return { action: "retry", fromStage: "review", cost: agentCost };
+    }
+
     logger.warn("autofix", "Autofix exhausted — escalating", { storyId: ctx.story.id });
     return {
       action: "escalate",
