@@ -41,6 +41,14 @@ import { runTestWriterRectification, splitAdversarialFindingsByScope } from "./a
 const CLARIFY_REGEX = /^CLARIFY:\s*(.+)$/ms;
 /** Matches the REVIEW-003 reviewer contradiction escape hatch emitted by the implementer. */
 const UNRESOLVED_REGEX = /^UNRESOLVED:\s*(.+)$/ms;
+/**
+ * Maximum number of consecutive no-op reprompts (agent produced zero file changes)
+ * before the attempt is counted against the rectification budget.
+ *
+ * Set to 1: one free reprompt per no-op streak. If the agent still produces no
+ * changes after the stronger directive, the second no-op counts as a real attempt.
+ */
+const MAX_CONSECUTIVE_NOOP_REPROMPTS = 1;
 
 export const autofixStage: PipelineStage = {
   name: "autofix",
@@ -380,6 +388,10 @@ async function runAgentRectification(
   const loopState = {
     attempt: 0,
     failedChecks: implementerChecks,
+    /** Number of consecutive no-op turns (zero file changes) so far this cycle. */
+    consecutiveNoOps: 0,
+    /** True when the previous turn produced no file changes and the reprompt should fire. */
+    lastWasNoOp: false,
   };
   let unresolvedReason: string | undefined;
   // #411: Track git HEAD before each agent attempt so checkResult can detect
@@ -413,6 +425,16 @@ async function runAgentRectification(
     buildPrompt: (attempt, state) => {
       // runSharedRectificationLoop increments attempt before calling buildPrompt,
       // so attempt=1 on the first call. Continuation mode starts from attempt=2.
+
+      // No-op reprompt: agent produced zero file changes on the previous turn.
+      // Send a focused directive before falling back to the normal prompt hierarchy.
+      if (state.lastWasNoOp) {
+        return RectifierPromptBuilder.noOpReprompt(
+          state.failedChecks,
+          state.consecutiveNoOps,
+          MAX_CONSECUTIVE_NOOP_REPROMPTS,
+        );
+      }
 
       // #412: First attempt uses a lean delta prompt when the implementer session is
       // already open — the agent has full story context from execution, so we only
@@ -448,7 +470,7 @@ async function runAgentRectification(
     },
     runAttempt: async (attempt, prompt) => {
       // #411: Capture HEAD before agent runs so checkResult can detect file changes.
-      refBeforeAttempt = await captureGitRef(ctx.workdir);
+      refBeforeAttempt = await _autofixDeps.captureGitRef(ctx.workdir);
       ctx.autofixAttempt = consumed + attempt;
       const agent = agentGetFn(ctx.rootConfig.autoMode.defaultAgent);
       if (!agent) {
@@ -530,11 +552,34 @@ async function runAgentRectification(
     },
     checkResult: async (attempt, state) => {
       // #411: Detect whether the agent modified source files since the attempt started.
-      // When no files changed (e.g. UNRESOLVED signal, lint-only), skip LLM checks
-      // that already passed — they'll return the same result on the unchanged diff.
-      const refAfterAttempt = await captureGitRef(ctx.workdir);
-      const sourceFilesChanged = refBeforeAttempt !== refAfterAttempt;
+      // When captureGitRef returns undefined (not a git repo or git unavailable), assume
+      // files changed — we cannot detect a no-op without git-ref comparison.
+      const refAfterAttempt = await _autofixDeps.captureGitRef(ctx.workdir);
+      const sourceFilesChanged =
+        refBeforeAttempt === undefined || refAfterAttempt === undefined || refBeforeAttempt !== refAfterAttempt;
+
       if (!sourceFilesChanged) {
+        // No-op short-circuit: don't consume this attempt — re-prompt with a stronger
+        // directive so the agent either edits files or emits UNRESOLVED explicitly.
+        if (state.consecutiveNoOps < MAX_CONSECUTIVE_NOOP_REPROMPTS) {
+          state.consecutiveNoOps++;
+          state.lastWasNoOp = true;
+          state.attempt--; // Undo the loop's increment — this attempt doesn't count.
+          logger.info("autofix", "No source changes — re-prompting with stronger directive (not counting attempt)", {
+            storyId: ctx.story.id,
+            noOpCount: `${state.consecutiveNoOps}/${MAX_CONSECUTIVE_NOOP_REPROMPTS}`,
+            attemptsRemaining: maxAttempts - state.attempt,
+          });
+          return false;
+        }
+        // No-op limit reached — count as a consumed attempt and proceed to recheck.
+        state.lastWasNoOp = false;
+        state.consecutiveNoOps = 0;
+        logger.warn("autofix", "No source changes (no-op limit reached) — counting as consumed attempt", {
+          storyId: ctx.story.id,
+          attemptsRemaining: maxAttempts - attempt,
+        });
+        // Skip LLM checks that already passed — they'll return the same result on the unchanged diff.
         const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
         if (passedChecks.length > 0) {
           ctx.retrySkipChecks = new Set(passedChecks);
@@ -543,6 +588,10 @@ async function runAgentRectification(
             skippedChecks: passedChecks,
           });
         }
+      } else {
+        // Source files changed — reset no-op tracking.
+        state.consecutiveNoOps = 0;
+        state.lastWasNoOp = false;
       }
 
       const passed = await _autofixDeps.recheckReview(ctx);
@@ -599,11 +648,18 @@ async function runAgentRectification(
     onAttemptFailure: (attempt) => {
       logger.warn("autofix", `Agent rectification still failing after attempt ${attempt}`, {
         storyId: ctx.story.id,
+        attemptsRemaining: maxAttempts - attempt,
+        globalBudgetRemaining: maxTotal - (consumed + attempt),
       });
     },
     onLoopEnd: (state) => {
       if (state.attempt >= maxAttempts) {
-        logger.warn("autofix", "Agent rectification exhausted", { storyId: ctx.story.id });
+        logger.warn("autofix", "Agent rectification exhausted", {
+          storyId: ctx.story.id,
+          attemptsUsed: state.attempt,
+          globalBudgetUsed: consumed + state.attempt,
+          maxTotalAttempts: maxTotal,
+        });
       }
     },
   }).catch((error: unknown) => {
@@ -627,6 +683,7 @@ export const _autofixDeps = {
   getAgent: (name: string, config: NaxConfig) => createAgentRegistry(config).getAgent(name),
   runQualityCommand,
   recheckReview,
+  captureGitRef,
   runAgentRectification: (
     ctx: PipelineContext,
     lintFixCmd: string | undefined,
