@@ -39,7 +39,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | 8 | `verify` | `verify.ts` | Test verification (scoped via smart-runner) |
 | 9 | `rectify` | `rectify.ts` | Auto-fix test failures (inline retry loop) |
 | 10 | `review` | `review.ts` | Quality checks (lint, typecheck, format, plugin checks) |
-| 11 | `autofix` | `autofix.ts` | Auto-fix lint/format issues before escalating |
+| 11 | `autofix` | `autofix.ts` | Auto-fix quality failures: mechanical (lintFix/formatFix) then agent rectification; partial-progress retry before escalating |
 | 12 | `regression` | `regression.ts` | Full-suite gate (inline mode only) |
 | 13 | `completion` | `completion.ts` | Mark complete, fire hooks, save metrics |
 
@@ -98,6 +98,8 @@ The shared mutable state passed through all stages. Acts as the single source of
 **Stage inputs:** `prd`, `story`, `stories`, `routing`, `hooks`, `plugins`
 
 **Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`, `verifyResult`, `reviewResult`, `acceptanceFailures`, `tddFailureCategory`, `fullSuiteGatePassed`
+
+**Autofix state:** `retrySkipChecks` — set of check names (e.g. `"lint"`, `"semantic"`) that passed during a prior autofix cycle and should be skipped on the next review retry. Accumulated across partial-progress cycles; cleared implicitly when the story completes.
 
 **Metadata:** `storyStartTime`, `rectifyAttempt`, `autofixAttempt`, `storyGitRef`, `accumulatedAttemptCost`, `reviewFindings`
 
@@ -461,6 +463,22 @@ The orchestrator splits checks into **mechanical** (typecheck, lint, build, form
 - Finding categories: `input`, `error-path`, `abandonment`, `test-gap`, `convention`, `assumption`
 - Configurable parallel/sequential execution
 - **Scope-aware routing:** adversarial findings in test files are routed to a test-writer session via `autofix-adversarial.ts`, not the implementer (TDD isolation constraint)
+
+### Autofix Stage
+
+`src/pipeline/stages/autofix.ts`:
+
+Two-phase approach when review fails:
+
+1. **Mechanical fix** (lint/format only) — runs `lintFix`/`formatFix` commands, rechecks. Returns `retry fromStage:"review"` immediately if resolved.
+2. **Agent rectification** — spawns the implementer session with failed-check context. Runs up to `quality.autofix.maxAttempts` (default 3) per cycle, bounded by `quality.autofix.maxTotalAttempts` (default 12) across all cycles.
+
+**Partial-progress retry:** when a cycle fails (not all checks fixed) but at least one check was newly cleared, the cleared checks are added to `retrySkipChecks` and the stage returns `retry fromStage:"review"` rather than escalating. The next review run skips cleared checks; the next autofix cycle targets only remaining failures. This allows the 12-attempt global budget to be consumed across multiple focused cycles (e.g. lint cleared in cycle 1 → only typecheck+semantic in cycle 2).
+
+**Escalation conditions:**
+- Zero progress in a cycle (no checks cleared) — budget remaining but stuck → escalate
+- Global budget exhausted (`autofixAttempt >= maxTotalAttempts`) → escalate
+- `UNRESOLVED` signal from implementer (reviewer contradiction) → escalate
 
 ### Review Audit Trail
 

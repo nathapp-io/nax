@@ -194,6 +194,89 @@ describe("autofixStage", () => {
     expect(result.action).toBe("escalate");
   });
 
+  test("partial progress — cleared checks added to skip list, returns retry when budget remains", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
+      // Simulate: lint cleared after 3 attempts, typecheck still failing. 3 of 12 budget used.
+      mockCtx.autofixAttempt = 3;
+      mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "TS2345: Type error" }]);
+      return { succeeded: false, cost: 1.5 };
+    };
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
+        },
+      } as any,
+    });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("retry");
+    if (result.action === "retry") expect(result.fromStage).toBe("review");
+    expect(ctx.retrySkipChecks?.has("lint")).toBe(true);
+    expect(ctx.retrySkipChecks?.has("typecheck")).toBe(false);
+  });
+
+  test("zero progress — escalates immediately even when budget remains", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
+      // Simulate: 3 attempts, nothing fixed — same checks still failing.
+      mockCtx.autofixAttempt = 3;
+      return { succeeded: false, cost: 1.5 };
+    };
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
+        },
+      } as any,
+    });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("escalate");
+  });
+
+  test("budget exhausted — escalates even when partial progress was made", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
+      // Simulate: lint cleared but budget now fully consumed.
+      mockCtx.autofixAttempt = 12;
+      mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "TS2345: Type error" }]);
+      return { succeeded: false, cost: 0.5 };
+    };
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
+        },
+      } as any,
+    });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("escalate");
+  });
+
   test("agent rectification skipped when review passes after mechanical fix", async () => {
     const saved = { ..._autofixDeps };
     let agentRectificationCalled = false;
