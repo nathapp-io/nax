@@ -104,6 +104,12 @@ export class StatusWriter {
     this._currentStory = story;
   }
 
+  /** Merge reviewSummary into the current story (no-op if no current story) */
+  setReviewSummary(reviewSummary: NonNullable<RunStateSnapshot["currentStory"]>["reviewSummary"]): void {
+    if (!this._currentStory) return;
+    this._currentStory = { ...this._currentStory, reviewSummary };
+  }
+
   /**
    * Merge a partial update into the in-memory postRun state for a given phase.
    * The next update() call will write the merged state to disk.

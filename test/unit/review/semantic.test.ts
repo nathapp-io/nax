@@ -541,11 +541,11 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
     expect(result.success).toBe(true);
   });
 
-  test("multiple findings all appear in output", async () => {
+  test("multiple blocking findings all appear in output", async () => {
     const multiFindings = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "warn", file: "src/a.ts", line: 1, issue: "Issue A", suggestion: "Fix A" },
+        { severity: "error", file: "src/a.ts", line: 1, issue: "Issue A", suggestion: "Fix A" },
         { severity: "error", file: "src/b.ts", line: 99, issue: "Issue B", suggestion: "Fix B" },
       ],
     });

@@ -116,13 +116,13 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     expect(result.findings![0].message).toBe("Missing wiring in runner");
   });
 
-  test("sets source='semantic-review' on each ReviewFinding", async () => {
+  test("sets source='semantic-review' on blocking ReviewFindings", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
         { severity: "error", file: "src/a.ts", line: 1, issue: "An issue", suggestion: "Fix" },
-        { severity: "warn", file: "src/b.ts", line: 2, issue: "Another issue", suggestion: "Fix" },
+        { severity: "error", file: "src/b.ts", line: 2, issue: "Another issue", suggestion: "Fix" },
       ],
     });
     const agent = makeMockAgent(llmResponse);
@@ -134,7 +134,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     }
   });
 
-  test("sets ruleId='semantic' on each ReviewFinding", async () => {
+  test("sets ruleId='semantic' on advisory ReviewFinding (info severity)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
@@ -146,7 +146,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
 
-    expect(result.findings![0].ruleId).toBe("semantic");
+    // info is advisory by default — check advisoryFindings
+    expect(result.advisoryFindings![0].ruleId).toBe("semantic");
   });
 
   test("maps finding.file to ReviewFinding.file", async () => {
@@ -194,7 +195,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     expect(result.findings![0].severity).toBe("error");
   });
 
-  test("normalises severity 'warn' to 'warning' in ReviewFinding", async () => {
+  test("normalises severity 'warn' to 'warning' in advisoryFindings (advisory at default threshold)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
@@ -206,10 +207,11 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
 
-    expect(result.findings![0].severity).toBe("warning");
+    // warn → warning, placed in advisoryFindings at default "error" threshold
+    expect(result.advisoryFindings![0].severity).toBe("warning");
   });
 
-  test("maps 'info' severity as-is to ReviewFinding.severity", async () => {
+  test("maps 'info' severity as-is into advisoryFindings (advisory at default threshold)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
@@ -221,10 +223,11 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
 
-    expect(result.findings![0].severity).toBe("info");
+    // info is advisory at default "error" threshold
+    expect(result.advisoryFindings![0].severity).toBe("info");
   });
 
-  test("populates findings for all LLM findings when multiple are returned", async () => {
+  test("splits multiple findings into blocking (error) and advisory (warn/info) by default", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
@@ -238,10 +241,13 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
 
-    expect(result.findings!.length).toBe(3);
-    expect(result.findings![1].message).toBe("Issue B");
-    expect(result.findings![1].file).toBe("src/b.ts");
-    expect(result.findings![1].severity).toBe("warning");
+    // Only error blocks by default
+    expect(result.findings!.length).toBe(1);
+    expect(result.findings![0].message).toBe("Issue A");
+    // warn + info are advisory
+    expect(result.advisoryFindings!.length).toBe(2);
+    expect(result.advisoryFindings![0].message).toBe("Issue B");
+    expect(result.advisoryFindings![0].severity).toBe("warning");
   });
 
   test("result.findings is empty or absent when LLM returns passed=true", async () => {

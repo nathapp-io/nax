@@ -121,7 +121,7 @@ describe("unverifiable finding handling", () => {
     );
 
     expect(result.success).toBe(true);
-    expect(result.output).toContain("unverifiable or informational");
+    expect(result.output).toContain("advisory");
   });
 
   test("mixed blocking + unverifiable: only blocking findings cause failure", async () => {
@@ -162,7 +162,7 @@ describe("unverifiable finding handling", () => {
     expect(result.findings?.[0].message).toBe("AC not implemented");
   });
 
-  test("info findings are still blocking (only unverifiable is non-blocking)", async () => {
+  test("info findings are advisory at default 'error' threshold (below blocking threshold)", async () => {
     const response = JSON.stringify({
       passed: false,
       findings: [
@@ -184,8 +184,11 @@ describe("unverifiable finding handling", () => {
       () => agent,
     );
 
-    // info findings still count as blocking — only "unverifiable" is non-blocking
-    expect(result.success).toBe(false);
+    // With default 'error' threshold, info findings are advisory — not blocking
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("advisory");
+    expect(result.advisoryFindings).toBeDefined();
+    expect(result.advisoryFindings![0].message).toBe("Minor observation");
   });
 });
 

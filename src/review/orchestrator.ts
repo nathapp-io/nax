@@ -20,7 +20,14 @@ import { runAdversarialReview } from "./adversarial";
 import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
 import { runSemanticReview } from "./semantic";
-import type { AdversarialReviewConfig, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+import type {
+  AdversarialReviewConfig,
+  ReviewCheckResult,
+  ReviewConfig,
+  ReviewResult,
+  ReviewerFindingSummary,
+} from "./types";
+import { writeReviewVerdict } from "./verdict-writer";
 
 /**
  * Injectable dependencies for orchestrator internals — allows tests to intercept
@@ -81,6 +88,26 @@ export interface OrchestratorReviewResult {
    * correct and UNRESOLVED should not trigger tier escalation.
    */
   mechanicalFailedOnly?: boolean;
+}
+
+/** Build per-reviewer finding summary from LLM check results. */
+function buildReviewSummary(checks: ReviewCheckResult[]): ReviewResult["reviewSummary"] {
+  const summary: ReviewResult["reviewSummary"] = {};
+  const semCheck = checks.find((c) => c.check === "semantic");
+  if (semCheck) {
+    summary.semantic = {
+      blocking: semCheck.findings?.length ?? 0,
+      advisory: semCheck.advisoryFindings?.length ?? 0,
+    } satisfies ReviewerFindingSummary;
+  }
+  const advCheck = checks.find((c) => c.check === "adversarial");
+  if (advCheck) {
+    summary.adversarial = {
+      blocking: advCheck.findings?.length ?? 0,
+      advisory: advCheck.advisoryFindings?.length ?? 0,
+    } satisfies ReviewerFindingSummary;
+  }
+  return summary;
 }
 
 export class ReviewOrchestrator {
@@ -235,6 +262,7 @@ export class ReviewOrchestrator {
             featureName,
             resolverSession,
             priorFailures,
+            reviewConfig.blockingThreshold,
           ),
           _orchestratorDeps.runAdversarialReview(
             workdir,
@@ -245,6 +273,7 @@ export class ReviewOrchestrator {
             naxConfig,
             featureName,
             priorFailures,
+            reviewConfig.blockingThreshold,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -280,12 +309,45 @@ export class ReviewOrchestrator {
           : `${firstFailure.check} failed (exit code ${firstFailure.exitCode})`
         : undefined;
 
+      // Build per-reviewer finding summary from LLM check results
+      const reviewSummary = buildReviewSummary(llmCheckResults);
+
       builtIn = {
         success: mechanicalPassed && llmPassed,
         checks: allChecks,
         totalDurationMs: mechanicalResult.totalDurationMs + (Date.now() - llmStart),
         failureReason,
+        reviewSummary: reviewSummary && Object.keys(reviewSummary).length > 0 ? reviewSummary : undefined,
       };
+
+      // Write unified verdict file (fire-and-forget) when LLM checks ran
+      if (llmCheckResults.length > 0 && storyId) {
+        const threshold = reviewConfig.blockingThreshold ?? "error";
+        const verdictReviewers: Record<string, { blocking: number; advisory: number; passed: boolean }> = {};
+        const semCheck = llmCheckResults.find((c) => c.check === "semantic");
+        if (semCheck) {
+          verdictReviewers.semantic = {
+            blocking: semCheck.findings?.length ?? 0,
+            advisory: semCheck.advisoryFindings?.length ?? 0,
+            passed: semCheck.success,
+          };
+        }
+        const advCheck = llmCheckResults.find((c) => c.check === "adversarial");
+        if (advCheck) {
+          verdictReviewers.adversarial = {
+            blocking: advCheck.findings?.length ?? 0,
+            advisory: advCheck.advisoryFindings?.length ?? 0,
+            passed: advCheck.success,
+          };
+        }
+        void writeReviewVerdict({
+          storyId,
+          featureName,
+          timestamp: new Date().toISOString(),
+          blockingThreshold: threshold,
+          reviewers: verdictReviewers,
+        });
+      }
 
       // Signal to autofix that code is functionally correct (LLM passed) despite mechanical failure
       mechanicalFailedOnly = !mechanicalPassed && llmPassed;

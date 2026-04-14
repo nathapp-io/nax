@@ -487,6 +487,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       undefined,
       undefined,
       undefined,
+      undefined, // blockingThreshold
     );
   });
 
@@ -520,6 +521,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       undefined,
       undefined,
       undefined,
+      undefined, // blockingThreshold
     );
   });
 });
