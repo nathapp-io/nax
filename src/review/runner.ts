@@ -331,7 +331,7 @@ export async function runReview(
         diffMode: "ref" as const,
         rules: [] as string[],
         timeoutMs: 600_000,
-        excludePatterns: [] as string[],
+        excludePatterns: [":!.nax/", ":!.nax-pids"] as string[],
         parallel: false,
         maxConcurrentSessions: 2,
       };

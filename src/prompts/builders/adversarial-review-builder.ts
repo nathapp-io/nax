@@ -26,7 +26,7 @@ export interface TestInventory {
 export interface AdversarialReviewPromptOptions {
   /** Diff access mode */
   mode: "embedded" | "ref";
-  /** Used when mode === "embedded": full diff (no excludePatterns) */
+  /** Used when mode === "embedded": full diff (excludes .nax/ metadata; includes test files) */
   diff?: string;
   /** Used when mode === "ref": git ref for self-serve diff commands */
   storyGitRef?: string;
@@ -36,6 +36,12 @@ export interface AdversarialReviewPromptOptions {
   priorFailures?: PriorFailure[];
   /** Used when mode === "embedded": pre-computed test file audit */
   testInventory?: TestInventory;
+  /**
+   * Pathspec exclusions for mode === "ref" git commands shown in prompt.
+   * Always merged with ':!.nax/' and ':!.nax-pids'.
+   * Adversarial does NOT exclude test files (unlike semantic).
+   */
+  excludePatterns?: string[];
 }
 
 const ADVERSARIAL_ROLE = `You are an adversarial code reviewer with full access to the repository.
@@ -122,8 +128,11 @@ Severity guide:
 /**
  * Build the diff section for "ref" mode.
  * Instructs the reviewer to self-serve the full diff (including tests) via git commands.
+ * Always excludes .nax/ and .nax-pids metadata paths; test files are included.
  */
-function buildAdversarialRefDiffSection(storyGitRef: string, stat?: string): string {
+function buildAdversarialRefDiffSection(storyGitRef: string, stat?: string, excludePatterns: string[] = []): string {
+  const merged = [...new Set([...excludePatterns, ":!.nax/", ":!.nax-pids"])];
+  const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
   const statBlock = stat ? `## Changed Files Summary\n\n\`\`\`\n${stat}\n\`\`\`\n\n` : "";
 
   return `${statBlock}## Diff Access
@@ -135,21 +144,21 @@ You have access to git commands. Fetch the diff yourself — do NOT ask for it t
 Recommended commands:
 
 \`\`\`bash
-# Full diff including tests (adversarial review sees everything):
-git diff --unified=3 ${storyGitRef}..HEAD
+# Full diff including tests (adversarial review sees everything except nax metadata):
+git diff --unified=3 ${storyGitRef}..HEAD -- . ${excludeArgs}
 
 # Commit history for this story:
 git log --oneline ${storyGitRef}..HEAD
 
 # Files added in this story (for test audit gap):
-git diff --name-only --diff-filter=A ${storyGitRef}..HEAD
+git diff --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${excludeArgs}
 
 # Show a specific file's full content:
 cat path/to/file.ts
 \`\`\`
 
 **Test audit workflow:**
-1. Run: \`git diff --name-only --diff-filter=A ${storyGitRef}..HEAD\`
+1. Run: \`git diff --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${excludeArgs}\`
 2. For each new \`src/**.ts\` file, check whether a matching \`test/**/**.test.ts\` was also added.
 3. If a new exported module has no test file, flag it as \`"test-gap"\`.
 
@@ -190,7 +199,7 @@ export class AdversarialReviewPromptBuilder {
     config: AdversarialReviewConfig,
     options: AdversarialReviewPromptOptions,
   ): string {
-    const { mode, diff, storyGitRef, stat, priorFailures, testInventory } = options;
+    const { mode, diff, storyGitRef, stat, priorFailures, testInventory, excludePatterns } = options;
 
     const storyBlock = `## Story Under Review
 
@@ -212,7 +221,7 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 
     let diffBlock: string;
     if (mode === "ref" && storyGitRef) {
-      diffBlock = buildAdversarialRefDiffSection(storyGitRef, stat);
+      diffBlock = buildAdversarialRefDiffSection(storyGitRef, stat, excludePatterns ?? []);
     } else if (mode === "embedded" && diff) {
       diffBlock = buildAdversarialEmbeddedDiffSection(diff, testInventory);
     } else {
