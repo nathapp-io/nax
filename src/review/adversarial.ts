@@ -245,10 +245,16 @@ export async function runAdversarialReview(
 
   let rawResponse: string;
   let llmCost = 0;
+  let retryAttempted = false;
   try {
     const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: false });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
+    logger?.debug("adversarial", "LLM call complete", {
+      storyId: story.id,
+      responseLen: rawResponse.length,
+      estimatedCost: llmCost,
+    });
   } catch (err) {
     logger?.warn("adversarial", "LLM call failed — fail-open", {
       storyId: story.id,
@@ -267,10 +273,13 @@ export async function runAdversarialReview(
   // Retry once when the response cannot be parsed — the session has full context so
   // a short follow-up asking for valid JSON is sufficient.
   if (!parseAdversarialResponse(rawResponse)) {
+    retryAttempted = true;
+    logger?.info("adversarial", "JSON parse failed, retrying (1/1)", {
+      storyId: story.id,
+      rawHead: rawResponse.slice(0, 200),
+      responseLen: rawResponse.length,
+    });
     try {
-      logger?.debug("adversarial", "Response could not be parsed — retrying with JSON prompt", {
-        storyId: story.id,
-      });
       const retryResult = await agent.run({
         prompt: ReviewPromptBuilder.jsonRetry(),
         ...runOpts,
@@ -278,6 +287,12 @@ export async function runAdversarialReview(
       });
       rawResponse = retryResult.output;
       llmCost += retryResult.estimatedCost ?? 0;
+      if (parseAdversarialResponse(rawResponse)) {
+        logger?.info("adversarial", "JSON retry succeeded", {
+          storyId: story.id,
+          responseLen: rawResponse.length,
+        });
+      }
     } catch (err) {
       logger?.warn("adversarial", "JSON retry call failed", { storyId: story.id, cause: String(err) });
     }
@@ -303,7 +318,8 @@ export async function runAdversarialReview(
     if (looksLikeFail) {
       logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
         storyId: story.id,
-        rawResponse: rawResponse.slice(0, 200),
+        retryAttempted,
+        rawHead: rawResponse.slice(0, 200),
       });
       return {
         check: "adversarial",
@@ -317,9 +333,11 @@ export async function runAdversarialReview(
       };
     }
 
-    logger?.warn("adversarial", "LLM returned invalid JSON — fail-open", {
+    logger?.warn("adversarial", "Retry exhausted — fail-open", {
       storyId: story.id,
-      rawResponse: rawResponse.slice(0, 200),
+      retries: retryAttempted ? 1 : 0,
+      rawHead: rawResponse.slice(0, 200),
+      responseLen: rawResponse.length,
     });
     return {
       check: "adversarial",
