@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 
 /** Zod schema for runtime validation */
 const TokenPricingSchema = z.object({
@@ -92,13 +93,13 @@ const RegressionGateConfigSchema = z.object({
 
 const SmartTestRunnerConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  testFilePatterns: z.array(z.string()).default(["test/**/*.test.ts"]),
+  testFilePatterns: z.array(z.string()).default([...DEFAULT_TEST_FILE_PATTERNS]),
   fallback: z.enum(["import-grep", "full-suite"]).default("import-grep"),
 });
 
 const SMART_TEST_RUNNER_DEFAULT = {
   enabled: true,
-  testFilePatterns: ["test/**/*.test.ts"],
+  testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS],
   fallback: "import-grep" as const,
 };
 
@@ -106,7 +107,7 @@ const SMART_TEST_RUNNER_DEFAULT = {
 const smartTestRunnerFieldSchema = z
   .preprocess((val) => {
     if (typeof val === "boolean") {
-      return { enabled: val, testFilePatterns: ["test/**/*.test.ts"], fallback: "import-grep" };
+      return { enabled: val, testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS], fallback: "import-grep" };
     }
     return val;
   }, SmartTestRunnerConfigSchema)

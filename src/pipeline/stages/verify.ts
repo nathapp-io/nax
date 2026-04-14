@@ -12,6 +12,7 @@
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { resolveQualityTestCommands } from "../../quality/command-resolver";
+import { DEFAULT_TEST_FILE_PATTERNS } from "../../test-runners/conventions";
 import { logTestOutput } from "../../utils/log-test-output";
 import { detectRuntimeCrash } from "../../verification/crash-detector";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
@@ -21,7 +22,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 const DEFAULT_SMART_RUNNER_CONFIG: SmartTestRunnerConfig = {
   enabled: true,
-  testFilePatterns: ["test/**/*.test.ts"],
+  testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS],
   fallback: "import-grep",
 };
 

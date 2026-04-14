@@ -16,6 +16,7 @@ import type { InteractionChain } from "../interaction/chain";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
+import { isTestFile } from "../test-runners";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
@@ -188,10 +189,11 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     };
   }
 
-  // BUG-20 Fix: Verify that test-writer session actually created test files
-  // On retry (BUG-018 fix), session1 is undefined — skip this check entirely
-  const testFilePatterns = /\.(test|spec)\.(ts|js|tsx|jsx)$/;
-  const testFilesCreated = session1 ? session1.filesChanged.filter((f) => testFilePatterns.test(f)) : [];
+  // BUG-20 Fix: Verify that test-writer session actually created test files.
+  // Uses the shared language-agnostic `isTestFile()` classifier — recognizes
+  // .test.*, .spec.*, _test.go, test_*.py, test/ directory segments, etc.
+  // On retry (BUG-018 fix), session1 is undefined — skip this check entirely.
+  const testFilesCreated = session1 ? session1.filesChanged.filter(isTestFile) : [];
 
   if (!isRetry && testFilesCreated.length === 0) {
     // BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.

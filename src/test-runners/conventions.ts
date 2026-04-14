@@ -1,0 +1,86 @@
+/**
+ * Test File Conventions — single source of truth for test-file patterns.
+ *
+ * The smart test runner, config schema, and TDD orchestrator all need to
+ * answer some variation of "what does a test file look like?". Historically
+ * this concept was duplicated across 7 source files in three different
+ * representations (glob strings, regex lists, ad-hoc regexes). This module
+ * consolidates the glob form and provides a derivation utility for
+ * subsystems that need regex-based classification.
+ *
+ * See issue #461 for the follow-up work (auto-detection + config propagation
+ * through `isTestFile()` and the TDD orchestrator).
+ */
+
+/**
+ * Canonical default glob patterns for test-file discovery.
+ *
+ * Used by:
+ * - `SmartTestRunnerConfigSchema` as the Zod default
+ * - `mapSourceToTests()` and `importGrepFallback()` as the fallback
+ * - `verify` and `scoped` stages as their in-memory default
+ *
+ * Users override via `execution.smartTestRunner.testFilePatterns` in
+ * `.nax/config.json`. The suffix after the last `*` in each glob drives
+ * language-agnostic co-located test discovery (see `extractPatternSuffix`
+ * in `smart-runner.ts`).
+ */
+export const DEFAULT_TEST_FILE_PATTERNS: readonly string[] = Object.freeze([
+  "test/**/*.test.ts",
+]);
+
+/**
+ * Convert a glob's trailing suffix (everything after the last `*`) into a
+ * regex that matches any path ending with that suffix.
+ *
+ * Returns null when the glob has no `*` or an empty trailing suffix.
+ *
+ * @internal
+ */
+function suffixRegex(pattern: string): RegExp | null {
+  const lastStar = pattern.lastIndexOf("*");
+  if (lastStar === -1) return null;
+  const suffix = pattern.slice(lastStar + 1);
+  if (suffix.length === 0) return null;
+  const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${escaped}$`);
+}
+
+/**
+ * Derive path-classification regexes from a list of glob patterns.
+ *
+ * Each returned regex matches paths ending with the configured glob's suffix.
+ * Patterns with no extractable suffix are silently skipped. Duplicate
+ * regexes are de-duplicated by source.
+ *
+ * @example
+ * globsToTestRegex(["test/**\/*.test.ts", "src/**\/*.spec.ts"])
+ * // → [/\.test\.ts$/, /\.spec\.ts$/]
+ *
+ * @example
+ * globsToTestRegex(["**\/*_test.go"])
+ * // → [/_test\.go$/]
+ */
+export function globsToTestRegex(patterns: readonly string[]): RegExp[] {
+  const regexes: RegExp[] = [];
+  const seen = new Set<string>();
+  for (const pattern of patterns) {
+    const re = suffixRegex(pattern);
+    if (re && !seen.has(re.source)) {
+      regexes.push(re);
+      seen.add(re.source);
+    }
+  }
+  return regexes;
+}
+
+/**
+ * Classify a path as a test file using the given glob patterns.
+ *
+ * Thin wrapper around `globsToTestRegex()` for callers that just need a
+ * boolean answer. Returns false when `patterns` yields no usable regexes.
+ */
+export function isTestFileByPatterns(filePath: string, patterns: readonly string[]): boolean {
+  const regexes = globsToTestRegex(patterns);
+  return regexes.some((re) => re.test(filePath));
+}

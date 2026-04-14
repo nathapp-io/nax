@@ -4,6 +4,7 @@
  * Detects changed TypeScript source files using git diff,
  * enabling targeted test runs on only the files that changed.
  */
+import { DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { gitWithTimeout } from "../utils/git";
 
 /**
@@ -161,7 +162,7 @@ export async function mapSourceToTests(
   sourceFiles: string[],
   workdir: string,
   packagePrefix?: string,
-  testFilePatterns: string[] = ["test/**/*.test.ts"],
+  testFilePatterns: string[] = [...DEFAULT_TEST_FILE_PATTERNS],
 ): Promise<string[]> {
   // Derive unique test-file suffixes from configured patterns — language-agnostic.
   // e.g. ["test/**/*.test.ts", "src/**/*.spec.ts"] → [".test.ts", ".spec.ts"]
