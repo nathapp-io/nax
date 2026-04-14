@@ -422,10 +422,12 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       DEBATE_REVIEW_ENABLED_CONFIG,
     );
 
-    const findings = result.findings ?? [];
-    const files = findings.map((f) => f.file);
-    // Expect both files to appear (no under-merging)
-    expect(files).toContain("src/review/semantic.ts");
-    expect(files).toContain("src/cli/plan.ts");
+    // PROPOSAL_FAIL_A has error finding (blocking), PROPOSAL_FAIL_B adds a warn finding (advisory at default threshold)
+    const blockingFiles = (result.findings ?? []).map((f) => f.file);
+    const advisoryFiles = (result.advisoryFindings ?? []).map((f) => f.file);
+    const allFiles = [...blockingFiles, ...advisoryFiles];
+    // Expect both files to appear (no under-merging) — one blocking, one advisory
+    expect(allFiles).toContain("src/review/semantic.ts");
+    expect(allFiles).toContain("src/cli/plan.ts");
   });
 });

@@ -90,12 +90,24 @@ function normalizeSeverity(sev: string): ReviewFinding["severity"] {
 }
 
 /**
- * Check whether a finding severity is blocking (counts toward pass/fail).
- * "unverifiable" and "info" are non-blocking per the adversarial output schema:
- *   passed may be true with findings if all findings are "info" or "unverifiable".
+ * Severity rank for threshold comparison.
+ * "unverifiable" is treated as info (non-blocking by default).
  */
-function isBlockingSeverity(sev: string): boolean {
-  return sev !== "unverifiable" && sev !== "info";
+const SEVERITY_RANK: Record<string, number> = {
+  info: 0,
+  unverifiable: 0,
+  low: 1,
+  warning: 1,
+  error: 2,
+  critical: 3,
+};
+
+/**
+ * Check whether a normalized finding severity meets or exceeds the blocking threshold.
+ * threshold defaults to "error" — only error/critical block unless configured stricter.
+ */
+function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {
+  return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
 }
 
 /** Convert AdversarialLLMFinding[] to ReviewFinding[] with adversarial-review metadata. */
@@ -124,6 +136,7 @@ export async function runAdversarialReview(
   naxConfig?: NaxConfig,
   featureName?: string,
   priorFailures?: Array<{ stage: string; modelTier: string }>,
+  blockingThreshold?: "error" | "warning" | "info",
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -362,16 +375,17 @@ export async function runAdversarialReview(
     });
   }
 
-  const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity));
-  const nonBlockingFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity));
+  const threshold = blockingThreshold ?? "error";
+  const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+  const advisoryFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
 
-  if (nonBlockingFindings.length > 0) {
+  if (advisoryFindings.length > 0) {
     logger?.debug(
       "review",
-      `Adversarial review: ${nonBlockingFindings.length} non-blocking findings (unverifiable/info)`,
+      `Adversarial review: ${advisoryFindings.length} advisory findings (below threshold '${threshold}')`,
       {
         storyId: story.id,
-        findings: nonBlockingFindings.map((f) => ({
+        findings: advisoryFindings.map((f) => ({
           severity: f.severity,
           category: f.category,
           file: f.file,
@@ -382,11 +396,11 @@ export async function runAdversarialReview(
   }
 
   // Findings take precedence over the passed field.
-  // The schema requires passed:false when any error/warn finding exists, but if the LLM
-  // contradicts itself (passed:true + error findings), trust the findings and fail-closed.
+  // The schema requires passed:false when any blocking finding exists, but if the LLM
+  // contradicts itself (passed:true + blocking findings), trust the findings and fail-closed.
   if (blockingFindings.length > 0) {
     const durationMs = Date.now() - startTime;
-    logger?.warn("review", `Adversarial review failed: ${blockingFindings.length} findings`, {
+    logger?.warn("review", `Adversarial review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
       durationMs,
     });
@@ -408,14 +422,15 @@ export async function runAdversarialReview(
       output: `Adversarial review failed:\n\n${formatFindings(blockingFindings)}`,
       durationMs,
       findings: toAdversarialReviewFindings(blockingFindings),
+      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
       cost: llmCost,
     };
   }
 
-  // If all findings are non-blocking (unverifiable/info), override to pass regardless of passed field.
+  // If all findings are advisory (below threshold), override to pass regardless of passed field.
   if (!parsed.passed && blockingFindings.length === 0) {
     const durationMs = Date.now() - startTime;
-    logger?.info("review", "Adversarial review passed (all findings non-blocking)", {
+    logger?.info("review", "Adversarial review passed (all findings below blocking threshold)", {
       storyId: story.id,
       durationMs,
     });
@@ -424,8 +439,9 @@ export async function runAdversarialReview(
       success: true,
       command: "",
       exitCode: 0,
-      output: "Adversarial review passed (all findings were unverifiable or informational)",
+      output: "Adversarial review passed (all findings were advisory — below blocking threshold)",
       durationMs,
+      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
       cost: llmCost,
     };
   }
@@ -441,6 +457,7 @@ export async function runAdversarialReview(
     exitCode: parsed.passed ? 0 : 1,
     output: parsed.passed ? "Adversarial review passed" : "Adversarial review failed (no findings)",
     durationMs,
+    advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
     cost: llmCost,
   };
 }

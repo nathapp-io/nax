@@ -175,6 +175,12 @@ export async function runIteration(
     }
   }
 
+  // Propagate reviewSummary to status writer so it appears in status.json
+  const reviewSummaryFromPipeline = pipelineResult.context.reviewResult?.reviewSummary;
+  if (reviewSummaryFromPipeline) {
+    ctx.statusWriter.setReviewSummary(reviewSummaryFromPipeline);
+  }
+
   const currentPrd = pipelineResult.context.prd;
 
   const handlerCtx = {

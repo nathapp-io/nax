@@ -350,6 +350,17 @@ const ReviewConfigSchema = z.object({
   }),
   pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
   audit: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+  /**
+   * Minimum severity that counts as a blocking finding.
+   * "error"   (default): only error/critical findings block; warnings are advisory.
+   * "warning": error, critical, AND warning findings block; info is advisory.
+   * "info":    all findings block (strictest mode).
+   *
+   * Hierarchy: info < warning < error < critical.
+   * Applies only to LLM-based checkers (semantic, adversarial).
+   * Mechanical checks (lint, typecheck, test, build) always block on failure.
+   */
+  blockingThreshold: z.enum(["error", "warning", "info"]).default("error"),
   semantic: SemanticReviewConfigSchema.optional(),
   adversarial: AdversarialReviewConfigSchema.optional(),
   dialogue: ReviewDialogueConfigSchema.default({
@@ -766,6 +777,7 @@ export const NaxConfigSchema = z
       commands: {},
       pluginMode: "per-story",
       audit: { enabled: false },
+      blockingThreshold: "error",
       semantic: {
         modelTier: "balanced",
         diffMode: "embedded",

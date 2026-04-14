@@ -119,6 +119,11 @@ export interface NaxStatusFile {
     attempt: number;
     /** Current phase */
     phase: string;
+    /** Per-reviewer finding breakdown from the most recent review (populated after LLM review) */
+    reviewSummary?: {
+      semantic?: { blocking: number; advisory: number };
+      adversarial?: { blocking: number; advisory: number };
+    };
   } | null;
 
   /** Number of loop iterations completed */
@@ -210,6 +215,11 @@ export interface RunStateSnapshot {
     model: string;
     attempt: number;
     phase: string;
+    /** Per-reviewer finding breakdown from the most recent review */
+    reviewSummary?: {
+      semantic?: { blocking: number; advisory: number };
+      adversarial?: { blocking: number; advisory: number };
+    };
   } | null;
   /** Number of loop iterations */
   iterations: number;

@@ -306,6 +306,7 @@ export async function runReview(
         featureName,
         resolverSession,
         priorFailures,
+        config.blockingThreshold,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
@@ -344,6 +345,7 @@ export async function runReview(
         naxConfig,
         featureName,
         priorFailures,
+        config.blockingThreshold,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

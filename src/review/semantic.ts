@@ -89,9 +89,25 @@ function normalizeSeverity(sev: string): ReviewFinding["severity"] {
   return "info";
 }
 
-/** Check whether a finding severity is blocking (counts toward pass/fail). */
-function isBlockingSeverity(sev: string): boolean {
-  return sev !== "unverifiable";
+/**
+ * Severity rank for threshold comparison.
+ * "unverifiable" is treated as info (non-blocking by default).
+ */
+const SEVERITY_RANK: Record<string, number> = {
+  info: 0,
+  unverifiable: 0,
+  low: 1,
+  warning: 1,
+  error: 2,
+  critical: 3,
+};
+
+/**
+ * Check whether a normalized finding severity meets or exceeds the blocking threshold.
+ * threshold defaults to "error" — only error/critical block unless configured stricter.
+ */
+function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {
+  return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
 }
 
 /** Convert LLMFinding[] to ReviewFinding[] with semantic-review metadata. */
@@ -119,6 +135,7 @@ export async function runSemanticReview(
   featureName?: string,
   resolverSession?: import("./dialogue").ReviewerSession,
   priorFailures?: Array<{ stage: string; modelTier: string }>,
+  blockingThreshold?: "error" | "warning" | "info",
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -308,13 +325,15 @@ export async function runSemanticReview(
       }
     }
 
-    // Filter non-blocking findings from debate results
-    const debateBlocking = deduped.filter((f) => isBlockingSeverity(f.severity));
+    // Split debate findings by blocking threshold
+    const debateThreshold = blockingThreshold ?? "error";
+    const debateBlocking = deduped.filter((f) => isBlockingSeverity(f.severity, debateThreshold));
+    const debateAdvisory = deduped.filter((f) => !isBlockingSeverity(f.severity, debateThreshold));
 
     const durationMs = Date.now() - startTime;
     if (!resolverPassed) {
       if (debateBlocking.length > 0) {
-        logger?.warn("review", `Semantic review failed (debate): ${debateBlocking.length} findings`, {
+        logger?.warn("review", `Semantic review failed (debate): ${debateBlocking.length} blocking findings`, {
           storyId: story.id,
           durationMs,
         });
@@ -326,11 +345,12 @@ export async function runSemanticReview(
           output: `Semantic review failed:\n\n${formatFindings(debateBlocking)}`,
           durationMs,
           findings: toReviewFindings(debateBlocking),
+          advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
           cost: debateCost,
         };
       }
-      // All findings were non-blocking — override to pass
-      logger?.info("review", "Semantic review passed (debate, all findings non-blocking)", {
+      // All findings were advisory — override to pass
+      logger?.info("review", "Semantic review passed (debate, all findings below blocking threshold)", {
         storyId: story.id,
         durationMs,
       });
@@ -339,8 +359,9 @@ export async function runSemanticReview(
         success: true,
         command: "",
         exitCode: 0,
-        output: "Semantic review passed (debate, all findings were unverifiable or informational)",
+        output: "Semantic review passed (debate, all findings were advisory — below blocking threshold)",
         durationMs,
+        advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
         cost: debateCost,
       };
     }
@@ -352,6 +373,7 @@ export async function runSemanticReview(
       exitCode: 0,
       output: "Semantic review passed",
       durationMs,
+      advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
       cost: debateCost,
     };
   }
@@ -501,17 +523,18 @@ export async function runSemanticReview(
     });
   }
 
-  // Split findings into blocking (error/warn) and non-blocking (unverifiable/info)
-  const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity));
-  const nonBlockingFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity));
+  // Split findings by blocking threshold
+  const threshold = blockingThreshold ?? "error";
+  const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+  const advisoryFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
 
-  if (nonBlockingFindings.length > 0) {
+  if (advisoryFindings.length > 0) {
     logger?.debug(
       "review",
-      `Semantic review: ${nonBlockingFindings.length} non-blocking findings (unverifiable/info)`,
+      `Semantic review: ${advisoryFindings.length} advisory findings (below threshold '${threshold}')`,
       {
         storyId: story.id,
-        findings: nonBlockingFindings.map((f) => ({ severity: f.severity, file: f.file, issue: f.issue })),
+        findings: advisoryFindings.map((f) => ({ severity: f.severity, file: f.file, issue: f.issue })),
       },
     );
   }
@@ -519,7 +542,7 @@ export async function runSemanticReview(
   // Format findings and populate structured ReviewFinding[]
   if (!parsed.passed && blockingFindings.length > 0) {
     const durationMs = Date.now() - startTime;
-    logger?.warn("review", `Semantic review failed: ${blockingFindings.length} findings`, {
+    logger?.warn("review", `Semantic review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
       durationMs,
     });
@@ -542,21 +565,26 @@ export async function runSemanticReview(
       output,
       durationMs,
       findings: toReviewFindings(blockingFindings),
+      advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
       cost: llmCost,
     };
   }
 
-  // If LLM said failed but all findings are non-blocking, override to pass
+  // If LLM said failed but all findings are advisory (below threshold), override to pass
   if (!parsed.passed && blockingFindings.length === 0) {
     const durationMs = Date.now() - startTime;
-    logger?.info("review", "Semantic review passed (all findings non-blocking)", { storyId: story.id, durationMs });
+    logger?.info("review", "Semantic review passed (all findings below blocking threshold)", {
+      storyId: story.id,
+      durationMs,
+    });
     return {
       check: "semantic",
       success: true,
       command: "",
       exitCode: 0,
-      output: "Semantic review passed (all findings were unverifiable or informational)",
+      output: "Semantic review passed (all findings were advisory — below blocking threshold)",
       durationMs,
+      advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
       cost: llmCost,
     };
   }
@@ -572,6 +600,7 @@ export async function runSemanticReview(
     exitCode: parsed.passed ? 0 : 1,
     output: parsed.passed ? "Semantic review passed" : "Semantic review failed (no findings)",
     durationMs,
+    advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
     cost: llmCost,
   };
 }

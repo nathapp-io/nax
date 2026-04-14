@@ -62,8 +62,10 @@ export interface ReviewCheckResult {
   output: string;
   /** Duration in milliseconds */
   durationMs: number;
-  /** Structured findings (populated by semantic review when LLM returns findings) */
+  /** Blocking findings — severity at or above blockingThreshold (populated by LLM reviewers) */
   findings?: import("../plugins/types").ReviewFinding[];
+  /** Advisory findings — severity below blockingThreshold (populated by LLM reviewers) */
+  advisoryFindings?: import("../plugins/types").ReviewFinding[];
   /** LLM cost incurred for this check (populated by semantic review) */
   cost?: number;
 }
@@ -84,6 +86,14 @@ export interface PluginReviewerResult {
   findings?: import("../plugins/types").ReviewFinding[];
 }
 
+/** Per-reviewer blocking/advisory finding counts for reviewSummary */
+export interface ReviewerFindingSummary {
+  /** Number of findings at or above blockingThreshold */
+  blocking: number;
+  /** Number of findings below blockingThreshold */
+  advisory: number;
+}
+
 /** Review phase result */
 export interface ReviewResult {
   /** All checks passed */
@@ -96,6 +106,11 @@ export interface ReviewResult {
   failureReason?: string;
   /** Plugin reviewer results (if any) */
   pluginReviewers?: PluginReviewerResult[];
+  /** Per-reviewer finding breakdown (populated when semantic/adversarial run) */
+  reviewSummary?: {
+    semantic?: ReviewerFindingSummary;
+    adversarial?: ReviewerFindingSummary;
+  };
 }
 
 /** Reviewer-implementer dialogue configuration */
@@ -151,6 +166,14 @@ export interface ReviewConfig {
   pluginMode?: "per-story" | "deferred";
   /** Review audit configuration — saves parsed reviewer JSON to .nax/review-audit/ */
   audit?: { enabled: boolean };
+  /**
+   * Minimum severity that counts as a blocking finding for LLM-based checkers.
+   * "error" (default): only error/critical block; warnings are advisory.
+   * "warning": error, critical, and warning block; info is advisory.
+   * "info": all findings block (strictest).
+   * Mechanical checks (lint, typecheck, test, build) always block on failure.
+   */
+  blockingThreshold?: "error" | "warning" | "info";
   /** Semantic review configuration (when 'semantic' is in checks) */
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */

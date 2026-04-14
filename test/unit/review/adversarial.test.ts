@@ -307,7 +307,7 @@ describe("runAdversarialReview — fail with warn finding", () => {
 
   afterEach(restoreAllDeps);
 
-  test("returns success=false when LLM returns findings with severity 'warn'", async () => {
+  test("returns success=true with advisory findings when LLM returns 'warn' severity (advisory at default threshold)", async () => {
     const agent = makeAgent(FAILING_WARN_RESPONSE);
 
     const result = await runAdversarialReview(
@@ -318,7 +318,10 @@ describe("runAdversarialReview — fail with warn finding", () => {
       () => agent,
     );
 
-    expect(result.success).toBe(false);
+    // warn is advisory at default "error" threshold — passes with advisory findings
+    expect(result.success).toBe(true);
+    expect(result.advisoryFindings).toBeDefined();
+    expect(result.advisoryFindings![0].message).toBe("Token never invalidated on logout");
   });
 });
 
