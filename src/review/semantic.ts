@@ -385,10 +385,16 @@ export async function runSemanticReview(
 
   let rawResponse: string;
   let llmCost = 0;
+  let retryAttempted = false;
   try {
     const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: false });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
+    logger?.debug("semantic", "LLM call complete", {
+      storyId: story.id,
+      responseLen: rawResponse.length,
+      estimatedCost: llmCost,
+    });
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
     return {
@@ -404,10 +410,13 @@ export async function runSemanticReview(
   // Retry once when the response cannot be parsed — the session has full context so
   // a short follow-up asking for valid JSON is sufficient.
   if (!parseLLMResponse(rawResponse)) {
+    retryAttempted = true;
+    logger?.info("semantic", "JSON parse failed, retrying (1/1)", {
+      storyId: story.id,
+      rawHead: rawResponse.slice(0, 200),
+      responseLen: rawResponse.length,
+    });
     try {
-      logger?.debug("semantic", "Response could not be parsed — retrying with JSON prompt", {
-        storyId: story.id,
-      });
       const retryResult = await agent.run({
         prompt: ReviewPromptBuilder.jsonRetry(),
         ...runOpts,
@@ -415,6 +424,12 @@ export async function runSemanticReview(
       });
       rawResponse = retryResult.output;
       llmCost += retryResult.estimatedCost ?? 0;
+      if (parseLLMResponse(rawResponse)) {
+        logger?.info("semantic", "JSON retry succeeded", {
+          storyId: story.id,
+          responseLen: rawResponse.length,
+        });
+      }
     } catch (err) {
       logger?.warn("semantic", "JSON retry call failed", { storyId: story.id, cause: String(err) });
     }
@@ -442,7 +457,8 @@ export async function runSemanticReview(
     if (looksLikeFail) {
       logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
         storyId: story.id,
-        rawResponse: rawResponse.slice(0, 200),
+        retryAttempted,
+        rawHead: rawResponse.slice(0, 200),
       });
       return {
         check: "semantic",
@@ -456,9 +472,11 @@ export async function runSemanticReview(
       };
     }
 
-    logger?.warn("semantic", "LLM returned invalid JSON — fail-open", {
+    logger?.warn("semantic", "Retry exhausted — fail-open", {
       storyId: story.id,
-      rawResponse: rawResponse.slice(0, 200),
+      retries: retryAttempted ? 1 : 0,
+      rawHead: rawResponse.slice(0, 200),
+      responseLen: rawResponse.length,
     });
     return {
       check: "semantic",

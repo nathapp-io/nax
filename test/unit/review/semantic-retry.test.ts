@@ -7,11 +7,13 @@
  * - agent.run called twice when initial response is unparseable
  * - Retry call uses keepSessionOpen: false
  * - Cost accumulated from both initial and retry calls
+ * - Logging: info on parse fail + retry, info on retry success, warn on exhaustion
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { AgentResult } from "../../../src/agents/types";
 import type { AgentAdapter } from "../../../src/agents/types";
+import * as loggerModule from "../../../src/logger";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
@@ -100,6 +102,40 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
       throw new Error("complete() must NOT be called in non-debate path");
     }),
   } as unknown as AgentAdapter;
+}
+
+// ---------------------------------------------------------------------------
+// Logger mock helpers
+// ---------------------------------------------------------------------------
+
+interface LogCall {
+  stage: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+interface MockLogger {
+  info: ReturnType<typeof mock>;
+  warn: ReturnType<typeof mock>;
+  debug: ReturnType<typeof mock>;
+  infoCalls: LogCall[];
+  warnCalls: LogCall[];
+}
+
+function makeLogger(): MockLogger {
+  const infoCalls: LogCall[] = [];
+  const warnCalls: LogCall[] = [];
+  return {
+    infoCalls,
+    warnCalls,
+    info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
+      infoCalls.push({ stage, message, data });
+    }),
+    warn: mock((stage: string, message: string, data?: Record<string, unknown>) => {
+      warnCalls.push({ stage, message, data });
+    }),
+    debug: mock(() => {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -262,5 +298,82 @@ describe("runSemanticReview — JSON retry failure paths", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("passed:false");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Logging behaviour
+// ---------------------------------------------------------------------------
+
+describe("runSemanticReview — retry logging", () => {
+  let loggerSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    saveAllDeps();
+    setupHappyPathDeps();
+  });
+
+  afterEach(() => {
+    restoreAllDeps();
+    loggerSpy?.mockRestore();
+  });
+
+  test("logs info 'JSON parse failed, retrying (1/1)' with rawHead when initial parse fails", async () => {
+    const logger = makeLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    const badOutput = "this is not json at all";
+    const agent = makeMultiCallAgent([badOutput, PASSING_LLM_RESPONSE]);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
+    expect(parseFailLog).toBeDefined();
+    expect(parseFailLog?.stage).toBe("semantic");
+    expect(parseFailLog?.data?.rawHead).toContain("not json");
+    expect(parseFailLog?.data?.responseLen).toBe(badOutput.length);
+  });
+
+  test("logs info 'JSON retry succeeded' when retry parse passes", async () => {
+    const logger = makeLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    const agent = makeMultiCallAgent(["not json", PASSING_LLM_RESPONSE]);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    const successLog = logger.infoCalls.find((c) => c.message.includes("JSON retry succeeded"));
+    expect(successLog).toBeDefined();
+    expect(successLog?.stage).toBe("semantic");
+    expect(successLog?.data?.responseLen).toBeGreaterThan(0);
+  });
+
+  test("does not log 'JSON retry succeeded' when initial parse succeeds (no retry needed)", async () => {
+    const logger = makeLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    const agent = makeMultiCallAgent([PASSING_LLM_RESPONSE]);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    const retryLog = logger.infoCalls.find((c) => c.message.includes("retry"));
+    expect(retryLog).toBeUndefined();
+  });
+
+  test("logs warn 'Retry exhausted — fail-open' with retries:1 and rawHead when both attempts fail", async () => {
+    const logger = makeLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    const badOutput = "still not json after retry";
+    const agent = makeMultiCallAgent(["not json", badOutput]);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
+    expect(exhaustLog).toBeDefined();
+    expect(exhaustLog?.stage).toBe("semantic");
+    expect(exhaustLog?.data?.retries).toBe(1);
+    expect(exhaustLog?.data?.rawHead).toContain("not json");
+    expect(exhaustLog?.data?.responseLen).toBe(badOutput.length);
   });
 });
