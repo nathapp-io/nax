@@ -498,10 +498,6 @@ function extractQuestion(output: string): string | null {
   const lines = text.split("\n").filter((l) => l.trim().length > 0);
   const lastLine = lines.at(-1)?.trim() ?? "";
 
-  if (lastLine.endsWith("?") && lastLine.length > 10) {
-    return lastLine;
-  }
-
   // Keyword markers — also scoped to the last line to avoid mid-message false positives
   const lower = lastLine.toLowerCase();
   const markers = [
@@ -513,13 +509,27 @@ function extractQuestion(output: string): string | null {
     "do you want",
     "can you clarify",
   ];
-  for (const marker of markers) {
-    if (lower.includes(marker)) {
-      return lastLine;
-    }
-  }
 
-  return null;
+  const isQuestion = (lastLine.endsWith("?") && lastLine.length > 10) || markers.some((m) => lower.includes(m));
+
+  if (!isQuestion) return null;
+
+  // Return the last two paragraphs so the caller has full context.
+  // Paragraph boundary = one or more blank lines (\n\n+).
+  //
+  // Agents often structure their final turn as:
+  //   <long output: tables, code blocks, AC coverage>
+  //   \n\n
+  //   <conclusion sentence: "All tests pass. Nothing more to do.">  ← paragraph[-2]
+  //   \n\n
+  //   <question: "Would you like me to:\n1. ...\n3. X?">            ← paragraph[-1]
+  //
+  // Returning only paragraph[-1] drops the conclusion sentence that explains
+  // WHY the agent is asking — leaving the user without meaningful context.
+  const paragraphs = text.split(/\n\n+/);
+  const questionPara = paragraphs.at(-1)?.trim() ?? lastLine;
+  const contextPara = paragraphs.at(-2)?.trim();
+  return contextPara ? `${contextPara}\n\n${questionPara}` : questionPara;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
