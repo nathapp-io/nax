@@ -167,11 +167,7 @@ export async function mapSourceToTests(
   // Derive unique test-file suffixes from configured patterns — language-agnostic.
   // e.g. ["test/**/*.test.ts", "src/**/*.spec.ts"] → [".test.ts", ".spec.ts"]
   // e.g. ["**/*_test.go"] → ["_test.go"]
-  const testSuffixes = [
-    ...new Set(
-      testFilePatterns.map(extractPatternSuffix).filter((s): s is string => s !== null),
-    ),
-  ];
+  const testSuffixes = [...new Set(testFilePatterns.map(extractPatternSuffix).filter((s): s is string => s !== null))];
 
   const result: string[] = [];
 

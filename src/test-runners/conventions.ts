@@ -25,9 +25,7 @@
  * language-agnostic co-located test discovery (see `extractPatternSuffix`
  * in `smart-runner.ts`).
  */
-export const DEFAULT_TEST_FILE_PATTERNS: readonly string[] = Object.freeze([
-  "test/**/*.test.ts",
-]);
+export const DEFAULT_TEST_FILE_PATTERNS: readonly string[] = Object.freeze(["test/**/*.test.ts"]);
 
 /**
  * Convert a glob's trailing suffix (everything after the last `*`) into a
