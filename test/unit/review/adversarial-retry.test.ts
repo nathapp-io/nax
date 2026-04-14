@@ -86,6 +86,7 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
       callIndex++;
       return { output: response, estimatedCost: costPerCall };
     }),
+    closeSession: mock(async () => {}),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
@@ -205,13 +206,29 @@ describe("runAdversarialReview — JSON retry succeeds", () => {
     expect((calls[1][0] as Record<string, unknown>).keepSessionOpen).toBe(false);
   });
 
-  test("initial call uses keepSessionOpen: false (stateless scorer, ADR-008)", async () => {
+  test("initial call uses keepSessionOpen: true so retry has conversation history (session closes by end of runReview, ADR-008)", async () => {
     const agent = makeMultiCallAgent([PASSING_RESPONSE]);
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
 
     const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[0][0] as Record<string, unknown>).keepSessionOpen).toBe(false);
+    expect((calls[0][0] as Record<string, unknown>).keepSessionOpen).toBe(true);
+  });
+
+  test("agent.closeSession called once to close the session after runReview completes", async () => {
+    const agent = makeMultiCallAgent([PASSING_RESPONSE]);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+
+    expect((agent.closeSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+  });
+
+  test("agent.closeSession called even when retry was needed (retry-exhausted path)", async () => {
+    const agent = makeMultiCallAgent(["this is not json at all", PASSING_RESPONSE]);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+
+    expect((agent.closeSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("agent.run called once when initial response is valid JSON", async () => {
@@ -262,6 +279,7 @@ describe("runAdversarialReview — JSON retry failure paths", () => {
         if (callIndex === 1) return { output: "not json at all", estimatedCost: 0 };
         throw new Error("retry connection failure");
       }),
+      closeSession: mock(async () => {}),
       buildCommand: mock(() => []),
       plan: mock(async () => { throw new Error("not used"); }),
       decompose: mock(async () => { throw new Error("not used"); }),
@@ -390,6 +408,7 @@ describe("runAdversarialReview — retry logging", () => {
         if (callIndex === 1) return { output: "not json", estimatedCost: 0 };
         throw new Error("retry network failure");
       }),
+      closeSession: mock(async () => {}),
       buildCommand: mock(() => []),
       plan: mock(async () => { throw new Error("not used"); }),
       decompose: mock(async () => { throw new Error("not used"); }),

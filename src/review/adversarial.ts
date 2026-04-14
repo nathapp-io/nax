@@ -261,7 +261,10 @@ export async function runAdversarialReview(
   let llmCost = 0;
   let retryAttempted = false;
   try {
-    const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: false });
+    // keepSessionOpen: true — session stays alive so the JSON retry prompt has
+    // full conversation history. Closed explicitly below on the happy path, or
+    // by the retry call (keepSessionOpen: false) when a retry is needed.
+    const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: true });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
     logger?.debug("adversarial", "LLM call complete", {
@@ -274,6 +277,7 @@ export async function runAdversarialReview(
       storyId: story.id,
       cause: String(err),
     });
+    void agent.closeSession(adversarialSessionName, workdir);
     return {
       check: "adversarial",
       success: true,
@@ -311,6 +315,11 @@ export async function runAdversarialReview(
       logger?.warn("adversarial", "JSON retry call failed", { storyId: story.id, cause: String(err) });
     }
   }
+
+  // Close the session — covers both the happy path (no retry) and the retry-exhausted
+  // path (retry threw or returned unparseable JSON, so keepSessionOpen: false on the
+  // retry call may not have closed it). Best-effort: already-closed sessions no-op.
+  void agent.closeSession(adversarialSessionName, workdir);
 
   // Parse response — fail-closed when LLM clearly intended to fail,
   // fail-open only when response is truly unparseable with no signal.

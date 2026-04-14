@@ -95,6 +95,7 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
       callIndex++;
       return agentResultFor(response);
     }),
+    closeSession: mock(async () => {}),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
@@ -203,6 +204,15 @@ describe("runSemanticReview — JSON retry succeeds", () => {
     expect((agent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
   });
 
+  test("initial call uses keepSessionOpen: true so retry has conversation history (session closes by end of runReview, ADR-008)", async () => {
+    const agent = makeMultiCallAgent([PASSING_LLM_RESPONSE]);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
+    expect((calls[0][0] as Record<string, unknown>).keepSessionOpen).toBe(true);
+  });
+
   test("retry call uses keepSessionOpen: false to close the session", async () => {
     const agent = makeMultiCallAgent(["this is not json at all", PASSING_LLM_RESPONSE]);
 
@@ -210,6 +220,22 @@ describe("runSemanticReview — JSON retry succeeds", () => {
 
     const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
     expect((calls[1][0] as Record<string, unknown>).keepSessionOpen).toBe(false);
+  });
+
+  test("agent.closeSession called once to close the session after runReview completes", async () => {
+    const agent = makeMultiCallAgent([PASSING_LLM_RESPONSE]);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect((agent.closeSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+  });
+
+  test("agent.closeSession called even when retry was needed (retry-exhausted path)", async () => {
+    const agent = makeMultiCallAgent(["this is not json at all", PASSING_LLM_RESPONSE]);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect((agent.closeSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("agent.run called once when initial response is valid JSON", async () => {
@@ -266,6 +292,7 @@ describe("runSemanticReview — JSON retry failure paths", () => {
         }
         throw new Error("retry connection failure");
       }),
+      closeSession: mock(async () => {}),
       buildCommand: mock(() => []),
       plan: mock(async () => { throw new Error("not used"); }),
       decompose: mock(async () => { throw new Error("not used"); }),
