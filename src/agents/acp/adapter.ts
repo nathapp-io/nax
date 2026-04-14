@@ -360,7 +360,7 @@ export async function clearAcpSession(
 ): Promise<void> {
   try {
     const path = acpSessionsPath(workdir, featureName);
-    let data: Record<string, string> = {};
+    let data: Record<string, SidecarEntry> = {};
     try {
       const existing = await Bun.file(path).text();
       data = JSON.parse(existing);
@@ -931,6 +931,11 @@ export class AcpAgentAdapter implements AgentAdapter {
       } else if (isSessionBroken) {
         getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         await closeAcpSession(session);
+        // Clear the sidecar so the next run does not see an "in-flight" marker and
+        // emit a misleading crash-orphan warning — a broken session is a clean exit.
+        if (options.featureName && options.storyId) {
+          await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
+        }
       } else if (!runState.succeeded) {
         // BUG-456: Promote from "in-flight" → "open" so the next run knows this
         // is a legitimate retry (not a crash survivor) and safely resumes the session.

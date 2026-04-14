@@ -609,4 +609,21 @@ describe("crash-orphaned session guard", () => {
       expect((entry as { status?: string }).status).toBe("open");
     }
   });
+
+  test("on session error (broken session), sidecar is cleared — not left as in-flight", async () => {
+    // stopReason "error" = broken connection; session is closed but a subsequent run
+    // must NOT see an "in-flight" marker and emit a misleading crash-orphan warning.
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [],
+        stopReason: "error",
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await new AcpAgentAdapter("claude", DEFAULT_CONFIG).run({ ...BASE, workdir: tmpDir });
+
+    const entry = await readAcpSessionEntry(tmpDir, "feat", "US-001");
+    expect(entry).toBeNull();
+  });
 });
