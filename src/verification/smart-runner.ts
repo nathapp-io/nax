@@ -37,23 +37,30 @@ const _bunDeps = {
 /**
  * Map source files to their corresponding test files.
  *
- * For each file in `sourceFiles`, checks both:
- *   - `<workdir>/test/unit/<relative-path>.test.ts`
- *   - `<workdir>/test/integration/<relative-path>.test.ts`
+ * Single-package (no packagePrefix):
+ *   - Strips leading `src/` from each source path
+ *   - Checks `<workdir>/test/unit/<relative>.test.ts` and `test/integration/`
  *
- * where `<relative-path>` is the file path with the leading `src/` stripped
- * and the `.ts` extension replaced with `.test.ts`.
+ * Monorepo (packagePrefix = e.g. `"apps/api"`):
+ *   - Strips `<packagePrefix>/src/` from each source path
+ *   - Checks `<workdir>/<packagePrefix>/test/unit/<relative>.test.ts` and `test/integration/`
  *
  * Only returns paths that actually exist on disk.
  *
- * @param sourceFiles - Array of source file paths (e.g. `["src/foo/bar.ts"]`)
- * @param workdir     - Absolute path to the repository root
+ * @param sourceFiles   - Source file paths relative to the git root (e.g. `["src/foo/bar.ts"]`)
+ * @param workdir       - Absolute path to the repository root
+ * @param packagePrefix - Monorepo package directory relative to repo root (e.g. `"apps/api"`)
  * @returns Existing test file paths (absolute)
  *
  * @example
  * ```typescript
- * const tests = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
- * // Returns: ["/repo/test/unit/foo/bar.test.ts"] (if it exists)
+ * // Single-package
+ * await mapSourceToTests(["src/foo/bar.ts"], "/repo");
+ * // => ["/repo/test/unit/foo/bar.test.ts"] (if it exists)
+ *
+ * // Monorepo
+ * await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
+ * // => ["/repo/apps/api/test/unit/foo/bar.test.ts"] (if it exists)
  * ```
  */
 /**
@@ -123,14 +130,35 @@ export async function importGrepFallback(
   return matched;
 }
 
-export async function mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]> {
+export async function mapSourceToTests(
+  sourceFiles: string[],
+  workdir: string,
+  packagePrefix?: string,
+): Promise<string[]> {
   const result: string[] = [];
 
   for (const sourceFile of sourceFiles) {
-    // Strip leading "src/" and replace ".ts" with ".test.ts"
-    const relative = sourceFile.replace(/^src\//, "").replace(/\.ts$/, ".test.ts");
+    let relative: string;
+    let testBase: string;
 
-    const candidates = [`${workdir}/test/unit/${relative}`, `${workdir}/test/integration/${relative}`];
+    if (packagePrefix) {
+      // Monorepo: source path is "<prefix>/src/foo.ts" — strip "<prefix>/src/" to get "foo.ts"
+      const srcRoot = `${packagePrefix}/src/`;
+      const inner = sourceFile.startsWith(srcRoot)
+        ? sourceFile.slice(srcRoot.length)
+        : sourceFile.replace(/^.*\/src\//, "");
+      relative = inner.replace(/\.ts$/, ".test.ts");
+      testBase = `${workdir}/${packagePrefix}`;
+    } else {
+      // Single-package: source path is "src/foo.ts" — strip "src/"
+      relative = sourceFile.replace(/^src\//, "").replace(/\.ts$/, ".test.ts");
+      testBase = workdir;
+    }
+
+    const candidates = [
+      `${testBase}/test/unit/${relative}`,
+      `${testBase}/test/integration/${relative}`,
+    ];
 
     for (const candidate of candidates) {
       if (await _bunDeps.file(candidate).exists()) {

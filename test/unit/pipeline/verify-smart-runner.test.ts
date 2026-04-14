@@ -34,7 +34,7 @@ const _origVerifyDeps = { ..._verifyDeps };
 // ---- Mock functions ---------------------------------------------------------
 
 const mockGetChangedSourceFiles = mock(async (_workdir: string) => [] as string[]);
-const mockMapSourceToTests = mock(async (_files: string[], _workdir: string) => [] as string[]);
+const mockMapSourceToTests = mock(async (_files: string[], _workdir: string, _packagePrefix?: string) => [] as string[]);
 const mockImportGrepFallback = mock(async (_files: string[], _workdir: string, _patterns: string[]) => [] as string[]);
 const mockBuildSmartTestCommand = mock((testFiles: string[], baseCommand: string) => {
   if (testFiles.length === 0) return baseCommand;
@@ -113,7 +113,10 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig 
   };
 }
 
-function makeContext(configOverrides: Partial<NaxConfig["execution"]> = {}): PipelineContext {
+function makeContext(
+  configOverrides: Partial<NaxConfig["execution"]> = {},
+  storyWorkdir?: string,
+): PipelineContext {
   const story: UserStory = {
     id: "STR-005-test",
     title: "Smart Runner Test Story",
@@ -125,6 +128,7 @@ function makeContext(configOverrides: Partial<NaxConfig["execution"]> = {}): Pip
     passes: false,
     escalations: [],
     attempts: 0,
+    workdir: storyWorkdir,
   };
 
   const prd: PRD = {
@@ -204,7 +208,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       expect(mockGetChangedSourceFiles).toHaveBeenCalledWith("/test/workdir", undefined, undefined);
     });
 
-    test("calls mapSourceToTests with changed files and workdir", async () => {
+    test("calls mapSourceToTests with changed files, workdir, and undefined packagePrefix for single-package story", async () => {
       mockGetChangedSourceFiles.mockImplementation(async () => ["src/utils/helper.ts"]);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
@@ -212,7 +216,22 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       const ctx = makeContext({ smartTestRunner: true });
       await verifyStage.execute(ctx);
 
-      expect(mockMapSourceToTests).toHaveBeenCalledWith(["src/utils/helper.ts"], "/test/workdir");
+      expect(mockMapSourceToTests).toHaveBeenCalledWith(["src/utils/helper.ts"], "/test/workdir", undefined);
+    });
+
+    test("forwards story.workdir as packagePrefix to mapSourceToTests for monorepo stories", async () => {
+      mockGetChangedSourceFiles.mockImplementation(async () => ["apps/api/src/utils/helper.ts"]);
+      mockMapSourceToTests.mockImplementation(async () => []);
+      mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
+
+      const ctx = makeContext({ smartTestRunner: true }, "apps/api");
+      await verifyStage.execute(ctx);
+
+      expect(mockMapSourceToTests).toHaveBeenCalledWith(
+        ["apps/api/src/utils/helper.ts"],
+        "/test/workdir",
+        "apps/api",
+      );
     });
 
     test("calls buildSmartTestCommand with mapped test files and base command", async () => {
