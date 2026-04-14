@@ -6,9 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
 import { PlanPromptBuilder } from "../../../src/prompts";
@@ -69,9 +67,10 @@ const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
 const origExistsSync = _planDeps.existsSync;
 
-function makeFakeAdapter(returnPrd: object = SAMPLE_PRD) {
+function makeFakeAdapter(prdContent: object = SAMPLE_PRD) {
   return {
-    complete: mock(async (_prompt: string) => JSON.stringify(returnPrd)),
+    plan: mock(async (_opts: { prompt?: string }) => {}),
+    _prdContent: prdContent,
   };
 }
 
@@ -91,22 +90,27 @@ function makeFakeScan() {
 describe("planCommand", () => {
   let tmpDir: string;
   let capturedWriteArgs: Array<[string, string]>;
-  let capturedCompleteArgs: string[];
+  let capturedPlanArgs: string[];
 
   beforeEach(async () => {
     tmpDir = makeTempDir("nax-plan-test-");
     capturedWriteArgs = [];
-    capturedCompleteArgs = [];
+    capturedPlanArgs = [];
 
     // Create nax directory
     await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
-    // Default deps — override per test as needed
-    _planDeps.readFile = mock(async (_path: string) => SAMPLE_SPEC);
+    // Default deps — ACP path: plan() writes PRD to outputPath, then readFile reads it back
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return JSON.stringify(SAMPLE_PRD);
+      return SAMPLE_SPEC;
+    });
 
     _planDeps.writeFile = mock(async (path: string, content: string) => {
       capturedWriteArgs.push([path, content]);
     });
+
+    _planDeps.existsSync = mock((path: string) => path.endsWith("prd.json"));
 
     _planDeps.scanCodebase = mock(async (_workdir: string) => makeFakeScan());
 
@@ -120,13 +124,12 @@ describe("planCommand", () => {
     _planDeps.mkdirp = mock(async (_path: string) => {});
 
     _planDeps.getAgent = mock((_name: string) => {
-      const adapter = makeFakeAdapter();
-      capturedCompleteArgs = [];
-      adapter.complete = mock(async (prompt: string) => {
-        capturedCompleteArgs.push(prompt);
-        return JSON.stringify(SAMPLE_PRD);
-      });
-      return adapter as ReturnType<typeof makeFakeAdapter> as never;
+      capturedPlanArgs = [];
+      return {
+        plan: mock(async (opts: { prompt?: string }) => {
+          if (opts.prompt) capturedPlanArgs.push(opts.prompt);
+        }),
+      } as never;
     });
   });
 
@@ -151,6 +154,7 @@ describe("planCommand", () => {
     const specPath = join(tmpDir, "spec.md");
     _planDeps.readFile = mock(async (path: string) => {
       if (path === specPath) return SAMPLE_SPEC;
+      if (path.endsWith("prd.json")) return JSON.stringify(SAMPLE_PRD);
       throw new Error(`Unexpected readFile call: ${path}`);
     });
 
@@ -161,7 +165,7 @@ describe("planCommand", () => {
     });
 
     expect(_planDeps.readFile).toHaveBeenCalledWith(specPath);
-    expect(capturedCompleteArgs[0]).toContain("URL Shortener");
+    expect(capturedPlanArgs[0]).toContain("URL Shortener");
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -176,31 +180,23 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const prompt = capturedCompleteArgs[0];
+    const prompt = capturedPlanArgs[0];
     expect(prompt).toContain("Codebase");
     expect(prompt).toContain("express");
   });
 
-  test("uses explicit plan model selector to choose adapter and raw model id", async () => {
+  test("uses explicit plan model selector to choose adapter", async () => {
     let receivedAgentName: string | undefined;
-    let receivedModel: string | undefined;
 
     _planDeps.getAgent = mock((name: string) => {
       receivedAgentName = name;
       return {
-        complete: mock(async (_prompt: string, options?: { model?: string }) => {
-          receivedModel = options?.model;
-          return JSON.stringify(SAMPLE_PRD);
-        }),
-      } as ReturnType<typeof makeFakeAdapter> as never;
+        plan: mock(async (_opts: { prompt?: string }) => {}),
+      } as never;
     });
 
     const config = {
       ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        protocol: "cli",
-      },
       models: {
         ...DEFAULT_CONFIG.models,
         codex: {
@@ -222,7 +218,6 @@ describe("planCommand", () => {
     });
 
     expect(receivedAgentName).toBe("codex");
-    expect(receivedModel).toBe("gpt-5.3-codex");
   });
 
   test("AC-2: prompt includes output schema with prd.json structure", async () => {
@@ -232,7 +227,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const prompt = capturedCompleteArgs[0];
+    const prompt = capturedPlanArgs[0];
     expect(prompt).toContain("userStories");
     expect(prompt).toContain("acceptanceCriteria");
     expect(prompt).toContain("dependencies");
@@ -245,7 +240,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const prompt = capturedCompleteArgs[0];
+    const prompt = capturedPlanArgs[0];
     expect(prompt).toContain("simple");
     expect(prompt).toContain("medium");
     expect(prompt).toContain("complex");
@@ -259,17 +254,17 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const prompt = capturedCompleteArgs[0];
+    const prompt = capturedPlanArgs[0];
     expect(prompt).toContain("test-after");
     expect(prompt).toContain("tdd-lite");
     expect(prompt).toContain("three-session-tdd");
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AC-3: adapter.complete() is called with the full planning prompt
+  // AC-3: adapter.plan() is called with the full planning prompt
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-3: adapter.complete() is called in --auto mode", async () => {
+  test("AC-3: adapter.plan() is called in --auto mode", async () => {
     const fakeAdapter = makeFakeAdapter();
     _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
 
@@ -279,7 +274,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    expect(fakeAdapter.complete).toHaveBeenCalledTimes(1);
+    expect(fakeAdapter.plan).toHaveBeenCalledTimes(1);
   });
 
   test("AC-3: interactive mode is now supported when --auto not set", async () => {
@@ -357,12 +352,10 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-4: throws on invalid JSON response from adapter", async () => {
-    _planDeps.getAgent = mock(
-      (_name: string) =>
-        ({
-          complete: mock(async () => "not valid json {{"),
-        }) as never,
-    );
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return "not valid json {{";
+      return SAMPLE_SPEC;
+    });
 
     await expect(
       planCommand(tmpDir, {} as never, {
@@ -378,12 +371,10 @@ describe("planCommand", () => {
     const prdWithoutProject = { ...SAMPLE_PRD } as Partial<PRD>;
     prdWithoutProject.project = undefined;
 
-    _planDeps.getAgent = mock(
-      (_name: string) =>
-        ({
-          complete: mock(async () => JSON.stringify(prdWithoutProject)),
-        }) as never,
-    );
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return JSON.stringify(prdWithoutProject);
+      return SAMPLE_SPEC;
+    });
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -401,12 +392,10 @@ describe("planCommand", () => {
     const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
     badPrd.userStories = undefined;
 
-    _planDeps.getAgent = mock(
-      (_name: string) =>
-        ({
-          complete: mock(async () => JSON.stringify(badPrd)),
-        }) as never,
-    );
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return JSON.stringify(badPrd);
+      return SAMPLE_SPEC;
+    });
 
     expect(
       planCommand(tmpDir, {} as never, {
@@ -459,12 +448,10 @@ describe("planCommand", () => {
       ],
     };
 
-    _planDeps.getAgent = mock(
-      (_name: string) =>
-        ({
-          complete: mock(async () => JSON.stringify(prdWithBadStatuses)),
-        }) as never,
-    );
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return JSON.stringify(prdWithBadStatuses);
+      return SAMPLE_SPEC;
+    });
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -590,7 +577,7 @@ describe("buildPlanningPrompt (ENH-006)", () => {
   const ctx = "## Codebase Structure\nsrc/auth/auth.module.ts";
 
   /** Helper: concatenate both parts into a single string for content assertions. */
-  function fullPrompt(...args: Parameters<typeof PlanPromptBuilder.build>): string {
+  function fullPrompt(...args: Parameters<InstanceType<typeof PlanPromptBuilder>["build"]>): string {
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(...args);
     return `${taskContext}\n\n${outputFormat}`;
   }

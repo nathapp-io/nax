@@ -11,7 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ALL_AGENTS } from "../../../src/agents/registry";
+import { _registryTestAdapters } from "../../../src/agents/registry";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -51,10 +51,13 @@ class MockAgentAdapter implements AgentAdapter {
     return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCost: 0 };
   }
   async plan(_o: PlanOptions): Promise<PlanResult> {
-    return { specContent: "# Feature\n", success: true };
+    return { specContent: "# Feature\n" };
   }
   async decompose(_o: DecomposeOptions): Promise<DecomposeResult> {
-    return { stories: [], success: true };
+    return { stories: [] };
+  }
+  async complete(_prompt: string): Promise<import("../../../src/agents/types").CompleteResult> {
+    return { output: "", costUsd: 0, source: "exact" };
   }
 }
 
@@ -71,16 +74,11 @@ describe("Reporter Lifecycle Events (US-004)", () => {
   let onRunEndCalls: RunEndEvent[] = [];
 
   beforeAll(() => {
-    // Register mock agent
-    ALL_AGENTS.push(new MockAgentAdapter());
+    _registryTestAdapters.set("mock", new MockAgentAdapter());
   });
 
   afterAll(() => {
-    // Cleanup mock agent
-    const mockIndex = ALL_AGENTS.findIndex((a) => a.name === "mock");
-    if (mockIndex !== -1) {
-      ALL_AGENTS.splice(mockIndex, 1);
-    }
+    _registryTestAdapters.delete("mock");
   });
 
   beforeEach(async () => {
@@ -162,11 +160,9 @@ describe("Reporter Lifecycle Events (US-004)", () => {
 
     await fs.writeFile(path.join(pluginDir, "test-reporter.ts"), pluginCode);
 
-    // Create minimal config
+    // Create minimal config (mock agent registered via _registryTestAdapters)
     config = {
-      // Use cli protocol so the mock agent in ALL_AGENTS is used directly
-      // (acp protocol wraps agents as AcpAgentAdapter, bypassing our mock)
-      agent: { protocol: "cli" },
+      agent: { protocol: "acp" },
       agents: {
         mock: { enabled: true },
       },

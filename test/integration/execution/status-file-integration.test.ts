@@ -15,7 +15,7 @@ import * as nodeFs from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ALL_AGENTS } from "../../../src/agents/registry";
+import { _registryTestAdapters } from "../../../src/agents/registry";
 import { makeTempDir } from "../../helpers/temp";
 import type {
   AgentAdapter,
@@ -61,19 +61,16 @@ class MockAgentAdapter implements AgentAdapter {
   async decompose(_o: DecomposeOptions): Promise<DecomposeResult> {
     return { stories: [] };
   }
+  async complete(_prompt: string): Promise<import("../../../src/agents/types").CompleteResult> {
+    return { output: "", costUsd: 0, source: "exact" };
+  }
 }
 
-let cleanupAgent: () => void;
 beforeAll(() => {
-  const adapter = new MockAgentAdapter();
-  ALL_AGENTS.push(adapter);
-  cleanupAgent = () => {
-    const idx = ALL_AGENTS.findIndex((a) => a.name === "mock");
-    if (idx !== -1) ALL_AGENTS.splice(idx, 1);
-  };
+  _registryTestAdapters.set("mock", new MockAgentAdapter());
 });
 afterAll(() => {
-  cleanupAgent?.();
+  _registryTestAdapters.delete("mock");
 });
 
 // ============================================================================
@@ -82,9 +79,6 @@ afterAll(() => {
 function createTestConfig(): NaxConfig {
   return {
     ...DEFAULT_CONFIG,
-    // Use cli protocol so the mock agent in ALL_AGENTS is used directly
-    // (acp protocol wraps agents as AcpAgentAdapter, bypassing our mock)
-    agent: { protocol: "cli" },
     autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "mock" },
     execution: { ...DEFAULT_CONFIG.execution, maxIterations: 20, maxStoriesPerFeature: 500, iterationDelayMs: 0 },
     review: { ...DEFAULT_CONFIG.review, enabled: false },

@@ -179,17 +179,16 @@ See [Plugins Guide](docs/guides/agents.md#plugins).
 
 ## Agents
 
-nax supports multiple agent backends:
+nax communicates with all coding agents via [ACP](https://github.com/openclaw/acpx) (Agent Client Protocol) — a JSON-RPC protocol that provides persistent sessions, exact token/cost reporting, and multi-turn session continuity.
 
-| Agent | Protocol | Notes |
-|:------|:---------|:------|
-| ACP (recommended) | ACP | Works with Claude Code, Codex, Gemini CLI, and more. Supports multi-turn continuity |
-| Claude Code | CLI | Direct `claude` invocation. `--agent claude` |
-| Codex | CLI | `opencode` / Codex CLI. `--agent opencode` |
-| Gemini CLI | CLI | `--agent gemini` |
-| OpenCode | CLI | `--agent opencode` |
-
-ACP is recommended — it provides structured JSON-RPC communication, token-cost tracking, and multi-session continuity.
+| Agent | Binary | Notes |
+|:------|:-------|:------|
+| Claude Code | `claude` | Default. Set `autoMode.defaultAgent: "claude"` |
+| OpenCode | `opencode` | Set `autoMode.defaultAgent: "opencode"` |
+| Codex | `codex` | Set `autoMode.defaultAgent: "codex"` |
+| Gemini CLI | `gemini` | Set `autoMode.defaultAgent: "gemini"` |
+| Aider | `aider` | Set `autoMode.defaultAgent: "aider"` |
+| Any ACP-compatible | — | See [acpx agent docs](https://github.com/openclaw/acpx#agents) |
 
 See [Agents Guide](docs/guides/agents.md).
 

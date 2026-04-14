@@ -34,8 +34,8 @@ function makeRoot(): NaxConfig {
 describe("mergePackageConfig — agent section", () => {
   test("merges agent.protocol when packageOverride provides it", () => {
     const root = makeRoot();
-    const result = mergePackageConfig(root, { agent: { protocol: "cli" } } as Partial<NaxConfig>);
-    expect(result.agent?.protocol).toBe("cli");
+    const result = mergePackageConfig(root, { agent: { protocol: "acp" } } as Partial<NaxConfig>);
+    expect(result.agent?.protocol).toBe("acp");
     expect(result.agent?.maxInteractionTurns).toBe(10); // root preserved
   });
 
@@ -76,7 +76,7 @@ describe("mergePackageConfig — agent section", () => {
   test("does not mutate root.agent", () => {
     const root = makeRoot();
     const origProtocol = root.agent?.protocol;
-    mergePackageConfig(root, { agent: { protocol: "cli" } } as Partial<NaxConfig>);
+    mergePackageConfig(root, { agent: { maxInteractionTurns: 20 } } as Partial<NaxConfig>);
     expect(root.agent?.protocol).toBe(origProtocol);
   });
 });
@@ -151,14 +151,15 @@ describe("mergePackageConfig — combined override", () => {
   test("merges agent + models + routing + quality simultaneously", () => {
     const root = makeRoot();
     const override = {
-      agent: { protocol: "cli" },
+      agent: { maxInteractionTurns: 20 },
       models: { claude: { fast: "sonnet", balanced: "opus", powerful: "opus" } },
       routing: { strategy: "llm" },
       quality: { commands: { test: "npm test" } },
     };
     const result = mergePackageConfig(root, override as unknown as Partial<NaxConfig>);
 
-    expect(result.agent?.protocol).toBe("cli");
+    expect(result.agent?.protocol).toBe("acp");
+    expect(result.agent?.maxInteractionTurns).toBe(20);
     expect(result.models.claude?.fast).toBe("sonnet");
     expect(result.routing?.strategy).toBe("llm");
     expect(result.quality.commands.test).toBe("npm test");

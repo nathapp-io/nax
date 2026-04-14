@@ -1,6 +1,5 @@
 export type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, CompleteOptions } from "./types";
 export { CompleteError } from "./types";
-export { ClaudeCodeAdapter } from "./claude";
 export { getAllAgentNames, getAgent, getInstalledAgents, checkAgentHealth } from "./registry";
 export type { ModelCostRates, TokenUsage, CostEstimate, TokenUsageWithConfidence, SessionTokenUsage } from "./cost";
 export {

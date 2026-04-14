@@ -102,33 +102,27 @@ export interface AgentAdapter {
   name: string;
   capabilities: AgentCapabilities;
   run(options: AgentRunOptions): Promise<AgentResult>;
-  complete(prompt: string, options?: CompleteOptions): Promise<string>;
+  complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
   plan(options: PlanOptions): Promise<PlanResult>;
   decompose(options: DecomposeOptions): Promise<DecomposeResult>;
 }
 
-// ✅ Each backend implements it
-export class ClaudeCodeAdapter implements AgentAdapter { ... }  // CLI mode (Bun.spawn)
-export class AcpAgentAdapter implements AgentAdapter { ... }    // ACP mode (protocol)
+// ✅ One production implementation: ACP adapter (all agents)
+export class AcpAgentAdapter implements AgentAdapter { ... }    // JSON-RPC over stdio via acpx
 ```
 
 **Rules:**
-- Interface in `types.ts`, implementations in separate files
+- Interface in `types.ts`, implementation in `src/agents/acp/adapter.ts`
 - Implementations are classes (stateful — may hold config, PID registries, etc.)
 - Capabilities declared as data, not methods — enables routing decisions without instantiation
 
-**Reference:** `src/agents/types.ts`, `src/agents/claude/adapter.ts`, `src/agents/acp/adapter.ts`
+**Reference:** `src/agents/types.ts`, `src/agents/acp/adapter.ts`
 
-#### Agent Protocol Modes
+#### Agent Protocol
 
-nax supports two agent communication protocols, configured via `agent.protocol` in config:
+nax communicates with all agents via **ACP** (Agent Client Protocol) — JSON-RPC over stdio via [acpx](https://github.com/openclaw/acpx). `AcpAgentAdapter` is the only adapter; there is no CLI protocol mode.
 
-| Mode | Config value | Adapter | Communication |
-|:-----|:-------------|:--------|:--------------|
-| ACP (default) | `"acp"` | `AcpAgentAdapter` | JSON-RPC over stdio via `AcpClient` from `acpx` |
-| CLI (legacy) | `"cli"` | `ClaudeCodeAdapter` | `Bun.spawn(["claude", "-p", ...])` → parse stdout |
-
-The protocol toggle is transparent to all consumers — pipeline stages, routing, TDD, acceptance generators all call the same `AgentAdapter` interface methods.
+All pipeline stages, routing, TDD, and acceptance generators call the same `AgentAdapter` interface methods. The agent binary is set by `autoMode.defaultAgent` in config.
 
 #### LLM Fallback Rule
 
@@ -136,21 +130,15 @@ The protocol toggle is transparent to all consumers — pipeline stages, routing
 
 ```typescript
 // ✅ Correct: resolve the default agent adapter
-import { getAgent } from "../agents/registry";
+import { createAgentRegistry } from "../agents/registry";
 
-const agent = getAgent(config.autoMode.defaultAgent);
+const registry = createAgentRegistry(config);
+const agent = registry.getAgent(config.autoMode.defaultAgent);
 if (!agent) {
   throw new Error(`[stage] Agent "${config.autoMode.defaultAgent}" not found`);
 }
 // Use agent.complete() for one-shot LLM calls
-const result = await agent.complete(prompt, { jsonMode: true });
-
-// ✅ Correct: wrapping agent.complete() for domain-specific interfaces
-const adapter = {
-  async decompose(prompt: string): Promise<string> {
-    return agent.complete(prompt, { jsonMode: true });
-  },
-};
+const result = await agent.complete(prompt, { jsonMode: true, config });
 
 // ❌ Wrong: inline stub that throws
 const adapter = {
@@ -158,13 +146,7 @@ const adapter = {
     throw new Error("No LLM adapter configured");
   },
 };
-
-// ❌ Wrong: hardcoding a specific agent
-import { ClaudeCodeAdapter } from "../agents/claude";
-const adapter = new ClaudeCodeAdapter();
 ```
-
-This pattern is **forward-compatible** with ACP: when `agent.protocol` switches from `"cli"` to `"acp"`, `getAgent()` returns `AcpAgentAdapter` whose `complete()` uses the ACP protocol — no calling code changes needed.
 
 **Where this applies:**
 - Pipeline stages needing LLM calls (routing decompose, classification)

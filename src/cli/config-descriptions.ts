@@ -220,7 +220,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",
-  "agent.protocol": "Protocol for agent communication: 'acp' | 'cli' (default: 'acp')",
+  "agent.protocol": "Protocol for agent communication: 'acp'",
   "agent.maxInteractionTurns":
     "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
   // quality.testing (ENH-010) — per-package overridable

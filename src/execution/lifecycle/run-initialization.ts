@@ -164,10 +164,9 @@ function validateStoryCount(counts: ReturnType<typeof countStories>, config: Nax
 /**
  * Log the active agent protocol to aid debugging.
  */
-export function logActiveProtocol(config: NaxConfig): void {
+export function logActiveProtocol(_config: NaxConfig): void {
   const logger = getSafeLogger();
-  const protocol = config.agent?.protocol;
-  logger?.info("run-initialization", `Agent protocol: ${protocol}`, { protocol });
+  logger?.info("run-initialization", "Agent protocol: acp", { protocol: "acp" });
 }
 
 /**

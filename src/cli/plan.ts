@@ -232,14 +232,11 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       rawResponse = await runInteractivePlan();
     }
   } else if (options.auto) {
-    // Auto (one-shot) path — no debate
-    // #91: Respect agent.protocol — ACP protocol uses adapter.plan() (session-based),
-    // CLI protocol uses adapter.complete() (one-shot). This matches how the run path works.
-    const isAcp = config?.agent?.protocol === "acp";
+    // Auto (one-shot) path — no debate; ACP protocol uses adapter.plan() (session-based)
     const { taskContext: autoTaskCtx, outputFormat: autoOutputFmt } = new PlanPromptBuilder().build(
       specContent,
       codebaseContext,
-      isAcp ? outputPath : undefined, // ACP writes directly to file; CLI returns inline
+      outputPath,
       relativePackages,
       packageDetails,
       config?.project,
@@ -251,80 +248,55 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
 
-    if (isAcp) {
-      logger?.info("plan", "Starting ACP auto planning session", {
-        agent: agentName,
-        model: resolvedPlanModel.modelDef.model,
-        workdir,
-        feature: options.feature,
-        timeoutSeconds,
-      });
-      const pidRegistry = new PidRegistry(workdir);
-      let planError: Error | null = null;
+    logger?.info("plan", "Starting ACP auto planning session", {
+      agent: agentName,
+      model: resolvedPlanModel.modelDef.model,
+      workdir,
+      feature: options.feature,
+      timeoutSeconds,
+    });
+    const pidRegistry = new PidRegistry(workdir);
+    let planError: Error | null = null;
+    try {
       try {
-        try {
-          await adapter.plan({
-            prompt,
-            workdir,
-            interactive: false,
-            timeoutSeconds,
-            config,
-            modelTier: resolvedPlanModel.modelTier,
-            modelDef: resolvedPlanModel.modelDef,
-            dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
-            maxInteractionTurns: config?.agent?.maxInteractionTurns,
-            featureName: options.feature,
-            pidRegistry,
-            sessionRole: "plan",
-          });
-        } catch (err) {
-          planError = err instanceof Error ? err : new Error(String(err));
-          logger?.warn("plan", "ACP auto planning did not complete cleanly; checking for written PRD", {
-            error: planError.message,
-            outputPath,
-          });
-        }
-      } finally {
-        await pidRegistry.killAll().catch(() => {});
-      }
-      if (!_planDeps.existsSync(outputPath)) {
-        if (planError) {
-          throw new Error(`[plan] ACP planning failed and no PRD was written: ${planError.message}`, {
-            cause: planError,
-          });
-        }
-        throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
-      }
-      if (planError) {
-        logger?.warn("plan", "Proceeding with PRD written by ACP despite incomplete terminal response", {
+        await adapter.plan({
+          prompt,
+          workdir,
+          interactive: false,
+          timeoutSeconds,
+          config,
+          modelTier: resolvedPlanModel.modelTier,
+          modelDef: resolvedPlanModel.modelDef,
+          dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
+          maxInteractionTurns: config?.agent?.maxInteractionTurns,
+          featureName: options.feature,
+          pidRegistry,
+          sessionRole: "plan",
+        });
+      } catch (err) {
+        planError = err instanceof Error ? err : new Error(String(err));
+        logger?.warn("plan", "ACP auto planning did not complete cleanly; checking for written PRD", {
+          error: planError.message,
           outputPath,
         });
       }
-      rawResponse = await _planDeps.readFile(outputPath);
-    } else {
-      // CLI: one-shot complete() — simple and fast, no session overhead
-      const timeoutMs = (config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
-      const completeResult = await adapter.complete(prompt, {
-        model: resolvedPlanModel.modelDef.model,
-        jsonMode: true,
-        workdir,
-        config,
-        featureName: options.feature,
-        sessionRole: "plan",
-        timeoutMs,
-      });
-      let result = typeof completeResult === "string" ? completeResult : completeResult.output;
-      // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
-      try {
-        const envelope = JSON.parse(result) as Record<string, unknown>;
-        if (envelope?.type === "result" && typeof envelope?.result === "string") {
-          result = envelope.result;
-        }
-      } catch {
-        // Not an envelope — use result as-is
-      }
-      rawResponse = result;
+    } finally {
+      await pidRegistry.killAll().catch(() => {});
     }
+    if (!_planDeps.existsSync(outputPath)) {
+      if (planError) {
+        throw new Error(`[plan] ACP planning failed and no PRD was written: ${planError.message}`, {
+          cause: planError,
+        });
+      }
+      throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+    }
+    if (planError) {
+      logger?.warn("plan", "Proceeding with PRD written by ACP despite incomplete terminal response", {
+        outputPath,
+      });
+    }
+    rawResponse = await _planDeps.readFile(outputPath);
   } else {
     rawResponse = await runInteractivePlan();
   }

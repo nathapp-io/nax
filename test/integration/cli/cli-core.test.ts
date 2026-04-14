@@ -1450,8 +1450,8 @@ describe("AC7: AUTO_RECOVERED stories shown as INFO", () => {
  */
 
 import { rm } from "node:fs/promises";
+import { _acpAdapterDeps } from "../../../src/agents/acp/adapter";
 import { agentsListCommand, _cliAgentsDeps } from "../../../src/cli/agents";
-import { _claudeAdapterDeps } from "../../../src/agents/claude/adapter";
 import { DEFAULT_CONFIG } from "../../../src/config";
 
 describe("agentsListCommand", () => {
@@ -1467,29 +1467,20 @@ describe("agentsListCommand", () => {
   });
 
   let origGetAgentVersion: typeof _cliAgentsDeps.getAgentVersion;
-  let origClaudeSpawn: typeof _claudeAdapterDeps.spawn;
+  let origWhich: typeof _acpAdapterDeps.which;
 
   beforeEach(() => {
     origGetAgentVersion = _cliAgentsDeps.getAgentVersion;
-    origClaudeSpawn = _claudeAdapterDeps.spawn;
+    origWhich = _acpAdapterDeps.which;
     // Mock getAgentVersion to return a version immediately
     _cliAgentsDeps.getAgentVersion = async () => "1.0.0";
-    // Mock Claude's isInstalled spawn to say "claude" is found
-    _claudeAdapterDeps.spawn = mock((cmd: string[]) => {
-      const isWhich = cmd[0] === "which";
-      return {
-        exited: Promise.resolve(isWhich ? 0 : 1),
-        stdout: new ReadableStream({ start(c) { c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
-        pid: 0,
-        kill: () => {},
-      };
-    }) as typeof _claudeAdapterDeps.spawn;
+    // Mock which to report "claude" as installed, others as not found
+    _acpAdapterDeps.which = mock((binary: string) => (binary === "claude" ? "/usr/bin/claude" : null));
   });
 
   afterEach(() => {
     _cliAgentsDeps.getAgentVersion = origGetAgentVersion;
-    _claudeAdapterDeps.spawn = origClaudeSpawn;
+    _acpAdapterDeps.which = origWhich;
   });
 
   test("should display agents table with headers", async () => {

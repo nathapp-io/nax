@@ -206,16 +206,17 @@ describe("loadConfigForWorkdir", () => {
       join(tempDir, ".nax", "config.json"),
       JSON.stringify({ agent: { protocol: "acp" } }),
     );
-    mkdirSync(join(tempDir, ".nax", "mono", "packages", "legacy"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "pkg-a"), { recursive: true });
     writeFileSync(
-      join(tempDir, ".nax", "mono", "packages", "legacy", "config.json"),
-      JSON.stringify({ agent: { protocol: "cli" } }),
+      join(tempDir, ".nax", "mono", "packages", "pkg-a", "config.json"),
+      JSON.stringify({ agent: { maxInteractionTurns: 5 } }),
     );
 
     const rootConfigPath = join(tempDir, ".nax", "config.json");
-    const result = await loadConfigForWorkdir(rootConfigPath, "packages/legacy");
+    const result = await loadConfigForWorkdir(rootConfigPath, "packages/pkg-a");
 
-    expect(result.agent?.protocol).toBe("cli");
+    expect(result.agent?.protocol).toBe("acp");
+    expect(result.agent?.maxInteractionTurns).toBe(5);
   });
 
   test("per-package routing.strategy override is applied", async () => {

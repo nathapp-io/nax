@@ -334,12 +334,16 @@ describe("planCommand — debate integration (US-004)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC2: debate disabled → adapter.complete() called exactly once, no debate
+  // AC2: debate disabled → adapter.plan() called exactly once (ACP auto path), no debate
   // ─────────────────────────────────────────────────────────────────────────
 
-  test("AC2: adapter.complete() called exactly once when debate.enabled=false", async () => {
-    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
-    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+  test("AC2: adapter.plan() called exactly once when debate.enabled=false", async () => {
+    const adapterPlan = mock(async () => {});
+    _planDeps.getAgent = mock(() => ({ plan: adapterPlan }) as never);
+    _planDeps.existsSync = mock(() => true);
+    _planDeps.readFile = mock(async (p: string) =>
+      p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
+    );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
@@ -350,13 +354,17 @@ describe("planCommand — debate integration (US-004)", () => {
       { from: "/spec.md", feature: "debate-plan", auto: true },
     );
 
-    expect(adapterComplete).toHaveBeenCalledTimes(1);
+    expect(adapterPlan).toHaveBeenCalledTimes(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
-  test("AC2: adapter.complete() called exactly once when debate config is absent", async () => {
-    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
-    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+  test("AC2: adapter.plan() called exactly once when debate config is absent", async () => {
+    const adapterPlan = mock(async () => {});
+    _planDeps.getAgent = mock(() => ({ plan: adapterPlan }) as never);
+    _planDeps.existsSync = mock(() => true);
+    _planDeps.readFile = mock(async (p: string) =>
+      p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
+    );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
@@ -367,13 +375,17 @@ describe("planCommand — debate integration (US-004)", () => {
       auto: true,
     });
 
-    expect(adapterComplete).toHaveBeenCalledTimes(1);
+    expect(adapterPlan).toHaveBeenCalledTimes(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
-  test("AC2: adapter.complete() called when debate.stages.plan.enabled=false", async () => {
-    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
-    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+  test("AC2: adapter.plan() called when debate.stages.plan.enabled=false", async () => {
+    const adapterPlan = mock(async () => {});
+    _planDeps.getAgent = mock(() => ({ plan: adapterPlan }) as never);
+    _planDeps.existsSync = mock(() => true);
+    _planDeps.readFile = mock(async (p: string) =>
+      p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
+    );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
@@ -384,7 +396,7 @@ describe("planCommand — debate integration (US-004)", () => {
       auto: true,
     });
 
-    expect(adapterComplete).toHaveBeenCalledTimes(1);
+    expect(adapterPlan).toHaveBeenCalledTimes(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
