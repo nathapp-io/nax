@@ -11,6 +11,7 @@
  */
 
 import { getLogger } from "../../logger";
+import { DEFAULT_TEST_FILE_PATTERNS } from "../../test-runners/conventions";
 import type { IVerificationStrategy, StructuredTestFailure, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { parseTestOutput } from "../parser";
@@ -19,7 +20,7 @@ import { _smartRunnerDeps } from "../smart-runner";
 
 const DEFAULT_SMART_RUNNER_CONFIG = {
   enabled: true,
-  testFilePatterns: ["test/**/*.test.ts"],
+  testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS],
   fallback: "import-grep" as const,
 };
 

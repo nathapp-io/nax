@@ -9,6 +9,11 @@
  * - analyzeTestExitCode(): environmental failure detection
  */
 
+export {
+  DEFAULT_TEST_FILE_PATTERNS,
+  globsToTestRegex,
+  isTestFileByPatterns,
+} from "./conventions";
 export { detectFramework, isTestFile } from "./detector";
 export type { Framework } from "./detector";
 export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTestOutput } from "./parser";

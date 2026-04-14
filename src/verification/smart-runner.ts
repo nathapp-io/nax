@@ -4,6 +4,7 @@
  * Detects changed TypeScript source files using git diff,
  * enabling targeted test runs on only the files that changed.
  */
+import { DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { gitWithTimeout } from "../utils/git";
 
 /**
@@ -37,25 +38,59 @@ const _bunDeps = {
 /**
  * Map source files to their corresponding test files.
  *
- * For each file in `sourceFiles`, checks both:
- *   - `<workdir>/test/unit/<relative-path>.test.ts`
- *   - `<workdir>/test/integration/<relative-path>.test.ts`
+ * Checks four candidate locations per source file (in order):
  *
- * where `<relative-path>` is the file path with the leading `src/` stripped
- * and the `.ts` extension replaced with `.test.ts`.
+ * 1. Separated test directory — `<testBase>/test/unit/<relative>.test.ts`
+ * 2. Separated test directory — `<testBase>/test/integration/<relative>.test.ts`
+ * 3. Co-located spec file    — `<workdir>/<sourceFile>.spec.ts`  (NestJS convention)
+ * 4. Co-located test file    — `<workdir>/<sourceFile>.test.ts`  (Vitest/Jest convention)
+ *
+ * `<testBase>` is `workdir` for single-package repos and `workdir/<packagePrefix>`
+ * for monorepo packages. Co-located candidates always resolve relative to the git root.
  *
  * Only returns paths that actually exist on disk.
  *
- * @param sourceFiles - Array of source file paths (e.g. `["src/foo/bar.ts"]`)
- * @param workdir     - Absolute path to the repository root
+ * @param sourceFiles   - Source file paths relative to the git root (e.g. `["src/foo/bar.ts"]`)
+ * @param workdir       - Absolute path to the repository root
+ * @param packagePrefix - Monorepo package directory relative to repo root (e.g. `"apps/api"`)
  * @returns Existing test file paths (absolute)
  *
  * @example
  * ```typescript
- * const tests = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
- * // Returns: ["/repo/test/unit/foo/bar.test.ts"] (if it exists)
+ * // Single-package, separated
+ * await mapSourceToTests(["src/foo/bar.ts"], "/repo");
+ * // => ["/repo/test/unit/foo/bar.test.ts"]
+ *
+ * // Monorepo, separated
+ * await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
+ * // => ["/repo/apps/api/test/unit/foo/bar.test.ts"]
+ *
+ * // Monorepo, co-located .spec.ts (NestJS)
+ * await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api");
+ * // => ["/repo/apps/api/src/agents/agents.service.spec.ts"]
  * ```
  */
+/**
+ * Extract the test-file suffix implied by a glob pattern.
+ *
+ * The suffix is everything that follows the last `*` wildcard, making this
+ * language-agnostic: the caller's `testFilePatterns` configuration drives which
+ * suffixes are probed rather than hardcoding TypeScript-specific extensions.
+ *
+ * @example
+ * extractPatternSuffix("test/**\/*.test.ts")  // ".test.ts"
+ * extractPatternSuffix("src/**\/*.spec.ts")   // ".spec.ts"
+ * extractPatternSuffix("**\/*_test.go")       // "_test.go"
+ *
+ * @internal
+ */
+function extractPatternSuffix(pattern: string): string | null {
+  const lastStar = pattern.lastIndexOf("*");
+  if (lastStar === -1) return null;
+  const suffix = pattern.slice(lastStar + 1);
+  return suffix.length > 0 ? suffix : null;
+}
+
 /**
  * Extract searchable identifiers from a source file path.
  *
@@ -123,14 +158,49 @@ export async function importGrepFallback(
   return matched;
 }
 
-export async function mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]> {
+export async function mapSourceToTests(
+  sourceFiles: string[],
+  workdir: string,
+  packagePrefix?: string,
+  testFilePatterns: string[] = [...DEFAULT_TEST_FILE_PATTERNS],
+): Promise<string[]> {
+  // Derive unique test-file suffixes from configured patterns — language-agnostic.
+  // e.g. ["test/**/*.test.ts", "src/**/*.spec.ts"] → [".test.ts", ".spec.ts"]
+  // e.g. ["**/*_test.go"] → ["_test.go"]
+  const testSuffixes = [...new Set(testFilePatterns.map(extractPatternSuffix).filter((s): s is string => s !== null))];
+
   const result: string[] = [];
 
   for (const sourceFile of sourceFiles) {
-    // Strip leading "src/" and replace ".ts" with ".test.ts"
-    const relative = sourceFile.replace(/^src\//, "").replace(/\.ts$/, ".test.ts");
+    // Strip source extension for co-located candidate generation
+    const sourceWithoutExt = sourceFile.replace(/\.[^.]+$/, "");
 
-    const candidates = [`${workdir}/test/unit/${relative}`, `${workdir}/test/integration/${relative}`];
+    let innerRelative: string;
+    let testBase: string;
+
+    if (packagePrefix) {
+      // Monorepo: source path is "<prefix>/src/foo.ts" — strip "<prefix>/src/" to get "foo"
+      const srcRoot = `${packagePrefix}/src/`;
+      const inner = sourceFile.startsWith(srcRoot)
+        ? sourceFile.slice(srcRoot.length)
+        : sourceFile.replace(/^.*\/src\//, "");
+      innerRelative = inner.replace(/\.[^.]+$/, "");
+      testBase = `${workdir}/${packagePrefix}`;
+    } else {
+      // Single-package: source path is "src/foo.ts" — strip "src/" and extension
+      innerRelative = sourceFile.replace(/^src\//, "").replace(/\.[^.]+$/, "");
+      testBase = workdir;
+    }
+
+    const candidates: string[] = [];
+
+    for (const suffix of testSuffixes) {
+      // Separated test directories
+      candidates.push(`${testBase}/test/unit/${innerRelative}${suffix}`);
+      candidates.push(`${testBase}/test/integration/${innerRelative}${suffix}`);
+      // Co-located: next to the source file (e.g. NestJS .spec.ts, Vitest .test.ts, Go _test.go)
+      candidates.push(`${workdir}/${sourceWithoutExt}${suffix}`);
+    }
 
     for (const candidate of candidates) {
       if (await _bunDeps.file(candidate).exists()) {

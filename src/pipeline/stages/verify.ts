@@ -12,6 +12,7 @@
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { resolveQualityTestCommands } from "../../quality/command-resolver";
+import { DEFAULT_TEST_FILE_PATTERNS } from "../../test-runners/conventions";
 import { logTestOutput } from "../../utils/log-test-output";
 import { detectRuntimeCrash } from "../../verification/crash-detector";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
@@ -21,7 +22,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 const DEFAULT_SMART_RUNNER_CONFIG: SmartTestRunnerConfig = {
   enabled: true,
-  testFilePatterns: ["test/**/*.test.ts"],
+  testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS],
   fallback: "import-grep",
 };
 
@@ -102,8 +103,13 @@ export const verifyStage: PipelineStage = {
       // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
       const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef, ctx.story.workdir);
 
-      // Pass 1: path convention mapping
-      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
+      // Pass 1: path convention mapping — pass packagePrefix and testFilePatterns for language-agnostic suffix derivation
+      const pass1Files = await _smartRunnerDeps.mapSourceToTests(
+        sourceFiles,
+        ctx.workdir,
+        ctx.story.workdir,
+        smartRunnerConfig.testFilePatterns,
+      );
       if (pass1Files.length > 0) {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
