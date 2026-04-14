@@ -177,59 +177,6 @@ describe("mapSourceToTests", () => {
     ]);
   });
 
-  // ---------------------------------------------------------------------------
-  // Monorepo — packagePrefix
-  // ---------------------------------------------------------------------------
-
-  test("maps monorepo source to package-local test/unit when packagePrefix is set", async () => {
-    mockFileExists(["/repo/apps/api/test/unit/foo/bar.test.ts"]);
-
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
-
-    expect(result).toEqual(["/repo/apps/api/test/unit/foo/bar.test.ts"]);
-  });
-
-  test("maps monorepo source to package-local test/integration when packagePrefix is set", async () => {
-    mockFileExists(["/repo/apps/api/test/integration/foo/bar.test.ts"]);
-
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
-
-    expect(result).toEqual(["/repo/apps/api/test/integration/foo/bar.test.ts"]);
-  });
-
-  test("does NOT look in workdir/test/unit when packagePrefix is set", async () => {
-    // Only the wrong (root-level) path exists — should not be returned
-    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
-
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty array when no packagePrefix match exists on disk", async () => {
-    mockFileExists([]);
-
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
-
-    expect(result).toEqual([]);
-  });
-
   test("single-package behaviour unchanged when packagePrefix is undefined", async () => {
     mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
 

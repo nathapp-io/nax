@@ -102,8 +102,13 @@ export const verifyStage: PipelineStage = {
       // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
       const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef, ctx.story.workdir);
 
-      // Pass 1: path convention mapping — pass packagePrefix for monorepo stories
-      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir, ctx.story.workdir);
+      // Pass 1: path convention mapping — pass packagePrefix and testFilePatterns for language-agnostic suffix derivation
+      const pass1Files = await _smartRunnerDeps.mapSourceToTests(
+        sourceFiles,
+        ctx.workdir,
+        ctx.story.workdir,
+        smartRunnerConfig.testFilePatterns,
+      );
       if (pass1Files.length > 0) {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,

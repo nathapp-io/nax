@@ -34,7 +34,7 @@ const _origVerifyDeps = { ..._verifyDeps };
 // ---- Mock functions ---------------------------------------------------------
 
 const mockGetChangedSourceFiles = mock(async (_workdir: string) => [] as string[]);
-const mockMapSourceToTests = mock(async (_files: string[], _workdir: string, _packagePrefix?: string) => [] as string[]);
+const mockMapSourceToTests = mock(async (_files: string[], _workdir: string, _packagePrefix?: string, _patterns?: string[]) => [] as string[]);
 const mockImportGrepFallback = mock(async (_files: string[], _workdir: string, _patterns: string[]) => [] as string[]);
 const mockBuildSmartTestCommand = mock((testFiles: string[], baseCommand: string) => {
   if (testFiles.length === 0) return baseCommand;
@@ -216,7 +216,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       const ctx = makeContext({ smartTestRunner: true });
       await verifyStage.execute(ctx);
 
-      expect(mockMapSourceToTests).toHaveBeenCalledWith(["src/utils/helper.ts"], "/test/workdir", undefined);
+      expect(mockMapSourceToTests).toHaveBeenCalledWith(["src/utils/helper.ts"], "/test/workdir", undefined, ["test/**/*.test.ts"]);
     });
 
     test("forwards story.workdir as packagePrefix to mapSourceToTests for monorepo stories", async () => {
@@ -231,6 +231,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
         ["apps/api/src/utils/helper.ts"],
         "/test/workdir",
         "apps/api",
+        ["test/**/*.test.ts"],
       );
     });
 
