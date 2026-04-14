@@ -1,6 +1,6 @@
 # ADR-007: Single Continuous Implementer Session Across Fix Stages
 
-**Status:** Proposed  
+**Status:** Superseded by ADR-008  
 **Date:** 2026-04-12  
 **Author:** William Khoo, Claude  
 

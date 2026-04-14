@@ -169,13 +169,13 @@ describe("runAdversarialReview — JSON retry succeeds", () => {
     expect((calls[1][0] as Record<string, unknown>).keepSessionOpen).toBe(false);
   });
 
-  test("initial call uses keepSessionOpen: true to keep session open for retry", async () => {
+  test("initial call uses keepSessionOpen: false (stateless scorer, ADR-008)", async () => {
     const agent = makeMultiCallAgent([PASSING_RESPONSE]);
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
 
     const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[0][0] as Record<string, unknown>).keepSessionOpen).toBe(true);
+    expect((calls[0][0] as Record<string, unknown>).keepSessionOpen).toBe(false);
   });
 
   test("agent.run called once when initial response is valid JSON", async () => {
