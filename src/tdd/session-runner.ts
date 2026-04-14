@@ -46,6 +46,7 @@ export const _sessionRunnerDeps = {
         constitution?: string,
       ) => Promise<string>),
 };
+import { buildSessionName } from "../agents/acp/adapter";
 import type { IsolationCheck } from "./types";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
@@ -166,10 +167,19 @@ export async function runTddSession(
   logger.info("tdd", `-> Session: ${role}`, { role, storyId: story.id, lite });
 
   // When rectification is enabled, keep the implementer session open after it finishes.
-  // The rectification gate uses the same session name (buildSessionName + "implementer")
-  // and will resume it directly — so the implementer retains full context of what it built.
+  // The rectification gate uses the same session name and will resume it directly — so
+  // the implementer retains full context of what it built.
   // The session sweep (or the last rectification attempt) handles final cleanup.
   const keepSessionOpen = role === "implementer" && (config.execution.rectification?.enabled ?? false);
+
+  // Pin the implementer to an explicit session name derived from the same formula used by
+  // rectification-gate.ts. Without this, the adapter falls through to the sidecar which may
+  // return a stale name from a prior run, causing the implementer to resume the wrong session
+  // and breaking session continuity with the TDD gate and autofix. (ADR-008)
+  const acpSessionName =
+    role === "implementer" && featureName
+      ? buildSessionName(workdir, featureName, story.id, "implementer")
+      : undefined;
 
   // Run the agent
   const result = await agent.run({
@@ -191,6 +201,7 @@ export async function runTddSession(
     featureName,
     storyId: story.id,
     sessionRole: role,
+    acpSessionName,
     keepSessionOpen,
     interactionBridge,
   });

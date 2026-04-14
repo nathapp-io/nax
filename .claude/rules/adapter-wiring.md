@@ -76,8 +76,8 @@ Format: `nax-<hash8>-<feature>-<storyId>-<sessionRole>`
 | `"auto"` | `complete()` | Auto-approve interaction |
 | `"diagnose"` | `run()` | Acceptance failure diagnosis |
 | `"source-fix"` | `run()` | Acceptance source fix |
-| `"reviewer-semantic"` | `run()` | Semantic review session (targets implementer session via `acpSessionName`) |
-| `"reviewer-adversarial"` | `run()` | Adversarial review session (own fresh session, `keepSessionOpen: false`) |
+| `"reviewer-semantic"` | `run()` | Semantic review session — `keepSessionOpen: false` (stateless scorer, ADR-008) |
+| `"reviewer-adversarial"` | `run()` | Adversarial review session — `keepSessionOpen: false` (stateless scorer, ADR-008) |
 
 ## Rule 3: Agent Resolution — CRITICAL
 

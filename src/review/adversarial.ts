@@ -246,7 +246,7 @@ export async function runAdversarialReview(
   let rawResponse: string;
   let llmCost = 0;
   try {
-    const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: true });
+    const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: false });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
   } catch (err) {
