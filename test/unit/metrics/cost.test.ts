@@ -6,7 +6,7 @@ import {
   estimateCostFromOutput,
   formatCostWithConfidence,
   parseTokenUsage,
-} from "../../../src/agents/claude/cost";
+} from "../../../src/agents/cost";
 
 describe("parseTokenUsage", () => {
   test("parses Claude Code token output with estimated confidence", () => {

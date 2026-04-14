@@ -4,7 +4,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { ClaudeCodeAdapter } from "../../src/agents/claude";
 import type { PtyHandle } from "../../src/agents/types";
 import { AgentPanel } from "../../src/tui/components/AgentPanel";
 
@@ -51,14 +50,6 @@ describe("AgentPanel", () => {
 });
 
 describe("PtyHandle interface", () => {
-  test("ClaudeCodeAdapter has PtyHandle interface", () => {
-    const adapter = new ClaudeCodeAdapter();
-
-    // Check that runInteractive method exists
-    expect(adapter.runInteractive).toBeDefined();
-    expect(typeof adapter.runInteractive).toBe("function");
-  });
-
   test("PtyHandle has required methods", () => {
     // Mock PtyHandle to verify interface contract
     const mockHandle: PtyHandle = {

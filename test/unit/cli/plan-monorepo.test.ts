@@ -9,9 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
@@ -78,7 +76,10 @@ describe("planCommand — MW-007 monorepo awareness", () => {
 
     await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
-    _planDeps.readFile = mock(async () => "# Spec\nDo something.");
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return JSON.stringify(SAMPLE_PRD);
+      return "# Spec\nDo something.";
+    });
     _planDeps.writeFile = mock(async () => {});
     _planDeps.scanCodebase = mock(async () => ({
       fileTree: "└── src/",
@@ -89,10 +90,10 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
+    _planDeps.existsSync = mock(() => true);
     _planDeps.getAgent = mock((_name: string) => ({
-      complete: mock(async (prompt: string) => {
+      plan: mock(async ({ prompt }: { prompt: string }) => {
         capturedPrompts.push(prompt);
-        return JSON.stringify(SAMPLE_PRD);
       }),
     })) as never;
   });
@@ -191,11 +192,14 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     });
 
     const prompt = capturedPrompts[0];
-    // Should NOT contain the full absolute path
-    expect(prompt).not.toContain(tmpDir);
-    // Should contain relative paths
+    // Package paths should appear as relative paths, not absolute
+    // (The prompt also contains the absolute output file path, so we check
+    //  the monorepo section specifically rather than asserting no tmpDir at all)
     expect(prompt).toContain("packages/api");
     expect(prompt).toContain("apps/web");
+    // The package listing section should not include the absolute tmpDir prefix before the package paths
+    expect(prompt).not.toContain(`${tmpDir}/packages/api`);
+    expect(prompt).not.toContain(`${tmpDir}/apps/web`);
   });
 });
 
@@ -208,7 +212,6 @@ describe("planCommand — per-package tech stack in prompt", () => {
     capturedPrompts = [];
     await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
-    _planDeps.readFile = mock(async () => "# Spec\nDo something.\n");
     _planDeps.existsSync = mock(() => true);
     _planDeps.writeFile = mock(async () => {});
     _planDeps.scanCodebase = mock(async () => ({
@@ -246,12 +249,15 @@ describe("planCommand — per-package tech stack in prompt", () => {
         },
       ],
     };
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return JSON.stringify(minimalPrd);
+      return "# Spec\nDo something.\n";
+    });
     _planDeps.getAgent = mock(
       () =>
         ({
-          complete: mock(async (p: string) => {
+          plan: mock(async ({ prompt: p }: { prompt: string }) => {
             capturedPrompts.push(p);
-            return JSON.stringify(minimalPrd);
           }),
         }) as never,
     );

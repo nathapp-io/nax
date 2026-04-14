@@ -1,19 +1,16 @@
 /**
- * Tests for ACP-003: Registry integration and config toggle
+ * Tests for ACP-003: Registry integration and config
  *
  * Covers:
- * - createAgentRegistry() returns AcpAgentAdapter when config.agent.protocol is 'acp'
- * - createAgentRegistry() returns ClaudeCodeAdapter when config.agent.protocol is 'cli' or unset
+ * - createAgentRegistry() always returns AcpAgentAdapter (ACP is the only protocol)
  * - AgentConfig type is exported with correct shape from config/schema
- * - Default protocol is 'cli' for backward compatibility
  * - AcpAgentAdapter instances are reused per agent name within a registry
- * - checkAgentHealth() works with both ACP and legacy adapters
+ * - checkAgentHealth() works with ACP adapters
  * - logActiveProtocol() logs the active protocol
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
-import { ClaudeCodeAdapter } from "../../../../src/agents/claude";
 import { createAgentRegistry } from "../../../../src/agents/registry";
 import type { AgentConfig } from "../../../../src/config/schema";
 import type { NaxConfig } from "../../../../src/config/schema";
@@ -47,7 +44,7 @@ describe("createAgentRegistry — protocol selection", () => {
     mock.restore();
   });
 
-  test("returns AcpAgentAdapter for 'claude' when protocol is 'acp'", () => {
+  test("returns AcpAgentAdapter for 'claude'", () => {
     const registry = createAgentRegistry(makeConfig({ protocol: "acp" }));
     const agent = registry.getAgent("claude");
     expect(agent).toBeInstanceOf(AcpAgentAdapter);
@@ -59,31 +56,21 @@ describe("createAgentRegistry — protocol selection", () => {
     expect(agent?.name).toBe("claude");
   });
 
-  test("returns ClaudeCodeAdapter for 'claude' when protocol is 'cli'", () => {
-    const registry = createAgentRegistry(makeConfig({ protocol: "cli" }));
-    const agent = registry.getAgent("claude");
-    expect(agent).toBeInstanceOf(ClaudeCodeAdapter);
-  });
-
   test("returns AcpAgentAdapter for 'claude' when agent config is unset (default acp)", () => {
     const registry = createAgentRegistry(makeConfig(undefined));
     const agent = registry.getAgent("claude");
     expect(agent).toBeInstanceOf(AcpAgentAdapter);
   });
 
-  test("returns undefined for unknown agent name regardless of protocol", () => {
-    const registryAcp = createAgentRegistry(makeConfig({ protocol: "acp" }));
-    const registryCli = createAgentRegistry(makeConfig({ protocol: "cli" }));
-    expect(registryAcp.getAgent("unknown-agent-xyz")).toBeUndefined();
-    expect(registryCli.getAgent("unknown-agent-xyz")).toBeUndefined();
+  test("returns undefined for unknown agent name", () => {
+    const registry = createAgentRegistry(makeConfig({ protocol: "acp" }));
+    expect(registry.getAgent("unknown-agent-xyz")).toBeUndefined();
   });
 
-  test("exposes protocol field matching the configured protocol", () => {
-    const acpRegistry = createAgentRegistry(makeConfig({ protocol: "acp" }));
-    const cliRegistry = createAgentRegistry(makeConfig({ protocol: "cli" }));
+  test("exposes protocol field as 'acp'", () => {
+    const registry = createAgentRegistry(makeConfig({ protocol: "acp" }));
     const defaultRegistry = createAgentRegistry(makeConfig());
-    expect(acpRegistry.protocol).toBe("acp");
-    expect(cliRegistry.protocol).toBe("cli");
+    expect(registry.protocol).toBe("acp");
     expect(defaultRegistry.protocol).toBe("acp");
   });
 });
@@ -104,10 +91,8 @@ describe("createAgentRegistry — instance reuse", () => {
     const registry = createAgentRegistry(makeConfig({ protocol: "acp" }));
     const claude = registry.getAgent("claude");
     const codex = registry.getAgent("codex");
-    // Both should be AcpAgentAdapter instances
     expect(claude).toBeInstanceOf(AcpAgentAdapter);
     expect(codex).toBeInstanceOf(AcpAgentAdapter);
-    // But they should be distinct objects
     expect(claude).not.toBe(codex);
   });
 
@@ -128,19 +113,9 @@ describe("Config schema — AgentConfig", () => {
     expect(config.agent?.protocol).toBe("acp");
   });
 
-  test("NaxConfig accepts agent.protocol: 'cli'", () => {
-    const config: NaxConfig = makeConfig({ protocol: "cli" });
-    expect(config.agent?.protocol).toBe("cli");
-  });
-
   test("NaxConfig agent field is optional (backward compatibility)", () => {
     const config: NaxConfig = makeConfig();
     expect(config.agent).toBeUndefined();
-  });
-
-  test("AgentConfig accepts acpPermissionMode field", () => {
-    const agentConfig: AgentConfig = { protocol: "acp", acpPermissionMode: "approve-all" };
-    expect(agentConfig.acpPermissionMode).toBe("approve-all");
   });
 
   test("DEFAULT_CONFIG has agent.protocol set to 'acp'", () => {
@@ -160,7 +135,7 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
     mock.restore();
   });
 
-  test("returns health entries for all known agents when protocol is 'acp'", async () => {
+  test("returns health entries for all known agents", async () => {
     _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
     const registry = createAgentRegistry(makeConfig({ protocol: "acp" }));
     const health = await registry.checkAgentHealth();
@@ -179,7 +154,7 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
     }
   });
 
-  test("health entry installed is true when binary is on PATH (ACP protocol)", async () => {
+  test("health entry installed is true when binary is on PATH", async () => {
     _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
     const registry = createAgentRegistry(makeConfig({ protocol: "acp" }));
     const health = await registry.checkAgentHealth();
@@ -188,20 +163,13 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
     expect(claudeEntry?.installed).toBe(true);
   });
 
-  test("health entry installed is false when binary is not on PATH (ACP protocol)", async () => {
+  test("health entry installed is false when binary is not on PATH", async () => {
     _acpAdapterDeps.which = mock((_name: string) => null);
     const registry = createAgentRegistry(makeConfig({ protocol: "acp" }));
     const health = await registry.checkAgentHealth();
     const claudeEntry = health.find((e) => e.name === "claude");
     expect(claudeEntry).toBeDefined();
     expect(claudeEntry?.installed).toBe(false);
-  });
-
-  test("returns health entries for all known agents when protocol is 'cli'", async () => {
-    const registry = createAgentRegistry(makeConfig({ protocol: "cli" }));
-    const health = await registry.checkAgentHealth();
-    expect(Array.isArray(health)).toBe(true);
-    expect(health.length).toBeGreaterThan(0);
   });
 });
 
@@ -212,10 +180,6 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
 describe("logActiveProtocol()", () => {
   test("does not throw when protocol is 'acp'", () => {
     expect(() => logActiveProtocol(makeConfig({ protocol: "acp" }))).not.toThrow();
-  });
-
-  test("does not throw when protocol is 'cli'", () => {
-    expect(() => logActiveProtocol(makeConfig({ protocol: "cli" }))).not.toThrow();
   });
 
   test("does not throw when agent config is unset", () => {

@@ -509,7 +509,7 @@ const PromptAuditConfigSchema = z.object({
 });
 
 const AgentConfigSchema = z.object({
-  protocol: z.enum(["acp", "cli"]).default("acp"),
+  protocol: z.literal("acp").default("acp"),
   maxInteractionTurns: z.number().int().min(1).max(100).default(10),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
 });

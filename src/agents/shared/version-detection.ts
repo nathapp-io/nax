@@ -7,7 +7,6 @@
 
 import { typedSpawn } from "../../utils/bun-deps";
 import { getInstalledAgents } from "../registry";
-import type { AgentAdapter } from "../types";
 
 /**
  * Information about an installed agent including its version
@@ -75,21 +74,24 @@ export async function getAgentVersion(binaryName: string): Promise<string | null
  * Returns list of agents with their installation status and version info.
  */
 export async function getAgentVersions(): Promise<AgentVersionInfo[]> {
-  const agents = await _versionDetectionDeps.getInstalledAgents();
-  const agentsByName = new Map(agents.map((a) => [a.name, a]));
+  const installedAgents = await _versionDetectionDeps.getInstalledAgents();
+  const installedByName = new Map(installedAgents.map((a) => [a.name, a]));
 
-  // Import ALL_AGENTS to include non-installed ones
-  const { ALL_AGENTS } = await import("../registry");
+  // Use all installed agents directly — getInstalledAgents now returns AcpAgentAdapters
+  // that have the correct name, displayName, and binary fields
+  const allAgents = await _versionDetectionDeps.getInstalledAgents();
+  const agentsByName = new Map(allAgents.map((a) => [a.name, a]));
 
+  // Also include any installed agents
   const versions = await Promise.all(
-    ALL_AGENTS.map(async (agent: AgentAdapter): Promise<AgentVersionInfo> => {
-      const version = agentsByName.has(agent.name) ? await getAgentVersion(agent.binary) : null;
+    Array.from(agentsByName.values()).map(async (agent): Promise<AgentVersionInfo> => {
+      const version = installedByName.has(agent.name) ? await getAgentVersion(agent.binary) : null;
 
       return {
         name: agent.name,
         displayName: agent.displayName,
         version,
-        installed: agentsByName.has(agent.name),
+        installed: installedByName.has(agent.name),
       };
     }),
   );

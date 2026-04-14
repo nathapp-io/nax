@@ -4,7 +4,8 @@
  * Lists available agents with their binary paths, versions, and health status.
  */
 
-import { ALL_AGENTS } from "../agents/registry";
+import { AcpAgentAdapter } from "../agents/acp/adapter";
+import { KNOWN_AGENT_NAMES } from "../agents/registry";
 import { getAgentVersion } from "../agents/shared/version-detection";
 import type { NaxConfig } from "../config/schema";
 
@@ -23,9 +24,10 @@ export const _cliAgentsDeps = { getAgentVersion };
  * @param _workdir - Working directory (for consistency with other commands)
  */
 export async function agentsListCommand(config: NaxConfig, _workdir: string): Promise<void> {
-  // Get version info for all agents
+  // Create ACP adapters for all known agents and collect version info
+  const adapters = KNOWN_AGENT_NAMES.map((name) => new AcpAgentAdapter(name, config));
   const agentVersions = await Promise.all(
-    ALL_AGENTS.map(async (agent) => ({
+    adapters.map(async (agent) => ({
       name: agent.name,
       displayName: agent.displayName,
       binary: agent.binary,
