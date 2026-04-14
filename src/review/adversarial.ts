@@ -182,7 +182,7 @@ export async function runAdversarialReview(
   let testInventory: import("./diff-utils").TestInventory | undefined;
 
   if (diffMode === "embedded") {
-    // Adversarial embedded mode: no excludePatterns — sees test files too.
+    // Adversarial embedded mode: excludes .nax/ metadata but sees test files (unlike semantic).
     diff = await collectDiff(workdir, effectiveRef, adversarialConfig.excludePatterns ?? []);
     if (!diff) {
       return {
@@ -222,6 +222,7 @@ export async function runAdversarialReview(
     stat,
     priorFailures,
     testInventory,
+    excludePatterns: adversarialConfig.excludePatterns,
   });
 
   // Resolve model definition

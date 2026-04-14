@@ -324,8 +324,9 @@ export const AdversarialReviewConfigSchema = z.object({
   /** LLM call timeout in milliseconds. Default 600s (matches semantic — no debate path but ref mode may need full tool traversal). */
   timeoutMs: z.number().int().positive().default(600_000),
   /**
-   * Pathspec exclusions applied only in embedded mode.
-   * Default empty — adversarial sees test files (unlike semantic).
+   * Pathspec exclusions applied in embedded mode (to collectDiff) and in ref mode
+   * (shown in the prompt's git commands). Adversarial sees test files — only nax
+   * metadata is excluded by default.
    */
   excludePatterns: z.array(z.string()).default([":!.nax/", ":!.nax-pids"]),
   /**
