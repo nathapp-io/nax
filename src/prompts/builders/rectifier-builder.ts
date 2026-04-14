@@ -238,6 +238,51 @@ Commit your fixes when done.${scopeConstraint}`;
   }
 
   /**
+   * Re-prompt sent when the agent produced no file changes on a previous turn.
+   *
+   * Used by the no-op short-circuit in autofix.ts: when git HEAD doesn't advance
+   * after an agent run, we re-prompt once without counting the attempt, forcing the
+   * agent to either edit files or emit UNRESOLVED.
+   */
+  static noOpReprompt(failedChecks: ReviewCheckResult[], noOpCount: number, maxNoOpReprompts: number): string {
+    const parts: string[] = [];
+
+    parts.push(
+      "**Your previous turn produced no file changes.**\n\n" +
+        "You must take one of these two actions:\n" +
+        "1. **Edit source files** to address the review findings listed below, OR\n" +
+        "2. **Emit `UNRESOLVED: <reason>`** if the findings are contradictory or cannot be fixed\n\n",
+    );
+
+    if (noOpCount >= maxNoOpReprompts) {
+      parts.push(
+        "**WARNING:** If you produce no file changes again this attempt will count against your rectification budget.\n\n",
+      );
+    }
+
+    parts.push("## Remaining Review Failures\n\n");
+
+    for (const check of failedChecks) {
+      parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
+      const truncated = check.output.length > 4000;
+      const output = truncated
+        ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
+        : check.output;
+      parts.push(`\`\`\`\n${output}\n\`\`\`\n\n`);
+      if (check.findings?.length) {
+        parts.push("Structured findings:\n");
+        for (const f of check.findings) {
+          parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
+        }
+        parts.push("\n");
+      }
+    }
+
+    parts.push(CONTRADICTION_ESCAPE_HATCH);
+    return parts.join("");
+  }
+
+  /**
    * Prompt for escalation to a higher-tier model after exhausting retries.
    *
    * Migrated from createEscalatedRectificationPrompt() in src/verification/rectification.ts.

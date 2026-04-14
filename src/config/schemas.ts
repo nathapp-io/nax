@@ -327,7 +327,7 @@ export const AdversarialReviewConfigSchema = z.object({
    * Pathspec exclusions applied only in embedded mode.
    * Default empty — adversarial sees test files (unlike semantic).
    */
-  excludePatterns: z.array(z.string()).default([]),
+  excludePatterns: z.array(z.string()).default([":!.nax/", ":!.nax-pids"]),
   /**
    * When true, run semantic and adversarial reviewers concurrently via Promise.all.
    * Default false (conservative rollout). Only activates when session count is within cap.
