@@ -34,6 +34,7 @@ export interface MockAcpSession {
 export interface MockAcpClient {
   start(): Promise<void>;
   createSession(opts: { agentName: string; permissionMode: string }): Promise<MockAcpSession>;
+  loadSession?: (name: string, agentName: string, permissionMode: string) => Promise<MockAcpSession | null>;
   close(): Promise<void>;
   cancelActivePrompt(): Promise<void>;
 }
@@ -63,11 +64,13 @@ export function makeClient(
   overrides: {
     startFn?: () => Promise<void>;
     createSessionFn?: (opts: { agentName: string; permissionMode: string; sessionName?: string }) => Promise<MockAcpSession>;
+    loadSessionFn?: (name: string, agentName: string, permissionMode: string) => Promise<MockAcpSession | null>;
   } = {},
 ): MockAcpClient {
   return {
     start: overrides.startFn ?? (async () => {}),
     createSession: overrides.createSessionFn ?? (async (_opts) => session),
+    loadSession: overrides.loadSessionFn,
     close: async () => {},
     cancelActivePrompt: async () => {},
   };

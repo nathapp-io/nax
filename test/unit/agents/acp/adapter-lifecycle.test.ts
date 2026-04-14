@@ -15,11 +15,13 @@ import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "b
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import {
   AcpAgentAdapter,
   _acpAdapterDeps,
   clearAcpSession,
   readAcpSession,
+  readAcpSessionEntry,
   runSessionPrompt,
   saveAcpSession,
   sweepFeatureSessions,
@@ -428,5 +430,183 @@ describe("clearAcpSession — sessionRole key", () => {
 
     const entry = await readAcpSession(tmpDir, featureName, storyId);
     expect(entry).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SidecarEntry status field — readAcpSessionEntry + saveAcpSession
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("sidecar status field", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-sidecar-status-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("saveAcpSession writes in-flight status; readAcpSessionEntry returns it", async () => {
+    await saveAcpSession(tmpDir, "feat", "US-001", "session-abc", "claude", "in-flight");
+    const entry = await readAcpSessionEntry(tmpDir, "feat", "US-001");
+    expect(entry).not.toBeNull();
+    expect(typeof entry).toBe("object");
+    if (entry && typeof entry === "object") {
+      expect((entry as { status?: string }).status).toBe("in-flight");
+    }
+  });
+
+  test("saveAcpSession writes open status; readAcpSessionEntry returns it", async () => {
+    await saveAcpSession(tmpDir, "feat", "US-001", "session-abc", "claude", "open");
+    const entry = await readAcpSessionEntry(tmpDir, "feat", "US-001");
+    expect(entry).not.toBeNull();
+    if (entry && typeof entry === "object") {
+      expect((entry as { status?: string }).status).toBe("open");
+    }
+  });
+
+  test("readAcpSession still returns session name regardless of status", async () => {
+    await saveAcpSession(tmpDir, "feat", "US-002", "session-xyz", "claude", "in-flight");
+    const name = await readAcpSession(tmpDir, "feat", "US-002");
+    expect(name).toBe("session-xyz");
+  });
+
+  test("readAcpSessionEntry returns null when no entry exists", async () => {
+    const entry = await readAcpSessionEntry(tmpDir, "feat", "US-missing");
+    expect(entry).toBeNull();
+  });
+
+  test("legacy string entry treated as open by sidecar (readAcpSessionEntry returns it)", async () => {
+    // Simulate a legacy sidecar written before status field existed
+    const sidecarPath = join(tmpDir, ".nax", "features", "feat", "acp-sessions.json");
+    await Bun.write(sidecarPath, JSON.stringify({ "US-003": "session-legacy" }));
+
+    const entry = await readAcpSessionEntry(tmpDir, "feat", "US-003");
+    expect(entry).toBe("session-legacy"); // legacy string format preserved
+    const name = await readAcpSession(tmpDir, "feat", "US-003");
+    expect(name).toBe("session-legacy");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Crash-orphaned session guard — in-flight detection in _runWithClient
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("crash-orphaned session guard", () => {
+  const origCreateClient = _acpAdapterDeps.createClient;
+  const origSleep = _acpAdapterDeps.sleep;
+
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-crash-guard-test-"));
+    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+  });
+
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.sleep = origSleep;
+    rmSync(tmpDir, { recursive: true, force: true });
+    mock.restore();
+  });
+
+  const BASE = {
+    prompt: "implement feature",
+    workdir: "",          // set per-test
+    modelTier: "balanced" as const,
+    modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+    timeoutSeconds: 30,
+    config: DEFAULT_CONFIG,
+    featureName: "feat",
+    storyId: "US-001",
+  };
+
+  test("creates new session when sidecar entry has status in-flight (crash survivor)", async () => {
+    const loadedNames: string[] = [];
+    const createdNames: string[] = [];
+    const session = makeSession();
+
+    _acpAdapterDeps.createClient = mock((_cmd: string) =>
+      makeClient(session, {
+        createSessionFn: async (opts) => {
+          createdNames.push(opts.sessionName ?? "");
+          return session;
+        },
+        loadSessionFn: async (name: string) => {
+          loadedNames.push(name);
+          return null; // Simulate: no matching session exists in acpx
+        },
+      }),
+    );
+
+    // Pre-seed the sidecar with a stale in-flight entry
+    const staleSessionName = "nax-deadbeef-feat-us-001";
+    await saveAcpSession(tmpDir, "feat", "US-001", staleSessionName, "claude", "in-flight");
+
+    await new AcpAgentAdapter("claude", DEFAULT_CONFIG).run({ ...BASE, workdir: tmpDir });
+
+    // The stale session name must never have been loaded or created
+    expect(loadedNames).not.toContain(staleSessionName);
+    expect(createdNames).not.toContain(staleSessionName);
+    // A fresh session must have been created with a different name
+    expect(createdNames.length).toBeGreaterThan(0);
+    expect(createdNames[0]).not.toBe(staleSessionName);
+  });
+
+  test("stale in-flight sidecar entry is cleared before new session is created", async () => {
+    const session = makeSession();
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await saveAcpSession(tmpDir, "feat", "US-001", "nax-stale-session", "claude", "in-flight");
+
+    await new AcpAgentAdapter("claude", DEFAULT_CONFIG).run({ ...BASE, workdir: tmpDir });
+
+    // After the run completes successfully, the sidecar should be cleared (success path clears it)
+    const entry = await readAcpSession(tmpDir, "feat", "US-001");
+    expect(entry).toBeNull();
+  });
+
+  test("resumes open session (intentional retry — not a crash)", async () => {
+    const capturedLoads: string[] = [];
+    const session = makeSession();
+
+    _acpAdapterDeps.createClient = mock((_cmd: string) =>
+      makeClient(session, {
+        loadSessionFn: async (name: string) => {
+          capturedLoads.push(name);
+          return session;
+        },
+      }),
+    );
+
+    const openSessionName = "nax-aabbccdd-feat-us-001";
+    await saveAcpSession(tmpDir, "feat", "US-001", openSessionName, "claude", "open");
+
+    await new AcpAgentAdapter("claude", DEFAULT_CONFIG).run({ ...BASE, workdir: tmpDir });
+
+    // loadSession should have been called with the open session name
+    expect(capturedLoads).toContain(openSessionName);
+  });
+
+  test("on intentional failure, sidecar is promoted from in-flight to open", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [{ role: "assistant", content: "Tests failed." }],
+        stopReason: "cancelled",
+        cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await new AcpAgentAdapter("claude", DEFAULT_CONFIG).run({ ...BASE, workdir: tmpDir });
+
+    // After a non-success run, entry should exist with status "open" (safe to resume)
+    const entry = await readAcpSessionEntry(tmpDir, "feat", "US-001");
+    expect(entry).not.toBeNull();
+    if (entry && typeof entry === "object") {
+      expect((entry as { status?: string }).status).toBe("open");
+    }
   });
 });
