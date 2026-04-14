@@ -13,16 +13,11 @@
 src/
 ├── acceptance/       # Acceptance test generation, refinement, fix stories, templates
 │   └── templates/    # Test templates (unit, component, e2e, CLI, snapshot)
-├── agents/           # Agent adapters (CLI + ACP protocol modes)
-│   ├── acp/          # ACP protocol adapter (adapter, spawn-client, parser, cost, interaction-bridge, parse-agent-error)
-│   ├── claude/       # Claude Code CLI adapter (adapter, execution, complete, interactive, plan, cost)
-│   ├── aider/        # Aider CLI adapter (adapter.ts)
-│   ├── codex/        # Codex CLI adapter (adapter.ts)
-│   ├── gemini/       # Gemini CLI adapter (adapter.ts)
-│   ├── opencode/     # OpenCode CLI adapter (adapter.ts)
+├── agents/           # Agent adapters — all agents run via ACP protocol
+│   ├── acp/          # ACP adapter (adapter, spawn-client, parser, cost, interaction-bridge, parse-agent-error)
 │   ├── cost/         # Centralized cost calculation (calculate, parse, pricing, types)
 │   ├── shared/       # Cross-adapter utilities (decompose, decompose-prompt, env, model-resolution, validation, version-detection, types-extended)
-│   ├── registry.ts   # Agent discovery, lookup, and protocol routing
+│   ├── registry.ts   # Agent registry (KNOWN_AGENT_NAMES, createAgentRegistry, _registryTestAdapters)
 │   └── types.ts      # AgentAdapter interface, AgentResult, AgentRunOptions
 ├── analyze/          # Codebase scanning and LLM-enhanced story classification
 ├── cli/              # CLI command handlers (init, run, plan, analyze, accept, status, config, etc.)
@@ -189,11 +184,6 @@ The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem
 | | `src/verification/rectification-loop.ts` | `_rectificationDeps` | Rectification loop |
 | **Agents** | `src/agents/acp/adapter.ts` | `_acpAdapterDeps`, `_fallbackDeps` | ACP session management |
 | | `src/agents/acp/spawn-client.ts` | `_spawnClientDeps` | acpx process spawning |
-| | `src/agents/claude/adapter.ts` | `_claudeAdapterDeps`, `_decomposeDeps` | Claude CLI adapter |
-| | `src/agents/claude/execution.ts` | `_runOnceDeps` | Single-shot execution |
-| | `src/agents/claude/complete.ts` | `_completeDeps` | Completion API |
-| | `src/agents/gemini/adapter.ts` | `_geminiRunDeps`, `_geminiCompleteDeps` | Gemini adapter |
-| | `src/agents/codex/adapter.ts` | `_codexRunDeps`, `_codexCompleteDeps` | Codex adapter |
 | **Pipeline** | `src/pipeline/stages/routing.ts` | `_routingDeps` | Routing stage |
 | | `src/pipeline/stages/execution.ts` | `_executionDeps` | Execution stage |
 | | `src/pipeline/stages/verify.ts` | `_verifyDeps` | Verify stage |

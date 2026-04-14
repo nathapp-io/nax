@@ -21,23 +21,22 @@ All permission decisions flow through one function: `resolvePermissions(config, 
 │ • stage      │     └──────────────────────┘     │ • allowedTools?     │
 └─────────────┘                                   └─────────────────────┘
                                                          │
-                              ┌───────────────────────────┤
-                              ▼                           ▼
-                    ┌──────────────────┐        ┌──────────────────┐
-                    │ ACP adapter      │        │ CLI adapter      │
-                    │ reads .mode      │        │ reads             │
-                    │ ("approve-all"   │        │ .skipPermissions  │
-                    │  "approve-reads")│        │ (true/false)      │
-                    └──────────────────┘        └──────────────────┘
+                                                         ▼
+                                               ┌──────────────────┐
+                                               │ ACP adapter      │
+                                               │ reads .mode      │
+                                               │ ("approve-all"   │
+                                               │  "approve-reads")│
+                                               └──────────────────┘
 ```
 
 ### Permission Profiles
 
-| Profile | ACP mode | CLI flag | When to use |
-|:--------|:---------|:---------|:------------|
-| `unrestricted` | `approve-all` | `--dangerously-skip-permissions` | Development, trusted environments |
-| `safe` | `approve-reads` | *(no flag)* | Production, untrusted projects |
-| `scoped` | Per-stage (Phase 2) | Per-stage (Phase 2) | Fine-grained control (future) |
+| Profile | ACP mode | When to use |
+|:--------|:---------|:------------|
+| `unrestricted` | `approve-all` | Development, trusted environments |
+| `safe` | `approve-reads` | Production, untrusted projects |
+| `scoped` | Per-stage (Phase 2) | Fine-grained control (future) |
 
 ### Config Precedence
 
@@ -65,11 +64,11 @@ Every call to `resolvePermissions()` includes the pipeline stage:
 
 | Stage | Used by | Typical profile |
 |:------|:--------|:----------------|
-| `plan` | `plan.ts`, `claude-plan.ts` | Same as config (plan writes prd.json) |
-| `run` | `execution.ts`, `claude.ts`, `claude-execution.ts`, `session-runner.ts` | Primary execution — most permissive |
+| `plan` | `plan.ts` | Same as config (plan writes prd.json) |
+| `run` | `execution.ts`, `session-runner.ts` | Primary execution — most permissive |
 | `verify` | Verification strategies | Read-heavy — could be restricted in Phase 2 |
 | `rectification` | `rectification-loop.ts`, `rectification-gate.ts` | Needs write access for fixes |
-| `complete` | `claude-complete.ts`, `acp/adapter.ts` | One-shot LLM calls — varies by caller |
+| `complete` | `acp/adapter.ts` | One-shot LLM calls — varies by caller |
 | `acceptance` | Acceptance generator | Write access for test files |
 | `regression` | Regression gate | Read + test execution |
 | `review` | Code review | Read-only in Phase 2 |
@@ -96,16 +95,13 @@ import { resolvePermissions } from "../config/permissions";
 
 const { skipPermissions, mode } = resolvePermissions(config, "run");
 
-// For CLI adapter — pass skipPermissions
+// ACP adapter reads .mode ("approve-all" | "approve-reads")
 await adapter.run({
   ...options,
   config,
   pipelineStage: "run",
   dangerouslySkipPermissions: skipPermissions,
 });
-
-// For ACP adapter — pass mode
-session.setPermissionMode(mode);
 ```
 
 ```typescript
@@ -123,7 +119,6 @@ const perms = resolvePermissions(config, undefined as any);
 
 - **Resolver:** `src/config/permissions.ts` — `resolvePermissions()`, types, profiles
 - **Schema:** `src/config/schemas.ts` — `permissionProfile` field definition
-- **CLI adapter:** `src/agents/claude/adapter.ts`, `claude/execution.ts`, `claude/plan.ts`, `claude/complete.ts`
 - **ACP adapter:** `src/agents/acp/adapter.ts`
 - **Call sites:** `execution.ts`, `session-runner.ts`, `rectification-loop.ts`, `rectification-gate.ts`, `plan.ts`
 - **Spec:** `docs/specs/scoped-permissions.md` — PERM-001 + PERM-002 design
@@ -175,10 +170,10 @@ Each agent adapter lives in its own subfolder under `src/agents/`. The depth mat
 
 | Adapter | Folder | Files |
 |:--------|:-------|:------|
-| Claude Code (CLI) | `claude/` | adapter, execution, complete, interactive, plan, cost, index |
-| ACP protocol | `acp/` | adapter, spawn-client, parser, cost, interaction-bridge, parse-agent-error, types, index |
-| Aider / Codex / Gemini / OpenCode | `aider/`, `codex/`, `gemini/`, `opencode/` | adapter only |
+| ACP protocol (all agents) | `acp/` | adapter, spawn-client, parser, cost, interaction-bridge, parse-agent-error, types, index |
 | Centralized cost | `cost/` | calculate, parse, pricing, types, index |
+
+All agents (Claude Code, OpenCode, Codex, Gemini, Aider, and any ACP-compatible agent) are driven through `AcpAgentAdapter`. There are no per-agent CLI adapter folders.
 
 ### Rules
 
@@ -191,13 +186,13 @@ Each agent adapter lives in its own subfolder under `src/agents/`. The depth mat
 
 | File | Purpose | Used by |
 |:-----|:--------|:--------|
-| `shared/decompose.ts` | PRD decomposition prompt + parser | `claude/adapter.ts`, `acp/adapter.ts` |
+| `shared/decompose.ts` | PRD decomposition prompt + parser | `acp/adapter.ts` |
 | `shared/decompose-prompt.ts` | Async decompose prompt builder (spec + plan modes) | `acp/adapter.ts` |
-| `shared/env.ts` | Secure environment variable construction for spawned agents | All adapters via `buildAllowedEnv()` |
-| `shared/model-resolution.ts` | Resolve ModelDef from config | `claude/plan.ts`, `claude/adapter.ts` |
+| `shared/env.ts` | Secure environment variable construction for spawned agents | `acp/adapter.ts` via `buildAllowedEnv()` |
+| `shared/model-resolution.ts` | Resolve ModelDef from config | `acp/adapter.ts` |
 | `shared/validation.ts` | Agent capability + tier validation | `registry.ts`, pipeline stages |
 | `shared/version-detection.ts` | Binary version detection | `cli/agents.ts`, `precheck/checks-agents.ts` |
-| `shared/types-extended.ts` | Plan/decompose/interactive types | `claude/plan.ts`, `acp/adapter.ts`, `types.ts` |
+| `shared/types-extended.ts` | Plan/decompose/interactive types | `acp/adapter.ts`, `types.ts` |
 
 ### ACP Session Error Retry Tiers
 

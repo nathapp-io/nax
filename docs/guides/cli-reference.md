@@ -93,7 +93,7 @@ nax run -f my-feature
 | Flag | Description |
 |:-----|:------------|
 | `-f, --feature <name>` | Feature name |
-| `-a, --agent <name>` | Force a specific agent (`claude`, `opencode`, `codex`, etc.). Only applies when `agent.protocol = "cli"` — ignored when using ACP protocol. |
+| `-a, --agent <name>` | Override the default agent for this run (`claude`, `opencode`, `codex`, `gemini`, `aider`, etc.). |
 | `--plan` | Run plan phase first (requires `--from`) |
 | `--from <spec-path>` | Spec file for `--plan` |
 | `--one-shot` | Skip interactive Q&A during planning (ACP only) |
