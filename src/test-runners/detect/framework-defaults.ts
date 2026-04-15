@@ -9,6 +9,7 @@
  * Returns null when no known framework manifest is found in the workdir.
  */
 
+import { expandExtglobAll } from "./extglob";
 import type { DetectionSource } from "./types";
 
 /** Injectable deps for testability */
@@ -31,8 +32,17 @@ const JS_FRAMEWORK_DEFAULTS: Record<string, readonly string[]> = {
   cypress: ["cypress/e2e/**/*.cy.{js,jsx,ts,tsx}"],
 };
 
-/** Bun test default — activated when `bun test` is in package.json#scripts.test */
-const BUN_TEST_DEFAULTS: readonly string[] = ["**/*.test.{ts,tsx,js,jsx}"];
+/**
+ * Bun test defaults — matches Bun's hardcoded discovery rules
+ * (*.test.*, *_test.*, *.spec.*, *_spec.* across all JS/TS extensions).
+ * Activated when `bun test` appears in package.json#scripts.test.
+ */
+const BUN_TEST_DEFAULTS: readonly string[] = [
+  "**/*.test.{ts,tsx,js,jsx,mjs,cjs}",
+  "**/*_test.{ts,tsx,js,jsx,mjs,cjs}",
+  "**/*.spec.{ts,tsx,js,jsx,mjs,cjs}",
+  "**/*_spec.{ts,tsx,js,jsx,mjs,cjs}",
+];
 
 /**
  * Parse package.json to detect JS/TS test framework from devDependencies.
@@ -57,7 +67,7 @@ async function detectFromPackageJson(workdir: string): Promise<DetectionSource |
   // Check for known JS/TS frameworks (priority order)
   for (const [framework, patterns] of Object.entries(JS_FRAMEWORK_DEFAULTS)) {
     if (framework in allDeps) {
-      return { type: "manifest", path, patterns };
+      return { type: "manifest", path, patterns: expandExtglobAll(patterns) };
     }
   }
 
@@ -65,7 +75,7 @@ async function detectFromPackageJson(workdir: string): Promise<DetectionSource |
   const scripts = pkg.scripts as Record<string, unknown> | undefined;
   const testScript = typeof scripts?.test === "string" ? scripts.test : "";
   if (testScript.includes("bun test")) {
-    return { type: "manifest", path, patterns: BUN_TEST_DEFAULTS };
+    return { type: "manifest", path, patterns: expandExtglobAll(BUN_TEST_DEFAULTS) };
   }
 
   return null;

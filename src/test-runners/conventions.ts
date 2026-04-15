@@ -28,42 +28,92 @@
 export const DEFAULT_TEST_FILE_PATTERNS: readonly string[] = Object.freeze(["test/**/*.test.ts"]);
 
 /**
- * Convert a glob's trailing suffix (everything after the last `*`) into a
- * regex that matches any path ending with that suffix.
+ * Convert a single glob pattern into a path-classifying regex.
  *
- * Returns null when the glob has no `*` or an empty trailing suffix.
+ * Translates standard glob syntax to regex:
+ * - `**` (with optional surrounding `/`) → `(?:.*\/)?` (any number of path segments)
+ * - `*` → `[^/]*` (any chars except path separator)
+ * - `.` → `\.`
+ * - All other regex-special chars escaped
+ *
+ * The resulting regex is anchored to the end of the path with `$` and to a
+ * path-segment boundary at the start (so `**\/__tests__/...` matches paths
+ * containing a `__tests__` segment, not paths where it appears mid-segment).
+ *
+ * Returns null when the glob would compile to something that matches everything
+ * (e.g. the empty string or just `**`), to avoid silently classifying every
+ * path as a test file.
  *
  * @internal
  */
-function suffixRegex(pattern: string): RegExp | null {
-  const lastStar = pattern.lastIndexOf("*");
-  if (lastStar === -1) return null;
-  const suffix = pattern.slice(lastStar + 1);
-  if (suffix.length === 0) return null;
-  const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`${escaped}$`);
+function globToRegex(pattern: string): RegExp | null {
+  if (pattern.length === 0) return null;
+  if (/^\*+\/?$/.test(pattern)) return null;
+
+  let regex = "";
+  let i = 0;
+  while (i < pattern.length) {
+    const c = pattern[i];
+    if (c === "*") {
+      // `**/` or `/**` or `**` → match any number of path segments (including zero)
+      if (pattern[i + 1] === "*") {
+        const beforeSlash = i > 0 && pattern[i - 1] === "/";
+        const afterSlash = pattern[i + 2] === "/";
+        if (beforeSlash && afterSlash) {
+          regex = `${regex.slice(0, -1)}(?:.*\\/)?`;
+          i += 3;
+        } else if (afterSlash) {
+          regex += "(?:.*\\/)?";
+          i += 3;
+        } else {
+          regex += ".*";
+          i += 2;
+        }
+        continue;
+      }
+      regex += "[^/]*";
+      i++;
+      continue;
+    }
+    if (c === "?") {
+      regex += "[^/]";
+      i++;
+      continue;
+    }
+    if (".+^${}()|[]\\".includes(c)) {
+      regex += `\\${c}`;
+    } else {
+      regex += c;
+    }
+    i++;
+  }
+
+  // Anchor to end of path; allow leading match anywhere along path-segment boundary
+  // so `__tests__/foo.ts` and `apps/api/__tests__/foo.ts` both classify as tests.
+  return new RegExp(`(?:^|/)${regex}$`);
 }
 
 /**
  * Derive path-classification regexes from a list of glob patterns.
  *
- * Each returned regex matches paths ending with the configured glob's suffix.
- * Patterns with no extractable suffix are silently skipped. Duplicate
- * regexes are de-duplicated by source.
+ * Each returned regex matches paths matching its source glob — preserving
+ * directory structure, not just trailing suffix. Patterns that compile to
+ * a "match everything" regex (e.g. lone `**`) are silently skipped.
+ * Duplicate regexes are de-duplicated by source.
  *
  * @example
  * globsToTestRegex(["test/**\/*.test.ts", "src/**\/*.spec.ts"])
- * // → [/\.test\.ts$/, /\.spec\.ts$/]
+ * // → regexes that match e.g. "test/foo.test.ts" and "src/util/foo.spec.ts"
  *
  * @example
- * globsToTestRegex(["**\/*_test.go"])
- * // → [/_test\.go$/]
+ * globsToTestRegex(["**\/__tests__/**\/*.ts"])
+ * // → regex that matches "src/__tests__/foo.ts" but NOT "src/foo.ts"
  */
 export function globsToTestRegex(patterns: readonly string[]): RegExp[] {
   const regexes: RegExp[] = [];
   const seen = new Set<string>();
   for (const pattern of patterns) {
-    const re = suffixRegex(pattern);
+    const re = globToRegex(pattern);
     if (re && !seen.has(re.source)) {
       regexes.push(re);
       seen.add(re.source);
