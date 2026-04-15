@@ -65,6 +65,7 @@ import {
   profileUseCommand,
 } from "../src/cli/config-profile";
 import { generateCommand } from "../src/cli/generate";
+import { detectCommand } from "../src/commands/detect";
 import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
@@ -1031,6 +1032,30 @@ program
         dir: options.dir,
         json: options.json,
         light: options.light,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── detect ───────────────────────────────────────────
+program
+  .command("detect")
+  .description("Detect test-file patterns for the project and optionally persist them")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--apply", "Write detected patterns to .nax/ configs", false)
+  .option("--json", "Machine-readable JSON output", false)
+  .option("--package <dir>", "Restrict detection to a single package directory")
+  .option("--force", "With --apply: overwrite even when testFilePatterns is already set", false)
+  .action(async (options) => {
+    try {
+      await detectCommand({
+        dir: options.dir,
+        apply: options.apply,
+        json: options.json,
+        package: options.package,
+        force: options.force,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
