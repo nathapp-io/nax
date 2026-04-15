@@ -245,16 +245,7 @@ export class ReviewOrchestrator {
           resetRefOnRerun: false,
           rules: [] as string[],
           timeoutMs: 600_000,
-          excludePatterns: [
-            ":!test/",
-            ":!tests/",
-            ":!*_test.go",
-            ":!*.test.ts",
-            ":!*.spec.ts",
-            ":!**/__tests__/",
-            ":!.nax/",
-            ":!.nax-pids",
-          ] as string[],
+          // excludePatterns omitted — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009)
         };
         // advConfig is guaranteed non-null here: canParallelize required advConfig?.parallel === true
         const adversarialCfg: AdversarialReviewConfig = advConfig as AdversarialReviewConfig;

@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
+import { migrateLegacyTestPattern } from "./migrations";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
@@ -127,9 +128,15 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
 
   // Layer 1: Global config (~/.nax/config.json) — strip "profile" field before merging (AC 7)
   const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
+  let logger: ReturnType<typeof getLogger> | null = null;
+  try { logger = getLogger(); } catch { /* logger may not be init yet */ }
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-    const globalConf = applyBatchModeCompat(applyRemovedStrategyCompat(globalConfStripped));
+    const globalConf = applyBatchModeCompat(
+      applyRemovedStrategyCompat(
+        migrateLegacyTestPattern(globalConfStripped, logger),
+      ),
+    );
     rawConfig = deepMergeConfig(rawConfig, globalConf);
   }
 
@@ -138,7 +145,11 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
-      const resolvedProjConf = applyBatchModeCompat(applyRemovedStrategyCompat(projConfStripped));
+      const resolvedProjConf = applyBatchModeCompat(
+        applyRemovedStrategyCompat(
+          migrateLegacyTestPattern(projConfStripped, logger),
+        ),
+      );
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
     }
   }

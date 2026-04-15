@@ -87,8 +87,14 @@ export interface RegressionGateConfig {
 export interface SmartTestRunnerConfig {
   /** Enable smart test runner (default: true) */
   enabled: boolean;
-  /** Glob patterns to scan for test files during import-grep fallback */
-  testFilePatterns: string[];
+  /**
+   * Glob patterns to scan for test files during import-grep fallback.
+   *
+   * Optional — undefined means "user did not set this"; resolver falls through
+   * to auto-detection then DEFAULT_TEST_FILE_PATTERNS. Explicit `[]` means
+   * "no test files in this scope" (distinct from undefined). (ADR-009)
+   */
+  testFilePatterns?: string[];
   /** Fallback strategy when path-convention mapping yields no results */
   fallback: "import-grep" | "full-suite";
 }
@@ -370,8 +376,8 @@ export interface TestCoverageConfig {
   maxTokens: number;
   /** Test directory relative to workdir (default: auto-detect) */
   testDir?: string;
-  /** Glob pattern for test files */
-  testPattern: string;
+  /** @deprecated Migrate to execution.smartTestRunner.testFilePatterns. (ADR-009) */
+  testPattern?: string;
   /** Scope test coverage to story-relevant files only (default: true) */
   scopeToStory: boolean;
 }

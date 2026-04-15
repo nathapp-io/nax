@@ -131,10 +131,16 @@ export async function resolveEffectiveRef(
  * Used by adversarial review (embedded mode) to pre-compute a TestInventory for the prompt.
  *
  * Detection heuristics:
- * - Test file: path matches *.test.ts, *.spec.ts, *_test.go, or is under test/ / tests/ / __tests__/
- * - Source file without test: new source file whose basename has no matching test file in the added set
+ * - Test file: path matches configured testFilePatterns (ADR-009), falling back to defaults.
+ * - Source file without test: new source file whose basename has no matching test file in the added set.
+ *
+ * @param testFilePatterns - Configured test file globs (ADR-009). Falls back to DEFAULT_TEST_FILE_PATTERNS.
  */
-export async function computeTestInventory(workdir: string, storyGitRef: string): Promise<TestInventory> {
+export async function computeTestInventory(
+  workdir: string,
+  storyGitRef: string,
+  testFilePatterns?: readonly string[],
+): Promise<TestInventory> {
   const proc = _diffUtilsDeps.spawn({
     cmd: ["git", "diff", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`],
     cwd: workdir,
@@ -154,8 +160,8 @@ export async function computeTestInventory(workdir: string, storyGitRef: string)
 
   const addedFiles = stdout.trim().split("\n").filter(Boolean);
 
-  const addedTestFiles = addedFiles.filter(isTestFile);
-  const addedSourceFiles = addedFiles.filter((f) => !isTestFile(f));
+  const addedTestFiles = addedFiles.filter((f) => isTestFile(f, testFilePatterns));
+  const addedSourceFiles = addedFiles.filter((f) => !isTestFile(f, testFilePatterns));
 
   // For each added source file, check whether a matching test file was also added.
   // Match by basename: src/foo/bar.ts → looks for bar.test.ts, bar.spec.ts in addedFiles.

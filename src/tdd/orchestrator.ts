@@ -193,7 +193,13 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // Uses the shared language-agnostic `isTestFile()` classifier — recognizes
   // .test.*, .spec.*, _test.go, test_*.py, test/ directory segments, etc.
   // On retry (BUG-018 fix), session1 is undefined — skip this check entirely.
-  const testFilesCreated = session1 ? session1.filesChanged.filter(isTestFile) : [];
+  // ADR-009: pass user-configured testFilePatterns so custom patterns are recognised;
+  // undefined → broad regex fallback for backward compat.
+  const _tddTestFilePatterns =
+    typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
+      ? config.execution.smartTestRunner.testFilePatterns
+      : undefined;
+  const testFilesCreated = session1 ? session1.filesChanged.filter((f) => isTestFile(f, _tddTestFilePatterns)) : [];
 
   if (!isRetry && testFilesCreated.length === 0) {
     // BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.

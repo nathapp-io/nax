@@ -20,8 +20,15 @@ import type { PipelineContext } from "../types";
 /**
  * Split adversarial findings in a check result into test-file vs source-file buckets.
  * Returns null for each bucket when there are no findings for that scope.
+ *
+ * @param check            - The adversarial review check result to split.
+ * @param testFilePatterns - Configured test file globs (ADR-009). When undefined, falls back to
+ *   the broad language-agnostic regex (Phase 1 backward-compat path).
  */
-export function splitAdversarialFindingsByScope(check: ReviewCheckResult): {
+export function splitAdversarialFindingsByScope(
+  check: ReviewCheckResult,
+  testFilePatterns?: readonly string[],
+): {
   testFindings: ReviewCheckResult | null;
   sourceFindings: ReviewCheckResult | null;
 } {
@@ -29,8 +36,8 @@ export function splitAdversarialFindingsByScope(check: ReviewCheckResult): {
     return { testFindings: null, sourceFindings: null };
   }
 
-  const testFs = check.findings.filter((f) => isTestFile(f.file ?? ""));
-  const sourceFs = check.findings.filter((f) => !isTestFile(f.file ?? ""));
+  const testFs = check.findings.filter((f) => isTestFile(f.file ?? "", testFilePatterns));
+  const sourceFs = check.findings.filter((f) => !isTestFile(f.file ?? "", testFilePatterns));
 
   const toCheck = (findings: typeof testFs): ReviewCheckResult | null => {
     if (findings.length === 0) return null;

@@ -4,17 +4,19 @@
  * Checks that TDD sessions respect their boundaries:
  * - Session 1 (test writer): only test/ files modified
  * - Session 2 (implementer): no test/ files modified
+ *
+ * Both `verifyTestWriterIsolation` and `verifyImplementerIsolation` accept an
+ * optional `testFilePatterns` argument. When supplied, classification uses those
+ * patterns (config-aware path — ADR-009). When omitted, falls back to
+ * DEFAULT_TEST_FILE_PATTERNS for backward compatibility.
  */
 
-import { isTestFile } from "../test-runners";
+import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
 import type { IsolationCheck } from "./types";
 
 /** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */
 export const _isolationDeps = { spawn };
-
-// Re-export so existing callers (src/tdd/index.ts, tests) don't need to change imports.
-export { isTestFile };
 
 /** Common source directory patterns */
 const SRC_PATTERNS = [/^src\//, /^lib\//, /^packages\//];
@@ -56,17 +58,21 @@ function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
  * Only test files should be created/modified.
  * No source files should be touched.
  *
- * @param workdir - Working directory
- * @param beforeRef - Git ref to diff against
- * @param allowedPaths - Glob patterns for files that can be modified (soft violations)
+ * @param workdir          - Working directory
+ * @param beforeRef        - Git ref to diff against
+ * @param allowedPaths     - Glob patterns for files that can be modified (soft violations)
+ * @param testFilePatterns - Configured test file globs (ADR-009). Falls back to DEFAULT_TEST_FILE_PATTERNS.
  */
 export async function verifyTestWriterIsolation(
   workdir: string,
   beforeRef: string,
   allowedPaths: string[] = ["src/index.ts", "src/**/index.ts"],
+  testFilePatterns: readonly string[] = DEFAULT_TEST_FILE_PATTERNS,
 ): Promise<IsolationCheck> {
   const changed = await getChangedFiles(workdir, beforeRef);
-  const sourceFiles = changed.filter((f) => isSourceFile(f) && !isTestFile(f));
+  const sourceFiles = changed.filter(
+    (f) => isSourceFile(f) && !isTestFileByPatterns(f, testFilePatterns),
+  );
 
   // Separate hard violations from soft violations (allowed paths)
   const softViolations: string[] = [];
@@ -92,10 +98,18 @@ export async function verifyTestWriterIsolation(
  * Verify implementer isolation:
  * No test files should be modified.
  * Only source files should be touched.
+ *
+ * @param workdir          - Working directory
+ * @param beforeRef        - Git ref to diff against
+ * @param testFilePatterns - Configured test file globs (ADR-009). Falls back to DEFAULT_TEST_FILE_PATTERNS.
  */
-export async function verifyImplementerIsolation(workdir: string, beforeRef: string): Promise<IsolationCheck> {
+export async function verifyImplementerIsolation(
+  workdir: string,
+  beforeRef: string,
+  testFilePatterns: readonly string[] = DEFAULT_TEST_FILE_PATTERNS,
+): Promise<IsolationCheck> {
   const changed = await getChangedFiles(workdir, beforeRef);
-  const testFiles = changed.filter((f) => isTestFile(f));
+  const testFiles = changed.filter((f) => isTestFileByPatterns(f, testFilePatterns));
 
   if (testFiles.length > 0) {
     return {

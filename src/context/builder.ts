@@ -230,12 +230,16 @@ async function addFileElements(
     storyContext.workdir
   ) {
     const autoDetectConfig = storyContext.config?.context?.autoDetect;
+    const smartRunner = storyContext.config?.execution?.smartTestRunner;
+    const testFilePatterns =
+      typeof smartRunner === "object" && smartRunner !== null ? smartRunner.testFilePatterns : undefined;
     try {
       const detected = await _contextBuilderDeps.autoDetectContextFiles({
         workdir: storyContext.workdir,
         storyTitle: story.title,
         maxFiles: autoDetectConfig?.maxFiles ?? 5,
         traceImports: autoDetectConfig?.traceImports ?? false,
+        testFilePatterns,
       });
       if (detected.length > 0) {
         contextFiles = detected;

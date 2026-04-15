@@ -256,7 +256,14 @@ async function runRectificationLoop(
 
       await autoCommitIfDirty(workdir, "tdd", "rectification", story.id);
 
-      const rectifyIsolation = lite ? undefined : await verifyImplementerIsolation(workdir, rectifyBeforeRef);
+      // ADR-009: pass undefined when user hasn't configured patterns → broad regex fallback in isTestFile.
+      const testFilePatterns =
+        typeof config.execution?.smartTestRunner === "object"
+          ? config.execution.smartTestRunner?.testFilePatterns
+          : undefined;
+      const rectifyIsolation = lite
+        ? undefined
+        : await verifyImplementerIsolation(workdir, rectifyBeforeRef, testFilePatterns);
       if (rectifyIsolation && !rectifyIsolation.passed) {
         loopState.isolationPassed = false;
         logger.error("tdd", "Rectification violated isolation", {

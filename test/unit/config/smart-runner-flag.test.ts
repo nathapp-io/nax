@@ -111,7 +111,6 @@ describe("execution.smartTestRunner config flag", () => {
     if (result.success) {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: true,
-        testFilePatterns: ["test/**/*.test.ts"],
         fallback: "import-grep",
       });
     }
@@ -126,7 +125,6 @@ describe("execution.smartTestRunner config flag", () => {
     if (result.success) {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: false,
-        testFilePatterns: ["test/**/*.test.ts"],
         fallback: "import-grep",
       });
     }
@@ -141,7 +139,6 @@ describe("execution.smartTestRunner config flag", () => {
     if (result.success) {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: true,
-        testFilePatterns: ["test/**/*.test.ts"],
         fallback: "import-grep",
       });
     }
@@ -154,7 +151,6 @@ describe("execution.smartTestRunner config flag", () => {
     const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
       enabled: true,
-      testFilePatterns: ["test/**/*.test.ts"],
       fallback: "import-grep",
     });
   });
@@ -166,7 +162,6 @@ describe("execution.smartTestRunner config flag", () => {
     const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
       enabled: false,
-      testFilePatterns: ["test/**/*.test.ts"],
       fallback: "import-grep",
     });
   });
@@ -179,7 +174,6 @@ describe("execution.smartTestRunner config flag", () => {
     const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
       enabled: true,
-      testFilePatterns: ["test/**/*.test.ts"],
       fallback: "import-grep",
     });
   });

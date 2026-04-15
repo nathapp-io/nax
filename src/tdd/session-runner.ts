@@ -232,11 +232,21 @@ export async function runTddSession(
   // Check isolation based on role and skipIsolation flag.
   let isolation: IsolationCheck | undefined;
   if (!skipIsolation) {
+    // ADR-009: pass undefined when user hasn't configured patterns → broad regex fallback in isTestFile.
+    const testFilePatterns =
+      typeof config.execution?.smartTestRunner === "object"
+        ? config.execution.smartTestRunner?.testFilePatterns
+        : undefined;
     if (role === "test-writer") {
       const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
-      isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(workdir, beforeRef, allowedPaths);
+      isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(
+        workdir,
+        beforeRef,
+        allowedPaths,
+        testFilePatterns,
+      );
     } else if (role === "implementer" || role === "verifier") {
-      isolation = await _sessionRunnerDeps.verifyImplementerIsolation(workdir, beforeRef);
+      isolation = await _sessionRunnerDeps.verifyImplementerIsolation(workdir, beforeRef, testFilePatterns);
     }
   }
 

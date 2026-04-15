@@ -156,13 +156,17 @@ export const autofixStage: PipelineStage = {
     // files are irrelevant and unresolvable within the story's scope.  When every failing
     // check is an adversarial check whose findings are all test-file scoped, treat the
     // review as passed (with a warning) rather than launching any agent session.
+    const testFilePatterns =
+      typeof ctx.rootConfig.execution?.smartTestRunner === "object"
+        ? ctx.rootConfig.execution.smartTestRunner?.testFilePatterns
+        : undefined;
     if (ctx.routing.testStrategy === "no-test") {
       const failedChecks = (reviewResult.checks ?? []).filter((c) => !c.success);
       if (
         failedChecks.length > 0 &&
         failedChecks.every((c) => {
           if (c.check !== "adversarial") return false;
-          const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(c);
+          const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(c, testFilePatterns);
           return testFindings !== null && sourceFindings === null;
         })
       ) {
@@ -340,9 +344,13 @@ async function runAgentRectification(
   let implementerChecks = failedChecks;
   let testWriterChecks: ReviewCheckResult[] = [];
 
+  const stageTestFilePatterns =
+    typeof ctx.rootConfig.execution?.smartTestRunner === "object"
+      ? ctx.rootConfig.execution.smartTestRunner?.testFilePatterns
+      : undefined;
   for (const check of failedChecks) {
     if (check.check === "adversarial" && check.findings?.length) {
-      const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+      const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check, stageTestFilePatterns);
       if (testFindings) testWriterChecks = [...testWriterChecks, testFindings];
       if (sourceFindings) {
         // Use reference equality (c === check) rather than type matching so that multiple

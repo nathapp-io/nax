@@ -5,7 +5,6 @@
  */
 
 import { z } from "zod";
-import { DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 
 /** Zod schema for runtime validation */
 const TokenPricingSchema = z.object({
@@ -93,13 +92,16 @@ const RegressionGateConfigSchema = z.object({
 
 const SmartTestRunnerConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  testFilePatterns: z.array(z.string()).default([...DEFAULT_TEST_FILE_PATTERNS]),
+  /**
+   * Optional — undefined means user did not set this; resolver falls through
+   * to auto-detection then DEFAULT_TEST_FILE_PATTERNS. (ADR-009)
+   */
+  testFilePatterns: z.array(z.string()).optional(),
   fallback: z.enum(["import-grep", "full-suite"]).default("import-grep"),
 });
 
 const SMART_TEST_RUNNER_DEFAULT = {
   enabled: true,
-  testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS],
   fallback: "import-grep" as const,
 };
 
@@ -107,7 +109,7 @@ const SMART_TEST_RUNNER_DEFAULT = {
 const smartTestRunnerFieldSchema = z
   .preprocess((val) => {
     if (typeof val === "boolean") {
-      return { enabled: val, testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS], fallback: "import-grep" };
+      return { enabled: val, fallback: "import-grep" };
     }
     return val;
   }, SmartTestRunnerConfigSchema)
@@ -288,18 +290,11 @@ const SemanticReviewConfigSchema = z.object({
   resetRefOnRerun: z.boolean().default(false),
   rules: z.array(z.string()).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
-  excludePatterns: z
-    .array(z.string())
-    .default([
-      ":!test/",
-      ":!tests/",
-      ":!*_test.go",
-      ":!*.test.ts",
-      ":!*.spec.ts",
-      ":!**/__tests__/",
-      ":!.nax/",
-      ":!.nax-pids",
-    ]),
+  /**
+   * Optional — undefined means "derive from testFilePatterns + well-known noise dirs".
+   * Any user-set value (including []) is returned as-is. (ADR-009 §4.4)
+   */
+  excludePatterns: z.array(z.string()).optional(),
 });
 
 export const ReviewDialogueConfigSchema = z.object({
@@ -326,10 +321,13 @@ export const AdversarialReviewConfigSchema = z.object({
   timeoutMs: z.number().int().positive().default(600_000),
   /**
    * Pathspec exclusions applied in embedded mode (to collectDiff) and in ref mode
-   * (shown in the prompt's git commands). Adversarial sees test files — only nax
-   * metadata is excluded by default.
+   * (shown in the prompt's git commands).
+   *
+   * Optional — undefined means "derive from testFilePatterns + noise dirs" (adversarial
+   * defaults to minimal exclusions so it sees test files). Any user-set value (including [])
+   * is returned as-is. (ADR-009 §4.4)
    */
-  excludePatterns: z.array(z.string()).default([":!.nax/", ":!.nax-pids"]),
+  excludePatterns: z.array(z.string()).optional(),
   /**
    * When true, run semantic and adversarial reviewers concurrently via Promise.all.
    * Default false (conservative rollout). Only activates when session count is within cap.
@@ -420,7 +418,8 @@ const TestCoverageConfigSchema = z.object({
   detail: z.enum(["names-only", "names-and-counts", "describe-blocks"]).default("names-and-counts"),
   maxTokens: z.number().int().min(50).max(5000).default(500),
   testDir: z.string().optional(),
-  testPattern: z.string().default("**/*.test.{ts,js,tsx,jsx}"),
+  /** @deprecated Migrate to execution.smartTestRunner.testFilePatterns. Migration shim in src/config/migrations.ts. */
+  testPattern: z.string().optional(),
   scopeToStory: z.boolean().default(true),
 });
 

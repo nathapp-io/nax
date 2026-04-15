@@ -6,6 +6,7 @@
  */
 
 import { getLogger } from "../logger";
+import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { errorMessage } from "../utils/errors";
 
 export interface AutoDetectOptions {
@@ -17,6 +18,11 @@ export interface AutoDetectOptions {
   maxFiles?: number;
   /** Enable import tracing (default: false, reserved for future use) */
   traceImports?: boolean;
+  /**
+   * Configured test file glob patterns (ADR-009).
+   * Falls back to DEFAULT_TEST_FILE_PATTERNS when omitted.
+   */
+  testFilePatterns?: readonly string[];
 }
 
 /**
@@ -110,7 +116,7 @@ export function extractKeywords(title: string): string[] {
  * @returns Array of relative file paths (sorted by relevance score)
  */
 export async function autoDetectContextFiles(options: AutoDetectOptions): Promise<string[]> {
-  const { workdir, storyTitle, maxFiles = 5 } = options;
+  const { workdir, storyTitle, maxFiles = 5, testFilePatterns = DEFAULT_TEST_FILE_PATTERNS } = options;
   const logger = getLogger();
 
   // Extract keywords
@@ -171,8 +177,8 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
     // Filter out test files, index files, generated files
     const filtered = allFiles.filter((filePath) => {
       const lower = filePath.toLowerCase();
-      // Exclude test files
-      if (lower.includes(".test.") || lower.includes(".spec.") || lower.includes("/test/")) {
+      // Exclude test files (ADR-009: use config-aware classification)
+      if (isTestFileByPatterns(filePath, testFilePatterns)) {
         return false;
       }
       // Exclude index files (barrel exports, low signal)
