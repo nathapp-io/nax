@@ -55,6 +55,7 @@ function makeMockAgent(response: string): AgentAdapter {
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
     complete: mock(async (_prompt: string) => response),
+    closeSession: mock(async () => {}),
   } as unknown as AgentAdapter;
 }
 
@@ -859,6 +860,7 @@ function makeRunMockAgent(output: string, success = true): AgentAdapter {
     plan: mock(async () => { throw new Error("plan not used"); }),
     decompose: mock(async () => { throw new Error("decompose not used"); }),
     complete: mock(async (_prompt: string) => { throw new Error("complete() must NOT be called in non-debate path (US-003)"); }),
+    closeSession: mock(async () => {}),
   } as unknown as AgentAdapter;
 }
 
@@ -911,14 +913,14 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     expect(runOpts.acpSessionName).toBe(expectedSession);
   });
 
-  test("agent.run() initial call uses keepSessionOpen: false (stateless scorer, ADR-008)", async () => {
+  test("agent.run() initial call uses keepSessionOpen: true (session kept open for JSON retry)", async () => {
     const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
     expect(agent.run).toHaveBeenCalled();
     const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.keepSessionOpen).toBe(false);
+    expect(runOpts.keepSessionOpen).toBe(true);
   });
 
   test("acpSessionName encodes workdir hash in session name", async () => {

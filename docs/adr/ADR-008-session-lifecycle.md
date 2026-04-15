@@ -37,8 +37,8 @@ No ADR states this rule. Each site decides independently, and the decisions have
 | rectifier (autofix) | `src/pipeline/stages/autofix.ts:465` | `!isLastAttempt` | ✅ |
 | rectifier (verification) | `src/verification/rectification-loop.ts:261` | `!isLastAttempt` | ✅ |
 | autofix-adversarial | `src/pipeline/stages/autofix-adversarial.ts:93` | `keepOpen` (caller-controlled) | ✅ |
-| reviewer-semantic | `src/review/semantic.ts:389` | **`true`** | ❌ bug (this ADR) |
-| reviewer-adversarial | `src/review/adversarial.ts:249` | **`true`** | ❌ bug (this ADR) |
+| reviewer-semantic | `src/review/semantic.ts` | `true` (initial) / `false` (retry) | ✅ (session closes by end of `runReview`) |
+| reviewer-adversarial | `src/review/adversarial.ts` | `true` (initial) / `false` (retry) | ✅ (session closes by end of `runReview`) |
 | reviewer-dialogue | `src/review/dialogue.ts:309 et al.` | `true` (5 sites) | ✅ — dialogue is stateful by design |
 | debate (stateful) | `src/debate/session-stateful.ts:67` | caller-passed; `false` on close | ✅ |
 | debate (one-shot) | `src/debate/session-one-shot.ts` | n/a — `complete()` | ✅ |
@@ -54,6 +54,17 @@ Adopt a single rule, applied per role:
 
 > **Keep a session open (`keepSessionOpen: true`) if and only if the role is iterating on its own state. Close the session (`keepSessionOpen: false`) if the role is producing an independent verdict on someone else's work.**
 
+### Reviewer Session Invariant (Refined)
+
+For the semantic and adversarial reviewers, the unit of isolation is **one `runReview()` invocation** — not one `agent.run()` call. A single `runReview()` may issue up to two sequential `agent.run()` calls:
+
+1. **Initial call** — `keepSessionOpen: true`. The session stays alive so the JSON-retry prompt (sent on the *same* call chain within `runReview`) has full conversation history to re-express the verdict.
+2. **JSON-retry call** — `keepSessionOpen: false`. Closes the session after the retry response is received.
+
+The invariant is therefore: **the reviewer session is always closed by the time `runReview()` returns**. From the caller's perspective, each `runReview()` round is still stateless — no session memory persists between autofix rounds.
+
+If no retry is needed (initial response is valid JSON), the initial call's `keepSessionOpen: true` leaves the session open momentarily; `runReview()` does not issue a second call, but the ACP layer closes the session automatically when the connection is released at the end of the round. Fresh sessionIds are still generated per review round, enforced by `sweepFeatureSessions()` at story completion.
+
 ### Session Lifecycle Matrix
 
 | Role | `sessionRole` | Method | `keepSessionOpen` policy | Reset on retry | Reset on escalation |
@@ -62,15 +73,15 @@ Adopt a single rule, applied per role:
 | **Test-writer** | `"test-writer"` | `run()` | `false` | n/a (single run per story) | yes |
 | **Verifier** | `"verifier"` | `run()` | `false` | n/a | yes |
 | **Rectifier** (TDD / autofix / verification) | `"implementer"` | `run()` | `!isLastAttempt` | no — resume implementer session | yes |
-| **Reviewer — semantic** | `"reviewer-semantic"` | `run()` | **`false`** (this ADR) | **yes — fresh sessionId per round** | yes |
-| **Reviewer — adversarial** | `"reviewer-adversarial"` | `run()` | **`false`** (this ADR) | **yes — fresh sessionId per round** | yes |
+| **Reviewer — semantic** | `"reviewer-semantic"` | `run()` | `true` on initial call; `false` on JSON-retry call (session closes by end of `runReview`) | **yes — fresh sessionId per round** | yes |
+| **Reviewer — adversarial** | `"reviewer-adversarial"` | `run()` | `true` on initial call; `false` on JSON-retry call (session closes by end of `runReview`) | **yes — fresh sessionId per round** | yes |
 | **Reviewer — dialogue** (debate) | `"reviewer"` | `run()` | `true` across all turns of the dialogue | no — dialogue *is* the state | session closed when dialogue concludes |
 | **Debate — stateful debater** | `"debate-hybrid-<i>"` / `"plan-<i>"` | `run()` | `true` between proposal and rebuttal; `false` on close | no | yes |
 | **Debate — one-shot** | `"debate-proposal-<i>"` etc. | `complete()` | n/a | n/a | n/a |
 | **Router / auto-approver / decompose / refine / acceptance-gen / fix-gen** | various | `complete()` | n/a — one-shot | n/a | n/a |
 | **Diagnose / source-fix** (acceptance) | `"diagnose"` / `"source-fix"` | `run()` | `false` (single-shot verdict / fix) | yes | yes |
 
-**Why semantic and adversarial differ from dialogue.** Dialogue is a negotiated multi-turn exchange (reviewer ↔ implementer) where each turn is a response to the previous turn — the session *is* the work product. Semantic and adversarial review are per-round scoring passes where each round evaluates the current diff independently. A rerun should not know what the previous rerun said.
+**Why semantic and adversarial differ from dialogue.** Dialogue is a negotiated multi-turn exchange (reviewer ↔ implementer) where each turn is a response to the previous turn — the session *is* the work product. Semantic and adversarial review are per-round scoring passes where each round evaluates the current diff independently. A rerun should not know what the previous rerun said. The `keepSessionOpen: true` on the initial call is an implementation detail — session history is used only within the same `runReview()` call chain for JSON retry, never across independent autofix rounds.
 
 ---
 
@@ -113,11 +124,13 @@ Would preserve token savings across rounds. **Rejected** — this is precisely t
 
 | File | Change |
 |:---|:---|
-| `src/review/semantic.ts` | `keepSessionOpen: true` → `false` (line 389) |
-| `src/review/adversarial.ts` | `keepSessionOpen: true` → `false` (line 249) |
-| `test/unit/review/semantic.test.ts` | Update to assert `keepSessionOpen: false` |
-| `test/unit/review/adversarial-retry.test.ts` | Update to assert `keepSessionOpen: false` on first call |
-| `.claude/rules/adapter-wiring.md` | Update Session Role Registry: semantic and adversarial now `keepSessionOpen: false` |
+| `src/agents/acp/adapter.ts` | Add exported `closeNamedAcpSession(workdir, sessionName, agentName, sidecar?)` for explicit single-session close |
+| `src/review/semantic.ts` | Initial `agent.run()`: `keepSessionOpen: false` → `true`; happy path calls `_semanticDeps.closeNamedAcpSession`; retry call already `keepSessionOpen: false` |
+| `src/review/adversarial.ts` | Initial `agent.run()`: `keepSessionOpen: false` → `true`; happy path calls `_adversarialDeps.closeNamedAcpSession`; retry call already `keepSessionOpen: false` |
+| `test/unit/review/semantic-retry.test.ts` | Added initial call `keepSessionOpen: true` assertion; added happy-path/retry-path `closeNamedAcpSession` call count assertions |
+| `test/unit/review/adversarial-retry.test.ts` | Same additions as semantic test |
+| `docs/adr/ADR-008-session-lifecycle.md` | Refined invariant: "session closes by end of `runReview`" replaces "every `agent.run()` uses `keepSessionOpen: false`" |
+| `.claude/rules/adapter-wiring.md` | Update Session Role Registry: semantic and adversarial now `keepSessionOpen: true` on initial call, explicit close on happy path, `false` on retry |
 | `docs/adr/ADR-007-implementer-session-lifecycle.md` | Add superseded-by header pointing at this ADR (implementer rules are restated here) |
 
 ### Not Changed

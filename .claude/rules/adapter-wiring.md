@@ -76,8 +76,8 @@ Format: `nax-<hash8>-<feature>-<storyId>-<sessionRole>`
 | `"auto"` | `complete()` | Auto-approve interaction |
 | `"diagnose"` | `run()` | Acceptance failure diagnosis |
 | `"source-fix"` | `run()` | Acceptance source fix |
-| `"reviewer-semantic"` | `run()` | Semantic review session — `keepSessionOpen: false` (stateless scorer, ADR-008) |
-| `"reviewer-adversarial"` | `run()` | Adversarial review session — `keepSessionOpen: false` (stateless scorer, ADR-008) |
+| `"reviewer-semantic"` | `run()` | Semantic review session — initial call `keepSessionOpen: true` (retry needs history); `agent.closeSession()` called on all exit paths (ADR-008: session closes by end of `runReview`) |
+| `"reviewer-adversarial"` | `run()` | Adversarial review session — initial call `keepSessionOpen: true` (retry needs history); `agent.closeSession()` called on all exit paths (ADR-008: session closes by end of `runReview`) |
 
 ## Rule 3: Agent Resolution — CRITICAL
 

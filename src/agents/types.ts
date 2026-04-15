@@ -246,6 +246,16 @@ export interface AgentAdapter {
   complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
 
   /**
+   * Close a named session that was kept open with keepSessionOpen: true.
+   * Best-effort — errors are swallowed. No-op for adapters that do not support
+   * named sessions (e.g. future non-ACP adapters).
+   *
+   * @param sessionName - The session name returned by buildSessionName()
+   * @param workdir - Working directory used when the session was created
+   */
+  closeSession(sessionName: string, workdir: string): Promise<void>;
+
+  /**
    * Run the agent in interactive PTY mode for TUI embedding.
    * This method is optional — only implemented by agents that support
    * interactive terminal sessions (e.g., Claude Code).

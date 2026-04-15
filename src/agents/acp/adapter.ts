@@ -401,6 +401,49 @@ export async function readAcpSessionEntry(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Single-session close — used by reviewers to close the session on the happy
+// path (no retry needed) when keepSessionOpen: true was used on the initial call
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Close a single named ACP session and remove it from the sidecar.
+ * Best-effort — errors are logged, not thrown.
+ *
+ * Use this when keepSessionOpen: true was passed on an agent.run() call but
+ * the caller decides no follow-up turn is needed and must close the session
+ * explicitly (e.g. reviewer happy path — initial JSON parsed OK, no retry).
+ */
+export async function closeNamedAcpSession(
+  workdir: string,
+  sessionName: string,
+  agentName: string,
+  sidecar?: { featureName: string; storyId: string; sessionRole?: string },
+): Promise<void> {
+  const logger = getSafeLogger();
+  const cmdStr = `acpx ${agentName}`;
+  const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, undefined);
+  try {
+    await client.start();
+    try {
+      if (client.closeSession) {
+        await client.closeSession(sessionName, agentName);
+      } else if (client.loadSession) {
+        const session = await client.loadSession(sessionName, agentName, "approve-reads");
+        if (session) await session.close().catch(() => {});
+      }
+    } catch (err) {
+      logger?.warn("acp-adapter", `[close] Failed to close session ${sessionName}`, { error: String(err) });
+    }
+  } finally {
+    await client.close().catch(() => {});
+  }
+  if (sidecar) {
+    await clearAcpSession(workdir, sidecar.featureName, sidecar.storyId, sidecar.sessionRole);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Session sweep — close open sessions at run boundaries
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1315,6 +1358,10 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   private isAvailable(agentName: string): boolean {
     return !this._unavailableAgents.has(agentName);
+  }
+
+  async closeSession(sessionName: string, workdir: string): Promise<void> {
+    await closeNamedAcpSession(workdir, sessionName, this.name);
   }
 
   private resolveCurrentAgent(config: import("../../config").NaxConfig | undefined): string {

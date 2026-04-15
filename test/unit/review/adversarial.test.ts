@@ -69,6 +69,7 @@ function makeAgent(llmResponse: string, cost = 0.001): AgentAdapter {
       throw new Error("not used");
     }),
     complete: mock(async (_prompt: string) => llmResponse),
+    closeSession: mock(async () => {}),
   } as unknown as AgentAdapter;
 }
 
