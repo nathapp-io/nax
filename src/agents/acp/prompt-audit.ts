@@ -48,8 +48,10 @@ export interface PromptAuditEntry {
   callType: "run" | "complete";
   /** 1-indexed turn number — only set for run() multi-turn entries. */
   turn?: number;
-  /** Session ID returned by the ACP provider (e.g. acpx UUID). Undefined when not available. */
+  /** Volatile session ID (acpxSessionId): updated by acpx on each Claude Code reconnect. */
   sessionId?: string;
+  /** Stable record ID (acpxRecordId): assigned at session creation, never changes across reconnects. */
+  recordId?: string;
   /** Whether the ACP session was resumed from a prior run (true) or freshly created (false/undefined). */
   resumed?: boolean;
 }
@@ -103,6 +105,7 @@ function buildAuditContent(entry: PromptAuditEntry, epochMs: number): string {
   const lines = [
     `Timestamp: ${ts}`,
     `Session:   ${entry.sessionName}`,
+    ...(entry.recordId ? [`RecordId:  ${entry.recordId}`] : []),
     ...(entry.sessionId ? [`SessionId: ${entry.sessionId}`] : []),
     `Type:      ${typeLabel}`,
     `StoryId:   ${entry.storyId ?? "(none)"}`,
