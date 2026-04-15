@@ -125,7 +125,10 @@ describe("Tier 1 — vitest config", () => {
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
-    expect(result.patterns).toEqual(expect.arrayContaining(["**/*.{test,spec}.?(c|m)[jt]s?(x)"]));
+    // Vitest default is expanded from extglob into simple globs.
+    expect(result.patterns).toEqual(
+      expect.arrayContaining(["**/*.test.ts", "**/*.spec.ts", "**/*.test.tsx", "**/*.spec.cjs"]),
+    );
   });
 });
 
@@ -161,6 +164,127 @@ describe("Tier 1 — jest config", () => {
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
     expect(result.patterns).toContain("**/*.spec.js");
+  });
+
+  test("parses jest.config.json as JSON (not regex)", async () => {
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("jest.config.json")) {
+        return JSON.stringify({ testMatch: ["**/__tests__/**/*.ts", "**/*.test.ts"] });
+      }
+      return null;
+    });
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("high");
+    expect(result.patterns).toContain("**/__tests__/**/*.ts");
+    expect(result.patterns).toContain("**/*.test.ts");
+  });
+
+  test("expands extglob from jest.config.json into simple globs", async () => {
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("jest.config.json")) {
+        return JSON.stringify({ testMatch: ["**/?(*.)+(spec|test).[jt]s?(x)"] });
+      }
+      return null;
+    });
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.patterns).toContain("**/*.spec.ts");
+    expect(result.patterns).toContain("**/*.test.tsx");
+    expect(result.patterns).not.toContain("**/?(*.)+(spec|test).[jt]s?(x)");
+  });
+});
+
+// ─── Tier 1: vite config (Vitest) ────────────────────────────────────────────
+
+describe("Tier 1 — vite config (Vitest)", () => {
+  test("extracts test.include from vite.config.ts", async () => {
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("vite.config.ts")) {
+        return `export default defineConfig({
+          plugins: [react()],
+          test: {
+            globals: true,
+            include: ["src/**/*.test.ts", "src/**/*.spec.ts"],
+          },
+        });`;
+      }
+      return null;
+    });
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("high");
+    expect(result.patterns).toContain("src/**/*.test.ts");
+    expect(result.patterns).toContain("src/**/*.spec.ts");
+  });
+
+  test("does not match unrelated `include` arrays outside test: block", async () => {
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("vite.config.ts")) {
+        // A vite config without a test: section — must NOT pick up
+        // build.rollupOptions.input or other unrelated arrays.
+        return `export default defineConfig({
+          build: { rollupOptions: { input: ["src/main.ts"] } },
+        });`;
+      }
+      return null;
+    });
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    // No test: block → parseViteConfig returns null → no Tier 1 hit
+    expect(result.patterns).not.toContain("src/main.ts");
+  });
+});
+
+// ─── Tier 1: bunfig.toml (Bun test) ──────────────────────────────────────────
+
+describe("Tier 1 — bunfig.toml (Bun test)", () => {
+  test("emits Bun defaults when [test] section is present", async () => {
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("bunfig.toml")) {
+        return `[test]\npreload = ["./happydom.ts"]`;
+      }
+      return null;
+    });
+    _frameworkConfigDeps.parseToml = mock((_text: string) => ({
+      test: { preload: ["./happydom.ts"] },
+    }));
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("high");
+    expect(result.patterns).toContain("**/*.test.ts");
+    expect(result.patterns).toContain("**/*.spec.ts");
+    expect(result.patterns).toContain("**/*_test.ts");
+    expect(result.patterns).toContain("**/*_spec.ts");
+  });
+
+  test("returns nothing when bunfig.toml has no [test] section", async () => {
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("bunfig.toml")) {
+        return `[install]\nregistry = "https://npm.example.com/"`;
+      }
+      return null;
+    });
+    _frameworkConfigDeps.parseToml = mock((_text: string) => ({
+      install: { registry: "https://npm.example.com/" },
+    }));
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    // No [test] in bunfig → falls through to lower tiers; Tier 4 may emit
+    // something via directory scan but we mocked that to fail above.
+    expect(result.confidence).not.toBe("high");
   });
 });
 
@@ -202,9 +326,18 @@ describe("Tier 2 — framework defaults from manifests", () => {
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
+    // Jest defaults are expanded from extglob to simple globs so downstream
+    // regex classification (globsToTestRegex) works correctly.
     expect(result.patterns).toEqual(
-      expect.arrayContaining(["**/__tests__/**/*.[jt]s?(x)", "**/?(*.)+(spec|test).[jt]s?(x)"]),
+      expect.arrayContaining([
+        "**/__tests__/**/*.js",
+        "**/__tests__/**/*.ts",
+        "**/*.spec.ts",
+        "**/*.test.tsx",
+      ]),
     );
+    // Must not contain unexpanded extglob patterns.
+    expect(result.patterns).not.toContain("**/?(*.)+(spec|test).[jt]s?(x)");
   });
 
   test("detects bun test from package.json scripts.test", async () => {
@@ -219,7 +352,11 @@ describe("Tier 2 — framework defaults from manifests", () => {
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
-    expect(result.patterns).toEqual(expect.arrayContaining(["**/*.test.{ts,tsx,js,jsx}"]));
+    // Bun defaults are expanded from brace alternatives into simple globs
+    // and broadened to cover *_test.*, *.spec.*, and *_spec.* (matching Bun's discovery rules).
+    expect(result.patterns).toEqual(
+      expect.arrayContaining(["**/*.test.ts", "**/*.test.tsx", "**/*_test.ts", "**/*.spec.ts"]),
+    );
   });
 
   test("detects Go project from go.mod and returns **/*_test.go at medium confidence", async () => {
@@ -248,7 +385,8 @@ describe("Tier 2 — framework defaults from manifests", () => {
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
     expect(result.patterns).toContain("**/*_test.go");
-    expect(result.patterns).toEqual(expect.arrayContaining(["**/*.{test,spec}.?(c|m)[jt]s?(x)"]));
+    // Vitest extglob is expanded into simple globs.
+    expect(result.patterns).toEqual(expect.arrayContaining(["**/*.test.ts", "**/*.spec.tsx"]));
   });
 });
 
@@ -342,14 +480,14 @@ describe("monorepo workspace", () => {
 
     const result = await detectTestFilePatternsForWorkspace("/fake/root", ["packages/api", "packages/ui"]);
 
-    // Root should detect vitest
+    // Root should detect vitest (extglob expanded into simple globs)
     expect(result[""]?.confidence).toBe("medium");
-    expect(result[""]?.patterns).toEqual(expect.arrayContaining(["**/*.{test,spec}.?(c|m)[jt]s?(x)"]));
+    expect(result[""]?.patterns).toEqual(expect.arrayContaining(["**/*.test.ts", "**/*.spec.tsx"]));
 
-    // packages/api should detect jest
+    // packages/api should detect jest (extglob expanded into simple globs)
     expect(result["packages/api"]?.confidence).toBe("medium");
     expect(result["packages/api"]?.patterns).toEqual(
-      expect.arrayContaining(["**/__tests__/**/*.[jt]s?(x)"]),
+      expect.arrayContaining(["**/__tests__/**/*.ts", "**/__tests__/**/*.tsx"]),
     );
 
     // packages/ui has no signals
