@@ -4,16 +4,17 @@
  * Tests are fixture-based: each test creates a minimal in-memory workdir by
  * injecting mocks via the exported _deps objects. This avoids disk I/O and
  * keeps tests fast and deterministic.
+ *
+ * Cache behaviour is tested in detect-cache.test.ts.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { DetectionResult } from "../../../src/test-runners/detect";
-import { _cacheDeps } from "../../../src/test-runners/detect/cache";
 import { _directoryScanDeps } from "../../../src/test-runners/detect/directory-scan";
 import { _fileScanDeps } from "../../../src/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "../../../src/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "../../../src/test-runners/detect/framework-defaults";
-import { detectTestFilePatterns } from "../../../src/test-runners/detect/index";
+import { detectTestFilePatterns, detectTestFilePatternsForWorkspace } from "../../../src/test-runners/detect/index";
+import { _cacheDeps } from "../../../src/test-runners/detect/cache";
 
 // ─── Save/restore helpers ─────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ type Orig = {
   parseToml: typeof _frameworkConfigDeps.parseToml;
   parseYaml: typeof _frameworkConfigDeps.parseYaml;
   defaultsReadText: typeof _frameworkDefaultsDeps.readText;
+  defaultsFileExists: typeof _frameworkDefaultsDeps.fileExists;
   fileScanSpawn: typeof _fileScanDeps.spawn;
   cacheReadJson: typeof _cacheDeps.readJson;
   cacheWriteJson: typeof _cacheDeps.writeJson;
@@ -56,6 +58,7 @@ beforeEach(() => {
     parseToml: _frameworkConfigDeps.parseToml,
     parseYaml: _frameworkConfigDeps.parseYaml,
     defaultsReadText: _frameworkDefaultsDeps.readText,
+    defaultsFileExists: _frameworkDefaultsDeps.fileExists,
     fileScanSpawn: _fileScanDeps.spawn,
     cacheReadJson: _cacheDeps.readJson,
     cacheWriteJson: _cacheDeps.writeJson,
@@ -64,14 +67,13 @@ beforeEach(() => {
     dirSpawn: _directoryScanDeps.spawn,
   };
   // Default: cache miss, write is no-op
-  _cacheDeps.readJson = mock(async () => {
-    throw new Error("not found");
-  });
+  _cacheDeps.readJson = mock(async () => { throw new Error("not found"); });
   _cacheDeps.writeJson = mock(async () => {});
   _cacheDeps.fileMtime = mock(async () => null);
-  // Default: no directories exist
+  // Default: no directories exist, no go.mod/Cargo.toml
   _directoryScanDeps.dirExists = mock(async () => false);
   _directoryScanDeps.spawn = mock((..._args: unknown[]) => spawnFailed()) as unknown as typeof Bun.spawn;
+  _frameworkDefaultsDeps.fileExists = mock(async () => false);
 });
 
 afterEach(() => {
@@ -79,6 +81,7 @@ afterEach(() => {
   _frameworkConfigDeps.parseToml = orig.parseToml;
   _frameworkConfigDeps.parseYaml = orig.parseYaml;
   _frameworkDefaultsDeps.readText = orig.defaultsReadText;
+  _frameworkDefaultsDeps.fileExists = orig.defaultsFileExists;
   _fileScanDeps.spawn = orig.fileScanSpawn;
   _cacheDeps.readJson = orig.cacheReadJson;
   _cacheDeps.writeJson = orig.cacheWriteJson;
@@ -109,7 +112,6 @@ describe("Tier 1 — vitest config", () => {
 
   test("falls through to Tier 2 when vitest config has no extractable include", async () => {
     _frameworkConfigDeps.readText = mock(async (path: string) => {
-      // Return vitest config with no literal include array
       if (path.endsWith("vitest.config.ts")) return `export default defineConfig({})`;
       return null;
     });
@@ -122,7 +124,6 @@ describe("Tier 1 — vitest config", () => {
     _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
-    // Tier 1 found config but no patterns → Tier 2 has vitest in deps
     expect(result.confidence).toBe("medium");
     expect(result.patterns).toEqual(expect.arrayContaining(["**/*.{test,spec}.?(c|m)[jt]s?(x)"]));
   });
@@ -220,6 +221,35 @@ describe("Tier 2 — framework defaults from manifests", () => {
     expect(result.confidence).toBe("medium");
     expect(result.patterns).toEqual(expect.arrayContaining(["**/*.test.{ts,tsx,js,jsx}"]));
   });
+
+  test("detects Go project from go.mod and returns **/*_test.go at medium confidence", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.fileExists = mock(async (path: string) => path.endsWith("go.mod"));
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("medium");
+    expect(result.patterns).toContain("**/*_test.go");
+    expect(result.sources[0]?.type).toBe("manifest");
+  });
+
+  test("polyglot project (TS + Go) merges patterns from both", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("package.json")) {
+        return JSON.stringify({ devDependencies: { vitest: "^1.0.0" } });
+      }
+      return null;
+    });
+    _frameworkDefaultsDeps.fileExists = mock(async (path: string) => path.endsWith("go.mod"));
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("medium");
+    expect(result.patterns).toContain("**/*_test.go");
+    expect(result.patterns).toEqual(expect.arrayContaining(["**/*.{test,spec}.?(c|m)[jt]s?(x)"]));
+  });
 });
 
 // ─── Tier 3: file scan ────────────────────────────────────────────────────────
@@ -229,7 +259,6 @@ describe("Tier 3 — file scan", () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
 
-    // 6 .test.ts files + source files — meets threshold
     const testFiles = Array.from({ length: 6 }, (_, i) => `src/module${i}.test.ts`).join("\n");
     const allFiles = `${testFiles}\nsrc/app.ts\nsrc/index.ts\n`;
     _fileScanDeps.spawn = mock((..._args: unknown[]) =>
@@ -246,7 +275,6 @@ describe("Tier 3 — file scan", () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
 
-    // Only 2 .test.ts files out of 52 total — below both thresholds
     const files =
       "src/a.test.ts\nsrc/b.test.ts\n" +
       Array.from({ length: 50 }, (_, i) => `src/f${i}.ts`).join("\n");
@@ -266,7 +294,6 @@ describe("Tier 4 — directory convention", () => {
     _frameworkDefaultsDeps.readText = mock(async () => null);
     _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
 
-    // test/ directory exists; contains .ts files via git ls-files
     _directoryScanDeps.dirExists = mock(async (path: string) => path.endsWith("/test"));
     _directoryScanDeps.spawn = mock((..._args: unknown[]) =>
       spawnWithOutput("test/foo.test.ts\ntest/bar.test.ts\n"),
@@ -294,107 +321,38 @@ describe("empty project", () => {
   });
 });
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
+// ─── Monorepo workspace ───────────────────────────────────────────────────────
 
-describe("cache", () => {
-  test("returns cached result on hit", async () => {
-    const cached: DetectionResult = {
-      patterns: ["**/*.cached.ts"],
-      confidence: "high",
-      sources: [
-        { type: "framework-config", path: "/fake/workdir/vitest.config.ts", patterns: ["**/*.cached.ts"] },
-      ],
-    };
-
-    _cacheDeps.readJson = mock(async () => ({
-      workdir: "/fake/workdir",
-      mtimes: {},
-      result: cached,
-    }));
-    _cacheDeps.fileMtime = mock(async () => null);
-
-    // If cache returns, detection deps should NOT be called
-    const readTextSpy = mock(async () => null);
-    _frameworkConfigDeps.readText = readTextSpy;
-    _frameworkDefaultsDeps.readText = readTextSpy;
-
-    const result = await detectTestFilePatterns("/fake/workdir");
-    expect(result.patterns).toEqual(["**/*.cached.ts"]);
-    expect(readTextSpy).not.toHaveBeenCalled();
-  });
-
-  test("writes result to cache after detection", async () => {
-    // Cache miss
-    _cacheDeps.readJson = mock(async () => {
-      throw new Error("miss");
-    });
-    _cacheDeps.fileMtime = mock(async () => null);
-
-    const written: Array<[string, unknown]> = [];
-    _cacheDeps.writeJson = mock(async (path: string, data: unknown) => {
-      written.push([path, data]);
-    });
-
+describe("monorepo workspace", () => {
+  test("detectTestFilePatternsForWorkspace returns per-package map", async () => {
+    // Root: vitest; packages/api: jest; packages/ui: empty
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async (path: string) => {
-      if (path.endsWith("package.json")) {
+      if (path === "/fake/root/package.json") {
         return JSON.stringify({ devDependencies: { vitest: "^1.0.0" } });
+      }
+      if (path === "/fake/root/packages/api/package.json") {
+        return JSON.stringify({ devDependencies: { jest: "^29.0.0" } });
       }
       return null;
     });
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
-
-    await detectTestFilePatterns("/fake/workdir");
-    expect(written.length).toBe(1);
-    expect(written[0]?.[0]).toContain("test-patterns.json");
-  });
-
-  test("treats corrupt cache as miss, rebuilds without throwing", async () => {
-    _cacheDeps.readJson = mock(async () => {
-      throw new SyntaxError("bad json");
-    });
-    _cacheDeps.fileMtime = mock(async () => null);
-    _cacheDeps.writeJson = mock(async () => {});
-
-    _frameworkConfigDeps.readText = mock(async () => null);
-    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.fileExists = mock(async () => false);
     _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
     _directoryScanDeps.dirExists = mock(async () => false);
 
-    // Should not throw
-    const result = await detectTestFilePatterns("/fake/workdir");
-    expect(result.confidence).toBe("empty");
-  });
+    const result = await detectTestFilePatternsForWorkspace("/fake/root", ["packages/api", "packages/ui"]);
 
-  test("invalidates cache when mtime changes", async () => {
-    const cached: DetectionResult = {
-      patterns: ["**/*.stale.ts"],
-      confidence: "high",
-      sources: [],
-    };
+    // Root should detect vitest
+    expect(result[""]?.confidence).toBe("medium");
+    expect(result[""]?.patterns).toEqual(expect.arrayContaining(["**/*.{test,spec}.?(c|m)[jt]s?(x)"]));
 
-    // Cache has package.json mtime = 100, but current mtime = 200 (changed)
-    _cacheDeps.readJson = mock(async () => ({
-      workdir: "/fake/workdir",
-      mtimes: { "package.json": 100 },
-      result: cached,
-    }));
-    _cacheDeps.fileMtime = mock(async (path: string) => {
-      if (path.endsWith("package.json")) return 200; // changed
-      return null;
-    });
-    _cacheDeps.writeJson = mock(async () => {});
+    // packages/api should detect jest
+    expect(result["packages/api"]?.confidence).toBe("medium");
+    expect(result["packages/api"]?.patterns).toEqual(
+      expect.arrayContaining(["**/__tests__/**/*.[jt]s?(x)"]),
+    );
 
-    _frameworkConfigDeps.readText = mock(async () => null);
-    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
-      if (path.endsWith("package.json")) return JSON.stringify({ devDependencies: { vitest: "^1.0.0" } });
-      return null;
-    });
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
-
-    // Should re-detect, NOT return stale cached result
-    const result = await detectTestFilePatterns("/fake/workdir");
-    expect(result.patterns).not.toContain("**/*.stale.ts");
-    expect(result.confidence).toBe("medium");
+    // packages/ui has no signals
+    expect(result["packages/ui"]?.confidence).toBe("empty");
   });
 });

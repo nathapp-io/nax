@@ -11,6 +11,7 @@ import type { UserStory } from "../prd";
 import { countStories, getContextFiles } from "../prd";
 import { errorMessage } from "../utils/errors";
 import { autoDetectContextFiles } from "./auto-detect";
+import { resolveTestFilePatterns } from "../test-runners/resolver";
 import {
   createDependencyContext,
   createErrorContext,
@@ -178,10 +179,14 @@ async function addTestCoverageElement(
   try {
     const tcConfig = storyContext.config?.context?.testCoverage;
     const contextFiles = getContextFiles(story);
+    // Resolve effective test patterns via SSOT (ADR-009) — replaces deprecated testPattern.
+    const resolved = storyContext.config
+      ? await resolveTestFilePatterns(storyContext.config, storyContext.workdir)
+      : undefined;
     const scanResult = await generateTestCoverageSummary({
       workdir: storyContext.workdir,
       testDir: tcConfig?.testDir,
-      testPattern: tcConfig?.testPattern,
+      resolvedTestGlobs: resolved?.globs,
       maxTokens: tcConfig?.maxTokens ?? 500,
       detail: tcConfig?.detail ?? "names-and-counts",
       contextFiles: contextFiles.length > 0 ? contextFiles : undefined,

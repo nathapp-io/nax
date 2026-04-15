@@ -831,7 +831,6 @@ export const NaxConfigSchema = z
         enabled: true,
         detail: "names-and-counts",
         maxTokens: 500,
-        testPattern: "**/*.test.{ts,js,tsx,jsx}",
         scopeToStory: true,
       },
       autoDetect: {

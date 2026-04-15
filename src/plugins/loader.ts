@@ -92,6 +92,7 @@ export interface LoadedPlugin {
  * @param configPlugins - Explicit plugin entries from config
  * @param projectRoot - Project root directory for resolving relative paths in config
  * @param disabledPlugins - List of plugin names to disable (auto-discovered plugins only)
+ * @param isTestFileFn - Optional classifier from resolveTestFilePatterns; falls back to hardcoded defaults
  * @returns PluginRegistry with all loaded plugins and their sources
  */
 export async function loadPlugins(
@@ -100,6 +101,7 @@ export async function loadPlugins(
   configPlugins: PluginConfigEntry[],
   projectRoot?: string,
   disabledPlugins?: string[],
+  isTestFileFn?: (filename: string) => boolean,
 ): Promise<PluginRegistry> {
   const loadedPlugins: LoadedPlugin[] = [];
   const effectiveProjectRoot = projectRoot || projectDir;
@@ -108,7 +110,7 @@ export async function loadPlugins(
   const logger = getSafeLogger();
 
   // 1. Load plugins from global directory
-  const globalPlugins = await discoverPlugins(globalDir);
+  const globalPlugins = await discoverPlugins(globalDir, isTestFileFn);
   for (const plugin of globalPlugins) {
     const pluginName = extractPluginName(plugin.path);
     if (disabledSet.has(pluginName)) {
@@ -129,7 +131,7 @@ export async function loadPlugins(
   }
 
   // 2. Load plugins from project directory
-  const projectPlugins = await discoverPlugins(projectDir);
+  const projectPlugins = await discoverPlugins(projectDir, isTestFileFn);
   for (const plugin of projectPlugins) {
     const pluginName = extractPluginName(plugin.path);
     if (disabledSet.has(pluginName)) {
@@ -187,9 +189,13 @@ export async function loadPlugins(
  * - Directory plugins with index.ts/index.js/index.mjs
  *
  * @param dir - Directory to scan
+ * @param isTestFileFn - Optional classifier; falls back to hardcoded defaults
  * @returns Array of discovered plugin paths
  */
-async function discoverPlugins(dir: string): Promise<Array<{ path: string }>> {
+async function discoverPlugins(
+  dir: string,
+  isTestFileFn?: (filename: string) => boolean,
+): Promise<Array<{ path: string }>> {
   const discovered: Array<{ path: string }> = [];
 
   try {
@@ -200,7 +206,7 @@ async function discoverPlugins(dir: string): Promise<Array<{ path: string }>> {
 
       if (entry.isFile()) {
         // Single-file plugin
-        if (isPluginFile(entry.name)) {
+        if (isPluginFile(entry.name, isTestFileFn)) {
           discovered.push({ path: fullPath });
         }
       } else if (entry.isDirectory()) {
@@ -235,10 +241,15 @@ async function discoverPlugins(dir: string): Promise<Array<{ path: string }>> {
  * Check if a filename is a valid plugin file.
  *
  * @param filename - Filename to check
+ * @param isTestFileFn - Optional classifier from resolveTestFilePatterns; falls back to hardcoded defaults
  * @returns Whether the file could be a plugin
  */
-function isPluginFile(filename: string): boolean {
-  return /\.(ts|js|mjs)$/.test(filename) && !filename.endsWith(".test.ts") && !filename.endsWith(".spec.ts");
+const FALLBACK_TEST_FILE_RE = /\.(test|spec)\.(ts|js|tsx|jsx|mjs)$/;
+
+function isPluginFile(filename: string, isTestFileFn?: (filename: string) => boolean): boolean {
+  if (!/\.(ts|js|mjs)$/.test(filename)) return false;
+  if (isTestFileFn) return !isTestFileFn(filename);
+  return !FALLBACK_TEST_FILE_RE.test(filename);
 }
 
 /**

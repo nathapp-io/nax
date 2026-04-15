@@ -108,6 +108,12 @@ function validateGlobs(patterns: readonly string[], stage: string): void {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/** Options for resolveTestFilePatterns */
+export interface ResolveTestFilePatternsOptions {
+  /** Story ID for structured log correlation */
+  storyId?: string;
+}
+
 /**
  * Resolve effective test file patterns for the given config and optional
  * monorepo package directory.
@@ -116,11 +122,13 @@ function validateGlobs(patterns: readonly string[], stage: string): void {
  * @param workdir    - Absolute path to project root (for mono config lookup + detection).
  * @param packageDir - Relative path to the monorepo package (e.g. "packages/api").
  *                     Pass `undefined` for single-package projects.
+ * @param options    - Optional: storyId for log correlation.
  */
 export async function resolveTestFilePatterns(
   config: NaxConfig,
   workdir: string,
   packageDir?: string,
+  options?: ResolveTestFilePatternsOptions,
 ): Promise<ResolvedTestPatterns> {
   // 1. Per-package override
   if (packageDir) {
@@ -167,6 +175,7 @@ export async function resolveTestFilePatterns(
   const detected = await _resolverDeps.detectTestFilePatterns(workdir);
   if (detected.confidence !== "empty" && detected.patterns.length > 0) {
     getSafeLogger()?.info("resolver", "Test patterns auto-detected", {
+      ...(options?.storyId !== undefined && { storyId: options.storyId }),
       confidence: detected.confidence,
       patternCount: detected.patterns.length,
       tier: detected.sources[0]?.type,

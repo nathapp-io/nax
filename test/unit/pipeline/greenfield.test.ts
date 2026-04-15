@@ -130,7 +130,7 @@ describe("isGreenfieldStory", () => {
     expect(resultDefault).toBe(true);
 
     // Custom pattern should match
-    const resultCustom = await isGreenfieldStory(story, workdir, "**/*.custom.ts");
+    const resultCustom = await isGreenfieldStory(story, workdir, ["**/*.custom.ts"]);
     expect(resultCustom).toBe(false);
   });
 

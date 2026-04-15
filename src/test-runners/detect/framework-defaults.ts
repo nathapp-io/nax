@@ -18,6 +18,7 @@ export const _frameworkDefaultsDeps = {
     if (!(await f.exists())) return null;
     return f.text();
   },
+  fileExists: async (path: string): Promise<boolean> => Bun.file(path).exists(),
 };
 
 /** Default patterns per JS/TS test framework */
@@ -75,8 +76,7 @@ async function detectFromPackageJson(workdir: string): Promise<DetectionSource |
  */
 async function detectFromGoMod(workdir: string): Promise<DetectionSource | null> {
   const path = `${workdir}/go.mod`;
-  const f = Bun.file(path);
-  if (!(await f.exists())) return null;
+  if (!(await _frameworkDefaultsDeps.fileExists(path))) return null;
   return { type: "manifest", path, patterns: ["**/*_test.go"] };
 }
 
@@ -85,8 +85,7 @@ async function detectFromGoMod(workdir: string): Promise<DetectionSource | null>
  */
 async function detectFromCargoToml(workdir: string): Promise<DetectionSource | null> {
   const path = `${workdir}/Cargo.toml`;
-  const f = Bun.file(path);
-  if (!(await f.exists())) return null;
+  if (!(await _frameworkDefaultsDeps.fileExists(path))) return null;
   return { type: "manifest", path, patterns: ["tests/**/*.rs", "src/**/*.rs"] };
 }
 

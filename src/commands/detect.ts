@@ -171,6 +171,23 @@ export async function detectCommand(options: DetectOptions): Promise<void> {
   const detectionMap = await detectTestFilePatternsForWorkspace(workdir, packageDirs);
   const rootDetected = detectionMap[""] ?? { patterns: [], confidence: "empty" as const, sources: [] };
 
+  // Read per-package effective patterns from .nax/mono/<dir>/config.json
+  const pkgEntries = await Promise.all(
+    packageDirs.map(async (dir) => {
+      const det = detectionMap[dir] ?? { patterns: [], confidence: "empty" as const, sources: [] };
+      const pkgConfigPath = join(workdir, ".nax", "mono", dir, "config.json");
+      const pkgRaw = await loadRawConfig(pkgConfigPath);
+      const pkgPatterns = deepGet(pkgRaw, TEST_PATTERNS_KEY);
+      const effective = Array.isArray(pkgPatterns) ? (pkgPatterns as string[]) : undefined;
+      return {
+        packageDir: dir,
+        detected: det,
+        effective,
+        resolution: resolveEffective(det, effective),
+      };
+    }),
+  );
+
   // Build output entries
   const entries: PackageDetectionEntry[] = [
     {
@@ -179,16 +196,7 @@ export async function detectCommand(options: DetectOptions): Promise<void> {
       effective: rootConfigPatterns,
       resolution: resolveEffective(rootDetected, rootConfigPatterns),
     },
-    ...packageDirs.map((dir) => {
-      const det = detectionMap[dir] ?? { patterns: [], confidence: "empty" as const, sources: [] };
-      // Per-package config patterns would come from .nax/mono/<dir>/config.json — simplify for now
-      return {
-        packageDir: dir,
-        detected: det,
-        effective: undefined as readonly string[] | undefined,
-        resolution: resolveEffective(det, undefined),
-      };
-    }),
+    ...pkgEntries,
   ];
 
   // JSON output mode

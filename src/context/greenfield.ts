@@ -9,13 +9,28 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { UserStory } from "../prd/types";
+import { globsToTestRegex } from "../test-runners/conventions";
+
+/**
+ * Broad fallback patterns for the greenfield scan — covers any test file
+ * across all common languages without restricting to a single directory.
+ * Patterns are expanded (no brace alternatives) so globsToTestRegex can build
+ * correct suffix regexes. Used when the caller doesn't supply resolved patterns.
+ */
+const GREENFIELD_FALLBACK_PATTERNS: readonly string[] = Object.freeze([
+  "**/*.test.ts", "**/*.test.js", "**/*.test.tsx", "**/*.test.jsx",
+  "**/*.spec.ts", "**/*.spec.js", "**/*.spec.tsx", "**/*.spec.jsx",
+  "**/*_test.go",
+  "test_*.py",
+  "*_test.py",
+]);
 
 /**
  * Recursively scan directory for test files.
  * Ignores node_modules, dist, build, .next directories.
  * Throws error if root directory is unreadable.
  */
-async function scanForTestFiles(dir: string, testPattern: RegExp, isRootCall = true): Promise<string[]> {
+async function scanForTestFiles(dir: string, testPatterns: RegExp[], isRootCall = true): Promise<string[]> {
   const results: string[] = [];
   const ignoreDirs = new Set(["node_modules", "dist", "build", ".next", ".git"]);
 
@@ -30,11 +45,11 @@ async function scanForTestFiles(dir: string, testPattern: RegExp, isRootCall = t
         if (ignoreDirs.has(entry.name)) continue;
 
         // Recursively scan subdirectories (not root call)
-        const subResults = await scanForTestFiles(fullPath, testPattern, false);
+        const subResults = await scanForTestFiles(fullPath, testPatterns, false);
         results.push(...subResults);
       } else if (entry.isFile()) {
-        // Check if file matches test pattern
-        if (testPattern.test(entry.name)) {
+        // Check if file matches any test pattern
+        if (testPatterns.some((re) => re.test(entry.name))) {
           results.push(fullPath);
         }
       }
@@ -51,39 +66,17 @@ async function scanForTestFiles(dir: string, testPattern: RegExp, isRootCall = t
 }
 
 /**
- * Convert simple glob pattern to regex.
- * Supports:
- * - ** (any directory depth)
- * - * (any characters except /)
- * - {a,b,c} (alternatives)
- */
-function globToRegex(pattern: string): RegExp {
-  // Extract filename pattern from glob (everything after last /)
-  const parts = pattern.split("/");
-  const filePattern = parts[parts.length - 1];
-
-  // Convert glob syntax to regex
-  const regexStr = filePattern
-    .replace(/\./g, "\\.") // Escape dots
-    .replace(/\*/g, "[^/]*") // * = any chars except /
-    .replace(/\{([^}]+)\}/g, (_, group) => `(${group.replace(/,/g, "|")})`) // {a,b} = (a|b)
-    .replace(/\\\.\\\*/g, "\\.[^/]*"); // Fix escaped .* back to .\*
-
-  return new RegExp(`${regexStr}$`); // nosemgrep: detect-non-literal-regexp — pattern from internal .gitignore, not user input
-}
-
-/**
  * Detect if a story is greenfield based on test file presence in workdir.
  *
  * A story is greenfield if:
- * - No test files exist matching the test pattern in the working directory
+ * - No test files exist matching any of the given patterns in the working directory
  *
  * This prevents the TDD test-writer from struggling to create tests when there are
  * no existing test examples to follow.
  *
  * @param story - User story to check
  * @param workdir - Working directory to scan for test files
- * @param testPattern - Glob pattern for test files (default: "**\/*.{test,spec}.{ts,js,tsx,jsx}")
+ * @param patterns - Glob patterns for test files (default: DEFAULT_TEST_FILE_PATTERNS)
  * @returns true if no test files exist (greenfield), false otherwise
  *
  * @example
@@ -100,11 +93,11 @@ function globToRegex(pattern: string): RegExp {
 export async function isGreenfieldStory(
   _story: UserStory,
   workdir: string,
-  testPattern = "**/*.{test,spec}.{ts,js,tsx,jsx}",
+  patterns?: readonly string[],
 ): Promise<boolean> {
   try {
-    const regex = globToRegex(testPattern);
-    const testFiles = await scanForTestFiles(workdir, regex);
+    const regexes = globsToTestRegex(patterns ?? GREENFIELD_FALLBACK_PATTERNS);
+    const testFiles = await scanForTestFiles(workdir, regexes);
     return testFiles.length === 0;
   } catch (error) {
     // If scan fails completely (e.g., workdir doesn't exist), assume not greenfield (safe fallback)
