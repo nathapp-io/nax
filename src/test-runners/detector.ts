@@ -8,6 +8,8 @@
  * the pipeline (autofix scope routing, TDD isolation, diff analysis).
  */
 
+import { isTestFileByPatterns } from "./conventions";
+
 export type Framework = "bun" | "jest" | "vitest" | "pytest" | "go" | "unknown";
 
 /**
@@ -27,10 +29,21 @@ const TEST_FILE_PATTERNS = [
 ];
 
 /**
- * Returns true when the given file path looks like a test file across any
- * supported language (TypeScript, Python, Go, Ruby, Rust, Java, etc.).
+ * Returns true when the given file path looks like a test file.
+ *
+ * When `testFilePatterns` is supplied, delegates to `isTestFileByPatterns()`
+ * (config-aware path — ADR-009 preferred usage). When omitted, falls back to
+ * the broad language-agnostic regex (backward-compat Phase 1 path).
+ *
+ * All first-party call sites have been migrated to the resolver + classifier
+ * pattern (ADR-009). The no-argument form is kept as a Phase 1 backward-compat
+ * shim for any third-party plugins that import it directly; it will be removed
+ * in Phase 2 once detection guarantees the resolver always yields patterns.
  */
-export function isTestFile(filePath: string): boolean {
+export function isTestFile(filePath: string, testFilePatterns?: readonly string[]): boolean {
+  if (testFilePatterns !== undefined) {
+    return isTestFileByPatterns(filePath, testFilePatterns);
+  }
   return TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
 }
 

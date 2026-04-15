@@ -194,7 +194,11 @@ export async function runAdversarialReview(
         durationMs: Date.now() - startTime,
       };
     }
-    testInventory = await computeTestInventory(workdir, effectiveRef);
+    const testFilePatterns =
+      (typeof naxConfig?.execution?.smartTestRunner === "object"
+        ? naxConfig.execution.smartTestRunner?.testFilePatterns
+        : undefined) ?? undefined;
+    testInventory = await computeTestInventory(workdir, effectiveRef, testFilePatterns);
   }
 
   // Resolve agent

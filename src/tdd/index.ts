@@ -5,8 +5,8 @@ export type {
   TddSessionResult,
   ThreeSessionTddResult,
 } from "./types";
+export { isTestFile } from "../test-runners";
 export {
-  isTestFile,
   isSourceFile,
   getChangedFiles,
   verifyTestWriterIsolation,

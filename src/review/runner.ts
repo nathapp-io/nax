@@ -284,16 +284,7 @@ export async function runReview(
         resetRefOnRerun: false,
         rules: [] as string[],
         timeoutMs: 600_000,
-        excludePatterns: [
-          ":!test/",
-          ":!tests/",
-          ":!*_test.go",
-          ":!*.test.ts",
-          ":!*.spec.ts",
-          ":!**/__tests__/",
-          ":!.nax/",
-          ":!.nax-pids",
-        ],
+        // excludePatterns omitted — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009)
       };
       const runSemantic = _reviewSemanticDeps.runSemanticReview;
       const result = await runSemantic(
@@ -331,7 +322,7 @@ export async function runReview(
         diffMode: "ref" as const,
         rules: [] as string[],
         timeoutMs: 600_000,
-        excludePatterns: [":!.nax/", ":!.nax-pids"] as string[],
+        // excludePatterns omitted — collectDiff always appends ALWAYS_EXCLUDED (.nax/ etc.) (ADR-009)
         parallel: false,
         maxConcurrentSessions: 2,
       };

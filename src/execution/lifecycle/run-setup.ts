@@ -27,6 +27,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
+import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
@@ -214,12 +215,17 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
     const projectPluginsDir = path.join(workdir, ".nax", "plugins");
     const configPlugins = config.plugins || [];
+    // Build a test-file classifier from resolved patterns so the plugin loader
+    // honours custom testFilePatterns (ADR-009) instead of hardcoded TS suffixes.
+    const resolvedPatterns = await resolveTestFilePatterns(config, workdir);
+    const isTestFileFn = (filename: string): boolean => resolvedPatterns.regex.some((re) => re.test(filename));
     const pluginRegistry = await loadPlugins(
       globalPluginsDir,
       projectPluginsDir,
       configPlugins,
       workdir,
       config.disabledPlugins,
+      isTestFileFn,
     );
 
     // Log plugins loaded

@@ -115,7 +115,7 @@ describe("ReviewConfig semantic field", () => {
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
-        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
+        // excludePatterns is now optional (ADR-009): undefined means resolver will derive at runtime
       });
     }
   });

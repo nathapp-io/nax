@@ -18,6 +18,7 @@ import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { ReviewPromptBuilder } from "../prompts";
+import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
@@ -173,9 +174,14 @@ export async function runSemanticReview(
   // In ref mode: pass stat + ref to reviewer; reviewer self-serves the full diff via tools.
   const stat = await collectDiffStat(workdir, effectiveRef);
 
+  // ADR-009: resolve effective exclude patterns from config (falls back to DEFAULT_TEST_FILE_PATTERNS
+  // when semanticConfig.excludePatterns is undefined — no behaviour change for default config).
+  const resolved = await resolveTestFilePatterns(naxConfig ?? DEFAULT_CONFIG, workdir);
+  const excludePatterns = [...resolveReviewExcludePatterns(semanticConfig.excludePatterns, resolved)];
+
   let diff: string | undefined;
   if (diffMode === "embedded") {
-    const rawDiff = await collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns);
+    const rawDiff = await collectDiff(workdir, effectiveRef, excludePatterns);
     diff = truncateDiff(rawDiff, rawDiff.length > DIFF_CAP_BYTES ? stat : undefined);
     if (!diff) {
       return {

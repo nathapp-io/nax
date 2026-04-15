@@ -126,15 +126,51 @@ export async function resolveEffectiveRef(
   return undefined;
 }
 
+/** Default suffix-strip regexes when no testFilePatterns are configured. */
+const DEFAULT_SUFFIX_STRIPPERS = [/\.(test|spec)\.(ts|js|tsx|jsx)$/, /_test\.go$/];
+
+/**
+ * Build regexes that strip test suffixes from basenames.
+ * Derived from the glob patterns (suffix after last `*`), falling back to defaults.
+ */
+function buildSuffixStrippers(testFilePatterns?: readonly string[]): RegExp[] {
+  if (!testFilePatterns || testFilePatterns.length === 0) return DEFAULT_SUFFIX_STRIPPERS;
+  const regexes: RegExp[] = [];
+  for (const pattern of testFilePatterns) {
+    const lastStar = pattern.lastIndexOf("*");
+    if (lastStar === -1) continue;
+    const suffix = pattern.slice(lastStar + 1);
+    if (suffix.length > 0) {
+      regexes.push(new RegExp(`${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+    }
+  }
+  return regexes.length > 0 ? regexes : DEFAULT_SUFFIX_STRIPPERS;
+}
+
+/** Strip the first matching test suffix from a basename, returning the source basename. */
+function stripTestSuffix(base: string, strippers: RegExp[]): string {
+  for (const re of strippers) {
+    const stripped = base.replace(re, "");
+    if (stripped !== base) return stripped;
+  }
+  return base;
+}
+
 /**
  * Classify added files in the story's diff into test files vs source files without tests.
  * Used by adversarial review (embedded mode) to pre-compute a TestInventory for the prompt.
  *
  * Detection heuristics:
- * - Test file: path matches *.test.ts, *.spec.ts, *_test.go, or is under test/ / tests/ / __tests__/
- * - Source file without test: new source file whose basename has no matching test file in the added set
+ * - Test file: path matches configured testFilePatterns (ADR-009), falling back to defaults.
+ * - Source file without test: new source file whose basename has no matching test file in the added set.
+ *
+ * @param testFilePatterns - Configured test file globs (ADR-009). Falls back to DEFAULT_TEST_FILE_PATTERNS.
  */
-export async function computeTestInventory(workdir: string, storyGitRef: string): Promise<TestInventory> {
+export async function computeTestInventory(
+  workdir: string,
+  storyGitRef: string,
+  testFilePatterns?: readonly string[],
+): Promise<TestInventory> {
   const proc = _diffUtilsDeps.spawn({
     cmd: ["git", "diff", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`],
     cwd: workdir,
@@ -154,15 +190,17 @@ export async function computeTestInventory(workdir: string, storyGitRef: string)
 
   const addedFiles = stdout.trim().split("\n").filter(Boolean);
 
-  const addedTestFiles = addedFiles.filter(isTestFile);
-  const addedSourceFiles = addedFiles.filter((f) => !isTestFile(f));
+  const addedTestFiles = addedFiles.filter((f) => isTestFile(f, testFilePatterns));
+  const addedSourceFiles = addedFiles.filter((f) => !isTestFile(f, testFilePatterns));
 
   // For each added source file, check whether a matching test file was also added.
   // Match by basename: src/foo/bar.ts → looks for bar.test.ts, bar.spec.ts in addedFiles.
+  // Suffixes are derived from testFilePatterns so custom patterns (e.g. *.integration.ts) normalize correctly.
+  const suffixStrippers = buildSuffixStrippers(testFilePatterns);
   const testFileBasenames = new Set(
     addedTestFiles.map((f) => {
       const base = f.split("/").at(-1) ?? f;
-      return base.replace(/\.(test|spec)\.(ts|js|tsx|jsx)$/, "").replace(/_test\.go$/, "");
+      return stripTestSuffix(base, suffixStrippers);
     }),
   );
 

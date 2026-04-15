@@ -82,3 +82,62 @@ export function isTestFileByPatterns(filePath: string, patterns: readonly string
   const regexes = globsToTestRegex(patterns);
   return regexes.some((re) => re.test(filePath));
 }
+
+/**
+ * Convert a list of glob patterns to git pathspec exclusions.
+ *
+ * Extracts the last meaningful path segment (suffix) from each glob and
+ * prepends `:!` to form a git pathspec exclusion. Patterns with no
+ * extractable suffix or with only wildcard suffixes are skipped.
+ * Duplicate exclusions are de-duplicated by source.
+ *
+ * @example
+ * globsToPathspec(["test\/**\/*.test.ts", "**\/*.spec.ts"])
+ * // → [":!*.test.ts", ":!*.spec.ts"]
+ *
+ * @example
+ * globsToPathspec(["**\/*_test.go"])
+ * // → [":!*_test.go"]
+ */
+export function globsToPathspec(patterns: readonly string[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const pattern of patterns) {
+    const lastStar = pattern.lastIndexOf("*");
+    if (lastStar === -1) continue;
+    const suffix = pattern.slice(lastStar + 1);
+    if (suffix.length === 0) continue;
+    const pathspec = `:!*${suffix}`;
+    if (!seen.has(pathspec)) {
+      result.push(pathspec);
+      seen.add(pathspec);
+    }
+  }
+  return result;
+}
+
+/**
+ * Extract leading directory names from glob patterns.
+ *
+ * Returns the first path segment of each glob when it is a literal
+ * directory name (not a wildcard). Wildcards and patterns that start
+ * with `**` produce no directory entry.
+ *
+ * @example
+ * extractTestDirs(["test\/**\/*.test.ts", "src\/**\/*.spec.ts"])
+ * // → ["test"]
+ *
+ * @example
+ * extractTestDirs(["**\/*.test.ts"])
+ * // → []
+ */
+export function extractTestDirs(globs: readonly string[]): string[] {
+  const dirs = new Set<string>();
+  for (const glob of globs) {
+    const firstSegment = glob.split("/")[0];
+    if (firstSegment && !firstSegment.includes("*") && firstSegment.length > 0) {
+      dirs.add(firstSegment);
+    }
+  }
+  return [...dirs];
+}

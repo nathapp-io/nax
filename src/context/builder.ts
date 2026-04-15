@@ -9,6 +9,7 @@ import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";
 import { countStories, getContextFiles } from "../prd";
+import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
 import { autoDetectContextFiles } from "./auto-detect";
 import {
@@ -178,10 +179,14 @@ async function addTestCoverageElement(
   try {
     const tcConfig = storyContext.config?.context?.testCoverage;
     const contextFiles = getContextFiles(story);
+    // Resolve effective test patterns via SSOT (ADR-009) — replaces deprecated testPattern.
+    const resolved = storyContext.config
+      ? await resolveTestFilePatterns(storyContext.config, storyContext.workdir)
+      : undefined;
     const scanResult = await generateTestCoverageSummary({
       workdir: storyContext.workdir,
       testDir: tcConfig?.testDir,
-      testPattern: tcConfig?.testPattern,
+      resolvedTestGlobs: resolved?.globs,
       maxTokens: tcConfig?.maxTokens ?? 500,
       detail: tcConfig?.detail ?? "names-and-counts",
       contextFiles: contextFiles.length > 0 ? contextFiles : undefined,
@@ -230,12 +235,16 @@ async function addFileElements(
     storyContext.workdir
   ) {
     const autoDetectConfig = storyContext.config?.context?.autoDetect;
+    const smartRunner = storyContext.config?.execution?.smartTestRunner;
+    const testFilePatterns =
+      typeof smartRunner === "object" && smartRunner !== null ? smartRunner.testFilePatterns : undefined;
     try {
       const detected = await _contextBuilderDeps.autoDetectContextFiles({
         workdir: storyContext.workdir,
         storyTitle: story.title,
         maxFiles: autoDetectConfig?.maxFiles ?? 5,
         traceImports: autoDetectConfig?.traceImports ?? false,
+        testFilePatterns,
       });
       if (detected.length > 0) {
         contextFiles = detected;

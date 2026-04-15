@@ -17,6 +17,7 @@ import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { isTestFile } from "../test-runners";
+import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
@@ -193,14 +194,21 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // Uses the shared language-agnostic `isTestFile()` classifier — recognizes
   // .test.*, .spec.*, _test.go, test_*.py, test/ directory segments, etc.
   // On retry (BUG-018 fix), session1 is undefined — skip this check entirely.
-  const testFilesCreated = session1 ? session1.filesChanged.filter(isTestFile) : [];
+  // ADR-009: pass user-configured testFilePatterns so custom patterns are recognised;
+  // undefined → broad regex fallback for backward compat.
+  const _tddTestFilePatterns =
+    typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
+      ? config.execution.smartTestRunner.testFilePatterns
+      : undefined;
+  const testFilesCreated = session1 ? session1.filesChanged.filter((f) => isTestFile(f, _tddTestFilePatterns)) : [];
 
   if (!isRetry && testFilesCreated.length === 0) {
     // BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.
     // The test-writer may have produced 0 new files because tests were pre-written and committed
     // separately (e.g. during dogfooding or manual setup). If tests already exist, skip
     // test-writer phase and proceed directly to the implementer.
-    const testPatternGlob = config.context?.testCoverage?.testPattern ?? "**/*.{test,spec}.{ts,js,tsx,jsx}";
+    // Resolve effective test patterns via SSOT (ADR-009) — replaces deprecated testPattern read.
+    const resolvedForGreenfield = await resolveTestFilePatterns(config, workdir);
 
     // Scan directly for existing test files — don't use isGreenfieldStory() here because its
     // "safe fallback" returns false (not greenfield) on scan errors, which would incorrectly
@@ -208,11 +216,11 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     let hasPreExistingTests = false;
     try {
       // isGreenfieldStory returns true when NO tests exist; we want the inverse
-      hasPreExistingTests = !(await isGreenfieldStory(story, workdir, testPatternGlob));
+      hasPreExistingTests = !(await isGreenfieldStory(story, workdir, resolvedForGreenfield.globs));
       // Sanity check: if workdir doesn't exist, isGreenfieldStory returns false (safe fallback),
       // meaning hasPreExistingTests = true — wrong. Validate by checking if workdir is readable.
-      const { existsSync } = await import("node:fs");
-      if (!existsSync(workdir)) {
+      const dirCheck = Bun.spawn(["test", "-d", workdir], { stdout: "pipe", stderr: "pipe" });
+      if ((await dirCheck.exited) !== 0) {
         hasPreExistingTests = false;
       }
     } catch {

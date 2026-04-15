@@ -10,6 +10,7 @@ import path from "node:path";
 import { Glob } from "bun";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
+import { extractTestDirs } from "../test-runners/conventions";
 
 // ============================================================================
 // Types
@@ -26,6 +27,8 @@ export interface TestScanOptions {
   testDir?: string;
   /** Glob pattern for test files (default: "**\/*.test.{ts,js,tsx,jsx}") */
   testPattern?: string;
+  /** Resolved test glob patterns from resolveTestFilePatterns() — used to derive testDirs and deriveTestPatterns suffixes */
+  resolvedTestGlobs?: readonly string[];
   /** Max tokens for the summary (default: 500) */
   maxTokens?: number;
   /** Summary detail level (default: "names-and-counts") */
@@ -114,48 +117,78 @@ export function extractTestStructure(source: string): { describes: DescribeBlock
 // File Scanning
 // ============================================================================
 
-/** Common test directory names to auto-detect */
+/** Fallback test directory names used when resolver patterns yield no dirs */
 const COMMON_TEST_DIRS = ["test", "tests", "__tests__", "src/__tests__", "spec"];
+
+/**
+ * Extract trailing suffixes from glob patterns (everything after the last `*`).
+ * e.g., "test/**\/*.test.ts" → ".test.ts", "**\/*_test.go" → "_test.go"
+ *
+ * Only returns suffixes that contain a test discriminator (.test., .spec., _test., etc.)
+ * so that generic language patterns like "test/**\/*.ts" don't corrupt scoping logic.
+ */
+function extractGlobSuffixes(globs: readonly string[]): string[] {
+  const TEST_DISCRIMINATOR = /(\.(test|spec)\.|_(test|spec)\.)/i;
+  const suffixes: string[] = [];
+  for (const g of globs) {
+    const lastStar = g.lastIndexOf("*");
+    if (lastStar === -1) continue;
+    const s = g.slice(lastStar + 1);
+    if (s.length > 0 && TEST_DISCRIMINATOR.test(s)) suffixes.push(s);
+  }
+  return suffixes;
+}
+
+/** Default TS/JS suffixes used when no resolvedGlobs are provided */
+const DEFAULT_DERIVE_SUFFIXES = [
+  ".test.ts",
+  ".test.js",
+  ".test.tsx",
+  ".test.jsx",
+  ".spec.ts",
+  ".spec.js",
+  ".spec.tsx",
+  ".spec.jsx",
+];
 
 /**
  * Derive test file patterns from source file paths.
  *
- * Maps source files to their likely test file counterparts:
- * - src/foo.ts → test/foo.test.ts, test/foo.spec.ts
- * - src/bar/baz.service.ts → test/bar/baz.service.test.ts, test/baz.service.test.ts
+ * Maps source files to their likely test file counterparts using the
+ * resolved glob suffixes when available (ADR-009), falling back to the
+ * hardcoded TS/JS variants.
  *
  * @param contextFiles - Array of source file paths (relative to workdir)
- * @returns Array of test file path patterns (basename patterns for matching)
+ * @param resolvedGlobs - Resolved glob patterns from resolveTestFilePatterns(); used to derive suffixes
+ * @returns Array of test file basename patterns for matching
  */
-export function deriveTestPatterns(contextFiles: string[]): string[] {
+export function deriveTestPatterns(contextFiles: string[], resolvedGlobs?: readonly string[]): string[] {
   const patterns = new Set<string>();
+  const suffixes = resolvedGlobs ? extractGlobSuffixes(resolvedGlobs) : DEFAULT_DERIVE_SUFFIXES;
+  const effectiveSuffixes = suffixes.length > 0 ? suffixes : DEFAULT_DERIVE_SUFFIXES;
 
   for (const filePath of contextFiles) {
     const basename = path.basename(filePath);
-    const basenameNoExt = basename.replace(/\.(ts|js|tsx|jsx)$/, "");
+    // Strip last extension (works for .ts, .go, .py, etc.)
+    const basenameNoExt = basename.replace(/\.[^.]+$/, "");
 
-    // Pattern 1: exact basename match with .test/.spec extension
-    // e.g., foo.ts → foo.test.ts, foo.spec.ts
-    patterns.add(`${basenameNoExt}.test.ts`);
-    patterns.add(`${basenameNoExt}.test.js`);
-    patterns.add(`${basenameNoExt}.test.tsx`);
-    patterns.add(`${basenameNoExt}.test.jsx`);
-    patterns.add(`${basenameNoExt}.spec.ts`);
-    patterns.add(`${basenameNoExt}.spec.js`);
-    patterns.add(`${basenameNoExt}.spec.tsx`);
-    patterns.add(`${basenameNoExt}.spec.jsx`);
+    for (const suffix of effectiveSuffixes) {
+      patterns.add(`${basenameNoExt}${suffix}`);
+    }
 
-    // Pattern 2: if basename contains .service/.controller/etc, also match without it
-    // e.g., foo.service.ts → foo.test.ts
-    const simpleBasename = basenameNoExt.replace(
-      /\.(service|controller|resolver|module|guard|middleware|util|helper)$/,
-      "",
-    );
-    if (simpleBasename !== basenameNoExt) {
-      patterns.add(`${simpleBasename}.test.ts`);
-      patterns.add(`${simpleBasename}.test.js`);
-      patterns.add(`${simpleBasename}.spec.ts`);
-      patterns.add(`${simpleBasename}.spec.js`);
+    // For TS/JS: if basename contains .service/.controller/etc, also match without it
+    // e.g., foo.service.ts → foo.test.ts (only applies when using default suffixes)
+    if (!resolvedGlobs) {
+      const simpleBasename = basenameNoExt.replace(
+        /\.(service|controller|resolver|module|guard|middleware|util|helper)$/,
+        "",
+      );
+      if (simpleBasename !== basenameNoExt) {
+        patterns.add(`${simpleBasename}.test.ts`);
+        patterns.add(`${simpleBasename}.test.js`);
+        patterns.add(`${simpleBasename}.spec.ts`);
+        patterns.add(`${simpleBasename}.spec.js`);
+      }
     }
   }
 
@@ -164,9 +197,14 @@ export function deriveTestPatterns(contextFiles: string[]): string[] {
 
 /**
  * Auto-detect test directory by checking common locations.
+ * When resolvedGlobs is provided, dirs derived from those patterns are tried first.
  */
-async function detectTestDir(workdir: string): Promise<string | null> {
-  for (const dir of COMMON_TEST_DIRS) {
+async function detectTestDir(workdir: string, resolvedGlobs?: readonly string[]): Promise<string | null> {
+  const resolvedDirs = resolvedGlobs ? extractTestDirs(resolvedGlobs) : [];
+  const candidateDirs =
+    resolvedDirs.length > 0 ? [...new Set([...resolvedDirs, ...COMMON_TEST_DIRS])] : COMMON_TEST_DIRS;
+
+  for (const dir of candidateDirs) {
     const fullPath = path.join(workdir, dir);
     try {
       // Bun.file().exists() returns false for directories, use shell test -d
@@ -184,14 +222,37 @@ async function detectTestDir(workdir: string): Promise<string | null> {
  * @param options - Scan options
  * @returns Array of parsed test file info
  */
+/**
+ * Derive a Glob scan pattern relative to a scanDir from resolved test globs.
+ *
+ * Resolved globs may include a directory prefix (e.g. "test/**\/*.test.ts").
+ * Since the Glob scan runs relative to scanDir (already inside testDir), we
+ * strip that prefix so the pattern is correct relative to scanDir.
+ * Globs starting with "**\/" are already relative and used as-is.
+ */
+function deriveScanGlob(resolvedTestGlobs: readonly string[], testDir: string): string {
+  const prefix = `${testDir}/`;
+  for (const glob of resolvedTestGlobs) {
+    if (glob.startsWith(prefix)) return glob.slice(prefix.length);
+    if (glob.startsWith("**/")) return glob; // relative pattern, works from any dir
+  }
+  return "**/*.test.{ts,js,tsx,jsx}";
+}
+
 export async function scanTestFiles(options: TestScanOptions): Promise<TestFileInfo[]> {
-  const { workdir, testPattern = "**/*.test.{ts,js,tsx,jsx}", contextFiles, scopeToStory = true } = options;
+  const { workdir, testPattern: explicitTestPattern, contextFiles, scopeToStory = true, resolvedTestGlobs } = options;
   let testDir = options.testDir;
 
-  // Auto-detect test directory if not specified
+  // Auto-detect test directory if not specified, prioritising dirs from resolved globs
   if (!testDir) {
-    testDir = (await detectTestDir(workdir)) || "test";
+    testDir = (await detectTestDir(workdir, resolvedTestGlobs)) || "test";
   }
+
+  // Derive scan pattern: prefer explicit override, then resolved globs (stripped of testDir
+  // prefix so the Glob runs correctly relative to scanDir), then TS/JS default.
+  const testPattern =
+    explicitTestPattern ??
+    (resolvedTestGlobs ? deriveScanGlob(resolvedTestGlobs, testDir) : "**/*.test.{ts,js,tsx,jsx}");
 
   const scanDir = path.join(workdir, testDir);
 
@@ -204,7 +265,7 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
   // Derive test patterns from context files if scoping is enabled
   let allowedBasenames: Set<string> | null = null;
   if (scopeToStory && contextFiles && contextFiles.length > 0) {
-    const patterns = deriveTestPatterns(contextFiles);
+    const patterns = deriveTestPatterns(contextFiles, resolvedTestGlobs);
     allowedBasenames = new Set(patterns);
   }
 

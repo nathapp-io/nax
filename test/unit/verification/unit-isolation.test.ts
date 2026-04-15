@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { isSourceFile, isTestFile } from "../../../src/tdd/isolation";
+import { isSourceFile } from "../../../src/tdd/isolation";
+import { isTestFile } from "../../../src/test-runners";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // isTestFile

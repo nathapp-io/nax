@@ -44,8 +44,11 @@ export interface SemanticReviewConfig {
   rules: string[];
   /** Timeout in milliseconds for the LLM call (default: 600_000) */
   timeoutMs: number;
-  /** Git pathspec patterns to exclude from the semantic diff (e.g. ':!test/', ':!*.test.ts') */
-  excludePatterns: string[];
+  /**
+   * Git pathspec patterns to exclude from the semantic diff.
+   * Optional — undefined means "derive from testFilePatterns + well-known noise dirs". (ADR-009 §4.4)
+   */
+  excludePatterns?: string[];
 }
 
 /** Review check result */
@@ -137,8 +140,11 @@ export interface AdversarialReviewConfig {
   rules: string[];
   /** Timeout in milliseconds (default: 600_000) */
   timeoutMs: number;
-  /** Pathspec exclusions for embedded mode. Default empty (adversarial sees test files). */
-  excludePatterns: string[];
+  /**
+   * Pathspec exclusions for embedded mode.
+   * Optional — undefined means "derive from testFilePatterns + noise dirs". (ADR-009 §4.4)
+   */
+  excludePatterns?: string[];
   /** When true, run semantic and adversarial concurrently. Default false. */
   parallel: boolean;
   /** Maximum combined reviewer sessions before falling back to sequential. Default 2. */
