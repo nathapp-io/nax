@@ -9,9 +9,9 @@ import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";
 import { countStories, getContextFiles } from "../prd";
+import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
 import { autoDetectContextFiles } from "./auto-detect";
-import { resolveTestFilePatterns } from "../test-runners/resolver";
 import {
   createDependencyContext,
   createErrorContext,

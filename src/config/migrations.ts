@@ -31,10 +31,7 @@ import type { Logger } from "../logger";
  * @param logger Nullable logger — logger may not be initialized yet at call time.
  * @returns New config object with migration applied.
  */
-export function migrateLegacyTestPattern(
-  raw: Record<string, unknown>,
-  logger: Logger | null,
-): Record<string, unknown> {
+export function migrateLegacyTestPattern(raw: Record<string, unknown>, logger: Logger | null): Record<string, unknown> {
   type RawContext = { testCoverage?: { testPattern?: unknown; [k: string]: unknown }; [k: string]: unknown };
   type RawExecution = { smartTestRunner?: { testFilePatterns?: unknown; [k: string]: unknown }; [k: string]: unknown };
 

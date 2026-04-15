@@ -76,7 +76,9 @@ async function detectNpmWorkspaces(workdir: string): Promise<string[]> {
     const workspaces = pkg.workspaces;
     const patterns: string[] = Array.isArray(workspaces)
       ? workspaces.filter((p): p is string => typeof p === "string")
-      : typeof workspaces === "object" && workspaces !== null && Array.isArray((workspaces as Record<string, unknown>).packages)
+      : typeof workspaces === "object" &&
+          workspaces !== null &&
+          Array.isArray((workspaces as Record<string, unknown>).packages)
         ? ((workspaces as Record<string, unknown>).packages as string[])
         : [];
     if (patterns.length === 0) return [];

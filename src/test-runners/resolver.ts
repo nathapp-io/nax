@@ -18,9 +18,9 @@
  */
 
 import { dirname, relative, resolve } from "node:path";
+import type { NaxConfig } from "../config/types";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import type { NaxConfig } from "../config/types";
 import { DEFAULT_TEST_FILE_PATTERNS, extractTestDirs, globsToPathspec, globsToTestRegex } from "./conventions";
 import type { DetectionResult } from "./detect";
 import { detectTestFilePatterns } from "./detect";
@@ -81,10 +81,7 @@ export const _resolverDeps = {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function buildResolved(
-  globs: readonly string[],
-  resolution: ResolvedTestPatterns["resolution"],
-): ResolvedTestPatterns {
+function buildResolved(globs: readonly string[], resolution: ResolvedTestPatterns["resolution"]): ResolvedTestPatterns {
   return {
     globs,
     pathspec: globsToPathspec(globs),
@@ -97,11 +94,7 @@ function buildResolved(
 function validateGlobs(patterns: readonly string[], stage: string): void {
   for (const p of patterns) {
     if (typeof p !== "string" || p.trim().length === 0) {
-      throw new NaxError(
-        `Invalid test glob pattern: "${p}"`,
-        "INVALID_TEST_GLOB",
-        { pattern: p, stage },
-      );
+      throw new NaxError(`Invalid test glob pattern: "${p}"`, "INVALID_TEST_GLOB", { pattern: p, stage });
     }
   }
 }

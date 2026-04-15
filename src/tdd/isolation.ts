@@ -70,9 +70,7 @@ export async function verifyTestWriterIsolation(
   testFilePatterns: readonly string[] = DEFAULT_TEST_FILE_PATTERNS,
 ): Promise<IsolationCheck> {
   const changed = await getChangedFiles(workdir, beforeRef);
-  const sourceFiles = changed.filter(
-    (f) => isSourceFile(f) && !isTestFileByPatterns(f, testFilePatterns),
-  );
+  const sourceFiles = changed.filter((f) => isSourceFile(f) && !isTestFileByPatterns(f, testFilePatterns));
 
   // Separate hard violations from soft violations (allowed paths)
   const softViolations: string[] = [];

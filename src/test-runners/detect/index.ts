@@ -187,9 +187,7 @@ export async function detectTestFilePatternsForWorkspace(
 ): Promise<Record<string, DetectionResult>> {
   const entries = await Promise.all([
     detectForDirectory(workdir).then((r) => ["", r] as const),
-    ...packageDirs.map((dir) =>
-      detectForDirectory(`${workdir}/${dir}`).then((r) => [dir, r] as const),
-    ),
+    ...packageDirs.map((dir) => detectForDirectory(`${workdir}/${dir}`).then((r) => [dir, r] as const)),
   ]);
 
   return Object.fromEntries(entries);

@@ -18,8 +18,14 @@ import { globsToTestRegex } from "../test-runners/conventions";
  * correct suffix regexes. Used when the caller doesn't supply resolved patterns.
  */
 const GREENFIELD_FALLBACK_PATTERNS: readonly string[] = Object.freeze([
-  "**/*.test.ts", "**/*.test.js", "**/*.test.tsx", "**/*.test.jsx",
-  "**/*.spec.ts", "**/*.spec.js", "**/*.spec.tsx", "**/*.spec.jsx",
+  "**/*.test.ts",
+  "**/*.test.js",
+  "**/*.test.tsx",
+  "**/*.test.jsx",
+  "**/*.spec.ts",
+  "**/*.spec.js",
+  "**/*.spec.tsx",
+  "**/*.spec.jsx",
   "**/*_test.go",
   "test_*.py",
   "*_test.py",

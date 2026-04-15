@@ -141,8 +141,14 @@ function extractGlobSuffixes(globs: readonly string[]): string[] {
 
 /** Default TS/JS suffixes used when no resolvedGlobs are provided */
 const DEFAULT_DERIVE_SUFFIXES = [
-  ".test.ts", ".test.js", ".test.tsx", ".test.jsx",
-  ".spec.ts", ".spec.js", ".spec.tsx", ".spec.jsx",
+  ".test.ts",
+  ".test.js",
+  ".test.tsx",
+  ".test.jsx",
+  ".spec.ts",
+  ".spec.js",
+  ".spec.tsx",
+  ".spec.jsx",
 ];
 
 /**
@@ -195,9 +201,8 @@ export function deriveTestPatterns(contextFiles: string[], resolvedGlobs?: reado
  */
 async function detectTestDir(workdir: string, resolvedGlobs?: readonly string[]): Promise<string | null> {
   const resolvedDirs = resolvedGlobs ? extractTestDirs(resolvedGlobs) : [];
-  const candidateDirs = resolvedDirs.length > 0
-    ? [...new Set([...resolvedDirs, ...COMMON_TEST_DIRS])]
-    : COMMON_TEST_DIRS;
+  const candidateDirs =
+    resolvedDirs.length > 0 ? [...new Set([...resolvedDirs, ...COMMON_TEST_DIRS])] : COMMON_TEST_DIRS;
 
   for (const dir of candidateDirs) {
     const fullPath = path.join(workdir, dir);
@@ -245,8 +250,9 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
 
   // Derive scan pattern: prefer explicit override, then resolved globs (stripped of testDir
   // prefix so the Glob runs correctly relative to scanDir), then TS/JS default.
-  const testPattern = explicitTestPattern
-    ?? (resolvedTestGlobs ? deriveScanGlob(resolvedTestGlobs, testDir) : "**/*.test.{ts,js,tsx,jsx}");
+  const testPattern =
+    explicitTestPattern ??
+    (resolvedTestGlobs ? deriveScanGlob(resolvedTestGlobs, testDir) : "**/*.test.{ts,js,tsx,jsx}");
 
   const scanDir = path.join(workdir, testDir);
 

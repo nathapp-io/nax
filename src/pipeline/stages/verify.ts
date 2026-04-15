@@ -120,11 +120,9 @@ export const verifyStage: PipelineStage = {
         // Pass 2: import-grep fallback.
         // Phase 1 interim: importGrepFallback requires string[]; resolver not yet wired here.
         // Phase 2 will call resolveTestFilePatterns() upstream and pass resolved.globs instead.
-        const pass2Files = await _smartRunnerDeps.importGrepFallback(
-          sourceFiles,
-          ctx.workdir,
-          [...(smartRunnerConfig.testFilePatterns ?? DEFAULT_TEST_FILE_PATTERNS)],
-        );
+        const pass2Files = await _smartRunnerDeps.importGrepFallback(sourceFiles, ctx.workdir, [
+          ...(smartRunnerConfig.testFilePatterns ?? DEFAULT_TEST_FILE_PATTERNS),
+        ]);
         if (pass2Files.length > 0) {
           logger.info("verify", `[smart-runner] Pass 2: import-grep matched ${pass2Files.length} test files`, {
             storyId: ctx.story.id,
