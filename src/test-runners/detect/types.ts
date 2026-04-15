@@ -6,6 +6,13 @@
 /** Single detection signal source (one tier result) */
 export interface DetectionSource {
   type: "framework-config" | "manifest" | "file-scan" | "directory";
+  /**
+   * Framework identifier (e.g. "jest", "vitest", "playwright", "pytest").
+   * Present on Tier 1 and Tier 2 sources. Used by the orchestrator to suppress
+   * Tier 2 defaults when Tier 1 has already claimed the same framework — even
+   * when Tier 1 yielded no extractable patterns (e.g. testRegex, dynamic config).
+   */
+  framework?: string;
   path: string;
   patterns: readonly string[];
 }
