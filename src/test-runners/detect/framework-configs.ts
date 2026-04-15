@@ -62,13 +62,7 @@ async function parseVitestConfig(workdir: string): Promise<DetectionSource | nul
  * Extracts `testMatch` patterns (prefer) or converts `testRegex` when present.
  */
 async function parseJestConfig(workdir: string): Promise<DetectionSource | null> {
-  const candidates = [
-    "jest.config.ts",
-    "jest.config.js",
-    "jest.config.cjs",
-    "jest.config.mjs",
-    "jest.config.json",
-  ];
+  const candidates = ["jest.config.ts", "jest.config.js", "jest.config.cjs", "jest.config.mjs", "jest.config.json"];
   for (const name of candidates) {
     const path = `${workdir}/${name}`;
     const text = await _frameworkConfigDeps.readText(path);
@@ -238,7 +232,7 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
         return { type: "framework-config", path, patterns: filterExcluded(patterns) };
       }
     } catch {
-      continue;
+      // parse error — skip this config file, try next candidate
     }
   }
   return null;
@@ -301,9 +295,10 @@ async function parseCypressConfig(workdir: string): Promise<DetectionSource | nu
 function extractStringLiterals(body: string): string[] {
   const patterns: string[] = [];
   const re = /['"]([^'"]+)['"]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(body)) !== null) {
+  let m = re.exec(body);
+  while (m !== null) {
     if (m[1]) patterns.push(m[1]);
+    m = re.exec(body);
   }
   return patterns;
 }

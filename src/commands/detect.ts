@@ -75,13 +75,12 @@ function deepSet(obj: Record<string, unknown>, keyPath: string, value: unknown):
   const keys = keyPath.split(".");
   const result = { ...obj };
   let cur: Record<string, unknown> = result;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i]!;
-    cur[key] = { ...(cur[key] as Record<string, unknown> ?? {}) };
+  for (const key of keys.slice(0, -1)) {
+    cur[key] = { ...((cur[key] as Record<string, unknown>) ?? {}) };
     cur = cur[key] as Record<string, unknown>;
   }
-  const lastKey = keys.at(-1)!;
-  cur[lastKey] = value;
+  const lastKey = keys[keys.length - 1];
+  if (lastKey !== undefined) cur[lastKey] = value;
   return result;
 }
 
@@ -241,9 +240,7 @@ export async function detectCommand(options: DetectOptions): Promise<void> {
       try {
         const status = await applyToConfig(rootConfigPath, rootDetected.patterns, options.force ?? false);
         if (status === "skipped") {
-          console.log(
-            chalk.dim(`  root: skipped (testFilePatterns already set; use --force to overwrite)`),
-          );
+          console.log(chalk.dim("  root: skipped (testFilePatterns already set; use --force to overwrite)"));
         } else {
           console.log(chalk.green(`  root: ${status} → ${join(".nax", "config.json")}`));
         }

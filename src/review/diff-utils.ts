@@ -141,7 +141,7 @@ function buildSuffixStrippers(testFilePatterns?: readonly string[]): RegExp[] {
     if (lastStar === -1) continue;
     const suffix = pattern.slice(lastStar + 1);
     if (suffix.length > 0) {
-      regexes.push(new RegExp(suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$"));
+      regexes.push(new RegExp(`${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
     }
   }
   return regexes.length > 0 ? regexes : DEFAULT_SUFFIX_STRIPPERS;
