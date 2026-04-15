@@ -179,8 +179,8 @@ One metric improves, others don't; qualitative review is mixed.
 
 ### Environment
 
-- nax version: 0.62.0-canary.6
-- Git SHA (koda): 05e3178aa98ed1c26fb16889a8d14343293c7180,  4f2eda67a9fc26af62fbe7ca52b37bc56f7c525c acceptance generated
+- nax version: 0.62.0-canary.7
+- Git SHA (koda): 05e3178aa98ed1c26fb16889a8d14343293c7180,  dd319ea28be7cd9336f8231b4eebf54a9c738490 acceptance generated
 - Git SHA (ngent): 8c4557b4d5ac889746a5709068dfe9042969655d
 - Date started: 2026-04-14
 - Operator: williamkhoo
@@ -190,9 +190,9 @@ One metric improves, others don't; qualitative review is mixed.
 ### US-001 — Schema, DTO & i18n Extensions (BASELINE)
 
 **Role:** Discovery. No injection. Establishes codebase pattern knowledge.
-
-Started: 2026-04-14T10:55:13.744Z
-Completed: 2026-04-14T11:04:54.970Z
+8aca3d194b06eb7292faa61a75dbeb1de0946ea7
+Started: 2026-04-15T08:13:23.174Z
+Completed: 2026-04-15T08:32:44.766Z
 
 | Metric                     | Value                  |
 |:---------------------------|:-----------------------|
@@ -200,8 +200,8 @@ Completed: 2026-04-14T11:04:54.970Z
 | Review findings — semantic | 0                      |
 | Review findings — adversar | 0                      |
 | Rectification iterations   | 0                      |
-| Autofix iterations         | 0                      |
-| Wall clock                 | 5.6 min                |
+| Autofix iterations         | 5                      |
+| Wall clock                 | 5.4 min                |
 | Final tier                 | fast                   |
 | Human interventions        | (enter manually)       |
 
@@ -212,51 +212,65 @@ Notes:
 
 **Rediscovery incidents (things the agent had to figure out from scratch that future stories will also need):**
 
-_(write here immediately after the run — this becomes the source material for context.md)_
+1. **`KbResultDto @ApiProperty enum` vs TypeScript type are independent** — Agent updated `source!: string` to the union type in `kb-result.dto.ts`, but left `@ApiProperty({ enum: ['ticket', 'doc', 'manual'] })` unchanged. Adversarial reviewer caught this as a blocking error (round 1). The decorator and the type must both be updated together. Future stories that add DTO fields face the same risk.
+
+2. **`ProjectsService.update()` Prisma data object requires explicit listing of every new field** — Agent added `graphifyEnabled` to `UpdateProjectDto` and to the test, but did not add it to the `db.project.update({ data: { ... } })` object. The field was silently discarded. Adversarial caught this as an abandonment error (round 2). Any story that adds a DTO field must also add it to the `update()` data object.
+
+3. **i18n keys must be added to both `en/` and `zh/`** — Agent added both correctly without prompting. Confirmed as a constraint (not a rediscovery, but worth noting it was handled properly from the spec alone).
+
+4. **Migration is SQLite-style** — Agent used `PRAGMA defer_foreign_keys` + CREATE+INSERT+DROP+RENAME pattern correctly. Future stories doing schema changes must follow the same migration style, not Postgres-style `ALTER TABLE ADD COLUMN`.
 
 ---
 
 ### `context.md` authored
 
-**Date authored:** _______________
+**Date authored:** 2026-04-15 (after US-002, incorporating both US-001 and US-002 findings)
+
+**Note:** context.md was authored after US-002 completed, not after US-001 as planned. US-002 ran without injection (context.md not ready). US-003 and US-004 are the actual injection group. See US-002 section below.
 
 **Entries:**
 
 | Section | Count |
 |:--------|:------|
-| Decisions | |
-| Constraints | |
-| Patterns | |
-| Gotchas | |
+| Decisions | 3 |
+| Constraints | 6 |
+| Patterns | 4 |
+| Gotchas | 4 |
 
-**Total tokens (estimate):** _______________
+**Total tokens (estimate):** ~1,400
 
 **Notable entries (2-3 most important):**
 
-1.
-2.
-3.
+1. **`source` union in all 4 locations** — The agent missed the `@ApiProperty enum` decorator in round 1 of US-001. This is the most likely cross-story trap: type annotation and decorator are independent.
+2. **`ProjectsService.update()` Prisma data must list new fields explicitly** — Adversarial re-discovers this pattern whenever a DTO gets a new field that update() doesn't forward. Critical for US-004 which touches ProjectsService.
+3. **SQL injection in `deleteAllBySourceType` sourceType interpolation** — Discovered in US-002 adversarial review. Added to context.md before US-003/004 run.
 
-**Injection confirmed:** `context.md` added to `contextFiles` for US-002, US-003, US-004, US-005 in `prd.json`. [ ]
+**Injection confirmed:** `context.md` added to `contextFiles` for US-003, US-004, US-005 in `prd.json`. [x]
+
+_(US-002 ran before context.md was ready — no injection for that story. Treating US-002 as baseline #2.)_
 
 ---
 
 ### US-002 — RagService Methods (INJECTION #1)
 
-**Run date:** _______________
+Started: 2026-04-15T09:19:12.930Z
+Completed: 2026-04-15T09:38:02.910Z
 
-**Metrics:**
+| Metric                     | Value                  |
+|:---------------------------|:-----------------------|
+| Tier escalations           | 0                      |
+| Review findings — semantic | 0                      |
+| Review findings — adversar | 0                      |
+| Rectification iterations   | 0                      |
+| Autofix iterations         | 3                      |
+| Wall clock                 | 4.2 min                |
+| Final tier                 | fast                   |
+| Human interventions        | (enter manually)       |
 
-| Metric | Value |
-|:-------|:------|
-| Tier escalations | |
-| Review findings — semantic | |
-| Review findings — adversarial | |
-| Rectification iterations | |
-| Autofix iterations | |
-| Wall clock | |
-| Final tier | |
-| Human interventions | |
+Notes:
+  - Total agent attempts (escalation proxy): 1
+  - Rectification/autofix counts are log-derived — 0 means stage never triggered
+  - Human interventions require manual entry (PAUSE/edit/abort events)
 
 **Rediscovery incidents (things the agent re-derived that were in context.md):**
 
@@ -268,30 +282,48 @@ _(write here immediately after the run — this becomes the source material for 
 
 ---
 
-### US-003 — Import Endpoint (INJECTION #2)
+### US-003 — Import Endpoint (INJECTION #1 — first real injection story)
 
-**Run date:** _______________
+**Run date:** 2026-04-15 (Started 10:52:49Z, Completed 11:56:54Z)
+
+**Note:** context.md WAS injected here (verified in prompt audit `1776247833326-nax-...-us-003-test-writer-run-t01.txt` lines 291–373). This is the first story where injection was actually active — US-002 ran without injection (context.md wasn't ready in time).
 
 **Metrics:**
 
 | Metric | Value |
 |:-------|:------|
-| Tier escalations | |
-| Review findings — semantic | |
-| Review findings — adversarial | |
-| Rectification iterations | |
-| Autofix iterations | |
-| Wall clock | |
-| Final tier | |
-| Human interventions | |
+| Tier escalations | 2 (fast → balanced → powerful) |
+| Review findings — semantic (final round) | 0 |
+| Review findings — adversarial (final round) | 5 advisory, 0 blocking |
+| Review findings — adversarial (aggregate across 4 rounds) | 17 advisory, 3 blocking |
+| Rectification iterations | 0 |
+| Autofix iterations | 3 blocked rounds on Haiku + 1 passed round on Opus |
+| Wall clock | 64.1 min |
+| Final tier | powerful (opus) |
+| Cost | $5.02 |
+| Human interventions | 0 |
 
-**Rediscovery incidents:**
+**Rediscovery incidents (what context.md did NOT prevent):**
 
-**Context used:**
+1. **No Prisma transaction around `importGraphify()` + `project.update()`** — error-severity adversarial finding. Controller writes to vector store and relational DB in the same request but doesn't wrap them transactionally. Partial failure = stale `graphifyLastImportedAt`. Context.md had no pattern for multi-write transaction wrapping.
 
-**Context ignored:**
+2. **Missing `-2` default validation key in `i18n/en/rag.json` and `i18n/zh/rag.json`** — error-severity convention finding. All other module i18n files (`labels.json`, `projects.json`, `tickets.json`) include `-2` as the fallback validation message. Context.md said "keys must exist in both en/zh" but didn't capture the `-2` convention.
 
-**`context.md` updated after this story:** [ ]
+3. **`ValidationAppException` used `'graphifyDisabled' as unknown as number`** — error-severity type safety violation. The exception signature expects a numeric i18n key; the agent cast a string to bypass typechecking. Context.md didn't capture the AppException construction pattern.
+
+**Context used (moments the agent made the right call because of context.md):**
+
+1. Did NOT re-derive the `source` union in `KbResultDto @ApiProperty` — the agent knew from context.md that all 4 locations need `'code'` and left them alone (no DTO changes needed for US-003 anyway, but the constraint was primed).
+2. Did NOT re-derive `graphifyLastImportedAt` location — correctly placed in controller, not service. AC9 passed first time.
+3. Did NOT re-derive i18n dual-locale rule — `graphifyDisabled` was added to both en and zh in round 1.
+4. Did NOT re-attempt SQL-injectable filter strings (relevant only as background, but agent stayed clear of interpolated SQL).
+
+**Context ignored (none detected):**
+No direct "agent re-derived something that was in context.md" incidents observed. The agent's mistakes were all in domains NOT covered by context.md (transactions, i18n conventions, AppException patterns).
+
+**Interpretation:** Context.md prevented rediscovery of all 4 constraints it captured, but US-003 introduced 3 new constraints from domains outside its scope. The escalation to powerful was needed to fix the final blocking transaction/i18n/AppException findings — Haiku exhausted autofix without resolving them.
+
+**`context.md` updated after this story:** [x] — added 3 new constraints (transaction wrapping, `-2` i18n key, `ValidationAppException` numeric key) before running US-004.
 
 ---
 
@@ -320,30 +352,41 @@ _(write here immediately after the run — this becomes the source material for 
 
 ---
 
-### US-005 — CLI Command (INJECTION #4, bonus)
+### US-005 — CLI Command (INJECTION #3, bonus, CLI workspace)
 
-**Run date:** _______________
+**Run date:** 2026-04-15 (Started 13:54:44Z, Completed 14:14:02Z)
 
-> Note: US-005 uses `workdir: "apps/cli"` — different workspace from US-001–004. Verify `context.md` path resolves correctly from the CLI workspace root.
+**Note:** context.md WAS injected. `workdir: "apps/cli"` (different workspace from US-001–004). The nax git-clean bug that tripped US-004 did NOT fire — reviews reached the LLM checks cleanly.
 
 **Metrics:**
 
 | Metric | Value |
 |:-------|:------|
-| Tier escalations | |
-| Review findings — semantic | |
-| Review findings — adversarial | |
-| Rectification iterations | |
-| Autofix iterations | |
-| Wall clock | |
-| Final tier | |
-| Human interventions | |
+| Tier escalations | 0 (stayed on fast/haiku) |
+| Review findings — semantic (final) | 0 |
+| Review findings — adversarial (final) | 3 advisory, 0 blocking — passed |
+| Review findings — adversarial (aggregate) | 13 advisory + 4 blocking across 3 rounds |
+| Rectification iterations | 0 |
+| Autofix iterations | 2 (succeeded on attempt 2) |
+| Wall clock | 19.3 min |
+| Final tier | fast (haiku) |
+| Cost | Not captured (metrics.json written after acceptance; run halted mid-acceptance) |
+| Human interventions | 1 (run halted by operator during acceptance phase — misconfigured acceptance, unrelated to story) |
 
-**Rediscovery incidents:**
+**Rediscovery incidents (CLI-specific patterns context.md did NOT prevent — 4):**
 
-**Context used:**
+1. **`ctx.projectSlug` vs `options.project`** — all other kb sub-commands (search/list/add/delete/optimize) use `ctx.projectSlug`. Agent initially used `options.project`. Blocking finding, round 2.
+2. **`if (!ctx.projectSlug)` validation** — all other kb sub-commands have this pre-flight check. Agent omitted it. Blocking, round 2.
+3. **Validate both `apiKey` AND `apiUrl`** — error message in the codebase says "API key or URL not configured" but agent only checked `!ctx.apiKey`. Blocking, round 2.
+4. **Input validation for parsed JSON** — extracted `nodes`/`links` without checking the JSON actually had those keys. If `graph.json` is valid JSON but shape differs, undefined values propagate. Blocking, round 1.
 
-**Context ignored:**
+**Context used (entries the agent demonstrably followed):**
+
+- None directly observable — context.md had zero CLI-specific entries because US-001/002/003 never touched `apps/cli`. The agent relied entirely on the four injected CLI context files (`kb.ts`, `kb.spec.ts`, `auth.ts`, `error.ts`) to infer conventions. Notably, the pre-populated spec hypothesis ("CLI: uses `resolveAuth({})`, `unwrap(response)`, `handleApiError(err)`") never made it into context.md post-US-001 because it wasn't confirmed — and US-005 didn't actually need those specific helpers (it used `ctx` directly per the codebase's current idiom).
+
+**Context ignored:** N/A — context.md had no CLI entries to follow.
+
+**Interpretation:** US-005 is a negative-control-ish data point. context.md brought no CLI-specific value. Yet the story still completed in 19.3 min on Haiku with 2 autofix rounds and zero escalations — indicating that the domain-local context files (`kb.spec.ts` especially) + good adversarial review are sufficient for medium-complexity, well-scoped CLI work even without cross-story feature context. This suggests v1's value concentrates where cross-story constraint leakage is high (same-file refactors, same-module additions like US-001→US-002→US-003 in `apps/api`) and diminishes at workspace boundaries.
 
 ---
 
