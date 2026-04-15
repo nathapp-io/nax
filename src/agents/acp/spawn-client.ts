@@ -98,7 +98,10 @@ class SpawnAcpSession implements AcpSession {
   private readonly env: Record<string, string | undefined>;
   private readonly pidRegistry?: PidRegistry;
   private activeProc: { pid: number; kill(signal?: number): void } | null = null;
+  /** Volatile Claude Code session ID (acpxSessionId) — updated on reconnect. */
   readonly id?: string;
+  /** Stable record ID (acpxRecordId) — assigned at creation, never changes. */
+  readonly recordId?: string;
 
   constructor(opts: {
     agentName: string;
@@ -110,6 +113,7 @@ class SpawnAcpSession implements AcpSession {
     env: Record<string, string | undefined>;
     pidRegistry?: PidRegistry;
     id?: string;
+    recordId?: string;
   }) {
     this.agentName = opts.agentName;
     this.sessionName = opts.sessionName;
@@ -120,6 +124,7 @@ class SpawnAcpSession implements AcpSession {
     this.env = opts.env;
     this.pidRegistry = opts.pidRegistry;
     this.id = opts.id;
+    this.recordId = opts.recordId;
   }
 
   async prompt(text: string): Promise<AcpSessionResponse> {
@@ -324,26 +329,35 @@ class SpawnAcpSession implements AcpSession {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Parse the session UUID from `acpx --format json sessions ensure` stdout.
+ * Parse both ACP session IDs from `acpx --format json sessions ensure` stdout.
  *
  * acpx --format json outputs a JSON line:
- *   {"action":"session_ensured","created":true,"acpxSessionId":"<uuid>","name":"<name>"}
+ *   {"action":"session_ensured","created":true,"acpxRecordId":"<uuid>","acpxSessionId":"<uuid>","name":"<name>"}
  *
- * Returns the UUID string, or undefined if the output doesn't contain valid JSON with acpxSessionId.
+ * - `acpxRecordId` — stable record identifier, assigned at creation, never changes across reconnects.
+ * - `acpxSessionId` — volatile Claude Code session ID, updated on each Claude Code reconnect.
+ *
+ * Returns an object with both IDs (undefined when not present in output).
  */
-function parseSessionId(stdout: string): string | undefined {
+function parseSessionIds(stdout: string): { sessionId: string | undefined; recordId: string | undefined } {
   for (const line of stdout.split("\n").reverse()) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) continue;
     try {
       const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-      const id = parsed.acpxSessionId;
-      if (typeof id === "string" && id.length > 0) return id;
+      const sessionId = parsed.acpxSessionId;
+      const recordId = parsed.acpxRecordId;
+      if (typeof sessionId === "string" && sessionId.length > 0) {
+        return {
+          sessionId,
+          recordId: typeof recordId === "string" && recordId.length > 0 ? recordId : undefined,
+        };
+      }
     } catch {
       // not valid JSON — skip
     }
   }
-  return undefined;
+  return { sessionId: undefined, recordId: undefined };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -434,6 +448,7 @@ export class SpawnAcpClient implements AcpClient {
       throw new Error(`[acp-adapter] Failed to create session: ${stderr || `exit code ${exitCode}`}`);
     }
 
+    const { sessionId, recordId } = parseSessionIds(stdout);
     return new SpawnAcpSession({
       agentName: opts.agentName,
       sessionName,
@@ -443,7 +458,8 @@ export class SpawnAcpClient implements AcpClient {
       permissionMode: opts.permissionMode,
       env: this.env,
       pidRegistry: this.pidRegistry,
-      id: parseSessionId(stdout),
+      id: sessionId,
+      recordId,
     });
   }
 
@@ -457,6 +473,7 @@ export class SpawnAcpClient implements AcpClient {
       return null; // Session doesn't exist or can't be resumed
     }
 
+    const { sessionId, recordId } = parseSessionIds(stdout);
     return new SpawnAcpSession({
       agentName,
       sessionName,
@@ -466,7 +483,8 @@ export class SpawnAcpClient implements AcpClient {
       permissionMode,
       env: this.env,
       pidRegistry: this.pidRegistry,
-      id: parseSessionId(stdout),
+      id: sessionId,
+      recordId,
     });
   }
 

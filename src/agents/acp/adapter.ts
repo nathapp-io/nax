@@ -102,8 +102,10 @@ export interface AcpSession {
   prompt(text: string): Promise<AcpSessionResponse>;
   close(options?: { forceTerminate?: boolean }): Promise<void>;
   cancelActivePrompt(): Promise<void>;
-  /** Session ID returned by the ACP provider (e.g. acpx UUID). Undefined when not available. */
+  /** Volatile session ID: updated by acpx on each Claude Code reconnect (acpxSessionId). */
   readonly id?: string;
+  /** Stable record ID: assigned at session creation, never changes across reconnects (acpxRecordId). */
+  readonly recordId?: string;
 }
 
 export interface AcpClient {
@@ -886,6 +888,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           void writePromptAudit({
             prompt: currentPrompt,
             sessionName,
+            recordId: session.recordId,
             sessionId: session.id,
             workdir: options.workdir,
             projectDir: options.projectDir,
@@ -1098,6 +1101,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           void writePromptAudit({
             prompt,
             sessionName: completeSessionName,
+            recordId: session.recordId,
             sessionId: session.id,
             workdir: workdir ?? process.cwd(),
             auditDir: _completeAuditConfig.agent.promptAudit.dir,
