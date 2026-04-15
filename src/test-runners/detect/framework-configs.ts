@@ -167,7 +167,10 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
         if (specMatch) {
           return { type: "framework-config", framework: "mocha", path, patterns: normalize([specMatch[1]]) };
         }
-        continue;
+        // JS/CJS found but spec is dynamic/unextractable — claim framework with empty
+        // patterns so downstream callers know mocha is configured even if we can't
+        // read the exact spec. Tier 2 mocha defaults fill in as an honest fallback.
+        return { type: "framework-config", framework: "mocha", path, patterns: [] };
       }
 
       const spec = config.spec;
@@ -180,8 +183,11 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
       if (patterns.length > 0) {
         return { type: "framework-config", framework: "mocha", path, patterns: normalize(patterns) };
       }
+      // Parseable JSON/YAML config found but no spec field — claim framework; Tier 2 fills in.
+      return { type: "framework-config", framework: "mocha", path, patterns: [] };
     } catch {
-      // parse error — skip this config file, try next candidate
+      // Parse error — skip this config file and try next candidate.
+      // Do not emit a sentinel for malformed configs.
     }
   }
   return null;
@@ -190,9 +196,10 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
 /**
  * Parse playwright.config.* for testDir/testMatch.
  *
- * When testMatch is a RegExp literal (unextractable), we still return an
- * empty-pattern source carrying framework:"playwright" so Tier 2 playwright
- * defaults are suppressed in favour of the developer's explicit config.
+ * When testMatch is a RegExp literal (unextractable) or no pattern config is
+ * present, returns an empty-pattern source. Tier 2 playwright defaults
+ * ("**\/*.spec.*") then fill in as an honest fallback — those are exactly
+ * what the playwright runtime uses when no testDir/testMatch is set.
  */
 async function parsePlaywrightConfig(workdir: string): Promise<DetectionSource | null> {
   const candidates = ["playwright.config.ts", "playwright.config.js"];
@@ -207,8 +214,7 @@ async function parsePlaywrightConfig(workdir: string): Promise<DetectionSource |
     const testDirMatch = text.match(/testDir\s*:\s*['"]([^'"]+)['"]/);
     if (testDirMatch) patterns.push(`${testDirMatch[1]}/**/*.spec.{ts,js}`);
 
-    // testMatch: ['**/*.spec.ts'] — string array form only; RegExp literals are ignored
-    // (unextractable RegExp → empty source that still suppresses Tier 2 defaults)
+    // testMatch: ['**/*.spec.ts'] — string array form only; RegExp literals are not extracted
     const testMatchMatch = text.match(/testMatch\s*:\s*\[([^\]]+)\]/s);
     if (testMatchMatch) {
       const extracted = extractStringLiterals(testMatchMatch[1]);
@@ -218,9 +224,10 @@ async function parsePlaywrightConfig(workdir: string): Promise<DetectionSource |
     if (patterns.length > 0) {
       return { type: "framework-config", framework: "playwright", path, patterns: normalize(patterns) };
     }
-    // Config found but no extractable patterns (or only RegExp testMatch).
-    // Return empty-pattern source so Tier 2 playwright defaults are suppressed.
-    return { type: "framework-config", framework: "playwright", path, patterns: ["**/*.spec.ts", "**/*.spec.js"] };
+    // Config found but no extractable patterns (e.g. only RegExp testMatch).
+    // Return empty-pattern source — Tier 2 playwright defaults (`**/*.spec.*`) will
+    // fill in as an honest fallback, matching what the playwright runtime uses by default.
+    return { type: "framework-config", framework: "playwright", path, patterns: [] };
   }
   return null;
 }

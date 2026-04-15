@@ -168,7 +168,7 @@ describe("Tier 1 suppresses Tier 2 for the same framework", () => {
 
 // ─── Bug 2: Tier 1 unextractable config still suppresses Tier 2 defaults ──────
 
-describe("Tier 1 unextractable config suppresses Tier 2 defaults", () => {
+describe("Tier 1 unextractable config — honest fallback to Tier 2 defaults", () => {
   test("jest.config.js with testRegex falls back to jest Tier 2 defaults (honest fallback)", async () => {
     // Developer uses testRegex instead of testMatch — we can't extract patterns.
     // Because Tier 1 yields no patterns, Tier 2 defaults are allowed through as a
@@ -463,5 +463,127 @@ describe("jest config resolution precedence", () => {
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
     expect(result.patterns).toContain("src/**/*.unit.test.ts");
+  });
+});
+
+// ─── Regression: pytest plugin packages must not trigger pytest detection ──────
+
+describe("pyproject pytest-only plugin false positives", () => {
+  test("pytest-cov alone does NOT trigger pytest pattern detection", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("pyproject.toml")) {
+        // Only a pytest plugin — not the pytest runner itself
+        return `[project.optional-dependencies]\ndev = ["pytest-cov>=4", "pytest-asyncio>=0.21"]\n`;
+      }
+      return null;
+    });
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    // pytest-cov / pytest-asyncio must not produce python test patterns
+    expect(result.patterns).not.toContain("test_*.py");
+    expect(result.patterns).not.toContain("tests/**/*.py");
+  });
+
+  test("pytest-cov alongside pytest itself DOES trigger detection", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("pyproject.toml")) {
+        return `[project.optional-dependencies]\ndev = ["pytest>=7", "pytest-cov>=4"]\n`;
+      }
+      return null;
+    });
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.patterns).toContain("test_*.py");
+  });
+});
+
+// ─── Regression: .mocharc.js with dynamic spec emits sentinel (not null) ──────
+
+describe("parseMochaConfig dynamic spec — sentinel and honest fallback", () => {
+  test(".mocharc.js with dynamic spec emits mocha framework claim + Tier 2 defaults as fallback", async () => {
+    // .mocharc.js exists but spec uses a function call — unextractable by regex
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith(".mocharc.js")) {
+        return `module.exports = { spec: getSpecPatterns(), reporter: 'spec' }`;
+      }
+      return null;
+    });
+    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("package.json")) {
+        return JSON.stringify({ devDependencies: { mocha: "^10.0.0" } });
+      }
+      return null;
+    });
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    // Tier 1 claims mocha (empty patterns) — Tier 2 mocha defaults fill in as honest fallback
+    // since Tier 1 yields no patterns and the suppression rule only fires on non-empty Tier 1
+    expect(result.patterns.some((p) => p.includes("spec"))).toBe(true);
+    // Must not return empty — the mocha defaults give us something useful
+    expect(result.patterns.length).toBeGreaterThan(0);
+  });
+
+  test(".mocharc.json with no spec field emits sentinel + Tier 2 fills in", async () => {
+    _frameworkConfigDeps.readText = mock(async (path: string) => {
+      if (path.endsWith(".mocharc.json")) {
+        return JSON.stringify({ reporter: "dot", timeout: 5000 });
+      }
+      return null;
+    });
+    _frameworkConfigDeps.parseToml = orig.parseToml;
+    _frameworkConfigDeps.parseYaml = orig.parseYaml;
+    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("package.json")) {
+        return JSON.stringify({ devDependencies: { mocha: "^10.0.0" } });
+      }
+      return null;
+    });
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.patterns.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── Regression: bun test + vitest in devDeps — vitest wins ──────────────────
+
+describe("bun test + JS framework coexistence in Tier 2", () => {
+  test("vitest in devDeps + bun test in scripts → only vitest defaults emitted", async () => {
+    // When a recognised JS framework is found, the bun test check is skipped.
+    // This prevents duplicate/confusing patterns when vitest runs via bun test.
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("package.json")) {
+        return JSON.stringify({
+          devDependencies: { vitest: "^1.0.0" },
+          scripts: { test: "bun test" },
+        });
+      }
+      return null;
+    });
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("medium");
+    // Vitest defaults present
+    expect(result.patterns).toContain("**/*.test.ts");
+    // Bun-specific patterns (e.g. **/*_test.ts) must NOT appear alongside vitest defaults
+    // since bun test detection is skipped when vitest is already declared
+    expect(result.patterns).not.toContain("**/*_test.ts");
+  });
+
+  test("bun test only in scripts (no framework in devDeps) → bun defaults emitted", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async (path: string) => {
+      if (path.endsWith("package.json")) {
+        return JSON.stringify({ scripts: { test: "bun test" } });
+      }
+      return null;
+    });
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("medium");
+    expect(result.patterns).toContain("**/*.test.ts");
+    expect(result.patterns).toContain("**/*_test.ts");
   });
 });

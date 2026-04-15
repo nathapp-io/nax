@@ -137,8 +137,10 @@ async function detectFromPyprojectDeps(workdir: string): Promise<DetectionSource
   // Match pytest as a dependency declaration:
   //   - line-start key:   `pytest = ">=7"` or `  pytest>=7`
   //   - quoted string:    `"pytest"`, `"pytest>=7"`, `'pytest~=7.0'`
+  // Does NOT match plugin packages such as `pytest-cov`, `pytest-asyncio` (the
+  // negative lookahead (?![-\w]) rejects any continuation with a dash or word char).
   // Does NOT match `[tool.pytest.ini_options]` (preceded by `.`, no = or quotes).
-  const PYTEST_DEP_RE = /(?:^[ \t]*["']?pytest\b)|(?:["']pytest(?:[>=~!<][^"']*)?["'])/m;
+  const PYTEST_DEP_RE = /(?:^[ \t]*["']?pytest(?![-\w]))|(?:["']pytest(?![-\w])(?:[>=~!<][^"']*)?["'])/m;
   if (!PYTEST_DEP_RE.test(text)) return null;
 
   return {
