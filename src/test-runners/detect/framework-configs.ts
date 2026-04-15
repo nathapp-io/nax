@@ -1,29 +1,24 @@
 /**
- * Tier 1 — Framework Config Parsers
+ * Tier 1 — Framework Config Parsers (JS/TS frameworks)
  *
  * Extracts test-file glob patterns from framework configuration files.
  * Each parser returns null when the file is absent or yields no usable patterns.
  * The orchestrator (detect/index.ts) tries each parser in turn and unions results.
  *
+ * Python parsers live in framework-configs-python.ts.
  * Excluded dirs always filtered: node_modules/, dist/, build/, .nax/, coverage/, .git/
  */
 
 import { expandExtglobAll } from "./extglob";
+import { _frameworkConfigDeps } from "./framework-configs-deps";
+import { parsePyprojectToml, parsePytestIni } from "./framework-configs-python";
 import type { DetectionSource } from "./types";
+
+// Re-export so tests continue to import _frameworkConfigDeps from this module.
+export { _frameworkConfigDeps } from "./framework-configs-deps";
 
 /** Directories always excluded from produced globs */
 const EXCLUDE_DIRS = ["node_modules", "dist", "build", ".nax", "coverage", ".git"];
-
-/** Injectable deps for testability */
-export const _frameworkConfigDeps = {
-  readText: async (path: string): Promise<string | null> => {
-    const f = Bun.file(path);
-    if (!(await f.exists())) return null;
-    return f.text();
-  },
-  parseToml: (text: string): unknown => Bun.TOML.parse(text),
-  parseYaml: (text: string): unknown => Bun.YAML.parse(text),
-};
 
 /** Filter out patterns referencing excluded dirs */
 function filterExcluded(patterns: string[]): string[] {
@@ -59,21 +54,28 @@ async function parseVitestConfig(workdir: string): Promise<DetectionSource | nul
     if (includeMatch) {
       const patterns = extractStringLiterals(includeMatch[1]);
       if (patterns.length > 0) {
-        return { type: "framework-config", path, patterns: normalize(patterns) };
+        return { type: "framework-config", framework: "vitest", path, patterns: normalize(patterns) };
       }
     }
-    // Found config file but no extractable include → return empty source to signal Tier 1 found
-    return { type: "framework-config", path, patterns: [] };
+    // Found config file but no extractable include → still claim framework to suppress Tier 2 defaults.
+    return { type: "framework-config", framework: "vitest", path, patterns: [] };
   }
   return null;
 }
 
 /**
  * Try reading a jest config file (jest.config.ts/js/cjs/mjs/json or package.json#jest).
- * Extracts `testMatch` patterns (prefer) or converts `testRegex` when present.
+ * Extracts `testMatch` patterns when present.
+ *
+ * When `testRegex` is detected instead of `testMatch`, we return an empty-pattern
+ * source that still carries framework:"jest" so the orchestrator suppresses Tier 2
+ * jest defaults (the developer's explicit testRegex scope must be honoured).
  *
  * `jest.config.json` is parsed as JSON (exact schema match). JS/TS/CJS/MJS
  * variants are parsed with a permissive regex since we can't execute them.
+ *
+ * Fallthrough to package.json#jest only happens when NO jest.config.* file
+ * exists — matching Jest's own config-resolution precedence.
  */
 async function parseJestConfig(workdir: string): Promise<DetectionSource | null> {
   const candidates = ["jest.config.ts", "jest.config.js", "jest.config.cjs", "jest.config.mjs", "jest.config.json"];
@@ -87,17 +89,19 @@ async function parseJestConfig(workdir: string): Promise<DetectionSource | null>
       try {
         const config = JSON.parse(text) as Record<string, unknown>;
         const patterns = extractJestPatternsFromObject(config);
-        return { type: "framework-config", path, patterns: normalize(patterns) };
+        return { type: "framework-config", framework: "jest", path, patterns: normalize(patterns) };
       } catch {
         // Malformed JSON — fall through to regex extraction as a best-effort
       }
     }
 
     const patterns = extractJestPatterns(text);
-    return { type: "framework-config", path, patterns: normalize(patterns) };
+    // Even if patterns is empty (e.g. testRegex used), claim the framework so
+    // Tier 2 jest defaults are not added on top of an explicit jest config.
+    return { type: "framework-config", framework: "jest", path, patterns: normalize(patterns) };
   }
 
-  // Check package.json#jest
+  // Check package.json#jest — only reached when NO jest.config.* file was found.
   const pkgPath = `${workdir}/package.json`;
   const pkgText = await _frameworkConfigDeps.readText(pkgPath);
   if (pkgText) {
@@ -107,7 +111,12 @@ async function parseJestConfig(workdir: string): Promise<DetectionSource | null>
       if (jestConfig) {
         const patterns = extractJestPatternsFromObject(jestConfig);
         if (patterns.length > 0) {
-          return { type: "framework-config", path: `${pkgPath}#jest`, patterns: normalize(patterns) };
+          return {
+            type: "framework-config",
+            framework: "jest",
+            path: `${pkgPath}#jest`,
+            patterns: normalize(patterns),
+          };
         }
       }
     } catch {
@@ -125,6 +134,8 @@ function extractJestPatterns(text: string): string[] {
     const patterns = extractStringLiterals(matchMatch[1]);
     if (patterns.length > 0) return patterns;
   }
+  // testRegex present — dev configured jest explicitly but with a regex we can't
+  // convert to globs. Return empty so framework tag suppresses Tier 2 defaults.
   return [];
 }
 
@@ -132,93 +143,6 @@ function extractJestPatternsFromObject(config: Record<string, unknown>): string[
   const testMatch = config.testMatch;
   if (Array.isArray(testMatch)) return testMatch.filter((p): p is string => typeof p === "string");
   return [];
-}
-
-/**
- * Parse pyproject.toml for pytest test configuration.
- * Extracts testpaths and python_files from [tool.pytest.ini_options].
- */
-async function parsePyprojectToml(workdir: string): Promise<DetectionSource | null> {
-  const path = `${workdir}/pyproject.toml`;
-  const text = await _frameworkConfigDeps.readText(path);
-  if (!text) return null;
-
-  try {
-    const parsed = _frameworkConfigDeps.parseToml(text) as Record<string, unknown>;
-    const tool = parsed?.tool as Record<string, unknown> | undefined;
-    const pytest = tool?.pytest as Record<string, unknown> | undefined;
-    const iniOptions = (pytest?.ini_options ?? tool?.["pytest.ini_options"]) as Record<string, unknown> | undefined;
-
-    if (!iniOptions) {
-      // pyproject.toml exists but no pytest config
-      return null;
-    }
-
-    const patterns: string[] = [];
-
-    // testpaths: ["tests", "src"] → "tests/**/*.py"
-    const testpaths = iniOptions.testpaths;
-    if (Array.isArray(testpaths)) {
-      for (const p of testpaths) {
-        if (typeof p === "string") patterns.push(`${p}/**/*.py`);
-      }
-    }
-
-    // python_files: ["test_*.py", "*_test.py"]
-    const pythonFiles = iniOptions.python_files;
-    if (Array.isArray(pythonFiles)) {
-      for (const p of pythonFiles) {
-        if (typeof p === "string") patterns.push(p);
-      }
-    } else if (typeof pythonFiles === "string") {
-      patterns.push(pythonFiles);
-    }
-
-    // Default pytest patterns when config exists but no explicit patterns
-    if (patterns.length === 0) {
-      patterns.push("test_*.py", "*_test.py");
-    }
-
-    return { type: "framework-config", path, patterns: normalize(patterns) };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Parse pytest.ini for test configuration.
- */
-async function parsePytestIni(workdir: string): Promise<DetectionSource | null> {
-  const candidates = ["pytest.ini", "setup.cfg"];
-  for (const name of candidates) {
-    const path = `${workdir}/${name}`;
-    const text = await _frameworkConfigDeps.readText(path);
-    if (!text) continue;
-
-    if (!text.includes("[pytest]") && !text.includes("[tool:pytest]")) continue;
-
-    const patterns: string[] = [];
-
-    // testpaths = tests src
-    const testpathsMatch = text.match(/testpaths\s*=\s*([^\n]+)/);
-    if (testpathsMatch) {
-      for (const p of testpathsMatch[1].trim().split(/\s+/)) {
-        if (p) patterns.push(`${p}/**/*.py`);
-      }
-    }
-
-    // python_files = test_*.py *_test.py
-    const pyFilesMatch = text.match(/python_files\s*=\s*([^\n]+)/);
-    if (pyFilesMatch) {
-      for (const p of pyFilesMatch[1].trim().split(/\s+/)) {
-        if (p) patterns.push(p);
-      }
-    }
-
-    if (patterns.length === 0) patterns.push("test_*.py", "*_test.py");
-    return { type: "framework-config", path, patterns: normalize(patterns) };
-  }
-  return null;
 }
 
 /**
@@ -241,9 +165,12 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
         // JS/CJS — extract spec: property with regex
         const specMatch = text.match(/spec\s*:\s*['"]([^'"]+)['"]/);
         if (specMatch) {
-          return { type: "framework-config", path, patterns: normalize([specMatch[1]]) };
+          return { type: "framework-config", framework: "mocha", path, patterns: normalize([specMatch[1]]) };
         }
-        continue;
+        // JS/CJS found but spec is dynamic/unextractable — claim framework with empty
+        // patterns so downstream callers know mocha is configured even if we can't
+        // read the exact spec. Tier 2 mocha defaults fill in as an honest fallback.
+        return { type: "framework-config", framework: "mocha", path, patterns: [] };
       }
 
       const spec = config.spec;
@@ -254,10 +181,13 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
           : [];
 
       if (patterns.length > 0) {
-        return { type: "framework-config", path, patterns: normalize(patterns) };
+        return { type: "framework-config", framework: "mocha", path, patterns: normalize(patterns) };
       }
+      // Parseable JSON/YAML config found but no spec field — claim framework; Tier 2 fills in.
+      return { type: "framework-config", framework: "mocha", path, patterns: [] };
     } catch {
-      // parse error — skip this config file, try next candidate
+      // Parse error — skip this config file and try next candidate.
+      // Do not emit a sentinel for malformed configs.
     }
   }
   return null;
@@ -265,6 +195,11 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
 
 /**
  * Parse playwright.config.* for testDir/testMatch.
+ *
+ * When testMatch is a RegExp literal (unextractable) or no pattern config is
+ * present, returns an empty-pattern source. Tier 2 playwright defaults
+ * ("**\/*.spec.*") then fill in as an honest fallback — those are exactly
+ * what the playwright runtime uses when no testDir/testMatch is set.
  */
 async function parsePlaywrightConfig(workdir: string): Promise<DetectionSource | null> {
   const candidates = ["playwright.config.ts", "playwright.config.js"];
@@ -279,7 +214,7 @@ async function parsePlaywrightConfig(workdir: string): Promise<DetectionSource |
     const testDirMatch = text.match(/testDir\s*:\s*['"]([^'"]+)['"]/);
     if (testDirMatch) patterns.push(`${testDirMatch[1]}/**/*.spec.{ts,js}`);
 
-    // testMatch: ['**/*.spec.ts']
+    // testMatch: ['**/*.spec.ts'] — string array form only; RegExp literals are not extracted
     const testMatchMatch = text.match(/testMatch\s*:\s*\[([^\]]+)\]/s);
     if (testMatchMatch) {
       const extracted = extractStringLiterals(testMatchMatch[1]);
@@ -287,10 +222,12 @@ async function parsePlaywrightConfig(workdir: string): Promise<DetectionSource |
     }
 
     if (patterns.length > 0) {
-      return { type: "framework-config", path, patterns: normalize(patterns) };
+      return { type: "framework-config", framework: "playwright", path, patterns: normalize(patterns) };
     }
-    // Config file found but no extractable pattern
-    return { type: "framework-config", path, patterns: ["**/*.spec.ts", "**/*.spec.js"] };
+    // Config found but no extractable patterns (e.g. only RegExp testMatch).
+    // Return empty-pattern source — Tier 2 playwright defaults (`**/*.spec.*`) will
+    // fill in as an honest fallback, matching what the playwright runtime uses by default.
+    return { type: "framework-config", framework: "playwright", path, patterns: [] };
   }
   return null;
 }
@@ -308,10 +245,15 @@ async function parseCypressConfig(workdir: string): Promise<DetectionSource | nu
     // specPattern: 'cypress/e2e/**/*.cy.{js,jsx,ts,tsx}'
     const specMatch = text.match(/specPattern\s*:\s*['"]([^'"]+)['"]/);
     if (specMatch) {
-      return { type: "framework-config", path, patterns: normalize([specMatch[1]]) };
+      return { type: "framework-config", framework: "cypress", path, patterns: normalize([specMatch[1]]) };
     }
 
-    return { type: "framework-config", path, patterns: normalize(["cypress/e2e/**/*.cy.{js,ts}"]) };
+    return {
+      type: "framework-config",
+      framework: "cypress",
+      path,
+      patterns: normalize(["cypress/e2e/**/*.cy.{js,ts}"]),
+    };
   }
   return null;
 }
@@ -352,12 +294,12 @@ async function parseViteConfig(workdir: string): Promise<DetectionSource | null>
       if (includeMatch) {
         const patterns = extractStringLiterals(includeMatch[1]);
         if (patterns.length > 0) {
-          return { type: "framework-config", path, patterns: normalize(patterns) };
+          return { type: "framework-config", framework: "vitest", path, patterns: normalize(patterns) };
         }
       }
     }
-    // Vite config with test: block but no extractable include — signal Tier 1 found
-    return { type: "framework-config", path, patterns: [] };
+    // Vite config with test: block but no extractable include — claim vitest to suppress Tier 2.
+    return { type: "framework-config", framework: "vitest", path, patterns: [] };
   }
   return null;
 }
@@ -368,9 +310,6 @@ async function parseViteConfig(workdir: string): Promise<DetectionSource | null>
  * Bun test doesn't accept custom test-file patterns (the matchers are
  * hardcoded in the runtime), so we emit Bun's well-known defaults when a
  * `[test]` section is present.
- *
- * Default patterns match Bun's discovery rules:
- * `*.test.*`, `*_test.*`, `*.spec.*`, `*_spec.*` with .ts/.tsx/.js/.jsx/.mjs/.cjs extensions.
  */
 async function parseBunfig(workdir: string): Promise<DetectionSource | null> {
   const path = `${workdir}/bunfig.toml`;
@@ -386,6 +325,7 @@ async function parseBunfig(workdir: string): Promise<DetectionSource | null> {
 
   return {
     type: "framework-config",
+    framework: "bun",
     path,
     patterns: normalize([
       "**/*.test.{ts,tsx,js,jsx,mjs,cjs}",

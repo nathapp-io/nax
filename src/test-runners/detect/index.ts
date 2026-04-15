@@ -12,6 +12,10 @@
  *
  * Multiple languages in one project produce a union of patterns.
  * Confidence reflects the strongest tier that yielded patterns.
+ *
+ * Framework isolation rule: when Tier 1 claims a framework (even with empty
+ * patterns — e.g. developer uses testRegex), Tier 2 defaults for that same
+ * framework are suppressed so developer intent is always honoured.
  */
 
 import { getSafeLogger } from "../../logger";
@@ -83,8 +87,20 @@ async function detectForDirectory(workdir: string): Promise<DetectionResult> {
   const tier1Sources = await detectFromFrameworkConfigs(workdir);
   const tier1Patterns = tier1Sources.flatMap((s) => [...s.patterns]);
 
-  // Tier 2: Framework defaults from manifests
-  const tier2Sources = await detectFromFrameworkDefaults(workdir);
+  // Determine which frameworks Tier 1 has claimed with actual patterns.
+  // We only suppress Tier 2 defaults when Tier 1 yielded non-empty patterns for
+  // the same framework — meaning the developer explicitly configured test-file
+  // matching. Empty Tier 1 sources (e.g. vitest.config.ts with no `include`)
+  // are left open so Tier 2 can fill in the framework's canonical defaults,
+  // which is what the runtime uses when no explicit include is set.
+  const tier1FrameworksWithPatterns = new Set(
+    tier1Sources.filter((s) => s.patterns.length > 0 && s.framework !== undefined).map((s) => s.framework as string),
+  );
+
+  // Tier 2: Framework defaults — suppressed only for frameworks where Tier 1
+  // already produced explicit patterns.
+  const tier2SourcesAll = await detectFromFrameworkDefaults(workdir);
+  const tier2Sources = tier2SourcesAll.filter((s) => !s.framework || !tier1FrameworksWithPatterns.has(s.framework));
   const tier2Patterns = tier2Sources.flatMap((s) => [...s.patterns]);
 
   // Tier 3: File scan (used for cross-check and as fallback)
@@ -112,10 +128,9 @@ async function detectForDirectory(workdir: string): Promise<DetectionResult> {
     }
   }
 
-  // If Tier 1 or 2 found patterns, use them
+  // If Tier 1 or 2 found patterns, use them (filter out empty-pattern sources)
   if (tier1Patterns.length > 0 || tier2Patterns.length > 0) {
     const sources = [...tier1Sources, ...tier2Sources];
-    // Filter empty-pattern sources (config file found but no extractable patterns)
     const meaningful = sources.filter((s) => s.patterns.length > 0);
     if (meaningful.length > 0) {
       const result = mergeResults(meaningful);
