@@ -8,6 +8,7 @@
  * Excluded dirs always filtered: node_modules/, dist/, build/, .nax/, coverage/, .git/
  */
 
+import { expandExtglobAll } from "./extglob";
 import type { DetectionSource } from "./types";
 
 /** Directories always excluded from produced globs */
@@ -30,6 +31,16 @@ function filterExcluded(patterns: string[]): string[] {
 }
 
 /**
+ * Normalize framework-emitted patterns by expanding extglob/brace syntax
+ * into simple globs the suffix-based regex extractor can handle.
+ * Filters excluded dirs after expansion since expansion may surface
+ * previously-hidden references.
+ */
+function normalize(patterns: string[]): string[] {
+  return filterExcluded(expandExtglobAll(patterns));
+}
+
+/**
  * Try reading a vitest config file (vitest.config.ts/js/mts).
  * Extracts `test.include` array when present.
  *
@@ -48,7 +59,7 @@ async function parseVitestConfig(workdir: string): Promise<DetectionSource | nul
     if (includeMatch) {
       const patterns = extractStringLiterals(includeMatch[1]);
       if (patterns.length > 0) {
-        return { type: "framework-config", path, patterns: filterExcluded(patterns) };
+        return { type: "framework-config", path, patterns: normalize(patterns) };
       }
     }
     // Found config file but no extractable include → return empty source to signal Tier 1 found
@@ -69,7 +80,7 @@ async function parseJestConfig(workdir: string): Promise<DetectionSource | null>
     if (!text) continue;
 
     const patterns = extractJestPatterns(text);
-    return { type: "framework-config", path, patterns: filterExcluded(patterns) };
+    return { type: "framework-config", path, patterns: normalize(patterns) };
   }
 
   // Check package.json#jest
@@ -82,7 +93,7 @@ async function parseJestConfig(workdir: string): Promise<DetectionSource | null>
       if (jestConfig) {
         const patterns = extractJestPatternsFromObject(jestConfig);
         if (patterns.length > 0) {
-          return { type: "framework-config", path: `${pkgPath}#jest`, patterns: filterExcluded(patterns) };
+          return { type: "framework-config", path: `${pkgPath}#jest`, patterns: normalize(patterns) };
         }
       }
     } catch {
@@ -154,7 +165,7 @@ async function parsePyprojectToml(workdir: string): Promise<DetectionSource | nu
       patterns.push("test_*.py", "*_test.py");
     }
 
-    return { type: "framework-config", path, patterns: filterExcluded(patterns) };
+    return { type: "framework-config", path, patterns: normalize(patterns) };
   } catch {
     return null;
   }
@@ -191,7 +202,7 @@ async function parsePytestIni(workdir: string): Promise<DetectionSource | null> 
     }
 
     if (patterns.length === 0) patterns.push("test_*.py", "*_test.py");
-    return { type: "framework-config", path, patterns: filterExcluded(patterns) };
+    return { type: "framework-config", path, patterns: normalize(patterns) };
   }
   return null;
 }
@@ -216,7 +227,7 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
         // JS/CJS — extract spec: property with regex
         const specMatch = text.match(/spec\s*:\s*['"]([^'"]+)['"]/);
         if (specMatch) {
-          return { type: "framework-config", path, patterns: [specMatch[1]] };
+          return { type: "framework-config", path, patterns: normalize([specMatch[1]]) };
         }
         continue;
       }
@@ -229,7 +240,7 @@ async function parseMochaConfig(workdir: string): Promise<DetectionSource | null
           : [];
 
       if (patterns.length > 0) {
-        return { type: "framework-config", path, patterns: filterExcluded(patterns) };
+        return { type: "framework-config", path, patterns: normalize(patterns) };
       }
     } catch {
       // parse error — skip this config file, try next candidate
@@ -262,7 +273,7 @@ async function parsePlaywrightConfig(workdir: string): Promise<DetectionSource |
     }
 
     if (patterns.length > 0) {
-      return { type: "framework-config", path, patterns: filterExcluded(patterns) };
+      return { type: "framework-config", path, patterns: normalize(patterns) };
     }
     // Config file found but no extractable pattern
     return { type: "framework-config", path, patterns: ["**/*.spec.ts", "**/*.spec.js"] };
@@ -283,10 +294,10 @@ async function parseCypressConfig(workdir: string): Promise<DetectionSource | nu
     // specPattern: 'cypress/e2e/**/*.cy.{js,jsx,ts,tsx}'
     const specMatch = text.match(/specPattern\s*:\s*['"]([^'"]+)['"]/);
     if (specMatch) {
-      return { type: "framework-config", path, patterns: [specMatch[1]] };
+      return { type: "framework-config", path, patterns: normalize([specMatch[1]]) };
     }
 
-    return { type: "framework-config", path, patterns: ["cypress/e2e/**/*.cy.{js,ts}"] };
+    return { type: "framework-config", path, patterns: normalize(["cypress/e2e/**/*.cy.{js,ts}"]) };
   }
   return null;
 }

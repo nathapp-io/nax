@@ -21,20 +21,24 @@ describe("DEFAULT_TEST_FILE_PATTERNS", () => {
 });
 
 describe("globsToTestRegex", () => {
-  test("extracts .test.ts suffix", () => {
+  test("matches files inside the configured test directory", () => {
     const [re] = globsToTestRegex(["test/**/*.test.ts"]);
     expect(re).toBeDefined();
-    expect(re.test("src/foo.test.ts")).toBe(true);
+    expect(re.test("test/foo.test.ts")).toBe(true);
+    expect(re.test("apps/api/test/integration/foo.test.ts")).toBe(true);
+    // Files outside `test/` must NOT match this pattern — broaden the config
+    // (e.g. add "**/*.test.ts") to classify co-located tests.
+    expect(re.test("src/foo.test.ts")).toBe(false);
     expect(re.test("src/foo.ts")).toBe(false);
   });
 
-  test("extracts .spec.ts suffix (NestJS)", () => {
+  test("matches NestJS spec files via src/**/*.spec.ts", () => {
     const [re] = globsToTestRegex(["src/**/*.spec.ts"]);
     expect(re.test("apps/api/src/agents/agents.service.spec.ts")).toBe(true);
     expect(re.test("apps/api/src/agents/agents.service.ts")).toBe(false);
   });
 
-  test("extracts _test.go suffix (Go)", () => {
+  test("matches Go test files via **/*_test.go", () => {
     const [re] = globsToTestRegex(["**/*_test.go"]);
     expect(re.test("internal/foo/bar_test.go")).toBe(true);
     expect(re.test("internal/foo/bar.go")).toBe(false);
@@ -45,19 +49,32 @@ describe("globsToTestRegex", () => {
     expect(regexes).toHaveLength(2);
   });
 
-  test("de-duplicates identical suffix regexes", () => {
-    const regexes = globsToTestRegex(["test/**/*.test.ts", "test/unit/**/*.test.ts"]);
+  test("de-duplicates identical regexes", () => {
+    const regexes = globsToTestRegex(["test/**/*.test.ts", "test/**/*.test.ts"]);
     expect(regexes).toHaveLength(1);
   });
 
-  test("skips patterns with no `*`", () => {
-    const regexes = globsToTestRegex(["no-wildcard.ts"]);
-    expect(regexes).toHaveLength(0);
+  test("preserves directory discriminators in the produced regex", () => {
+    const [re] = globsToTestRegex(["**/__tests__/**/*.ts"]);
+    expect(re.test("apps/api/__tests__/foo.ts")).toBe(true);
+    expect(re.test("src/components/__tests__/button.ts")).toBe(true);
+    // Source files outside __tests__ must NOT match — this is the fix for the
+    // FEAT-015 over-permissive `.ts$` regex bug.
+    expect(re.test("apps/api/src/foo.ts")).toBe(false);
+    expect(re.test("src/foo.ts")).toBe(false);
   });
 
-  test("skips patterns with empty trailing suffix", () => {
-    const regexes = globsToTestRegex(["test/*"]);
-    expect(regexes).toHaveLength(0);
+  test("matches literal filename patterns when no `*` is present", () => {
+    const [re] = globsToTestRegex(["specific-file.test.ts"]);
+    expect(re.test("specific-file.test.ts")).toBe(true);
+    expect(re.test("dir/specific-file.test.ts")).toBe(true);
+    expect(re.test("other.test.ts")).toBe(false);
+  });
+
+  test("skips lone wildcard patterns that would match everything", () => {
+    expect(globsToTestRegex(["**"])).toHaveLength(0);
+    expect(globsToTestRegex(["*"])).toHaveLength(0);
+    expect(globsToTestRegex([""])).toHaveLength(0);
   });
 
   test("escapes regex metacharacters in suffix", () => {
