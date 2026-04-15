@@ -27,7 +27,7 @@ const DEFAULT_SMART_RUNNER_CONFIG = {
 function coerceSmartRunner(val: unknown) {
   if (val === undefined || val === true) return DEFAULT_SMART_RUNNER_CONFIG;
   if (val === false) return { ...DEFAULT_SMART_RUNNER_CONFIG, enabled: false };
-  return val as typeof DEFAULT_SMART_RUNNER_CONFIG;
+  return { ...DEFAULT_SMART_RUNNER_CONFIG, ...(val as Partial<typeof DEFAULT_SMART_RUNNER_CONFIG>) };
 }
 
 function buildScopedCommand(testFiles: string[], baseCommand: string, testScopedTemplate?: string): string {

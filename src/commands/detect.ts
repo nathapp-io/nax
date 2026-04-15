@@ -58,15 +58,11 @@ function resolveEffective(
   return "none";
 }
 
-/** Load raw config JSON for a path (returns {} on missing) */
+/** Load raw config JSON for a path (returns {} on missing, throws on parse/read errors) */
 async function loadRawConfig(path: string): Promise<Record<string, unknown>> {
-  try {
-    const f = Bun.file(path);
-    if (!(await f.exists())) return {};
-    return JSON.parse(await f.text()) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+  const f = Bun.file(path);
+  if (!(await f.exists())) return {};
+  return JSON.parse(await f.text()) as Record<string, unknown>;
 }
 
 /** Write raw config JSON to a path (creates parent dirs) */
