@@ -2,6 +2,8 @@
  * Context Engine v2 — Markdown Renderer
  *
  * Renders packed chunks into the push markdown string.
+ * Default style: markdown-sections (## headers), used by assemble().
+ * For agent-aware rendering see agent-renderer.ts.
  *
  * Rendering order (spec §AC-9):
  *   Project > Feature > Story > Session > Retrieved
@@ -12,12 +14,11 @@
 
 import type { PackedChunk } from "./packing";
 import type { ChunkScope } from "./types";
+import { SCOPE_ORDER, groupByScope, sortedBodies } from "./render-utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scope ordering
+// Scope headers
 // ─────────────────────────────────────────────────────────────────────────────
-
-const SCOPE_ORDER: ChunkScope[] = ["project", "feature", "story", "session", "retrieved"];
 
 const SCOPE_HEADERS: Record<ChunkScope, string> = {
   project: "## Project Context",
@@ -50,30 +51,12 @@ export function renderChunks(chunks: PackedChunk[], options: RenderOptions = {})
     sections.push(`## Prior Stage Summary\n\n${options.priorStageDigest.trim()}`);
   }
 
-  // Group by scope
-  const byScope = new Map<ChunkScope, PackedChunk[]>();
-  for (const scope of SCOPE_ORDER) {
-    byScope.set(scope, []);
-  }
-
-  for (const chunk of chunks) {
-    const group = byScope.get(chunk.scope);
-    if (group) {
-      group.push(chunk);
-    }
-  }
-
-  // Render non-empty scopes in order
+  // Group by scope and render non-empty scopes in order
+  const byScope = groupByScope(chunks);
   for (const scope of SCOPE_ORDER) {
     const group = byScope.get(scope) ?? [];
     if (group.length === 0) continue;
-
-    // Sort by score descending within scope
-    const sorted = [...group].sort((a, b) => b.score - a.score);
-
-    const header = SCOPE_HEADERS[scope];
-    const bodies = sorted.map((c) => c.content.trim()).join("\n\n---\n\n");
-    sections.push(`${header}\n\n${bodies}`);
+    sections.push(`${SCOPE_HEADERS[scope]}\n\n${sortedBodies(group)}`);
   }
 
   return sections.join("\n\n");

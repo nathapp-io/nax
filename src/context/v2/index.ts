@@ -3,6 +3,7 @@
  */
 
 export { ContextOrchestrator, createDefaultOrchestrator, _orchestratorDeps } from "./orchestrator";
+export type { RebuildOptions } from "./orchestrator";
 export { scoreChunks, scoreChunk, MIN_SCORE } from "./scoring";
 export type { ScoredChunk } from "./scoring";
 export { dedupeChunks, SIMILARITY_THRESHOLD } from "./dedupe";
@@ -36,7 +37,13 @@ export {
 } from "./pull-tools";
 export type { RunCallCounter } from "./pull-tools";
 
+export { getAgentProfile, AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE } from "./agent-profiles";
+export type { AgentCapabilities, AgentProfile } from "./agent-profiles";
+export { renderForAgent } from "./agent-renderer";
+export type { AgentRenderOptions } from "./agent-renderer";
+
 export type {
+  AdapterFailure,
   ChunkKind,
   ChunkScope,
   ChunkRole,

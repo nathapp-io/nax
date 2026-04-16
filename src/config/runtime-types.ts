@@ -405,6 +405,21 @@ export interface ContextV2PullConfig {
   maxCallsPerRun: number;
 }
 
+/** Availability-fallback configuration (Phase 5.5+) */
+export interface ContextV2FallbackConfig {
+  /** Enable agent-swap fallback on availability failures */
+  enabled: boolean;
+  /** Trigger fallback on quality failures too (opt-in) */
+  onQualityFailure: boolean;
+  /** Maximum agent hops per story before marking failed */
+  maxHopsPerStory: number;
+  /**
+   * Fallback order per agent id.
+   * Example: { "claude": ["codex", "gemini"] }
+   */
+  map: Record<string, string[]>;
+}
+
 /** Canonical rules store configuration (Phase 5.1+) */
 export interface ContextV2RulesConfig {
   /**
@@ -427,6 +442,8 @@ export interface ContextV2Config {
   pull: ContextV2PullConfig;
   /** Canonical rules store configuration (Phase 5.1+) */
   rules: ContextV2RulesConfig;
+  /** Availability-fallback configuration (Phase 5.5+) */
+  fallback: ContextV2FallbackConfig;
 }
 
 export interface ContextConfig {

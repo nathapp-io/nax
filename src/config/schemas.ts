@@ -456,6 +456,33 @@ const ContextV2PullConfigSchema = z.object({
   maxCallsPerRun: z.number().int().min(0).default(50),
 }).default(() => ({ enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 }));
 
+// Context Engine v2 availability-fallback config (Phase 5.5)
+const ContextV2FallbackConfigSchema = z
+  .object({
+    /**
+     * Enable agent-swap fallback on availability failures (rate-limit, quota, auth, service-down).
+     * Default false — operators must opt in by populating the fallback map.
+     */
+    enabled: z.boolean().default(false),
+    /**
+     * Also trigger agent fallback on quality failures (review/verify reject).
+     * Default false — quality failures route to tier escalation by default.
+     */
+    onQualityFailure: z.boolean().default(false),
+    /**
+     * Maximum number of agent hops per story.
+     * Once exhausted the story is marked failed with "all-agents-unavailable".
+     */
+    maxHopsPerStory: z.number().int().min(1).max(10).default(2),
+    /**
+     * Fallback order per agent id.
+     * Example: { "claude": ["codex", "gemini"], "codex": ["claude"] }
+     * Empty map → fallback is never attempted even when enabled.
+     */
+    map: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
+  })
+  .default(() => ({ enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} }));
+
 // Context Engine v2 rules config (Phase 5.1)
 const ContextV2RulesConfigSchema = z.object({
   /**
@@ -485,6 +512,8 @@ const ContextV2ConfigSchema = z.object({
   pull: ContextV2PullConfigSchema,
   /** Canonical rules store configuration (Phase 5.1+) */
   rules: ContextV2RulesConfigSchema,
+  /** Availability-fallback configuration (Phase 5.5+) */
+  fallback: ContextV2FallbackConfigSchema,
 });
 
 const ContextConfigSchema = z.object({

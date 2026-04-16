@@ -28,9 +28,12 @@ import { PULL_TOOL_REGISTRY } from "./pull-tools";
 import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { renderChunks } from "./render";
+import { renderForAgent } from "./agent-renderer";
+import { AGENT_PROFILES } from "./agent-profiles";
 import { MIN_SCORE, scoreChunks } from "./scoring";
 import { getStageContextConfig } from "./stage-config";
 import type {
+  AdapterFailure,
   ContextBundle,
   ContextChunk,
   ContextManifest,
@@ -119,6 +122,78 @@ function toContextChunk(packed: PackedChunk): ContextChunk {
 /** Stamp providerId onto a raw chunk from the provider. */
 function enrichRaw(chunk: RawChunk, providerId: string): RawChunk {
   return { ...chunk, providerId };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5.5 — rebuild types and helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Agent id used when neither options.newAgentId nor prior.agentId is set.
+ * Represents the historical default — change this constant (not the inline
+ * fallback) if the project default agent ever changes.
+ */
+const DEFAULT_REBUILD_AGENT_ID = "claude";
+
+/**
+ * Options for ContextOrchestrator.rebuildForAgent().
+ * All fields are optional to preserve backward-compatibility with call sites
+ * that only need a digest update without an agent swap.
+ *
+ * Agent resolution order when newAgentId is absent:
+ *   prior.agentId → DEFAULT_REBUILD_AGENT_ID ("claude")
+ * This means a bundle that was assembled without an explicit agentId will be
+ * re-rendered as claude/markdown-sections, which is the correct behaviour for
+ * the common same-agent digest-update case. If the project default agent
+ * changes, update DEFAULT_REBUILD_AGENT_ID above.
+ */
+export interface RebuildOptions {
+  /** Target agent id for the new session (Phase 5.5 — agent-swap fallback) */
+  newAgentId?: string;
+  /** Adapter failure that triggered the rebuild (Phase 5.5) */
+  failure?: AdapterFailure;
+  /** Digest from the prior pipeline stage (optional preamble) */
+  priorStageDigest?: string;
+}
+
+/**
+ * Build a deterministic failure-note chunk describing the agent swap.
+ * This is a synthetic chunk (no provider fetch) injected so the new agent
+ * understands why the session started with pre-existing context.
+ *
+ * Deterministic: same inputs → byte-identical output (no LLM call).
+ */
+function buildFailureNoteChunk(
+  priorAgentId: string,
+  newAgentId: string,
+  failure: AdapterFailure,
+): import("./packing").PackedChunk {
+  const lines = [
+    "## Agent swap (availability fallback)",
+    "",
+    `Prior agent: ${priorAgentId} became unavailable.`,
+    `Reason: ${failure.outcome} — ${failure.message}`,
+    "",
+    `Continuing as: ${newAgentId}`,
+    "",
+    "Context from the prior session has been preserved below.",
+    "Resume from where the prior agent stopped.",
+  ];
+  const content = lines.join("\n");
+  const tokens = Math.ceil(content.length / 4);
+  return {
+    id: `failure-note:${priorAgentId}:${newAgentId}:${failure.outcome}`,
+    providerId: "orchestrator",
+    kind: "session",
+    scope: "session",
+    role: ["all"],
+    content,
+    tokens,
+    rawScore: 1.0,
+    score: 1.0,
+    roleFiltered: false,
+    belowMinScore: false,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -254,25 +329,61 @@ export class ContextOrchestrator {
 
   /**
    * Re-render from prior.chunks without fetching providers.
-   * Used on agent availability fallback to rebuild context for a different
-   * agent profile without re-running the full assembly pipeline.
    *
-   * NOT a wrapper around assemble() — takes existing packed chunks and
-   * re-renders only (no provider fetch, no scoring, no packing).
+   * Phase 5.5: accepts an optional RebuildOptions object. When options.newAgentId
+   * and options.failure are provided this is an availability-fallback rebuild —
+   * a failure-note chunk is injected and the push markdown is rendered under the
+   * new agent's profile. When they are absent the behaviour matches the original
+   * Phase 0 signature (re-render, same agent, optional digest update).
+   *
+   * Target latency: ≤100ms (no I/O, no provider fetching, no LLM calls).
+   *
+   * @param prior   - bundle from the prior assemble() or rebuildForAgent() call
+   * @param options - optional: newAgentId, failure (for agent-swap), priorStageDigest
    */
-  rebuildForAgent(prior: ContextBundle, priorStageDigest?: string): ContextBundle {
-    // Re-render the same chunks with an updated digest preamble
-    const packedChunks = prior.chunks.map((c) => ({
+  rebuildForAgent(prior: ContextBundle, options: RebuildOptions = {}): ContextBundle {
+    const { newAgentId, failure, priorStageDigest } = options;
+    const targetAgentId = newAgentId ?? prior.agentId ?? DEFAULT_REBUILD_AGENT_ID;
+    const logger = getLogger();
+
+    if (newAgentId && !AGENT_PROFILES[newAgentId]) {
+      logger.warn("context-v2", "rebuildForAgent: unknown agent id — using conservative defaults", {
+        stage: prior.manifest.stage,
+        agentId: newAgentId,
+      });
+    }
+
+    // Convert ContextChunks back to PackedChunk shape (adds ScoredChunk fields)
+    const packedChunks: import("./packing").PackedChunk[] = prior.chunks.map((c) => ({
       ...c,
-      // ScoredChunk fields needed by packing/render types
       rawScore: c.score,
       roleFiltered: false,
       belowMinScore: false,
     }));
 
-    const pushMarkdown = renderChunks(packedChunks, { priorStageDigest });
+    // Inject failure-note chunk when this is an agent-swap rebuild
+    if (failure && newAgentId) {
+      const priorAgentId = prior.agentId ?? "unknown";
+      packedChunks.push(buildFailureNoteChunk(priorAgentId, newAgentId, failure));
+    }
+
+    // Re-render under the target agent's profile (or markdown-sections for same-agent rebuild)
+    const pushMarkdown = newAgentId
+      ? renderForAgent(packedChunks, targetAgentId, { priorStageDigest })
+      : renderChunks(packedChunks, { priorStageDigest });
+
     const digest = buildDigest(packedChunks);
     const dTokens = digestTokens(digest);
+
+    const rebuildInfo: ContextManifest["rebuildInfo"] =
+      failure && newAgentId
+        ? {
+            priorAgentId: prior.agentId ?? "unknown",
+            newAgentId: targetAgentId,
+            failureCategory: failure.category,
+            failureOutcome: failure.outcome,
+          }
+        : undefined;
 
     const manifest: ContextManifest = {
       ...prior.manifest,
@@ -280,6 +391,7 @@ export class ContextOrchestrator {
       usedTokens: Math.max(0, prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens),
       digestTokens: dTokens,
       buildMs: 0,
+      rebuildInfo,
     };
 
     return {
@@ -288,6 +400,7 @@ export class ContextOrchestrator {
       digest,
       manifest,
       chunks: prior.chunks,
+      agentId: targetAgentId,
     };
   }
 }

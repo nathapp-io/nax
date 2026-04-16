@@ -188,7 +188,7 @@ describe("ContextOrchestrator.rebuildForAgent()", () => {
     const provider = makeProvider("p1", makeChunkResult({ id: "c:1" }));
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble(BASE_REQUEST);
-    const rebuilt = orch.rebuildForAgent(original, "Updated prior digest.");
+    const rebuilt = orch.rebuildForAgent(original, { priorStageDigest: "Updated prior digest." });
     expect(rebuilt.pushMarkdown).toContain("Updated prior digest.");
   });
 

@@ -8,6 +8,44 @@
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Adapter failure (Phase 5.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Failure descriptor returned (or synthesized) by the agent adapter layer.
+ * The runner uses this to decide between escalation (quality) and agent
+ * fallback (availability), and passes it to rebuildForAgent() so the new
+ * bundle carries a failure-note chunk.
+ *
+ * See: docs/specs/SPEC-context-engine-v2.md §Availability fallback
+ */
+export interface AdapterFailure {
+  /**
+   * "availability" — vendor quota, rate-limit, service down, auth error.
+   *   Triggers agent fallback (same tier, different agent).
+   * "quality" — review/verify rejected output.
+   *   Triggers tier escalation by default; agent fallback is opt-in.
+   */
+  category: "availability" | "quality";
+  /**
+   * Machine-readable outcome code.
+   * availability: fail-quota | fail-service-down | fail-auth | fail-timeout | fail-adapter-error
+   * quality:      fail-quality
+   */
+  outcome:
+    | "fail-quota"
+    | "fail-service-down"
+    | "fail-auth"
+    | "fail-timeout"
+    | "fail-adapter-error"
+    | "fail-quality";
+  /** Human-readable description (≤500 chars) for the failure-note chunk */
+  message: string;
+  /** True when the same agent/tier could succeed on immediate retry */
+  retriable: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Pull tools
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -119,6 +157,16 @@ export interface ContextManifest {
   digestTokens: number;
   /** Wall-clock time for the assemble() call in milliseconds */
   buildMs: number;
+  /**
+   * Set by rebuildForAgent() when an agent-swap failure triggered the rebuild.
+   * Records which agents were involved and why the swap occurred (Phase 5.5).
+   */
+  rebuildInfo?: {
+    priorAgentId: string;
+    newAgentId: string;
+    failureCategory: AdapterFailure["category"];
+    failureOutcome: AdapterFailure["outcome"];
+  };
 }
 
 /**
@@ -140,6 +188,12 @@ export interface ContextBundle {
   manifest: ContextManifest;
   /** Packed chunks (preserved for rebuildForAgent re-render) */
   chunks: ContextChunk[];
+  /**
+   * Agent id that produced this bundle (Phase 5.5).
+   * Set by assemble() when request carries an agent id, and always set by
+   * rebuildForAgent(). Used by renderForAgent() to pick the correct framing.
+   */
+  agentId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
