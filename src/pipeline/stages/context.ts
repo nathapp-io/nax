@@ -56,7 +56,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     ctx.sessionScratchDir = `${ctx.projectDir}/.nax/features/${featureId}/sessions/${sessionId}`;
   }
 
-  const storyScratchDirs = ctx.sessionScratchDir ? [ctx.sessionScratchDir] : undefined;
+  // ctx.sessionScratchDir is guaranteed set by the block above.
+  const storyScratchDirs = [ctx.sessionScratchDir];
 
   // Phase 2: read prior digest for progressive context threading.
   // On first run the file is absent → "". On retry (after rectify) or crash

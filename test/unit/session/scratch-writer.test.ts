@@ -113,9 +113,10 @@ describe("appendScratchEntry", () => {
   });
 
   describe("throws on write failure (dep injection)", () => {
-    const origWrite = _scratchWriterDeps.writeFile;
+    let origWrite: typeof _scratchWriterDeps.writeFile;
 
     beforeEach(() => {
+      origWrite = _scratchWriterDeps.writeFile;
       _scratchWriterDeps.writeFile = async () => {
         throw new Error("disk full");
       };
