@@ -80,6 +80,15 @@ export function shouldIncludeEntry(tags: string[], role: PromptRole | string): b
  * Parses the Markdown, keeps entries whose audience matches the role.
  * Entries without a tag default to [all] (backward-compatible).
  * Empty sections are removed.
+ *
+ * **Format constraint:** Only bullet entries (lines starting with `- `) inside
+ * `## Section` headings are filtered. Free-form narrative paragraphs inside a
+ * `## Section` (non-bullet text) are silently dropped, because `context.md`
+ * is spec-defined as bullet-only within sections. The `# Title` line and
+ * `_metadata_` lines at the top of the file (before any `## Section`) are
+ * always preserved. The `## Rationale Archive` section uses bullets too.
+ * If a future version needs to support paragraph text inside sections,
+ * the emit logic in `flushSection()` must be extended.
  */
 export function filterContextByRole(contextMd: string, role: PromptRole | string): string {
   if (!contextMd.trim()) return "";
@@ -97,7 +106,14 @@ export function filterContextByRole(contextMd: string, role: PromptRole | string
   function flushEntry() {
     if (entryLines.length === 0) return;
     if (entryIncluded) {
-      pendingEntries.push(...entryLines);
+      // Drop trailing blank lines buffered as "possible continuation" markers.
+      // Without this, an included entry immediately followed by an excluded entry
+      // leaks the inter-entry blank line into the output.
+      const trimmed = [...entryLines];
+      while (trimmed.length > 0 && (trimmed[trimmed.length - 1] ?? "").trim() === "") {
+        trimmed.pop();
+      }
+      pendingEntries.push(...trimmed);
     }
     entryLines = [];
     inEntry = false;

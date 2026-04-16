@@ -51,7 +51,7 @@ export const contextStage: PipelineStage = {
     if (ctx.plugins) {
       const providers = ctx.plugins.getContextProviders();
       if (providers.length > 0) {
-        logger.info("context", `Running ${providers.length} plugin context provider(s)`);
+        logger.info("context", `Running ${providers.length} plugin context provider(s)`, { storyId: ctx.story.id });
 
         const pluginElements: ContextElement[] = [];
         let pluginTokensUsed = 0;
@@ -60,17 +60,21 @@ export const contextStage: PipelineStage = {
         for (const provider of providers) {
           // Check if we have budget remaining
           if (pluginTokensUsed >= tokenBudget) {
-            logger.info("context", "Plugin context budget exhausted, skipping remaining providers");
+            logger.info("context", "Plugin context budget exhausted, skipping remaining providers", {
+              storyId: ctx.story.id,
+            });
             break;
           }
 
           try {
-            logger.info("context", `Fetching context from plugin: ${provider.name}`);
+            logger.info("context", `Fetching context from plugin: ${provider.name}`, { storyId: ctx.story.id });
             const providerResult = await provider.getContext(ctx.story);
 
             // Check if adding this provider's content would exceed budget
             if (pluginTokensUsed + providerResult.estimatedTokens > tokenBudget) {
-              logger.info("context", `Skipping plugin ${provider.name}: would exceed budget`);
+              logger.info("context", `Skipping plugin ${provider.name}: would exceed budget`, {
+                storyId: ctx.story.id,
+              });
               break;
             }
 
@@ -86,9 +90,13 @@ export const contextStage: PipelineStage = {
             logger.info(
               "context",
               `Added context from plugin ${provider.name} (${providerResult.estimatedTokens} tokens)`,
+              {
+                storyId: ctx.story.id,
+              },
             );
           } catch (error) {
             logger.error("context", `Plugin context provider error: ${provider.name}`, {
+              storyId: ctx.story.id,
               error: errorMessage(error),
             });
             // Continue with other providers on error (soft failure)
@@ -109,6 +117,9 @@ export const contextStage: PipelineStage = {
           logger.info(
             "context",
             `Added ${pluginElements.length} plugin context element(s) (${pluginTokensUsed} tokens total)`,
+            {
+              storyId: ctx.story.id,
+            },
           );
         }
       }

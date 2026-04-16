@@ -22,7 +22,7 @@
  */
 
 import type { NaxConfig } from "../../config/types";
-import { filterContextByRole, truncateToContextBudget } from "../../context/feature-context-filter";
+import { filterContextByRole, truncateToContextBudget } from "../../context";
 import type { UserStory } from "../../prd";
 import { SectionAccumulator } from "../core";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
@@ -150,7 +150,11 @@ export class TddPromptBuilder {
       const budgetTokens = this.loaderConfig_?.context?.featureEngine?.budgetTokens ?? 2048;
       const filtered = filterContextByRole(this.featureContextMd_, this.role);
       if (filtered.trim()) {
-        const truncated = truncateToContextBudget(filtered, budgetTokens, "feature");
+        // Extract featureId from the injection header ("_Feature: <id>_") so the
+        // truncation warning log names the actual feature instead of a placeholder.
+        const headerMatch = this.featureContextMd_.match(/^_Feature: (.+?)_$/m);
+        const logFeatureId = headerMatch?.[1] ?? "unknown";
+        const truncated = truncateToContextBudget(filtered, budgetTokens, logFeatureId);
         if (truncated.trim()) {
           acc.add(this.s("feature-context", truncated));
         }

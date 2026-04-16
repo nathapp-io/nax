@@ -287,3 +287,51 @@ describe("truncateToContextBudget", () => {
     expect(result).not.toContain("HEADER-TEXT");
   });
 });
+
+describe("filterContextByRole — edge cases", () => {
+  test("no trailing blank line leaks from excluded into included entry", () => {
+    // When an included entry is immediately followed by an excluded entry,
+    // the blank line separating them must NOT appear in the output.
+    const md = [
+      "## Constraints",
+      "",
+      "- **Included entry.** `[implementer]`",
+      "  Body of included entry.",
+      "",
+      "- **Excluded entry.** `[test-writer]`",
+      "  Body of excluded entry.",
+    ].join("\n");
+
+    const result = filterContextByRole(md, "implementer");
+
+    // The included entry should be present
+    expect(result).toContain("Included entry");
+    // The excluded entry must not appear
+    expect(result).not.toContain("Excluded entry");
+    // The result must not end with a blank line (leaked from between entries)
+    expect(result.trimEnd()).toBe(result);
+    // Specifically: no double newline trailing
+    expect(result).not.toMatch(/\n\s*$/);
+  });
+
+  test("narrative text under ## section heading is dropped (bullet-only format)", () => {
+    // context.md entries are spec-defined as bullet form.
+    // Free-form narrative paragraphs inside a ## Section are silently dropped.
+    // This test documents the intentional behavior.
+    const md = [
+      "## Decisions",
+      "",
+      "This is a narrative paragraph, not a bullet entry.",
+      "",
+      "- **Bullet entry.** `[all]`",
+      "  Body text.",
+    ].join("\n");
+
+    const result = filterContextByRole(md, "implementer");
+
+    // Bullet entry is kept
+    expect(result).toContain("Bullet entry");
+    // Narrative paragraph is dropped (by design — not a supported format)
+    expect(result).not.toContain("This is a narrative paragraph");
+  });
+});

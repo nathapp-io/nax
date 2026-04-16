@@ -19,7 +19,7 @@ import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
-import { filterContextByRole } from "../context/feature-context-filter";
+import { filterContextByRole } from "../context";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
