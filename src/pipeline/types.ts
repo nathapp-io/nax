@@ -124,6 +124,13 @@ export interface PipelineContext {
    * Format: sess-<uuid>
    */
   sessionId?: string;
+  /**
+   * Absolute path to this pipeline run's session scratch directory.
+   * Set by the context stage when config.context.v2.enabled is true.
+   * Format: <projectDir>/.nax/features/<featureId>/sessions/<sessionId>/
+   * Written by verify and rectify; read by SessionScratchProvider via storyScratchDirs.
+   */
+  sessionScratchDir?: string;
   /** Final prompt sent to agent (set by promptStage) */
   prompt?: string;
   /** Agent execution result (set by executionStage) */

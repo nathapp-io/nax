@@ -15,6 +15,7 @@
  * - `continue`: Always continues (soft failure if context empty)
  */
 
+import { randomUUID } from "node:crypto";
 import { FeatureContextProvider } from "../../context/providers/feature-context";
 import type { ContextElement } from "../../context/types";
 import { createDefaultOrchestrator } from "../../context/v2";
@@ -31,6 +32,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 export const _contextStageDeps = {
   createOrchestrator: createDefaultOrchestrator,
   v1FeatureProvider: () => new FeatureContextProvider(),
+  uuid: () => randomUUID(),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +41,19 @@ export const _contextStageDeps = {
 
 async function runV2Path(ctx: PipelineContext): Promise<void> {
   const logger = getLogger();
+
+  // Derive the session scratch directory for this pipeline run.
+  // ctx.sessionId may not be set yet (set by execution stage later), so we
+  // generate a stable ID here that identify this particular run. Phase 5.5
+  // will have the SessionManager own this derivation.
+  if (!ctx.sessionScratchDir) {
+    const sessionId = ctx.sessionId ?? _contextStageDeps.uuid();
+    if (!ctx.sessionId) ctx.sessionId = sessionId;
+    const featureId = ctx.featureDir?.replace(/\/$/, "").split("/").pop() ?? "_unattached";
+    ctx.sessionScratchDir = `${ctx.projectDir}/.nax/features/${featureId}/sessions/${sessionId}`;
+  }
+
+  const storyScratchDirs = ctx.sessionScratchDir ? [ctx.sessionScratchDir] : undefined;
 
   const request: ContextRequest = {
     storyId: ctx.story.id,
@@ -50,11 +65,12 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     role: "implementer",
     budgetTokens: ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
     minScore: ctx.config.context.v2?.minScore,
+    storyScratchDirs,
     priorStageDigest: undefined,
   };
 
   try {
-    const orchestrator = _contextStageDeps.createOrchestrator(ctx.story, ctx.config);
+    const orchestrator = _contextStageDeps.createOrchestrator(ctx.story, ctx.config, storyScratchDirs);
     const bundle = await orchestrator.assemble(request);
 
     ctx.contextBundle = bundle;

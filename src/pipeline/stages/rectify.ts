@@ -80,6 +80,25 @@ export const rectifyStage: PipelineStage = {
       fixed: succeeded,
     });
 
+    // Phase 1: append rectification attempt to session scratch
+    if (ctx.config.context.v2?.enabled && ctx.sessionScratchDir) {
+      try {
+        await _rectifyDeps.appendScratch(ctx.sessionScratchDir, {
+          kind: "rectify-attempt",
+          timestamp: new Date().toISOString(),
+          storyId: ctx.story.id,
+          stage: "rectify",
+          attempt: rectifyAttempt,
+          succeeded,
+        });
+      } catch (scratchErr) {
+        logger.warn("rectify", "Failed to write scratch entry — continuing", {
+          storyId: ctx.story.id,
+          error: String(scratchErr),
+        });
+      }
+    }
+
     if (succeeded) {
       logger.info("rectify", "Rectification succeeded — retrying verify", { storyId: ctx.story.id });
       // Clear verifyResult so verify stage re-runs fresh
@@ -96,6 +115,7 @@ export const rectifyStage: PipelineStage = {
   },
 };
 
+import { appendScratchEntry } from "../../session/scratch-writer";
 /**
  * Injectable deps for testing.
  */
@@ -103,4 +123,5 @@ import { runRectificationLoopFromCtx } from "../../verification/rectification-lo
 export const _rectifyDeps = {
   runRectificationLoop: runRectificationLoopFromCtx,
   resolveTestCommands: resolveQualityTestCommands,
+  appendScratch: appendScratchEntry,
 };

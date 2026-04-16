@@ -81,6 +81,7 @@ export class SessionManager implements ISessionManager {
       storyId: options.storyId,
       protocolIds: NULL_PROTOCOL_IDS,
       handle: options.handle,
+      scratchDir: options.scratchDir,
       completedStages: [],
       createdAt: now,
       lastActivityAt: now,
@@ -147,6 +148,12 @@ export class SessionManager implements ISessionManager {
     });
 
     return { ...updated };
+  }
+
+  getForStory(storyId: string): SessionDescriptor[] {
+    return Array.from(this._sessions.values())
+      .filter((s) => s.storyId === storyId)
+      .map((s) => ({ ...s }));
   }
 
   listActive(): SessionDescriptor[] {

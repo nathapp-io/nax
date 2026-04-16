@@ -40,8 +40,14 @@ export interface StageContextConfig {
 // Phase 0 provider set
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Providers available in Phase 0 */
+/** Providers available in Phase 0 (static rules + feature context) */
 const PHASE_0_PROVIDERS = ["static-rules", "feature-context"];
+
+/**
+ * Phase 1 providers — adds session scratch for stages that need it.
+ * verify and rectify read scratch entries written by the prior run.
+ */
+const PHASE_1_PROVIDERS = ["static-rules", "feature-context", "session-scratch"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage map
@@ -83,18 +89,18 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     providerIds: PHASE_0_PROVIDERS,
   },
 
-  // Verify — small budget, knows about test failures
+  // Verify — small budget, reads session scratch to surface prior failures
   verify: {
     role: "implementer",
     budgetTokens: 4_000,
-    providerIds: PHASE_0_PROVIDERS,
+    providerIds: PHASE_1_PROVIDERS,
   },
 
-  // Rectify — medium budget, needs feature context for fix attempts
+  // Rectify — medium budget, needs feature context + prior verify failures from scratch
   rectify: {
     role: "implementer",
     budgetTokens: 8_000,
-    providerIds: PHASE_0_PROVIDERS,
+    providerIds: PHASE_1_PROVIDERS,
   },
 
   // Review — reviewer role, sees reviewer-tagged chunks

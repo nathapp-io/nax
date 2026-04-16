@@ -22,6 +22,7 @@ import { buildDigest, digestTokens } from "./digest";
 import { packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
+import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { renderChunks } from "./render";
 import { MIN_SCORE, scoreChunks } from "./scoring";
@@ -264,12 +265,24 @@ export class ContextOrchestrator {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a default orchestrator for Phase 0.
+ * Build a default orchestrator for Phase 0/1.
  * Providers are constructed with story/config bound where needed.
  *
- * @param story - current story (needed by FeatureContextProviderV2)
- * @param config - nax config (needed by FeatureContextProviderV2)
+ * When storyScratchDirs is provided, `SessionScratchProvider` is registered
+ * so the verify/rectify stages can see prior scratch observations.
+ *
+ * @param story           - current story (needed by FeatureContextProviderV2)
+ * @param config          - nax config (needed by FeatureContextProviderV2)
+ * @param storyScratchDirs - scratch dirs for this story's sessions (Phase 1+)
  */
-export function createDefaultOrchestrator(story: UserStory, config: NaxConfig): ContextOrchestrator {
-  return new ContextOrchestrator([new StaticRulesProvider(), new FeatureContextProviderV2(story, config)]);
+export function createDefaultOrchestrator(
+  story: UserStory,
+  config: NaxConfig,
+  storyScratchDirs?: string[],
+): ContextOrchestrator {
+  const providers: IContextProvider[] = [new StaticRulesProvider(), new FeatureContextProviderV2(story, config)];
+  if (storyScratchDirs && storyScratchDirs.length > 0) {
+    providers.push(new SessionScratchProvider());
+  }
+  return new ContextOrchestrator(providers);
 }

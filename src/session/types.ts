@@ -153,6 +153,12 @@ export interface CreateSessionOptions {
   featureName?: string;
   storyId?: string;
   handle?: string;
+  /**
+   * Absolute path to this session's scratch directory (Phase 1+).
+   * When provided, the manager stores it on the descriptor so callers can
+   * retrieve it via get() or getForStory() without recomputing the path.
+   */
+  scratchDir?: string;
 }
 
 /** Options for transitioning session state */
@@ -175,6 +181,11 @@ export interface ISessionManager {
   transition(id: string, to: SessionState, options?: TransitionOptions): SessionDescriptor;
   /** List all active (non-terminal) sessions */
   listActive(): SessionDescriptor[];
+  /**
+   * Return all sessions for a given story ID.
+   * Used by pipeline stages to collect scratch dirs from all story sessions.
+   */
+  getForStory(storyId: string): SessionDescriptor[];
   /** Remove completed/failed sessions older than ttlMs */
   sweepOrphans(ttlMs?: number): number;
 }
