@@ -34,6 +34,13 @@ export interface StageContextConfig {
    * Phase 1+: more providers added here.
    */
   providerIds: string[];
+  /**
+   * Pull tool names to activate for this stage (Phase 4+).
+   * Absent or empty = pull tools disabled for this stage.
+   * The orchestrator filters these through PULL_TOOL_REGISTRY and the
+   * per-request pullConfig.allowedTools allowlist.
+   */
+  pullToolNames?: string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,11 +119,13 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     role: "tdd",
     budgetTokens: 8_000,
     providerIds: PHASE_3_TDD_TEST_WRITER,
+    pullToolNames: ["query_neighbor"],
   },
   "tdd-implementer": {
     role: "implementer",
     budgetTokens: 8_000,
     providerIds: PHASE_3_TDD_IMPLEMENTER,
+    pullToolNames: ["query_neighbor"],
   },
   "tdd-verifier": {
     role: "tdd",
@@ -136,6 +145,7 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     role: "implementer",
     budgetTokens: 8_000,
     providerIds: PHASE_3_RECTIFY,
+    pullToolNames: ["query_neighbor"],
   },
 
   // Review — reviewer role, sees reviewer-tagged chunks

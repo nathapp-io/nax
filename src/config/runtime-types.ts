@@ -393,6 +393,18 @@ export interface FeatureContextEngineConfig {
   budgetTokens: number;
 }
 
+/** Pull tool configuration for Context Engine v2 (Phase 4+) */
+export interface ContextV2PullConfig {
+  /** Enable pull tools — false (default) means assemble() returns empty pullTools array */
+  enabled: boolean;
+  /** Tool names to activate; empty = all stage-configured tools allowed */
+  allowedTools: string[];
+  /** Per-session call ceiling */
+  maxCallsPerSession: number;
+  /** Per-run call ceiling across all sessions */
+  maxCallsPerRun: number;
+}
+
 /** Context Engine v2 configuration (Phase 0+) */
 export interface ContextV2Config {
   /** Enable the v2 orchestrator — false (default) keeps v1 path unchanged */
@@ -402,6 +414,8 @@ export interface ContextV2Config {
    * Phase 0 default: 0.1 (near-zero impact).
    */
   minScore: number;
+  /** Pull tool configuration (Phase 4+) */
+  pull: ContextV2PullConfig;
 }
 
 export interface ContextConfig {

@@ -434,6 +434,28 @@ const FeatureContextEngineConfigSchema = z.object({
   budgetTokens: z.number().int().min(256).default(2048),
 });
 
+// Context Engine v2 pull tool config (Phase 4)
+const ContextV2PullConfigSchema = z.object({
+  /**
+   * Enable pull tools for this run.
+   * When false (default), assemble() returns an empty pullTools array.
+   */
+  enabled: z.boolean().default(false),
+  /**
+   * Tool names permitted to activate. Empty array = all stage-configured tools allowed.
+   * Use to restrict which tools are enabled without changing the stage map.
+   */
+  allowedTools: z.array(z.string()).default([]),
+  /**
+   * Per-session call ceiling (overrides the descriptor default when set).
+   */
+  maxCallsPerSession: z.number().int().min(0).default(5),
+  /**
+   * Per-run call ceiling across all sessions in a single nax run.
+   */
+  maxCallsPerRun: z.number().int().min(0).default(50),
+}).default(() => ({ enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 }));
+
 // Context Engine v2 config (Phase 0: off by default)
 const ContextV2ConfigSchema = z.object({
   /**
@@ -448,6 +470,8 @@ const ContextV2ConfigSchema = z.object({
    * Post-GA: tuned upward once effectiveness signal data is available.
    */
   minScore: z.number().min(0).max(1).default(0.1),
+  /** Pull tool configuration (Phase 4+) */
+  pull: ContextV2PullConfigSchema,
 });
 
 const ContextConfigSchema = z.object({

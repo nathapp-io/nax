@@ -24,6 +24,7 @@ import type { PackedChunk } from "./packing";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
 import { GitHistoryProvider } from "./providers/git-history";
+import { PULL_TOOL_REGISTRY } from "./pull-tools";
 import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { renderChunks } from "./render";
@@ -37,7 +38,31 @@ import type {
   ContextRequest,
   IContextProvider,
   RawChunk,
+  ToolDescriptor,
 } from "./types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pull tool helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the ToolDescriptor list for an assemble() call.
+ * Returns an empty array when pull is disabled or the stage has no pull tools.
+ * Filters by pullConfig.allowedTools when non-empty (empty = allow all stage tools).
+ * Overrides maxCallsPerSession from the pullConfig if it differs from the descriptor default.
+ */
+function buildPullToolDescriptors(
+  stageToolNames: string[],
+  pullConfig: ContextRequest["pullConfig"],
+): ToolDescriptor[] {
+  if (!pullConfig?.enabled || stageToolNames.length === 0) return [];
+  const allowed = pullConfig.allowedTools;
+  return stageToolNames
+    .filter((name) => allowed.length === 0 || allowed.includes(name))
+    .map((name) => PULL_TOOL_REGISTRY[name])
+    .filter((d): d is ToolDescriptor => d !== undefined)
+    .map((d) => ({ ...d, maxCallsPerSession: pullConfig.maxCallsPerSession ?? d.maxCallsPerSession }));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -153,7 +178,12 @@ export class ContextOrchestrator {
 
     // Collect all raw chunks with providerIds
     const allRaw = fetchResults.flatMap(({ provider, result }) => result.chunks.map((c) => enrichRaw(c, provider.id)));
-    const allPullTools = [...new Set(fetchResults.flatMap(({ result }) => result.pullTools ?? []))];
+    // Phase 4: build pull tool descriptors from stage config + PULL_TOOL_REGISTRY.
+    // Provider-level result.pullTools is reserved for Phase 7 and ignored here.
+    const allPullTools = buildPullToolDescriptors(
+      stageConfig.pullToolNames ?? [],
+      request.pullConfig,
+    );
 
     // Step 3: score
     const scored = scoreChunks(allRaw, role, effectiveMinScore);

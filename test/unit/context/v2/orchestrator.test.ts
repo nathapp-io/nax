@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/v2/orchestrator";
+import { QUERY_NEIGHBOR_DESCRIPTOR } from "../../../../src/context/v2/pull-tools";
 import type { ContextRequest, IContextProvider, ContextProviderResult } from "../../../../src/context/v2/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,23 +141,12 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.stage).toBe("review");
   });
 
-  test("pullTools aggregated from all providers", async () => {
-    const p1: IContextProvider = {
-      id: "p1",
-      kind: "feature",
-      fetch: async () => ({ chunks: [], pullTools: ["query_feature_context"] }),
-    };
-    const p2: IContextProvider = {
-      id: "p2",
-      kind: "rag",
-      fetch: async () => ({ chunks: [], pullTools: ["query_rag"] }),
-    };
-    const orch = new ContextOrchestrator([p1, p2]);
-    const bundle = await orch.assemble(BASE_REQUEST);
-    expect(bundle.pullTools).toContain("query_feature_context");
-    expect(bundle.pullTools).toContain("query_rag");
-    // Deduplicated
-    expect(bundle.pullTools.length).toBe(new Set(bundle.pullTools).size);
+  test("pullTools is empty when pullConfig is absent", async () => {
+    // Phase 4: provider-level pullTools are no longer aggregated;
+    // descriptors come from PULL_TOOL_REGISTRY via stage config.
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble(BASE_REQUEST); // BASE_REQUEST has no pullConfig
+    expect(bundle.pullTools).toEqual([]);
   });
 });
 
@@ -208,5 +198,111 @@ describe("ContextOrchestrator.rebuildForAgent()", () => {
     const original = await orch.assemble(BASE_REQUEST);
     const rebuilt = orch.rebuildForAgent(original);
     expect(rebuilt.manifest.requestId).not.toBe(original.manifest.requestId);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4: pull tools
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Phase 4: pull tools", () => {
+  const TDD_IMPLEMENTER_REQUEST: ContextRequest = {
+    storyId: "US-001",
+    workdir: "/project",
+    stage: "tdd-implementer",
+    role: "implementer",
+    budgetTokens: 8_000,
+    providerIds: [],
+  };
+
+  test("pullTools is empty when pullConfig is absent", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...TDD_IMPLEMENTER_REQUEST, pullConfig: undefined });
+    expect(bundle.pullTools).toEqual([]);
+  });
+
+  test("pullTools is empty when pullConfig.enabled is false", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      pullConfig: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools).toEqual([]);
+  });
+
+  test("pullTools contains query_neighbor descriptor for tdd-implementer when enabled", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools).toHaveLength(1);
+    expect(bundle.pullTools[0]?.name).toBe("query_neighbor");
+  });
+
+  test("pullTools items are ToolDescriptor objects with required fields", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    const tool = bundle.pullTools[0]!;
+    expect(typeof tool.name).toBe("string");
+    expect(typeof tool.description).toBe("string");
+    expect(typeof tool.inputSchema).toBe("object");
+    expect(typeof tool.maxCallsPerSession).toBe("number");
+    expect(typeof tool.maxTokensPerCall).toBe("number");
+  });
+
+  test("maxCallsPerSession on descriptor reflects pullConfig override", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 3 },
+    });
+    expect(bundle.pullTools[0]?.maxCallsPerSession).toBe(3);
+  });
+
+  test("allowedTools filter restricts pull tools", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      pullConfig: { enabled: true, allowedTools: ["other_tool"], maxCallsPerSession: 5 },
+    });
+    // query_neighbor is not in allowedTools — filtered out
+    expect(bundle.pullTools).toEqual([]);
+  });
+
+  test("empty allowedTools means all stage-configured tools are allowed", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools.length).toBeGreaterThan(0);
+  });
+
+  test("stage with no pullToolNames returns empty pullTools even when enabled", async () => {
+    const orch = new ContextOrchestrator([]);
+    const verifyRequest: ContextRequest = {
+      ...TDD_IMPLEMENTER_REQUEST,
+      stage: "verify",
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    };
+    const bundle = await orch.assemble(verifyRequest);
+    expect(bundle.pullTools).toEqual([]);
+  });
+
+  test("rebuildForAgent preserves pullTools from original bundle", async () => {
+    const orch = new ContextOrchestrator([]);
+    const original = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(original.pullTools).toHaveLength(1);
+
+    const rebuilt = orch.rebuildForAgent(original);
+    expect(rebuilt.pullTools).toEqual(original.pullTools);
+    expect(rebuilt.pullTools[0]?.name).toBe(QUERY_NEIGHBOR_DESCRIPTOR.name);
   });
 });

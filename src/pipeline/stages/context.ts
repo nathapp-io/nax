@@ -93,6 +93,13 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     storyScratchDirs,
     priorStageDigest,
     ...(touchedFiles.length > 0 && { touchedFiles }),
+  pullConfig: ctx.config.context.v2?.pull
+    ? {
+        enabled: ctx.config.context.v2.pull.enabled,
+        allowedTools: ctx.config.context.v2.pull.allowedTools,
+        maxCallsPerSession: ctx.config.context.v2.pull.maxCallsPerSession,
+      }
+    : undefined,
   };
 
   try {

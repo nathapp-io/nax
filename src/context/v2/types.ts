@@ -8,6 +8,31 @@
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pull tools
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Minimal JSON Schema type alias — no external library required. */
+export type JSONSchema = Record<string, unknown>;
+
+/**
+ * Descriptor for a pull tool registered with the agent session (Phase 4+).
+ * The orchestrator returns these alongside push markdown; agent adapters
+ * register them as callable tools on the session.
+ */
+export interface ToolDescriptor {
+  /** Tool identifier exposed to the agent (e.g. "query_neighbor") */
+  name: string;
+  /** Human-readable description shown to the agent */
+  description: string;
+  /** JSON Schema for the tool's input arguments */
+  inputSchema: JSONSchema;
+  /** Maximum calls allowed per agent session before the tool errors */
+  maxCallsPerSession: number;
+  /** Maximum tokens returned per call (response is truncated to this ceiling) */
+  maxTokensPerCall: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Chunk classification
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -105,10 +130,10 @@ export interface ContextBundle {
   /** Markdown string injected into the agent prompt (push path) */
   pushMarkdown: string;
   /**
-   * Pull tool names registered on the session (Phase 4+).
-   * Always empty in Phase 0.
+   * Pull tool descriptors to register on the agent session (Phase 4+).
+   * Empty array when pull is disabled or the stage has no pull tools configured.
    */
-  pullTools: string[];
+  pullTools: ToolDescriptor[];
   /** Deterministic digest (≤250 tokens) for stage-to-stage threading */
   digest: string;
   /** Audit trail for this bundle */
@@ -175,6 +200,18 @@ export interface ContextRequest {
    * Used by GitHistoryProvider and CodeNeighborProvider (Phase 3).
    */
   touchedFiles?: string[];
+  /**
+   * Pull tool configuration for this assembly call (Phase 4+).
+   * When absent or disabled, assemble() returns an empty pullTools array.
+   * Derived by the pipeline stage from config.context.v2.pull.
+   */
+  pullConfig?: {
+    enabled: boolean;
+    /** Tool names to activate; empty array means all stage-configured tools are allowed. */
+    allowedTools: string[];
+    /** Per-session call ceiling (overrides the descriptor's default when provided). */
+    maxCallsPerSession: number;
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,10 +242,11 @@ export interface ContextProviderResult {
   /** Raw chunks to be scored, deduped, and packed by the orchestrator */
   chunks: RawChunk[];
   /**
-   * Pull tool names this provider wants registered on the session (Phase 4+).
-   * Empty array in Phase 0.
+   * Reserved for future provider-registered pull tools (Phase 7+).
+   * Providers should leave this empty; the orchestrator builds pull tool
+   * descriptors from the stage config TOOL_REGISTRY (Phase 4).
    */
-  pullTools?: string[];
+  pullTools?: ToolDescriptor[];
 }
 
 /**

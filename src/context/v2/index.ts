@@ -17,6 +17,14 @@ export { FeatureContextProviderV2, _featureContextV2Deps } from "./providers/fea
 export { SessionScratchProvider, _sessionScratchDeps } from "./providers/session-scratch";
 export { GitHistoryProvider, _gitHistoryDeps } from "./providers/git-history";
 export { CodeNeighborProvider, _codeNeighborDeps } from "./providers/code-neighbor";
+export {
+  QUERY_NEIGHBOR_DESCRIPTOR,
+  PULL_TOOL_REGISTRY,
+  PullToolBudget,
+  createRunCallCounter,
+  handleQueryNeighbor,
+} from "./pull-tools";
+export type { RunCallCounter } from "./pull-tools";
 
 export type {
   ChunkKind,
@@ -29,4 +37,6 @@ export type {
   RawChunk,
   ContextProviderResult,
   IContextProvider,
+  ToolDescriptor,
+  JSONSchema,
 } from "./types";
