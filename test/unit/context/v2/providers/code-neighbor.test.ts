@@ -199,6 +199,30 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks).toHaveLength(0);
   });
 
+  test(".tsx file sibling maps to .test.tsx not .test.ts", async () => {
+    setupDeps({ files: { "src/components/Button.tsx": "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/components/Button.tsx"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("test/unit/components/Button.test.tsx");
+    expect(content).not.toContain("Button.test.ts\n");
+  });
+
+  test("reverse-dep scan continues past self-reference (continue, not break)", async () => {
+    // When the touched file appears in the glob results, the scan must continue
+    // past it to find other reverse deps — a break would terminate early.
+    setupDeps({
+      files: {
+        "src/utils/target.ts": "",
+        "src/service.ts": 'import { x } from "./utils/target"',
+      },
+      // Put the touched file first in glob order to trigger the continue path
+      globFiles: ["src/utils/target.ts", "src/service.ts"],
+    });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/utils/target.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("src/service.ts");
+  });
+
   test("does not include the touched file itself as a neighbor", async () => {
     setupDeps({
       files: { "src/a.ts": 'import "./a"' }, // import of itself — should not appear

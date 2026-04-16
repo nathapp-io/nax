@@ -2,9 +2,15 @@
  * Context Engine v2 — CodeNeighborProvider
  *
  * Surfaces import-graph neighbors for files this story touches:
- *   - Forward deps:  files imported by the touched file (regex parse of import statements)
+ *   - Forward deps:  files imported by the touched file (import/require parse)
  *   - Reverse deps:  files that import the touched file (Bun.Glob scan, capped at 200 files)
- *   - Sibling test:  mirrored test file at test/unit/<relpath>.test.ts
+ *   - Sibling test:  mirrored test file (src/foo/bar.ts → test/unit/foo/bar.test.ts)
+ *
+ * Language scope:
+ *   Forward dep parsing is JavaScript/TypeScript-only (import/require syntax).
+ *   For other languages (Python, Go, Rust, etc.), forward deps return empty;
+ *   reverse deps and sibling tests are still attempted where applicable.
+ *   The reverse-dep glob covers common source extensions across languages.
  *
  * The combined result is collapsed into a single "neighbor" kind chunk.
  * Files are capped at MAX_FILES; neighbors per file capped at MAX_NEIGHBORS_PER_FILE.
@@ -35,6 +41,12 @@ const MAX_GLOB_FILES = 200;
 /** Token ceiling for the combined neighbor chunk */
 const MAX_CHUNK_TOKENS = 500;
 
+/**
+ * Source file extensions to scan for reverse deps.
+ * Covers common languages nax may be run against.
+ */
+const SOURCE_GLOB = "src/**/*.{ts,tsx,js,jsx,py,go,rs,java,rb,php,cs,cpp,c,h}";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,14 +75,15 @@ function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
 }
 
-/** Patterns that match import/require statements — used with matchAll() */
+/** Patterns that match JS/TS import/require statements — used with matchAll() */
 const FROM_PATTERN = /from\s+['"]([^'"]+)['"]/g;
 const REQUIRE_PATTERN = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 const IMPORT_SIDE_EFFECT_PATTERN = /import\s+['"]([^'"]+)['"]/g;
 
 /**
- * Parse import specifiers from file content.
+ * Parse JS/TS import specifiers from file content.
  * Returns only relative paths (starts with ".") — ignores node_modules.
+ * Returns empty for non-JS/TS files (no import syntax match).
  */
 function parseImportSpecifiers(content: string): string[] {
   const specifiers = new Set<string>();
@@ -88,11 +101,14 @@ function parseImportSpecifiers(content: string): string[] {
 
 /**
  * Resolve a relative import specifier to a workdir-relative path.
- * Tries common TypeScript extensions. Returns null if outside workdir.
+ * Extension candidates are checked in order — with-extension first so the
+ * returned path always carries the extension (avoids bare "src/utils/helper").
+ * Returns null if all candidates fall outside workdir.
  */
 function resolveImport(specifier: string, fromFile: string, workdir: string): string | null {
   const base = resolve(workdir, fromFile, "..", specifier);
-  const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
+  // Extension-first ordering ensures the returned path includes the extension.
+  const candidates = [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`, base];
   for (const candidate of candidates) {
     const rel = relative(workdir, candidate);
     if (!rel.startsWith("..")) return rel;
@@ -102,24 +118,27 @@ function resolveImport(specifier: string, fromFile: string, workdir: string): st
 
 /**
  * Derive the sibling test file path for a source file.
- * src/foo/bar.ts → test/unit/foo/bar.test.ts
+ * Preserves the source extension for JSX/TSX files.
+ *   src/foo/bar.ts  → test/unit/foo/bar.test.ts
+ *   src/foo/bar.tsx → test/unit/foo/bar.test.tsx
  */
 function siblingTestPath(filePath: string): string | null {
-  const srcMatch = filePath.match(/^src\/(.+)\.(ts|tsx)$/);
+  const srcMatch = filePath.match(/^src\/(.+)\.(ts|tsx|js|jsx)$/);
   if (!srcMatch) return null;
-  return `test/unit/${srcMatch[1]}.test.ts`;
+  const ext = srcMatch[2] ?? "ts";
+  return `test/unit/${srcMatch[1]}.test.${ext}`;
 }
 
 /**
  * Collect neighbors for a single file:
- * - forward deps (imports it makes)
- * - reverse deps (files that import it)
- * - sibling test file
+ * - forward deps (JS/TS import parse only — empty for other languages)
+ * - reverse deps (all common source extensions)
+ * - sibling test file (JS/TS/JSX/TSX only)
  */
 async function collectNeighbors(filePath: string, workdir: string): Promise<string[]> {
   const neighbors = new Set<string>();
 
-  // Forward deps
+  // Forward deps (JS/TS only)
   if (await _codeNeighborDeps.fileExists(join(workdir, filePath))) {
     const content = await _codeNeighborDeps.readFile(join(workdir, filePath));
     for (const spec of parseImportSpecifiers(content)) {
@@ -128,16 +147,17 @@ async function collectNeighbors(filePath: string, workdir: string): Promise<stri
     }
   }
 
-  // Reverse deps — scan src/ for files that import this file.
+  // Reverse deps — scan for files that import this file.
   // Quick check uses the base name (without extension) — broad but avoids parsing every file.
-  const fileBaseName = (filePath.split("/").pop() ?? filePath).replace(/\.(ts|tsx)$/, "");
-  const fileNoExt = filePath.replace(/\.(ts|tsx)$/, "");
-  const srcFiles = _codeNeighborDeps.glob("src/**/*.{ts,tsx}", workdir);
+  const fileBaseName = (filePath.split("/").pop() ?? filePath).replace(/\.[^.]+$/, "");
+  const fileNoExt = filePath.replace(/\.[^.]+$/, "");
+  const srcFiles = _codeNeighborDeps.glob(SOURCE_GLOB, workdir);
   for (const srcFile of srcFiles) {
-    if (srcFile === filePath || neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
+    if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
+    if (srcFile === filePath) continue; // skip self — must be continue, not break
     try {
       const content = await _codeNeighborDeps.readFile(join(workdir, srcFile));
-      // Quick string check using base name before full parse
+      // Quick string check using base name before full JS/TS parse
       if (content.includes(fileBaseName)) {
         for (const spec of parseImportSpecifiers(content)) {
           const resolved = resolveImport(spec, srcFile, workdir);
@@ -152,7 +172,7 @@ async function collectNeighbors(filePath: string, workdir: string): Promise<stri
     }
   }
 
-  // Sibling test
+  // Sibling test (JS/TS/JSX/TSX only)
   const testPath = siblingTestPath(filePath);
   if (testPath) neighbors.add(testPath);
 

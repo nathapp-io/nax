@@ -92,6 +92,14 @@ export const DEFAULT_STAGE_CONFIG: StageContextConfig = {
  * Based on the stage context map in SPEC-context-engine-v2.md.
  */
 export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
+  // Context stage — initial assembly before execution; uses git history + code neighbors
+  // so the agent sees touched-file history and import-graph neighbors from the start.
+  context: {
+    role: "implementer",
+    budgetTokens: 8_000,
+    providerIds: PHASE_3_EXECUTION,
+  },
+
   // Main implementation — full budget, implementer role
   execution: {
     role: "implementer",
