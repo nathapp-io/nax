@@ -50,6 +50,33 @@ const PHASE_0_PROVIDERS = ["static-rules", "feature-context"];
 const PHASE_1_PROVIDERS = ["static-rules", "feature-context", "session-scratch"];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 provider sets
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Phase 3 providers for tdd-test-writer — adds code neighbors so the
+ * test writer can see sibling tests and related imports.
+ */
+const PHASE_3_TDD_TEST_WRITER = [...PHASE_1_PROVIDERS, "code-neighbor"];
+
+/**
+ * Phase 3 providers for tdd-implementer and execution — adds git history
+ * (recent commits on touched files) and code neighbors.
+ */
+const PHASE_3_TDD_IMPLEMENTER = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor"];
+
+/**
+ * Phase 3 providers for execution stage — same as tdd-implementer.
+ */
+const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor"];
+
+/**
+ * Phase 3 providers for rectify — code neighbors help the agent understand
+ * the import graph when fixing failures; git history omitted (less relevant).
+ */
+const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor"];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Stage map
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -69,19 +96,19 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
   execution: {
     role: "implementer",
     budgetTokens: 12_000,
-    providerIds: PHASE_0_PROVIDERS,
+    providerIds: PHASE_3_EXECUTION,
   },
 
   // TDD sub-sessions — each gets implementer role, moderate budget
   "tdd-test-writer": {
     role: "tdd",
     budgetTokens: 8_000,
-    providerIds: PHASE_0_PROVIDERS,
+    providerIds: PHASE_3_TDD_TEST_WRITER,
   },
   "tdd-implementer": {
     role: "implementer",
     budgetTokens: 8_000,
-    providerIds: PHASE_0_PROVIDERS,
+    providerIds: PHASE_3_TDD_IMPLEMENTER,
   },
   "tdd-verifier": {
     role: "tdd",
@@ -96,11 +123,11 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     providerIds: PHASE_1_PROVIDERS,
   },
 
-  // Rectify — medium budget, needs feature context + prior verify failures from scratch
+  // Rectify — medium budget, needs feature context + prior verify failures + code neighbors
   rectify: {
     role: "implementer",
     budgetTokens: 8_000,
-    providerIds: PHASE_1_PROVIDERS,
+    providerIds: PHASE_3_RECTIFY,
   },
 
   // Review — reviewer role, sees reviewer-tagged chunks

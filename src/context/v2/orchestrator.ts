@@ -21,7 +21,9 @@ import { dedupeChunks } from "./dedupe";
 import { buildDigest, digestTokens } from "./digest";
 import { packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
+import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
+import { GitHistoryProvider } from "./providers/git-history";
 import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { renderChunks } from "./render";
@@ -284,5 +286,9 @@ export function createDefaultOrchestrator(
   if (storyScratchDirs && storyScratchDirs.length > 0) {
     providers.push(new SessionScratchProvider());
   }
+  // Phase 3: git history and code neighbors (always registered; active only when
+  // request.touchedFiles is non-empty and the stage includes these provider IDs)
+  providers.push(new GitHistoryProvider());
+  providers.push(new CodeNeighborProvider());
   return new ContextOrchestrator(providers);
 }

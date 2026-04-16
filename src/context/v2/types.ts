@@ -170,6 +170,11 @@ export interface ContextRequest {
    * the orchestrator to NaxConfig.
    */
   minScore?: number;
+  /**
+   * Files this story touches (from PRD contextFiles or story.relevantFiles).
+   * Used by GitHistoryProvider and CodeNeighborProvider (Phase 3).
+   */
+  touchedFiles?: string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

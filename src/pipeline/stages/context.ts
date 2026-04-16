@@ -22,6 +22,7 @@ import { createDefaultOrchestrator } from "../../context/v2";
 import type { ContextRequest } from "../../context/v2";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
+import { getContextFiles } from "../../prd";
 import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
 import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -76,6 +77,9 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     }
   }
 
+  // Phase 3: derive files touched by this story for git history + neighbor providers.
+  const touchedFiles = getContextFiles(ctx.story);
+
   const request: ContextRequest = {
     storyId: ctx.story.id,
     // Trim trailing slash before taking the last path segment so
@@ -88,6 +92,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     minScore: ctx.config.context.v2?.minScore,
     storyScratchDirs,
     priorStageDigest,
+    ...(touchedFiles.length > 0 && { touchedFiles }),
   };
 
   try {
