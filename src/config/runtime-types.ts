@@ -429,9 +429,22 @@ export interface ContextV2RulesConfig {
   allowLegacyClaudeMd: boolean;
 }
 
-/** Context Engine v2 configuration (Phase 0+) */
+/**
+ * Registration entry for an external plugin provider (Phase 7+).
+ * The engine loads the module and passes config to provider.init() if present.
+ */
+export interface ContextPluginProviderConfig {
+  /** npm package name or workdir-relative path to the provider module */
+  module: string;
+  /** Provider-specific config, passed to provider.init(config) on load */
+  config?: Record<string, unknown>;
+  /** Set false to skip loading this provider (default: true) */
+  enabled: boolean;
+}
+
+/** Context Engine configuration (Phase 0+) */
 export interface ContextV2Config {
-  /** Enable the Context Engine orchestrator — true by default (Phase 6) */
+  /** Enable the Context Engine orchestrator — false by default (opt-in) */
   enabled: boolean;
   /**
    * Min-score threshold for noise filtering.
@@ -444,6 +457,8 @@ export interface ContextV2Config {
   rules: ContextV2RulesConfig;
   /** Availability-fallback configuration (Phase 5.5+) */
   fallback: ContextV2FallbackConfig;
+  /** External plugin providers to load (Phase 7+). Empty by default. */
+  pluginProviders: ContextPluginProviderConfig[];
 }
 
 export interface ContextConfig {

@@ -19,6 +19,12 @@ export { SessionScratchProvider, _sessionScratchDeps } from "./providers/session
 export { GitHistoryProvider, _gitHistoryDeps } from "./providers/git-history";
 export { CodeNeighborProvider, _codeNeighborDeps } from "./providers/code-neighbor";
 export {
+  loadPluginProviders,
+  resolveModuleSpecifier,
+  _pluginLoaderDeps,
+} from "./providers/plugin-loader";
+export type { InitialisableProvider } from "./providers/plugin-loader";
+export {
   loadCanonicalRules,
   lintForNeutrality,
   NeutralityLintError,

@@ -494,15 +494,35 @@ const ContextV2RulesConfigSchema = z.object({
   allowLegacyClaudeMd: z.boolean().default(true),
 }).default(() => ({ allowLegacyClaudeMd: true }));
 
-// Context Engine — on by default for opted-in projects (Phase 6)
+// Context Engine plugin provider config (Phase 7)
+const ContextPluginProviderConfigSchema = z.object({
+  /**
+   * Module specifier for the plugin provider.
+   * Accepts npm package names (e.g. "@company/nax-rag") or paths
+   * relative to the project workdir (e.g. "./plugins/my-provider.js").
+   */
+  module: z.string().min(1),
+  /**
+   * Provider-specific config object passed to provider.init(config) on load.
+   * Shape is provider-defined — the engine passes it through opaquely.
+   */
+  config: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Set false to skip this provider without removing the config entry.
+   * Useful for temporarily disabling a provider for debugging.
+   */
+  enabled: z.boolean().default(true),
+});
+
+// Context Engine config (Phase 6: selective on; operators opt in per project)
 const ContextV2ConfigSchema = z
   .object({
   /**
    * Enable Context Engine orchestrator.
-   * Phase 6: true by default — the v1 code path is preserved as fallback but
-   * the engine path is the standard for all new stories.
+   * Default: false — operators opt in by setting this true in their project config.
+   * Phase 6: selective on; Phase 7: plugin providers available once enabled.
    */
-  enabled: z.boolean().default(true),
+  enabled: z.boolean().default(false),
   /**
    * Minimum score threshold — chunks below this are dropped as noise.
    * Phase 0: near-zero (0.1) so existing content is almost never filtered.
@@ -515,13 +535,20 @@ const ContextV2ConfigSchema = z
   rules: ContextV2RulesConfigSchema,
   /** Availability-fallback configuration (Phase 5.5+) */
   fallback: ContextV2FallbackConfigSchema,
+  /**
+   * External plugin provider registrations (Phase 7+).
+   * Each entry loads a module that exports an IContextProvider-compatible object.
+   * Empty by default — operators add providers for RAG, graph, or KB use cases.
+   */
+  pluginProviders: z.array(ContextPluginProviderConfigSchema).default([]),
   })
   .default(() => ({
-    enabled: true,
+    enabled: false,
     minScore: 0.1,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
     rules: { allowLegacyClaudeMd: true },
     fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
+    pluginProviders: [],
   }));
 
 const ContextConfigSchema = z.object({
@@ -937,11 +964,12 @@ export const NaxConfigSchema = z
         traceImports: false,
       },
       v2: {
-        enabled: true,
+        enabled: false,
         minScore: 0.1,
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
         rules: { allowLegacyClaudeMd: true },
         fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
+        pluginProviders: [],
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),

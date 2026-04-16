@@ -19,7 +19,8 @@ import { randomUUID } from "node:crypto";
 import { FeatureContextProvider } from "../../context/providers/feature-context";
 import type { ContextElement } from "../../context/types";
 import { createDefaultOrchestrator } from "../../context/engine";
-import type { ContextRequest } from "../../context/engine";
+import type { ContextRequest, IContextProvider } from "../../context/engine";
+import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
 import { getContextFiles } from "../../prd";
@@ -33,6 +34,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const _contextStageDeps = {
   createOrchestrator: createDefaultOrchestrator,
+  loadPlugins: loadPluginProviders,
   v1FeatureProvider: () => new FeatureContextProvider(),
   uuid: () => randomUUID(),
   readDigest: readDigestFile,
@@ -102,8 +104,16 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     : undefined,
   };
 
+  // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.
+  // Non-fatal: failures are logged inside loadPluginProviders and skipped.
+  const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
+  const pluginProviders: IContextProvider[] =
+    pluginConfigs.length > 0
+      ? await _contextStageDeps.loadPlugins(pluginConfigs, ctx.workdir)
+      : [];
+
   try {
-    const orchestrator = _contextStageDeps.createOrchestrator(ctx.story, ctx.config, storyScratchDirs);
+    const orchestrator = _contextStageDeps.createOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);
     const bundle = await orchestrator.assemble(request);
 
     ctx.contextBundle = bundle;

@@ -410,20 +410,26 @@ export class ContextOrchestrator {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a default orchestrator for Phase 0/1.
+ * Build a default orchestrator for Phase 0–7+.
  * Providers are constructed with story/config bound where needed.
  *
  * When storyScratchDirs is provided, `SessionScratchProvider` is registered
  * so the verify/rectify stages can see prior scratch observations.
  *
- * @param story           - current story (needed by FeatureContextProviderV2)
- * @param config          - nax config (needed by FeatureContextProviderV2)
- * @param storyScratchDirs - scratch dirs for this story's sessions (Phase 1+)
+ * Phase 7: accepts pre-loaded plugin providers (RAG/graph/KB) via
+ * `additionalProviders`. Callers are responsible for loading these via
+ * `loadPluginProviders()` before invoking this factory.
+ *
+ * @param story              - current story (needed by FeatureContextProviderV2)
+ * @param config             - nax config (needed by FeatureContextProviderV2)
+ * @param storyScratchDirs   - scratch dirs for this story's sessions (Phase 1+)
+ * @param additionalProviders - pre-loaded plugin providers (Phase 7+)
  */
 export function createDefaultOrchestrator(
   story: UserStory,
   config: NaxConfig,
   storyScratchDirs?: string[],
+  additionalProviders: IContextProvider[] = [],
 ): ContextOrchestrator {
   const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? true;
   const providers: IContextProvider[] = [
@@ -437,5 +443,7 @@ export function createDefaultOrchestrator(
   // request.touchedFiles is non-empty and the stage includes these provider IDs)
   providers.push(new GitHistoryProvider());
   providers.push(new CodeNeighborProvider());
+  // Phase 7: plugin providers (RAG, graph, KB, etc.)
+  providers.push(...additionalProviders);
   return new ContextOrchestrator(providers);
 }
