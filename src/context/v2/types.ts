@@ -162,6 +162,14 @@ export interface ContextRequest {
   priorStageDigest?: string;
   /** Restrict fetch to only these provider IDs (optional, for testing). */
   providerIds?: string[];
+  /**
+   * Minimum score threshold for noise filtering.
+   * Chunks whose adjusted score falls below this are excluded from packing.
+   * Sourced from config.context.v2.minScore (default: 0.1).
+   * Passed through ContextRequest so callers control it without coupling
+   * the orchestrator to NaxConfig.
+   */
+  minScore?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

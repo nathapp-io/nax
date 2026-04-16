@@ -24,7 +24,7 @@ import type { PackedChunk } from "./packing";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
 import { StaticRulesProvider } from "./providers/static-rules";
 import { renderChunks } from "./render";
-import { scoreChunks } from "./scoring";
+import { MIN_SCORE, scoreChunks } from "./scoring";
 import { getStageContextConfig } from "./stage-config";
 import type {
   ContextBundle,
@@ -52,10 +52,15 @@ export const _orchestratorDeps = {
 const PROVIDER_FETCH_TIMEOUT_MS = 5_000;
 
 async function fetchWithTimeout(provider: IContextProvider, request: ContextRequest): Promise<ContextProviderResult> {
-  const timeout = new Promise<ContextProviderResult>((_, reject) =>
-    setTimeout(() => reject(new Error(`Provider "${provider.id}" timed out`)), PROVIDER_FETCH_TIMEOUT_MS),
-  );
-  return Promise.race([provider.fetch(request), timeout]);
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<ContextProviderResult>((_, reject) => {
+    handle = setTimeout(() => reject(new Error(`Provider "${provider.id}" timed out`)), PROVIDER_FETCH_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([provider.fetch(request), timeout]);
+  } finally {
+    clearTimeout(handle);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,9 +126,12 @@ export class ContextOrchestrator {
 
     const stageConfig = getStageContextConfig(request.stage);
     const role = request.role ?? stageConfig.role;
+    const effectiveMinScore = request.minScore ?? MIN_SCORE;
 
-    // Step 1: filter providers to those applicable for this stage
-    const activeProviders = this.providers.filter((p) => !request.providerIds || request.providerIds.includes(p.id));
+    // Step 1: filter providers to those applicable for this stage.
+    // request.providerIds (test-only override) takes precedence; otherwise stageConfig.providerIds.
+    const allowedIds = request.providerIds ?? stageConfig.providerIds;
+    const activeProviders = this.providers.filter((p) => allowedIds.includes(p.id));
 
     // Step 2: parallel fetch with timeout — failures return empty, never throw
     const fetchResults = await Promise.all(
@@ -145,7 +153,7 @@ export class ContextOrchestrator {
     const allPullTools = [...new Set(fetchResults.flatMap(({ result }) => result.pullTools ?? []))];
 
     // Step 3: score
-    const scored = scoreChunks(allRaw, role);
+    const scored = scoreChunks(allRaw, role, effectiveMinScore);
 
     // Separate role-filtered and below-min-score chunks
     const roleFiltered = scored.filter((c) => c.roleFiltered);
@@ -236,7 +244,7 @@ export class ContextOrchestrator {
     const manifest: ContextManifest = {
       ...prior.manifest,
       requestId: _orchestratorDeps.uuid(),
-      usedTokens: prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens,
+      usedTokens: Math.max(0, prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens),
       digestTokens: dTokens,
       buildMs: 0,
     };

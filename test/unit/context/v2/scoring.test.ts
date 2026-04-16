@@ -62,8 +62,9 @@ describe("scoreChunk", () => {
 
   test("staleness penalty: halves the score", () => {
     const chunk = makeChunk({ role: ["implementer"], rawScore: 1.0, kind: "feature" });
-    const fresh = scoreChunk(chunk, "implementer", false);
-    const stale = scoreChunk(chunk, "implementer", true);
+    // Pass minScore=MIN_SCORE explicitly, stale as 4th arg
+    const fresh = scoreChunk(chunk, "implementer", MIN_SCORE, false);
+    const stale = scoreChunk(chunk, "implementer", MIN_SCORE, true);
     expect(stale.score).toBeCloseTo(fresh.score * 0.5);
   });
 

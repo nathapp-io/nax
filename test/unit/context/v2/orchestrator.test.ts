@@ -19,6 +19,9 @@ const BASE_REQUEST: ContextRequest = {
   stage: "execution",
   role: "implementer",
   budgetTokens: 10_000,
+  // Bypass stage-config provider filtering for test isolation.
+  // Tests that verify providerIds filtering override this explicitly.
+  providerIds: ["p1", "p2", "test-provider", "timeout-sim", "good"],
 };
 
 function makeProvider(id: string, result: Partial<ContextProviderResult> = {}): IContextProvider {

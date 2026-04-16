@@ -34,12 +34,6 @@ export interface StageContextConfig {
    * Phase 1+: more providers added here.
    */
   providerIds: string[];
-  /**
-   * Plan digest boost multiplier (Amendment B).
-   * Applied to all chunk scores in single-session execution modes.
-   * Defaults to 1.0 (no boost).
-   */
-  planDigestBoost?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,7 +64,6 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     role: "implementer",
     budgetTokens: 12_000,
     providerIds: PHASE_0_PROVIDERS,
-    planDigestBoost: 1.5, // single-session: plan → execution digest boost
   },
 
   // TDD sub-sessions — each gets implementer role, moderate budget
@@ -83,7 +76,6 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     role: "implementer",
     budgetTokens: 8_000,
     providerIds: PHASE_0_PROVIDERS,
-    planDigestBoost: 1.5,
   },
   "tdd-verifier": {
     role: "tdd",

@@ -78,9 +78,10 @@ export interface ScoredChunk extends RawChunk {
  *
  * @param chunk - raw chunk from provider
  * @param callerRole - role of the requesting pipeline stage
+ * @param minScore - minimum score threshold (from config.context.v2.minScore)
  * @param stale - whether the chunk is detected as stale (Post-GA)
  */
-export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, stale = false): ScoredChunk {
+export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MIN_SCORE, stale = false): ScoredChunk {
   const rm = roleMultiplier(chunk.role, callerRole);
   const roleFiltered = rm === 0;
 
@@ -88,7 +89,7 @@ export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, stale = false
   const freshnessMultiplier = stale ? STALENESS_PENALTY : 1.0;
 
   const score = chunk.rawScore * rm * kindWeight * freshnessMultiplier;
-  const belowMinScore = !roleFiltered && score < MIN_SCORE;
+  const belowMinScore = !roleFiltered && score < minScore;
 
   return { ...chunk, score, roleFiltered, belowMinScore };
 }
@@ -96,7 +97,11 @@ export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, stale = false
 /**
  * Score all chunks from all providers.
  * Returns parallel array of ScoredChunks — same order as input.
+ *
+ * @param chunks - raw chunks to score
+ * @param callerRole - role of the requesting pipeline stage
+ * @param minScore - minimum score threshold (from config.context.v2.minScore, default: MIN_SCORE)
  */
-export function scoreChunks(chunks: RawChunk[], callerRole: ChunkRole): ScoredChunk[] {
-  return chunks.map((c) => scoreChunk(c, callerRole));
+export function scoreChunks(chunks: RawChunk[], callerRole: ChunkRole, minScore = MIN_SCORE): ScoredChunk[] {
+  return chunks.map((c) => scoreChunk(c, callerRole, minScore));
 }

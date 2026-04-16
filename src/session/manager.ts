@@ -40,6 +40,7 @@ const NULL_PROTOCOL_IDS: ProtocolIds = { recordId: null, sessionId: null };
 
 export const _sessionManagerDeps = {
   now: () => new Date().toISOString(),
+  nowMs: () => Date.now(),
   uuid: () => randomUUID(),
 };
 
@@ -156,7 +157,7 @@ export class SessionManager implements ISessionManager {
   }
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {
-    const cutoff = Date.now() - ttlMs;
+    const cutoff = _sessionManagerDeps.nowMs() - ttlMs;
     const terminal: SessionState[] = ["COMPLETED", "FAILED"];
     let removed = 0;
 

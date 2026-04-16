@@ -42,11 +42,14 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
 
   const request: ContextRequest = {
     storyId: ctx.story.id,
-    featureId: ctx.featureDir?.split("/").pop(),
+    // Trim trailing slash before taking the last path segment so
+    // "/features/my-feature/" resolves to "my-feature" not "".
+    featureId: ctx.featureDir?.replace(/\/$/, "").split("/").pop(),
     workdir: ctx.workdir,
     stage: "context", // initial assembly; execution stage overrides to "execution"
     role: "implementer",
     budgetTokens: ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
+    minScore: ctx.config.context.v2?.minScore,
     priorStageDigest: undefined,
   };
 
