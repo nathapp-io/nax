@@ -429,10 +429,16 @@ const ContextAutoDetectConfigSchema = z.object({
   traceImports: z.boolean().default(false),
 });
 
+const FeatureContextEngineConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  budgetTokens: z.number().int().min(256).default(2048),
+});
+
 const ContextConfigSchema = z.object({
   testCoverage: TestCoverageConfigSchema,
   autoDetect: ContextAutoDetectConfigSchema,
   fileInjection: z.enum(["keyword", "disabled"]).default("disabled"),
+  featureEngine: FeatureContextEngineConfigSchema.optional(),
 });
 
 const LlmRoutingConfigSchema = z.object({

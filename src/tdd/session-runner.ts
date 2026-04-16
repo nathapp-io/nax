@@ -44,6 +44,7 @@ export const _sessionRunnerDeps = {
         contextMarkdown?: string,
         lite?: boolean,
         constitution?: string,
+        featureContextMarkdown?: string,
       ) => Promise<string>),
 };
 import { buildSessionName } from "../agents/acp/adapter";
@@ -121,13 +122,23 @@ export async function runTddSession(
   featureName?: string,
   interactionBridge?: InteractionBridge,
   projectDir?: string,
+  featureContextMarkdown?: string,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
   // Build prompt — use injectable buildPrompt if set, otherwise default PromptBuilder
   let prompt: string;
   if (_sessionRunnerDeps.buildPrompt) {
-    prompt = await _sessionRunnerDeps.buildPrompt(role, config, story, workdir, contextMarkdown, lite, constitution);
+    prompt = await _sessionRunnerDeps.buildPrompt(
+      role,
+      config,
+      story,
+      workdir,
+      contextMarkdown,
+      lite,
+      constitution,
+      featureContextMarkdown,
+    );
   } else {
     switch (role) {
       case "test-writer":
@@ -135,6 +146,7 @@ export async function runTddSession(
           .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
+          .featureContext(featureContextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)
@@ -145,6 +157,7 @@ export async function runTddSession(
           .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
+          .featureContext(featureContextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)
@@ -155,6 +168,7 @@ export async function runTddSession(
           .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
+          .featureContext(featureContextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)

@@ -4,6 +4,17 @@
 
 export type { ContextElement, ContextBudget, StoryContext, BuiltContext } from "./types";
 
+export { resolveFeatureId, clearFeatureResolverCache } from "./feature-resolver";
+export {
+  filterContextByRole,
+  parseAudienceTags,
+  shouldIncludeEntry,
+  estimateContextTokens,
+  truncateToContextBudget,
+} from "./feature-context-filter";
+export { FeatureContextProvider } from "./providers/feature-context";
+export type { FeatureContextResult } from "./providers/feature-context";
+
 export {
   createStoryContext,
   createDependencyContext,

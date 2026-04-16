@@ -388,10 +388,16 @@ export interface ContextAutoDetectConfig {
   traceImports: boolean;
 }
 
+export interface FeatureContextEngineConfig {
+  enabled: boolean;
+  budgetTokens: number;
+}
+
 export interface ContextConfig {
   testCoverage: TestCoverageConfig;
   autoDetect: ContextAutoDetectConfig;
   fileInjection?: "keyword" | "disabled";
+  featureEngine?: FeatureContextEngineConfig; // NEW — Context Engine v1
 }
 
 /** Story size gate thresholds (v0.16.0) */

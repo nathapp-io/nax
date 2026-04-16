@@ -19,6 +19,7 @@ import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
+import { filterContextByRole } from "../context";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
@@ -137,6 +138,7 @@ export async function runAdversarialReview(
   featureName?: string,
   priorFailures?: Array<{ stage: string; modelTier: string }>,
   blockingThreshold?: "error" | "warning" | "info",
+  featureContextMarkdown?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -218,8 +220,15 @@ export async function runAdversarialReview(
     };
   }
 
+  // Filter feature context for reviewer-adversarial role
+  let featureCtxBlock = "";
+  if (featureContextMarkdown) {
+    const filtered = filterContextByRole(featureContextMarkdown, "reviewer-adversarial");
+    if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
+  }
+
   // Build prompt
-  const prompt = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(story, adversarialConfig, {
+  const basePrompt = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(story, adversarialConfig, {
     mode: diffMode,
     diff,
     storyGitRef: effectiveRef,
@@ -228,6 +237,7 @@ export async function runAdversarialReview(
     testInventory,
     excludePatterns: adversarialConfig.excludePatterns,
   });
+  const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 
   // Resolve model definition
   const defaultAgent = naxConfig?.autoMode?.defaultAgent ?? "claude";

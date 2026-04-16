@@ -13,6 +13,7 @@ import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
+import { filterContextByRole } from "../context";
 import { DebateSession } from "../debate";
 import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
@@ -137,6 +138,7 @@ export async function runSemanticReview(
   resolverSession?: import("./dialogue").ReviewerSession,
   priorFailures?: Array<{ stage: string; modelTier: string }>,
   blockingThreshold?: "error" | "warning" | "info",
+  featureContextMarkdown?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -224,8 +226,15 @@ export async function runSemanticReview(
     };
   }
 
+  // Filter feature context for reviewer-semantic role
+  let featureCtxBlock = "";
+  if (featureContextMarkdown) {
+    const filtered = filterContextByRole(featureContextMarkdown, "reviewer-semantic");
+    if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
+  }
+
   // Build prompt — mode determines whether diff is embedded or reviewer self-serves via tools.
-  const prompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(story, semanticConfig, {
+  const basePrompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(story, semanticConfig, {
     mode: diffMode,
     diff,
     storyGitRef: effectiveRef,
@@ -233,6 +242,7 @@ export async function runSemanticReview(
     priorFailures,
     excludePatterns: semanticConfig.excludePatterns,
   });
+  const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 
   // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;

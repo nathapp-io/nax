@@ -216,6 +216,7 @@ export async function runReview(
   featureName?: string,
   resolverSession?: import("./dialogue").ReviewerSession,
   priorFailures?: Array<{ stage: string; modelTier: string }>,
+  featureContextMarkdown?: string,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -298,6 +299,7 @@ export async function runReview(
         resolverSession,
         priorFailures,
         config.blockingThreshold,
+        featureContextMarkdown,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
@@ -337,6 +339,7 @@ export async function runReview(
         featureName,
         priorFailures,
         config.blockingThreshold,
+        featureContextMarkdown,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

@@ -22,6 +22,7 @@
  */
 
 import type { NaxConfig } from "../../config/types";
+import { filterContextByRole, truncateToContextBudget } from "../../context";
 import type { UserStory } from "../../prd";
 import { SectionAccumulator } from "../core";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
@@ -47,6 +48,7 @@ export class TddPromptBuilder {
   private stories_: UserStory[] | undefined;
   private constitution_: string | undefined;
   private contextMd_: string | undefined;
+  private featureContextMd_: string | undefined;
   private overridePath_: string | undefined;
   private loaderWorkdir_: string | undefined;
   private loaderConfig_: NaxConfig | undefined;
@@ -76,6 +78,11 @@ export class TddPromptBuilder {
 
   context(md: string | undefined): this {
     if (md) this.contextMd_ = md;
+    return this;
+  }
+
+  featureContext(md: string | undefined): this {
+    if (md) this.featureContextMd_ = md;
     return this;
   }
 
@@ -137,6 +144,22 @@ export class TddPromptBuilder {
 
     // (2) Role task body — disk override or default template
     acc.add(this.s("role-task", await this.resolveRoleBody()));
+
+    // (2.5) Feature-level context (feature engine v1) — between role task and story
+    if (this.featureContextMd_) {
+      const budgetTokens = this.loaderConfig_?.context?.featureEngine?.budgetTokens ?? 2048;
+      const filtered = filterContextByRole(this.featureContextMd_, this.role);
+      if (filtered.trim()) {
+        // Extract featureId from the injection header ("_Feature: <id>_") so the
+        // truncation warning log names the actual feature instead of a placeholder.
+        const headerMatch = this.featureContextMd_.match(/^_Feature: (.+?)_$/m);
+        const logFeatureId = headerMatch?.[1] ?? "unknown";
+        const truncated = truncateToContextBudget(filtered, budgetTokens, logFeatureId);
+        if (truncated.trim()) {
+          acc.add(this.s("feature-context", truncated));
+        }
+      }
+    }
 
     // (3) Story context
     if (this.role === "batch" && this.stories_ && this.stories_.length > 0) {
