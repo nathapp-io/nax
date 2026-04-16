@@ -22,7 +22,7 @@ v2 keeps v1's goals (feature-scoped working memory, role-filtered injection, app
 
 - Feature-scoped > global. Confirmed by Phase 0 manual dogfooding.
 - Role-filtered injection. Reduced implementer prompt noise ~18% in the prompt-refactor feature.
-- Append-and-summarize with parallel-safe fragments. Correct concurrency model.
+- Feature-scoped file with manual append workflow. Correct model for a single operator; fragments and summarization are deferred to v2.
 - Human-in-the-loop promotion gate. Right call — auto-promotion caused sprawl in prior attempts.
 
 ### What v1 missed
@@ -47,7 +47,7 @@ v2 keeps v1's goals (feature-scoped working memory, role-filtered injection, app
 
 ## Non-Goals
 
-- **Not replacing v1's storage layout.** `.nax/features/<id>/context.md` stays as the `FeatureContextProvider`'s storage. v1's extractor, summarizer, and promotion gate remain valid and reused.
+- **Not replacing v1's storage layout.** `.nax/features/<id>/context.md` stays as the `FeatureContextProvider`'s storage. The file format and lock file schema are unchanged.
 - **Not shipping all providers at once.** Initial rollout ships the orchestrator + v1 feature provider + session scratch provider. RAG/graph/KB providers are separate follow-up specs that depend on this foundation.
 - **Not a general-purpose RAG framework.** Third-party providers are plugged in through `IContextProvider`; we are not building a vector database, an embedding pipeline, or an indexing daemon as part of this spec.
 - **Not changing the existing prompt builders' external API.** Builders still receive a `context` string via `.context(md)`; the orchestrator produces that string. Role filtering moves from the builder into the orchestrator.
@@ -692,7 +692,7 @@ Manifests are git-ignored by default (they reference internal chunk content) but
 
 ### `FeatureContextProvider` (v1, repurposed)
 
-Reads `.nax/features/<id>/context.md`. Supports push only. Role filtering moves *out* of this provider (orchestrator does it). Extractor / summarizer / promotion gates from v1 continue to run unchanged; they are v1 subsystems that write into this provider's storage.
+Reads `.nax/features/<id>/context.md`. Supports push only. Role filtering moves *out* of this provider (orchestrator does it). In v1, `context.md` is human-authored; the extractor, summarizer, and promotion gate are **new write-path subsystems first introduced in v2** — they write into this provider's storage via the capture stage.
 
 ### `SessionScratchProvider` (new)
 
@@ -730,9 +730,9 @@ The plugin loading mechanism reuses the existing 7-extension-point plugin system
 | Concern | v1 | v2 |
 |:--------|:---|:---|
 | Storage | `.nax/features/<id>/context.md` | Same (via `FeatureContextProvider`) |
-| Extractor | Capture stage calls LLM, writes fragments | Unchanged |
-| Summarizer | Phase boundary / run completion | Unchanged |
-| Promotion gate | Feature archival | Unchanged |
+| Extractor | **Not in v1** (deferred) | New — capture stage, fragment writer, merger |
+| Summarizer | **Not in v1** (deferred) | New — summarization gate at phase boundary |
+| Promotion gate | **Not in v1** (deferred) | New — runs at feature archival |
 | Role filtering | In prompt builders | In orchestrator |
 | Injection point | Prompt builder adds one block | Orchestrator assembles per stage |
 | Budget | One number | Per-stage + floor |
@@ -860,7 +860,7 @@ Example project config enabling v2 with default providers:
 - `src/pipeline/stages/rectify.ts` — read scratch via bundle.
 - `src/pipeline/stages/review.ts` — pass bundle; record pull calls.
 - `src/pipeline/stages/autofix.ts` — pass bundle.
-- `src/pipeline/stages/capture.ts` (v1) — unchanged semantically; its writes go through the feature provider's storage.
+- `src/pipeline/stages/capture.ts` — new in v2; runs the extractor on passing stories and writes fragments to the feature provider's storage.
 - `src/agents/acp/*.ts` — register pull tools from `bundle.pulledTools`; route tool calls to orchestrator.
 - `src/agents/claude/*.ts` — same via MCP where available; push-only fallback otherwise.
 - `src/execution/lifecycle/run-completion.ts` — rotate scratch, archive manifests.
@@ -872,6 +872,8 @@ Example project config enabling v2 with default providers:
 ### Step 0 — landing before anything else
 
 Ship the `ContextOrchestrator` with only `StaticRulesProvider` + `FeatureContextProvider` registered. Role filtering moves from builders into the orchestrator. Behavior is byte-for-byte identical to v1 at this point. Tests verify equivalence.
+
+**Interface adapter:** v1's `FeatureContextProvider` implements the existing `IContextProvider` (`getContext(story, workdir, config) → ContextProviderResult | null`). v2's provider interface (`src/context/core/provider.ts`) uses `fetch(req, softBudget) → ContextChunk[]`. Step 0 wraps v1's provider in a thin adapter at `src/context/providers/feature-context-provider.ts` that calls `getContext()` and converts the `ContextProviderResult` string into a single `ContextChunk` with `score: 1.0`, `audience: []` (all), and `kind: "feature"`. Per-entry audience tags are preserved by parsing the Markdown entries inside the adapter — the same logic as v1's `filterContextByRole()` but inverted: instead of filtering out, it annotates each parsed entry as a separate chunk. This gives v2's orchestrator the per-chunk audience data it needs without requiring v1 code to change.
 
 ### Step 1 — session scratch
 
@@ -1080,7 +1082,7 @@ Evidence from prior experiments: smaller models rarely call tools even when help
 
 20. **Session scratch retention.** Scratch older than `sessionScratch.retentionDays` is purged on run completion. Feature archival moves scratch to `_archive/` only if `manifest.archiveOnFeatureArchive: true`.
 
-21. **v1 features preserved.** v1's extractor, summarizer, promotion gate, and archival all continue to function against the feature provider's storage. v1 config under `context.featureEngine.*` remains valid.
+21. **v1 read-path preserved.** v1's `FeatureContextProvider` and `resolveFeatureId` continue to function; human-authored `context.md` files are read unchanged. v1 config under `context.featureEngine.*` remains valid. The extractor, summarizer, and promotion gate are new v2 additions, not preserved from v1.
 
 22. **Builder migration.** Phase 0 uses `.context(bundle.pushMarkdown)` adapter; by the end of Phase 5 all prompt builders consume `ContextBundle` directly, and `.context(string)` is deprecated.
 

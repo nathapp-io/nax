@@ -55,36 +55,36 @@ A context engine structures the problem as "state that grows over the feature's 
 - **No cross-feature retrieval.** Archived feature contexts are not auto-loaded into new features. If a future refactor touches the same area, a human decides whether to seed the new feature's context from an archived one.
 - **No replacement for CLAUDE.md, ADRs, or rules.** These remain the authoritative source for project-wide standards. The context engine is for feature-local working memory.
 - **No persistent knowledge base / embedding index.** That's a different architecture (iterative retrieval). Context engine is file-based and simple.
-- **No first-version automated write path.** Initial rollout is read-path-only with human-written context files. The extractor agent is Phase 2, gated on evidence that the read path pays off.
+- **No automated write path in v1.** The extractor agent (Phase 2), summarization gate (Phase 3), parallel fragment merge (Phase 4), and promotion gate (Phase 5) are all **deferred to v2**. v1 is read-path-only. Human-written `context.md` files are the only source. This is a deliberate scope decision based on Phase 0 validation evidence: the read path delivers value independently, and auto-extraction quality is unproven.
 - **No default-on rollout.** Ships off by default; opted-in per feature until proven.
 
 ## Design
 
 ### Where It Fits
 
-The engine has two insertion points in the nax pipeline:
+The engine has two insertion points in the nax pipeline. **v1 implements only the read path.** The write path and promotion gate are deferred to v2.
 
 ```
-┌─ Pre-story (read path) ───────────────────────────────┐
-│  Feature-ID resolution → load context.md → inject    │
-│  into agent prompt via src/context/                   │
-└───────────────────────────────────────────────────────┘
+┌─ Pre-story (read path) ────────────────────────────── v1 ─┐
+│  Feature-ID resolution → load context.md → inject        │
+│  into agent prompt via src/context/                       │
+└───────────────────────────────────────────────────────────┘
                          ↓
               [execute → verify → rectify → review → autofix]
                          ↓
-┌─ Post-story (write path, optional) ───────────────────┐
-│  On review pass → extractor LLM call → append to     │
-│  context.md fragment → merge at phase boundary       │
-└───────────────────────────────────────────────────────┘
+┌─ Post-story (write path, optional) ────────────── v2 ─────┐
+│  On review pass → extractor LLM call → append to         │
+│  context.md fragment → merge at phase boundary           │
+└───────────────────────────────────────────────────────────┘
                          ↓
-┌─ Post-feature (promotion gate, on merge) ─────────────┐
-│  Review context.md → surface general learnings as    │
-│  PR comment or issue → human promotes to rules       │
-│  Archive context.md → .nax/features/_archive/        │
-└───────────────────────────────────────────────────────┘
+┌─ Post-feature (promotion gate, on merge) ───────── v2 ────┐
+│  Review context.md → surface general learnings as        │
+│  PR comment or issue → human promotes to rules           │
+│  Archive context.md → .nax/features/_archive/            │
+└───────────────────────────────────────────────────────────┘
 ```
 
-The read path is cheap and should run on every story for opted-in features. The write path is more expensive (extra LLM call per story) and is opted-in separately.
+The read path is cheap and runs on every story for opted-in features. In v1, `context.md` is written by hand — the human author updates it at natural checkpoints (after phases where new constraints are discovered). The write path (auto-extractor) is more expensive and architecturally uncertain; it ships in v2 after the read path is proven.
 
 ### Storage Layout
 
@@ -105,26 +105,23 @@ Extends the existing `.nax/features/<feature-id>/` namespace without introducing
 
 **`context.md`** — the canonical, agent-facing file. This is what gets injected into every subsequent story's prompt. It is append-and-summarize: new content gets added, and the summarization gate (below) rewrites the file when it exceeds budget.
 
-**`context.lock.json`** — metadata:
+**`context.lock.json`** — metadata (v1 populates only the fields relevant to the read path; write-path fields are reserved for v2):
 
 ```json
 {
   "featureId": "prompt-refactor",
   "createdAt": "2026-04-12T10:00:00Z",
   "lastUpdatedAt": "2026-04-12T14:22:00Z",
-  "lastSummarizedAt": "2026-04-12T13:00:00Z",
   "entriesCount": 14,
   "budgetTokens": 2048,
   "currentTokens": 1670,
-  "source": "manual" | "extractor" | "mixed",
-  "contributions": [
-    { "storyId": "US-001", "at": "2026-04-12T10:30:00Z", "tokens": 220, "author": "extractor" },
-    { "storyId": "US-002", "at": "2026-04-12T11:15:00Z", "tokens": 180, "author": "manual" }
-  ]
+  "source": "manual"
 }
 ```
 
-**`context-fragments/`** — per-story write buffer directory. Each story that writes context produces a fragment file, not a direct edit to `context.md`. Fragments are merged into `context.md` at phase boundaries (or immediately in sequential mode). This is the primary mechanism for **parallel-execution safety** — see below.
+**Forward-compatibility:** The lock file parser must use `z.passthrough()` (or equivalent) when reading `context.lock.json` so that unknown fields added by v2 (e.g., `lastExtractedAt`, `summarizationRound`, `promotedEntries`) are preserved on read/write rather than stripped. v1 only reads and writes the fields above; it must never truncate an object that v2 may have already written.
+
+**`context-fragments/`** — per-story write buffer directory. Not used in v1 (no auto-extractor). Reserved for v2 parallel-safe fragment merge.
 
 ### Data Format — `context.md`
 
@@ -235,7 +232,7 @@ Each entry in `context.md` carries an **audience tag** — a list of roles that 
 | `reviewer-adversarial` | Adversarial review only | `sessionRole: "reviewer-adversarial"` |
 | `reviewer` | All reviewer roles | Both semantic and adversarial |
 
-**Filtering logic in `FeatureContextProvider`:**
+**Filtering logic (called by prompt builders, not the provider):**
 
 ```typescript
 function filterByAudience(contextMd: string, role: PromptRole | string): string {
@@ -281,7 +278,9 @@ Cache the result per-run in `ctx` to avoid re-walking the feature directory. If 
 
 ### Read Path — Pre-Story Context Injection
 
-Integrates into the existing `src/context/` stage. A new context provider implements the `IContextProvider` interface.
+Integrates into the existing `src/context/` stage. A new context provider implements the existing `IContextProvider` interface from `src/plugins/extensions.ts`.
+
+**Interface note:** The existing `IContextProvider.getContext(story)` signature takes only `UserStory`. v1 extends this with `workdir` and `config` via the plugin's optional parameter pattern — existing providers that don't use these parameters are unaffected. The v2 spec introduces a new, richer `IContextProvider` with `fetch(req, softBudget)` in `src/context/core/provider.ts`; that is a different interface. When v2 ships, it wraps v1's `FeatureContextProvider` in an adapter that maps `getContext()` → `fetch()`, preserving the file format without requiring v1 code to change.
 
 **Key design constraint:** The `IContextProvider.getContext()` interface currently receives `UserStory`, which has no role information. The `PromptRole` is only available at prompt-build time in `TddPromptBuilder.for(role)`. Two options:
 
@@ -306,7 +305,9 @@ export class FeatureContextProvider implements IContextProvider {
     const content = await file.text()
     if (content.trim().length === 0) return null
 
-    // Return FULL context — role filtering happens at prompt-build time
+    // Return FULL context — role filtering happens at prompt-build time.
+    // The raw Markdown is returned here; v2's adapter layer parses entries
+    // into individual ContextChunks with per-entry audience tags.
     return {
       content: formatForInjection(content, featureId),
       estimatedTokens: estimateTokens(content),
@@ -324,7 +325,16 @@ import type { PromptRole } from "../prompts/core/types";
 type AudienceTag = "all" | "implementer" | "test-writer" | "verifier"
   | "reviewer" | "reviewer-semantic" | "reviewer-adversarial";
 
-/** Map PromptRole to which audience tags it should receive */
+/**
+ * Map PromptRole to which audience tags it should receive.
+ * Covers the 7 PromptRole values that exist in v1.
+ * Roles introduced in v2 (rectifier, autofixer, planner, decomposer, etc.)
+ * are not in this map — filterContextByRole() accepts `PromptRole | string`,
+ * so unmapped string roles fall through to direct tag matching:
+ * the role string is compared against audience tags literally, and
+ * entries tagged [all] are always included. This means v2 roles work
+ * correctly without modifying v1 code.
+ */
 const ROLE_AUDIENCE_MAP: Record<PromptRole, AudienceTag[]> = {
   "implementer":     ["all", "implementer"],
   "test-writer":     ["all", "test-writer"],
@@ -380,9 +390,11 @@ This provider registers in the default provider chain and runs alongside the exi
 
 Feature context is narrower than project and broader than story — it belongs between them.
 
-**Budget enforcement.** The read path truncates `context.md` if it exceeds the configured token budget (default 2048 tokens). Truncation is tail-biased: keep the most recent entries, drop older ones to the `Rationale Archive` section. The summarization gate (below) is the primary defense against overflow; truncation is a safety net.
+**Budget enforcement.** The read path truncates the role-filtered content if it exceeds the configured token budget (default 2048 tokens). Truncation applies after filtering — only entries that passed the role filter count against the budget. Truncation is tail-biased: keep the most recent entries, drop older ones. The summarization gate (below) is the primary defense against overflow; truncation is a safety net.
 
 ### Write Path — Post-Story Extraction
+
+> **Deferred to v2.** This section describes the design for v2 implementation. It is retained here for design continuity and to ensure the v1 storage layout and lock file schema are forward-compatible with it. No write-path code is implemented in v1.
 
 Runs after a story passes review. Opt-in via `context.featureEngine.write.enabled`.
 
@@ -504,6 +516,8 @@ The prompt is deliberately narrow — most stories should produce zero or one en
 
 ### Fragment Merge — Parallel Execution Safety
 
+> **Deferred to v2.** No fragment merge is implemented in v1.
+
 Nax supports parallel story execution. If two stories in the same feature finish concurrently and both try to append to `context.md`, they race.
 
 **Solution:** per-story fragment files written independently, merged into `context.md` at a serialization point.
@@ -527,9 +541,11 @@ The merger runs inside the single-threaded run completion phase, so it has no co
 
 ### Summarization Gate
 
+> **Deferred to v2.** No auto-summarization is implemented in v1. The v1 safety net is tail-truncation of role-filtered content (see Budget enforcement above).
+
 `context.md` grows linearly with the feature. Without bounds, it eventually exceeds the prompt budget and crowds out the actual story brief. Two safeguards:
 
-**1. Hard token budget** (`context.featureEngine.budgetTokens`, default 2048). The read path truncates if exceeded. Truncation is tail-biased and emits a warning.
+**1. Hard token budget** (`context.featureEngine.budgetTokens`, default 2048). The read path truncates the role-filtered content if exceeded (budget is measured after filtering, not on raw `context.md`). Truncation is tail-biased and emits a warning.
 
 **2. Summarization gate** (runs at phase boundary or on growth threshold). An LLM pass reads `context.md` and rewrites it into a tighter form that preserves decisions/constraints/patterns but compresses rationale:
 
@@ -593,6 +609,8 @@ Archived contexts are **not read by default**. A future feature that wants to se
 
 ### Promotion Gate — Feature-Local to Project-Wide
 
+> **Deferred to v2.** No promotion gate is implemented in v1.
+
 At feature close (archival), some learnings may generalize beyond the feature. The promotion gate surfaces candidates:
 
 1. **Trigger.** Runs at archival, after the feature merges.
@@ -609,30 +627,12 @@ At feature close (archival), some learnings may generalize beyond the feature. T
 
 ## Config
 
-New config section at `src/config/schemas.ts`:
+New config section at `src/config/schemas.ts`. **v1 scope: read-path config only.** Write, summarization, and promotion config fields are reserved for v2 and must not be added to the schema in v1.
 
 ```typescript
-const FeatureContextWriteConfigSchema = z.object({
-  enabled: z.boolean().default(false),           // opt-in: runs extractor post-story
-  modelTier: ModelTierSchema.default("fast"),    // extractor LLM tier
-  timeoutMs: z.number().int().min(10_000).default(60_000),
-  maxEntriesPerStory: z.number().int().min(0).default(5),
-});
-
 const FeatureContextEngineConfigSchema = z.object({
   enabled: z.boolean().default(false),           // master switch (read path)
   budgetTokens: z.number().int().min(256).default(2048),
-  summarization: z.object({
-    enabled: z.boolean().default(true),
-    triggerFraction: z.number().min(0).max(1).default(0.75),
-    modelTier: ModelTierSchema.default("balanced"),
-  }).default({}),
-  write: FeatureContextWriteConfigSchema.default({}),
-  promotion: z.object({
-    enabled: z.boolean().default(false),         // runs at feature archival
-    modelTier: ModelTierSchema.default("balanced"),
-    output: z.enum(["pr-comment", "issue", "local-file"]).default("local-file"),
-  }).default({}),
 });
 
 // Attach to ContextConfigSchema
@@ -644,50 +644,47 @@ const ContextConfigSchema = z.object({
 
 **Defaults justification:**
 
-- `enabled: false` at both master and write levels — opt-in feature, conservative rollout.
+- `enabled: false` — opt-in feature, conservative rollout.
 - `budgetTokens: 2048` — about 8 KB of Markdown, enough for ~15 entries with moderate detail.
-- `summarization.triggerFraction: 0.75` — summarize before the budget is hit, not after, to avoid mid-story truncation.
-- `write.modelTier: "fast"` — extractor runs frequently, use a cheap model.
-- `summarization.modelTier: "balanced"` — summarization quality matters more than frequency; runs rarely.
-- `maxEntriesPerStory: 5` — cap per story, primary defense against noise.
-- `promotion.output: "local-file"` — least intrusive; surface candidates without auto-commenting on PRs.
 
-### Opt-In Levels
-
-Users can enable the engine at three graduated levels:
+### Opt-In Levels (v1)
 
 | Level | Config | Behavior |
 |:---|:---|:---|
 | **Off** | `enabled: false` | No-op. Default. |
-| **Read-only** | `enabled: true, write.enabled: false` | Engine reads existing `context.md` files (human-written). No extractor. Cheapest way to benefit. |
-| **Read + Write** | `enabled: true, write.enabled: true` | Engine reads and the extractor writes. Full loop. |
-| **Read + Write + Promote** | `enabled: true, write.enabled: true, promotion.enabled: true` | Full loop + archival promotion candidates. |
+| **Read-only** | `enabled: true` | Engine reads existing `context.md` files (human-written) and injects them into agent prompts. |
 
-The **read-only** level is the important one for rollout: it lets users manually curate `context.md` during a feature build and see whether injection actually helps, before committing to the cost of the extractor.
+v1 is read-only only. The write path (`write.enabled`), summarization, and promotion config keys are v2 additions and should not be implemented or documented in v1 code.
 
 ## File Surface
 
-### New files
+### New files (v1 scope — read path only)
 
 - `src/context/providers/feature-context.ts` — the `IContextProvider` implementation (read path)
 - `src/context/feature-resolver.ts` — `resolveFeatureId(story, workdir)` helper with caching
-- `src/context/feature-context-filter.ts` — **NEW** — `filterContextByRole()` audience tag parser and role-based entry filter
-- `src/context/feature-writer.ts` — fragment writer (write path)
-- `src/context/feature-merger.ts` — fragment merger (runs at phase boundary / run completion); formats audience arrays as inline tags
-- `src/context/feature-summarizer.ts` — summarization gate
-- `src/context/feature-promotion.ts` — promotion gate (runs at archival)
-- `src/prompts/builders/context-extractor-builder.ts` — extractor prompt builder (includes audience classification instructions)
-- `src/prompts/builders/context-summarizer-builder.ts` — summarizer prompt builder (preserves audience tags)
-- `src/prompts/builders/context-promotion-builder.ts` — promotion-gate prompt builder
+- `src/context/feature-context-filter.ts` — `filterContextByRole()` audience tag parser and role-based entry filter
 - `test/unit/context/feature-context.test.ts` — read-path unit tests with `_deps` mocking
-- `test/unit/context/feature-context-filter.test.ts` — **NEW** — audience tag parsing, role mapping, edge cases (no tag → all, unknown tag → all, multi-tag entries)
+- `test/unit/context/feature-context-filter.test.ts` — audience tag parsing, role mapping, edge cases (no tag → all, unknown tag → all, multi-tag entries)
 - `test/unit/context/feature-resolver.test.ts` — resolver tests (cache, edge cases)
-- `test/unit/context/feature-merger.test.ts` — fragment merge logic, audience tag formatting, dedup with audience union
-- `test/unit/context/feature-summarizer.test.ts` — summarization invariants (never drops entries, preserves audience tags)
-- `test/integration/context/feature-engine-end-to-end.test.ts` — full feature lifecycle
-- `test/integration/context/feature-engine-parallel.test.ts` — parallel story fragment merge
+- `test/integration/context/feature-engine-read-path.test.ts` — read path end-to-end (feature resolution → file load → role filter → prompt injection)
 
-### Modified files
+### Deferred to v2
+
+The following files are **not implemented in v1**. They are documented here for continuity with the v2 spec:
+
+- `src/context/feature-writer.ts` — fragment writer (write path)
+- `src/context/feature-merger.ts` — fragment merger (parallel-safe)
+- `src/context/feature-summarizer.ts` — summarization gate
+- `src/context/feature-promotion.ts` — promotion gate
+- `src/prompts/builders/context-extractor-builder.ts` — extractor prompt builder
+- `src/prompts/builders/context-summarizer-builder.ts` — summarizer prompt builder
+- `src/prompts/builders/context-promotion-builder.ts` — promotion-gate prompt builder
+- `src/pipeline/stages/capture.ts` — post-review extractor stage
+- `test/unit/context/feature-merger.test.ts`
+- `test/unit/context/feature-summarizer.test.ts`
+- `test/integration/context/feature-engine-parallel.test.ts`
+
+### Modified files (v1 scope)
 
 - `src/config/schemas.ts` — add `FeatureContextEngineConfigSchema` under `ContextConfigSchema`
 - `src/config/types.ts` — re-export new types
@@ -696,43 +693,7 @@ The **read-only** level is the important one for rollout: it lets users manually
 - `src/prompts/builders/tdd-builder.ts` — call `filterContextByRole(contextMd, this.role)` in `build()` before adding context section
 - `src/review/semantic.ts` — call `filterContextByRole(featureContext, "reviewer-semantic")` when injecting feature context into review prompt
 - `src/review/adversarial.ts` — call `filterContextByRole(featureContext, "reviewer-adversarial")` when injecting feature context into review prompt
-- `src/execution/lifecycle/run-completion.ts` — run the fragment merger and summarization gate at run end
-- `src/pipeline/stages/capture.ts` — new post-review stage that runs the extractor on passing stories (see **New pipeline stage** below)
-- `src/pipeline/default-pipeline.ts` — register the capture stage after review
-- `src/agents/types.ts` — add `"context-extractor"`, `"context-summarizer"`, `"context-promoter"` as recognized `sessionRole` values (currently free-form string; this is documentation-level)
-- `src/metrics/story-metrics.ts` — add `contextEngine` sub-bucket for cost/token tracking
 - `CLAUDE.md` / `.claude/rules/` — document the feature context convention so humans know what `context.md` is when they see it in `.nax/features/`
-
-### New pipeline stage: `capture`
-
-Runs after review (and after autofix, if it fired) but before the story is marked final. Only executes if:
-
-- Story state is `passed`
-- `config.context.featureEngine.write.enabled` is true
-- Feature ID resolves
-
-Stage responsibilities:
-
-1. Build the extractor input (diff, findings, escalations, existing context)
-2. Call the extractor via `agent.complete()` with `sessionRole: "context-extractor"` and `jsonMode: true`
-3. Validate the JSON response against the expected schema
-4. Write the fragment file
-5. Log metrics (entries produced, cost, tokens)
-
-On extractor failure (LLM error, JSON parse error, timeout): log a warning and continue. Never fail the story because the extractor failed — the context engine is best-effort.
-
-The capture stage is **new to the default pipeline** and slots in between `review` and the existing post-review steps. Pipeline modification:
-
-```typescript
-// src/pipeline/default-pipeline.ts
-export const defaultPipeline = [
-  // ...existing stages
-  reviewStage,
-  autofixStage,
-  captureStage,   // NEW — runs only if context engine + write are enabled
-  // ...
-]
-```
 
 ## Migration
 
@@ -768,44 +729,39 @@ Before writing any code, validate the hypothesis manually on one real feature:
 
 If this doesn't help, the engine won't either — abort or redesign. If it does help, the evidence justifies Phase 1.
 
-### Phase 1 — Read path only
+### Phase 1 — Read path only (v1 scope — build this now)
 
-- Ship `FeatureContextProvider` + `resolveFeatureId` + config schema.
+- Ship `FeatureContextProvider` + `resolveFeatureId` + `filterContextByRole` + config schema.
 - `enabled: false` by default.
 - Users manually write `context.md`; engine auto-injects.
 - Add the read-path integration tests.
-- Measure: how often is `context.md` present? When present, does it reduce escalation rates or review findings? (Tracked via metrics.)
+- Measure: when `context.md` is present, does it reduce escalation rates or review findings? (Tracked by comparing runs with and without `enabled: true`.)
+- **This is the complete v1 implementation.** Phases 2–6 are out of scope.
 
-### Phase 2 — Write path (extractor)
+### Phase 2 — Write path (extractor) — **deferred to v2**
 
-- Ship `feature-writer.ts`, `feature-merger.ts`, `context-extractor-builder.ts`.
-- Ship the capture stage.
+- Ship `feature-writer.ts`, `feature-merger.ts`, `context-extractor-builder.ts`, capture stage.
 - `write.enabled: false` by default.
-- Users opt in per-feature.
-- Measure: extractor quality (human audit of output), cost per story, how often extracted entries actually get cited or referenced by subsequent stories.
+- Gate: Phase 1 must demonstrate measurable read-path value on at least 2 features before Phase 2 begins.
 
-### Phase 3 — Summarization gate
+### Phase 3 — Summarization gate — **deferred to v2**
 
 - Ship `feature-summarizer.ts`.
-- Defaults to `enabled: true` (summarization is a safety feature, not a behavioral change).
-- Triggered only at phase boundaries.
+- Depends on Phase 2 (write path must produce entries before summarization is needed at scale).
 
-### Phase 4 — Parallel-safe fragment merge
+### Phase 4 — Parallel-safe fragment merge — **deferred to v2**
 
-- Fragment files exist from Phase 2 onward, but merging in parallel mode requires the run-completion merger.
-- Ship and test parallel story fragment merge in this phase.
+- Depends on Phase 2 fragment files existing.
 - Gate with an integration test that spawns 4 parallel stories and verifies no lost fragments.
 
-### Phase 5 — Promotion gate
+### Phase 5 — Promotion gate — **deferred to v2**
 
 - Ship `feature-promotion.ts` and the promotion-gate prompt.
 - Runs at feature archival.
-- Default `output: "local-file"` — least intrusive.
-- Opt-in to `output: "pr-comment"` once the promotion candidates are seen to be high-signal.
 
-### Phase 6 — Measurement and tuning
+### Phase 6 — Measurement and tuning — **deferred to v2**
 
-- Collect metrics across several features over a few weeks.
+- Collect metrics across several features.
 - Tune defaults: budget, summarization trigger, extractor prompt, maxEntriesPerStory.
 - Decide whether to flip `enabled` to `true` by default.
 
@@ -888,15 +844,15 @@ If users start writing project-wide conventions into `context.md` instead of `CL
 
 ## Open Questions
 
-1. **Is `.nax/features/` gitignored by default, or committed?** This materially affects the design:
-   - **Committed:** `context.md` becomes part of the repo, reviewable in PRs, version-controlled. Promotion to `CLAUDE.md` is less urgent because `context.md` itself is durable. Secrets risk is higher.
-   - **Gitignored:** `context.md` is local state, ephemeral across clones, machine-specific. Harder to share between team members working on the same feature. Secrets risk is lower.
-
-   Need to check the current nax convention and decide. If `.nax/features/` is currently mixed (some committed, some not), the context engine needs its own decision.
+1. *(Resolved.)* **Is `.nax/features/` gitignored by default, or committed?** **Decision: `context.md` and `context.lock.json` are committed.** `context-fragments/` and `sessions/` are gitignored. Rationale: `context.md` is human-authored feature documentation with the same lifecycle as `prd.json` (already committed). It is team-shared knowledge. Auto-extracted fragments and session scratch may contain secrets and are ephemeral — gitignored. Storage layout:
+   - `.nax/features/<id>/context.md` → committed
+   - `.nax/features/<id>/context.lock.json` → committed
+   - `.nax/features/<id>/context-fragments/` → gitignored (v2)
+   - `.nax/features/<id>/sessions/` → gitignored (v2)
 
 2. **Should `context.md` be human-readable Markdown (current design) or structured JSON?** Markdown is LLM-friendly and human-editable. JSON is queryable and type-safe but harder to edit. Markdown wins for the agent-facing use case, but a JSON sidecar (`context.entries.json`) for metrics and querying may be worth adding.
 
-3. **How does the engine interact with `constitution` and `src/context/` existing providers?** Need to verify the provider chain supports ordered injection (project → feature → story) without duplication or conflict.
+3. *(Resolved by v2 design.)* **How does the engine interact with `constitution` and `src/context/` existing providers?** v1 registers `FeatureContextProvider` alongside the existing provider chain — no conflict, it returns `null` when disabled. v2's `StaticRulesProvider` absorbs `src/context/` auto-detect; the provider chain becomes the orchestrator's responsibility. For v1, simply register in `src/context/index.ts` and inject at the correct prompt position (between project context and story context).
 
 4. **What happens when a story is part of no feature?** Current design: no-op. Alternative: per-run context scope, disposed at run end. The per-run scope adds complexity for a marginal benefit; recommend deferring until Phase 6 evidence shows it's needed.
 
@@ -909,6 +865,8 @@ If users start writing project-wide conventions into `context.md` instead of `CL
 8. **Cross-feature seeding.** `feature.seedFromArchive: "prior-feature-id"` in the new feature's PRD. Does this get implemented in the initial rollout or deferred? Recommend deferred — ship the basic loop first, add seeding only if a real use case arises.
 
 ## Acceptance Criteria
+
+**v1 scope: ACs 1–11 only. ACs 12+ are deferred to v2.**
 
 1. **Config:** `context.featureEngine` is an optional config section that validates against `FeatureContextEngineConfigSchema`. Configs without it parse unchanged.
 
@@ -928,36 +886,19 @@ If users start writing project-wide conventions into `context.md` instead of `CL
 
 9. **Role filtering — no tag:** Entries without an audience tag are treated as `[all]` and included for every role. This provides backward compatibility with manually-written `context.md` files.
 
-10. **Extractor audience output:** The extractor LLM response includes an `audience` array per entry. The fragment merger formats this as an inline `[tag1, tag2]` annotation in the Markdown headline.
+10. **Budget enforcement:** When `context.md` exceeds `budgetTokens`, the read path truncates to the budget and logs a warning. Truncation is tail-biased (most recent entries preserved). Budget is checked _after_ role filtering (only filtered entries count toward budget).
 
-11. **Budget enforcement:** When `context.md` exceeds `budgetTokens`, the read path truncates to the budget and logs a warning. Truncation is tail-biased (most recent entries preserved). Budget is checked _after_ role filtering (only filtered entries count toward budget).
+11. **No impact when disabled:** With `enabled: false`, the pipeline's wall-clock time, cost, and output are indistinguishable from a run without this feature. Verified by diff on a reference run.
 
-12. **Write path — disabled:** When `write.enabled: false`, the capture stage runs as a no-op and produces no fragment files.
+---
 
-13. **Write path — enabled, successful extraction:** When `write.enabled: true` and a story passes review, the capture stage calls the extractor, receives a valid JSON response with `audience` arrays, writes a fragment file to `.nax/features/<id>/context-fragments/<storyId>-<ts>-<sha>.md`, and logs the contribution to `context.lock.json`.
+**Deferred to v2 (not acceptance criteria for v1):**
 
-14. **Write path — extractor failure:** When the extractor returns invalid JSON, times out, or fails, the story is not failed; a warning is logged and no fragment file is written.
-
-15. **Fragment merge — sequential:** In sequential mode, fragments are merged into `context.md` immediately after each story. `context.md` reflects the latest state before the next story reads it. Audience arrays are formatted as inline `[tag]` annotations.
-
-16. **Fragment merge — parallel:** In parallel mode, fragments from concurrent stories are written independently without conflicts, and the run-completion merger integrates all fragments at run end. No fragments are lost; no fragment is merged twice.
-
-17. **Merge — dedup:** If two fragments contain entries with identical titles or near-identical bodies, the merger keeps the earlier one (by story ID order) and discards the later. If the two entries have different audience tags, the merger takes the union of both audiences.
-
-18. **Summarization gate:** When `context.md` exceeds `triggerFraction * budgetTokens` at phase boundary, the summarizer runs and rewrites the file. After summarization, no entry is dropped from `Decisions`, `Constraints`, `Patterns Established`, or `Gotchas for Future Phases`; older rationale is moved to `Rationale Archive`. Audience tags are preserved through summarization.
-
-19. **Summarization invariant:** Summarization is a property test — for any valid `context.md`, the summarized version contains every entry from the input (verified by title + citation + audience tag), and the total token count is below budget.
-
-20. **Metrics:** `StoryMetrics.contextEngine` is populated with `cost`, `tokens`, `wallClockMs`, `entriesWritten`, and `summarizationsRun` after a run with the engine enabled.
-
-21. **Promotion gate — disabled:** When `promotion.enabled: false`, archival does not run the promotion gate and does not produce candidate files.
-
-22. **Promotion gate — enabled:** When `promotion.enabled: true` and a feature is archived, the promotion gate runs and produces a `candidate-promotions.md` file (or PR comment / issue, per config) listing candidate entries for global rules. The gate never writes directly to `CLAUDE.md` or `.claude/rules/`.
-
-23. **Archival:** On feature archival, `context.md`, `context.lock.json`, and `context-fragments/` are moved to `.nax/features/_archive/<feature-id>/`. The original directory's context files are removed. Non-context files (`prd.json`, etc.) are handled by existing nax archival logic, unchanged by this feature.
-
-24. **Sessions differentiated:** The capture, summarization, and promotion LLM calls use distinct `sessionRole` values (`"context-extractor"`, `"context-summarizer"`, `"context-promoter"`) and are correlatable in logs via the first-class `sessionRole` field introduced by the adversarial review SPEC.
-
-25. **No impact when disabled:** With `enabled: false` at every level, the pipeline's wall-clock time, cost, and output are indistinguishable from a run without this feature. Verified by diff on a reference run.
-
-26. **Self-referential dogfooding:** This feature's own implementation, developed across multiple nax stories, uses the context engine (at `read-only` level initially) and `context.md` is manually maintained. The first real-world validation of the read path is the feature's own development.
+12. Write path — extractor, fragment files, capture stage.
+13. Fragment merge — sequential and parallel.
+14. Merge deduplication with audience union.
+15. Summarization gate.
+16. Metrics: `StoryMetrics.contextEngine` cost/token tracking.
+17. Promotion gate.
+18. Archival of `context-fragments/`.
+19. Sessions differentiated (`"context-extractor"`, `"context-summarizer"`, `"context-promoter"`).

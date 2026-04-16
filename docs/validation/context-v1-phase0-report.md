@@ -93,19 +93,11 @@ From `SPEC-context-v1-phase0-validation.md` Decision Gate:
 
 ## Nax bugs discovered during validation
 
-Three distinct bugs surfaced. Not blockers for the context engine decision, but each should be filed.
+Two distinct bugs surfaced. Not blockers for the context engine decision, but each should be filed.
 
-### Bug 1: Mono config auto-regeneration
+### Bug 1: Review git-clean gate loops on unrelated file changes
 
-**Symptom:** `.nax/mono/apps/{api,cli}/config.json` files repeatedly get their `testFilePatterns` array re-expanded from the 2 canonical globs (`**/__tests__/**/*.[jt]s?(x)`, `**/?(*.)+(spec|test).[jt]s?(x)`) to 12–14 redundant explicit patterns during story execution. Confirmed during US-004 and US-005 runs without manual edits — files were touched by nax.
-
-**Impact:** Dirty working tree mid-review triggers the git-clean gate (see Bug 2).
-
-**Investigation:** `src/test-runners/resolver.ts` is read-only; `src/commands/detect.ts` only writes with `--apply` flag. Source of the write-back not located — likely elsewhere in test pattern detection or coverage pipeline.
-
-### Bug 2: Review git-clean gate loops on unrelated file changes
-
-**Symptom:** After review round 1, every subsequent review fails at the git-clean gate because something (Bug 1) keeps modifying `apps/cli/config.json`. Pattern:
+**Symptom:** After review round 1, every subsequent review fails at the git-clean gate because a manually edited file (`apps/cli/config.json`) was dirtied mid-run. Pattern:
 ```
 review: Uncommitted changes detected before review: .nax/mono/apps/cli/config.json
 review: Agent did not commit after agent session — auto-committing
@@ -118,7 +110,7 @@ Review never reaches LLM reviewers. Autofix finds "No source changes" (implement
 
 **Suggested fix:** scope the git-clean gate to files under the story's `workdir`, not the entire repo.
 
-### Bug 3: metrics.json not written on mid-run halt
+### Bug 2: metrics.json not written on mid-run halt
 
 **Symptom:** US-004 and US-005 runs ended without `metrics.json` per-story entries. The top-level entry exists (`runId`, `feature`, `startedAt`) but `stories: []` is empty.
 
