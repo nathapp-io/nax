@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/v2/orchestrator";
-import { QUERY_NEIGHBOR_DESCRIPTOR } from "../../../../src/context/v2/pull-tools";
+import { QUERY_NEIGHBOR_DESCRIPTOR, QUERY_FEATURE_CONTEXT_DESCRIPTOR } from "../../../../src/context/v2/pull-tools";
 import type { ContextRequest, IContextProvider, ContextProviderResult } from "../../../../src/context/v2/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -304,5 +304,84 @@ describe("Phase 4: pull tools", () => {
     const rebuilt = orch.rebuildForAgent(original);
     expect(rebuilt.pullTools).toEqual(original.pullTools);
     expect(rebuilt.pullTools[0]?.name).toBe(QUERY_NEIGHBOR_DESCRIPTOR.name);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5: review stage pull tools
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Phase 5: review stage pull tools", () => {
+  const REVIEW_REQUEST: ContextRequest = {
+    storyId: "US-001",
+    workdir: "/project",
+    stage: "review-semantic",
+    role: "reviewer",
+    budgetTokens: 6_000,
+    providerIds: [],
+  };
+
+  test("review-semantic with pullConfig enabled returns query_feature_context", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...REVIEW_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools).toHaveLength(1);
+    expect(bundle.pullTools[0]?.name).toBe("query_feature_context");
+  });
+
+  test("review-adversarial with pullConfig enabled returns query_feature_context", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...REVIEW_REQUEST,
+      stage: "review-adversarial",
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools).toHaveLength(1);
+    expect(bundle.pullTools[0]?.name).toBe("query_feature_context");
+  });
+
+  test("review-semantic pull tool descriptor matches QUERY_FEATURE_CONTEXT_DESCRIPTOR name", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...REVIEW_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools[0]?.name).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name);
+  });
+
+  test("review-semantic pullConfig disabled returns empty pull tools", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...REVIEW_REQUEST,
+      pullConfig: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools).toEqual([]);
+  });
+
+  test("tdd-implementer stage does not return query_feature_context", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      storyId: "US-001",
+      workdir: "/project",
+      stage: "tdd-implementer",
+      role: "implementer",
+      budgetTokens: 8_000,
+      providerIds: [],
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    const names = bundle.pullTools.map((t) => t.name);
+    expect(names).not.toContain("query_feature_context");
+  });
+
+  test("review-semantic does not return query_neighbor", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...REVIEW_REQUEST,
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    const names = bundle.pullTools.map((t) => t.name);
+    expect(names).not.toContain("query_neighbor");
   });
 });

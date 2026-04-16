@@ -155,6 +155,23 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     providerIds: PHASE_0_PROVIDERS,
   },
 
+  // Semantic review — reviewer role; query_feature_context lets the reviewer
+  // check design decisions and prior conventions in the feature context.
+  "review-semantic": {
+    role: "reviewer",
+    budgetTokens: 6_000,
+    providerIds: PHASE_0_PROVIDERS,
+    pullToolNames: ["query_feature_context"],
+  },
+
+  // Adversarial review — same pull tool access as semantic review.
+  "review-adversarial": {
+    role: "reviewer",
+    budgetTokens: 6_000,
+    providerIds: PHASE_0_PROVIDERS,
+    pullToolNames: ["query_feature_context"],
+  },
+
   // Autofix — implementer role, tight budget (mechanical fixes)
   autofix: {
     role: "implementer",

@@ -19,10 +19,12 @@ export { GitHistoryProvider, _gitHistoryDeps } from "./providers/git-history";
 export { CodeNeighborProvider, _codeNeighborDeps } from "./providers/code-neighbor";
 export {
   QUERY_NEIGHBOR_DESCRIPTOR,
+  QUERY_FEATURE_CONTEXT_DESCRIPTOR,
   PULL_TOOL_REGISTRY,
   PullToolBudget,
   createRunCallCounter,
   handleQueryNeighbor,
+  handleQueryFeatureContext,
 } from "./pull-tools";
 export type { RunCallCounter } from "./pull-tools";
 
