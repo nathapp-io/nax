@@ -285,6 +285,38 @@ export interface ContextRequest {
     /** Per-session call ceiling (overrides the descriptor's default when provided). */
     maxCallsPerSession: number;
   };
+  /**
+   * Agent id that will receive this bundle (Phase 7+).
+   * When set, bundle.agentId is populated and renderForAgent() uses this
+   * profile for the push markdown framing.
+   */
+  agentId?: string;
+  /**
+   * Known capabilities of the target agent (Phase 7+).
+   * Used for budget and rendering adjustments when agent metadata is available.
+   */
+  agentCapabilities?: {
+    /** Maximum context window in tokens */
+    maxContextTokens: number;
+    /** Whether the agent supports tool calls (pull tools) */
+    supportsToolCalls: boolean;
+  };
+  /**
+   * Session identity for this assembly (Phase 7+).
+   * Matches the ACP session name so the manifest can be correlated with session logs.
+   */
+  sessionId?: string;
+  /**
+   * Failure hints from prior stages (Phase 7+).
+   * Passed to providers so they can surface recovery-relevant context
+   * (e.g. a rectify provider surfacing prior failure patterns).
+   */
+  failureHints?: string[];
+  /**
+   * Package directory for monorepo projects (Phase 7+).
+   * When set, providers scope their lookups to this directory rather than workdir.
+   */
+  packageDir?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

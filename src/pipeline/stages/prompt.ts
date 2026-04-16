@@ -21,6 +21,7 @@
  * ```
  */
 
+import { assembleForStage, getBundleMarkdown } from "../../context/engine";
 import { getLogger } from "../../logger";
 import { PromptBuilder } from "../../prompts";
 import type { AcceptanceEntry } from "../../prompts/sections/acceptance";
@@ -69,13 +70,19 @@ export const promptStage: PipelineStage = {
     // AC6–AC8: load acceptance test file content from ctx.acceptanceTestPaths
     const acceptanceEntries = await _loadAcceptanceEntries(ctx, logger);
 
+    // Assemble a stage-specific v2 bundle for the execution stage so the agent receives
+    // the correct role/provider/budget context (Finding 1 fix).  Falls back to null when
+    // v2 is disabled; getBundleMarkdown() then returns ctx.featureContextMarkdown.
+    const execStage = isBatch ? "batch" : ctx.routing.testStrategy === "no-test" ? "no-test" : "single-session";
+    const execBundle = await assembleForStage(ctx, execStage);
+
     let prompt: string;
     if (isBatch) {
       const builder = PromptBuilder.for("batch")
         .withLoader(ctx.workdir, ctx.config)
         .stories(ctx.stories)
         .context(ctx.contextMarkdown)
-        .featureContext(ctx.featureContextMarkdown)
+        .featureContext(getBundleMarkdown(ctx, execBundle))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
         .hermeticConfig(ctx.config.quality?.testing);
@@ -88,7 +95,7 @@ export const promptStage: PipelineStage = {
         .withLoader(ctx.workdir, ctx.config)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
-        .featureContext(ctx.featureContextMarkdown)
+        .featureContext(getBundleMarkdown(ctx, execBundle))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
         .hermeticConfig(ctx.config.quality?.testing)

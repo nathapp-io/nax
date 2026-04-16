@@ -192,6 +192,51 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
     budgetTokens: 12_000,
     providerIds: PHASE_0_PROVIDERS,
   },
+
+  // Single-session strategy — same as execution (no TDD split)
+  "single-session": {
+    role: "implementer",
+    budgetTokens: 12_000,
+    providerIds: PHASE_3_EXECUTION,
+    pullToolNames: ["query_neighbor"],
+  },
+
+  // No-test strategy — implementer role, moderate budget
+  "no-test": {
+    role: "implementer",
+    budgetTokens: 10_000,
+    providerIds: PHASE_3_EXECUTION,
+  },
+
+  // Batch strategy — implementer role, full budget (parallel stories)
+  batch: {
+    role: "implementer",
+    budgetTokens: 12_000,
+    providerIds: PHASE_3_EXECUTION,
+    pullToolNames: ["query_neighbor"],
+  },
+
+  // Route — lightweight context for routing/classification; static rules only
+  route: {
+    role: "implementer",
+    budgetTokens: 4_000,
+    providerIds: PHASE_0_PROVIDERS,
+  },
+
+  // Review dialogue — reviewer role; same pull access as semantic review
+  "review-dialogue": {
+    role: "reviewer",
+    budgetTokens: 6_000,
+    providerIds: PHASE_0_PROVIDERS,
+    pullToolNames: ["query_feature_context"],
+  },
+
+  // Debate — reviewer role; static + feature context for multi-agent critique
+  debate: {
+    role: "reviewer",
+    budgetTokens: 6_000,
+    providerIds: PHASE_0_PROVIDERS,
+  },
 };
 
 /**

@@ -1,0 +1,87 @@
+/**
+ * Context Engine — Stage Assembler Helpers (Phase B)
+ *
+ * Provides per-stage bundle assembly for pipeline stages that need
+ * stage-specific context (execution, TDD, review) rather than reusing
+ * the context-stage bundle.
+ *
+ * assembleForStage() calls assemble() with stage-specific provider/budget/role
+ * config from STAGE_CONTEXT_MAP, addressing branch-review Finding 1.
+ *
+ * getBundleMarkdown() returns the v2 bundle's pushMarkdown directly (no v1 role
+ * filter applied), addressing branch-review Finding 2.
+ *
+ * See: docs/reviews/context-engine-v2-branch-review.md §1, §2
+ */
+
+import { getLogger } from "../../logger";
+import type { PipelineContext } from "../../pipeline/types";
+import { getContextFiles } from "../../prd/types";
+import { errorMessage } from "../../utils/errors";
+import { createDefaultOrchestrator } from "./orchestrator-factory";
+import { loadPluginProviders } from "./providers/plugin-loader";
+import { getStageContextConfig } from "./stage-config";
+import type { ContextBundle, ContextRequest } from "./types";
+
+/**
+ * Assemble a fresh ContextBundle for the given pipeline stage.
+ *
+ * Returns null when:
+ * - config.context.v2.enabled is false (v1 path is active), or
+ * - orchestrator.assemble() throws (provider error, etc.)
+ *
+ * Callers fall back to featureContextMarkdown when null is returned.
+ */
+export async function assembleForStage(ctx: PipelineContext, stage: string): Promise<ContextBundle | null> {
+  // Defensive check: test fixtures may bypass Zod and omit `context.v2`.
+  if (!ctx.config.context?.v2?.enabled) return null;
+
+  const stageConfig = getStageContextConfig(stage);
+  const logger = getLogger();
+
+  try {
+    // Defensive check: test fixtures may bypass Zod and omit `pluginProviders`.
+    const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
+    const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.workdir) : [];
+
+    const orchestrator = createDefaultOrchestrator(
+      ctx.story,
+      ctx.config,
+      ctx.sessionScratchDir ? [ctx.sessionScratchDir] : [],
+      pluginProviders,
+    );
+
+    const request: ContextRequest = {
+      storyId: ctx.story.id,
+      featureId: ctx.prd.feature,
+      workdir: ctx.workdir,
+      stage,
+      role: stageConfig.role,
+      budgetTokens: stageConfig.budgetTokens,
+      touchedFiles: getContextFiles(ctx.story),
+      storyScratchDirs: ctx.sessionScratchDir ? [ctx.sessionScratchDir] : [],
+      priorStageDigest: ctx.contextBundle?.digest,
+      minScore: ctx.config.context.v2.minScore,
+    };
+
+    return await orchestrator.assemble(request);
+  } catch (err) {
+    logger.warn("context-v2", `assembleForStage failed for stage "${stage}"`, {
+      storyId: ctx.story.id,
+      error: errorMessage(err),
+    });
+    return null;
+  }
+}
+
+/**
+ * Return the push markdown for a bundle, or fall back to ctx.featureContextMarkdown.
+ *
+ * When a v2 bundle is present its pushMarkdown is returned directly — the orchestrator
+ * already applied role filtering, dedup, and budget packing, so no additional
+ * v1-style filterContextByRole() pass is needed or wanted.
+ */
+export function getBundleMarkdown(ctx: PipelineContext, bundle: ContextBundle | null | undefined): string {
+  if (bundle) return bundle.pushMarkdown;
+  return ctx.featureContextMarkdown ?? "";
+}

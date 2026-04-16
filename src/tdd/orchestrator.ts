@@ -38,6 +38,16 @@ export interface ThreeSessionTddOptions {
   contextMarkdown?: string;
   /** Raw (unfiltered) feature context markdown from context engine v1 */
   featureContextMarkdown?: string;
+  /**
+   * Per-session v2 context bundles (context engine v2, Finding 1+2 fix).
+   * When present, each session uses the bundle's pushMarkdown directly
+   * (bypasses filterContextByRole in the TDD prompt builder).
+   */
+  tddContextBundles?: {
+    testWriter?: import("../context/engine").ContextBundle;
+    implementer?: import("../context/engine").ContextBundle;
+    verifier?: import("../context/engine").ContextBundle;
+  };
   constitution?: string;
   dryRun?: boolean;
   lite?: boolean;
@@ -61,6 +71,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     featureName,
     contextMarkdown,
     featureContextMarkdown,
+    tddContextBundles,
     constitution,
     dryRun = false,
     lite = false,
@@ -172,6 +183,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
       projectDir,
       featureContextMarkdown,
+      tddContextBundles?.testWriter,
     );
     sessions.push(session1);
   }
@@ -289,6 +301,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
     projectDir,
     featureContextMarkdown,
+    tddContextBundles?.implementer,
   );
   sessions.push(session2);
 
@@ -340,6 +353,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     undefined,
     projectDir,
     featureContextMarkdown,
+    tddContextBundles?.verifier,
   );
   sessions.push(session3);
 
@@ -455,11 +469,32 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 /**
  * Run the three-session TDD pipeline from a PipelineContext.
  * Stage-specific params (agent, dryRun, lite) must still be provided.
+ *
+ * When context engine v2 is enabled, assembles per-role bundles for test-writer,
+ * implementer, and verifier stages so each session receives role-appropriate context
+ * without the v1 filterContextByRole pass (Finding 1 + 2 fix).
  */
-export function runThreeSessionTddFromCtx(
+export async function runThreeSessionTddFromCtx(
   ctx: PipelineContext,
   opts: { agent: AgentAdapter; dryRun?: boolean; lite?: boolean },
 ): Promise<ThreeSessionTddResult> {
+  let tddContextBundles: ThreeSessionTddOptions["tddContextBundles"];
+
+  // Defensive check: test fixtures may bypass Zod and omit `context.v2`.
+  if (ctx.config.context?.v2?.enabled) {
+    const { assembleForStage } = await import("../context/engine");
+    const [testWriter, implementer, verifier] = await Promise.all([
+      assembleForStage(ctx, "tdd-test-writer"),
+      assembleForStage(ctx, "tdd-implementer"),
+      assembleForStage(ctx, "tdd-verifier"),
+    ]);
+    tddContextBundles = {
+      testWriter: testWriter ?? undefined,
+      implementer: implementer ?? undefined,
+      verifier: verifier ?? undefined,
+    };
+  }
+
   return runThreeSessionTdd({
     agent: opts.agent,
     story: ctx.story,
@@ -469,6 +504,7 @@ export function runThreeSessionTddFromCtx(
     featureName: ctx.prd.feature,
     contextMarkdown: ctx.contextMarkdown,
     featureContextMarkdown: ctx.featureContextMarkdown,
+    tddContextBundles,
     constitution: ctx.constitution?.content,
     dryRun: opts.dryRun ?? false,
     lite: opts.lite ?? false,

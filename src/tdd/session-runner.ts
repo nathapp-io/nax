@@ -123,12 +123,17 @@ export async function runTddSession(
   interactionBridge?: InteractionBridge,
   projectDir?: string,
   featureContextMarkdown?: string,
+  contextBundle?: import("../context/engine").ContextBundle,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
-  // Build prompt — use injectable buildPrompt if set, otherwise default PromptBuilder
+  // Build prompt — use injectable buildPrompt if set, otherwise default PromptBuilder.
+  // When a v2 ContextBundle is available, .v2FeatureContext() injects pushMarkdown directly
+  // (bypasses filterContextByRole which drops ##-section content).  featureContextMarkdown
+  // is used as the v1 fallback via .featureContext() when no bundle is present.
   let prompt: string;
   if (_sessionRunnerDeps.buildPrompt) {
+    const effectiveFeatureCtx = contextBundle ? contextBundle.pushMarkdown : featureContextMarkdown;
     prompt = await _sessionRunnerDeps.buildPrompt(
       role,
       config,
@@ -137,7 +142,7 @@ export async function runTddSession(
       contextMarkdown,
       lite,
       constitution,
-      featureContextMarkdown,
+      effectiveFeatureCtx,
     );
   } else {
     switch (role) {
@@ -146,7 +151,8 @@ export async function runTddSession(
           .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
-          .featureContext(featureContextMarkdown)
+          .v2FeatureContext(contextBundle?.pushMarkdown)
+          .featureContext(contextBundle ? undefined : featureContextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)
@@ -157,7 +163,8 @@ export async function runTddSession(
           .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
-          .featureContext(featureContextMarkdown)
+          .v2FeatureContext(contextBundle?.pushMarkdown)
+          .featureContext(contextBundle ? undefined : featureContextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)
@@ -168,7 +175,8 @@ export async function runTddSession(
           .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
-          .featureContext(featureContextMarkdown)
+          .v2FeatureContext(contextBundle?.pushMarkdown)
+          .featureContext(contextBundle ? undefined : featureContextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)

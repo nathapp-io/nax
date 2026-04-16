@@ -294,6 +294,8 @@ export class ContextOrchestrator {
       digest,
       manifest,
       chunks: packed.map(toContextChunk),
+      // Propagate agentId when the caller specifies a target agent (Phase 7+).
+      ...(request.agentId !== undefined && { agentId: request.agentId }),
     };
   }
 
@@ -355,10 +357,17 @@ export class ContextOrchestrator {
           }
         : undefined;
 
+    // Recompute token delta: failure-note chunk adds tokens not present in prior bundle.
+    const extraTokens = packedChunks
+      .filter((c) => !prior.chunks.some((pc) => pc.id === c.id))
+      .reduce((sum, c) => sum + c.tokens, 0);
+
     const manifest: ContextManifest = {
       ...prior.manifest,
       requestId: _orchestratorDeps.uuid(),
-      usedTokens: Math.max(0, prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens),
+      // Update includedChunks so the manifest reflects the actual rendered content.
+      includedChunks: packedChunks.map((c) => c.id),
+      usedTokens: Math.max(0, prior.manifest.usedTokens - prior.manifest.digestTokens + dTokens + extraTokens),
       digestTokens: dTokens,
       buildMs: 0,
       rebuildInfo,
@@ -369,7 +378,9 @@ export class ContextOrchestrator {
       pullTools: prior.pullTools,
       digest,
       manifest,
-      chunks: prior.chunks,
+      // Return the full packedChunks (including any injected failure-note) so
+      // bundle.chunks matches what was actually rendered into pushMarkdown.
+      chunks: packedChunks.map(toContextChunk),
       agentId: targetAgentId,
     };
   }

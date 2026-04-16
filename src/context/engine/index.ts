@@ -49,6 +49,8 @@ export type { AgentCapabilities, AgentProfile } from "./agent-profiles";
 export { renderForAgent } from "./agent-renderer";
 export type { AgentRenderOptions } from "./agent-renderer";
 
+export { assembleForStage, getBundleMarkdown } from "./stage-assembler";
+
 export type {
   AdapterFailure,
   ChunkKind,

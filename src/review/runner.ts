@@ -217,6 +217,7 @@ export async function runReview(
   resolverSession?: import("./dialogue").ReviewerSession,
   priorFailures?: Array<{ stage: string; modelTier: string }>,
   featureContextMarkdown?: string,
+  contextBundle?: import("../context/engine").ContextBundle,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -300,6 +301,7 @@ export async function runReview(
         priorFailures,
         config.blockingThreshold,
         featureContextMarkdown,
+        contextBundle,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
@@ -340,6 +342,7 @@ export async function runReview(
         priorFailures,
         config.blockingThreshold,
         featureContextMarkdown,
+        contextBundle,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

@@ -139,6 +139,7 @@ export async function runSemanticReview(
   priorFailures?: Array<{ stage: string; modelTier: string }>,
   blockingThreshold?: "error" | "warning" | "info",
   featureContextMarkdown?: string,
+  contextBundle?: import("../context/engine").ContextBundle,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -226,9 +227,15 @@ export async function runSemanticReview(
     };
   }
 
-  // Filter feature context for reviewer-semantic role
+  // Build feature context block for the prompt.
+  // When a v2 ContextBundle is provided, use its pushMarkdown directly — the orchestrator
+  // already applied role filtering and dedup, so the v1 filterContextByRole() pass is
+  // skipped (it would silently drop ##-section content from v2's rendered output).
   let featureCtxBlock = "";
-  if (featureContextMarkdown) {
+  if (contextBundle) {
+    const md = contextBundle.pushMarkdown.trim();
+    if (md) featureCtxBlock = `${md}\n\n---\n\n`;
+  } else if (featureContextMarkdown) {
     const filtered = filterContextByRole(featureContextMarkdown, "reviewer-semantic");
     if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
   }
