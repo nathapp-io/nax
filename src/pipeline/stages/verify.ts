@@ -14,6 +14,7 @@ import { getLogger } from "../../logger";
 import { resolveQualityTestCommands } from "../../quality/command-resolver";
 import { appendScratchEntry } from "../../session/scratch-writer";
 import { DEFAULT_TEST_FILE_PATTERNS } from "../../test-runners/conventions";
+import { errorMessage } from "../../utils/errors";
 import { logTestOutput } from "../../utils/log-test-output";
 import { detectRuntimeCrash } from "../../verification/crash-detector";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
@@ -205,7 +206,7 @@ export const verifyStage: PipelineStage = {
       } catch (scratchErr) {
         logger.warn("verify", "Failed to write scratch entry — continuing", {
           storyId: ctx.story.id,
-          error: String(scratchErr),
+          error: errorMessage(scratchErr),
         });
       }
     }

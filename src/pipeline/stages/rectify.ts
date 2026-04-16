@@ -14,6 +14,8 @@
 
 import { getLogger } from "../../logger";
 import { resolveQualityTestCommands } from "../../quality/command-resolver";
+import { appendScratchEntry } from "../../session/scratch-writer";
+import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -94,7 +96,7 @@ export const rectifyStage: PipelineStage = {
       } catch (scratchErr) {
         logger.warn("rectify", "Failed to write scratch entry — continuing", {
           storyId: ctx.story.id,
-          error: String(scratchErr),
+          error: errorMessage(scratchErr),
         });
       }
     }
@@ -115,7 +117,6 @@ export const rectifyStage: PipelineStage = {
   },
 };
 
-import { appendScratchEntry } from "../../session/scratch-writer";
 /**
  * Injectable deps for testing.
  */

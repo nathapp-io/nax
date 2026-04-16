@@ -43,9 +43,9 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   const logger = getLogger();
 
   // Derive the session scratch directory for this pipeline run.
-  // ctx.sessionId may not be set yet (set by execution stage later), so we
-  // generate a stable ID here that identify this particular run. Phase 5.5
-  // will have the SessionManager own this derivation.
+  // ctx.sessionId is owned by this (context) stage — it pre-allocates a UUID
+  // here so the scratch dir path is stable before the execution stage runs.
+  // Phase 5.5 will migrate ownership to the SessionManager.
   if (!ctx.sessionScratchDir) {
     const sessionId = ctx.sessionId ?? _contextStageDeps.uuid();
     if (!ctx.sessionId) ctx.sessionId = sessionId;

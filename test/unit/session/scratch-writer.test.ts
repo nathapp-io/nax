@@ -109,12 +109,20 @@ describe("appendScratchEntry", () => {
     expect(exists).toBe(true);
   });
 
-  test("throws on write failure (dep injection)", async () => {
+  describe("throws on write failure (dep injection)", () => {
     const origWrite = _scratchWriterDeps.writeFile;
-    _scratchWriterDeps.writeFile = async () => {
-      throw new Error("disk full");
-    };
-    try {
+
+    beforeEach(() => {
+      _scratchWriterDeps.writeFile = async () => {
+        throw new Error("disk full");
+      };
+    });
+
+    afterEach(() => {
+      _scratchWriterDeps.writeFile = origWrite;
+    });
+
+    test("propagates write error", async () => {
       let threw = false;
       try {
         await appendScratchEntry(join(tmpDir, "sess-fail"), VERIFY_ENTRY);
@@ -122,8 +130,6 @@ describe("appendScratchEntry", () => {
         threw = true;
       }
       expect(threw).toBe(true);
-    } finally {
-      _scratchWriterDeps.writeFile = origWrite;
-    }
+    });
   });
 });

@@ -94,15 +94,21 @@ async function readScratchDir(scratchDir: string): Promise<RawChunk | null> {
   const entries = allEntries.slice(-MAX_ENTRIES_PER_DIR);
   const content = entries.map(renderEntry).join("\n\n");
 
-  const hash = contentHash8(content);
-  const tokens = Math.min(Math.ceil(content.length / 4), MAX_CHUNK_TOKENS);
+  // Truncate content to the token ceiling so the reported token count
+  // matches the actual content length. Without truncation the packing stage
+  // would trust the capped number and silently overrun the context budget.
+  const MAX_CONTENT_CHARS = MAX_CHUNK_TOKENS * 4;
+  const truncated = content.length > MAX_CONTENT_CHARS ? content.slice(0, MAX_CONTENT_CHARS) : content;
+
+  const hash = contentHash8(truncated);
+  const tokens = Math.ceil(truncated.length / 4);
 
   return {
     id: `session-scratch:${hash}`,
     kind: "session",
     scope: "session",
     role: ["all"],
-    content,
+    content: truncated,
     tokens,
     rawScore: 0.9,
   };
