@@ -230,12 +230,16 @@ export async function handleQueryNeighbor(
  * Filter feature context content by a keyword or section heading.
  * Splits on level-2 markdown headings (## ...) and keeps sections
  * whose text contains the keyword (case-insensitive).
- * Returns all content when keyword is absent or no headings found.
+ * When no ## headings are found, returns the full content unchanged
+ * (section-based filtering is not possible on flat content).
+ * Returns empty string when sections exist but none match the keyword.
  */
 function filterByKeyword(content: string, keyword: string): string {
   const lower = keyword.toLowerCase();
   // Split on level-2 headings; keep each "## ..." block together
   const sections = content.split(/(?=^##\s)/m);
+  // No headings — can't section-filter flat content; return all
+  if (sections.length <= 1) return content;
   const matched = sections.filter((s) => s.toLowerCase().includes(lower));
   return matched.join("");
 }

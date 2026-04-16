@@ -371,6 +371,20 @@ describe("handleQueryFeatureContext", () => {
     expect(result).toBe("");
   });
 
+  test("filter with no ## headings returns full content (flat context.md)", async () => {
+    mockV1Provider("Flat content without any headings.\nSome conventions here.");
+    const result = await handleQueryFeatureContext(
+      { filter: "conventions" },
+      STORY,
+      CONFIG,
+      "/repo",
+      makeBudget(),
+    );
+    // No ## headings — section-filter not possible; full content returned
+    expect(result).toContain("Flat content");
+    expect(result).toContain("conventions");
+  });
+
   test("truncates output to maxTokensPerCall * 4 characters", async () => {
     const longContent = "## Section\n" + "x".repeat(500);
     mockV1Provider(longContent);

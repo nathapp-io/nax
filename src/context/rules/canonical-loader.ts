@@ -36,19 +36,7 @@ export const CANONICAL_RULES_DIR = ".nax/rules";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _canonicalLoaderDeps = {
-  glob: (pattern: string): string[] => [...new Bun.Glob(pattern).scanSync({ cwd: "/", absolute: true })],
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
-  dirExists: async (path: string): Promise<boolean> => {
-    try {
-      const f = Bun.file(path);
-      // A directory is not a file — exists() returns false for dirs in Bun.
-      // Use the glob approach instead.
-      void f;
-      return false;
-    } catch {
-      return false;
-    }
-  },
   globInDir: (dir: string): string[] => {
     try {
       return [...new Bun.Glob("*.md").scanSync({ cwd: dir })]

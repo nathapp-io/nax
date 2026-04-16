@@ -65,10 +65,19 @@ describe("neutralizeContent", () => {
     expect(content).toContain("Keep this.");
   });
 
-  test("replaces tool-name phrasing", () => {
+  test("replaces tool-name phrasing with '<Name> capability'", () => {
     const { content, replacements } = neutralizeContent("Use the Grep tool to search.");
     expect(content).not.toContain("the Grep tool");
+    expect(content).toContain("the Grep capability");
     expect(replacements).toBeGreaterThan(0);
+  });
+
+  test("replaces any capitalised tool name, not just a hardcoded list", () => {
+    const { content } = neutralizeContent("Call the TodoWrite tool and the WebFetch tool.");
+    expect(content).not.toContain("the TodoWrite tool");
+    expect(content).not.toContain("the WebFetch tool");
+    expect(content).toContain("TodoWrite capability");
+    expect(content).toContain("WebFetch capability");
   });
 
   test("replaces CLAUDE.md references", () => {
@@ -98,6 +107,12 @@ describe("neutralizeContent", () => {
   test("returns zero replacements for clean content", () => {
     const { replacements } = neutralizeContent("## Style\n\nUse async/await.");
     expect(replacements).toBe(0);
+  });
+
+  test("replacements counts occurrences, not pattern hits", () => {
+    // 3 occurrences of IMPORTANT: — should count as 3, not 1
+    const { replacements } = neutralizeContent("IMPORTANT: one.\nIMPORTANT: two.\nIMPORTANT: three.");
+    expect(replacements).toBe(3);
   });
 
   test("trims whitespace from result", () => {

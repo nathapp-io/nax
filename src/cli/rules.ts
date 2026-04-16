@@ -137,14 +137,16 @@ export function neutralizeContent(content: string): { content: string; replaceme
   let replacements = 0;
 
   const apply = (pattern: RegExp, replacement: string): void => {
-    const before = result;
-    result = result.replace(pattern, replacement);
-    if (result !== before) replacements++;
+    const matches = [...result.matchAll(pattern)].length;
+    if (matches > 0) {
+      result = result.replace(pattern, replacement);
+      replacements += matches;
+    }
   };
 
   apply(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
   apply(/<system-reminder>/gi, "");
-  apply(/\bthe (Read|Write|Edit|Grep|Glob|Bash|Search|Lint|Format) tool\b/g, "the file tool");
+  apply(/\bthe ([A-Z][a-zA-Z]+) tool\b/g, "the $1 capability");
   apply(/CLAUDE\.md/g, "project conventions file");
   apply(/\.claude\//g, ".nax/rules/");
   apply(/\bIMPORTANT:/g, "Note:");
