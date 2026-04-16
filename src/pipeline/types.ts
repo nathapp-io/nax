@@ -118,6 +118,10 @@ export interface PipelineContext {
    * Prompt builders read bundle.pushMarkdown instead of featureContextMarkdown.
    */
   contextBundle?: import("../context/engine").ContextBundle;
+  /** Shared per-run pull-tool call counter for context-engine tool budgets. */
+  contextToolRunCounter?: import("../context/engine").RunCallCounter;
+  /** In-process session registry for story-level scratch aggregation and session lifecycle. */
+  sessionManager?: import("../session").ISessionManager;
   /**
    * nax session ID for the current story's main execution session.
    * Set by the execution stage after SessionManager.create().

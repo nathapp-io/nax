@@ -18,10 +18,33 @@ import { getLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
 import { getContextFiles } from "../../prd/types";
 import { errorMessage } from "../../utils/errors";
+import { writeContextManifest } from "./manifest-store";
 import { createDefaultOrchestrator } from "./orchestrator-factory";
 import { loadPluginProviders } from "./providers/plugin-loader";
 import { getStageContextConfig } from "./stage-config";
 import type { ContextBundle, ContextRequest } from "./types";
+
+export interface StageAssembleOptions {
+  priorStageDigest?: string;
+  storyScratchDirs?: string[];
+  touchedFiles?: string[];
+}
+
+function dedupeScratchDirs(dirs: Array<string | undefined>): string[] {
+  return [...new Set(dirs.filter((dir): dir is string => Boolean(dir)))];
+}
+
+function getStoryScratchDirs(ctx: PipelineContext, options: StageAssembleOptions): string[] {
+  if (options.storyScratchDirs) {
+    return dedupeScratchDirs(options.storyScratchDirs);
+  }
+
+  const managerDirs =
+    ctx.sessionManager
+      ?.getForStory(ctx.story.id)
+      .flatMap((session) => (session.scratchDir ? [session.scratchDir] : [])) ?? [];
+  return dedupeScratchDirs([ctx.sessionScratchDir, ...managerDirs]);
+}
 
 /**
  * Assemble a fresh ContextBundle for the given pipeline stage.
@@ -32,7 +55,11 @@ import type { ContextBundle, ContextRequest } from "./types";
  *
  * Callers fall back to featureContextMarkdown when null is returned.
  */
-export async function assembleForStage(ctx: PipelineContext, stage: string): Promise<ContextBundle | null> {
+export async function assembleForStage(
+  ctx: PipelineContext,
+  stage: string,
+  options: StageAssembleOptions = {},
+): Promise<ContextBundle | null> {
   // Defensive check: test fixtures may bypass Zod and omit `context.v2`.
   if (!ctx.config.context?.v2?.enabled) return null;
 
@@ -43,13 +70,9 @@ export async function assembleForStage(ctx: PipelineContext, stage: string): Pro
     // Defensive check: test fixtures may bypass Zod and omit `pluginProviders`.
     const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
     const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.workdir) : [];
+    const storyScratchDirs = getStoryScratchDirs(ctx, options);
 
-    const orchestrator = createDefaultOrchestrator(
-      ctx.story,
-      ctx.config,
-      ctx.sessionScratchDir ? [ctx.sessionScratchDir] : [],
-      pluginProviders,
-    );
+    const orchestrator = createDefaultOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);
 
     const request: ContextRequest = {
       storyId: ctx.story.id,
@@ -58,13 +81,27 @@ export async function assembleForStage(ctx: PipelineContext, stage: string): Pro
       stage,
       role: stageConfig.role,
       budgetTokens: stageConfig.budgetTokens,
-      touchedFiles: getContextFiles(ctx.story),
-      storyScratchDirs: ctx.sessionScratchDir ? [ctx.sessionScratchDir] : [],
-      priorStageDigest: ctx.contextBundle?.digest,
+      touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
+      storyScratchDirs,
+      priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,
       minScore: ctx.config.context.v2.minScore,
+      pullConfig: ctx.config.context.v2.pull
+        ? {
+            enabled: ctx.config.context.v2.pull.enabled,
+            allowedTools: ctx.config.context.v2.pull.allowedTools,
+            maxCallsPerSession: ctx.config.context.v2.pull.maxCallsPerSession,
+          }
+        : undefined,
+      sessionId: ctx.sessionId,
+      agentId:
+        ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude",
     };
 
-    return await orchestrator.assemble(request);
+    const bundle = await orchestrator.assemble(request);
+    if (ctx.projectDir && ctx.prd.feature) {
+      await writeContextManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, stage, bundle.manifest);
+    }
+    return bundle;
   } catch (err) {
     logger.warn("context-v2", `assembleForStage failed for stage "${stage}"`, {
       storyId: ctx.story.id,

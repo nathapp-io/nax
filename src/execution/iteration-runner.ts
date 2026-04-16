@@ -15,6 +15,7 @@ import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
 import { savePRD } from "../prd";
 import type { PRD } from "../prd/types";
+import { SessionManager } from "../session";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { WorktreeManager } from "../worktree/manager";
@@ -144,6 +145,7 @@ export async function runIteration(
     interaction: ctx.interactionChain ?? undefined,
     agentGetFn: ctx.agentGetFn,
     pidRegistry: ctx.pidRegistry,
+    sessionManager: new SessionManager(),
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
   };
 

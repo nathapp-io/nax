@@ -42,6 +42,7 @@ import { Command } from "commander";
 import {
   acceptCommand,
   agentsListCommand,
+  contextInspectCommand,
   displayCostMetrics,
   displayFeatureStatus,
   displayLastRunMetrics,
@@ -1263,6 +1264,38 @@ program
         noAutoInject: !options.autoInject,
         package: options.package,
         allPackages: options.allPackages,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── context ──────────────────────────────────────────
+const context = program.command("context").description("Inspect context-engine artifacts");
+
+context
+  .command("inspect <storyId>")
+  .description("Inspect persisted context manifests for a story")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("-f, --feature <id>", "Feature ID (otherwise scan all features)")
+  .option("--json", "Print raw manifest JSON", false)
+  .action(async (storyId, options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+
+    try {
+      await contextInspectCommand({
+        dir: workdir,
+        feature: options.feature,
+        json: options.json,
+        storyId,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));

@@ -105,6 +105,65 @@ describe("AcpAgentAdapter — session mode (run)", () => {
   });
 
   describe("turn with question → interaction bridge", () => {
+    test("handles context pull tool calls in the session loop", async () => {
+      let promptCallCount = 0;
+      const toolRuntime = {
+        callTool: mock(async (name: string, input: unknown) => {
+          expect(name).toBe("query_neighbor");
+          expect(input).toEqual({ filePath: "src/index.ts" });
+          return "Neighbor context for src/index.ts";
+        }),
+      };
+
+      const session = makeSession({
+        promptFn: async (prompt: string) => {
+          promptCallCount++;
+          if (promptCallCount === 1) {
+            expect(prompt).toContain("## Context Pull Tools");
+            expect(prompt).toContain("query_neighbor");
+            return {
+              messages: [
+                {
+                  role: "assistant",
+                  content: '<nax_tool_call name="query_neighbor">\n{"filePath":"src/index.ts"}\n</nax_tool_call>',
+                },
+              ],
+              stopReason: "end_turn",
+              cumulative_token_usage: { input_tokens: 100, output_tokens: 50 },
+            };
+          }
+
+          expect(prompt).toContain("<nax_tool_result name=\"query_neighbor\" status=\"ok\">");
+          expect(prompt).toContain("Neighbor context for src/index.ts");
+          return {
+            messages: [{ role: "assistant", content: "Implemented using the extra context." }],
+            stopReason: "end_turn",
+            cumulative_token_usage: { input_tokens: 80, output_tokens: 40 },
+          };
+        },
+      });
+      _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+      const result = await adapter.run({
+        ...BASE_OPTIONS,
+        contextPullTools: [
+          {
+            name: "query_neighbor",
+            description: "Fetch extra neighbor context",
+            inputSchema: { type: "object" },
+            maxCallsPerSession: 3,
+            maxTokensPerCall: 500,
+          },
+        ],
+        contextToolRuntime: toolRuntime,
+      });
+
+      expect(promptCallCount).toBe(2);
+      expect(toolRuntime.callTool).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+      expect(result.output).toContain("Implemented using the extra context.");
+    });
+
     test("multi-line question block — full paragraph passed to bridge (not just last line)", async () => {
       const answers: string[] = [];
       let promptCallCount = 0;

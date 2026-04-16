@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type {
@@ -42,6 +43,8 @@ export const _sessionManagerDeps = {
   now: () => new Date().toISOString(),
   nowMs: () => Date.now(),
   uuid: () => randomUUID(),
+  sessionScratchDir: (projectDir: string, featureName: string, sessionId: string): string =>
+    join(projectDir, ".nax", "features", featureName, "sessions", sessionId),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,6 +73,11 @@ export class SessionManager implements ISessionManager {
   create(options: CreateSessionOptions): SessionDescriptor {
     const now = _sessionManagerDeps.now();
     const id = `sess-${_sessionManagerDeps.uuid()}`;
+    const scratchDir =
+      options.scratchDir ??
+      (options.projectDir && options.featureName
+        ? _sessionManagerDeps.sessionScratchDir(options.projectDir, options.featureName, id)
+        : undefined);
 
     const descriptor: SessionDescriptor = {
       id,
@@ -81,7 +89,7 @@ export class SessionManager implements ISessionManager {
       storyId: options.storyId,
       protocolIds: NULL_PROTOCOL_IDS,
       handle: options.handle,
-      scratchDir: options.scratchDir,
+      scratchDir,
       completedStages: [],
       createdAt: now,
       lastActivityAt: now,

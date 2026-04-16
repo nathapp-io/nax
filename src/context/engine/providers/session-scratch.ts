@@ -73,6 +73,16 @@ function renderEntry(entry: ScratchEntry): string {
     }
     case "rectify-attempt":
       return `**Rectify** attempt ${entry.attempt} at ${entry.timestamp}: ${entry.succeeded ? "succeeded" : "failed"}`;
+    case "tdd-session": {
+      const changed = entry.filesChanged.length > 0 ? ` — changed: ${entry.filesChanged.join(", ")}` : "";
+      const lines = [
+        `**TDD ${entry.role}** at ${entry.timestamp}: ${entry.success ? "succeeded" : "failed"}${changed}`,
+      ];
+      if (entry.outputTail.trim()) {
+        lines.push("```", entry.outputTail.trim(), "```");
+      }
+      return lines.join("\n");
+    }
     default:
       return JSON.stringify(entry);
   }

@@ -8,6 +8,7 @@ import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
+import { createContextToolRuntime } from "../context/engine";
 import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -223,6 +224,15 @@ export async function runTddSession(
     sessionRole: role,
     acpSessionName,
     keepSessionOpen,
+    contextPullTools: contextBundle?.pullTools,
+    contextToolRuntime: contextBundle
+      ? createContextToolRuntime({
+          bundle: contextBundle,
+          story,
+          config,
+          workdir,
+        })
+      : undefined,
     interactionBridge,
   });
 
@@ -311,5 +321,6 @@ export async function runTddSession(
     filesChanged,
     durationMs,
     estimatedCost: result.estimatedCost,
+    outputTail: result.output.slice(-500),
   };
 }

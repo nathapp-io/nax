@@ -20,8 +20,10 @@ import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
 import { filterContextByRole } from "../context";
+import { createContextToolRuntime } from "../context/engine";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
+import type { UserStory } from "../prd";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
 import { ReviewPromptBuilder } from "../prompts/builders/review-builder";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -264,6 +266,18 @@ export async function runAdversarialReview(
 
   // Adversarial review uses its own session (NOT the implementer session).
   const adversarialSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-adversarial");
+  const contextToolStory: UserStory = {
+    id: story.id,
+    title: story.title,
+    description: story.description,
+    acceptanceCriteria: story.acceptanceCriteria,
+    tags: [],
+    dependencies: [],
+    status: "in-progress",
+    passes: false,
+    escalations: [],
+    attempts: 0,
+  };
 
   const runOpts = {
     workdir,
@@ -276,6 +290,15 @@ export async function runAdversarialReview(
     featureName,
     storyId: story.id,
     sessionRole: "reviewer-adversarial",
+    contextPullTools: contextBundle?.pullTools,
+    contextToolRuntime: contextBundle
+      ? createContextToolRuntime({
+          bundle: contextBundle,
+          story: contextToolStory,
+          config: naxConfig ?? DEFAULT_CONFIG,
+          workdir,
+        })
+      : undefined,
   } as const;
 
   let rawResponse: string;

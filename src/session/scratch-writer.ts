@@ -47,7 +47,20 @@ export interface RectifyScratchEntry {
   succeeded: boolean;
 }
 
-export type ScratchEntry = VerifyScratchEntry | RectifyScratchEntry;
+/** Entry written after each TDD sub-session to carry discoveries forward */
+export interface TddSessionScratchEntry {
+  kind: "tdd-session";
+  timestamp: string;
+  storyId: string;
+  stage: string;
+  role: "test-writer" | "implementer" | "verifier";
+  success: boolean;
+  filesChanged: string[];
+  /** Tail of agent output for lightweight cross-session continuity */
+  outputTail: string;
+}
+
+export type ScratchEntry = VerifyScratchEntry | RectifyScratchEntry | TddSessionScratchEntry;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps

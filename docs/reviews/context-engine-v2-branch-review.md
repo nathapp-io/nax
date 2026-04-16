@@ -1,210 +1,107 @@
-# Context Engine v2 Branch Review
+# Context Engine v2 Review And Remediation Report
 
 Date: 2026-04-16
-Branch reviewed: `feat/context-engine-v2`
-Base compared: `main`
+Branch: `feat/context-engine-v2`
+Base: `main`
 
 ## Scope
 
-Review of the current branch implementation against:
+Reviewed against:
 
 - `docs/specs/SPEC-context-engine-v2.md`
 - `docs/specs/SPEC-context-engine-v2-amendments.md`
 - `docs/specs/SPEC-context-engine-v2-compilation.md`
 - `docs/adr/ADR-010-context-engine.md`
 
-This review focuses on correctness, integration depth, and spec/ADR gaps.
+## Findings Reviewed
 
-## Findings
+The latest branch review identified four active gaps:
 
-### 1. High: engine is not yet integrated as a per-stage assembler
+1. Three-session TDD was preassembling all bundles up front, so implementer/verifier runs could not learn from earlier sessions.
+2. Pull-tool descriptors were assembled but never actually executable at agent runtime.
+3. Story-level scratch aggregation was not wired into production context assembly.
+4. Context manifests were only available in memory; there was no durable inspect flow.
 
-The implementation currently assembles a v2 bundle only in the `context` stage, then copies the rendered markdown into the legacy `featureContextMarkdown` field.
+## Remediation Implemented
 
-Evidence:
+### 1. TDD bundle assembly is now just-in-time
 
-- `src/pipeline/stages/context.ts:91`
-- `src/pipeline/stages/context.ts:136`
+- `runThreeSessionTdd()` now supports lazy per-role bundle assembly.
+- `runThreeSessionTddFromCtx()` now assembles `test-writer`, `implementer`, and `verifier` bundles sequentially instead of precomputing them in parallel.
+- Each completed TDD sub-session writes a `tdd-session` scratch entry immediately, so later sessions can consume the discoveries.
+- Per-stage digests are persisted alongside those TDD scratch updates.
 
-Downstream runtime paths still consume the legacy prompt channel instead of assembling stage-specific bundles at execution/review time:
+Key files:
 
-- `src/pipeline/stages/prompt.ts:74`
-- `src/tdd/session-runner.ts:145`
-- `src/review/semantic.ts:229`
-- `src/review/adversarial.ts:223`
+- `src/tdd/orchestrator.ts`
+- `src/tdd/session-runner.ts`
+- `src/tdd/types.ts`
+- `src/session/scratch-writer.ts`
+- `src/context/engine/providers/session-scratch.ts`
 
-Impact:
+### 2. Pull tools are now live in ACP runs
 
-- The stage-aware provider selection is not really in effect at the runtime points that matter.
-- Stage-specific budgets and digest threading are not reaching execution, TDD, rectify, and review in the way the spec describes.
-- The branch currently behaves more like a precomputed context blob than a stage-aware context engine.
+- `AgentRunOptions` now carries `contextPullTools` and `contextToolRuntime`.
+- Added a context-tool runtime bridge for `query_neighbor` and `query_feature_context`.
+- The ACP adapter now supports a constrained text tool-call loop using `<nax_tool_call ...>` / `<nax_tool_result ...>` blocks.
+- Execution, TDD, semantic review, and adversarial review now pass pull-tool descriptors and runtime handlers into `agent.run()`.
 
-### 2. High: the v1 compatibility shim is lossy and can drop v2 content
+Key files:
 
-`bundle.pushMarkdown` is copied into `ctx.featureContextMarkdown`, but that field is still processed by v1-style role filtering in TDD and review prompt builders.
+- `src/agents/types.ts`
+- `src/agents/acp/adapter.ts`
+- `src/context/engine/tool-runtime.ts`
+- `src/pipeline/stages/execution.ts`
+- `src/tdd/session-runner.ts`
+- `src/review/semantic.ts`
+- `src/review/adversarial.ts`
 
-Evidence:
+### 3. Story-level scratch aggregation now uses SessionManager in production
 
-- `src/pipeline/stages/context.ts:139`
-- `src/prompts/builders/tdd-builder.ts:149`
-- `src/review/semantic.ts:231`
-- `src/review/adversarial.ts:225`
+- `PipelineContext` now carries an in-process `sessionManager`.
+- `iteration-runner` creates a `SessionManager` per story pipeline run.
+- `SessionManager.create()` can now derive a session scratch directory automatically from `projectDir + feature + sessionId`.
+- The context stage registers the main story session through `SessionManager` when available.
+- `assembleForStage()` now aggregates scratch dirs from `sessionManager.getForStory(storyId)` plus the current session scratch dir.
 
-The legacy filter is designed for `context.md` bullet entries and explicitly drops free-form section content inside `##` sections.
+Key files:
 
-Evidence:
+- `src/pipeline/types.ts`
+- `src/execution/iteration-runner.ts`
+- `src/session/types.ts`
+- `src/session/manager.ts`
+- `src/pipeline/stages/context.ts`
+- `src/context/engine/stage-assembler.ts`
 
-- `src/context/feature-context-filter.ts:84`
-- `src/context/feature-context-filter.ts:123`
+### 4. Manifest auditability is now persisted and inspectable
 
-Impact:
+- Added durable per-stage manifest persistence under:
+  - `.nax/features/<feature>/stories/<story>/context-manifest-<stage>.json`
+- Added manifest discovery helpers.
+- Added CLI support via `nax context inspect <storyId>`.
 
-- Static rules, scratch/history/neighbor sections, and other generic rendered markdown can be partially or fully discarded before they reach the agent.
-- This creates a hidden mismatch where the orchestrator assembles one bundle, but prompt builders may inject a materially different subset.
+Key files:
 
-### 3. High: pull tools are implemented but not wired into agent runs
+- `src/context/engine/manifest-store.ts`
+- `src/cli/context.ts`
+- `src/cli/index.ts`
+- `bin/nax.ts`
 
-The orchestrator returns `pullTools`, but there is no runtime path that registers them with an agent session.
+## Verification
 
-Evidence:
+Commands run:
 
-- `src/context/engine/orchestrator.ts:229`
-- `src/context/engine/orchestrator.ts:291`
+```bash
+bun run typecheck
+bun test test/unit/agents/acp/adapter-session.test.ts test/unit/context/engine/providers/session-scratch.test.ts test/unit/context/engine/manifest-store.test.ts test/unit/session/manager.test.ts test/unit/context/engine/orchestrator.test.ts test/unit/pipeline/stages/context-digest.test.ts --timeout=30000
+```
 
-`AgentRunOptions` does not expose a place to pass tool descriptors or server-side handlers into adapters.
+Result:
 
-Evidence:
+- `typecheck`: passed
+- targeted tests: `119 passed, 0 failed`
 
-- `src/agents/types.ts:55`
+## Residual Notes
 
-I also could not find production call sites consuming `ctx.contextBundle.pullTools`.
-
-Impact:
-
-- `query_neighbor` and `query_feature_context` are effectively dead code in normal execution.
-- The branch currently delivers push-only behavior even though the spec/ADR treats pull as a core part of the design.
-
-### 4. Medium: `rebuildForAgent()` does not preserve rebuilt audit state
-
-`assemble()` does not set `bundle.agentId`, even though the type contract says it should.
-
-Evidence:
-
-- `src/context/engine/types.ts:185`
-- `src/context/engine/orchestrator.ts:291`
-
-`rebuildForAgent()` injects a synthetic failure-note chunk into local `packedChunks`, but returns `chunks: prior.chunks` and keeps the inherited manifest chunk lists.
-
-Evidence:
-
-- `src/context/engine/orchestrator.ts:334`
-- `src/context/engine/orchestrator.ts:358`
-- `src/context/engine/orchestrator.ts:372`
-
-Impact:
-
-- The rebuilt prompt may contain information that is missing from the returned bundle state.
-- Manifest/audit data for availability fallback is incomplete.
-- A second rebuild or later inspection cannot rely on the returned bundle as the full source of truth.
-
-## Gaps Against Spec / ADR
-
-### 1. Session-aware continuity is only partially implemented
-
-The spec expects story-level scratch aggregation across sessions, but the context stage currently seeds only a single scratch dir for the current pipeline run.
-
-Evidence:
-
-- `src/pipeline/stages/context.ts:55`
-- `src/pipeline/stages/context.ts:63`
-
-`SessionManager` exists, but is still described and implemented as a non-authoritative in-memory skeleton. I could not find production wiring that uses it to drive context assembly.
-
-Evidence:
-
-- `src/session/manager.ts:4`
-- `src/session/manager.ts:54`
-
-Gap:
-
-- The spec flow using `getForStory(storyId).map(s => s.scratchDir)` is not actually in place.
-- Cross-session learning for three-session TDD is therefore not fully realized.
-
-### 2. Stage map coverage is incomplete relative to the compiled design
-
-The current stage config only covers a subset of the documented stage matrix and execution modes.
-
-Evidence:
-
-- `src/context/engine/stage-config.ts:101`
-
-Missing or under-modeled relative to the compiled spec:
-
-- `single-session`
-- `no-test`
-- `batch`
-- `route`
-- `review-dialogue`
-- `debate`
-
-There are also material differences in stage budgets and provider selection versus the compiled design.
-
-### 3. `ContextRequest` is narrower than the design contract
-
-The implementation request type lacks several design-level fields that the spec and ADR describe, including target agent metadata/capabilities, explicit session identity, richer failure/review hints, and monorepo repo/package scoping.
-
-Evidence:
-
-- `src/context/engine/types.ts:226`
-
-Gap:
-
-- Agent-aware budgeting/rendering is only partially modeled.
-- Availability fallback and monorepo behavior are not represented end-to-end at the request boundary.
-
-### 4. Manifest auditability is mostly in-memory, not persisted
-
-The spec and compiled design describe per-stage context manifests and inspection tooling, but I could not find production code that writes `context-manifest-*.json` files or implements `nax context inspect`.
-
-Evidence:
-
-- `src/context/engine/orchestrator.ts:265`
-- search across `src/cli` and `src/context` found no production `context inspect` command
-
-Gap:
-
-- The manifest exists as a return value but not yet as durable audit output.
-- This weakens one of the main design goals: explainability of injected context.
-
-## Overall Assessment
-
-The branch builds a substantial amount of good engine scaffolding:
-
-- orchestrator
-- provider abstraction
-- scoring / dedupe / packing
-- session scratch provider
-- canonical rules loader
-- plugin provider loader
-- rebuild scaffolding
-
-The main issue is not lack of implementation volume. The main issue is integration depth.
-
-Right now, the codebase has a strong engine core, but the actual runtime still mostly behaves like the old single-blob system because:
-
-1. bundle assembly is concentrated in the `context` stage,
-2. downstream prompt construction still flows through legacy `featureContextMarkdown`,
-3. pull tools are not registered with agents,
-4. session-manager-driven cross-session continuity is not yet authoritative.
-
-## Recommended Next Steps
-
-1. Stop routing v2 through `featureContextMarkdown` for the main execution paths; consume `ContextBundle` directly in prompt/runtime code.
-2. Add stage-specific `assemble()` calls at the real execution points: single-session prompt, TDD sub-sessions, verify/rectify, and review.
-3. Extend adapter run options and runtime wiring so `pullTools` can be registered and handled for actual sessions.
-4. Make session-manager-backed story scratch discovery authoritative before claiming cross-session continuity.
-5. Persist manifests to disk and add the inspection CLI promised by the design.
-
-## Review Notes
-
-This review was produced by code inspection of the current branch diff against `main` and comparison against the listed specs/ADR. It does not claim that the implementation is without value; the core architecture work is substantial. The current concern is that the shipped behavior does not yet match the architecture that the docs describe.
+- Review runners synthesize a minimal `UserStory` shape for `query_feature_context` pull-tool calls because review inputs use the narrower `SemanticStory` type.
+- Session-manager-backed scratch aggregation is now active for normal story execution; contexts constructed outside the main story pipeline still fall back gracefully to direct scratch-dir usage when no manager is present.

@@ -75,6 +75,9 @@ export const promptStage: PipelineStage = {
     // v2 is disabled; getBundleMarkdown() then returns ctx.featureContextMarkdown.
     const execStage = isBatch ? "batch" : ctx.routing.testStrategy === "no-test" ? "no-test" : "single-session";
     const execBundle = await assembleForStage(ctx, execStage);
+    if (execBundle) {
+      ctx.contextBundle = execBundle;
+    }
 
     let prompt: string;
     if (isBatch) {

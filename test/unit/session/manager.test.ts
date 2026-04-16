@@ -58,6 +58,21 @@ describe("SessionManager.create()", () => {
     expect(desc.storyId).toBe("US-001");
     expect(desc.featureName).toBe("auth");
   });
+
+  test("derives a scratch dir when projectDir and featureName are provided", () => {
+    const mgr = new SessionManager();
+    const desc = mgr.create({
+      role: "test-writer",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
+    expect(desc.scratchDir).toBe(
+      "/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001",
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

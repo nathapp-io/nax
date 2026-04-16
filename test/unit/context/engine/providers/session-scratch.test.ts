@@ -38,6 +38,17 @@ const RECTIFY_ENTRY = JSON.stringify({
   succeeded: false,
 });
 
+const TDD_ENTRY = JSON.stringify({
+  kind: "tdd-session",
+  timestamp: "2026-01-01T00:02:00.000Z",
+  storyId: "US-001",
+  stage: "tdd-implementer",
+  role: "implementer",
+  success: true,
+  filesChanged: ["src/index.ts"],
+  outputTail: "Implemented the missing edge-case handling.",
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,6 +137,17 @@ describe("SessionScratchProvider", () => {
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0].content).toContain("Verify");
     expect(result.chunks[0].content).toContain("Rectify");
+  });
+
+  test("renders TDD session entries with changed files and output", async () => {
+    mockScratchFile(`${TDD_ENTRY}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("TDD implementer");
+    expect(result.chunks[0].content).toContain("src/index.ts");
+    expect(result.chunks[0].content).toContain("edge-case handling");
   });
 
   test("skips malformed JSONL lines without throwing", async () => {

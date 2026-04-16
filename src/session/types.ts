@@ -55,7 +55,9 @@ export const SESSION_TRANSITIONS: Record<SessionState, SessionState[]> = {
  */
 export type SessionRole =
   | "main" // Default implementation session (no suffix in name)
+  | "test-writer" // TDD test-writing session
   | "implementer" // Rectification / autofix sessions
+  | "verifier" // TDD verification session
   | "plan" // Planning stage
   | "decompose" // Story decomposition (complete())
   | "acceptance-gen" // Acceptance test generation (complete())
@@ -150,6 +152,7 @@ export interface CreateSessionOptions {
   role: SessionRole;
   agent: string;
   workdir: string;
+  projectDir?: string;
   featureName?: string;
   storyId?: string;
   handle?: string;

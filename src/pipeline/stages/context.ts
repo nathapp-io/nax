@@ -16,8 +16,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { createDefaultOrchestrator } from "../../context/engine";
+import { createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
+import { writeContextManifest } from "../../context/engine/manifest-store";
 import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
 import { FeatureContextProvider } from "../../context/providers/feature-context";
 import type { ContextElement } from "../../context/types";
@@ -47,20 +48,38 @@ export const _contextStageDeps = {
 
 async function runV2Path(ctx: PipelineContext): Promise<void> {
   const logger = getLogger();
+  const agentName =
+    ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude";
 
   // Derive the session scratch directory for this pipeline run.
   // ctx.sessionId is owned by this (context) stage — it pre-allocates a UUID
   // here so the scratch dir path is stable before the execution stage runs.
   // Phase 5.5 will migrate ownership to the SessionManager.
   if (!ctx.sessionScratchDir) {
-    const sessionId = ctx.sessionId ?? _contextStageDeps.uuid();
-    if (!ctx.sessionId) ctx.sessionId = sessionId;
-    const featureId = ctx.featureDir?.replace(/\/$/, "").split("/").pop() ?? "_unattached";
-    ctx.sessionScratchDir = `${ctx.projectDir}/.nax/features/${featureId}/sessions/${sessionId}`;
+    if (ctx.sessionManager && ctx.prd.feature) {
+      const session = ctx.sessionManager.create({
+        role: "main",
+        agent: agentName,
+        workdir: ctx.workdir,
+        projectDir: ctx.projectDir,
+        featureName: ctx.prd.feature,
+        storyId: ctx.story.id,
+      });
+      ctx.sessionId = session.id;
+      ctx.sessionScratchDir = session.scratchDir;
+    } else {
+      const sessionId = ctx.sessionId ?? _contextStageDeps.uuid();
+      if (!ctx.sessionId) ctx.sessionId = sessionId;
+      const featureId = ctx.featureDir?.replace(/\/$/, "").split("/").pop() ?? "_unattached";
+      ctx.sessionScratchDir = `${ctx.projectDir}/.nax/features/${featureId}/sessions/${sessionId}`;
+    }
+  }
+  if (!ctx.contextToolRunCounter) {
+    ctx.contextToolRunCounter = createRunCallCounter();
   }
 
   // ctx.sessionScratchDir is guaranteed set by the block above.
-  const storyScratchDirs = [ctx.sessionScratchDir];
+  const storyScratchDirs = ctx.sessionScratchDir ? [ctx.sessionScratchDir] : [];
 
   // Phase 2: read prior digest for progressive context threading.
   // On first run the file is absent → "". On retry (after rectify) or crash
@@ -104,6 +123,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
           maxCallsPerSession: ctx.config.context.v2.pull.maxCallsPerSession,
         }
       : undefined,
+    sessionId: ctx.sessionId,
+    agentId: agentName,
   };
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.
@@ -119,6 +140,9 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     const bundle = await orchestrator.assemble(request);
 
     ctx.contextBundle = bundle;
+    if (ctx.prd.feature) {
+      await writeContextManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, "context", bundle.manifest);
+    }
 
     // Phase 2: persist digest for next pipeline pass or crash resume.
     // Best-effort: a failed write must not block stage execution.

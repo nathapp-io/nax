@@ -36,6 +36,7 @@ import { join } from "node:path";
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
+import { createContextToolRuntime } from "../../context/engine";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -240,6 +241,15 @@ export const executionStage: PipelineStage = {
     const keepSessionOpen = !!(
       ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true
     );
+    const contextToolRuntime = ctx.contextBundle
+      ? createContextToolRuntime({
+          bundle: ctx.contextBundle,
+          story: ctx.story,
+          config: ctx.config,
+          workdir: ctx.workdir,
+          runCounter: ctx.contextToolRunCounter,
+        })
+      : undefined;
 
     const result = await agent.run({
       prompt: ctx.prompt,
@@ -262,6 +272,8 @@ export const executionStage: PipelineStage = {
       storyId: ctx.story.id,
       sessionRole: "implementer",
       keepSessionOpen,
+      contextPullTools: ctx.contextBundle?.pullTools,
+      contextToolRuntime,
       interactionBridge: buildInteractionBridge(ctx.interaction, {
         featureName: ctx.prd.feature,
         storyId: ctx.story.id,
