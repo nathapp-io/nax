@@ -1097,7 +1097,7 @@ session: SessionManagerConfigSchema.default({}),
 
 23. **Session manager vs adapter session naming.** ACP sessions are identified by name (`acpx` uses names, not UUIDs). The session manager generates UUID-based IDs. The adapter derives an ACP-compatible name from the UUID. Should we let the adapter choose its own naming scheme, or should the manager dictate it? Tentative: manager owns the `sessionId` (stable UUID); adapter derives a protocol-specific name from it. The manager doesn't know or care about protocol-specific names.
 
-24. **Scratch sharing across TDD sub-sessions.** In three-session TDD, test-writer, implementer, and verifier each have their own session and scratch directory. Should the implementer be able to read the test-writer's scratch (cross-session within the same story)? Tentative: yes — `SessionScratchProvider` reads scratch from ALL sessions for the same story, not just the current session. This is how the test-writer's observations reach the implementer even without progressive digest.
+24. *(Resolved.)* ~~**Scratch sharing across TDD sub-sessions.**~~ Yes — `SessionScratchProvider` reads scratch from ALL sessions for the same story. The pipeline stage populates `ContextRequest.storyScratchDirs` from `sessionManager.getForStory(storyId).map(s => s.scratchDir)`. The provider iterates all directories, keeping the provider decoupled from the session manager. Decided.
 
 25. **Session manager as a v2 prerequisite.** Should the session manager ship before v2 Phase 0, or as part of it? Tentative: ship alongside Phase 0. The orchestrator needs `sessionId` from day one. Dual-write with legacy sidecar logic during Phase 0; legacy removed at Phase 5.5.
 

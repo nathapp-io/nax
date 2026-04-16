@@ -147,6 +147,29 @@ export interface ContextRequest {
   };
   /** Explicit query, only used by providers that support retrieval. */
   query?: string;
+  /**
+   * Token budget available for context injection, as reported by the prompt
+   * builder. This is the remaining room in the agent's context window after
+   * accounting for constitution, role-task body, story brief, code context,
+   * and other non-context sections. The orchestrator uses the minimum of
+   * this value, the stage config budget, and the agent profile ceiling.
+   * When omitted, the orchestrator uses the stage config budget unchecked.
+   */
+  availableBudgetTokens?: number;
+  /**
+   * Scratch directories for ALL sessions belonging to this story (not just
+   * the current session). Populated by the pipeline stage from
+   * `sessionManager.getForStory(storyId).map(s => s.scratchDir)`.
+   *
+   * This allows SessionScratchProvider to read observations from all
+   * sessions (e.g., test-writer's scratch is readable by implementer)
+   * without injecting the SessionManager into the provider — keeping
+   * providers decoupled from session management.
+   *
+   * When omitted, the provider reads only from the current session's
+   * scratch directory (derived from sessionId + featureId).
+   */
+  storyScratchDirs?: string[];
 }
 
 export interface AgentTarget {
@@ -457,7 +480,7 @@ The renderer's responsibilities are narrow — rules content is already neutral,
 
 - Wraps the push block in the agent's preferred framing (`markdown-sections`, `xml-tagged`, or `plain`).
 - Serializes pull tools into the agent's native schema dialect.
-- Enforces `preferredPromptTokens` as the budget ceiling (per-stage budget is `min(stageConfig.budgetTokens, agent.caps.preferredPromptTokens / expectedStages)`).
+- Enforces `preferredPromptTokens` as the budget ceiling (per-stage budget is `min(stageConfig.budgetTokens, agent.caps.preferredPromptTokens / expectedStages, req.availableBudgetTokens ?? Infinity)`).
 - Drops Markdown formatting when `supportsMarkdown: false`.
 
 No rule rewriting, no path translation, no citation mangling. Adding a new agent means adding a profile with ~20 lines of code and ~20 lines of renderer logic.
@@ -516,17 +539,38 @@ async rebuildForAgent(
   newAgent: AgentTarget,
   failure: AdapterFailure,
 ): Promise<ContextBundle> {
-  // 1. Preserve portable state: feature context, session scratch, digest from completed stages
+  // IMPORTANT: This is a RE-RENDER, not a fresh assemble(). No provider
+  // fetching, no I/O, no timeouts. The prior bundle's chunks are the input.
+  // Target: ≤100ms, zero LLM calls.
+
+  // 1. Take prior.manifest.chunks where kept=true — these are the already-fetched chunks
+  const portableChunks = prior.manifest.chunks
+    .filter(c => c.kept && isPortable(c));  // drop agent-specific artifacts
+
   // 2. Synthesize a failure-note chunk describing what the prior agent attempted
-  //    (deterministic string build — NO LLM call on the hot path)
-  // 3. Call assemble() with:
-  //      - req.agent = newAgent
-  //      - req.hints.priorAgent = prior's agent
-  //      - req.hints.priorAttempt = failure summary + category
-  // 4. Re-render under new agent's profile
-  // 5. Write rebuild-manifest.json correlating old chunk IDs to new
+  //    (deterministic string build — NO LLM call)
+  const failureNote = buildFailureNoteChunk(prior, failure);
+  portableChunks.push(failureNote);
+
+  // 3. Re-score for new agent profile (role/freshness/kind weights unchanged,
+  //    but agent-dimension budget ceiling may differ)
+  const rescored = reweightForAgent(portableChunks, newAgent);
+
+  // 4. Re-pack into new agent's budget (may differ from prior agent's)
+  const packed = knapsack(rescored, resolvedBudget(newAgent));
+
+  // 5. Re-render under new agent's profile (markdown framing, tool schema dialect)
+  const pushMarkdown = renderMarkdown(packed.kept, newAgent);
+
+  // 6. Carry forward digest unchanged (it's content, not agent-specific)
+  const digest = prior.digest;
+
+  // 7. Write rebuild-manifest.json correlating old chunk IDs to new
+  return { stage: prior.stage, role: prior.role, pushMarkdown, /* ... */ };
 }
 ```
+
+**`rebuildForAgent()` does NOT call `assemble()`.** It skips all provider fetching and works entirely from the prior bundle's already-fetched chunks. This is why the ≤100ms latency target is achievable — no I/O, no provider timeouts, no parallel fetch. The only computation is re-scoring, re-packing, and re-rendering for the new agent's profile.
 
 **Portable substrate (carries forward):**
 
@@ -605,6 +649,36 @@ The digest is part of the push block at each stage, clearly labeled. It costs to
 
 Digest is produced deterministically (truncation + templating), **not** via an LLM call, to keep it cheap and reproducible. Providers that produced chunks tag which chunks should appear in the digest (`chunk.kind === "decision"` or `"constraint"` by default).
 
+#### Digest threading — end-to-end flow
+
+The digest flows through four touchpoints: orchestrator (produces), session manager (persists), pipeline stage (threads), orchestrator (consumes).
+
+```
+STAGE N completes:
+  1. orchestrator.assemble(req_N) returns bundle_N with bundle_N.digest
+  2. Pipeline stage calls sessionManager.recordStage(sessionId, stageN, bundle_N.digest)
+     → persists to <scratchDir>/digest-<stageN>.txt (survives crash)
+     → appends to descriptor.completedStages[]
+
+STAGE N+1 begins:
+  3. Pipeline stage reads the prior digest:
+       const sessions = sessionManager.getForStory(storyId);
+       const lastDigest = sessions
+         .flatMap(s => s.completedStages)
+         .sort((a, b) => a.completedAt.localeCompare(b.completedAt))
+         .at(-1)?.digest ?? "";
+  4. Pipeline stage sets req.hints.priorStageDigest = lastDigest
+  5. orchestrator.assemble(req_N+1) includes the digest as a push chunk
+     with kind: "digest", freshness: "this-session", score: 1.0
+
+CRASH RESUME:
+  6. On startup, sessionManager.resume() reads <scratchDir>/digest-*.txt
+     → rebuilds descriptor.completedStages[] from disk
+  7. Pipeline stage picks up from step 3 as normal
+```
+
+The pipeline stage owns the threading (step 3–4), not the orchestrator. The orchestrator only produces digests (step 1) and consumes them as chunks (step 5). The session manager only persists and recovers them (steps 2, 6). This keeps each component focused on its responsibility.
+
 ### Stage context map (default)
 
 | Stage | Push sources (in order) | Pull tools | Budget (default) |
@@ -643,9 +717,13 @@ Kind weights per stage are in config; e.g., `rectify` weights `gotcha` and `cons
 
 **Dedup.** Chunks with the same `id` or whose content's normalized form (whitespace-collapsed, lowercased, first 200 chars) matches ≥0.9 are merged. Merged chunks take the union of audiences and the max score.
 
-**Knapsack packing.** Standard 0/1 knapsack, weight = tokens, value = score, capacity = stage budget. For small candidate sets (≤50) this is trivial. Implementation uses a dynamic programming solver with a 50ms timeout; if exceeded, falls back to greedy-by-value-per-token. Dropped chunks go into the manifest with a reason.
+**Packing.** Two algorithms, phased:
 
-**Budget floor.** Every stage reserves a minimum slice for `static` + `feature` providers even if other providers score higher. This prevents, e.g., RAG results with high scores from crowding out core project rules.
+- **Phase 0–2: Greedy packing** (primary). Sort chunks by `score / tokens` descending. Pack budget-floor chunks first (static + feature — always included). Then pack remaining chunks greedily until budget is exhausted. Dropped chunks go into the manifest with a reason. Simple, ~20 lines, produces near-identical results to optimal for the typical candidate set sizes (5–20 chunks).
+
+- **Phase 3+ (optional): 0/1 knapsack** (upgrade if needed). Standard DP solver, weight = tokens, value = score, capacity = stage budget. Only add this if manifests from Phase 0–2 show the greedy approach leaving significant value on the table (i.e., a high-score-per-token chunk was dropped while a lower-scoring chunk was included due to ordering). The greedy algorithm remains as the fallback for candidate sets > 50 or when the DP solver exceeds 50ms.
+
+**Budget floor.** Every stage reserves a minimum slice for `static` + `feature` providers. Floor chunks are packed first, unconditionally. If floor content alone exceeds the stage budget, the floor wins — no other providers contribute, and the manifest records dropped chunks with `reason: "budget-exceeded-by-floor"`. The budget is a soft ceiling that the floor can override, not a hard cap that drops rules.
 
 ### Push/pull hybrid model
 
@@ -1052,9 +1130,9 @@ Evidence from prior experiments: smaller models rarely call tools even when help
 
 5. **Per-provider timeout.** A provider that exceeds `providerTimeoutMs` is dropped; the orchestrator logs a warning but does not fail the stage.
 
-6. **Budget enforcement.** `pushMarkdown` token count ≤ `budgetTokens` for the stage; `static` and `feature` provider chunks occupy at least their configured floor unless their combined size exceeds the budget (in which case all of them are kept and other providers are dropped).
+6. **Budget enforcement.** `pushMarkdown` token count ≤ `budgetTokens` for the stage, except when budget-floor content (static + feature) alone exceeds the budget — in that case, floor content is kept and no other providers contribute. The manifest records dropped chunks with `reason: "budget-exceeded-by-floor"`.
 
-7. **Knapsack correctness.** For candidate sets ≤ 50 chunks, the packed set maximizes total score subject to the budget constraint (verified by a property test comparing against brute-force for small inputs).
+7. **Packing correctness.** Phase 0–2: greedy packing (sort by `score/tokens` descending, floor first) produces results within 5% of optimal for candidate sets ≤ 50 (verified by a property test comparing against brute-force for small inputs). Phase 3+: if 0/1 DP knapsack is added, it maximizes total score subject to the budget constraint.
 
 8. **Role filtering.** Entries tagged `[implementer]` are present in bundles for roles in `{ implementer, single-session, tdd-simple, no-test, batch }` and absent for `{ test-writer, verifier, reviewer-*, rectifier, autofixer }` unless also tagged `[all]` or the matching role.
 
@@ -1104,7 +1182,7 @@ Evidence from prior experiments: smaller models rarely call tools even when help
 
 31. **Legacy compatibility flag.** With `context.rules.allowLegacyClaudeMd: true` and no `.nax/rules/` present, the engine reads `CLAUDE.md` + `.claude/rules/` and emits a deprecation warning on every run. With the flag off (default) and no `.nax/rules/`, the engine loads zero rules and logs a warning.
 
-32. **Agent-dimension budget resolution.** The effective stage budget is `min(stageConfig.budgetTokens, agent.caps.preferredPromptTokens / expectedStages)`, overridable by `stages[stage].agents[agent.id].budgetTokens`. Verified by swapping agents and checking the resolved budget.
+32. **Agent-dimension budget resolution.** The effective stage budget is `min(stageConfig.budgetTokens, agent.caps.preferredPromptTokens / expectedStages, req.availableBudgetTokens ?? Infinity)`, overridable by `stages[stage].agents[agent.id].budgetTokens`. Verified by swapping agents and checking the resolved budget. When `availableBudgetTokens` is provided by the prompt builder, the orchestrator never exceeds it — this prevents context injection from blowing the agent's context window even when the stage config budget is generous.
 
 33. **Tool registration gated on agent capability.** When `agent.caps.supportsToolCalls: false`, `ContextBundle.pulledTools` is empty regardless of stage config, and push-eligible providers receive proportionally larger soft budgets.
 
