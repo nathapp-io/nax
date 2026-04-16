@@ -83,7 +83,7 @@ export const rectifyStage: PipelineStage = {
     });
 
     // Phase 1: append rectification attempt to session scratch
-    if (ctx.config.context.v2?.enabled && ctx.sessionScratchDir) {
+    if (ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
       try {
         await _rectifyDeps.appendScratch(ctx.sessionScratchDir, {
           kind: "rectify-attempt",

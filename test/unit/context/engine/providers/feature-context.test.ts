@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { FeatureContextProviderV2, _featureContextV2Deps } from "../../../../../src/context/v2/providers/feature-context";
-import type { ContextRequest } from "../../../../../src/context/v2/types";
+import { FeatureContextProviderV2, _featureContextV2Deps } from "../../../../../src/context/engine/providers/feature-context";
+import type { ContextRequest } from "../../../../../src/context/engine/types";
 import type { NaxConfig } from "../../../../../src/config/types";
 import type { UserStory } from "../../../../../src/prd";
 

@@ -431,7 +431,7 @@ export interface ContextV2RulesConfig {
 
 /** Context Engine v2 configuration (Phase 0+) */
 export interface ContextV2Config {
-  /** Enable the v2 orchestrator — false (default) keeps v1 path unchanged */
+  /** Enable the Context Engine orchestrator — true by default (Phase 6) */
   enabled: boolean;
   /**
    * Min-score threshold for noise filtering.
@@ -451,8 +451,8 @@ export interface ContextConfig {
   autoDetect: ContextAutoDetectConfig;
   fileInjection?: "keyword" | "disabled";
   featureEngine?: FeatureContextEngineConfig; // Context Engine v1
-  /** Context Engine v2 settings (Phase 0+) */
-  v2?: ContextV2Config;
+  /** Context Engine settings (Phase 6: enabled by default) */
+  v2: ContextV2Config;
 }
 
 /** Story size gate thresholds (v0.16.0) */

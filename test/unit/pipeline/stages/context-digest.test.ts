@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { contextStage, _contextStageDeps } from "../../../../src/pipeline/stages/context";
 import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { ContextBundle, ContextRequest } from "../../../../src/context/v2";
+import type { ContextBundle, ContextRequest } from "../../../../src/context/engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)

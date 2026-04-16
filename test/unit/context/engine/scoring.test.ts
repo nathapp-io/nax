@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { scoreChunk, scoreChunks, MIN_SCORE } from "../../../../src/context/v2/scoring";
-import type { RawChunk } from "../../../../src/context/v2/types";
+import { scoreChunk, scoreChunks, MIN_SCORE } from "../../../../src/context/engine/scoring";
+import type { RawChunk } from "../../../../src/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

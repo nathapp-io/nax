@@ -9,9 +9,9 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { NaxError } from "../../../../../src/errors";
-import { StaticRulesProvider, _staticRulesDeps } from "../../../../../src/context/v2/providers/static-rules";
+import { StaticRulesProvider, _staticRulesDeps } from "../../../../../src/context/engine/providers/static-rules";
 import { NeutralityLintError } from "../../../../../src/context/rules/canonical-loader";
-import type { ContextRequest } from "../../../../../src/context/v2/types";
+import type { ContextRequest } from "../../../../../src/context/engine/types";
 import type { CanonicalRule } from "../../../../../src/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────

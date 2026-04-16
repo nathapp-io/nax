@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { renderChunks } from "../../../../src/context/v2/render";
-import type { PackedChunk } from "../../../../src/context/v2/packing";
+import { renderChunks } from "../../../../src/context/engine/render";
+import type { PackedChunk } from "../../../../src/context/engine/packing";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

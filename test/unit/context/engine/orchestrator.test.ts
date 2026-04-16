@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/v2/orchestrator";
-import { QUERY_NEIGHBOR_DESCRIPTOR, QUERY_FEATURE_CONTEXT_DESCRIPTOR } from "../../../../src/context/v2/pull-tools";
-import type { ContextRequest, IContextProvider, ContextProviderResult } from "../../../../src/context/v2/types";
+import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/engine/orchestrator";
+import { QUERY_NEIGHBOR_DESCRIPTOR, QUERY_FEATURE_CONTEXT_DESCRIPTOR } from "../../../../src/context/engine/pull-tools";
+import type { ContextRequest, IContextProvider, ContextProviderResult } from "../../../../src/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

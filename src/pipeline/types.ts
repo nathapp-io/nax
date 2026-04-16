@@ -117,7 +117,7 @@ export interface PipelineContext {
    * Contains pushMarkdown, digest, manifest, and packed chunks.
    * Prompt builders read bundle.pushMarkdown instead of featureContextMarkdown.
    */
-  contextBundle?: import("../context/v2").ContextBundle;
+  contextBundle?: import("../context/engine").ContextBundle;
   /**
    * nax session ID for the current story's main execution session.
    * Set by the execution stage after SessionManager.create().

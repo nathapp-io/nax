@@ -9,8 +9,8 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { renderForAgent } from "../../../../src/context/v2/agent-renderer";
-import type { PackedChunk } from "../../../../src/context/v2/packing";
+import { renderForAgent } from "../../../../src/context/engine/agent-renderer";
+import type { PackedChunk } from "../../../../src/context/engine/packing";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

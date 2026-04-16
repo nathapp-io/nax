@@ -9,8 +9,8 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { NaxError } from "../../../../src/errors";
-import { _codeNeighborDeps } from "../../../../src/context/v2/providers/code-neighbor";
-import { _featureContextV2Deps } from "../../../../src/context/v2/providers/feature-context";
+import { _codeNeighborDeps } from "../../../../src/context/engine/providers/code-neighbor";
+import { _featureContextV2Deps } from "../../../../src/context/engine/providers/feature-context";
 import {
   QUERY_NEIGHBOR_DESCRIPTOR,
   QUERY_FEATURE_CONTEXT_DESCRIPTOR,
@@ -19,7 +19,7 @@ import {
   createRunCallCounter,
   handleQueryNeighbor,
   handleQueryFeatureContext,
-} from "../../../../src/context/v2/pull-tools";
+} from "../../../../src/context/engine/pull-tools";
 import type { NaxConfig } from "../../../../src/config/types";
 import type { UserStory } from "../../../../src/prd";
 

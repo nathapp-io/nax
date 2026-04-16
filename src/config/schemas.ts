@@ -494,14 +494,15 @@ const ContextV2RulesConfigSchema = z.object({
   allowLegacyClaudeMd: z.boolean().default(true),
 }).default(() => ({ allowLegacyClaudeMd: true }));
 
-// Context Engine v2 config (Phase 0: off by default)
-const ContextV2ConfigSchema = z.object({
+// Context Engine — on by default for opted-in projects (Phase 6)
+const ContextV2ConfigSchema = z
+  .object({
   /**
-   * Enable Context Engine v2 orchestrator.
-   * When false (default), the v1 code path runs unchanged.
-   * Phase 0 exit gate: parity tests pass with v2 enabled.
+   * Enable Context Engine orchestrator.
+   * Phase 6: true by default — the v1 code path is preserved as fallback but
+   * the engine path is the standard for all new stories.
    */
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
   /**
    * Minimum score threshold — chunks below this are dropped as noise.
    * Phase 0: near-zero (0.1) so existing content is almost never filtered.
@@ -514,15 +515,22 @@ const ContextV2ConfigSchema = z.object({
   rules: ContextV2RulesConfigSchema,
   /** Availability-fallback configuration (Phase 5.5+) */
   fallback: ContextV2FallbackConfigSchema,
-});
+  })
+  .default(() => ({
+    enabled: true,
+    minScore: 0.1,
+    pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
+    rules: { allowLegacyClaudeMd: true },
+    fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
+  }));
 
 const ContextConfigSchema = z.object({
   testCoverage: TestCoverageConfigSchema,
   autoDetect: ContextAutoDetectConfigSchema,
   fileInjection: z.enum(["keyword", "disabled"]).default("disabled"),
   featureEngine: FeatureContextEngineConfigSchema.optional(),
-  /** Context Engine v2 settings (Phase 0+) */
-  v2: ContextV2ConfigSchema.optional(),
+  /** Context Engine settings (Phase 6: enabled by default) */
+  v2: ContextV2ConfigSchema,
 });
 
 const LlmRoutingConfigSchema = z.object({
@@ -927,6 +935,13 @@ export const NaxConfigSchema = z
         enabled: true,
         maxFiles: 5,
         traceImports: false,
+      },
+      v2: {
+        enabled: true,
+        minScore: 0.1,
+        pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
+        rules: { allowLegacyClaudeMd: true },
+        fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),

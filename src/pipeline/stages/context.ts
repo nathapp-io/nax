@@ -18,8 +18,8 @@
 import { randomUUID } from "node:crypto";
 import { FeatureContextProvider } from "../../context/providers/feature-context";
 import type { ContextElement } from "../../context/types";
-import { createDefaultOrchestrator } from "../../context/v2";
-import type { ContextRequest } from "../../context/v2";
+import { createDefaultOrchestrator } from "../../context/engine";
+import type { ContextRequest } from "../../context/engine";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
 import { getContextFiles } from "../../prd";
@@ -89,11 +89,11 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     stage: "context", // initial assembly; execution stage overrides to "execution"
     role: "implementer",
     budgetTokens: ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
-    minScore: ctx.config.context.v2?.minScore,
+    minScore: ctx.config.context.v2.minScore,
     storyScratchDirs,
     priorStageDigest,
     ...(touchedFiles.length > 0 && { touchedFiles }),
-  pullConfig: ctx.config.context.v2?.pull
+  pullConfig: ctx.config.context.v2.pull
     ? {
         enabled: ctx.config.context.v2.pull.enabled,
         allowedTools: ctx.config.context.v2.pull.allowedTools,
@@ -246,7 +246,7 @@ export const contextStage: PipelineStage = {
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
-    if (ctx.config.context.v2?.enabled) {
+    if (ctx.config.context.v2.enabled) {
       await runV2Path(ctx);
     } else {
       await runV1Path(ctx);

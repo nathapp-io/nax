@@ -10,7 +10,7 @@ import {
   AGENT_PROFILES,
   CONSERVATIVE_DEFAULT_PROFILE,
   getAgentProfile,
-} from "../../../../src/context/v2/agent-profiles";
+} from "../../../../src/context/engine/agent-profiles";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AGENT_PROFILES registry

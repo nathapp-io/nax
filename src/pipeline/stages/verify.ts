@@ -190,7 +190,7 @@ export const verifyStage: PipelineStage = {
     };
 
     // Phase 1: append verify result to session scratch for later stages to read
-    if (ctx.config.context.v2?.enabled && ctx.sessionScratchDir) {
+    if (ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
       try {
         await _verifyDeps.appendScratch(ctx.sessionScratchDir, {
           kind: "verify-result",
