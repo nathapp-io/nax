@@ -405,6 +405,15 @@ export interface ContextV2PullConfig {
   maxCallsPerRun: number;
 }
 
+/** Canonical rules store configuration (Phase 5.1+) */
+export interface ContextV2RulesConfig {
+  /**
+   * Fall back to CLAUDE.md + .claude/rules/ when .nax/rules/ is absent.
+   * Default true during migration period; set false to enforce canonical-only.
+   */
+  allowLegacyClaudeMd: boolean;
+}
+
 /** Context Engine v2 configuration (Phase 0+) */
 export interface ContextV2Config {
   /** Enable the v2 orchestrator — false (default) keeps v1 path unchanged */
@@ -416,6 +425,8 @@ export interface ContextV2Config {
   minScore: number;
   /** Pull tool configuration (Phase 4+) */
   pull: ContextV2PullConfig;
+  /** Canonical rules store configuration (Phase 5.1+) */
+  rules: ContextV2RulesConfig;
 }
 
 export interface ContextConfig {

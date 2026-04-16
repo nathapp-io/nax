@@ -312,7 +312,11 @@ export function createDefaultOrchestrator(
   config: NaxConfig,
   storyScratchDirs?: string[],
 ): ContextOrchestrator {
-  const providers: IContextProvider[] = [new StaticRulesProvider(), new FeatureContextProviderV2(story, config)];
+  const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? true;
+  const providers: IContextProvider[] = [
+    new StaticRulesProvider({ allowLegacyClaudeMd }),
+    new FeatureContextProviderV2(story, config),
+  ];
   if (storyScratchDirs && storyScratchDirs.length > 0) {
     providers.push(new SessionScratchProvider());
   }

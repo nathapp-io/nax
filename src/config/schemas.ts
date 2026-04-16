@@ -456,6 +456,17 @@ const ContextV2PullConfigSchema = z.object({
   maxCallsPerRun: z.number().int().min(0).default(50),
 }).default(() => ({ enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 }));
 
+// Context Engine v2 rules config (Phase 5.1)
+const ContextV2RulesConfigSchema = z.object({
+  /**
+   * Fall back to reading CLAUDE.md + .claude/rules/ when .nax/rules/ is absent.
+   * Default true for one version (migration period); set false once canonical
+   * store is populated to enforce strict canonical-only rules loading.
+   * Phase 5.1: true (default). Removed after next minor version.
+   */
+  allowLegacyClaudeMd: z.boolean().default(true),
+}).default(() => ({ allowLegacyClaudeMd: true }));
+
 // Context Engine v2 config (Phase 0: off by default)
 const ContextV2ConfigSchema = z.object({
   /**
@@ -472,6 +483,8 @@ const ContextV2ConfigSchema = z.object({
   minScore: z.number().min(0).max(1).default(0.1),
   /** Pull tool configuration (Phase 4+) */
   pull: ContextV2PullConfigSchema,
+  /** Canonical rules store configuration (Phase 5.1+) */
+  rules: ContextV2RulesConfigSchema,
 });
 
 const ContextConfigSchema = z.object({
