@@ -22,6 +22,7 @@ import { createDefaultOrchestrator } from "../../context/v2";
 import type { ContextRequest } from "../../context/v2";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
+import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
 import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -33,6 +34,8 @@ export const _contextStageDeps = {
   createOrchestrator: createDefaultOrchestrator,
   v1FeatureProvider: () => new FeatureContextProvider(),
   uuid: () => randomUUID(),
+  readDigest: readDigestFile,
+  writeDigest: writeDigestFile,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +58,23 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
 
   const storyScratchDirs = ctx.sessionScratchDir ? [ctx.sessionScratchDir] : undefined;
 
+  // Phase 2: read prior digest for progressive context threading.
+  // On first run the file is absent → "". On retry (after rectify) or crash
+  // resume, the file contains the previous assembly's digest and is threaded
+  // into the new request so the agent sees what context was previously built.
+  let priorStageDigest: string | undefined;
+  if (ctx.sessionScratchDir) {
+    try {
+      const raw = await _contextStageDeps.readDigest(ctx.sessionScratchDir, "context");
+      priorStageDigest = raw || undefined;
+    } catch (err) {
+      logger.warn("context", "Failed to read prior digest — continuing without it", {
+        storyId: ctx.story.id,
+        error: errorMessage(err),
+      });
+    }
+  }
+
   const request: ContextRequest = {
     storyId: ctx.story.id,
     // Trim trailing slash before taking the last path segment so
@@ -66,7 +86,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     budgetTokens: ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
     minScore: ctx.config.context.v2?.minScore,
     storyScratchDirs,
-    priorStageDigest: undefined,
+    priorStageDigest,
   };
 
   try {
@@ -74,6 +94,19 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     const bundle = await orchestrator.assemble(request);
 
     ctx.contextBundle = bundle;
+
+    // Phase 2: persist digest for next pipeline pass or crash resume.
+    // Best-effort: a failed write must not block stage execution.
+    if (ctx.sessionScratchDir && bundle.digest) {
+      try {
+        await _contextStageDeps.writeDigest(ctx.sessionScratchDir, "context", bundle.digest);
+      } catch (digestErr) {
+        logger.warn("context", "Failed to persist context digest — non-fatal", {
+          storyId: ctx.story.id,
+          error: errorMessage(digestErr),
+        });
+      }
+    }
 
     // v1 compat shim: populate featureContextMarkdown from bundle so existing
     // prompt builders that read ctx.featureContextMarkdown still work.

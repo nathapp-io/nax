@@ -4,7 +4,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   appendScratchEntry,
+  digestFilePath,
+  readDigestFile,
   scratchFilePath,
+  writeDigestFile,
   _scratchWriterDeps,
 } from "../../../src/session/scratch-writer";
 import type { ScratchEntry } from "../../../src/session/scratch-writer";
@@ -131,5 +134,79 @@ describe("appendScratchEntry", () => {
       }
       expect(threw).toBe(true);
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// digestFilePath / writeDigestFile / readDigestFile
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("digestFilePath", () => {
+  test("returns <scratchDir>/digest-<stageKey>.txt", () => {
+    expect(digestFilePath("/sessions/sess-001", "context")).toBe("/sessions/sess-001/digest-context.txt");
+    expect(digestFilePath("/sessions/sess-001", "verify")).toBe("/sessions/sess-001/digest-verify.txt");
+  });
+});
+
+describe("writeDigestFile", () => {
+  test("creates the digest file with content", async () => {
+    const scratchDir = join(tmpDir, "sess-digest-a");
+    await writeDigestFile(scratchDir, "context", "prior context summary");
+    const raw = await Bun.file(digestFilePath(scratchDir, "context")).text();
+    expect(raw).toBe("prior context summary");
+  });
+
+  test("overwrites existing digest on second call", async () => {
+    const scratchDir = join(tmpDir, "sess-digest-b");
+    await writeDigestFile(scratchDir, "context", "first digest");
+    await writeDigestFile(scratchDir, "context", "second digest");
+    const raw = await Bun.file(digestFilePath(scratchDir, "context")).text();
+    expect(raw).toBe("second digest");
+  });
+
+  test("creates nested parent directories if absent", async () => {
+    const scratchDir = join(tmpDir, "deep", "nested", "sess-digest");
+    await writeDigestFile(scratchDir, "context", "hello");
+    const exists = await Bun.file(digestFilePath(scratchDir, "context")).exists();
+    expect(exists).toBe(true);
+  });
+
+  test("different stage keys produce separate files", async () => {
+    const scratchDir = join(tmpDir, "sess-digest-c");
+    await writeDigestFile(scratchDir, "context", "context digest");
+    await writeDigestFile(scratchDir, "verify", "verify digest");
+    const ctxRaw = await Bun.file(digestFilePath(scratchDir, "context")).text();
+    const verRaw = await Bun.file(digestFilePath(scratchDir, "verify")).text();
+    expect(ctxRaw).toBe("context digest");
+    expect(verRaw).toBe("verify digest");
+  });
+});
+
+describe("readDigestFile", () => {
+  test("returns empty string when file does not exist", async () => {
+    const result = await readDigestFile(join(tmpDir, "no-such-session"), "context");
+    expect(result).toBe("");
+  });
+
+  test("returns trimmed content when file exists", async () => {
+    const scratchDir = join(tmpDir, "sess-digest-d");
+    await writeDigestFile(scratchDir, "context", "  trimmed digest  ");
+    const result = await readDigestFile(scratchDir, "context");
+    expect(result).toBe("trimmed digest");
+  });
+
+  test("returns empty string for empty file", async () => {
+    const scratchDir = join(tmpDir, "sess-digest-e");
+    await writeDigestFile(scratchDir, "context", "");
+    const result = await readDigestFile(scratchDir, "context");
+    expect(result).toBe("");
+  });
+
+  test("roundtrip: write then read returns the same content", async () => {
+    const scratchDir = join(tmpDir, "sess-digest-f");
+    const digest = "## Context\n- Touched src/review/semantic.ts\n- Added test fixture tempWorkdir";
+    await writeDigestFile(scratchDir, "context", digest);
+    const result = await readDigestFile(scratchDir, "context");
+    expect(result).toBe(digest);
   });
 });

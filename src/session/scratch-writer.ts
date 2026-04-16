@@ -99,3 +99,46 @@ export async function appendScratchEntry(scratchDir: string, entry: ScratchEntry
   const line = JSON.stringify(entry);
   await _scratchWriterDeps.writeFile(filePath, existing ? `${existing}${line}\n` : `${line}\n`);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Digest files
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Resolves the digest file path: <scratchDir>/digest-<stageKey>.txt */
+export function digestFilePath(scratchDir: string, stageKey: string): string {
+  return `${scratchDir}/digest-${stageKey}.txt`;
+}
+
+/**
+ * Write a stage digest to <scratchDir>/digest-<stageKey>.txt.
+ *
+ * Overwrites any existing digest for this stage key — only the latest
+ * digest is kept per stage.
+ *
+ * Callers should wrap in try-catch: digest writes are best-effort and
+ * must never block stage execution.
+ *
+ * @param scratchDir - Absolute path to the session scratch directory
+ * @param stageKey   - Stage identifier (e.g. "context", "verify")
+ * @param digest     - Terse summary produced by buildDigest()
+ */
+export async function writeDigestFile(scratchDir: string, stageKey: string, digest: string): Promise<void> {
+  const filePath = digestFilePath(scratchDir, stageKey);
+  await _scratchWriterDeps.mkdirp(dirname(filePath));
+  await _scratchWriterDeps.writeFile(filePath, digest);
+}
+
+/**
+ * Read a stage digest from <scratchDir>/digest-<stageKey>.txt.
+ *
+ * Returns the trimmed digest string, or "" if the file does not exist.
+ *
+ * Callers should wrap in try-catch to handle unexpected I/O errors.
+ *
+ * @param scratchDir - Absolute path to the session scratch directory
+ * @param stageKey   - Stage identifier (e.g. "context", "verify")
+ */
+export async function readDigestFile(scratchDir: string, stageKey: string): Promise<string> {
+  const content = await _scratchWriterDeps.readFile(digestFilePath(scratchDir, stageKey));
+  return content.trim();
+}
