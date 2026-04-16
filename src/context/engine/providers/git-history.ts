@@ -52,7 +52,7 @@ function contentHash8(content: string): string {
  */
 async function fetchFileHistory(filePath: string, workdir: string): Promise<string | null> {
   const { stdout, exitCode } = await _gitHistoryDeps.gitWithTimeout(
-    ["log", "--oneline", "--follow", `-n`, String(MAX_COMMITS), "--", filePath],
+    ["log", "--oneline", "--follow", "-n", String(MAX_COMMITS), "--", filePath],
     workdir,
   );
 

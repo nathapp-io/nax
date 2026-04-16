@@ -38,7 +38,7 @@ function trigrams(text: string): Set<string> {
 
 /**
  * Jaccard similarity between two trigram sets.
- * Returns 0 when both sets are empty.
+ * Returns 1.0 when both sets are empty (two empty-content chunks are identical).
  */
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 && b.size === 0) return 1.0;

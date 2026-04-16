@@ -13,8 +13,8 @@
  */
 
 import type { PackedChunk } from "./packing";
-import type { ChunkScope } from "./types";
 import { SCOPE_ORDER, groupByScope, sortedBodies } from "./render-utils";
+import type { ChunkScope } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Scope headers

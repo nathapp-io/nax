@@ -17,10 +17,10 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Canonical rules delivery
  */
 
-import { join, basename } from "node:path";
 import { mkdir } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
-import { loadCanonicalRules, CANONICAL_RULES_DIR } from "../context/rules/canonical-loader";
 import { errorMessage } from "../utils/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,7 +29,9 @@ import { errorMessage } from "../utils/errors";
 
 export const _rulesCLIDeps = {
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
-  writeFile: async (path: string, content: string): Promise<void> => { await Bun.write(path, content); },
+  writeFile: async (path: string, content: string): Promise<void> => {
+    await Bun.write(path, content);
+  },
   fileExists: async (path: string): Promise<boolean> => Bun.file(path).exists(),
   globInDir: (dir: string): string[] => {
     try {
@@ -38,7 +40,9 @@ export const _rulesCLIDeps = {
       return [];
     }
   },
-  mkdir: async (path: string): Promise<void> => { await mkdir(path, { recursive: true }); },
+  mkdir: async (path: string): Promise<void> => {
+    await mkdir(path, { recursive: true });
+  },
   loadCanonicalRules,
 };
 
@@ -105,7 +109,7 @@ export async function rulesExportCommand(options: RulesExportOptions): Promise<v
 
 `;
   const body = rules.map((r) => `## ${r.fileName}\n\n${r.content}`).join("\n\n---\n\n");
-  const shimContent = header + body + "\n";
+  const shimContent = `${header + body}\n`;
   const shimPath = join(workdir, shimFileName);
 
   if (options.dryRun) {
@@ -245,23 +249,24 @@ export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise
   for (const { sourcePath, targetFileName, content } of sources) {
     const targetPath = join(targetDir, targetFileName);
 
-    if (!force && !options.dryRun && await _rulesCLIDeps.fileExists(targetPath)) {
+    if (!force && !options.dryRun && (await _rulesCLIDeps.fileExists(targetPath))) {
       console.log(`[skip] ${targetFileName} already exists (use --force to overwrite)`);
       skipped++;
       continue;
     }
 
     const { content: neutralized, replacements } = neutralizeContent(content);
-    const notice = replacements > 0
-      ? `<!-- NOTE: ${replacements} neutralization(s) applied — review before committing -->\n\n`
-      : "";
+    const notice =
+      replacements > 0 ? `<!-- NOTE: ${replacements} neutralization(s) applied — review before committing -->\n\n` : "";
     const output = notice + neutralized;
 
     if (options.dryRun) {
       console.log(`[dry-run] Would write ${targetFileName} from ${sourcePath} (${replacements} replacements)`);
     } else {
       await _rulesCLIDeps.writeFile(targetPath, output);
-      console.log(`[OK] ${targetFileName} <- ${sourcePath}${replacements > 0 ? ` (${replacements} replacements)` : ""}`);
+      console.log(
+        `[OK] ${targetFileName} <- ${sourcePath}${replacements > 0 ? ` (${replacements} replacements)` : ""}`,
+      );
     }
     written++;
   }
@@ -269,7 +274,9 @@ export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise
   if (!options.dryRun) {
     console.log(`\nMigration complete: ${written} file(s) written, ${skipped} skipped.`);
     if (written > 0) {
-      console.log(`Review ${CANONICAL_RULES_DIR}/ before committing. Run \`nax rules export --agent=claude\` to regenerate CLAUDE.md.`);
+      console.log(
+        `Review ${CANONICAL_RULES_DIR}/ before committing. Run \`nax rules export --agent=claude\` to regenerate CLAUDE.md.`,
+      );
     }
   }
 }

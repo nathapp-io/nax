@@ -16,11 +16,11 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { FeatureContextProvider } from "../../context/providers/feature-context";
-import type { ContextElement } from "../../context/types";
 import { createDefaultOrchestrator } from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
+import { FeatureContextProvider } from "../../context/providers/feature-context";
+import type { ContextElement } from "../../context/types";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
 import { getContextFiles } from "../../prd";
@@ -95,22 +95,24 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     storyScratchDirs,
     priorStageDigest,
     ...(touchedFiles.length > 0 && { touchedFiles }),
-  pullConfig: ctx.config.context.v2.pull
-    ? {
-        enabled: ctx.config.context.v2.pull.enabled,
-        allowedTools: ctx.config.context.v2.pull.allowedTools,
-        maxCallsPerSession: ctx.config.context.v2.pull.maxCallsPerSession,
-      }
-    : undefined,
+    // Defensive check: test fixtures may bypass Zod and omit `pull`.
+    // In production configs this is always present (required by schema).
+    pullConfig: ctx.config.context.v2.pull
+      ? {
+          enabled: ctx.config.context.v2.pull.enabled,
+          allowedTools: ctx.config.context.v2.pull.allowedTools,
+          maxCallsPerSession: ctx.config.context.v2.pull.maxCallsPerSession,
+        }
+      : undefined,
   };
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.
   // Non-fatal: failures are logged inside loadPluginProviders and skipped.
+  // Defensive fallback: test fixtures may bypass Zod and omit `pluginProviders`.
+  // In production configs this is always present (required by schema, defaults to []).
   const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
   const pluginProviders: IContextProvider[] =
-    pluginConfigs.length > 0
-      ? await _contextStageDeps.loadPlugins(pluginConfigs, ctx.workdir)
-      : [];
+    pluginConfigs.length > 0 ? await _contextStageDeps.loadPlugins(pluginConfigs, ctx.workdir) : [];
 
   try {
     const orchestrator = _contextStageDeps.createOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);

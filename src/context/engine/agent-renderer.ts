@@ -108,18 +108,13 @@ function renderPlain(chunks: PackedChunk[], options: AgentRenderOptions): string
  * @param agentId  - target agent id (e.g. "claude", "codex")
  * @param options  - optional priorStageDigest preamble
  */
-export function renderForAgent(
-  chunks: PackedChunk[],
-  agentId: string,
-  options: AgentRenderOptions = {},
-): string {
+export function renderForAgent(chunks: PackedChunk[], agentId: string, options: AgentRenderOptions = {}): string {
   const { profile } = getAgentProfile(agentId);
   switch (profile.caps.systemPromptStyle) {
     case "markdown-sections":
       return renderMarkdownSections(chunks, options);
     case "xml-tagged":
       return renderXmlTagged(chunks, options);
-    case "plain":
     default:
       return renderPlain(chunks, options);
   }

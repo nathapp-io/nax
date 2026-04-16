@@ -20,7 +20,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Canonical rules delivery
  */
 
-import { join, basename } from "node:path";
+import { basename, join } from "node:path";
 import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 
@@ -39,9 +39,7 @@ export const _canonicalLoaderDeps = {
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
   globInDir: (dir: string): string[] => {
     try {
-      return [...new Bun.Glob("*.md").scanSync({ cwd: dir })]
-        .sort()
-        .map((f) => join(dir, f));
+      return [...new Bun.Glob("*.md").scanSync({ cwd: dir })].sort().map((f) => join(dir, f));
     } catch {
       return [];
     }
@@ -82,7 +80,7 @@ export function lintForNeutrality(content: string, fileName: string): Neutrality
   const lines = content.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
+    const line = lines[i] ?? "";
     for (const { regex, description } of BANNED_PATTERNS) {
       if (regex.test(line)) {
         violations.push({
@@ -114,11 +112,10 @@ export class NeutralityLintError extends NaxError {
     const summary = violations
       .map((v) => `  ${v.file}:${v.lineNumber} — ${v.pattern}: "${v.line.slice(0, 80)}"`)
       .join("\n");
-    super(
-      `Canonical rules neutrality linter failed:\n${summary}`,
-      "NEUTRALITY_LINT_FAILED",
-      { stage: "canonical-loader", violationCount: violations.length },
-    );
+    super(`Canonical rules neutrality linter failed:\n${summary}`, "NEUTRALITY_LINT_FAILED", {
+      stage: "canonical-loader",
+      violationCount: violations.length,
+    });
     this.violations = violations;
   }
 }
@@ -159,7 +156,7 @@ export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule
     try {
       content = await _canonicalLoaderDeps.readFile(filePath);
     } catch {
-      logger.warn("canonical-loader", `Failed to read rules file — skipping`, {
+      logger.warn("canonical-loader", "Failed to read rules file — skipping", {
         storyId: "_rules",
         file: filePath,
       });

@@ -13,23 +13,16 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../config/types";
 import { getLogger } from "../../logger";
-import type { UserStory } from "../../prd";
 import { errorMessage } from "../../utils/errors";
+import { AGENT_PROFILES } from "./agent-profiles";
+import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { buildDigest, digestTokens } from "./digest";
 import { packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
-import { CodeNeighborProvider } from "./providers/code-neighbor";
-import { FeatureContextProviderV2 } from "./providers/feature-context";
-import { GitHistoryProvider } from "./providers/git-history";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
-import { SessionScratchProvider } from "./providers/session-scratch";
-import { StaticRulesProvider } from "./providers/static-rules";
 import { renderChunks } from "./render";
-import { renderForAgent } from "./agent-renderer";
-import { AGENT_PROFILES } from "./agent-profiles";
 import { MIN_SCORE, scoreChunks } from "./scoring";
 import { getStageContextConfig } from "./stage-config";
 import type {
@@ -41,6 +34,7 @@ import type {
   ContextRequest,
   IContextProvider,
   RawChunk,
+  RebuildOptions,
   ToolDescriptor,
 } from "./types";
 
@@ -134,27 +128,6 @@ function enrichRaw(chunk: RawChunk, providerId: string): RawChunk {
  * fallback) if the project default agent ever changes.
  */
 const DEFAULT_REBUILD_AGENT_ID = "claude";
-
-/**
- * Options for ContextOrchestrator.rebuildForAgent().
- * All fields are optional to preserve backward-compatibility with call sites
- * that only need a digest update without an agent swap.
- *
- * Agent resolution order when newAgentId is absent:
- *   prior.agentId → DEFAULT_REBUILD_AGENT_ID ("claude")
- * This means a bundle that was assembled without an explicit agentId will be
- * re-rendered as claude/markdown-sections, which is the correct behaviour for
- * the common same-agent digest-update case. If the project default agent
- * changes, update DEFAULT_REBUILD_AGENT_ID above.
- */
-export interface RebuildOptions {
-  /** Target agent id for the new session (Phase 5.5 — agent-swap fallback) */
-  newAgentId?: string;
-  /** Adapter failure that triggered the rebuild (Phase 5.5) */
-  failure?: AdapterFailure;
-  /** Digest from the prior pipeline stage (optional preamble) */
-  priorStageDigest?: string;
-}
 
 /**
  * Build a deterministic failure-note chunk describing the agent swap.
@@ -255,10 +228,7 @@ export class ContextOrchestrator {
     const allRaw = fetchResults.flatMap(({ provider, result }) => result.chunks.map((c) => enrichRaw(c, provider.id)));
     // Phase 4: build pull tool descriptors from stage config + PULL_TOOL_REGISTRY.
     // Provider-level result.pullTools is reserved for Phase 7 and ignored here.
-    const allPullTools = buildPullToolDescriptors(
-      stageConfig.pullToolNames ?? [],
-      request.pullConfig,
-    );
+    const allPullTools = buildPullToolDescriptors(stageConfig.pullToolNames ?? [], request.pullConfig);
 
     // Step 3: score
     const scored = scoreChunks(allRaw, role, effectiveMinScore);
@@ -403,47 +373,4 @@ export class ContextOrchestrator {
       agentId: targetAgentId,
     };
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Factory
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Build a default orchestrator for Phase 0–7+.
- * Providers are constructed with story/config bound where needed.
- *
- * When storyScratchDirs is provided, `SessionScratchProvider` is registered
- * so the verify/rectify stages can see prior scratch observations.
- *
- * Phase 7: accepts pre-loaded plugin providers (RAG/graph/KB) via
- * `additionalProviders`. Callers are responsible for loading these via
- * `loadPluginProviders()` before invoking this factory.
- *
- * @param story              - current story (needed by FeatureContextProviderV2)
- * @param config             - nax config (needed by FeatureContextProviderV2)
- * @param storyScratchDirs   - scratch dirs for this story's sessions (Phase 1+)
- * @param additionalProviders - pre-loaded plugin providers (Phase 7+)
- */
-export function createDefaultOrchestrator(
-  story: UserStory,
-  config: NaxConfig,
-  storyScratchDirs?: string[],
-  additionalProviders: IContextProvider[] = [],
-): ContextOrchestrator {
-  const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? true;
-  const providers: IContextProvider[] = [
-    new StaticRulesProvider({ allowLegacyClaudeMd }),
-    new FeatureContextProviderV2(story, config),
-  ];
-  if (storyScratchDirs && storyScratchDirs.length > 0) {
-    providers.push(new SessionScratchProvider());
-  }
-  // Phase 3: git history and code neighbors (always registered; active only when
-  // request.touchedFiles is non-empty and the stage includes these provider IDs)
-  providers.push(new GitHistoryProvider());
-  providers.push(new CodeNeighborProvider());
-  // Phase 7: plugin providers (RAG, graph, KB, etc.)
-  providers.push(...additionalProviders);
-  return new ContextOrchestrator(providers);
 }

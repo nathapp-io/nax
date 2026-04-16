@@ -32,13 +32,7 @@ export interface AdapterFailure {
    * availability: fail-quota | fail-service-down | fail-auth | fail-timeout | fail-adapter-error
    * quality:      fail-quality
    */
-  outcome:
-    | "fail-quota"
-    | "fail-service-down"
-    | "fail-auth"
-    | "fail-timeout"
-    | "fail-adapter-error"
-    | "fail-quality";
+  outcome: "fail-quota" | "fail-service-down" | "fail-auth" | "fail-timeout" | "fail-adapter-error" | "fail-quality";
   /** Human-readable description (≤500 chars) for the failure-note chunk */
   message: string;
   /** True when the same agent/tier could succeed on immediate retry */
@@ -194,6 +188,31 @@ export interface ContextBundle {
    * rebuildForAgent(). Used by renderForAgent() to pick the correct framing.
    */
   agentId?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rebuild options (Phase 5.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for ContextOrchestrator.rebuildForAgent().
+ * All fields are optional to preserve backward-compatibility with call sites
+ * that only need a digest update without an agent swap.
+ *
+ * Agent resolution order when newAgentId is absent:
+ *   prior.agentId → DEFAULT_REBUILD_AGENT_ID ("claude")
+ * This means a bundle that was assembled without an explicit agentId will be
+ * re-rendered as claude/markdown-sections, which is the correct behaviour for
+ * the common same-agent digest-update case. If the project default agent
+ * changes, update DEFAULT_REBUILD_AGENT_ID in orchestrator.ts.
+ */
+export interface RebuildOptions {
+  /** Target agent id for the new session (Phase 5.5 — agent-swap fallback) */
+  newAgentId?: string;
+  /** Adapter failure that triggered the rebuild (Phase 5.5) */
+  failure?: AdapterFailure;
+  /** Digest from the prior pipeline stage (optional preamble) */
+  priorStageDigest?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

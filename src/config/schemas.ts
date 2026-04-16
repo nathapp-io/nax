@@ -435,26 +435,28 @@ const FeatureContextEngineConfigSchema = z.object({
 });
 
 // Context Engine v2 pull tool config (Phase 4)
-const ContextV2PullConfigSchema = z.object({
-  /**
-   * Enable pull tools for this run.
-   * When false (default), assemble() returns an empty pullTools array.
-   */
-  enabled: z.boolean().default(false),
-  /**
-   * Tool names permitted to activate. Empty array = all stage-configured tools allowed.
-   * Use to restrict which tools are enabled without changing the stage map.
-   */
-  allowedTools: z.array(z.string()).default([]),
-  /**
-   * Per-session call ceiling (overrides the descriptor default when set).
-   */
-  maxCallsPerSession: z.number().int().min(0).default(5),
-  /**
-   * Per-run call ceiling across all sessions in a single nax run.
-   */
-  maxCallsPerRun: z.number().int().min(0).default(50),
-}).default(() => ({ enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 }));
+const ContextV2PullConfigSchema = z
+  .object({
+    /**
+     * Enable pull tools for this run.
+     * When false (default), assemble() returns an empty pullTools array.
+     */
+    enabled: z.boolean().default(false),
+    /**
+     * Tool names permitted to activate. Empty array = all stage-configured tools allowed.
+     * Use to restrict which tools are enabled without changing the stage map.
+     */
+    allowedTools: z.array(z.string()).default([]),
+    /**
+     * Per-session call ceiling (overrides the descriptor default when set).
+     */
+    maxCallsPerSession: z.number().int().min(0).default(5),
+    /**
+     * Per-run call ceiling across all sessions in a single nax run.
+     */
+    maxCallsPerRun: z.number().int().min(0).default(50),
+  })
+  .default(() => ({ enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 }));
 
 // Context Engine v2 availability-fallback config (Phase 5.5)
 const ContextV2FallbackConfigSchema = z
@@ -484,15 +486,17 @@ const ContextV2FallbackConfigSchema = z
   .default(() => ({ enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} }));
 
 // Context Engine v2 rules config (Phase 5.1)
-const ContextV2RulesConfigSchema = z.object({
-  /**
-   * Fall back to reading CLAUDE.md + .claude/rules/ when .nax/rules/ is absent.
-   * Default true for one version (migration period); set false once canonical
-   * store is populated to enforce strict canonical-only rules loading.
-   * Phase 5.1: true (default). Removed after next minor version.
-   */
-  allowLegacyClaudeMd: z.boolean().default(true),
-}).default(() => ({ allowLegacyClaudeMd: true }));
+const ContextV2RulesConfigSchema = z
+  .object({
+    /**
+     * Fall back to reading CLAUDE.md + .claude/rules/ when .nax/rules/ is absent.
+     * Default true for one version (migration period); set false once canonical
+     * store is populated to enforce strict canonical-only rules loading.
+     * Phase 5.1: true (default). Removed after next minor version.
+     */
+    allowLegacyClaudeMd: z.boolean().default(true),
+  })
+  .default(() => ({ allowLegacyClaudeMd: true }));
 
 // Context Engine plugin provider config (Phase 7)
 const ContextPluginProviderConfigSchema = z.object({
@@ -517,30 +521,30 @@ const ContextPluginProviderConfigSchema = z.object({
 // Context Engine config (Phase 6: selective on; operators opt in per project)
 const ContextV2ConfigSchema = z
   .object({
-  /**
-   * Enable Context Engine orchestrator.
-   * Default: false — operators opt in by setting this true in their project config.
-   * Phase 6: selective on; Phase 7: plugin providers available once enabled.
-   */
-  enabled: z.boolean().default(false),
-  /**
-   * Minimum score threshold — chunks below this are dropped as noise.
-   * Phase 0: near-zero (0.1) so existing content is almost never filtered.
-   * Post-GA: tuned upward once effectiveness signal data is available.
-   */
-  minScore: z.number().min(0).max(1).default(0.1),
-  /** Pull tool configuration (Phase 4+) */
-  pull: ContextV2PullConfigSchema,
-  /** Canonical rules store configuration (Phase 5.1+) */
-  rules: ContextV2RulesConfigSchema,
-  /** Availability-fallback configuration (Phase 5.5+) */
-  fallback: ContextV2FallbackConfigSchema,
-  /**
-   * External plugin provider registrations (Phase 7+).
-   * Each entry loads a module that exports an IContextProvider-compatible object.
-   * Empty by default — operators add providers for RAG, graph, or KB use cases.
-   */
-  pluginProviders: z.array(ContextPluginProviderConfigSchema).default([]),
+    /**
+     * Enable Context Engine orchestrator.
+     * Default: false — operators opt in by setting this true in their project config.
+     * Phase 6: selective on; Phase 7: plugin providers available once enabled.
+     */
+    enabled: z.boolean().default(false),
+    /**
+     * Minimum score threshold — chunks below this are dropped as noise.
+     * Phase 0: near-zero (0.1) so existing content is almost never filtered.
+     * Post-GA: tuned upward once effectiveness signal data is available.
+     */
+    minScore: z.number().min(0).max(1).default(0.1),
+    /** Pull tool configuration (Phase 4+) */
+    pull: ContextV2PullConfigSchema,
+    /** Canonical rules store configuration (Phase 5.1+) */
+    rules: ContextV2RulesConfigSchema,
+    /** Availability-fallback configuration (Phase 5.5+) */
+    fallback: ContextV2FallbackConfigSchema,
+    /**
+     * External plugin provider registrations (Phase 7+).
+     * Each entry loads a module that exports an IContextProvider-compatible object.
+     * Empty by default — operators add providers for RAG, graph, or KB use cases.
+     */
+    pluginProviders: z.array(ContextPluginProviderConfigSchema).default([]),
   })
   .default(() => ({
     enabled: false,

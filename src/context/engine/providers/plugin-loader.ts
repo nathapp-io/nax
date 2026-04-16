@@ -19,8 +19,8 @@
  */
 
 import { join, resolve } from "node:path";
-import { getLogger } from "../../../logger";
 import type { ContextPluginProviderConfig } from "../../../config/runtime-types";
+import { getLogger } from "../../../logger";
 import type { IContextProvider } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,6 +46,10 @@ export const _pluginLoaderDeps = {
  * Optional lifecycle method a plugin provider may export.
  * Called once after loading, before the provider is registered.
  * Use for expensive initialisation (e.g. opening an embedding index).
+ *
+ * init() is only called when the plugin entry includes a `config` field.
+ * Providers that need always-run initialisation should handle defaults
+ * internally (i.e. treat an empty config as valid input).
  */
 export interface InitialisableProvider extends IContextProvider {
   init(config: Record<string, unknown>): Promise<void>;
@@ -100,10 +104,22 @@ function extractProvider(mod: unknown): IContextProvider | null {
  * Resolves a module specifier to an importable path.
  * Relative paths (starting with "./" or "../") are resolved against workdir.
  * Package names are returned unchanged for the runtime to resolve.
+ *
+ * Throws when a relative path resolves to a location outside workdir
+ * (path traversal guard). Plugin modules must live within the project root.
+ * Note: plugin config is operator-controlled but can be misconfigured —
+ * this prevents accidental or malicious escapes from the project boundary.
  */
 export function resolveModuleSpecifier(specifier: string, workdir: string): string {
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
-    return resolve(join(workdir, specifier));
+    const resolvedWorkdir = resolve(workdir);
+    const resolved = resolve(join(workdir, specifier));
+    if (resolved !== resolvedWorkdir && !resolved.startsWith(`${resolvedWorkdir}/`)) {
+      throw new Error(
+        `Plugin module path escapes project workdir: "${specifier}" resolves to "${resolved}" (workdir: "${resolvedWorkdir}")`,
+      );
+    }
+    return resolved;
   }
   return specifier;
 }
@@ -128,9 +144,7 @@ export async function loadPluginProviders(
 
   if (enabled.length === 0) return [];
 
-  const results = await Promise.allSettled(
-    enabled.map((entry) => loadSingleProvider(entry, workdir, logger)),
-  );
+  const results = await Promise.allSettled(enabled.map((entry) => loadSingleProvider(entry, workdir, logger)));
 
   const providers: IContextProvider[] = [];
   for (const result of results) {
@@ -147,15 +161,13 @@ async function loadSingleProvider(
   workdir: string,
   logger: ReturnType<typeof getLogger>,
 ): Promise<IContextProvider | null> {
-  const resolved = resolveModuleSpecifier(entry.module, workdir);
-
   let mod: unknown;
   try {
+    const resolved = resolveModuleSpecifier(entry.module, workdir);
     mod = await _pluginLoaderDeps.dynamicImport(resolved);
   } catch (err) {
     logger.warn("context-engine", "Plugin provider module failed to load — skipping", {
       module: entry.module,
-      resolved,
       error: err instanceof Error ? err.message : String(err),
     });
     return null;

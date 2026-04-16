@@ -18,8 +18,8 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Pull tools
  */
 
-import { NaxError } from "../../errors";
 import type { NaxConfig } from "../../config/types";
+import { NaxError } from "../../errors";
 import type { UserStory } from "../../prd";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
@@ -89,8 +89,7 @@ export const QUERY_FEATURE_CONTEXT_DESCRIPTOR: ToolDescriptor = {
       filter: {
         type: "string",
         description:
-          "Optional keyword or section heading to filter context sections. " +
-          "Returns all content when omitted.",
+          "Optional keyword or section heading to filter context sections. " + "Returns all content when omitted.",
       },
     },
     additionalProperties: false,
@@ -152,18 +151,18 @@ export class PullToolBudget {
    */
   consume(): void {
     if (this.sessionCalls >= this.maxCallsPerSession) {
-      throw new NaxError(
-        "context tool budget exhausted",
-        "PULL_TOOL_BUDGET_EXHAUSTED",
-        { stage: "pull-tool", scope: "session", limit: this.maxCallsPerSession },
-      );
+      throw new NaxError("context tool budget exhausted", "PULL_TOOL_BUDGET_EXHAUSTED", {
+        stage: "pull-tool",
+        scope: "session",
+        limit: this.maxCallsPerSession,
+      });
     }
     if (this.runCounter.count >= this.maxCallsPerRun) {
-      throw new NaxError(
-        "context tool budget exhausted",
-        "PULL_TOOL_BUDGET_EXHAUSTED",
-        { stage: "pull-tool", scope: "run", limit: this.maxCallsPerRun },
-      );
+      throw new NaxError("context tool budget exhausted", "PULL_TOOL_BUDGET_EXHAUSTED", {
+        stage: "pull-tool",
+        scope: "run",
+        limit: this.maxCallsPerRun,
+      });
     }
     this.sessionCalls += 1;
     this.runCounter.count += 1;

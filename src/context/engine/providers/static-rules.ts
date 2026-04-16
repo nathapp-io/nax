@@ -126,10 +126,14 @@ export class StaticRulesProvider implements IContextProvider {
     }
 
     // allowLegacyClaudeMd: true — emit deprecation warning and fall back to legacy files
-    logger.warn("static-rules", "No .nax/rules/ found — falling back to legacy rule files (deprecation warning). " +
-      "Run `nax rules migrate` to create the canonical store.", {
-      storyId: request.storyId,
-    });
+    logger.warn(
+      "static-rules",
+      "No .nax/rules/ found — falling back to legacy rule files (deprecation warning). " +
+        "Run `nax rules migrate` to create the canonical store.",
+      {
+        storyId: request.storyId,
+      },
+    );
 
     return this.fetchLegacy(request);
   }

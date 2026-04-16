@@ -61,9 +61,16 @@ describe("resolveModuleSpecifier", () => {
     expect(result).toBe("/repo/plugins/rag.js");
   });
 
-  test("resolves ../ relative paths against workdir", () => {
-    const result = resolveModuleSpecifier("../shared/rag.js", "/repo/app");
-    expect(result).toBe("/repo/shared/rag.js");
+  test("resolves internal ../ paths that stay within workdir", () => {
+    // ./sub/../plugins/rag.js from /repo resolves to /repo/plugins/rag.js (inside workdir)
+    const result = resolveModuleSpecifier("./sub/../plugins/rag.js", "/repo");
+    expect(result).toBe("/repo/plugins/rag.js");
+  });
+
+  test("throws when ../ escapes the workdir boundary", () => {
+    expect(() => resolveModuleSpecifier("../escape.js", "/repo")).toThrow(
+      /escapes project workdir/,
+    );
   });
 
   test("nested relative path is resolved correctly", () => {
@@ -126,6 +133,24 @@ describe("loadPluginProviders — load failures (non-fatal)", () => {
     _pluginLoaderDeps.dynamicImport = async () => ({ default: { id: "p1", kind: "rag" } });
     const result = await loadPluginProviders([makeConfig("no-fetch")], "/repo");
     expect(result).toEqual([]);
+  });
+
+  test("skips provider when import resolves to null", async () => {
+    _pluginLoaderDeps.dynamicImport = async () => null;
+    const result = await loadPluginProviders([makeConfig("null-pkg")], "/repo");
+    expect(result).toEqual([]);
+  });
+
+  test("skips provider when module path escapes workdir", async () => {
+    let importCalled = false;
+    _pluginLoaderDeps.dynamicImport = async () => {
+      importCalled = true;
+      return { default: makeProvider("p1") };
+    };
+    // ../escape.js from /repo escapes the workdir boundary
+    const result = await loadPluginProviders([makeConfig("../escape.js")], "/repo");
+    expect(result).toEqual([]);
+    expect(importCalled).toBe(false);
   });
 
   test("continues loading other providers when one fails", async () => {

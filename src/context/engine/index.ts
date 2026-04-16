@@ -1,9 +1,10 @@
 /**
- * Context Engine v2 — public barrel
+ * Context Engine — public barrel
  */
 
-export { ContextOrchestrator, createDefaultOrchestrator, _orchestratorDeps } from "./orchestrator";
-export type { RebuildOptions } from "./orchestrator";
+export { ContextOrchestrator, _orchestratorDeps } from "./orchestrator";
+export { createDefaultOrchestrator } from "./orchestrator-factory";
+export type { RebuildOptions } from "./types";
 export { scoreChunks, scoreChunk, MIN_SCORE } from "./scoring";
 export type { ScoredChunk } from "./scoring";
 export { dedupeChunks, SIMILARITY_THRESHOLD } from "./dedupe";
