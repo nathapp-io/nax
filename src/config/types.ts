@@ -53,6 +53,7 @@ export type {
   ContextConfig,
   EscalationEntry,
   ExecutionConfig,
+  FeatureContextEngineConfig,
   RawHooksConfig,
   InteractionConfig,
   LlmRoutingConfig,

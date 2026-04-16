@@ -488,6 +488,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       undefined,
       undefined,
       undefined, // blockingThreshold
+      undefined, // featureContextMarkdown
     );
   });
 
@@ -522,6 +523,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       undefined,
       undefined,
       undefined, // blockingThreshold
+      undefined, // featureContextMarkdown
     );
   });
 });

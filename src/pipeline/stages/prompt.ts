@@ -75,6 +75,7 @@ export const promptStage: PipelineStage = {
         .withLoader(ctx.workdir, ctx.config)
         .stories(ctx.stories)
         .context(ctx.contextMarkdown)
+        .featureContext(ctx.featureContextMarkdown)
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
         .hermeticConfig(ctx.config.quality?.testing);
@@ -87,6 +88,7 @@ export const promptStage: PipelineStage = {
         .withLoader(ctx.workdir, ctx.config)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
+        .featureContext(ctx.featureContextMarkdown)
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
         .hermeticConfig(ctx.config.quality?.testing)

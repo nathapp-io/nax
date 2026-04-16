@@ -20,6 +20,7 @@
  * ```
  */
 
+import { FeatureContextProvider } from "../../context/providers/feature-context";
 import type { ContextElement } from "../../context/types";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
@@ -111,6 +112,13 @@ export const contextStage: PipelineStage = {
           );
         }
       }
+    }
+
+    // Feature context engine (v1 read path): load feature context.md if enabled
+    const featureContextProvider = new FeatureContextProvider();
+    const featureResult = await featureContextProvider.getContext(ctx.story, ctx.workdir, ctx.config);
+    if (featureResult) {
+      ctx.featureContextMarkdown = featureResult.content;
     }
 
     return { action: "continue" };

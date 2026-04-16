@@ -108,6 +108,8 @@ export interface PipelineContext {
   constitution?: ConstitutionResult;
   /** Context markdown for the agent (set by contextStage) */
   contextMarkdown?: string;
+  /** Raw (unfiltered) feature context markdown — populated by context stage, used by prompt builders */
+  featureContextMarkdown?: string;
   /** Built context with element-level token tracking (set by contextStage) */
   builtContext?: BuiltContext;
   /** Final prompt sent to agent (set by promptStage) */

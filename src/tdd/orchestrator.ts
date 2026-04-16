@@ -36,6 +36,8 @@ export interface ThreeSessionTddOptions {
   /** Feature name — used for ACP session naming (nax-<hash>-<feature>-<story>-<role>) */
   featureName?: string;
   contextMarkdown?: string;
+  /** Raw (unfiltered) feature context markdown from context engine v1 */
+  featureContextMarkdown?: string;
   constitution?: string;
   dryRun?: boolean;
   lite?: boolean;
@@ -58,6 +60,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     modelTier,
     featureName,
     contextMarkdown,
+    featureContextMarkdown,
     constitution,
     dryRun = false,
     lite = false,
@@ -168,6 +171,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       featureName,
       buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
       projectDir,
+      featureContextMarkdown,
     );
     sessions.push(session1);
   }
@@ -284,6 +288,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     featureName,
     buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
     projectDir,
+    featureContextMarkdown,
   );
   sessions.push(session2);
 
@@ -334,6 +339,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     featureName,
     undefined,
     projectDir,
+    featureContextMarkdown,
   );
   sessions.push(session3);
 
@@ -462,6 +468,7 @@ export function runThreeSessionTddFromCtx(
     modelTier: ctx.routing.modelTier,
     featureName: ctx.prd.feature,
     contextMarkdown: ctx.contextMarkdown,
+    featureContextMarkdown: ctx.featureContextMarkdown,
     constitution: ctx.constitution?.content,
     dryRun: opts.dryRun ?? false,
     lite: opts.lite ?? false,
