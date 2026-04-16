@@ -197,3 +197,44 @@ describe("SessionManager.sweepOrphans()", () => {
     expect(removed).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getForStory()
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionManager.getForStory()", () => {
+  test("returns all sessions matching the given storyId", () => {
+    const mgr = new SessionManager();
+    const s1 = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
+    const s2 = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-002" });
+
+    const results = mgr.getForStory("US-001");
+    expect(results).toHaveLength(2);
+    expect(results.map((s) => s.id).sort()).toEqual([s1.id, s2.id].sort());
+  });
+
+  test("returns empty array when no sessions match", () => {
+    const mgr = new SessionManager();
+    mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
+    expect(mgr.getForStory("US-999")).toHaveLength(0);
+  });
+
+  test("returns immutable copies (mutations don't affect registry)", () => {
+    const mgr = new SessionManager();
+    mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
+    const results = mgr.getForStory("US-001");
+    (results[0] as { state: string }).state = "FAILED";
+    expect(mgr.getForStory("US-001")[0].state).toBe("CREATED");
+  });
+
+  test("includes sessions regardless of state", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
+    mgr.transition(sess.id, "RUNNING");
+    mgr.transition(sess.id, "COMPLETED");
+    const results = mgr.getForStory("US-001");
+    expect(results).toHaveLength(1);
+    expect(results[0].state).toBe("COMPLETED");
+  });
+});
