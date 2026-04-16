@@ -434,11 +434,29 @@ const FeatureContextEngineConfigSchema = z.object({
   budgetTokens: z.number().int().min(256).default(2048),
 });
 
+// Context Engine v2 config (Phase 0: off by default)
+const ContextV2ConfigSchema = z.object({
+  /**
+   * Enable Context Engine v2 orchestrator.
+   * When false (default), the v1 code path runs unchanged.
+   * Phase 0 exit gate: parity tests pass with v2 enabled.
+   */
+  enabled: z.boolean().default(false),
+  /**
+   * Minimum score threshold — chunks below this are dropped as noise.
+   * Phase 0: near-zero (0.1) so existing content is almost never filtered.
+   * Post-GA: tuned upward once effectiveness signal data is available.
+   */
+  minScore: z.number().min(0).max(1).default(0.1),
+});
+
 const ContextConfigSchema = z.object({
   testCoverage: TestCoverageConfigSchema,
   autoDetect: ContextAutoDetectConfigSchema,
   fileInjection: z.enum(["keyword", "disabled"]).default("disabled"),
   featureEngine: FeatureContextEngineConfigSchema.optional(),
+  /** Context Engine v2 settings (Phase 0+) */
+  v2: ContextV2ConfigSchema.optional(),
 });
 
 const LlmRoutingConfigSchema = z.object({

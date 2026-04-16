@@ -393,11 +393,24 @@ export interface FeatureContextEngineConfig {
   budgetTokens: number;
 }
 
+/** Context Engine v2 configuration (Phase 0+) */
+export interface ContextV2Config {
+  /** Enable the v2 orchestrator — false (default) keeps v1 path unchanged */
+  enabled: boolean;
+  /**
+   * Min-score threshold for noise filtering.
+   * Phase 0 default: 0.1 (near-zero impact).
+   */
+  minScore: number;
+}
+
 export interface ContextConfig {
   testCoverage: TestCoverageConfig;
   autoDetect: ContextAutoDetectConfig;
   fileInjection?: "keyword" | "disabled";
-  featureEngine?: FeatureContextEngineConfig; // NEW — Context Engine v1
+  featureEngine?: FeatureContextEngineConfig; // Context Engine v1
+  /** Context Engine v2 settings (Phase 0+) */
+  v2?: ContextV2Config;
 }
 
 /** Story size gate thresholds (v0.16.0) */

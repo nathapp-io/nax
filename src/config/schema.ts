@@ -52,6 +52,7 @@ export type {
   TestCoverageConfig,
   ContextAutoDetectConfig,
   ContextConfig,
+  ContextV2Config,
   RoutingStrategyName,
   AdaptiveRoutingConfig,
   LlmRoutingMode,
