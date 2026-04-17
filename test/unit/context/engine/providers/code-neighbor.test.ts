@@ -5,7 +5,10 @@
  * No real files are read.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
 import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { CodeNeighborProviderOptions } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
@@ -396,5 +399,73 @@ describe("CodeNeighborProvider — SEC-503 path traversal prevention", () => {
 
     expect(readPaths.some((rp) => rp.includes("valid.ts"))).toBe(true);
     expect(readPaths.some((rp) => rp.includes("evil"))).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M11: debug log when glob cap (MAX_GLOB_FILES=200) is reached
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
+  let tmpDir: string;
+  let origGetLogger: typeof _codeNeighborDeps.getLogger;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    const srcDir = join(tmpDir, "src");
+    mkdirSync(srcDir, { recursive: true });
+    // Create 201 files to exceed the 200-file cap
+    for (let i = 0; i < 201; i++) {
+      writeFileSync(join(srcDir, `file${i}.ts`), "");
+    }
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  beforeEach(() => {
+    origGetLogger = _codeNeighborDeps.getLogger;
+  });
+
+  afterEach(() => {
+    _codeNeighborDeps.getLogger = origGetLogger;
+  });
+
+  test("logs debug when glob results are truncated at MAX_GLOB_FILES cap", () => {
+    const debugCalls: Array<[string, string, Record<string, unknown>]> = [];
+    _codeNeighborDeps.getLogger = () =>
+      ({
+        debug: (stage: string, msg: string, ctx: Record<string, unknown>) =>
+          debugCalls.push([stage, msg, ctx]),
+        warn: () => {},
+        info: () => {},
+        error: () => {},
+      }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
+
+    // Call the real default glob implementation directly (not the mock from setupDeps)
+    const results = _codeNeighborDeps.glob("src/**/*.ts", tmpDir);
+
+    expect(results).toHaveLength(200);
+    expect(debugCalls.length).toBeGreaterThan(0);
+    expect(debugCalls[0]?.[0]).toBe("context-v2");
+    expect(debugCalls[0]?.[2]).toMatchObject({ cap: 200 });
+  });
+
+  test("does not log debug when glob results are below the cap", () => {
+    const debugCalls: unknown[] = [];
+    _codeNeighborDeps.getLogger = () =>
+      ({
+        debug: (...args: unknown[]) => debugCalls.push(args),
+        warn: () => {},
+        info: () => {},
+        error: () => {},
+      }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
+
+    // Only 1 file matches — well below cap
+    const results = _codeNeighborDeps.glob("src/file0.ts", tmpDir);
+
+    expect(results.length).toBeLessThan(200);
+    expect(debugCalls.length).toBe(0);
   });
 });

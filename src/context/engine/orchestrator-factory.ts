@@ -37,7 +37,7 @@ export function createDefaultOrchestrator(
   storyScratchDirs?: string[],
   additionalProviders: IContextProvider[] = [],
 ): ContextOrchestrator {
-  const allowLegacyClaudeMd = config.context.v2.rules.allowLegacyClaudeMd;
+  const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? true;
   const providers: IContextProvider[] = [
     new StaticRulesProvider({ allowLegacyClaudeMd }),
     new FeatureContextProviderV2(story, config),

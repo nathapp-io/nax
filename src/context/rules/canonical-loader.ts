@@ -44,6 +44,7 @@ export const _canonicalLoaderDeps = {
       return [];
     }
   },
+  getLogger,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,7 +140,7 @@ export interface CanonicalRule {
  * Returns an empty array if the `.nax/rules/` directory does not exist.
  */
 export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule[]> {
-  const logger = getLogger();
+  const logger = _canonicalLoaderDeps.getLogger();
   const rulesDir = join(workdir, CANONICAL_RULES_DIR);
 
   const filePaths = _canonicalLoaderDeps.globInDir(rulesDir);
@@ -157,7 +158,6 @@ export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule
       content = await _canonicalLoaderDeps.readFile(filePath);
     } catch {
       logger.warn("canonical-loader", "Failed to read rules file — skipping", {
-        storyId: "_rules",
         file: filePath,
       });
       continue;
@@ -179,7 +179,6 @@ export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule
   }
 
   logger.debug("canonical-loader", "Loaded canonical rules", {
-    storyId: "_rules",
     fileCount: rules.length,
     files: rules.map((r) => r.fileName),
   });

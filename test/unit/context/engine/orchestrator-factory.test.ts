@@ -107,6 +107,26 @@ afterEach(() => {
 // #507: historyScope respected by GitHistoryProvider
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M7: optional chaining on config.context.v2.rules
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("createDefaultOrchestrator — #508-M7 optional chaining on rules", () => {
+  test("does not throw when config.context.v2.rules is undefined", () => {
+    const configNoRules = {
+      ...makeConfig(),
+      context: {
+        v2: {
+          ...makeConfig().context.v2,
+          rules: undefined,
+        },
+      },
+    } as unknown as NaxConfig;
+
+    expect(() => createDefaultOrchestrator(makeStory(), configNoRules)).not.toThrow();
+  });
+});
+
 describe("createDefaultOrchestrator — #507 provider scope config", () => {
   test("GitHistoryProvider uses repoRoot workdir when historyScope is 'repo'", async () => {
     const capturedWorkdirs: string[] = [];
