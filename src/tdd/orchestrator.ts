@@ -592,6 +592,7 @@ export async function runThreeSessionTddFromCtx(
           success: result.success,
           filesChanged: result.filesChanged,
           outputTail: result.outputTail ?? "",
+          writtenByAgent: ctx.routing?.agent ?? ctx.config.autoMode.defaultAgent,
         });
 
         const digest = priorDigestByRole.get(result.role);

@@ -35,6 +35,8 @@ export interface VerifyScratchEntry {
   failCount: number;
   /** Last 500 chars of raw test output — enough for a rectifier to see what failed */
   rawOutputTail: string;
+  /** Agent id that produced this entry. For cross-agent scratch neutralization (AC-42). */
+  writtenByAgent?: string;
 }
 
 /** Entry written after each rectification attempt */
@@ -45,6 +47,8 @@ export interface RectifyScratchEntry {
   stage: string;
   attempt: number;
   succeeded: boolean;
+  /** Agent id that produced this entry. For cross-agent scratch neutralization (AC-42). */
+  writtenByAgent?: string;
 }
 
 /** Entry written after each TDD sub-session to carry discoveries forward */
@@ -58,6 +62,8 @@ export interface TddSessionScratchEntry {
   filesChanged: string[];
   /** Tail of agent output for lightweight cross-session continuity */
   outputTail: string;
+  /** Agent id that produced this entry. For cross-agent scratch neutralization (AC-42). */
+  writtenByAgent?: string;
 }
 
 export type ScratchEntry = VerifyScratchEntry | RectifyScratchEntry | TddSessionScratchEntry;
