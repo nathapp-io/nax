@@ -5,6 +5,7 @@ import { closeAllRunSessions, closeStorySessions } from "../../../src/execution/
 type SessionManagerLike = {
   closeStory(storyId: string): SessionDescriptor[];
   listActive(): SessionDescriptor[];
+  transition?(id: string, to: "COMPLETED"): SessionDescriptor;
 };
 
 const makeSessionDescriptor = (overrides: Partial<SessionDescriptor> = {}): SessionDescriptor =>
@@ -57,6 +58,21 @@ describe("closeStorySessions()", () => {
     expect(agentGetFn).not.toHaveBeenCalled();
     expect(closePhysicalSession).not.toHaveBeenCalled();
   });
+
+  test("swallows adapter.closePhysicalSession rejections", async () => {
+    const withHandle = makeSessionDescriptor({ id: "sess-1", handle: "nax-story-1", workdir: "/workdir/a" });
+    const sessionManager: SessionManagerLike = {
+      closeStory: mock(() => [withHandle]),
+      listActive: mock(() => []),
+    };
+    const closePhysicalSession = mock(async () => {
+      throw new Error("boom");
+    });
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await expect(closeStorySessions(sessionManager, "US-001", agentGetFn)).resolves.toBe(1);
+    expect(closePhysicalSession).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("closeAllRunSessions()", () => {
@@ -76,5 +92,27 @@ describe("closeAllRunSessions()", () => {
     expect(sessionManager.closeStory).toHaveBeenCalledTimes(2);
     expect(sessionManager.closeStory).toHaveBeenNthCalledWith(1, "US-001");
     expect(sessionManager.closeStory).toHaveBeenNthCalledWith(2, "US-002");
+  });
+
+  test("closes storyless active sessions via transition and physical close", async () => {
+    const storyBound = makeSessionDescriptor({ id: "sess-1", storyId: "US-001", handle: "nax-1" });
+    const storyless = makeSessionDescriptor({ id: "sess-2", handle: "nax-2", workdir: "/workdir/b" });
+    const sessionManager: SessionManagerLike = {
+      closeStory: mock(() => [storyBound]),
+      listActive: mock(() => [storyBound, storyless]),
+      transition: mock(() => storyless),
+    };
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    const closed = await closeAllRunSessions(sessionManager, agentGetFn);
+
+    expect(closed).toBe(2);
+    expect(sessionManager.closeStory).toHaveBeenCalledTimes(1);
+    expect(sessionManager.transition).toHaveBeenCalledTimes(1);
+    expect(sessionManager.transition).toHaveBeenCalledWith("sess-2", "COMPLETED");
+    expect(closePhysicalSession).toHaveBeenCalledTimes(2);
+    expect(closePhysicalSession).toHaveBeenNthCalledWith(1, "nax-1", "/workdir");
+    expect(closePhysicalSession).toHaveBeenNthCalledWith(2, "nax-2", "/workdir/b");
   });
 });

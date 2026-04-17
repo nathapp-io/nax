@@ -17,6 +17,16 @@ async function closePhysicalSession(
   }
 }
 
+async function closeStorylessSession(
+  sessionManager: Pick<ISessionManager, "transition">,
+  descriptor: SessionDescriptor,
+  agentGetFn?: AgentGetFn,
+): Promise<number> {
+  sessionManager.transition(descriptor.id, "COMPLETED");
+  await closePhysicalSession(descriptor, agentGetFn);
+  return 1;
+}
+
 export async function closeStorySessions(
   sessionManager: Pick<ISessionManager, "closeStory">,
   storyId: string,
@@ -32,12 +42,14 @@ export async function closeStorySessions(
 }
 
 export async function closeAllRunSessions(
-  sessionManager: Pick<ISessionManager, "listActive" | "closeStory">,
+  sessionManager: Pick<ISessionManager, "listActive" | "closeStory" | "transition">,
   agentGetFn?: AgentGetFn,
 ): Promise<number> {
   const storyIds = new Set<string>();
+  const storylessSessionIds = new Set<string>();
+  const activeSessions = sessionManager.listActive();
 
-  for (const descriptor of sessionManager.listActive()) {
+  for (const descriptor of activeSessions) {
     if (descriptor.storyId) {
       storyIds.add(descriptor.storyId);
     }
@@ -46,6 +58,12 @@ export async function closeAllRunSessions(
   let totalClosed = 0;
   for (const storyId of storyIds) {
     totalClosed += await closeStorySessions(sessionManager, storyId, agentGetFn);
+  }
+
+  for (const descriptor of activeSessions) {
+    if (descriptor.storyId || storylessSessionIds.has(descriptor.id)) continue;
+    storylessSessionIds.add(descriptor.id);
+    totalClosed += await closeStorylessSession(sessionManager, descriptor, agentGetFn);
   }
 
   return totalClosed;
