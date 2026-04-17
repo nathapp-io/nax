@@ -11,3 +11,9 @@ export {
   type EscalationHandlerContext,
   type EscalationHandlerResult,
 } from "./tier-escalation";
+export {
+  resolveSwapTarget,
+  shouldAttemptSwap,
+  rebuildForSwap,
+  _agentSwapDeps,
+} from "./agent-swap";
