@@ -352,16 +352,13 @@ export class ContextOrchestrator {
   /**
    * Re-render from prior.chunks without fetching providers.
    *
-   * ⚠ STATUS: library-only today. No caller in the runner or escalation paths
-   * currently invokes this method on an availability failure — adapters do not
-   * yet emit AdapterFailure, so Phase 5.5's agent-swap story is not observable
-   * from a production run. See the tracking issue for the runner wiring plan.
-   *
    * Phase 5.5: accepts an optional RebuildOptions object. When options.newAgentId
    * and options.failure are provided this is an availability-fallback rebuild —
    * a failure-note chunk is injected and the push markdown is rendered under the
    * new agent's profile. When they are absent the behaviour matches the original
    * Phase 0 signature (re-render, same agent, optional digest update).
+   *
+   * Wired into the execution stage via rebuildForSwap() (Issue #474).
    *
    * Target latency: ≤100ms (no I/O, no provider fetching, no LLM calls).
    *
