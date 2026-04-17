@@ -13,7 +13,7 @@
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
  */
 
-import { buildSessionName, readAcpSession } from "../agents/acp/adapter";
+import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
@@ -36,7 +36,6 @@ export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
 export const _adversarialDeps = {
-  readAcpSession,
   writeReviewAudit,
 };
 
