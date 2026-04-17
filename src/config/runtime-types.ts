@@ -477,6 +477,15 @@ export interface ContextV2Config {
     /** When true and the feature run fully completes, archive to _archive/ instead of deleting. */
     archiveOnFeatureArchive: boolean;
   };
+  /** Staleness detection for feature context entries (Amendment A AC-46/AC-47) */
+  staleness: {
+    /** Enable staleness detection. Default: true. */
+    enabled: boolean;
+    /** Stories after which a context entry is age-stale. Default: 10. */
+    maxStoryAge: number;
+    /** Score multiplier applied to stale chunks (0–1). Default: 0.4. */
+    scoreMultiplier: number;
+  };
 }
 
 export interface ContextConfig {

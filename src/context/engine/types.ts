@@ -108,6 +108,14 @@ export type ChunkRole = "implementer" | "reviewer" | "tdd" | "all";
 // Core data structures
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Effectiveness signal annotated on a chunk post-story (Amendment A AC-45). */
+export interface ChunkEffectiveness {
+  /** Whether the chunk's advice was followed, contradicted, ignored, or unknown. */
+  signal: "followed" | "contradicted" | "ignored" | "unknown";
+  /** Short evidence string (review finding text, diff excerpt, etc.) */
+  evidence?: string;
+}
+
 /** A single context chunk produced by a provider and packed into the bundle. */
 export interface ContextChunk {
   /** Stable id: `<providerId>:<contentHash8>` */
@@ -130,8 +138,12 @@ export interface ContextChunk {
   score: number;
   /** True when chunk is detected as stale (post-GA: staleness signal) */
   stale?: boolean;
+  /** True when chunk is a stale candidate (Amendment A AC-46) */
+  staleCandidate?: boolean;
   /** Reason recorded in manifest when chunk was floor-included despite budget overflow */
   reason?: string;
+  /** Effectiveness signal annotated post-story (Amendment A AC-45) */
+  effectiveness?: ChunkEffectiveness;
 }
 
 /**
@@ -212,6 +224,24 @@ export interface ContextManifest {
     failureCategory: AdapterFailure["category"];
     failureOutcome: AdapterFailure["outcome"];
   };
+  /**
+   * First 300 chars of each included chunk's content (Amendment A AC-45).
+   * Written at assemble() time; used by annotateManifestEffectiveness() post-story
+   * to compare chunk content against agent output / diff / review findings.
+   * Keyed by chunk ID.
+   */
+  chunkSummaries?: Record<string, string>;
+  /**
+   * IDs of included chunks that had staleCandidate: true (Amendment A AC-46).
+   * Populated by orchestrator at assemble() time when staleness detection fires.
+   */
+  staleChunks?: string[];
+  /**
+   * Per-chunk effectiveness signals written post-story (Amendment A AC-45).
+   * Keyed by chunk ID. Written by annotateManifestEffectiveness() after the
+   * story pipeline completes; absent until then.
+   */
+  chunkEffectiveness?: Record<string, ChunkEffectiveness>;
 }
 
 /**
@@ -422,6 +452,18 @@ export interface RawChunk {
    * Free providers (git, file-scan) omit this field.
    */
   costUsd?: number;
+  /**
+   * True when this chunk is a staleness candidate (Amendment A AC-46).
+   * Set by FeatureContextProviderV2 when an entry is older than maxStoryAge
+   * or contradicted by a newer entry in the same section (AC-47).
+   * The scorer applies scoreMultiplier to downweight stale chunks.
+   */
+  staleCandidate?: boolean;
+  /**
+   * Score multiplier applied by the scorer when staleCandidate is true.
+   * Comes from config.context.v2.staleness.scoreMultiplier (default: 0.4).
+   */
+  scoreMultiplier?: number;
 }
 
 /** What an IContextProvider returns from fetch(). */

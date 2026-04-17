@@ -86,7 +86,11 @@ export function scoreChunk(chunk: RawChunk, callerRole: ChunkRole, minScore = MI
   const roleFiltered = rm === 0;
 
   const kindWeight = KIND_WEIGHTS[chunk.kind] ?? 0.5;
-  const freshnessMultiplier = stale ? STALENESS_PENALTY : 1.0;
+  // Amendment A AC-46: staleCandidate on chunk overrides the caller-supplied stale flag.
+  // scoreMultiplier from the chunk (set by FeatureContextProviderV2) takes precedence
+  // over the global STALENESS_PENALTY so config.staleness.scoreMultiplier is respected.
+  const isStale = chunk.staleCandidate === true || stale;
+  const freshnessMultiplier = isStale ? (chunk.scoreMultiplier ?? STALENESS_PENALTY) : 1.0;
 
   const score = chunk.rawScore * rm * kindWeight * freshnessMultiplier;
   const belowMinScore = !roleFiltered && score < minScore;

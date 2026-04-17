@@ -89,6 +89,20 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
       })),
     });
   }
+
+  // Amendment A AC-48: warn when any story's pollution ratio exceeds threshold
+  const POLLUTION_WARN_THRESHOLD = 0.3;
+  for (const story of lastRun.stories) {
+    const ratio = story.context?.pollution?.pollutionRatio;
+    if (ratio !== undefined && ratio > POLLUTION_WARN_THRESHOLD) {
+      logger.warn("cli", "High context pollution detected — review context.md for stale entries", {
+        storyId: story.storyId,
+        pollutionRatio: ratio,
+        contradictedChunks: story.context?.pollution?.contradictedChunks ?? 0,
+        ignoredChunks: story.context?.pollution?.ignoredChunks ?? 0,
+      });
+    }
+  }
 }
 
 /**
