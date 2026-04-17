@@ -143,7 +143,7 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
+    expect(threw).toBeInstanceOf(NeutralityLintError);
     expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
   });
 });
@@ -341,7 +341,7 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
+    expect(threw).toBeInstanceOf(NeutralityLintError);
     expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
   });
 
@@ -360,7 +360,7 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
+    expect(threw).toBeInstanceOf(NeutralityLintError);
     expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
   });
 
