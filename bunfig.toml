@@ -1,14 +1,15 @@
 # Bun Test Configuration
 
 [test]
+smol = true
+root = "./test"
 # Global test timeout: 30 seconds per test (unit/integration)
 # This prevents individual tests from hanging indefinitely
-timeout = 30000
+timeout = 5000
 
 # Preload: runs before any test file — clears env vars inherited from the nax harness
 preload = ["./test/preload.ts"]
 
 # Exclude nax dogfood feature directories (contain acceptance tests from nax runs, not source tests)
-exclude = ["nax/**"]
-
-concurrent = 1
+exclude = [".nax/**"]
+AGENT = 1
