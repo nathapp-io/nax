@@ -187,6 +187,12 @@ export interface PipelineContext {
    */
   agentSwapCount?: number;
   /**
+   * Ordered log of agent-swap hops for this story (AC-41).
+   * Each entry captures the agents involved, the failure that triggered the swap,
+   * and the 1-indexed hop number. Surfaced in StoryMetrics.fallback.hops.
+   */
+  agentFallbacks?: import("../metrics/types").AgentFallbackHop[];
+  /**
    * Set of review check names that already passed in a previous review pass within this
    * pipeline run. When autofix retries from "review", checks in this set are skipped to
    * avoid redundant re-runs (e.g. a 45s semantic check after a lint-only fix). (#136)

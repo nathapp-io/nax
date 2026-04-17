@@ -358,3 +358,59 @@ describe("collectStoryMetrics - scopeTestFallback field (US-002)", () => {
     expect(metrics.scopeTestFallback).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC-41: collectStoryMetrics maps ctx.agentFallbacks to StoryMetrics.fallback
+// ---------------------------------------------------------------------------
+
+describe("collectStoryMetrics - AC-41 fallback.hops field", () => {
+  test("includes fallback.hops when ctx.agentFallbacks is non-empty", async () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+    ctx.agentFallbacks = [
+      { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1 },
+    ];
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.fallback).toBeDefined();
+    expect(metrics.fallback!.hops).toHaveLength(1);
+    expect(metrics.fallback!.hops[0].priorAgent).toBe("claude");
+    expect(metrics.fallback!.hops[0].newAgent).toBe("codex");
+    expect(metrics.fallback!.hops[0].hop).toBe(1);
+  });
+
+  test("fallback is absent when ctx.agentFallbacks is empty", async () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+    ctx.agentFallbacks = [];
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.fallback).toBeUndefined();
+  });
+
+  test("fallback is absent when ctx.agentFallbacks is undefined", async () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.fallback).toBeUndefined();
+  });
+
+  test("fallback.hops preserves all hop fields", async () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+    ctx.agentFallbacks = [
+      { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-service-down", category: "availability", hop: 1 },
+      { storyId: "US-001", priorAgent: "codex", newAgent: "opencode", outcome: "fail-rate-limit", category: "availability", hop: 2 },
+    ];
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.fallback!.hops).toHaveLength(2);
+    expect(metrics.fallback!.hops[1].hop).toBe(2);
+    expect(metrics.fallback!.hops[1].category).toBe("availability");
+  });
+});
