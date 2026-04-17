@@ -160,11 +160,7 @@ function siblingTestPath(filePath: string): string | null {
  * extraGlobWorkdirs: when provided (AC-62 crossPackageDepth > 0), also scans
  * each directory for cross-package reverse deps (workspace package dirs or repoRoot).
  */
-async function collectNeighbors(
-  filePath: string,
-  workdir: string,
-  extraGlobWorkdirs?: string[],
-): Promise<string[]> {
+async function collectNeighbors(filePath: string, workdir: string, extraGlobWorkdirs?: string[]): Promise<string[]> {
   const neighbors = new Set<string>();
 
   // Forward deps (JS/TS only)
@@ -248,9 +244,7 @@ async function resolveExtraGlobWorkdirs(
     const relPkgDirs = await _codeNeighborDeps.discoverWorkspacePackages(repoRoot);
     if (relPkgDirs.length === 0) return [repoRoot];
     // Convert relative workspace dirs to absolute, excluding the current package
-    return relPkgDirs
-      .map((rel) => join(repoRoot, rel))
-      .filter((abs) => abs !== packageDir);
+    return relPkgDirs.map((rel) => join(repoRoot, rel)).filter((abs) => abs !== packageDir);
   } catch {
     return [repoRoot];
   }

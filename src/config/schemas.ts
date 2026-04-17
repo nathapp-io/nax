@@ -553,12 +553,7 @@ const ContextV2ConfigSchema = z
      *
      * Example: { "execution": { "budgetTokens": 15000 } }
      */
-    stages: z
-      .record(
-        z.string().min(1),
-        z.object({ budgetTokens: z.number().int().positive().optional() }),
-      )
-      .default({}),
+    stages: z.record(z.string().min(1), z.object({ budgetTokens: z.number().int().positive().optional() })).default({}),
   })
   .default(() => ({
     enabled: false,
