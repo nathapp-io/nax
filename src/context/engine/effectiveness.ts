@@ -11,8 +11,14 @@
  * See: docs/specs/SPEC-context-engine-v2-amendments.md Amendment A.2
  */
 
+import { getLogger } from "../../logger";
+import { errorMessage } from "../../utils/errors";
 import { _manifestStoreDeps, loadContextManifests } from "./manifest-store";
 import type { ChunkEffectiveness } from "./types";
+
+export const _effectivenessDeps = {
+  getLogger,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -199,8 +205,11 @@ export async function annotateManifestEffectiveness(
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       parsed.chunkEffectiveness = effectiveness;
       await _manifestStoreDeps.writeFile(item.path, `${JSON.stringify(parsed, null, 2)}\n`);
-    } catch {
-      // Best-effort — non-fatal
+    } catch (err) {
+      _effectivenessDeps.getLogger().warn("context-v2", "Failed to annotate chunk effectiveness", {
+        path: item.path,
+        error: errorMessage(err),
+      });
     }
   }
 }

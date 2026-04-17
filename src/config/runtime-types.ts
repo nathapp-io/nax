@@ -486,6 +486,15 @@ export interface ContextV2Config {
     /** Score multiplier applied to stale chunks (0–1). Default: 0.4. */
     scoreMultiplier: number;
   };
+  /** Built-in provider scope configuration (#507). */
+  providers: {
+    /** Working directory scope for GitHistoryProvider. Default: "package". */
+    historyScope: "repo" | "package";
+    /** Working directory scope for CodeNeighborProvider. Default: "package". */
+    neighborScope: "repo" | "package";
+    /** Cross-package scan depth for CodeNeighborProvider. Default: 1. */
+    crossPackageDepth: number;
+  };
 }
 
 export interface ContextConfig {
