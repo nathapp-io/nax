@@ -236,10 +236,17 @@ export class ContextOrchestrator {
           const result = await fetchWithTimeout(provider, request);
           const durationMs = _orchestratorDeps.now() - providerStart;
           const status = result.chunks.length === 0 ? ("empty" as const) : ("ok" as const);
+          const tokensProduced = result.chunks.reduce((sum, c) => sum + c.tokens, 0);
           return {
             provider,
             result,
-            providerStatus: { providerId: provider.id, status, chunkCount: result.chunks.length, durationMs },
+            providerStatus: {
+              providerId: provider.id,
+              status,
+              chunkCount: result.chunks.length,
+              durationMs,
+              tokensProduced,
+            },
           };
         } catch (err) {
           const durationMs = _orchestratorDeps.now() - providerStart;
@@ -252,7 +259,14 @@ export class ContextOrchestrator {
           return {
             provider,
             result: { chunks: [], pullTools: [] },
-            providerStatus: { providerId: provider.id, status, chunkCount: 0, durationMs, error: errMsg },
+            providerStatus: {
+              providerId: provider.id,
+              status,
+              chunkCount: 0,
+              durationMs,
+              tokensProduced: 0,
+              error: errMsg,
+            },
           };
         }
       }),

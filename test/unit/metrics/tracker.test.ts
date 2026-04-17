@@ -88,7 +88,7 @@ function makeCtx(
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - initialComplexity field", () => {
-  test("includes initialComplexity from story.routing.initialComplexity", () => {
+  test("includes initialComplexity from story.routing.initialComplexity", async () => {
     const routing: StoryRouting = {
       complexity: "medium",
       initialComplexity: "simple", // original prediction before potential escalation
@@ -98,12 +98,12 @@ describe("collectStoryMetrics - initialComplexity field", () => {
     const story = makeStory({ routing });
     const ctx = makeCtx(story, { complexity: "medium" });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.initialComplexity).toBe("simple");
   });
 
-  test("initialComplexity differs from complexity when story was escalated", () => {
+  test("initialComplexity differs from complexity when story was escalated", async () => {
     const routing: StoryRouting = {
       complexity: "medium", // complexity as classified
       initialComplexity: "simple", // original first-classify prediction
@@ -125,14 +125,14 @@ describe("collectStoryMetrics - initialComplexity field", () => {
     });
     const ctx = makeCtx(story, { complexity: "medium", modelTier: "balanced" });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.initialComplexity).toBe("simple");
     // complexity field unchanged (backward compat)
     expect(metrics.complexity).toBe("medium");
   });
 
-  test("falls back to routing.complexity when story.routing.initialComplexity is absent", () => {
+  test("falls back to routing.complexity when story.routing.initialComplexity is absent", async () => {
     // Backward compat: story.routing exists but has no initialComplexity
     const routing: StoryRouting = {
       complexity: "complex",
@@ -143,16 +143,16 @@ describe("collectStoryMetrics - initialComplexity field", () => {
     const story = makeStory({ routing });
     const ctx = makeCtx(story, { complexity: "complex" });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.initialComplexity).toBe("complex");
   });
 
-  test("falls back to routing.complexity when story.routing is undefined", () => {
+  test("falls back to routing.complexity when story.routing is undefined", async () => {
     const story = makeStory({ routing: undefined });
     const ctx = makeCtx(story, { complexity: "simple" });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.initialComplexity).toBe("simple");
   });
@@ -163,7 +163,7 @@ describe("collectStoryMetrics - initialComplexity field", () => {
 // ---------------------------------------------------------------------------
 
 describe("StoryMetrics type - initialComplexity field", () => {
-  test("StoryMetrics includes initialComplexity field", () => {
+  test("StoryMetrics includes initialComplexity field", async () => {
     const routing: StoryRouting = {
       complexity: "medium",
       initialComplexity: "simple",
@@ -173,13 +173,13 @@ describe("StoryMetrics type - initialComplexity field", () => {
     const story = makeStory({ routing });
     const ctx = makeCtx(story, { complexity: "medium" });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     // TypeScript will error at compile time if initialComplexity is not on StoryMetrics
     expect("initialComplexity" in metrics).toBe(true);
   });
 
-  test("initialComplexity is a string when present", () => {
+  test("initialComplexity is a string when present", async () => {
     const routing: StoryRouting = {
       complexity: "expert",
       initialComplexity: "expert",
@@ -189,7 +189,7 @@ describe("StoryMetrics type - initialComplexity field", () => {
     const story = makeStory({ routing });
     const ctx = makeCtx(story, { complexity: "expert" });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(typeof metrics.initialComplexity).toBe("string");
   });
@@ -200,29 +200,29 @@ describe("StoryMetrics type - initialComplexity field", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - agentUsed field", () => {
-  test("agentUsed is defaultAgent when routing.agent is unset", () => {
+  test("agentUsed is defaultAgent when routing.agent is unset", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { modelTier: "balanced" });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.agentUsed).toBe("claude");
   });
 
-  test("agentUsed is routing.agent when set", () => {
+  test("agentUsed is routing.agent when set", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { modelTier: "fast", agent: "codex" } as Partial<PipelineContext["routing"]>);
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.agentUsed).toBe("codex");
   });
 
-  test("agentUsed field exists on StoryMetrics", () => {
+  test("agentUsed field exists on StoryMetrics", async () => {
     const story = makeStory();
     const ctx = makeCtx(story);
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect("agentUsed" in metrics).toBe(true);
   });
@@ -233,7 +233,7 @@ describe("collectStoryMetrics - agentUsed field", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - tokenUsage field", () => {
-  test("sets storyMetrics.tokens when ctx.agentResult.tokenUsage is defined", () => {
+  test("sets storyMetrics.tokens when ctx.agentResult.tokenUsage is defined", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { modelTier: "balanced" });
     ctx.agentResult = {
@@ -249,14 +249,14 @@ describe("collectStoryMetrics - tokenUsage field", () => {
       },
     };
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.tokens).toBeDefined();
     expect(metrics.tokens?.input_tokens).toBe(1000);
     expect(metrics.tokens?.output_tokens).toBe(500);
   });
 
-  test("sets storyMetrics.tokens with cache fields when present in tokenUsage", () => {
+  test("sets storyMetrics.tokens with cache fields when present in tokenUsage", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { modelTier: "balanced" });
     ctx.agentResult = {
@@ -274,7 +274,7 @@ describe("collectStoryMetrics - tokenUsage field", () => {
       } as unknown as { inputTokens: number; outputTokens: number },
     };
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.tokens).toBeDefined();
     expect(metrics.tokens?.input_tokens).toBe(1000);
@@ -283,7 +283,7 @@ describe("collectStoryMetrics - tokenUsage field", () => {
     expect(metrics.tokens?.cache_creation_input_tokens).toBe(50);
   });
 
-  test("storyMetrics.tokens is undefined when ctx.agentResult.tokenUsage is undefined", () => {
+  test("storyMetrics.tokens is undefined when ctx.agentResult.tokenUsage is undefined", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { modelTier: "balanced" });
     ctx.agentResult = {
@@ -295,7 +295,7 @@ describe("collectStoryMetrics - tokenUsage field", () => {
       durationMs: 5000,
     };
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.tokens).toBeUndefined();
   });
@@ -306,7 +306,7 @@ describe("collectStoryMetrics - tokenUsage field", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - scopeTestFallback field (US-002)", () => {
-  test("scopeTestFallback is propagated from verifyResult to StoryMetrics when set", () => {
+  test("scopeTestFallback is propagated from verifyResult to StoryMetrics when set", async () => {
     const story = makeStory();
     const verifyResult: VerifyResult = {
       success: true,
@@ -323,12 +323,12 @@ describe("collectStoryMetrics - scopeTestFallback field (US-002)", () => {
     };
     const ctx = makeCtx(story, {}, verifyResult);
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.scopeTestFallback).toBe(true);
   });
 
-  test("scopeTestFallback is absent from StoryMetrics when verifyResult does not have it", () => {
+  test("scopeTestFallback is absent from StoryMetrics when verifyResult does not have it", async () => {
     const story = makeStory();
     const verifyResult: VerifyResult = {
       success: true,
@@ -344,16 +344,16 @@ describe("collectStoryMetrics - scopeTestFallback field (US-002)", () => {
     };
     const ctx = makeCtx(story, {}, verifyResult);
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.scopeTestFallback).toBeUndefined();
   });
 
-  test("scopeTestFallback is absent from StoryMetrics when verifyResult is undefined", () => {
+  test("scopeTestFallback is absent from StoryMetrics when verifyResult is undefined", async () => {
     const story = makeStory();
     const ctx = makeCtx(story);
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.scopeTestFallback).toBeUndefined();
   });

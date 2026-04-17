@@ -82,11 +82,11 @@ function makeCtx(
 // ---------------------------------------------------------------------------
 
 describe("StoryMetrics type - fullSuiteGatePassed field", () => {
-  test("StoryMetrics includes fullSuiteGatePassed field", () => {
+  test("StoryMetrics includes fullSuiteGatePassed field", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "three-session-tdd" }, { fullSuiteGatePassed: true });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect("fullSuiteGatePassed" in metrics).toBe(true);
   });
@@ -97,39 +97,39 @@ describe("StoryMetrics type - fullSuiteGatePassed field", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - fullSuiteGatePassed for TDD strategies", () => {
-  test("returns true for three-session-tdd when ctx.fullSuiteGatePassed is true", () => {
+  test("returns true for three-session-tdd when ctx.fullSuiteGatePassed is true", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "three-session-tdd" }, { fullSuiteGatePassed: true });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(true);
   });
 
-  test("returns true for three-session-tdd-lite when ctx.fullSuiteGatePassed is true", () => {
+  test("returns true for three-session-tdd-lite when ctx.fullSuiteGatePassed is true", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "three-session-tdd-lite" }, { fullSuiteGatePassed: true });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(true);
   });
 
-  test("returns false for three-session-tdd when ctx.fullSuiteGatePassed is false", () => {
+  test("returns false for three-session-tdd when ctx.fullSuiteGatePassed is false", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "three-session-tdd" }, { fullSuiteGatePassed: false });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(false);
   });
 
-  test("returns false for three-session-tdd when ctx.fullSuiteGatePassed is undefined", () => {
+  test("returns false for three-session-tdd when ctx.fullSuiteGatePassed is undefined", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "three-session-tdd" });
     // fullSuiteGatePassed not set in ctx
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(false);
   });
@@ -140,38 +140,38 @@ describe("collectStoryMetrics - fullSuiteGatePassed for TDD strategies", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - fullSuiteGatePassed always false for non-TDD strategies", () => {
-  test("returns false for test-after even when ctx.fullSuiteGatePassed is true", () => {
+  test("returns false for test-after even when ctx.fullSuiteGatePassed is true", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "test-after" }, { fullSuiteGatePassed: true });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(false);
   });
 
-  test("returns false for tdd-simple even when ctx.fullSuiteGatePassed is true", () => {
+  test("returns false for tdd-simple even when ctx.fullSuiteGatePassed is true", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "tdd-simple" }, { fullSuiteGatePassed: true });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(false);
   });
 
-  test("returns false for test-after when ctx.fullSuiteGatePassed is false", () => {
+  test("returns false for test-after when ctx.fullSuiteGatePassed is false", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "test-after" }, { fullSuiteGatePassed: false });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(false);
   });
 
-  test("returns false for tdd-simple when ctx.fullSuiteGatePassed is false", () => {
+  test("returns false for tdd-simple when ctx.fullSuiteGatePassed is false", async () => {
     const story = makeStory();
     const ctx = makeCtx(story, { testStrategy: "tdd-simple" }, { fullSuiteGatePassed: false });
 
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.fullSuiteGatePassed).toBe(false);
   });
@@ -182,7 +182,7 @@ describe("collectStoryMetrics - fullSuiteGatePassed always false for non-TDD str
 // ---------------------------------------------------------------------------
 
 describe("collectBatchMetrics - fullSuiteGatePassed always false", () => {
-  test("batch metrics always have fullSuiteGatePassed: false", () => {
+  test("batch metrics always have fullSuiteGatePassed: false", async () => {
     const story1 = makeStory({ id: "US-001" });
     const story2 = makeStory({ id: "US-002" });
     const prd: PRD = {

@@ -41,7 +41,7 @@ export const completionStage: PipelineStage = {
     if (isBatch) {
       ctx.storyMetrics = collectBatchMetrics(ctx, storyStartTime);
     } else {
-      ctx.storyMetrics = [collectStoryMetrics(ctx, storyStartTime)];
+      ctx.storyMetrics = [await collectStoryMetrics(ctx, storyStartTime)];
     }
 
     // Mark all stories in batch as passed

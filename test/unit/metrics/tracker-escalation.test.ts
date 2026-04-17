@@ -148,7 +148,7 @@ describe("collectStoryMetrics — firstPassSuccess is false when escalation occu
     },
   ])(
     "$name",
-    ({
+    async ({
       attempts,
       hasPriorFailures,
       hasEscalations,
@@ -202,7 +202,7 @@ describe("collectStoryMetrics — firstPassSuccess is false when escalation occu
         },
       });
 
-      const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+      const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
       expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
     },
   );
@@ -243,7 +243,7 @@ describe("collectStoryMetrics — attempt count includes all cross-tier attempts
       priorFailuresCount: 1,
       expectedAttempts: 2,
     },
-  ])("$name", ({ attempts, priorFailuresCount, expectedAttempts }) => {
+  ])("$name", async ({ attempts, priorFailuresCount, expectedAttempts }) => {
     const priorFailures = Array.from({ length: priorFailuresCount }, (_, i) => ({
       attempt: i + 1,
       modelTier: "fast" as const,
@@ -258,7 +258,7 @@ describe("collectStoryMetrics — attempt count includes all cross-tier attempts
     });
 
     const ctx = makeCtx(story);
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.attempts).toBe(expectedAttempts);
   });
@@ -302,7 +302,7 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
     },
   ])(
     "$name",
-    ({
+    async ({
       priorFailuresCount,
       priorAttemptCost,
       currentAttemptCost,
@@ -347,7 +347,7 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
         accumulatedAttemptCost: priorAttemptCost,
       } as any);
 
-      const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+      const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
       expect(metrics.cost).toBeCloseTo(expectedCost, 5);
     },
   );
