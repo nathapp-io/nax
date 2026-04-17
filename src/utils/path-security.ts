@@ -41,6 +41,18 @@ function safeRealpathForComparison(p: string): string {
   }
 }
 
+/**
+ * Returns true when filePath is safe to use as a relative file path — i.e. it
+ * contains no `..` segments and is not an absolute path.  Used by context-engine
+ * providers to gate user-supplied paths before any filesystem or git call.
+ */
+export function isRelativeAndSafe(filePath: string): boolean {
+  if (!filePath) return false;
+  if (isAbsolute(filePath)) return false;
+  if (filePath.includes("..")) return false;
+  return true;
+}
+
 export function validateModulePath(modulePath: string, allowedRoots: string[]): PathValidationResult {
   if (!modulePath) {
     return { valid: false, error: "Module path is empty" };

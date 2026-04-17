@@ -240,3 +240,51 @@ describe("GitHistoryProvider — AC-55 historyScope", () => {
     expect(result.chunks[0]?.content).toContain("src/service.ts");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-503: path traversal prevention
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("GitHistoryProvider — SEC-503 path traversal prevention", () => {
+  test("drops touchedFiles with '..' traversal — never calls git for them", async () => {
+    const queriedFiles: string[] = [];
+    _gitHistoryDeps.gitWithTimeout = async (args: string[]) => {
+      queriedFiles.push(args[args.length - 1] ?? "");
+      return { stdout: "abc1234 feat: something", exitCode: 0 };
+    };
+
+    const p = new GitHistoryProvider();
+    await p.fetch(makeRequest({ touchedFiles: ["../../../etc/passwd", "src/service.ts"] }));
+
+    expect(queriedFiles.some((f) => f.includes("etc/passwd"))).toBe(false);
+    expect(queriedFiles).toContain("src/service.ts");
+  });
+
+  test("drops absolute path touchedFiles — never calls git for them", async () => {
+    const queriedFiles: string[] = [];
+    _gitHistoryDeps.gitWithTimeout = async (args: string[]) => {
+      queriedFiles.push(args[args.length - 1] ?? "");
+      return { stdout: "abc1234 feat: something", exitCode: 0 };
+    };
+
+    const p = new GitHistoryProvider();
+    await p.fetch(makeRequest({ touchedFiles: ["/etc/passwd", "src/service.ts"] }));
+
+    expect(queriedFiles.some((f) => f.includes("etc/passwd"))).toBe(false);
+    expect(queriedFiles).toContain("src/service.ts");
+  });
+
+  test("returns empty when all touchedFiles are unsafe", async () => {
+    let gitCalled = false;
+    _gitHistoryDeps.gitWithTimeout = async () => {
+      gitCalled = true;
+      return { stdout: "", exitCode: 0 };
+    };
+
+    const p = new GitHistoryProvider();
+    const result = await p.fetch(makeRequest({ touchedFiles: ["../evil", "/absolute/path"] }));
+
+    expect(gitCalled).toBe(false);
+    expect(result.chunks).toHaveLength(0);
+  });
+});

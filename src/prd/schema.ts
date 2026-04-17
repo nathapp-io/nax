@@ -199,9 +199,19 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
 
   // contextFiles — optional array of relative file paths from LLM analysis
   const rawContextFiles = s.contextFiles;
-  const contextFiles: string[] = Array.isArray(rawContextFiles)
-    ? (rawContextFiles as unknown[]).filter((f): f is string => typeof f === "string" && f.trim() !== "")
-    : [];
+  const contextFiles: string[] = [];
+  if (Array.isArray(rawContextFiles)) {
+    for (const f of rawContextFiles as unknown[]) {
+      if (typeof f !== "string" || f.trim() === "") continue;
+      if (f.startsWith("/")) {
+        throw new Error(`[schema] story[${index}].contextFiles entry must be relative (no absolute paths): "${f}"`);
+      }
+      if (f.includes("..")) {
+        throw new Error(`[schema] story[${index}].contextFiles entry must not contain '..': "${f}"`);
+      }
+      contextFiles.push(f);
+    }
+  }
 
   return {
     id,
