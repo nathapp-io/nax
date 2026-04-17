@@ -366,12 +366,13 @@ export class ContextOrchestrator {
    * @param options - optional: newAgentId, failure (for agent-swap), priorStageDigest
    */
   rebuildForAgent(prior: ContextBundle, options: RebuildOptions = {}): ContextBundle {
-    const { newAgentId, failure, priorStageDigest } = options;
+    const { newAgentId, failure, priorStageDigest, storyId } = options;
     const targetAgentId = newAgentId ?? prior.agentId ?? DEFAULT_REBUILD_AGENT_ID;
     const logger = getLogger();
 
     if (newAgentId && !AGENT_PROFILES[newAgentId]) {
       logger.warn("context-v2", "rebuildForAgent: unknown agent id — using conservative defaults", {
+        ...(storyId && { storyId }),
         stage: prior.manifest.stage,
         agentId: newAgentId,
       });

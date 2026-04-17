@@ -5,6 +5,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { NaxError } from "../../errors";
 import type { FailureCategory } from "../../tdd";
 import type { PipelineContext, StageResult } from "../types";
 
@@ -19,7 +20,11 @@ export function resolveStoryWorkdir(repoRoot: string, storyWorkdir?: string): st
   if (!storyWorkdir) return repoRoot;
   const resolved = join(repoRoot, storyWorkdir);
   if (!existsSync(resolved)) {
-    throw new Error(`[execution] story.workdir "${storyWorkdir}" does not exist at "${resolved}"`);
+    throw new NaxError(
+      `[execution] story.workdir "${storyWorkdir}" does not exist at "${resolved}"`,
+      "WORKDIR_NOT_FOUND",
+      { stage: "execution", storyWorkdir, resolved },
+    );
   }
   return resolved;
 }

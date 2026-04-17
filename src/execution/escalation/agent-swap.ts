@@ -15,8 +15,12 @@ import type { AdapterFailure, ContextBundle } from "../../context/engine/types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _agentSwapDeps = {
-  rebuildForAgent: (prior: ContextBundle, opts: { newAgentId?: string; failure?: AdapterFailure }): ContextBundle =>
-    new ContextOrchestrator([]).rebuildForAgent(prior, opts),
+  // Empty providers array is intentional and safe: rebuildForAgent() re-renders
+  // prior.chunks without fetching any providers — no provider calls are made.
+  rebuildForAgent: (
+    prior: ContextBundle,
+    opts: { newAgentId?: string; failure?: AdapterFailure; storyId?: string },
+  ): ContextBundle => new ContextOrchestrator([]).rebuildForAgent(prior, opts),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +78,11 @@ export function shouldAttemptSwap(
  * - Stamps manifest.rebuildInfo with priorAgentId/newAgentId/failure
  * - Strips pull tools when the new agent's profile lacks supportsToolCalls
  */
-export function rebuildForSwap(prior: ContextBundle, newAgentId: string, failure: AdapterFailure): ContextBundle {
-  return _agentSwapDeps.rebuildForAgent(prior, { newAgentId, failure });
+export function rebuildForSwap(
+  prior: ContextBundle,
+  newAgentId: string,
+  failure: AdapterFailure,
+  storyId?: string,
+): ContextBundle {
+  return _agentSwapDeps.rebuildForAgent(prior, { newAgentId, failure, storyId });
 }
