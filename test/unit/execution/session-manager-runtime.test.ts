@@ -1,11 +1,11 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { SessionDescriptor } from "../../../src/session/types";
 import { closeAllRunSessions, closeStorySessions } from "../../../src/execution/session-manager-runtime";
+import type { SessionDescriptor, SessionState } from "../../../src/session/types";
 
 type SessionManagerLike = {
   closeStory(storyId: string): SessionDescriptor[];
   listActive(): SessionDescriptor[];
-  transition?(id: string, to: "COMPLETED"): SessionDescriptor;
+  transition?(id: string, to: SessionState): SessionDescriptor;
 };
 
 const makeSessionDescriptor = (overrides: Partial<SessionDescriptor> = {}): SessionDescriptor =>

@@ -1,10 +1,7 @@
 import type { AgentGetFn } from "../pipeline/types";
 import type { ISessionManager, SessionDescriptor, SessionState } from "../session/types";
 
-async function closePhysicalSession(
-  descriptor: SessionDescriptor,
-  agentGetFn?: AgentGetFn,
-): Promise<void> {
+async function closePhysicalSession(descriptor: SessionDescriptor, agentGetFn?: AgentGetFn): Promise<void> {
   if (!descriptor.handle) return;
 
   const adapter = agentGetFn?.(descriptor.agent);
