@@ -119,6 +119,26 @@ export interface StoryMetrics {
    */
   context?: {
     providers: Record<string, ContextProviderMetrics>;
+    /**
+     * Aggregate pollution indicators (Amendment A AC-48).
+     * Populated post-story when effectiveness annotation and staleness detection run.
+     * Absent when no manifests were found or no effectiveness data exists.
+     */
+    pollution?: {
+      /** Chunks dropped by the min-score threshold (noise gate). */
+      droppedBelowMinScore: number;
+      /** Included chunks flagged as staleness candidates (AC-46). */
+      staleChunksInjected: number;
+      /** Chunks whose advice was contradicted by a review finding (AC-45). */
+      contradictedChunks: number;
+      /** Chunks that appear to have been ignored by the agent (AC-45). */
+      ignoredChunks: number;
+      /**
+       * Ratio of polluted context: (contradicted + ignored) / total included.
+       * A value > 0.3 is surfaced as a warning in `nax status`.
+       */
+      pollutionRatio: number;
+    };
   };
   /**
    * Per-reviewer metrics for the review stage.

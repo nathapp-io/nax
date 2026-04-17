@@ -12,7 +12,7 @@
  * builds a fresh provider per assemble() call).
  *
  * Phase 0: behavioral parity with v1 — same file, same header, same tokens.
- * Phase 2+: staleness detection, effectiveness signal (Amendment A.2/A.3).
+ * Phase 2 (Amendment A): staleness detection (AC-46/AC-47).
  */
 
 import { createHash } from "node:crypto";
@@ -21,6 +21,7 @@ import { getLogger } from "../../../logger";
 import type { UserStory } from "../../../prd";
 import { errorMessage } from "../../../utils/errors";
 import { FeatureContextProvider as FeatureContextProviderV1 } from "../../providers/feature-context";
+import { applyStaleness, detectContradictions, parseFeatureContextEntries, selectStaleByAge } from "../staleness";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +61,10 @@ export class FeatureContextProviderV2 implements IContextProvider {
    * Fetch feature context via the v1 provider and adapt the result into a
    * v2 RawChunk.  Returns empty chunks when the feature engine is disabled
    * or no context.md exists.
+   *
+   * When staleness detection is enabled (Amendment A AC-46/AC-47), the chunk
+   * is annotated with staleCandidate: true and a scoreMultiplier when any
+   * entries in the content are age-stale or contradiction-stale.
    */
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const logger = getLogger();
@@ -72,17 +77,38 @@ export class FeatureContextProviderV2 implements IContextProvider {
       }
 
       const hash = contentHash8(result.content);
-      const chunk: RawChunk = {
+      let chunk: RawChunk = {
         id: `feature-context:${hash}`,
         kind: "feature",
         scope: "feature",
-        // Feature context is relevant to both implementers and reviewers
         role: ["implementer", "reviewer", "tdd"],
         content: result.content,
         tokens: result.estimatedTokens,
-        // Full score — feature context is always maximally relevant
         rawScore: 1.0,
       };
+
+      // Amendment A AC-46/AC-47: staleness detection (read-time, no LLM).
+      const stalenessConfig = this.config.context?.v2?.staleness;
+      if (stalenessConfig?.enabled !== false) {
+        const maxStoryAge = stalenessConfig?.maxStoryAge ?? 10;
+        const scoreMultiplier = stalenessConfig?.scoreMultiplier ?? 0.4;
+
+        const entries = parseFeatureContextEntries(result.content);
+        if (entries.length > 0) {
+          const contradicted = detectContradictions(entries);
+          const ageStale = selectStaleByAge(entries, maxStoryAge);
+          const isStale = contradicted.size > 0 || ageStale.size > 0;
+          chunk = applyStaleness(chunk, { isStale, scoreMultiplier });
+
+          if (isStale) {
+            logger.debug("feature-context-v2", "Stale entries detected in feature context", {
+              storyId: request.storyId,
+              contradicted: contradicted.size,
+              ageStale: ageStale.size,
+            });
+          }
+        }
+      }
 
       logger.debug("feature-context-v2", "Loaded feature context chunk", {
         storyId: request.storyId,

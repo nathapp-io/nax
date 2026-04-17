@@ -107,6 +107,7 @@ function toContextChunk(packed: PackedChunk): ContextChunk {
     rawScore: packed.rawScore,
     score: packed.score,
     reason: packed.reason,
+    ...(packed.staleCandidate && { staleCandidate: true }),
   };
 }
 
@@ -357,6 +358,14 @@ export class ContextOrchestrator {
 
     const buildMs = _orchestratorDeps.now() - startMs;
 
+    // Amendment A: collect stale chunk IDs and chunk content summaries for
+    // post-story effectiveness annotation. Both are optional and absent when empty.
+    const staleChunkIds = packed.filter((c) => c.staleCandidate).map((c) => c.id);
+    const chunkSummaries: Record<string, string> = {};
+    for (const c of packed) {
+      chunkSummaries[c.id] = c.content.slice(0, 300);
+    }
+
     // Build manifest
     const manifest: ContextManifest = {
       requestId,
@@ -377,6 +386,8 @@ export class ContextOrchestrator {
       providerResults,
       repoRoot: request.repoRoot,
       packageDir: request.packageDir,
+      ...(Object.keys(chunkSummaries).length > 0 && { chunkSummaries }),
+      ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
     };
 
     logger.debug("context-v2", "Bundle assembled", {

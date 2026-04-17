@@ -14,11 +14,13 @@
 
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import type { SemanticVerdict } from "../../acceptance/types";
+import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
 import { appendProgress } from "../../execution/progress";
 import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { collectBatchMetrics, collectStoryMetrics } from "../../metrics";
 import { countStories, markStoryPassed, savePRD } from "../../prd";
+import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -42,6 +44,25 @@ export const completionStage: PipelineStage = {
       ctx.storyMetrics = collectBatchMetrics(ctx, storyStartTime);
     } else {
       ctx.storyMetrics = [await collectStoryMetrics(ctx, storyStartTime)];
+    }
+
+    // Amendment A AC-45: annotate context manifests with effectiveness signals.
+    // Best-effort — non-fatal if the annotation fails or v2 context was not active.
+    const featureId = ctx.prd?.feature;
+    if (!isBatch && ctx.projectDir && featureId && ctx.config.context?.v2?.enabled) {
+      try {
+        const diffText = await _completionDeps.getDiffText(ctx.workdir, ctx.storyGitRef);
+        await annotateManifestEffectiveness(ctx.projectDir, featureId, ctx.story.id, {
+          agentOutput: ctx.agentResult?.output ?? "",
+          diffText,
+          findingMessages: (ctx.reviewFindings ?? []).map((f) => f.message),
+        });
+      } catch (err) {
+        logger.debug("completion", "Effectiveness annotation failed — non-fatal", {
+          storyId: ctx.story.id,
+          error: errorMessage(err),
+        });
+      }
     }
 
     // Mark all stories in batch as passed
@@ -135,6 +156,19 @@ export const completionStage: PipelineStage = {
   },
 };
 
+/** Get a git diff text between baseRef and HEAD. Best-effort, returns "" on failure. */
+async function getDiffText(workdir: string, baseRef: string | undefined): Promise<string> {
+  if (!baseRef) return "";
+  try {
+    const proc = Bun.spawn(["git", "diff", `${baseRef}..HEAD`], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+    return output.slice(0, 8000); // cap to avoid bloating effectiveness inputs
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
@@ -142,4 +176,5 @@ export const _completionDeps = {
   checkReviewGate,
   persistSemanticVerdict,
   savePRD,
+  getDiffText,
 };

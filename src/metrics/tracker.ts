@@ -7,6 +7,7 @@
 import path from "node:path";
 import { resolveModelForAgent } from "../config/schema";
 import { loadContextManifests } from "../context/engine/manifest-store";
+import { computePollutionMetrics } from "../context/engine/pollution";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
 import type { ContextProviderMetrics, RunMetrics, StoryMetrics } from "./types";
@@ -76,7 +77,16 @@ async function deriveContextMetrics(
     }
   }
 
-  return Object.keys(providers).length === 0 ? undefined : { providers };
+  if (Object.keys(providers).length === 0) return undefined;
+
+  const pollution = computePollutionMetrics(stored);
+  const hasPollution =
+    pollution.droppedBelowMinScore > 0 ||
+    pollution.staleChunksInjected > 0 ||
+    pollution.contradictedChunks > 0 ||
+    pollution.ignoredChunks > 0;
+
+  return { providers, ...(hasPollution && { pollution }) };
 }
 
 export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): Promise<StoryMetrics> {

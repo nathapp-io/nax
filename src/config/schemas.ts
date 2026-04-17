@@ -573,6 +573,30 @@ export const ContextV2ConfigSchema = z
         archiveOnFeatureArchive: z.boolean().default(true),
       })
       .default(() => ({ retentionDays: 7, archiveOnFeatureArchive: true })),
+    /**
+     * Staleness detection for feature context entries (Amendment A AC-46/AC-47).
+     * Downweights old or contradicted entries in context.md so stale advice
+     * does not crowd out fresh context. No chunks are auto-removed — humans
+     * must edit context.md to remove stale entries.
+     */
+    staleness: z
+      .object({
+        /** Enable staleness detection. Default: true. */
+        enabled: z.boolean().default(true),
+        /**
+         * Number of completed stories after which a context entry is considered
+         * age-stale. Measured by position in context.md (entries are appended
+         * in story order). Default: 10.
+         */
+        maxStoryAge: z.number().int().min(1).default(10),
+        /**
+         * Score multiplier applied to stale chunks (0–1).
+         * 0.4 = stale entry scores 40% of its normal weight, making it less
+         * likely to beat fresh context for the same budget slot.
+         */
+        scoreMultiplier: z.number().min(0).max(1).default(0.4),
+      })
+      .default(() => ({ enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 })),
   })
   .default(() => ({
     enabled: false,
@@ -584,6 +608,7 @@ export const ContextV2ConfigSchema = z
     stages: {},
     deterministic: false,
     session: { retentionDays: 7, archiveOnFeatureArchive: true },
+    staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
   }));
 
 const ContextConfigSchema = z.object({
@@ -1008,6 +1033,7 @@ export const NaxConfigSchema = z
         stages: {},
         deterministic: false,
         session: { retentionDays: 7, archiveOnFeatureArchive: true },
+        staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),
