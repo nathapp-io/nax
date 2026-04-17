@@ -8,6 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import type { ModelDef, ModelTier } from "../config/schema";
+import type { ToolDescriptor } from "../context/engine/types";
 import type { TokenUsage } from "./cost";
 
 // Re-export extended types for backward compatibility
@@ -101,6 +102,12 @@ export interface AgentRunOptions {
    * The caller is responsible for closing the session when the loop is done.
    */
   keepSessionOpen?: boolean;
+  /** Context-engine pull tools to expose for this run (ACP text-tool protocol). */
+  contextPullTools?: ToolDescriptor[];
+  /** Server-side runtime for resolving context-engine pull tool calls. */
+  contextToolRuntime?: {
+    callTool(name: string, input: unknown): Promise<string>;
+  };
 }
 
 /**

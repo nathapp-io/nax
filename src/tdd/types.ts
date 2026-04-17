@@ -49,6 +49,8 @@ export interface TddSessionResult {
   timestamp?: string;
   /** Error message (if success=false) */
   error?: string;
+  /** Tail of the agent output for cross-session continuity/debugging */
+  outputTail?: string;
   /** Number of tests written/passed/failed */
   tests?: {
     total: number;

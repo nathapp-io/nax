@@ -51,6 +51,7 @@ export type {
   ConstitutionConfig,
   ContextAutoDetectConfig,
   ContextConfig,
+  ContextV2Config,
   EscalationEntry,
   ExecutionConfig,
   FeatureContextEngineConfig,

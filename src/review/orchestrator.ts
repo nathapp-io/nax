@@ -12,6 +12,8 @@ import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
+import { assembleForStage } from "../context/engine";
+import type { ContextBundle } from "../context/engine";
 import { getSafeLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
@@ -129,6 +131,8 @@ export class ReviewOrchestrator {
     resolverSession?: import("./dialogue").ReviewerSession,
     priorFailures?: Array<{ stage: string; modelTier: string }>,
     featureContextMarkdown?: string,
+    contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle },
+    projectDir?: string,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -188,6 +192,8 @@ export class ReviewOrchestrator {
         resolverSession,
         priorFailures,
         featureContextMarkdown,
+        contextBundles,
+        projectDir,
       );
     } else {
       // Always split: mechanical checks first, then LLM checks independently.
@@ -216,6 +222,8 @@ export class ReviewOrchestrator {
         resolverSession,
         priorFailures,
         featureContextMarkdown,
+        contextBundles,
+        projectDir,
       );
 
       // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
@@ -267,6 +275,8 @@ export class ReviewOrchestrator {
             priorFailures,
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
+            contextBundles?.semantic,
+            projectDir,
           ),
           _orchestratorDeps.runAdversarialReview(
             workdir,
@@ -279,6 +289,8 @@ export class ReviewOrchestrator {
             priorFailures,
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
+            contextBundles?.adversarial,
+            projectDir,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -301,6 +313,7 @@ export class ReviewOrchestrator {
           resolverSession,
           priorFailures,
           featureContextMarkdown,
+          contextBundles,
         );
         llmCheckResults = llmResult.checks;
       }
@@ -441,7 +454,7 @@ export class ReviewOrchestrator {
    * Consumes ctx.retrySkipChecks once (clears it after reading) so
    * subsequent retries re-evaluate all checks.
    */
-  reviewFromContext(ctx: PipelineContext): Promise<OrchestratorReviewResult> {
+  async reviewFromContext(ctx: PipelineContext): Promise<OrchestratorReviewResult> {
     // #136: Consume retrySkipChecks once — cleared so subsequent retries re-evaluate
     const retrySkipChecks = ctx.retrySkipChecks;
     ctx.retrySkipChecks = undefined;
@@ -456,6 +469,18 @@ export class ReviewOrchestrator {
     // session so runSemanticReview() can thread it through to the DebateSession.
     const reviewDebateEnabled = ctx.rootConfig?.debate?.enabled && ctx.rootConfig?.debate?.stages?.review?.enabled;
     const resolverSession = reviewDebateEnabled ? ctx.reviewerSession : undefined;
+
+    // Assemble stage-specific v2 bundles for semantic and adversarial review in parallel.
+    // Each stage uses its own provider/budget/role config from STAGE_CONTEXT_MAP so they
+    // can diverge independently. Reviewers skip filterContextByRole when a bundle is set.
+    const [semanticBundle, adversarialBundle] = await Promise.all([
+      assembleForStage(ctx, "review-semantic"),
+      assembleForStage(ctx, "review-adversarial"),
+    ]);
+    const contextBundles =
+      semanticBundle || adversarialBundle
+        ? { semantic: semanticBundle ?? undefined, adversarial: adversarialBundle ?? undefined }
+        : undefined;
 
     return this.review(
       ctx.config.review,
@@ -479,6 +504,8 @@ export class ReviewOrchestrator {
       resolverSession,
       ctx.story.priorFailures,
       ctx.featureContextMarkdown,
+      contextBundles,
+      ctx.projectDir,
     );
   }
 }

@@ -44,8 +44,25 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
     codebaseSummary: "",
   };
 
-  return {
-    config: DEFAULT_CONFIG,
+  // This test file covers the v1 plugin provider path (separate from the v2
+  // orchestrator's built-in providers). Always disable v2, even when the caller
+  // passes a config override, so the v1 path runs.
+  const baseConfig = overrides?.config ?? DEFAULT_CONFIG;
+  const config = {
+    ...baseConfig,
+    context: {
+      ...DEFAULT_CONFIG.context,
+      ...(baseConfig.context ?? {}),
+      v2: {
+        ...DEFAULT_CONFIG.context.v2,
+        ...(baseConfig.context?.v2 ?? {}),
+        enabled: false,
+      },
+    },
+  };
+
+  const ctx = {
+    config,
     prd,
     story,
     stories: [story],
@@ -59,6 +76,9 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
     hooks: { hooks: {} },
     ...overrides,
   };
+  // Force v2.enabled=false regardless of what overrides.config sets
+  ctx.config = config;
+  return ctx;
 }
 
 /**

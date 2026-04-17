@@ -393,11 +393,81 @@ export interface FeatureContextEngineConfig {
   budgetTokens: number;
 }
 
+/** Pull tool configuration for Context Engine v2 (Phase 4+) */
+export interface ContextV2PullConfig {
+  /** Enable pull tools — false (default) means assemble() returns empty pullTools array */
+  enabled: boolean;
+  /** Tool names to activate; empty = all stage-configured tools allowed */
+  allowedTools: string[];
+  /** Per-session call ceiling */
+  maxCallsPerSession: number;
+  /** Per-run call ceiling across all sessions */
+  maxCallsPerRun: number;
+}
+
+/** Availability-fallback configuration (Phase 5.5+) */
+export interface ContextV2FallbackConfig {
+  /** Enable agent-swap fallback on availability failures */
+  enabled: boolean;
+  /** Trigger fallback on quality failures too (opt-in) */
+  onQualityFailure: boolean;
+  /** Maximum agent hops per story before marking failed */
+  maxHopsPerStory: number;
+  /**
+   * Fallback order per agent id.
+   * Example: { "claude": ["codex", "gemini"] }
+   */
+  map: Record<string, string[]>;
+}
+
+/** Canonical rules store configuration (Phase 5.1+) */
+export interface ContextV2RulesConfig {
+  /**
+   * Fall back to CLAUDE.md + .claude/rules/ when .nax/rules/ is absent.
+   * Default true during migration period; set false to enforce canonical-only.
+   */
+  allowLegacyClaudeMd: boolean;
+}
+
+/**
+ * Registration entry for an external plugin provider (Phase 7+).
+ * The engine loads the module and passes config to provider.init() if present.
+ */
+export interface ContextPluginProviderConfig {
+  /** npm package name or workdir-relative path to the provider module */
+  module: string;
+  /** Provider-specific config, passed to provider.init(config) on load */
+  config?: Record<string, unknown>;
+  /** Set false to skip loading this provider (default: true) */
+  enabled: boolean;
+}
+
+/** Context Engine configuration (Phase 0+) */
+export interface ContextV2Config {
+  /** Enable the Context Engine orchestrator — false by default (opt-in) */
+  enabled: boolean;
+  /**
+   * Min-score threshold for noise filtering.
+   * Phase 0 default: 0.1 (near-zero impact).
+   */
+  minScore: number;
+  /** Pull tool configuration (Phase 4+) */
+  pull: ContextV2PullConfig;
+  /** Canonical rules store configuration (Phase 5.1+) */
+  rules: ContextV2RulesConfig;
+  /** Availability-fallback configuration (Phase 5.5+) */
+  fallback: ContextV2FallbackConfig;
+  /** External plugin providers to load (Phase 7+). Empty by default. */
+  pluginProviders: ContextPluginProviderConfig[];
+}
+
 export interface ContextConfig {
   testCoverage: TestCoverageConfig;
   autoDetect: ContextAutoDetectConfig;
   fileInjection?: "keyword" | "disabled";
-  featureEngine?: FeatureContextEngineConfig; // NEW — Context Engine v1
+  featureEngine?: FeatureContextEngineConfig; // Context Engine v1
+  /** Context Engine settings (Phase 6: enabled by default) */
+  v2: ContextV2Config;
 }
 
 /** Story size gate thresholds (v0.16.0) */

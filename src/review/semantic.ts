@@ -14,10 +14,12 @@ import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
 import { filterContextByRole } from "../context";
+import { createContextToolRuntime } from "../context/engine";
 import { DebateSession } from "../debate";
 import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
+import type { UserStory } from "../prd";
 import { ReviewPromptBuilder } from "../prompts";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -139,6 +141,8 @@ export async function runSemanticReview(
   priorFailures?: Array<{ stage: string; modelTier: string }>,
   blockingThreshold?: "error" | "warning" | "info",
   featureContextMarkdown?: string,
+  contextBundle?: import("../context/engine").ContextBundle,
+  projectDir?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -226,9 +230,15 @@ export async function runSemanticReview(
     };
   }
 
-  // Filter feature context for reviewer-semantic role
+  // Build feature context block for the prompt.
+  // When a v2 ContextBundle is provided, use its pushMarkdown directly — the orchestrator
+  // already applied role filtering and dedup, so the v1 filterContextByRole() pass is
+  // skipped (it would silently drop ##-section content from v2's rendered output).
   let featureCtxBlock = "";
-  if (featureContextMarkdown) {
+  if (contextBundle) {
+    const md = contextBundle.pushMarkdown.trim();
+    if (md) featureCtxBlock = `${md}\n\n---\n\n`;
+  } else if (featureContextMarkdown) {
     const filtered = filterContextByRole(featureContextMarkdown, "reviewer-semantic");
     if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
   }
@@ -398,6 +408,18 @@ export async function runSemanticReview(
   // The reviewer works from diff + tools, not from implementer conversation history.
   // See #414: supersedes #262 US-003 session-sharing design.
   const reviewerSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-semantic");
+  const contextToolStory: UserStory = {
+    id: story.id,
+    title: story.title,
+    description: story.description,
+    acceptanceCriteria: story.acceptanceCriteria,
+    tags: [],
+    dependencies: [],
+    status: "in-progress",
+    passes: false,
+    escalations: [],
+    attempts: 0,
+  };
   const defaultAgent = naxConfig?.autoMode?.defaultAgent ?? "claude";
   let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
   try {
@@ -419,6 +441,16 @@ export async function runSemanticReview(
     featureName,
     storyId: story.id,
     sessionRole: "reviewer-semantic",
+    contextPullTools: contextBundle?.pullTools,
+    contextToolRuntime: contextBundle
+      ? createContextToolRuntime({
+          bundle: contextBundle,
+          story: contextToolStory,
+          config: naxConfig ?? DEFAULT_CONFIG,
+          workdir,
+          projectDir,
+        })
+      : undefined,
   } as const;
 
   let rawResponse: string;

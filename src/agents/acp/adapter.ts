@@ -46,6 +46,7 @@ import type { AgentRegistryEntry } from "./types";
 const MAX_AGENT_OUTPUT_CHARS = 5000;
 const MAX_RATE_LIMIT_RETRIES = 3;
 const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
+const CONTEXT_TOOL_CALL_PATTERN = /<nax_tool_call\s+name="([^"]+)">\s*([\s\S]*?)\s*<\/nax_tool_call>/i;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent registry
@@ -607,6 +608,58 @@ function extractQuestion(output: string): string | null {
   return contextPara ? `${contextPara}\n\n${questionPara}` : questionPara;
 }
 
+function buildContextToolPreamble(options: AgentRunOptions): string {
+  const tools = options.contextPullTools;
+  if (!tools || tools.length === 0 || !options.contextToolRuntime) {
+    return options.prompt;
+  }
+
+  const toolList = tools
+    .map((tool) => `- ${tool.name}: ${tool.description} (max ${tool.maxCallsPerSession} calls/session)`)
+    .join("\n");
+
+  return `${options.prompt}
+
+## Context Pull Tools
+When you need more repo context, you may request one tool call by replying with exactly:
+<nax_tool_call name="tool_name">
+{"key":"value"}
+</nax_tool_call>
+
+Available tools:
+${toolList}
+
+After you receive a <nax_tool_result ...> block, continue the task normally.`;
+}
+
+function extractContextToolCall(output: string): { name: string; input?: unknown; error?: string } | null {
+  const match = output.match(CONTEXT_TOOL_CALL_PATTERN);
+  if (!match) return null;
+
+  const [, name, rawInput] = match;
+  const trimmedInput = rawInput.trim();
+  if (!trimmedInput) {
+    return { name, input: {} };
+  }
+
+  try {
+    return { name, input: JSON.parse(trimmedInput) as unknown };
+  } catch (error) {
+    return {
+      name,
+      error: `Invalid JSON tool input: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+function buildContextToolResult(name: string, result: string, status: "ok" | "error" = "ok"): string {
+  return `<nax_tool_result name="${name}" status="${status}">
+${result.trim()}
+</nax_tool_result>
+
+Continue the task.`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AcpAgentAdapter
 // ─────────────────────────────────────────────────────────────────────────────
@@ -874,9 +927,10 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     try {
       // 5. Multi-turn loop
-      let currentPrompt = options.prompt;
+      const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
+      let currentPrompt = buildContextToolPreamble(options);
       let turnCount = 0;
-      const MAX_TURNS = options.interactionBridge ? (options.maxInteractionTurns ?? 10) : 1;
+      const MAX_TURNS = options.interactionBridge || hasContextTools ? (options.maxInteractionTurns ?? 10) : 1;
 
       while (turnCount < MAX_TURNS) {
         turnCount++;
@@ -930,6 +984,27 @@ export class AcpAgentAdapter implements AgentAdapter {
         // output) or tool_use (mid-tool-call), skip detection to avoid false positives.
         const outputText = extractOutput(lastResponse);
         const isEndTurn = lastResponse.stopReason === "end_turn";
+        const toolCall = isEndTurn ? extractContextToolCall(outputText) : null;
+        if (toolCall && options.contextToolRuntime) {
+          try {
+            const toolResult = toolCall.error
+              ? buildContextToolResult(toolCall.name, toolCall.error, "error")
+              : buildContextToolResult(
+                  toolCall.name,
+                  await options.contextToolRuntime.callTool(toolCall.name, toolCall.input ?? {}),
+                );
+            currentPrompt = toolResult;
+            continue;
+          } catch (error) {
+            currentPrompt = buildContextToolResult(
+              toolCall.name,
+              error instanceof Error ? error.message : String(error),
+              "error",
+            );
+            continue;
+          }
+        }
+
         const question = isEndTurn ? extractQuestion(outputText) : null;
         if (!question || !options.interactionBridge) break;
 
@@ -955,7 +1030,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
       // Only warn if we exhausted turns while still receiving questions (interactive mode).
       // In non-interactive mode (MAX_TURNS=1) the loop always completes in 1 turn — not a warning.
-      if (turnCount >= MAX_TURNS && options.interactionBridge) {
+      if (turnCount >= MAX_TURNS && (options.interactionBridge || hasContextTools)) {
         getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
       }
 

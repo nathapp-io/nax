@@ -16,6 +16,7 @@ import type { InteractionChain } from "../interaction/chain";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
+import { appendScratchEntry, readDigestFile, writeDigestFile } from "../session/scratch-writer";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
@@ -23,7 +24,7 @@ import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
 import { runFullSuiteGate } from "./rectification-gate";
 import { rollbackToRef, runTddSession, truncateTestOutput } from "./session-runner";
-import type { FailureCategory, TddSessionResult, ThreeSessionTddResult } from "./types";
+import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
 
 /** Options for three-session TDD */
@@ -38,6 +39,23 @@ export interface ThreeSessionTddOptions {
   contextMarkdown?: string;
   /** Raw (unfiltered) feature context markdown from context engine v1 */
   featureContextMarkdown?: string;
+  /**
+   * Per-session v2 context bundles (context engine v2, Finding 1+2 fix).
+   * When present, each session uses the bundle's pushMarkdown directly
+   * (bypasses filterContextByRole in the TDD prompt builder).
+   */
+  tddContextBundles?: {
+    testWriter?: import("../context/engine").ContextBundle;
+    implementer?: import("../context/engine").ContextBundle;
+    verifier?: import("../context/engine").ContextBundle;
+  };
+  /**
+   * Lazy bundle hook used by the v2 path so each TDD session can assemble
+   * after the previous one has already produced scratch/digest output.
+   */
+  getTddContextBundle?: (role: TddSessionRole) => Promise<import("../context/engine").ContextBundle | undefined>;
+  /** Persist per-session outcomes (scratch, digests, metrics) as soon as they exist. */
+  recordTddSessionOutcome?: (result: TddSessionResult) => Promise<void>;
   constitution?: string;
   dryRun?: boolean;
   lite?: boolean;
@@ -61,6 +79,9 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     featureName,
     contextMarkdown,
     featureContextMarkdown,
+    tddContextBundles,
+    getTddContextBundle,
+    recordTddSessionOutcome,
     constitution,
     dryRun = false,
     lite = false,
@@ -156,6 +177,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   if (!isRetry) {
     const testWriterTier = config.tdd.sessionTiers?.testWriter ?? "balanced";
+    const testWriterBundle = (await getTddContextBundle?.("test-writer")) ?? tddContextBundles?.testWriter;
     session1 = await runTddSession(
       "test-writer",
       agent,
@@ -172,8 +194,10 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
       projectDir,
       featureContextMarkdown,
+      testWriterBundle,
     );
     sessions.push(session1);
+    await recordTddSessionOutcome?.(session1);
   }
 
   if (session1 && !session1.success) {
@@ -273,6 +297,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   // Session 2: Implementer
   const implementerTier = config.tdd.sessionTiers?.implementer ?? modelTier;
+  const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
   const session2 = await runTddSession(
     "implementer",
     agent,
@@ -289,8 +314,10 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
     projectDir,
     featureContextMarkdown,
+    implementerBundle,
   );
   sessions.push(session2);
+  await recordTddSessionOutcome?.(session2);
 
   if (!session2.success) {
     needsHumanReview = true;
@@ -324,6 +351,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // Session 3: Verifier
   const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
   const verifierTier = config.tdd.sessionTiers?.verifier ?? "fast";
+  const verifierBundle = (await getTddContextBundle?.("verifier")) ?? tddContextBundles?.verifier;
   const session3 = await runTddSession(
     "verifier",
     agent,
@@ -340,8 +368,10 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     undefined,
     projectDir,
     featureContextMarkdown,
+    verifierBundle,
   );
   sessions.push(session3);
+  await recordTddSessionOutcome?.(session3);
 
   // T9: Verdict-based post-TDD verification
   const verdict = await readVerdict(workdir);
@@ -455,11 +485,129 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 /**
  * Run the three-session TDD pipeline from a PipelineContext.
  * Stage-specific params (agent, dryRun, lite) must still be provided.
+ *
+ * When context engine v2 is enabled, assembles per-role bundles for test-writer,
+ * implementer, and verifier stages so each session receives role-appropriate context
+ * without the v1 filterContextByRole pass (Finding 1 + 2 fix).
  */
-export function runThreeSessionTddFromCtx(
+export async function runThreeSessionTddFromCtx(
   ctx: PipelineContext,
   opts: { agent: AgentAdapter; dryRun?: boolean; lite?: boolean },
 ): Promise<ThreeSessionTddResult> {
+  let tddContextBundles: ThreeSessionTddOptions["tddContextBundles"];
+  let getTddContextBundle: ThreeSessionTddOptions["getTddContextBundle"];
+  let recordTddSessionOutcome: ThreeSessionTddOptions["recordTddSessionOutcome"];
+
+  // Defensive check: test fixtures may bypass Zod and omit `context.v2`.
+  if (ctx.config.context?.v2?.enabled) {
+    const { assembleForStage } = await import("../context/engine");
+    const stageByRole: Record<TddSessionRole, string> = {
+      "test-writer": "tdd-test-writer",
+      implementer: "tdd-implementer",
+      verifier: "tdd-verifier",
+    };
+    const priorDigestByRole = new Map<TddSessionRole, string | undefined>();
+    const scratchDirByRole = new Map<TddSessionRole, string | undefined>();
+    const storyScratchDirs = new Set<string>(ctx.sessionScratchDir ? [ctx.sessionScratchDir] : []);
+
+    const ensureRoleScratchDir = (role: TddSessionRole): string | undefined => {
+      const existing = scratchDirByRole.get(role);
+      if (existing !== undefined) return existing;
+
+      const created =
+        ctx.sessionManager && ctx.prd.feature
+          ? ctx.sessionManager.create({
+              role,
+              agent: ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+              workdir: ctx.workdir,
+              projectDir: ctx.projectDir,
+              featureName: ctx.prd.feature,
+              storyId: ctx.story.id,
+            }).scratchDir
+          : ctx.sessionScratchDir;
+      scratchDirByRole.set(role, created);
+      if (created) storyScratchDirs.add(created);
+      return created;
+    };
+
+    /**
+     * Resolve the prior-stage digest for a TDD role. Prefers the in-memory
+     * map populated by the previous role in this pipeline run; falls back to
+     * reading `digest-<priorStage>.txt` from any known story scratch dir so
+     * crash-resume and cross-iteration escalation keep digest continuity (M4).
+     */
+    const resolvePriorDigest = async (role: TddSessionRole): Promise<string | undefined> => {
+      if (role === "test-writer") return ctx.contextBundle?.digest;
+      const priorRole: TddSessionRole = role === "implementer" ? "test-writer" : "implementer";
+      const inMemory = priorDigestByRole.get(priorRole);
+      if (inMemory) return inMemory;
+      const priorStageKey = stageByRole[priorRole];
+      for (const dir of storyScratchDirs) {
+        try {
+          const onDisk = await readDigestFile(dir, priorStageKey);
+          if (onDisk) return onDisk;
+        } catch {
+          // best-effort; missing digest is not an error
+        }
+      }
+      return undefined;
+    };
+
+    getTddContextBundle = async (role) => {
+      const scratchDir = ensureRoleScratchDir(role);
+      const bundle = await assembleForStage(ctx, stageByRole[role], {
+        priorStageDigest: await resolvePriorDigest(role),
+        storyScratchDirs: [...storyScratchDirs],
+      });
+      if (bundle) {
+        priorDigestByRole.set(role, bundle.digest);
+        ctx.contextBundle = bundle;
+        // M4: persist the digest eagerly at assemble-time so a crash before
+        // session outcome still leaves a digest for the next role to pick up.
+        if (scratchDir) {
+          try {
+            await writeDigestFile(scratchDir, stageByRole[role], bundle.digest);
+          } catch (error) {
+            getLogger().warn("tdd", "Failed to persist TDD stage digest — continuing", {
+              storyId: ctx.story.id,
+              role,
+              error: errorMessage(error),
+            });
+          }
+        }
+      }
+      return bundle ?? undefined;
+    };
+
+    recordTddSessionOutcome = async (result) => {
+      const scratchDir = ensureRoleScratchDir(result.role);
+      if (!scratchDir) return;
+      try {
+        await appendScratchEntry(scratchDir, {
+          kind: "tdd-session",
+          timestamp: new Date().toISOString(),
+          storyId: ctx.story.id,
+          stage: stageByRole[result.role],
+          role: result.role,
+          success: result.success,
+          filesChanged: result.filesChanged,
+          outputTail: result.outputTail ?? "",
+        });
+
+        const digest = priorDigestByRole.get(result.role);
+        if (digest) {
+          await writeDigestFile(scratchDir, stageByRole[result.role], digest);
+        }
+      } catch (error) {
+        getLogger().warn("tdd", "Failed to persist TDD session scratch — continuing", {
+          storyId: ctx.story.id,
+          role: result.role,
+          error: errorMessage(error),
+        });
+      }
+    };
+  }
+
   return runThreeSessionTdd({
     agent: opts.agent,
     story: ctx.story,
@@ -469,6 +617,9 @@ export function runThreeSessionTddFromCtx(
     featureName: ctx.prd.feature,
     contextMarkdown: ctx.contextMarkdown,
     featureContextMarkdown: ctx.featureContextMarkdown,
+    tddContextBundles,
+    getTddContextBundle,
+    recordTddSessionOutcome,
     constitution: ctx.constitution?.content,
     dryRun: opts.dryRun ?? false,
     lite: opts.lite ?? false,

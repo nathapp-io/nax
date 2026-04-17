@@ -39,3 +39,11 @@ export {
 export { generateCommand, type GenerateCommandOptions } from "./generate";
 export { configCommand, type ConfigCommandOptions } from "./config";
 export { agentsListCommand } from "./agents";
+export { contextInspectCommand, type ContextInspectOptions } from "./context";
+export {
+  rulesExportCommand,
+  rulesMigrateCommand,
+  neutralizeContent,
+  type RulesExportOptions,
+  type RulesMigrateOptions,
+} from "./rules";

@@ -20,8 +20,10 @@ import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
 import { filterContextByRole } from "../context";
+import { createContextToolRuntime } from "../context/engine";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
+import type { UserStory } from "../prd";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
 import { ReviewPromptBuilder } from "../prompts/builders/review-builder";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -139,6 +141,8 @@ export async function runAdversarialReview(
   priorFailures?: Array<{ stage: string; modelTier: string }>,
   blockingThreshold?: "error" | "warning" | "info",
   featureContextMarkdown?: string,
+  contextBundle?: import("../context/engine").ContextBundle,
+  projectDir?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -220,9 +224,15 @@ export async function runAdversarialReview(
     };
   }
 
-  // Filter feature context for reviewer-adversarial role
+  // Build feature context block for the prompt.
+  // When a v2 ContextBundle is provided, use its pushMarkdown directly — the orchestrator
+  // already applied role filtering and dedup, so the v1 filterContextByRole() pass is
+  // skipped (it would silently drop ##-section content from v2's rendered output).
   let featureCtxBlock = "";
-  if (featureContextMarkdown) {
+  if (contextBundle) {
+    const md = contextBundle.pushMarkdown.trim();
+    if (md) featureCtxBlock = `${md}\n\n---\n\n`;
+  } else if (featureContextMarkdown) {
     const filtered = filterContextByRole(featureContextMarkdown, "reviewer-adversarial");
     if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
   }
@@ -257,6 +267,18 @@ export async function runAdversarialReview(
 
   // Adversarial review uses its own session (NOT the implementer session).
   const adversarialSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-adversarial");
+  const contextToolStory: UserStory = {
+    id: story.id,
+    title: story.title,
+    description: story.description,
+    acceptanceCriteria: story.acceptanceCriteria,
+    tags: [],
+    dependencies: [],
+    status: "in-progress",
+    passes: false,
+    escalations: [],
+    attempts: 0,
+  };
 
   const runOpts = {
     workdir,
@@ -269,6 +291,16 @@ export async function runAdversarialReview(
     featureName,
     storyId: story.id,
     sessionRole: "reviewer-adversarial",
+    contextPullTools: contextBundle?.pullTools,
+    contextToolRuntime: contextBundle
+      ? createContextToolRuntime({
+          bundle: contextBundle,
+          story: contextToolStory,
+          config: naxConfig ?? DEFAULT_CONFIG,
+          workdir,
+          projectDir,
+        })
+      : undefined,
   } as const;
 
   let rawResponse: string;

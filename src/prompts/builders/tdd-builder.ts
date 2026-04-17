@@ -49,6 +49,8 @@ export class TddPromptBuilder {
   private constitution_: string | undefined;
   private contextMd_: string | undefined;
   private featureContextMd_: string | undefined;
+  /** v2 pushMarkdown — injected directly, bypassing filterContextByRole (Finding 2 fix) */
+  private v2PushMarkdown_: string | undefined;
   private overridePath_: string | undefined;
   private loaderWorkdir_: string | undefined;
   private loaderConfig_: NaxConfig | undefined;
@@ -83,6 +85,16 @@ export class TddPromptBuilder {
 
   featureContext(md: string | undefined): this {
     if (md) this.featureContextMd_ = md;
+    return this;
+  }
+
+  /**
+   * Inject a v2 ContextBundle's pushMarkdown directly, bypassing filterContextByRole.
+   * Use this instead of featureContext() when assembleForStage() returned a bundle.
+   * The orchestrator already applied role filtering — no additional v1 filter needed.
+   */
+  v2FeatureContext(md: string | undefined): this {
+    if (md) this.v2PushMarkdown_ = md;
     return this;
   }
 
@@ -145,8 +157,14 @@ export class TddPromptBuilder {
     // (2) Role task body — disk override or default template
     acc.add(this.s("role-task", await this.resolveRoleBody()));
 
-    // (2.5) Feature-level context (feature engine v1) — between role task and story
-    if (this.featureContextMd_) {
+    // (2.5) Feature-level context — between role task and story.
+    // v2 path: pushMarkdown is injected directly (already role-filtered by the orchestrator).
+    // v1 path: featureContextMd_ goes through filterContextByRole for audience filtering.
+    if (this.v2PushMarkdown_) {
+      // v2 bundle pushMarkdown: include verbatim, no filter pass needed.
+      const md = this.v2PushMarkdown_.trim();
+      if (md) acc.add(this.s("feature-context", md));
+    } else if (this.featureContextMd_) {
       const budgetTokens = this.loaderConfig_?.context?.featureEngine?.budgetTokens ?? 2048;
       const filtered = filterContextByRole(this.featureContextMd_, this.role);
       if (filtered.trim()) {

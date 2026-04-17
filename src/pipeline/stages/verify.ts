@@ -12,7 +12,9 @@
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { resolveQualityTestCommands } from "../../quality/command-resolver";
+import { appendScratchEntry } from "../../session/scratch-writer";
 import { DEFAULT_TEST_FILE_PATTERNS } from "../../test-runners/conventions";
+import { errorMessage } from "../../utils/errors";
 import { logTestOutput } from "../../utils/log-test-output";
 import { detectRuntimeCrash } from "../../verification/crash-detector";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
@@ -163,15 +165,19 @@ export const verifyStage: PipelineStage = {
     });
 
     // Store result on context for rectify stage
-    ctx.verifyResult = {
-      success: result.success,
-      status: (result.status === "TIMEOUT"
+    const verifyStatus = (
+      result.status === "TIMEOUT"
         ? "TIMEOUT"
         : result.success
           ? "PASS"
           : detectRuntimeCrash(result.output)
             ? "RUNTIME_CRASH"
-            : "TEST_FAILURE") as VerifyStatus,
+            : "TEST_FAILURE"
+    ) as VerifyStatus;
+
+    ctx.verifyResult = {
+      success: result.success,
+      status: verifyStatus,
       storyId: ctx.story.id,
       strategy: "scoped",
       passCount: result.passCount ?? 0,
@@ -182,6 +188,28 @@ export const verifyStage: PipelineStage = {
       durationMs: 0,
       countsTowardEscalation: result.countsTowardEscalation,
     };
+
+    // Phase 1: append verify result to session scratch for later stages to read
+    if (ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
+      try {
+        await _verifyDeps.appendScratch(ctx.sessionScratchDir, {
+          kind: "verify-result",
+          timestamp: new Date().toISOString(),
+          storyId: ctx.story.id,
+          stage: "verify",
+          success: result.success,
+          status: verifyStatus,
+          passCount: result.passCount ?? 0,
+          failCount: result.failCount ?? 0,
+          rawOutputTail: (result.output ?? "").slice(-500),
+        });
+      } catch (scratchErr) {
+        logger.warn("verify", "Failed to write scratch entry — continuing", {
+          storyId: ctx.story.id,
+          error: errorMessage(scratchErr),
+        });
+      }
+    }
 
     // HARD FAILURE: Tests must pass for story to be marked complete
     if (!result.success) {
@@ -236,4 +264,5 @@ export const verifyStage: PipelineStage = {
 export const _verifyDeps = {
   regression,
   resolveTestCommands: resolveQualityTestCommands,
+  appendScratch: appendScratchEntry,
 };

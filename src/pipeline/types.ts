@@ -112,6 +112,29 @@ export interface PipelineContext {
   featureContextMarkdown?: string;
   /** Built context with element-level token tracking (set by contextStage) */
   builtContext?: BuiltContext;
+  /**
+   * v2 context bundle (set by contextStage when context.v2.enabled).
+   * Contains pushMarkdown, digest, manifest, and packed chunks.
+   * Prompt builders read bundle.pushMarkdown instead of featureContextMarkdown.
+   */
+  contextBundle?: import("../context/engine").ContextBundle;
+  /** Shared per-run pull-tool call counter for context-engine tool budgets. */
+  contextToolRunCounter?: import("../context/engine").RunCallCounter;
+  /** In-process session registry for story-level scratch aggregation and session lifecycle. */
+  sessionManager?: import("../session").ISessionManager;
+  /**
+   * nax session ID for the current story's main execution session.
+   * Set by the execution stage after SessionManager.create().
+   * Format: sess-<uuid>
+   */
+  sessionId?: string;
+  /**
+   * Absolute path to this pipeline run's session scratch directory.
+   * Set by the context stage when config.context.v2.enabled is true.
+   * Format: <projectDir>/.nax/features/<featureId>/sessions/<sessionId>/
+   * Written by verify and rectify; read by SessionScratchProvider via storyScratchDirs.
+   */
+  sessionScratchDir?: string;
   /** Final prompt sent to agent (set by promptStage) */
   prompt?: string;
   /** Agent execution result (set by executionStage) */
