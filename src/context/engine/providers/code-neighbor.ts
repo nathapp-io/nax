@@ -23,8 +23,8 @@
 
 import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
-import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
 import { getLogger } from "../../../logger";
+import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
 import { isRelativeAndSafe } from "../../../utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
