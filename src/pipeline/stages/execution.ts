@@ -241,6 +241,19 @@ export const executionStage: PipelineStage = {
     const keepSessionOpen = !!(
       ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true
     );
+
+    // G1: Advance state machine to RUNNING so resume() / listActive() see accurate state.
+    // Guarded — ctx.sessionId may not have a manager entry when v2 context is disabled.
+    if (ctx.sessionManager && ctx.sessionId) {
+      const pre = ctx.sessionManager.get(ctx.sessionId);
+      if (pre?.state === "CREATED") {
+        ctx.sessionManager.transition(ctx.sessionId, "RUNNING");
+      }
+    }
+
+    // G3: Resolve descriptor for Phase 1+ session tracking.
+    const sessionDescriptor = ctx.sessionManager && ctx.sessionId ? ctx.sessionManager.get(ctx.sessionId) : undefined;
+
     const contextToolRuntime = ctx.contextBundle
       ? createContextToolRuntime({
           bundle: ctx.contextBundle,
@@ -273,6 +286,9 @@ export const executionStage: PipelineStage = {
       storyId: ctx.story.id,
       sessionRole: "implementer",
       keepSessionOpen,
+      // G3: pass descriptor so adapter uses it for session name derivation (Phase 1+).
+      // Backward-compatible — featureName/storyId/sessionRole kept as fallback.
+      ...(sessionDescriptor && { session: sessionDescriptor }),
       contextPullTools: ctx.contextBundle?.pullTools,
       contextToolRuntime,
       interactionBridge: buildInteractionBridge(ctx.interaction, {

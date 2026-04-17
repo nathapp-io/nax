@@ -470,7 +470,7 @@ export async function runSemanticReview(
     });
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-    void agent.closeSession(reviewerSessionName, workdir);
+    void agent.closePhysicalSession(reviewerSessionName, workdir);
     return {
       check: "semantic",
       success: true,
@@ -512,7 +512,7 @@ export async function runSemanticReview(
   // Close the session — covers both the happy path (no retry) and the retry-exhausted
   // path (retry threw or returned unparseable JSON, so keepSessionOpen: false on the
   // retry call may not have closed it). Best-effort: already-closed sessions no-op.
-  void agent.closeSession(reviewerSessionName, workdir);
+  void agent.closePhysicalSession(reviewerSessionName, workdir);
 
   // Parse response — fail-closed when LLM clearly intended to fail,
   // fail-open only when response is truly unparseable with no signal.
