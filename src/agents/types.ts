@@ -8,7 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import type { ModelDef, ModelTier } from "../config/schema";
-import type { AdapterFailure, ToolDescriptor } from "../context/engine/types";
+import type { AdapterFailure, ToolDescriptor } from "../context/engine";
 import type { SessionDescriptor } from "../session/types";
 import type { TokenUsage } from "./cost";
 

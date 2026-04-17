@@ -135,8 +135,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     emitError: (reason: string) => {
       pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
     },
-    // Phase 3 (#477): session sweep on shutdown handled by SessionManager.closeStory()
-    // called in run-completion.ts. No-op here since sidecar no longer exists.
+    // Per-story SessionManagers are local to iteration-runner.ts; closeStory() is
+    // called there after runPipeline() returns. A run-level manager (Phase 5.5) will
+    // enable closeStory for all in-flight sessions here on SIGTERM.
     onShutdown: async () => {},
   });
 
@@ -168,7 +169,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   }
 
   // Phase 3 (#477): stale session sweep via sidecar removed.
-  // Orphan detection is now handled by SessionManager.sweepOrphans() at run boundaries.
+  // SessionManager.sweepOrphans() handles orphan detection at run boundaries.
+  // Per-story SessionManagers are created in iteration-runner.ts; a run-level
+  // manager (Phase 5.5) will allow sweepOrphans() to be called here at startup.
 
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
