@@ -519,7 +519,7 @@ const ContextPluginProviderConfigSchema = z.object({
 });
 
 // Context Engine config (Phase 6: selective on; operators opt in per project)
-const ContextV2ConfigSchema = z
+export const ContextV2ConfigSchema = z
   .object({
     /**
      * Enable Context Engine orchestrator.
@@ -555,6 +555,13 @@ const ContextV2ConfigSchema = z
      */
     stages: z.record(z.string().min(1), z.object({ budgetTokens: z.number().int().positive().optional() })).default({}),
     /**
+     * Determinism mode (AC-24).
+     * When true, providers that declare `deterministic: false` are excluded from assembly.
+     * Guarantees two runs with identical inputs produce identical push blocks.
+     * Default: false — all providers run regardless of determinism declaration.
+     */
+    deterministic: z.boolean().default(false),
+    /**
      * Session scratch retention settings (AC-20).
      * Controls how long completed session scratch dirs are kept on disk.
      */
@@ -575,6 +582,7 @@ const ContextV2ConfigSchema = z
     fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
     pluginProviders: [],
     stages: {},
+    deterministic: false,
     session: { retentionDays: 7, archiveOnFeatureArchive: true },
   }));
 
@@ -998,6 +1006,7 @@ export const NaxConfigSchema = z
         fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         pluginProviders: [],
         stages: {},
+        deterministic: false,
         session: { retentionDays: 7, archiveOnFeatureArchive: true },
       },
     }),

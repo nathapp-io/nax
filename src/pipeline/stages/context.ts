@@ -127,6 +127,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       : undefined,
     sessionId: ctx.sessionId,
     agentId: agentName,
+    deterministic: ctx.config.context.v2.deterministic,
   };
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.
