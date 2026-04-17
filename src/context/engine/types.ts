@@ -181,6 +181,12 @@ export interface ContextManifest {
     durationMs: number;
     /** Total tokens across all chunks returned by this provider */
     tokensProduced: number;
+    /**
+     * Total LLM cost for this provider call in USD (AC-25).
+     * Sum of costUsd across all chunks returned. Absent when the provider
+     * reported no chunk costs (i.e. free providers such as git or file-scan).
+     */
+    costUsd?: number;
     error?: string;
   }>;
   /**
@@ -400,6 +406,12 @@ export interface RawChunk {
   tokens: number;
   /** Provider's raw relevance score (0–1 range) */
   rawScore: number;
+  /**
+   * LLM cost for producing this chunk in USD (AC-25).
+   * Only set by providers that invoke an LLM to generate context (e.g. KB-retrieval).
+   * Free providers (git, file-scan) omit this field.
+   */
+  costUsd?: number;
 }
 
 /** What an IContextProvider returns from fetch(). */

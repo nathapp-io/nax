@@ -273,6 +273,12 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     firstPassSuccess: sm.firstPassSuccess,
   }));
 
+  // AC-25: sum context provider cost across all stories
+  const contextCostUsd = allStoryMetrics.reduce((runSum, sm) => {
+    if (!sm.context?.providers) return runSum;
+    return runSum + Object.values(sm.context.providers).reduce((s, p) => s + (p.costUsd ?? 0), 0);
+  }, 0);
+
   logger?.info("run.complete", "Feature execution completed", {
     runId,
     feature,
@@ -283,6 +289,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     storiesFailed: finalCounts.failed,
     storiesPending: finalCounts.pending,
     totalCost,
+    ...(contextCostUsd > 0 && { contextCostUsd }),
     durationMs,
     storyMetrics: storyMetricsSummary,
   });
