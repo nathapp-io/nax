@@ -41,6 +41,14 @@ export interface StageContextConfig {
    * per-request pullConfig.allowedTools allowlist.
    */
   pullToolNames?: string[];
+  /**
+   * Plan digest score multiplier (Amendment B AC-51).
+   * When > 1.0, the plan digest is injected as a scored RawChunk with
+   * rawScore = 0.9 * planDigestBoost instead of raw markdown rendering.
+   * Applied for single-session modes to compensate for absent cross-session digest.
+   * Default: absent (treated as 1.0, raw markdown rendering used).
+   */
+  planDigestBoost?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,26 +202,42 @@ export const STAGE_CONTEXT_MAP: Record<string, StageContextConfig> = {
   },
 
   // Single-session strategy — same as execution (no TDD split)
+  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
   "single-session": {
     role: "implementer",
     budgetTokens: 12_000,
     providerIds: PHASE_3_EXECUTION,
     pullToolNames: ["query_neighbor"],
+    planDigestBoost: 1.5,
+  },
+
+  // TDD-simple strategy — same as single-session (simplified TDD with merged roles)
+  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
+  "tdd-simple": {
+    role: "implementer",
+    budgetTokens: 12_000,
+    providerIds: PHASE_3_EXECUTION,
+    pullToolNames: ["query_neighbor"],
+    planDigestBoost: 1.5,
   },
 
   // No-test strategy — implementer role, moderate budget
+  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
   "no-test": {
     role: "implementer",
     budgetTokens: 10_000,
     providerIds: PHASE_3_EXECUTION,
+    planDigestBoost: 1.5,
   },
 
   // Batch strategy — implementer role, full budget (parallel stories)
+  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
   batch: {
     role: "implementer",
     budgetTokens: 12_000,
     providerIds: PHASE_3_EXECUTION,
     pullToolNames: ["query_neighbor"],
+    planDigestBoost: 1.5,
   },
 
   // Route — lightweight context for routing/classification; static rules only
