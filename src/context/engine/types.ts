@@ -182,6 +182,17 @@ export interface ContextManifest {
     error?: string;
   }>;
   /**
+   * Absolute path to the repository root at the time of assembly (AC-60).
+   * Populated from ContextRequest.repoRoot. Lets nax context inspect
+   * show which repo a manifest came from.
+   */
+  repoRoot?: string;
+  /**
+   * Absolute path to the story's package directory at the time of assembly (AC-60).
+   * Equals repoRoot for non-monorepo projects (AC-61).
+   */
+  packageDir?: string;
+  /**
    * Set by rebuildForAgent() when an agent-swap failure triggered the rebuild.
    * Records which agents were involved and why the swap occurred (Phase 5.5).
    */
@@ -260,15 +271,21 @@ export interface ContextRequest {
   storyId: string;
   /** Feature this story belongs to (optional — unattached stories omit this) */
   featureId?: string;
-  /** Working directory (package-scoped — used for git operations, neighbor graph) */
-  workdir: string;
   /**
-   * Repository root directory.
-   * In monorepos this differs from workdir (e.g. workdir = "packages/foo", projectDir = repo root).
-   * Providers that load .nax/ (canonical rules, feature context, plugin modules) must use
-   * projectDir when set, falling back to workdir for single-package repos.
+   * Absolute path to the repository root where `.nax/` lives (Amendment C AC-54).
+   * Replaces the former `workdir` field. Always set. For non-monorepo projects
+   * this equals `packageDir`.
    */
-  projectDir?: string;
+  repoRoot: string;
+  /**
+   * Absolute path to the story's package directory (Amendment C AC-54).
+   * Equals `repoRoot` for non-monorepo projects (AC-61 no-op guarantee).
+   * In monorepos: `join(repoRoot, story.workdir)`.
+   * Providers that scope to package paths (GitHistoryProvider, CodeNeighborProvider)
+   * use this field; repo-root providers (StaticRulesProvider, FeatureContextProvider)
+   * continue to use `repoRoot`.
+   */
+  packageDir: string;
   /** Pipeline stage name (e.g. "execution", "verify", "review") */
   stage: string;
   /** Caller role — used by role filter and score adjustments */
@@ -351,11 +368,6 @@ export interface ContextRequest {
    * (e.g. a rectify provider surfacing prior failure patterns).
    */
   failureHints?: string[];
-  /**
-   * Package directory for monorepo projects (Phase 7+).
-   * When set, providers scope their lookups to this directory rather than workdir.
-   */
-  packageDir?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

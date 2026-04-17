@@ -199,18 +199,17 @@ export class PullToolBudget {
  */
 export async function handleQueryNeighbor(
   input: { filePath: string; depth?: number },
-  workdir: string,
+  repoRoot: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
-  projectDir?: string,
 ): Promise<string> {
   budget.consume();
 
   const provider = new CodeNeighborProvider();
   const request: ContextRequest = {
     storyId: "_pull-tool",
-    workdir,
-    projectDir,
+    repoRoot,
+    packageDir: repoRoot,
     stage: "pull-tool",
     role: "implementer",
     budgetTokens: maxTokensPerCall,
@@ -264,18 +263,17 @@ export async function handleQueryFeatureContext(
   input: { filter?: string },
   story: UserStory,
   config: NaxConfig,
-  workdir: string,
+  repoRoot: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
-  projectDir?: string,
 ): Promise<string> {
   budget.consume();
 
   const provider = new FeatureContextProviderV2(story, config);
   const request: ContextRequest = {
     storyId: story.id,
-    workdir,
-    projectDir,
+    repoRoot,
+    packageDir: repoRoot,
     stage: "pull-tool",
     role: "reviewer",
     budgetTokens: maxTokensPerCall,

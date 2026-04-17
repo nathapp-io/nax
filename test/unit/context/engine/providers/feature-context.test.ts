@@ -21,7 +21,8 @@ const CONFIG = {} as NaxConfig;
 function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   return {
     storyId: "story-001",
-    workdir: "/repo",
+    repoRoot: "/repo",
+    packageDir: "/repo",
     stage: "execution",
     role: "implementer",
     budgetTokens: 8_000,

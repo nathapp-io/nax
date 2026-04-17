@@ -9,7 +9,8 @@ import type { ContextRequest } from "../../../../../src/context/engine/types";
 function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   return {
     storyId: "US-001",
-    workdir: "/repo",
+    repoRoot: "/repo",
+    packageDir: "/repo",
     stage: "rectify",
     role: "implementer",
     budgetTokens: 4_000,

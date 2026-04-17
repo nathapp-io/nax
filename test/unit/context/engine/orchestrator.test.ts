@@ -16,7 +16,8 @@ beforeEach(() => {
 
 const BASE_REQUEST: ContextRequest = {
   storyId: "US-001",
-  workdir: "/project",
+  repoRoot: "/project",
+  packageDir: "/project",
   stage: "execution",
   role: "implementer",
   budgetTokens: 10_000,
@@ -294,7 +295,8 @@ describe("ContextOrchestrator.rebuildForAgent()", () => {
 describe("Phase 4: pull tools", () => {
   const TDD_IMPLEMENTER_REQUEST: ContextRequest = {
     storyId: "US-001",
-    workdir: "/project",
+    repoRoot: "/project",
+    packageDir: "/project",
     stage: "tdd-implementer",
     role: "implementer",
     budgetTokens: 8_000,
@@ -400,7 +402,8 @@ describe("Phase 4: pull tools", () => {
 describe("Phase 5: review stage pull tools", () => {
   const REVIEW_REQUEST: ContextRequest = {
     storyId: "US-001",
-    workdir: "/project",
+    repoRoot: "/project",
+    packageDir: "/project",
     stage: "review-semantic",
     role: "reviewer",
     budgetTokens: 6_000,
@@ -450,7 +453,8 @@ describe("Phase 5: review stage pull tools", () => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({
       storyId: "US-001",
-      workdir: "/project",
+      repoRoot: "/project",
+      packageDir: "/project",
       stage: "tdd-implementer",
       role: "implementer",
       budgetTokens: 8_000,
@@ -469,5 +473,73 @@ describe("Phase 5: review stage pull tools", () => {
     });
     const names = bundle.pullTools.map((t) => t.name);
     expect(names).not.toContain("query_neighbor");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-54 / AC-60 / AC-61 — dual workdir fields (repoRoot + packageDir)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60/AC-61)", () => {
+  test("AC-54: ContextRequest accepts repoRoot and packageDir instead of workdir", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 4_000,
+      providerIds: [],
+    });
+    expect(bundle).toBeDefined();
+  });
+
+  test("AC-60: manifest records repoRoot and packageDir", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/api",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 4_000,
+      providerIds: [],
+    });
+    expect(bundle.manifest.repoRoot).toBe("/repo");
+    expect(bundle.manifest.packageDir).toBe("/repo/packages/api");
+  });
+
+  test("AC-61: non-monorepo — packageDir equals repoRoot, behavior unchanged", async () => {
+    const provider = makeProvider("p1", makeChunkResult({ id: "chunk:nm" }));
+    const orch = new ContextOrchestrator([provider]);
+    const bundle = await orch.assemble({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 4_000,
+      providerIds: ["p1"],
+    });
+    expect(bundle.manifest.repoRoot).toBe("/repo");
+    expect(bundle.manifest.packageDir).toBe("/repo");
+    expect(bundle.chunks.some((c) => c.id === "chunk:nm")).toBe(true);
+  });
+
+  test("AC-60: rebuildForAgent preserves repoRoot and packageDir from prior manifest", async () => {
+    const orch = new ContextOrchestrator([]);
+    const prior = await orch.assemble({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/web",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 4_000,
+      providerIds: [],
+    });
+    const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "codex" });
+    expect(rebuilt.manifest.repoRoot).toBe("/repo");
+    expect(rebuilt.manifest.packageDir).toBe("/repo/packages/web");
   });
 });

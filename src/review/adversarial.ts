@@ -296,8 +296,7 @@ export async function runAdversarialReview(
           bundle: contextBundle,
           story: contextToolStory,
           config: naxConfig ?? DEFAULT_CONFIG,
-          workdir,
-          projectDir,
+          repoRoot: workdir,
         })
       : undefined,
   } as const;

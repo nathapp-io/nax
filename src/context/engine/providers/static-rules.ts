@@ -84,7 +84,7 @@ export class StaticRulesProvider implements IContextProvider {
 
     // Phase 5.1: try canonical store first
     try {
-      const canonicalRules = await _staticRulesDeps.loadCanonicalRules(request.projectDir ?? request.workdir);
+      const canonicalRules = await _staticRulesDeps.loadCanonicalRules(request.repoRoot);
       if (canonicalRules.length > 0) {
         const chunks = canonicalRules.map((rule) => {
           const hash = contentHash8(rule.content);
@@ -145,7 +145,7 @@ export class StaticRulesProvider implements IContextProvider {
   private async fetchLegacy(request: ContextRequest): Promise<ContextProviderResult> {
     const logger = getLogger();
     const chunks: RawChunk[] = [];
-    const rootDir = request.projectDir ?? request.workdir;
+    const rootDir = request.repoRoot;
 
     // Detect multiple candidates so operators know which one was chosen when more than one exists.
     const existingCandidates: string[] = [];

@@ -44,7 +44,8 @@ afterEach(() => {
 
 const BASE_REQUEST: ContextRequest = {
   storyId: "US-001",
-  workdir: "/project",
+  repoRoot: "/project",
+  packageDir: "/project",
   stage: "execution",
   role: "implementer",
   budgetTokens: 8000,
