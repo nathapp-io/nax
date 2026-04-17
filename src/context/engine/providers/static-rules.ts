@@ -84,7 +84,7 @@ export class StaticRulesProvider implements IContextProvider {
 
     // Phase 5.1: try canonical store first
     try {
-      const canonicalRules = await _staticRulesDeps.loadCanonicalRules(request.workdir);
+      const canonicalRules = await _staticRulesDeps.loadCanonicalRules(request.projectDir ?? request.workdir);
       if (canonicalRules.length > 0) {
         const chunks = canonicalRules.map((rule) => {
           const hash = contentHash8(rule.content);
@@ -147,7 +147,7 @@ export class StaticRulesProvider implements IContextProvider {
     const chunks: RawChunk[] = [];
 
     for (const fileName of LEGACY_CANDIDATE_FILES) {
-      const filePath = join(request.workdir, fileName);
+      const filePath = join(request.projectDir ?? request.workdir, fileName);
 
       try {
         const exists = await _staticRulesDeps.fileExists(filePath);

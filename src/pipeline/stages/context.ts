@@ -107,6 +107,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     // "/features/my-feature/" resolves to "my-feature" not "".
     featureId: ctx.featureDir?.replace(/\/$/, "").split("/").pop(),
     workdir: ctx.workdir,
+    projectDir: ctx.projectDir,
     stage: "context", // initial assembly; execution stage overrides to "execution"
     role: "implementer",
     budgetTokens: ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
@@ -133,7 +134,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // In production configs this is always present (required by schema, defaults to []).
   const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
   const pluginProviders: IContextProvider[] =
-    pluginConfigs.length > 0 ? await _contextStageDeps.loadPlugins(pluginConfigs, ctx.workdir) : [];
+    pluginConfigs.length > 0 ? await _contextStageDeps.loadPlugins(pluginConfigs, ctx.projectDir ?? ctx.workdir) : [];
 
   try {
     const orchestrator = _contextStageDeps.createOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);

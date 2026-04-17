@@ -131,7 +131,7 @@ export class ReviewOrchestrator {
     resolverSession?: import("./dialogue").ReviewerSession,
     priorFailures?: Array<{ stage: string; modelTier: string }>,
     featureContextMarkdown?: string,
-    contextBundle?: ContextBundle,
+    contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle },
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -191,7 +191,7 @@ export class ReviewOrchestrator {
         resolverSession,
         priorFailures,
         featureContextMarkdown,
-        contextBundle,
+        contextBundles,
       );
     } else {
       // Always split: mechanical checks first, then LLM checks independently.
@@ -220,7 +220,7 @@ export class ReviewOrchestrator {
         resolverSession,
         priorFailures,
         featureContextMarkdown,
-        contextBundle,
+        contextBundles,
       );
 
       // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
@@ -272,7 +272,7 @@ export class ReviewOrchestrator {
             priorFailures,
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
-            contextBundle,
+            contextBundles?.semantic,
           ),
           _orchestratorDeps.runAdversarialReview(
             workdir,
@@ -285,7 +285,7 @@ export class ReviewOrchestrator {
             priorFailures,
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
-            contextBundle,
+            contextBundles?.adversarial,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -308,7 +308,7 @@ export class ReviewOrchestrator {
           resolverSession,
           priorFailures,
           featureContextMarkdown,
-          contextBundle,
+          contextBundles,
         );
         llmCheckResults = llmResult.checks;
       }
@@ -465,11 +465,17 @@ export class ReviewOrchestrator {
     const reviewDebateEnabled = ctx.rootConfig?.debate?.enabled && ctx.rootConfig?.debate?.stages?.review?.enabled;
     const resolverSession = reviewDebateEnabled ? ctx.reviewerSession : undefined;
 
-    // Assemble a review-specific v2 bundle when v2 is enabled (Finding 1 + 2 fix).
-    // Uses "review-semantic" stage config (reviewer role, PHASE_0_PROVIDERS) so the
-    // orchestrator applies reviewer-role filtering before the bundle reaches the agents.
-    // runSemanticReview/runAdversarialReview skip filterContextByRole when contextBundle is set.
-    const contextBundle = await assembleForStage(ctx, "review-semantic");
+    // Assemble stage-specific v2 bundles for semantic and adversarial review in parallel.
+    // Each stage uses its own provider/budget/role config from STAGE_CONTEXT_MAP so they
+    // can diverge independently. Reviewers skip filterContextByRole when a bundle is set.
+    const [semanticBundle, adversarialBundle] = await Promise.all([
+      assembleForStage(ctx, "review-semantic"),
+      assembleForStage(ctx, "review-adversarial"),
+    ]);
+    const contextBundles =
+      semanticBundle || adversarialBundle
+        ? { semantic: semanticBundle ?? undefined, adversarial: adversarialBundle ?? undefined }
+        : undefined;
 
     return this.review(
       ctx.config.review,
@@ -493,7 +499,7 @@ export class ReviewOrchestrator {
       resolverSession,
       ctx.story.priorFailures,
       ctx.featureContextMarkdown,
-      contextBundle ?? undefined,
+      contextBundles,
     );
   }
 }

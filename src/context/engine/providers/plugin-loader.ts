@@ -43,16 +43,24 @@ export const _pluginLoaderDeps = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Optional lifecycle method a plugin provider may export.
- * Called once after loading, before the provider is registered.
- * Use for expensive initialisation (e.g. opening an embedding index).
+ * Optional lifecycle methods a plugin provider may export.
  *
+ * init() — called once after loading, before the provider is registered.
+ * Use for expensive initialisation (e.g. opening an embedding index).
  * init() is only called when the plugin entry includes a `config` field.
  * Providers that need always-run initialisation should handle defaults
  * internally (i.e. treat an empty config as valid input).
+ *
+ * dispose() — forward-compatible teardown hook. Not invoked by any caller
+ * today; reserved for the future PluginProviderCache (Finding 5). Plugin
+ * authors that own long-lived handles (sockets, DB connections, spawned
+ * subprocesses) may implement dispose() now and it will be honored once
+ * the cache lands. Implementations must not throw — handle errors internally.
+ * See docs/reviews/context-engine-v2-findings-2-and-5-proposal.md.
  */
 export interface InitialisableProvider extends IContextProvider {
   init(config: Record<string, unknown>): Promise<void>;
+  dispose?(): Promise<void>;
 }
 
 function isInitialisable(p: IContextProvider): p is InitialisableProvider {

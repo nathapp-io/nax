@@ -152,6 +152,19 @@ export interface ContextManifest {
   /** Wall-clock time for the assemble() call in milliseconds */
   buildMs: number;
   /**
+   * Per-provider execution outcomes for this assemble() call.
+   * Recorded even when a provider fails or returns nothing, so the manifest
+   * can explain whether absent context was due to policy, budget, or provider error.
+   */
+  providerResults?: Array<{
+    providerId: string;
+    /** "ok" = returned ≥1 chunk; "empty" = succeeded but returned no chunks; "failed" = threw; "timeout" = timed out */
+    status: "ok" | "empty" | "failed" | "timeout";
+    chunkCount: number;
+    durationMs: number;
+    error?: string;
+  }>;
+  /**
    * Set by rebuildForAgent() when an agent-swap failure triggered the rebuild.
    * Records which agents were involved and why the swap occurred (Phase 5.5).
    */
@@ -228,8 +241,15 @@ export interface ContextRequest {
   storyId: string;
   /** Feature this story belongs to (optional — unattached stories omit this) */
   featureId?: string;
-  /** Working directory (repo root or package dir in monorepo) */
+  /** Working directory (package-scoped — used for git operations, neighbor graph) */
   workdir: string;
+  /**
+   * Repository root directory.
+   * In monorepos this differs from workdir (e.g. workdir = "packages/foo", projectDir = repo root).
+   * Providers that load .nax/ (canonical rules, feature context, plugin modules) must use
+   * projectDir when set, falling back to workdir for single-package repos.
+   */
+  projectDir?: string;
   /** Pipeline stage name (e.g. "execution", "verify", "review") */
   stage: string;
   /** Caller role — used by role filter and score adjustments */
@@ -366,6 +386,12 @@ export interface IContextProvider {
   /**
    * Fetch context chunks for the given request.
    * Must not throw — return empty chunks array on failure and log internally.
+   *
+   * Concurrency contract: fetch() must be safe under concurrent invocation with
+   * distinct ContextRequest values. The orchestrator calls providers in parallel
+   * within a single assemble pass, and a future plugin cache (Finding 5) will
+   * share provider instances across parallel stories. Implementations must not
+   * rely on per-call mutable state on the provider instance.
    */
   fetch(request: ContextRequest): Promise<ContextProviderResult>;
 }

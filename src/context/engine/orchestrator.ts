@@ -209,23 +209,32 @@ export class ContextOrchestrator {
     const allowedIds = request.providerIds ?? stageConfig.providerIds;
     const activeProviders = this.providers.filter((p) => allowedIds.includes(p.id));
 
-    // Step 2: parallel fetch with timeout — failures return empty, never throw
+    // Step 2: parallel fetch with timeout — failures return empty, never throw.
+    // Per-provider status is recorded for manifest auditability (Finding 3).
     const fetchResults = await Promise.all(
       activeProviders.map(async (provider) => {
+        const providerStart = _orchestratorDeps.now();
         try {
-          return { provider, result: await fetchWithTimeout(provider, request) };
+          const result = await fetchWithTimeout(provider, request);
+          const durationMs = _orchestratorDeps.now() - providerStart;
+          const status = result.chunks.length === 0 ? ("empty" as const) : ("ok" as const);
+          return { provider, result, providerStatus: { providerId: provider.id, status, chunkCount: result.chunks.length, durationMs } };
         } catch (err) {
-          logger.warn("context-v2", `Provider "${provider.id}" failed — skipping`, {
+          const durationMs = _orchestratorDeps.now() - providerStart;
+          const errMsg = errorMessage(err);
+          const status = errMsg.includes("timed out") ? ("timeout" as const) : ("failed" as const);
+          logger.warn("context-v2", `Provider "${provider.id}" ${status} — skipping`, {
             storyId: request.storyId,
-            error: errorMessage(err),
+            error: errMsg,
           });
-          return { provider, result: { chunks: [], pullTools: [] } };
+          return { provider, result: { chunks: [], pullTools: [] }, providerStatus: { providerId: provider.id, status, chunkCount: 0, durationMs, error: errMsg } };
         }
       }),
     );
 
     // Collect all raw chunks with providerIds
     const allRaw = fetchResults.flatMap(({ provider, result }) => result.chunks.map((c) => enrichRaw(c, provider.id)));
+    const providerResults = fetchResults.map(({ providerStatus }) => providerStatus);
     // Phase 4: build pull tool descriptors from stage config + PULL_TOOL_REGISTRY.
     // Provider-level result.pullTools is reserved for Phase 7 and ignored here.
     const allPullTools = buildPullToolDescriptors(stageConfig.pullToolNames ?? [], request.pullConfig);
@@ -278,6 +287,7 @@ export class ContextOrchestrator {
       floorItems: floorItemIds,
       digestTokens: dTokens,
       buildMs,
+      providerResults,
     };
 
     logger.debug("context-v2", "Bundle assembled", {
