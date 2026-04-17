@@ -24,6 +24,7 @@ import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
 import { renderChunks } from "./render";
 import { MIN_SCORE, scoreChunks } from "./scoring";
+import { neutralizeForAgent } from "./scratch-neutralizer";
 import { getStageContextConfig } from "./stage-config";
 import type {
   AdapterFailure,
@@ -438,18 +439,26 @@ export class ContextOrchestrator {
       });
     }
 
+    // Snapshot prior chunk IDs before any mutations (AC-39, M5)
+    const priorChunkIds = prior.chunks.map((c) => c.id);
+
     // Convert ContextChunks back to PackedChunk shape (adds ScoredChunk fields)
-    const packedChunks: import("./packing").PackedChunk[] = prior.chunks.map((c) => ({
-      ...c,
-      rawScore: c.score,
-      roleFiltered: false,
-      belowMinScore: false,
-    }));
+    const priorAgentForNeutralize = prior.agentId ?? "";
+    const packedChunks: import("./packing").PackedChunk[] = prior.chunks.map((c) => {
+      // M2 (AC-42): re-neutralize session-scratch chunk content when swapping agents.
+      // Session chunks carry free-text from renderEntry(); if the prior assemble ran
+      // under claude, tool-name references were preserved (no-op neutralization).
+      // On swap to a different agent we apply neutralization retroactively.
+      const content =
+        newAgentId && newAgentId !== priorAgentForNeutralize && c.kind === "session"
+          ? neutralizeForAgent(c.content, priorAgentForNeutralize, targetAgentId)
+          : c.content;
+      return { ...c, content, rawScore: c.score, roleFiltered: false, belowMinScore: false };
+    });
 
     // Inject failure-note chunk when this is an agent-swap rebuild
     if (failure && newAgentId) {
-      const priorAgentId = prior.agentId ?? "unknown";
-      packedChunks.push(buildFailureNoteChunk(priorAgentId, newAgentId, failure));
+      packedChunks.push(buildFailureNoteChunk(priorAgentForNeutralize || "unknown", newAgentId, failure));
     }
 
     // Re-render under the target agent's profile (or markdown-sections for same-agent rebuild)
@@ -467,6 +476,8 @@ export class ContextOrchestrator {
             newAgentId: targetAgentId,
             failureCategory: failure.category,
             failureOutcome: failure.outcome,
+            priorChunkIds,
+            newChunkIds: packedChunks.map((c) => c.id),
           }
         : undefined;
 

@@ -13,6 +13,7 @@ import { describe, test, expect } from "bun:test";
 import { ContextOrchestrator } from "../../../../src/context/engine/orchestrator";
 import type {
   AdapterFailure,
+  ContextBundle,
   ContextRequest,
   ContextProviderResult,
   IContextProvider,
@@ -280,5 +281,148 @@ describe("rebuildForAgent — rendering style dispatch", () => {
 
     orch.rebuildForAgent(original, { newAgentId: "codex", failure: AVAILABILITY_FAILURE });
     expect(fetchCount).toBe(1); // no additional fetch
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M2: AC-42 re-neutralize session-scratch chunks on agent-swap rebuild
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rebuildForAgent — #508-M2 session-chunk re-neutralization on swap", () => {
+  function makeSessionBundle(sessionContent: string, priorAgentId = "claude"): ContextBundle {
+    return {
+      pushMarkdown: "",
+      pullTools: [],
+      digest: "",
+      agentId: priorAgentId,
+      chunks: [
+        {
+          id: "session-scratch:abc123",
+          providerId: "session-scratch",
+          kind: "session" as const,
+          scope: "session" as const,
+          role: ["all"],
+          content: sessionContent,
+          tokens: 20,
+          score: 0.9,
+        },
+      ],
+      manifest: {
+        requestId: "req-prior",
+        stage: "tdd-implementer",
+        totalBudgetTokens: 8_000,
+        usedTokens: 100,
+        includedChunks: ["session-scratch:abc123"],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 10,
+        buildMs: 5,
+      },
+    };
+  }
+
+  test("session chunk content is re-neutralized when swapping from claude to codex", () => {
+    const orch = new ContextOrchestrator([]);
+    const prior = makeSessionBundle("I used the Read tool to inspect and the Bash tool to run tests.");
+    const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "codex", failure: AVAILABILITY_FAILURE });
+    expect(rebuilt.pushMarkdown).not.toContain("the Read tool");
+    expect(rebuilt.pushMarkdown).not.toContain("the Bash tool");
+    expect(rebuilt.pushMarkdown).toContain("a file read");
+    expect(rebuilt.pushMarkdown).toContain("a shell command");
+  });
+
+  test("session chunk is not re-neutralized on same-agent rebuild (claude → claude)", () => {
+    const orch = new ContextOrchestrator([]);
+    const prior = makeSessionBundle("I used the Read tool to inspect.", "claude");
+    const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "claude", failure: AVAILABILITY_FAILURE });
+    expect(rebuilt.pushMarkdown).toContain("the Read tool");
+  });
+
+  test("non-session (feature) chunks are not touched by re-neutralization", () => {
+    const orch = new ContextOrchestrator([]);
+    const prior: ContextBundle = {
+      pushMarkdown: "",
+      pullTools: [],
+      digest: "",
+      agentId: "claude",
+      chunks: [
+        {
+          id: "feature:abc",
+          providerId: "feature-context",
+          kind: "feature" as const,
+          scope: "feature" as const,
+          role: ["all"],
+          content: "Feature: use the Read tool pattern.",
+          tokens: 10,
+          score: 0.8,
+        },
+      ],
+      manifest: {
+        requestId: "req-x",
+        stage: "tdd-implementer",
+        totalBudgetTokens: 8_000,
+        usedTokens: 50,
+        includedChunks: ["feature:abc"],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 5,
+        buildMs: 1,
+      },
+    };
+    const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "codex", failure: AVAILABILITY_FAILURE });
+    // Feature chunks are not session history — must not be altered
+    expect(rebuilt.pushMarkdown).toContain("the Read tool");
+  });
+
+  test("no re-neutralization when no newAgentId (plain re-render)", () => {
+    const orch = new ContextOrchestrator([]);
+    const prior = makeSessionBundle("I used the Read tool to inspect.", "claude");
+    const rebuilt = orch.rebuildForAgent(prior);
+    // no newAgentId → no swap → no re-neutralization
+    expect(rebuilt.pushMarkdown).toContain("the Read tool");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M5: AC-39 rebuildInfo chunk ID correlation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rebuildForAgent — #508-M5 rebuildInfo chunk ID correlation", () => {
+  test("rebuildInfo contains priorChunkIds on agent-swap rebuild", async () => {
+    const provider = makeProvider("p1", makeChunkResult("chunk:abc"));
+    const orch = new ContextOrchestrator([provider]);
+    const original = await orch.assemble({ ...BASE_REQUEST, providerIds: ["p1"] });
+    const priorBundle = { ...original, agentId: "claude" };
+
+    const rebuilt = orch.rebuildForAgent(priorBundle, {
+      newAgentId: "codex",
+      failure: AVAILABILITY_FAILURE,
+    });
+
+    expect(rebuilt.manifest.rebuildInfo?.priorChunkIds).toEqual(["chunk:abc"]);
+  });
+
+  test("rebuildInfo contains newChunkIds including failure-note chunk", async () => {
+    const provider = makeProvider("p1", makeChunkResult("chunk:abc"));
+    const orch = new ContextOrchestrator([provider]);
+    const original = await orch.assemble({ ...BASE_REQUEST, providerIds: ["p1"] });
+    const priorBundle = { ...original, agentId: "claude" };
+
+    const rebuilt = orch.rebuildForAgent(priorBundle, {
+      newAgentId: "codex",
+      failure: AVAILABILITY_FAILURE,
+    });
+
+    const newIds = rebuilt.manifest.rebuildInfo?.newChunkIds ?? [];
+    expect(newIds).toContain("chunk:abc");
+    // failure-note chunk is added on swap → newChunkIds has more than priorChunkIds
+    expect(newIds.length).toBeGreaterThan(1);
+  });
+
+  test("rebuildInfo has no chunk ID fields when no failure (plain re-render)", async () => {
+    const orch = new ContextOrchestrator([]);
+    const original = await orch.assemble(BASE_REQUEST);
+    const rebuilt = orch.rebuildForAgent(original);
+    expect(rebuilt.manifest.rebuildInfo).toBeUndefined();
   });
 });

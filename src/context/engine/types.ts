@@ -223,6 +223,10 @@ export interface ContextManifest {
     newAgentId: string;
     failureCategory: AdapterFailure["category"];
     failureOutcome: AdapterFailure["outcome"];
+    /** Chunk IDs from the prior bundle before the rebuild (AC-39). */
+    priorChunkIds: string[];
+    /** Chunk IDs in the rebuilt bundle, including any injected failure-note (AC-39). */
+    newChunkIds: string[];
   };
   /**
    * First 300 chars of each included chunk's content (Amendment A AC-45).

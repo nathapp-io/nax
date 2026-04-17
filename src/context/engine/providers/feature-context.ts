@@ -97,8 +97,11 @@ export class FeatureContextProviderV2 implements IContextProvider {
         if (entries.length > 0) {
           const contradicted = detectContradictions(entries);
           const ageStale = selectStaleByAge(entries, maxStoryAge);
-          const isStale = contradicted.size > 0 || ageStale.size > 0;
-          chunk = applyStaleness(chunk, { isStale, scoreMultiplier });
+          const staleCount = contradicted.size + ageStale.size;
+          const staleRatio = staleCount / entries.length;
+          const isStale = staleRatio > 0;
+          const effectiveMultiplier = isStale ? 1.0 - (1.0 - scoreMultiplier) * staleRatio : scoreMultiplier;
+          chunk = applyStaleness(chunk, { isStale, scoreMultiplier: effectiveMultiplier });
 
           if (isStale) {
             logger.debug("feature-context-v2", "Stale entries detected in feature context", {

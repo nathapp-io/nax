@@ -15,7 +15,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Session model
  */
 
-import { mkdir } from "node:fs/promises";
+import { appendFile as fsAppendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +81,8 @@ export const _scratchWriterDeps = {
   },
   /** Write (overwrite) the file at path */
   writeFile: (path: string, content: string): Promise<number> => Bun.write(path, content),
+  /** Append content to the file at path (atomic append — avoids read-modify-write race) */
+  appendFile: (path: string, content: string): Promise<void> => fsAppendFile(path, content, "utf8"),
   /** Create directory and parents */
   mkdirp: (path: string): Promise<string | undefined> => mkdir(path, { recursive: true }),
 };
@@ -127,9 +129,8 @@ function truncateOutputFields(entry: ScratchEntry): ScratchEntry {
 export async function appendScratchEntry(scratchDir: string, entry: ScratchEntry): Promise<void> {
   const filePath = scratchFilePath(scratchDir);
   await _scratchWriterDeps.mkdirp(dirname(filePath));
-  const existing = await _scratchWriterDeps.readFile(filePath);
   const line = JSON.stringify(truncateOutputFields(entry));
-  await _scratchWriterDeps.writeFile(filePath, existing ? `${existing}${line}\n` : `${line}\n`);
+  await _scratchWriterDeps.appendFile(filePath, `${line}\n`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
