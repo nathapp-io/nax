@@ -143,7 +143,7 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
+    expect(threw).toBeInstanceOf(NeutralityLintError);
     expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
   });
 });
@@ -252,5 +252,126 @@ describe("StaticRulesProvider — legacy path", () => {
     setupLegacyFiles({ "/project/CLAUDE.md": content });
     const result = await provider.fetch(BASE_REQUEST);
     expect(result.chunks[0]?.tokens).toBeGreaterThanOrEqual(100);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-57: per-package canonical rules overlay
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MONOREPO_REQUEST: ContextRequest = {
+  storyId: "US-002",
+  repoRoot: "/repo",
+  packageDir: "/repo/packages/api",
+  stage: "execution",
+  role: "implementer",
+  budgetTokens: 8000,
+};
+
+describe("StaticRulesProvider — AC-57 per-package overlay", () => {
+  test("non-monorepo: loadCanonicalRules called once with repoRoot", async () => {
+    const calls: string[] = [];
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      calls.push(workdir);
+      return [{ fileName: "style.md", content: "Repo rules." }];
+    };
+    const provider = new StaticRulesProvider();
+    await provider.fetch(BASE_REQUEST); // packageDir === repoRoot === "/project"
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toBe("/project");
+  });
+
+  test("monorepo: package rules overlay repo rules — same filename: package wins", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === "/repo") return [{ fileName: "style.md", content: "Repo style." }];
+      if (workdir === "/repo/packages/api") return [{ fileName: "style.md", content: "Package style." }];
+      return [];
+    };
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(MONOREPO_REQUEST);
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("Package style.");
+    expect(result.chunks[0]?.content).not.toContain("Repo style.");
+  });
+
+  test("monorepo: package-only file is added alongside repo rules", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === "/repo") return [{ fileName: "testing.md", content: "Repo testing." }];
+      if (workdir === "/repo/packages/api") return [{ fileName: "api-conventions.md", content: "API conventions." }];
+      return [];
+    };
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(MONOREPO_REQUEST);
+    expect(result.chunks).toHaveLength(2);
+    const fileNames = result.chunks.map((c) => c.content).join("\n");
+    expect(fileNames).toContain("Repo testing.");
+    expect(fileNames).toContain("API conventions.");
+  });
+
+  test("monorepo: repo-only file included when package has no override", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === "/repo") return [
+        { fileName: "style.md", content: "Repo style." },
+        { fileName: "security.md", content: "Repo security." },
+      ];
+      if (workdir === "/repo/packages/api") return [{ fileName: "style.md", content: "Package style." }];
+      return [];
+    };
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(MONOREPO_REQUEST);
+    expect(result.chunks).toHaveLength(2);
+    const contents = result.chunks.map((c) => c.content).join("\n");
+    expect(contents).toContain("Package style.");
+    expect(contents).toContain("Repo security.");
+    expect(contents).not.toContain("Repo style.");
+  });
+
+  test("monorepo: NeutralityLintError from repo-level rules propagates without fallback", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === "/repo") {
+        throw new NeutralityLintError([{ file: "bad.md", lineNumber: 1, line: "CLAUDE.md", pattern: "agent-specific" }]);
+      }
+      return [];
+    };
+    setupLegacyFiles({ "/repo/CLAUDE.md": "Legacy." });
+    const provider = new StaticRulesProvider();
+    let threw: unknown;
+    try {
+      await provider.fetch(MONOREPO_REQUEST);
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(NeutralityLintError);
+    expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
+  });
+
+  test("monorepo: NeutralityLintError from package-level rules propagates", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === "/repo") return [{ fileName: "style.md", content: "Repo style." }];
+      if (workdir === "/repo/packages/api") {
+        throw new NeutralityLintError([{ file: "pkg.md", lineNumber: 2, line: "AGENTS.md", pattern: "agent-specific" }]);
+      }
+      return [];
+    };
+    const provider = new StaticRulesProvider();
+    let threw: unknown;
+    try {
+      await provider.fetch(MONOREPO_REQUEST);
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(NeutralityLintError);
+    expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
+  });
+
+  test("monorepo: empty package rules falls through to repo rules only", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === "/repo") return [{ fileName: "style.md", content: "Repo style." }];
+      return []; // package has no rules
+    };
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(MONOREPO_REQUEST);
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("Repo style.");
   });
 });

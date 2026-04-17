@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { getLogger } from "../../../logger";
 import { errorMessage } from "../../../utils/errors";
 import { loadCanonicalRules } from "../../rules/canonical-loader";
+import type { CanonicalRule } from "../../rules/canonical-loader";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,11 +83,24 @@ export class StaticRulesProvider implements IContextProvider {
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const logger = getLogger();
 
-    // Phase 5.1: try canonical store first
+    // Phase 5.1 + AC-57: try canonical store first, then overlay package rules if monorepo
     try {
-      const canonicalRules = await _staticRulesDeps.loadCanonicalRules(request.repoRoot);
-      if (canonicalRules.length > 0) {
-        const chunks = canonicalRules.map((rule) => {
+      const repoRules = await _staticRulesDeps.loadCanonicalRules(request.repoRoot);
+
+      // AC-57: in monorepos, load package-level rules and overlay (package wins on same fileName)
+      let mergedRules: CanonicalRule[] = repoRules;
+      if (request.packageDir !== request.repoRoot) {
+        const packageRules = await _staticRulesDeps.loadCanonicalRules(request.packageDir);
+        if (packageRules.length > 0) {
+          const merged = new Map<string, CanonicalRule>();
+          for (const rule of repoRules) merged.set(rule.fileName, rule);
+          for (const rule of packageRules) merged.set(rule.fileName, rule);
+          mergedRules = [...merged.values()];
+        }
+      }
+
+      if (mergedRules.length > 0) {
+        const chunks = mergedRules.map((rule) => {
           const hash = contentHash8(rule.content);
           const tokens = estimateTokens(rule.content);
           return {
