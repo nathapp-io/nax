@@ -240,6 +240,7 @@ export class ContextOrchestrator {
           const durationMs = _orchestratorDeps.now() - providerStart;
           const status = result.chunks.length === 0 ? ("empty" as const) : ("ok" as const);
           const tokensProduced = result.chunks.reduce((sum, c) => sum + c.tokens, 0);
+          const rawCostUsd = result.chunks.reduce((sum, c) => sum + (c.costUsd ?? 0), 0);
           return {
             provider,
             result,
@@ -249,6 +250,7 @@ export class ContextOrchestrator {
               chunkCount: result.chunks.length,
               durationMs,
               tokensProduced,
+              ...(rawCostUsd > 0 && { costUsd: rawCostUsd }),
             },
           };
         } catch (err) {

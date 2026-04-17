@@ -61,6 +61,7 @@ async function deriveContextMetrics(
         existing.wallClockMs += pr.durationMs;
         if (pr.status === "timeout") existing.timedOut = true;
         if (pr.status === "failed") existing.failed = true;
+        if (pr.costUsd) existing.costUsd = (existing.costUsd ?? 0) + pr.costUsd;
       } else {
         providers[pr.providerId] = {
           tokensProduced: pr.tokensProduced,
@@ -69,6 +70,7 @@ async function deriveContextMetrics(
           wallClockMs: pr.durationMs,
           timedOut: pr.status === "timeout",
           failed: pr.status === "failed",
+          ...(pr.costUsd ? { costUsd: pr.costUsd } : {}),
         };
       }
     }

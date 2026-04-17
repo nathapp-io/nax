@@ -62,6 +62,11 @@ export interface ContextProviderMetrics {
   wallClockMs: number;
   timedOut: boolean;
   failed: boolean;
+  /**
+   * Total LLM cost in USD for this provider across all pipeline stages (AC-25).
+   * Absent when the provider reported no chunk costs (free providers).
+   */
+  costUsd?: number;
 }
 
 /**
