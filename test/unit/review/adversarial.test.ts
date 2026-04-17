@@ -70,6 +70,7 @@ function makeAgent(llmResponse: string, cost = 0.001): AgentAdapter {
     }),
     complete: mock(async (_prompt: string) => llmResponse),
     closeSession: mock(async () => {}),
+    closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
 }
 

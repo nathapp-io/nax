@@ -87,6 +87,7 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
       return { output: response, estimatedCost: costPerCall };
     }),
     closeSession: mock(async () => {}),
+    closePhysicalSession: mock(async () => {}),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
@@ -215,20 +216,20 @@ describe("runAdversarialReview — JSON retry succeeds", () => {
     expect((calls[0][0] as Record<string, unknown>).keepSessionOpen).toBe(true);
   });
 
-  test("agent.closeSession called once to close the session after runReview completes", async () => {
+  test("agent.closePhysicalSession called once to close the session after runReview completes", async () => {
     const agent = makeMultiCallAgent([PASSING_RESPONSE]);
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
 
-    expect((agent.closeSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((agent.closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
-  test("agent.closeSession called even when retry was needed (retry-exhausted path)", async () => {
+  test("agent.closePhysicalSession called even when retry was needed (retry-exhausted path)", async () => {
     const agent = makeMultiCallAgent(["this is not json at all", PASSING_RESPONSE]);
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
 
-    expect((agent.closeSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((agent.closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("agent.run called once when initial response is valid JSON", async () => {
@@ -280,6 +281,7 @@ describe("runAdversarialReview — JSON retry failure paths", () => {
         throw new Error("retry connection failure");
       }),
       closeSession: mock(async () => {}),
+      closePhysicalSession: mock(async () => {}),
       buildCommand: mock(() => []),
       plan: mock(async () => { throw new Error("not used"); }),
       decompose: mock(async () => { throw new Error("not used"); }),
@@ -409,6 +411,7 @@ describe("runAdversarialReview — retry logging", () => {
         throw new Error("retry network failure");
       }),
       closeSession: mock(async () => {}),
+      closePhysicalSession: mock(async () => {}),
       buildCommand: mock(() => []),
       plan: mock(async () => { throw new Error("not used"); }),
       decompose: mock(async () => { throw new Error("not used"); }),

@@ -522,6 +522,19 @@ async function runAgentRectification(
 
       autofixCostAccum += result.estimatedCost ?? 0;
 
+      // G5: bind updated protocolIds after each autofix attempt so the session descriptor
+      // reflects the session that actually ran (may change after internal session retries).
+      if (ctx.sessionManager && ctx.sessionId && result.protocolIds) {
+        try {
+          const desc = ctx.sessionManager.get(ctx.sessionId);
+          if (desc) {
+            ctx.sessionManager.bindHandle(ctx.sessionId, implementerSession, result.protocolIds);
+          }
+        } catch {
+          // Best-effort — never block the autofix loop.
+        }
+      }
+
       // REVIEW-003: Detect UNRESOLVED signal — reviewer findings contradict each other.
       // Escalate immediately rather than retrying an unresolvable conflict.
       if (result.output) {
