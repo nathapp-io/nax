@@ -182,6 +182,14 @@ export interface ISessionManager {
    * Throws NaxError if the transition is invalid.
    */
   transition(id: string, to: SessionState, options?: TransitionOptions): SessionDescriptor;
+  /**
+   * Bind the protocol-specific session handle and IDs to a descriptor (Phase 1 plumbing).
+   * Called by pipeline stages after agent.run() returns, using AgentResult.protocolIds.
+   * Does not change the session's lifecycle state.
+   * Returns the updated descriptor.
+   * Throws NaxError if the session ID is unknown.
+   */
+  bindHandle(id: string, handle: string, protocolIds: ProtocolIds): SessionDescriptor;
   /** List all active (non-terminal) sessions */
   listActive(): SessionDescriptor[];
   /**

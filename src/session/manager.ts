@@ -184,6 +184,33 @@ export class SessionManager implements ISessionManager {
     return { ...updated };
   }
 
+  bindHandle(id: string, handle: string, protocolIds: ProtocolIds): SessionDescriptor {
+    const session = this._sessions.get(id);
+    if (!session) {
+      throw new NaxError(`Session "${id}" not found in registry`, "SESSION_NOT_FOUND", {
+        stage: "session",
+        sessionId: id,
+      });
+    }
+
+    const updated: SessionDescriptor = {
+      ...session,
+      handle,
+      protocolIds,
+      lastActivityAt: _sessionManagerDeps.now(),
+    };
+
+    this._sessions.set(id, updated);
+
+    getLogger().debug("session", "Session handle bound", {
+      storyId: session.storyId,
+      sessionId: id,
+      handle,
+    });
+
+    return { ...updated };
+  }
+
   getForStory(storyId: string): SessionDescriptor[] {
     return Array.from(this._sessions.values())
       .filter((s) => s.storyId === storyId)
