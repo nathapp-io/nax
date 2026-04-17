@@ -15,6 +15,7 @@ import {
   _canonicalLoaderDeps,
 } from "../../../../src/context/rules/canonical-loader";
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,5 +223,57 @@ describe("loadCanonicalRules", () => {
     setupFiles({ "/project/.nax/rules/style.md": "\n\n## Style\n\nContent.\n\n" });
     const rules = await loadCanonicalRules("/project");
     expect(rules[0]?.content).toBe("## Style\n\nContent.");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M10: logger calls must not carry sentinel storyId "_rules"
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — #508-M10 no sentinel storyId in logger calls", () => {
+  let origGetLogger: typeof _canonicalLoaderDeps.getLogger;
+
+  beforeEach(() => {
+    origGetLogger = _canonicalLoaderDeps.getLogger;
+  });
+
+  afterEach(() => {
+    _canonicalLoaderDeps.getLogger = origGetLogger;
+  });
+
+  function makeLoggerSpy(warnData: Array<Record<string, unknown>>, debugData: Array<Record<string, unknown>>) {
+    return () =>
+      ({
+        warn: (_stage: string, _msg: string, data: Record<string, unknown>) => warnData.push(data),
+        debug: (_stage: string, _msg: string, data: Record<string, unknown>) => debugData.push(data),
+        info: () => {},
+        error: () => {},
+      }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
+  }
+
+  test("warn log data does not contain storyId when readFile fails", async () => {
+    const warnData: Array<Record<string, unknown>> = [];
+    _canonicalLoaderDeps.getLogger = makeLoggerSpy(warnData, []);
+    _canonicalLoaderDeps.globInDir = () => ["/project/.nax/rules/rules.md"];
+    _canonicalLoaderDeps.readFile = async () => {
+      throw new Error("disk error");
+    };
+
+    await loadCanonicalRules("/project");
+
+    expect(warnData).toHaveLength(1);
+    expect("storyId" in (warnData[0] ?? {})).toBe(false);
+  });
+
+  test("debug log data does not contain storyId when rules load successfully", async () => {
+    const debugData: Array<Record<string, unknown>> = [];
+    _canonicalLoaderDeps.getLogger = makeLoggerSpy([], debugData);
+    _canonicalLoaderDeps.globInDir = () => ["/project/.nax/rules/style.md"];
+    _canonicalLoaderDeps.readFile = async () => "## Style\n\nUse async/await.";
+
+    await loadCanonicalRules("/project");
+
+    expect(debugData).toHaveLength(1);
+    expect("storyId" in (debugData[0] ?? {})).toBe(false);
   });
 });

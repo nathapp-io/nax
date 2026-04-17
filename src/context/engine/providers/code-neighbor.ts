@@ -24,6 +24,7 @@
 import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
+import { getLogger } from "../../../logger";
 import { isRelativeAndSafe } from "../../../utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -77,14 +78,26 @@ export const _codeNeighborDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
+  getLogger,
   glob: (pattern: string, cwd: string): string[] => {
     const g = new Bun.Glob(pattern);
     const results: string[] = [];
     let count = 0;
+    let truncated = false;
     for (const file of g.scanSync({ cwd, absolute: false })) {
-      if (count >= MAX_GLOB_FILES) break;
+      if (count >= MAX_GLOB_FILES) {
+        truncated = true;
+        break;
+      }
       results.push(file);
       count++;
+    }
+    if (truncated) {
+      _codeNeighborDeps.getLogger().debug("context-v2", "Glob cap reached — results truncated", {
+        pattern,
+        cwd,
+        cap: MAX_GLOB_FILES,
+      });
     }
     return results;
   },
