@@ -16,6 +16,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { writeContextManifest } from "../../context/engine/manifest-store";
@@ -106,8 +107,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     // Trim trailing slash before taking the last path segment so
     // "/features/my-feature/" resolves to "my-feature" not "".
     featureId: ctx.featureDir?.replace(/\/$/, "").split("/").pop(),
-    workdir: ctx.workdir,
-    projectDir: ctx.projectDir,
+    repoRoot: ctx.workdir,
+    packageDir: ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir,
     stage: "context", // initial assembly; execution stage overrides to "execution"
     role: "implementer",
     budgetTokens: ctx.config.context.featureEngine?.budgetTokens ?? 8_000,

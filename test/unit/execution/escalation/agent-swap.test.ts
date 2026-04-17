@@ -84,7 +84,8 @@ async function makeBundle(agentId = "claude"): Promise<ContextBundle> {
   const orch = new ContextOrchestrator([makeProvider("p1", makeChunkResult())]);
   return orch.assemble({
     storyId: "US-001",
-    workdir: "/repo",
+    repoRoot: "/repo",
+    packageDir: "/repo",
     stage: "run",
     role: "implementer",
     budgetTokens: 8_000,

@@ -24,7 +24,8 @@ import type {
 
 const BASE_REQUEST: ContextRequest = {
   storyId: "US-001",
-  workdir: "/repo",
+  repoRoot: "/repo",
+  packageDir: "/repo",
   stage: "tdd-implementer",
   role: "implementer",
   budgetTokens: 8_000,

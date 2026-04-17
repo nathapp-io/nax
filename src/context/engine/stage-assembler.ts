@@ -153,11 +153,15 @@ export async function assembleForStage(
 
     const orchestrator = createDefaultOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);
 
+    // AC-54: resolve dual workdir fields. repoRoot is the project root (where .nax/ lives);
+    // packageDir is the story's package directory (equals repoRoot for non-monorepo).
+    const packageDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+
     const request: ContextRequest = {
       storyId: ctx.story.id,
       featureId: ctx.prd.feature,
-      workdir: ctx.workdir,
-      projectDir: ctx.projectDir,
+      repoRoot: ctx.workdir,
+      packageDir,
       stage,
       role: stageConfig.role,
       budgetTokens: stageConfig.budgetTokens,
