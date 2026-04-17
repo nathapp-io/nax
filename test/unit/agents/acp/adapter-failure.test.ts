@@ -127,11 +127,11 @@ describe("AcpAgentAdapter — adapterFailure taxonomy", () => {
   });
 
   test("rate-limit exhausted (no fallback, legacy path) — fail-rate-limit, retriable: true", async () => {
-    // Rate-limit must come from a failed run (stopReason !== end_turn) whose output
-    // contains a 429 pattern. The legacy backoff path exhausts after 3 attempts.
+    // Rate-limit must come from a failed run (stopReason !== end_turn) with
+    // machine-readable structured output. The legacy backoff path exhausts after 3 attempts.
     const session = makeSession({
       promptFn: async () => ({
-        messages: [{ role: "assistant", content: "429 Rate limit exceeded. retry after 30" }],
+        messages: [{ role: "assistant", content: '{"statusCode":429,"retryAfterSeconds":30}' }],
         stopReason: "cancelled", // non-success so the output is parsed for rate-limit
       }),
     });

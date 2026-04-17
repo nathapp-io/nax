@@ -242,7 +242,7 @@ describe("complete()", () => {
     const session = makeSession({
       promptFn: async (_: string) => {
         calls++;
-        if (calls === 1) throw new Error("rate limit exceeded");
+        if (calls === 1) throw new Error('{"statusCode":429}');
         return { messages: [{ role: "assistant", content: "Retried OK." }], stopReason: "end_turn" };
       },
     });
@@ -256,13 +256,13 @@ describe("complete()", () => {
 
   test("throws after exhausting all rate limit retries", async () => {
     const session = makeSession({
-      promptFn: async (_: string) => { throw new Error("rate limit exceeded"); },
+      promptFn: async (_: string) => { throw new Error('{"statusCode":429}'); },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await expect(
       new AcpAgentAdapter("claude").complete("Fail all"),
-    ).rejects.toThrow(/rate limit/i);
+    ).rejects.toThrow(/429/);
   });
 });
 

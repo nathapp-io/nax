@@ -211,6 +211,33 @@ export class SessionManager implements ISessionManager {
     return { ...updated };
   }
 
+  handoff(id: string, newAgent: string, reason?: string): SessionDescriptor {
+    const session = this._sessions.get(id);
+    if (!session) {
+      throw new NaxError(`Session "${id}" not found in registry`, "SESSION_NOT_FOUND", {
+        stage: "session",
+        sessionId: id,
+      });
+    }
+
+    const updated: SessionDescriptor = {
+      ...session,
+      agent: newAgent,
+      lastActivityAt: _sessionManagerDeps.now(),
+    };
+    this._sessions.set(id, updated);
+
+    getLogger().info("session", "Session handed off to fallback agent", {
+      storyId: session.storyId,
+      sessionId: id,
+      fromAgent: session.agent,
+      toAgent: newAgent,
+      ...(reason && { reason }),
+    });
+
+    return { ...updated };
+  }
+
   resume(storyId: string, role: import("./types").SessionRole): SessionDescriptor | null {
     const terminal: SessionState[] = ["COMPLETED", "FAILED"];
     for (const session of this._sessions.values()) {

@@ -2,82 +2,56 @@ import { describe, expect, test } from "bun:test";
 import { parseAgentError } from "../../../../src/agents/acp/parse-agent-error";
 
 describe("parseAgentError", () => {
-  test("detects 429 status code as rate-limit", () => {
-    const result = parseAgentError("429 Too Many Requests");
-    expect(result.type).toBe("rate-limit");
-    expect(result.retryAfterSeconds).toBeUndefined();
-  });
-
-  test("detects lowercase 'rate limit' as rate-limit", () => {
-    const result = parseAgentError("rate limit exceeded");
-    expect(result.type).toBe("rate-limit");
-  });
-
-  test("detects capitalized 'Rate limit' as rate-limit", () => {
-    const result = parseAgentError("Rate limit hit, retry after 60");
-    expect(result.type).toBe("rate-limit");
-  });
-
-  test("extracts retryAfterSeconds when present in rate limit message", () => {
-    const result = parseAgentError("Rate limit hit, retry after 60 seconds");
+  test("detects rate-limit from direct JSON type", () => {
+    const result = parseAgentError('{"type":"rate-limit","retryAfterSeconds":60}');
     expect(result.type).toBe("rate-limit");
     expect(result.retryAfterSeconds).toBe(60);
   });
 
-  test("extracts retryAfterSeconds from different numeric patterns", () => {
-    const result = parseAgentError("rate limit, please retry after 120 seconds");
+  test("detects auth from direct JSON type", () => {
+    const result = parseAgentError('{"type":"auth"}');
+    expect(result.type).toBe("auth");
+  });
+
+  test("detects rate-limit from JSON statusCode", () => {
+    const result = parseAgentError('{"statusCode":429}');
     expect(result.type).toBe("rate-limit");
-    expect(result.retryAfterSeconds).toBe(120);
   });
 
-  test("detects 401 status code as auth", () => {
-    const result = parseAgentError("401 Unauthorized");
+  test("detects auth from JSON statusCode", () => {
+    const result = parseAgentError('{"statusCode":401}');
     expect(result.type).toBe("auth");
   });
 
-  test("detects 403 status code as auth", () => {
-    const result = parseAgentError("403 Forbidden");
+  test("detects rate-limit from bracketed acpx codes", () => {
+    const result = parseAgentError("acpx session failed [ACPX_RATE_LIMIT/TOO_MANY_REQUESTS]");
+    expect(result.type).toBe("rate-limit");
+  });
+
+  test("detects auth from bracketed acpx codes", () => {
+    const result = parseAgentError("acpx auth failed [AUTH_FAILED/PERMISSION_DENIED]");
     expect(result.type).toBe("auth");
   });
 
-  test("detects lowercase 'unauthorized' as auth", () => {
-    const result = parseAgentError("unauthorized access");
-    expect(result.type).toBe("auth");
+  test("detects structured key-value status codes", () => {
+    const rateLimit = parseAgentError("statusCode=429");
+    const auth = parseAgentError("code=403");
+    expect(rateLimit.type).toBe("rate-limit");
+    expect(auth.type).toBe("auth");
   });
 
-  test("detects capitalized 'Unauthorized' as auth", () => {
+  test("does not infer rate-limit from free-text phrases", () => {
+    const result = parseAgentError("Rate limit hit, retry after 60");
+    expect(result.type).toBe("unknown");
+  });
+
+  test("does not infer auth from free-text phrases", () => {
     const result = parseAgentError("Unauthorized request");
-    expect(result.type).toBe("auth");
-  });
-
-  test("detects lowercase 'forbidden' as auth", () => {
-    const result = parseAgentError("forbidden resource");
-    expect(result.type).toBe("auth");
-  });
-
-  test("detects capitalized 'Forbidden' as auth", () => {
-    const result = parseAgentError("Forbidden access denied");
-    expect(result.type).toBe("auth");
-  });
-
-  test("returns unknown for unrecognized error patterns", () => {
-    const result = parseAgentError("process exited with code 1");
-    expect(result.type).toBe("unknown");
-    expect(result.retryAfterSeconds).toBeUndefined();
-  });
-
-  test("returns unknown for empty string", () => {
-    const result = parseAgentError("");
     expect(result.type).toBe("unknown");
   });
 
-  test("returns unknown for generic error message", () => {
-    const result = parseAgentError("something went wrong");
-    expect(result.type).toBe("unknown");
-  });
-
-  test("prioritizes first recognized pattern", () => {
-    const result = parseAgentError("rate limit and 401 auth error");
-    expect(result.type).toBe("rate-limit");
+  test("returns unknown for empty or unstructured errors", () => {
+    expect(parseAgentError("").type).toBe("unknown");
+    expect(parseAgentError("something went wrong").type).toBe("unknown");
   });
 });

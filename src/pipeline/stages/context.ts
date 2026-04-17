@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { createDefaultOrchestrator, createRunCallCounter } from "../../context/engine";
 import type { ContextRequest, IContextProvider } from "../../context/engine";
+import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
 import { writeContextManifest } from "../../context/engine/manifest-store";
 import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
 import { getStageContextConfig } from "../../context/engine/stage-config";
@@ -128,6 +129,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       : undefined,
     sessionId: ctx.sessionId,
     agentId: agentName,
+    availableBudgetTokens: estimateAvailableBudgetTokens(agentName, ctx.prompt),
     deterministic: ctx.config.context.v2.deterministic,
     // Amendment B AC-51: pass planDigestBoost from the routing strategy's stage config.
     // single-session, tdd-simple, no-test, and batch strategies declare planDigestBoost >= 1.5.

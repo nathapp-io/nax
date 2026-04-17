@@ -191,6 +191,11 @@ export interface ISessionManager {
    */
   bindHandle(id: string, handle: string, protocolIds: ProtocolIds): SessionDescriptor;
   /**
+   * Update the session owner agent during availability fallback.
+   * Optional during the migration period; callers should guard with ?.handoff.
+   */
+  handoff?(id: string, newAgent: string, reason?: string): SessionDescriptor;
+  /**
    * Look up an existing non-terminal session by storyId + role (Phase 3).
    * Returns the descriptor if found, null otherwise.
    * Used by rectification loops to resume the implementer session across attempts.

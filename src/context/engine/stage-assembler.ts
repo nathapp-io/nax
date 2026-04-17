@@ -20,6 +20,7 @@ import { getLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
 import { getContextFiles } from "../../prd/types";
 import { errorMessage } from "../../utils/errors";
+import { estimateAvailableBudgetTokens } from "./available-budget";
 import { writeContextManifest } from "./manifest-store";
 import { createDefaultOrchestrator } from "./orchestrator-factory";
 import { loadPluginProviders } from "./providers/plugin-loader";
@@ -162,6 +163,8 @@ export async function assembleForStage(
     // AC-54: resolve dual workdir fields. repoRoot is the project root (where .nax/ lives);
     // packageDir is the story's package directory (equals repoRoot for non-monorepo).
     const packageDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    const targetAgentId =
+      ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude";
 
     const request: ContextRequest = {
       storyId: ctx.story.id,
@@ -185,8 +188,8 @@ export async function assembleForStage(
           }
         : undefined,
       sessionId: ctx.sessionId,
-      agentId:
-        ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude",
+      agentId: targetAgentId,
+      availableBudgetTokens: estimateAvailableBudgetTokens(targetAgentId, ctx.prompt),
       // AC-24: propagate determinism flag to every assembled stage, not just the context stage.
       deterministic: ctx.config.context.v2.deterministic,
       // AC-51: propagate planDigestBoost from the routing test strategy so the boost applies

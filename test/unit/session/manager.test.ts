@@ -343,3 +343,22 @@ describe("SessionManager.getForStory()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // bindHandle() tests extracted to manager-bind-handle.test.ts to keep file under 400 lines.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handoff() — fallback agent ownership
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionManager.handoff()", () => {
+  test("updates the session's agent owner", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
+    const updated = mgr.handoff(sess.id, "codex", "fail-quota");
+    expect(updated.agent).toBe("codex");
+    expect(mgr.get(sess.id)?.agent).toBe("codex");
+  });
+
+  test("handoff on unknown session throws NaxError", () => {
+    const mgr = new SessionManager();
+    expect(() => mgr.handoff("sess-unknown", "codex", "fail-quota")).toThrow(NaxError);
+  });
+});

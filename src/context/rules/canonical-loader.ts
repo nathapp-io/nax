@@ -39,7 +39,25 @@ export const _canonicalLoaderDeps = {
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
   globInDir: (dir: string): string[] => {
     try {
-      return [...new Bun.Glob("*.md").scanSync({ cwd: dir })].sort().map((f) => join(dir, f));
+      const logger = getLogger();
+      const files = [...new Bun.Glob("**/*.md").scanSync({ cwd: dir, absolute: false })].sort();
+      const kept: string[] = [];
+      const ignored: string[] = [];
+      for (const rel of files) {
+        const depth = rel.split("/").length - 1;
+        if (depth <= 1) {
+          kept.push(join(dir, rel));
+        } else {
+          ignored.push(rel);
+        }
+      }
+      if (ignored.length > 0) {
+        logger.warn("canonical-loader", "Ignoring canonical rule files deeper than one level", {
+          ignoredCount: ignored.length,
+          ignored: ignored.slice(0, 20),
+        });
+      }
+      return kept;
     } catch {
       return [];
     }
@@ -52,24 +70,50 @@ export const _canonicalLoaderDeps = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface BannedPattern {
+  id: string;
   regex: RegExp;
   description: string;
 }
 
 const BANNED_PATTERNS: BannedPattern[] = [
-  { regex: /<system-reminder>/i, description: "agent XML tag <system-reminder>" },
-  { regex: /CLAUDE\.md/, description: "agent-specific file reference CLAUDE.md" },
-  { regex: /\.claude\//, description: "agent-specific directory .claude/" },
-  { regex: /\bthe [A-Za-z]+ tool\b/i, description: "agent-specific tool-name phrasing" },
-  { regex: /\bIMPORTANT:/, description: "shouting-style IMPORTANT:" },
-  { regex: /\p{Extended_Pictographic}/u, description: "emoji character" },
+  { id: "xml-tag", regex: /<system-reminder>|<ide_diagnostics>/i, description: "agent-specific XML tag" },
+  { id: "claude-reference", regex: /CLAUDE\.md/, description: "agent-specific file reference CLAUDE.md" },
+  { id: "codex-reference", regex: /AGENTS\.md/, description: "agent-specific file reference AGENTS.md" },
+  { id: "gemini-reference", regex: /GEMINI\.md/, description: "agent-specific file reference GEMINI.md" },
+  { id: "agent-directory", regex: /\.claude\/|\.codex\/|\.gemini\//, description: "agent-specific directory path" },
+  {
+    id: "tool-phrasing",
+    regex: /\bthe [A-Za-z][A-Za-z0-9_-]* tool\b/i,
+    description: "agent-specific tool-name phrasing",
+  },
+  { id: "important-shouting", regex: /\bIMPORTANT:/, description: "shouting-style IMPORTANT:" },
+  { id: "emoji", regex: /\p{Extended_Pictographic}/u, description: "emoji character" },
 ];
+
+const FRONTMATTER_PRIORITY_DEFAULT = 100;
+const RULE_ALLOW_MARKER = /<!--\s*nax-rules-allow:\s*([a-z0-9,\s-]+)\s*-->/gi;
 
 export interface NeutralityViolation {
   file: string;
   lineNumber: number;
   line: string;
+  ruleId: string;
   pattern: string;
+}
+
+function parseRuleAllowMarker(line: string): Set<string> {
+  const allowed = new Set<string>();
+  RULE_ALLOW_MARKER.lastIndex = 0;
+  while (true) {
+    const match = RULE_ALLOW_MARKER.exec(line);
+    if (!match) break;
+    const body = match[1] ?? "";
+    for (const token of body.split(",")) {
+      const id = token.trim().toLowerCase();
+      if (id) allowed.add(id);
+    }
+  }
+  return allowed;
 }
 
 /**
@@ -82,12 +126,15 @@ export function lintForNeutrality(content: string, fileName: string): Neutrality
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    for (const { regex, description } of BANNED_PATTERNS) {
+    const allowList = parseRuleAllowMarker(line);
+    for (const { id, regex, description } of BANNED_PATTERNS) {
+      if (allowList.has(id)) continue;
       if (regex.test(line)) {
         violations.push({
           file: fileName,
           lineNumber: i + 1,
           line: line.trim(),
+          ruleId: id,
           pattern: description,
         });
         break; // one violation per line is enough to flag it
@@ -121,15 +168,99 @@ export class NeutralityLintError extends NaxError {
   }
 }
 
+export class RulesFrontmatterError extends NaxError {
+  constructor(message: string, filePath: string) {
+    super(message, "RULES_FRONTMATTER_INVALID", {
+      stage: "canonical-loader",
+      filePath,
+    });
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Loader
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CanonicalRule {
+  /** Rule identifier (relative path without extension, e.g. "frontend/style") */
+  id?: string;
   /** Filename (e.g. "coding-style.md") */
   fileName: string;
+  /** Relative path under .nax/rules (e.g. "frontend/style.md") */
+  path?: string;
   /** Full content of the file */
   content: string;
+  /** Approximate token count for this rule */
+  tokens?: number;
+  /** Priority for truncation/sorting (lower = more important) */
+  priority?: number;
+  /** Optional glob scopes that decide when this rule applies */
+  appliesTo?: string[];
+}
+
+interface ParsedFrontmatter {
+  content: string;
+  priority: number;
+  appliesTo?: string[];
+}
+
+function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
+  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
+    return { content: raw.trim(), priority: FRONTMATTER_PRIORITY_DEFAULT };
+  }
+
+  const close = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!close) {
+    throw new RulesFrontmatterError("Canonical rule frontmatter is missing closing '---'", filePath);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = Bun.YAML.parse(close[1] ?? "");
+  } catch (err) {
+    throw new RulesFrontmatterError(
+      `Failed to parse YAML frontmatter: ${err instanceof Error ? err.message : String(err)}`,
+      filePath,
+    );
+  }
+
+  if (parsed !== null && (typeof parsed !== "object" || Array.isArray(parsed))) {
+    throw new RulesFrontmatterError("Frontmatter must be a YAML object", filePath);
+  }
+
+  const doc = (parsed ?? {}) as Record<string, unknown>;
+  const priorityRaw = doc.priority;
+  let priority = FRONTMATTER_PRIORITY_DEFAULT;
+  if (priorityRaw !== undefined) {
+    if (typeof priorityRaw !== "number" || !Number.isFinite(priorityRaw)) {
+      throw new RulesFrontmatterError("frontmatter.priority must be a number", filePath);
+    }
+    priority = Math.trunc(priorityRaw);
+  }
+
+  const appliesRaw = doc.appliesTo;
+  let appliesTo: string[] | undefined;
+  if (appliesRaw !== undefined) {
+    if (typeof appliesRaw === "string") {
+      const trimmed = appliesRaw.trim();
+      if (!trimmed) throw new RulesFrontmatterError("frontmatter.appliesTo cannot be empty", filePath);
+      appliesTo = [trimmed];
+    } else if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
+      appliesTo = appliesRaw.map((v) => v.trim());
+    } else {
+      throw new RulesFrontmatterError("frontmatter.appliesTo must be a string or string[]", filePath);
+    }
+  }
+
+  return {
+    content: raw.slice(close[0].length).trim(),
+    priority,
+    ...(appliesTo && { appliesTo }),
+  };
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 /**
@@ -143,7 +274,20 @@ export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule
   const logger = _canonicalLoaderDeps.getLogger();
   const rulesDir = join(workdir, CANONICAL_RULES_DIR);
 
-  const filePaths = _canonicalLoaderDeps.globInDir(rulesDir);
+  const allFilePaths = _canonicalLoaderDeps.globInDir(rulesDir);
+  const filePaths = allFilePaths.filter((filePath) => {
+    const normalized = filePath.replaceAll("\\", "/");
+    const normalizedRulesDir = rulesDir.replaceAll("\\", "/");
+    const relativePath = normalized.startsWith(`${normalizedRulesDir}/`)
+      ? normalized.slice(normalizedRulesDir.length + 1)
+      : basename(normalized);
+    return relativePath.split("/").length <= 2;
+  });
+  if (allFilePaths.length > filePaths.length) {
+    logger.warn("canonical-loader", "Ignoring canonical rule files deeper than one level", {
+      ignoredCount: allFilePaths.length - filePaths.length,
+    });
+  }
   if (filePaths.length === 0) {
     return [];
   }
@@ -152,6 +296,11 @@ export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule
   const allViolations: NeutralityViolation[] = [];
 
   for (const filePath of filePaths) {
+    const normalizedPath = filePath.replaceAll("\\", "/");
+    const normalizedRulesDir = rulesDir.replaceAll("\\", "/");
+    const relativePath = normalizedPath.startsWith(`${normalizedRulesDir}/`)
+      ? normalizedPath.slice(normalizedRulesDir.length + 1)
+      : basename(normalizedPath);
     const fileName = basename(filePath);
     let content: string;
     try {
@@ -165,22 +314,39 @@ export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule
 
     if (!content.trim()) continue;
 
-    const violations = lintForNeutrality(content, fileName);
+    const parsed = parseFrontmatter(content, filePath);
+    if (!parsed.content) continue;
+
+    const violations = lintForNeutrality(parsed.content, fileName);
     if (violations.length > 0) {
       allViolations.push(...violations);
       continue; // collect all violations before throwing
     }
 
-    rules.push({ fileName, content: content.trim() });
+    rules.push({
+      id: relativePath.replace(/\.md$/i, ""),
+      fileName,
+      path: relativePath,
+      content: parsed.content,
+      tokens: estimateTokens(parsed.content),
+      priority: parsed.priority,
+      ...(parsed.appliesTo && { appliesTo: parsed.appliesTo }),
+    });
   }
 
   if (allViolations.length > 0) {
     throw new NeutralityLintError(allViolations);
   }
 
+  rules.sort(
+    (a, b) =>
+      (a.priority ?? FRONTMATTER_PRIORITY_DEFAULT) - (b.priority ?? FRONTMATTER_PRIORITY_DEFAULT) ||
+      (a.id ?? a.fileName).localeCompare(b.id ?? b.fileName),
+  );
+
   logger.debug("canonical-loader", "Loaded canonical rules", {
     fileCount: rules.length,
-    files: rules.map((r) => r.fileName),
+    files: rules.map((r) => r.path),
   });
 
   return rules;

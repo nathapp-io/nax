@@ -20,21 +20,25 @@ import type { CanonicalRule } from "../../../../../src/context/rules/canonical-l
 
 let origReadFile: typeof _staticRulesDeps.readFile;
 let origFileExists: typeof _staticRulesDeps.fileExists;
+let origGlobInDir: typeof _staticRulesDeps.globInDir;
 let origLoadCanonicalRules: typeof _staticRulesDeps.loadCanonicalRules;
 
 beforeEach(() => {
   origReadFile = _staticRulesDeps.readFile;
   origFileExists = _staticRulesDeps.fileExists;
+  origGlobInDir = _staticRulesDeps.globInDir;
   origLoadCanonicalRules = _staticRulesDeps.loadCanonicalRules;
   // Default: no canonical rules (so legacy tests run the legacy path)
   _staticRulesDeps.loadCanonicalRules = async () => [];
   _staticRulesDeps.fileExists = async () => false;
   _staticRulesDeps.readFile = async () => "";
+  _staticRulesDeps.globInDir = () => [];
 });
 
 afterEach(() => {
   _staticRulesDeps.readFile = origReadFile;
   _staticRulesDeps.fileExists = origFileExists;
+  _staticRulesDeps.globInDir = origGlobInDir;
   _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
 });
 
@@ -52,12 +56,14 @@ const BASE_REQUEST: ContextRequest = {
 };
 
 function setupLegacyFiles(files: Record<string, string | undefined>) {
+  const nestedRules = Object.keys(files).filter((path) => path.includes("/.claude/rules/") && path.endsWith(".md"));
   _staticRulesDeps.fileExists = async (path: string) => path in files && files[path] !== undefined;
   _staticRulesDeps.readFile = async (path: string) => {
     const content = files[path];
     if (content === undefined) throw new Error(`File not found: ${path}`);
     return content;
   };
+  _staticRulesDeps.globInDir = () => nestedRules;
 }
 
 function setupCanonical(rules: CanonicalRule[]) {
@@ -118,6 +124,33 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     expect(r1.chunks[0]?.id).toBe(r2.chunks[0]?.id);
   });
 
+  test("filters canonical rules by appliesTo when touchedFiles are present", async () => {
+    setupCanonical([
+      { fileName: "agents.md", content: "Agent-specific coding rules", appliesTo: ["src/agents/**"] },
+      { fileName: "global.md", content: "Global rules" },
+    ]);
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch({
+      ...BASE_REQUEST,
+      touchedFiles: ["src/review/runner.ts"],
+    });
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("Global rules");
+  });
+
+  test("includes appliesTo-scoped rule when touchedFiles match", async () => {
+    setupCanonical([
+      { fileName: "agents.md", content: "Agent-specific coding rules", appliesTo: ["src/agents/**"] },
+    ]);
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch({
+      ...BASE_REQUEST,
+      touchedFiles: ["src/agents/acp/adapter.ts"],
+    });
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("Agent-specific coding rules");
+  });
+
   test("canonical path takes precedence over legacy files", async () => {
     setupCanonical([{ fileName: "canonical.md", content: "Canonical rules." }]);
     setupLegacyFiles({ "/project/CLAUDE.md": "Legacy rules." });
@@ -132,7 +165,7 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
   test("propagates NeutralityLintError without falling back to legacy", async () => {
     _staticRulesDeps.loadCanonicalRules = async () => {
       throw new NeutralityLintError([
-        { file: "bad.md", lineNumber: 1, line: "CLAUDE.md", pattern: "agent-specific" },
+        { file: "bad.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific" },
       ]);
     };
     setupLegacyFiles({ "/project/CLAUDE.md": "Legacy rules." });
@@ -161,11 +194,15 @@ describe("StaticRulesProvider — allowLegacyClaudeMd", () => {
   });
 
   test("reads legacy files when allowLegacyClaudeMd is true and no canonical rules", async () => {
-    setupLegacyFiles({ "/project/CLAUDE.md": "# Project Rules\n\nUse bun." });
+    setupLegacyFiles({
+      "/project/CLAUDE.md": "# Project Rules\n\nUse bun.",
+      "/project/.claude/rules/testing.md": "Always write tests.",
+    });
     const provider = new StaticRulesProvider({ allowLegacyClaudeMd: true });
     const result = await provider.fetch(BASE_REQUEST);
-    expect(result.chunks).toHaveLength(1);
-    expect(result.chunks[0]?.content).toContain("Use bun.");
+    expect(result.chunks).toHaveLength(2);
+    expect(result.chunks.map((c) => c.content).join("\n")).toContain("Use bun.");
+    expect(result.chunks.map((c) => c.content).join("\n")).toContain("Always write tests.");
   });
 
   test("default allowLegacyClaudeMd is false — no legacy fallback without opt-in", async () => {
@@ -230,14 +267,30 @@ describe("StaticRulesProvider — legacy path", () => {
     expect(result.chunks[0]?.content).toContain("cursor rules here");
   });
 
-  test("reads only the first candidate found (CLAUDE.md wins over .cursorrules)", async () => {
+  test("reads all legacy candidate files when present", async () => {
     setupLegacyFiles({
       "/project/CLAUDE.md": "claude rules",
       "/project/.cursorrules": "cursor rules",
+      "/project/AGENTS.md": "agent rules",
     });
     const result = await provider.fetch(BASE_REQUEST);
-    expect(result.chunks).toHaveLength(1);
-    expect(result.chunks[0]?.content).toContain("claude rules");
+    expect(result.chunks).toHaveLength(3);
+    const all = result.chunks.map((c) => c.content).join("\n");
+    expect(all).toContain("claude rules");
+    expect(all).toContain("cursor rules");
+    expect(all).toContain("agent rules");
+  });
+
+  test("loads .claude/rules/*.md in legacy mode", async () => {
+    setupLegacyFiles({
+      "/project/.claude/rules/testing.md": "testing rules",
+      "/project/.claude/rules/typescript/style.md": "typescript style",
+    });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.chunks).toHaveLength(2);
+    const all = result.chunks.map((c) => c.content).join("\n");
+    expect(all).toContain(".claude/rules/testing.md");
+    expect(all).toContain(".claude/rules/typescript/style.md");
   });
 
   test("soft failure: read error is logged and returns empty", async () => {
@@ -329,7 +382,9 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
   test("monorepo: NeutralityLintError from repo-level rules propagates without fallback", async () => {
     _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
       if (workdir === "/repo") {
-        throw new NeutralityLintError([{ file: "bad.md", lineNumber: 1, line: "CLAUDE.md", pattern: "agent-specific" }]);
+        throw new NeutralityLintError([
+          { file: "bad.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific" },
+        ]);
       }
       return [];
     };
@@ -349,7 +404,9 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
       if (workdir === "/repo") return [{ fileName: "style.md", content: "Repo style." }];
       if (workdir === "/repo/packages/api") {
-        throw new NeutralityLintError([{ file: "pkg.md", lineNumber: 2, line: "AGENTS.md", pattern: "agent-specific" }]);
+        throw new NeutralityLintError([
+          { file: "pkg.md", lineNumber: 2, line: "AGENTS.md", ruleId: "codex-reference", pattern: "agent-specific" },
+        ]);
       }
       return [];
     };
@@ -401,8 +458,8 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     // Overlay: map has rule-a.md and rule-b.md — both kept since different filenames
     expect(result.chunks).toHaveLength(2);
     const ids = result.chunks.map((c) => c.id);
-    expect(ids.some((id) => id.includes("rule-a.md"))).toBe(true);
-    expect(ids.some((id) => id.includes("rule-b.md"))).toBe(true);
+    expect(ids.some((id) => id.includes("rule-a"))).toBe(true);
+    expect(ids.some((id) => id.includes("rule-b"))).toBe(true);
     // IDs must be distinct even though content hashes are identical
     expect(ids[0]).not.toBe(ids[1]);
   });
