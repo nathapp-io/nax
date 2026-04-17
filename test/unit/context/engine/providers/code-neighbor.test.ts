@@ -36,7 +36,8 @@ afterEach(() => {
 function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   return {
     storyId: "US-001",
-    workdir: "/repo",
+    repoRoot: "/repo",
+    packageDir: "/repo",
     stage: "execution",
     role: "implementer",
     budgetTokens: 8_000,

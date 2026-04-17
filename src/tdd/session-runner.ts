@@ -230,8 +230,7 @@ export async function runTddSession(
           bundle: contextBundle,
           story,
           config,
-          workdir,
-          projectDir,
+          repoRoot: workdir,
         })
       : undefined,
     interactionBridge,

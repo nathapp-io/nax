@@ -192,7 +192,10 @@ export class CodeNeighborProvider implements IContextProvider {
   readonly kind = "neighbor" as const;
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
-    const { touchedFiles, workdir } = request;
+    const { touchedFiles } = request;
+    // AC-56 (future): use request.packageDir for package-scoped neighbor tracing.
+    // For now, default to repoRoot to preserve existing behavior.
+    const workdir = request.repoRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }

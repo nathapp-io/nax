@@ -76,7 +76,8 @@ async function makeBundle(): Promise<ContextBundle> {
   const orch = new ContextOrchestrator([makeProvider()]);
   return orch.assemble({
     storyId: "US-001",
-    workdir: "/repo",
+    repoRoot: "/repo",
+    packageDir: "/repo",
     stage: "run",
     role: "implementer",
     budgetTokens: 8_000,

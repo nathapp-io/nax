@@ -447,8 +447,7 @@ export async function runSemanticReview(
           bundle: contextBundle,
           story: contextToolStory,
           config: naxConfig ?? DEFAULT_CONFIG,
-          workdir,
-          projectDir,
+          repoRoot: workdir,
         })
       : undefined,
   } as const;

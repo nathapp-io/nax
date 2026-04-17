@@ -155,8 +155,7 @@ export const executionStage: PipelineStage = {
           bundle: ctx.contextBundle,
           story: ctx.story,
           config: ctx.config,
-          workdir: ctx.workdir,
-          projectDir: ctx.projectDir,
+          repoRoot: ctx.workdir,
           runCounter: ctx.contextToolRunCounter,
         })
       : undefined;
@@ -301,8 +300,7 @@ export const executionStage: PipelineStage = {
               bundle: ctx.contextBundle,
               story: ctx.story,
               config: ctx.config,
-              workdir: ctx.workdir,
-              projectDir: ctx.projectDir,
+              repoRoot: ctx.workdir,
               runCounter: ctx.contextToolRunCounter,
             }),
             interactionBridge: buildInteractionBridge(ctx.interaction, {

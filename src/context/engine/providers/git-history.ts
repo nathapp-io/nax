@@ -76,7 +76,10 @@ export class GitHistoryProvider implements IContextProvider {
   readonly kind = "history" as const;
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
-    const { touchedFiles, workdir } = request;
+    const { touchedFiles } = request;
+    // AC-55 (future): use request.packageDir for package-scoped git history.
+    // For now, default to repoRoot to preserve existing behavior.
+    const workdir = request.repoRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }

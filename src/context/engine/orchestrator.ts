@@ -328,6 +328,8 @@ export class ContextOrchestrator {
       digestTokens: dTokens,
       buildMs,
       providerResults,
+      repoRoot: request.repoRoot,
+      packageDir: request.packageDir,
     };
 
     logger.debug("context-v2", "Bundle assembled", {
