@@ -261,7 +261,13 @@ export const executionStage: PipelineStage = {
         );
         const swapAgent = swapTarget ? (ctx.agentGetFn ?? _executionDeps.getAgent)(swapTarget) : null;
         if (swapAgent && swapTarget && ctx.contextBundle) {
-          ctx.contextBundle = _executionDeps.rebuildForSwap(ctx.contextBundle, swapTarget, adapterFailure);
+          const originalBundle = ctx.contextBundle;
+          ctx.contextBundle = _executionDeps.rebuildForSwap(
+            ctx.contextBundle,
+            swapTarget,
+            adapterFailure,
+            ctx.story.id,
+          );
           ctx.agentSwapCount = (ctx.agentSwapCount ?? 0) + 1;
           logger.info("execution", "Agent-swap triggered", {
             storyId: ctx.story.id,
@@ -313,6 +319,7 @@ export const executionStage: PipelineStage = {
             });
             return { action: "continue" };
           }
+          ctx.contextBundle = originalBundle;
           logger.warn("execution", "Agent-swap retry also failed — escalating", {
             storyId: ctx.story.id,
             toAgent: swapTarget,
@@ -321,10 +328,10 @@ export const executionStage: PipelineStage = {
       }
 
       logger.error("execution", "Agent session failed", {
+        storyId: ctx.story.id,
         exitCode: result.exitCode,
         stderr: result.stderr || "",
         rateLimited: result.rateLimited,
-        storyId: ctx.story.id,
       });
       if (result.rateLimited) {
         logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });

@@ -178,9 +178,15 @@ describe("shouldAttemptSwap", () => {
 
 describe("rebuildForSwap", () => {
   let bundle: ContextBundle;
+  let origRebuildForAgent: typeof _agentSwapDeps.rebuildForAgent;
 
   beforeEach(async () => {
     bundle = await makeBundle("claude");
+    origRebuildForAgent = _agentSwapDeps.rebuildForAgent;
+  });
+
+  afterEach(() => {
+    _agentSwapDeps.rebuildForAgent = origRebuildForAgent;
   });
 
   test("returns a ContextBundle with pushMarkdown and chunks", () => {
@@ -199,7 +205,7 @@ describe("rebuildForSwap", () => {
 
   test("result contains a failure-note chunk (kind=session, id starts with failure-note:)", () => {
     const result = rebuildForSwap(bundle, "codex", QUOTA_FAILURE);
-    const failureChunk = result.chunks.find((c) => c.id.startsWith("failure-note:"));
+    const failureChunk = result.chunks.find((c: { id: string }) => c.id.startsWith("failure-note:"));
     expect(failureChunk).toBeDefined();
     expect(failureChunk?.kind).toBe("session");
   });
@@ -218,15 +224,13 @@ describe("rebuildForSwap", () => {
   test("uses injectable rebuildForAgent dep", () => {
     const called: Array<{ prior: ContextBundle; opts: unknown }> = [];
     const fakeBundle: ContextBundle = { ...bundle, agentId: "codex" };
-    const origRebuild = _agentSwapDeps.rebuildForAgent;
-    _agentSwapDeps.rebuildForAgent = (prior, opts) => {
+    _agentSwapDeps.rebuildForAgent = (prior: ContextBundle, opts: { newAgentId?: string; failure?: AdapterFailure }) => {
       called.push({ prior, opts });
       return fakeBundle;
     };
 
     const result = rebuildForSwap(bundle, "codex", QUOTA_FAILURE);
 
-    _agentSwapDeps.rebuildForAgent = origRebuild;
     expect(called).toHaveLength(1);
     expect(called[0]!.opts).toMatchObject({ newAgentId: "codex", failure: QUOTA_FAILURE });
     expect(result).toBe(fakeBundle);

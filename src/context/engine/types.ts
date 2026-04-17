@@ -243,6 +243,8 @@ export interface RebuildOptions {
   failure?: AdapterFailure;
   /** Digest from the prior pipeline stage (optional preamble) */
   priorStageDigest?: string;
+  /** Story id for log correlation — passed through to orchestrator warn logs */
+  storyId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
