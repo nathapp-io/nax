@@ -284,6 +284,15 @@ export const executionStage: PipelineStage = {
 
     ctx.agentResult = result;
 
+    // Phase 1: bind protocol IDs to the session descriptor so the SessionManager
+    // can correlate storyId → sess-<uuid> → acpx recordId in post-run audits.
+    if (ctx.sessionManager && ctx.sessionId && result.protocolIds) {
+      const descriptor = ctx.sessionManager.get(ctx.sessionId);
+      if (descriptor) {
+        ctx.sessionManager.bindHandle(ctx.sessionId, agent.deriveSessionName(descriptor), result.protocolIds);
+      }
+    }
+
     // BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
     await autoCommitIfDirty(ctx.workdir, "execution", "single-session", ctx.story.id);
 
