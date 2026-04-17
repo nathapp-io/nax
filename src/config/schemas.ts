@@ -554,6 +554,18 @@ const ContextV2ConfigSchema = z
      * Example: { "execution": { "budgetTokens": 15000 } }
      */
     stages: z.record(z.string().min(1), z.object({ budgetTokens: z.number().int().positive().optional() })).default({}),
+    /**
+     * Session scratch retention settings (AC-20).
+     * Controls how long completed session scratch dirs are kept on disk.
+     */
+    session: z
+      .object({
+        /** Days to keep completed session scratch dirs before purging. Default: 7. */
+        retentionDays: z.number().int().min(1).default(7),
+        /** When true and the feature run completes fully, archive scratch to _archive/ instead of deleting. Default: true. */
+        archiveOnFeatureArchive: z.boolean().default(true),
+      })
+      .default(() => ({ retentionDays: 7, archiveOnFeatureArchive: true })),
   })
   .default(() => ({
     enabled: false,
@@ -563,6 +575,7 @@ const ContextV2ConfigSchema = z
     fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
     pluginProviders: [],
     stages: {},
+    session: { retentionDays: 7, archiveOnFeatureArchive: true },
   }));
 
 const ContextConfigSchema = z.object({
@@ -985,6 +998,7 @@ export const NaxConfigSchema = z
         fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         pluginProviders: [],
         stages: {},
+        session: { retentionDays: 7, archiveOnFeatureArchive: true },
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),
