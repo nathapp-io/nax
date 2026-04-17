@@ -692,6 +692,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     return path !== null;
   }
 
+  deriveSessionName(descriptor: import("../../session/types").SessionDescriptor): string {
+    return buildSessionName(descriptor.workdir, descriptor.featureName, descriptor.storyId, descriptor.role);
+  }
+
   buildCommand(_options: AgentRunOptions): string[] {
     // ACP adapter uses createClient, not direct CLI invocation.
     // Return a descriptive command for logging/display purposes only.
@@ -775,7 +779,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           }
         }
 
-        return result;
+        return { ...result, sessionRetries: sessionErrorRetries };
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         const parsed = _fallbackDeps.parseAgentError(error.message);
@@ -911,6 +915,13 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     // 5. Ensure session (resume existing or create new)
     const { session, resumed: sessionResumed } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
+
+    // Capture protocol IDs immediately after session is established (Phase 1 plumbing).
+    // session.recordId is stable across reconnects; session.id is volatile.
+    const protocolIds = {
+      recordId: (session as { recordId?: string }).recordId ?? null,
+      sessionId: (session as { id?: string }).id ?? null,
+    };
 
     let lastResponse: AcpSessionResponse | null = null;
     let timedOut = false;
@@ -1125,6 +1136,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       durationMs,
       estimatedCost,
       tokenUsage,
+      protocolIds,
     };
   }
 

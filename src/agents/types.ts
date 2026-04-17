@@ -9,6 +9,7 @@
 import type { NaxConfig } from "../config";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { ToolDescriptor } from "../context/engine/types";
+import type { SessionDescriptor } from "../session/types";
 import type { TokenUsage } from "./cost";
 
 // Re-export extended types for backward compatibility
@@ -48,6 +49,22 @@ export interface AgentResult {
   sessionError?: boolean;
   /** Whether acpx signalled the session error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION) */
   sessionErrorRetryable?: boolean;
+  /**
+   * Protocol-specific session identifiers from the agent backend (Phase 1 plumbing).
+   * Populated by the adapter after ensureAcpSession() returns.
+   * Pipeline stages pass these to sessionManager.bindHandle() for audit correlation.
+   *
+   * ACP: recordId is stable across reconnects; sessionId is volatile.
+   */
+  protocolIds?: {
+    recordId: string | null;
+    sessionId: string | null;
+  };
+  /**
+   * Number of session-level retries (broken connection, QUEUE_DISCONNECTED).
+   * Populated by the adapter; 0 when the first attempt succeeded.
+   */
+  sessionRetries?: number;
 }
 
 /**
@@ -108,6 +125,12 @@ export interface AgentRunOptions {
   contextToolRuntime?: {
     callTool(name: string, input: unknown): Promise<string>;
   };
+  /**
+   * Session descriptor from SessionManager (Phase 1 plumbing — optional for backward compat).
+   * When provided, the adapter MAY use descriptor.id/role/handle for audit correlation.
+   * Phase 5.5: replaces acpSessionName, featureName, storyId, sessionRole, keepSessionOpen.
+   */
+  session?: SessionDescriptor;
 }
 
 /**
@@ -251,6 +274,15 @@ export interface AgentAdapter {
    * Uses claude -p CLI for non-interactive completions.
    */
   complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
+
+  /**
+   * Derive the protocol-specific session name for the given descriptor (Phase 1 plumbing).
+   * Used by pipeline stages to obtain the handle string for sessionManager.bindHandle().
+   *
+   * ACP: "nax-<hash8>-<feature>-<storyId>-<role>" (same formula as buildSessionName)
+   * CLI: not applicable — returns empty string.
+   */
+  deriveSessionName(descriptor: SessionDescriptor): string;
 
   /**
    * Close a named session that was kept open with keepSessionOpen: true.
