@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { GitHistoryProvider, _gitHistoryDeps } from "../../../../../src/context/engine/providers/git-history";
+import type { GitHistoryProviderOptions } from "../../../../../src/context/engine/providers/git-history";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +46,16 @@ function mockGit(responses: Map<string, { stdout: string; exitCode: number }>) {
     const fileArg = args[args.length - 1] ?? "";
     return responses.get(fileArg) ?? { stdout: "", exitCode: 0 };
   };
+}
+
+/** Installs a mock that captures workdirs and returns success for every file */
+function captureWorkdirs(): string[] {
+  const captured: string[] = [];
+  _gitHistoryDeps.gitWithTimeout = async (args: string[], workdir: string) => {
+    captured.push(workdir);
+    return { stdout: "abc1234 feat: something", exitCode: 0 };
+  };
+  return captured;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -175,5 +186,57 @@ describe("GitHistoryProvider", () => {
     const chunk = result.chunks[0]!;
     expect(chunk.content.length).toBeLessThanOrEqual(600 * 4);
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-55: historyScope option
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("GitHistoryProvider — AC-55 historyScope", () => {
+  const MONOREPO_REQUEST: ContextRequest = {
+    storyId: "US-002",
+    repoRoot: "/repo",
+    packageDir: "/repo/packages/api",
+    stage: "execution",
+    role: "implementer",
+    budgetTokens: 8_000,
+    touchedFiles: ["src/service.ts"],
+  };
+
+  test("default historyScope is 'repo' — uses repoRoot", async () => {
+    const workdirs = captureWorkdirs();
+    const p = new GitHistoryProvider();
+    await p.fetch(MONOREPO_REQUEST);
+    expect(workdirs[0]).toBe("/repo");
+  });
+
+  test("historyScope 'repo' — uses repoRoot", async () => {
+    const workdirs = captureWorkdirs();
+    const p = new GitHistoryProvider({ historyScope: "repo" } as GitHistoryProviderOptions);
+    await p.fetch(MONOREPO_REQUEST);
+    expect(workdirs[0]).toBe("/repo");
+  });
+
+  test("historyScope 'package' — uses packageDir", async () => {
+    const workdirs = captureWorkdirs();
+    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
+    await p.fetch(MONOREPO_REQUEST);
+    expect(workdirs[0]).toBe("/repo/packages/api");
+  });
+
+  test("non-monorepo: historyScope 'package' uses repoRoot when packageDir === repoRoot", async () => {
+    const workdirs = captureWorkdirs();
+    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
+    await p.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] })); // packageDir === repoRoot === "/repo"
+    expect(workdirs[0]).toBe("/repo");
+  });
+
+  test("historyScope 'package' — chunk content still contains file history", async () => {
+    mockGit(new Map([["src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
+    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
+    const result = await p.fetch(MONOREPO_REQUEST);
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("src/service.ts");
   });
 });
