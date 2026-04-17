@@ -229,6 +229,11 @@ export interface ContextManifest {
     newChunkIds: string[];
   };
   /**
+   * Provider IDs in request.providerIds that matched no registered provider (AC-16).
+   * Absent when all IDs are known or providerIds is empty.
+   */
+  unknownProviderIds?: string[];
+  /**
    * First 300 chars of each included chunk's content (Amendment A AC-45).
    * Written at assemble() time; used by annotateManifestEffectiveness() post-story
    * to compare chunk content against agent output / diff / review findings.

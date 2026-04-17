@@ -48,8 +48,8 @@ const LEGACY_CANDIDATE_FILES = ["CLAUDE.md", ".cursorrules", "AGENTS.md"];
 export interface StaticRulesProviderOptions {
   /**
    * Fall back to reading CLAUDE.md / .cursorrules / AGENTS.md when
-   * .nax/rules/ is absent. Default: true (migration period).
-   * Set false to enforce strict canonical-only rules loading.
+   * .nax/rules/ is absent. Default: false — opt-in only.
+   * Set true only during migration to the canonical .nax/rules/ store.
    */
   allowLegacyClaudeMd?: boolean;
 }
@@ -77,7 +77,7 @@ export class StaticRulesProvider implements IContextProvider {
   private readonly allowLegacyClaudeMd: boolean;
 
   constructor(options: StaticRulesProviderOptions = {}) {
-    this.allowLegacyClaudeMd = options.allowLegacyClaudeMd ?? true;
+    this.allowLegacyClaudeMd = options.allowLegacyClaudeMd ?? false;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {

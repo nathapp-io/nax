@@ -490,13 +490,12 @@ const ContextV2RulesConfigSchema = z
   .object({
     /**
      * Fall back to reading CLAUDE.md + .claude/rules/ when .nax/rules/ is absent.
-     * Default true for one version (migration period); set false once canonical
-     * store is populated to enforce strict canonical-only rules loading.
-     * Phase 5.1: true (default). Removed after next minor version.
+     * Default false — legacy fallback must be explicitly opted in.
+     * Set true only during migration to the canonical .nax/rules/ store.
      */
-    allowLegacyClaudeMd: z.boolean().default(true),
+    allowLegacyClaudeMd: z.boolean().default(false),
   })
-  .default(() => ({ allowLegacyClaudeMd: true }));
+  .default(() => ({ allowLegacyClaudeMd: false }));
 
 // Context Engine plugin provider config (Phase 7)
 const ContextPluginProviderConfigSchema = z.object({
@@ -629,7 +628,7 @@ export const ContextV2ConfigSchema = z
     enabled: false,
     minScore: 0.1,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-    rules: { allowLegacyClaudeMd: true },
+    rules: { allowLegacyClaudeMd: false },
     fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
     pluginProviders: [],
     stages: {},
@@ -1055,7 +1054,7 @@ export const NaxConfigSchema = z
         enabled: false,
         minScore: 0.1,
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-        rules: { allowLegacyClaudeMd: true },
+        rules: { allowLegacyClaudeMd: false },
         fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         pluginProviders: [],
         stages: {},

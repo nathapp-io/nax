@@ -233,6 +233,16 @@ export class ContextOrchestrator {
       (p) => allowedIds.includes(p.id) && !(request.deterministic === true && p.deterministic === false),
     );
 
+    // AC-16: detect providerIds that matched no registered provider.
+    const registeredIds = new Set(this.providers.map((p) => p.id));
+    const unknownProviderIds = allowedIds.filter((id) => !registeredIds.has(id));
+    if (unknownProviderIds.length > 0) {
+      logger.warn("context-v2", "Unknown provider IDs in request — no matching provider registered", {
+        storyId: request.storyId,
+        unknownProviderIds,
+      });
+    }
+
     // Step 2: parallel fetch with timeout — failures return empty, never throw.
     // Per-provider status is recorded for manifest auditability (Finding 3).
     const fetchResults = await Promise.all(
@@ -389,6 +399,7 @@ export class ContextOrchestrator {
       packageDir: request.packageDir,
       ...(Object.keys(chunkSummaries).length > 0 && { chunkSummaries }),
       ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
+      ...(unknownProviderIds.length > 0 && { unknownProviderIds }),
     };
 
     logger.debug("context-v2", "Bundle assembled", {

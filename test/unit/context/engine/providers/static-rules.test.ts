@@ -168,11 +168,11 @@ describe("StaticRulesProvider — allowLegacyClaudeMd", () => {
     expect(result.chunks[0]?.content).toContain("Use bun.");
   });
 
-  test("default allowLegacyClaudeMd is true (migration period)", async () => {
+  test("default allowLegacyClaudeMd is false — no legacy fallback without opt-in", async () => {
     setupLegacyFiles({ "/project/CLAUDE.md": "# Project Rules\n\nLegacy." });
-    const provider = new StaticRulesProvider(); // no option — defaults to true
+    const provider = new StaticRulesProvider(); // no option — defaults to false
     const result = await provider.fetch(BASE_REQUEST);
-    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks).toHaveLength(0);
   });
 });
 
