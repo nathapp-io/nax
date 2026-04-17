@@ -20,6 +20,7 @@ import { executionStage, _executionDeps } from "../../../src/pipeline/stages/exe
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { AgentAdapter } from "../../../src/agents/types";
+import { _gitDeps } from "../../../src/utils/git";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved deps for restoration
@@ -31,6 +32,7 @@ const origDetectMerge = _executionDeps.detectMergeConflict;
 const origShouldSwap = _executionDeps.shouldAttemptSwap;
 const origResolveSwap = _executionDeps.resolveSwapTarget;
 const origRebuildForSwap = _executionDeps.rebuildForSwap;
+const origGitSpawn = _gitDeps.spawn;
 
 afterEach(() => {
   _executionDeps.getAgent = origGetAgent;
@@ -39,6 +41,7 @@ afterEach(() => {
   _executionDeps.shouldAttemptSwap = origShouldSwap;
   _executionDeps.resolveSwapTarget = origResolveSwap;
   _executionDeps.rebuildForSwap = origRebuildForSwap;
+  _gitDeps.spawn = origGitSpawn;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,6 +206,8 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     bundle = await makeBundle();
     _executionDeps.validateAgentForTier = mock(() => true);
     _executionDeps.detectMergeConflict = mock(() => false);
+    // Prevent autoCommitIfDirty from spawning real git processes against /tmp/test
+    _gitDeps.spawn = mock(() => ({ exited: Promise.resolve(1), stdout: null, stderr: null } as unknown as ReturnType<typeof Bun.spawn>));
   });
 
   test("swaps agent and returns continue when swap agent succeeds", async () => {
