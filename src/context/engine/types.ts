@@ -29,14 +29,24 @@ export interface AdapterFailure {
   category: "availability" | "quality";
   /**
    * Machine-readable outcome code.
-   * availability: fail-quota | fail-service-down | fail-auth | fail-timeout | fail-adapter-error
-   * quality:      fail-quality
+   * availability: fail-quota | fail-service-down | fail-auth | fail-rate-limit
+   * quality:      fail-timeout | fail-adapter-error | fail-quality | fail-unknown
    */
-  outcome: "fail-quota" | "fail-service-down" | "fail-auth" | "fail-timeout" | "fail-adapter-error" | "fail-quality";
+  outcome:
+    | "fail-quota"
+    | "fail-service-down"
+    | "fail-auth"
+    | "fail-rate-limit"
+    | "fail-timeout"
+    | "fail-adapter-error"
+    | "fail-quality"
+    | "fail-unknown";
   /** Human-readable description (≤500 chars) for the failure-note chunk */
   message: string;
   /** True when the same agent/tier could succeed on immediate retry */
   retriable: boolean;
+  /** Seconds to wait before retrying (for rate-limit failures) */
+  retryAfterSeconds?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

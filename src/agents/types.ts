@@ -8,7 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import type { ModelDef, ModelTier } from "../config/schema";
-import type { ToolDescriptor } from "../context/engine/types";
+import type { AdapterFailure, ToolDescriptor } from "../context/engine/types";
 import type { SessionDescriptor } from "../session/types";
 import type { TokenUsage } from "./cost";
 
@@ -65,6 +65,15 @@ export interface AgentResult {
    * Populated by the adapter; 0 when the first attempt succeeded.
    */
   sessionRetries?: number;
+  /**
+   * Structured failure classification (Phase 2 plumbing — additive, callers may ignore).
+   * Populated on all non-success return paths. Undefined on success.
+   *
+   * Phase 5.5: pipeline stages will inspect this to call sessionManager.handoff() or
+   * orchestrator.rebuildForAgent() instead of the adapter's internal fallback walk.
+   * See: docs/specs/SPEC-session-manager-integration.md Gap 2.
+   */
+  adapterFailure?: AdapterFailure;
 }
 
 /**
