@@ -374,4 +374,36 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0]?.content).toContain("Repo style.");
   });
+
+  test("monorepo: loadCanonicalRules is called exactly twice (repo + package)", async () => {
+    const calls: string[] = [];
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      calls.push(workdir);
+      if (workdir === "/repo") return [{ fileName: "style.md", content: "Repo style." }];
+      return [{ fileName: "pkg.md", content: "Pkg style." }];
+    };
+    const provider = new StaticRulesProvider();
+    await provider.fetch(MONOREPO_REQUEST);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toBe("/repo");
+    expect(calls[1]).toBe("/repo/packages/api");
+  });
+
+  test("chunk IDs include fileName to prevent dedup collision for same-content rules", async () => {
+    const sharedContent = "Identical content.";
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === "/repo") return [{ fileName: "rule-a.md", content: sharedContent }];
+      if (workdir === "/repo/packages/api") return [{ fileName: "rule-b.md", content: sharedContent }];
+      return [];
+    };
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(MONOREPO_REQUEST);
+    // Overlay: map has rule-a.md and rule-b.md — both kept since different filenames
+    expect(result.chunks).toHaveLength(2);
+    const ids = result.chunks.map((c) => c.id);
+    expect(ids.some((id) => id.includes("rule-a.md"))).toBe(true);
+    expect(ids.some((id) => id.includes("rule-b.md"))).toBe(true);
+    // IDs must be distinct even though content hashes are identical
+    expect(ids[0]).not.toBe(ids[1]);
+  });
 });

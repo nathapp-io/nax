@@ -104,7 +104,9 @@ export class StaticRulesProvider implements IContextProvider {
           const hash = contentHash8(rule.content);
           const tokens = estimateTokens(rule.content);
           return {
-            id: `static-rules:${hash}`,
+            // Include fileName so two rules with identical content but different names
+            // are not deduplicated by the packing stage (content-hash collision).
+            id: `static-rules:${rule.fileName}:${hash}`,
             kind: "static" as const,
             scope: "project" as const,
             role: ["all"] as ["all"],
