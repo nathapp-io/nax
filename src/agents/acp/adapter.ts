@@ -35,6 +35,7 @@ import type {
   PlanOptions,
   PlanResult,
 } from "../types";
+import type { AdapterFailure } from "../../context/engine/types";
 import { CompleteError } from "../types";
 import { estimateCostFromTokenUsage } from "./cost";
 import type { AgentRegistryEntry } from "./types";
@@ -841,6 +842,13 @@ export class AcpAgentAdapter implements AgentAdapter {
                 rateLimited: true,
                 durationMs,
                 estimatedCost: 0,
+                adapterFailure: {
+                  category: "availability",
+                  outcome: "fail-rate-limit",
+                  retriable: true,
+                  retryAfterSeconds: parsed.retryAfterSeconds,
+                  message: error.message.slice(0, 500),
+                },
               };
             }
             legacyAttempt++;
@@ -858,6 +866,12 @@ export class AcpAgentAdapter implements AgentAdapter {
             rateLimited: false,
             durationMs,
             estimatedCost: 0,
+            adapterFailure: {
+              category: "quality",
+              outcome: "fail-unknown",
+              retriable: false,
+              message: error.message.slice(0, 500),
+            },
           };
         }
       }
@@ -1097,6 +1111,8 @@ export class AcpAgentAdapter implements AgentAdapter {
         rateLimited: false,
         durationMs,
         estimatedCost: 0,
+        protocolIds,
+        adapterFailure: { category: "quality", outcome: "fail-timeout", retriable: true, message: `Session timed out after ${options.timeoutSeconds}s` },
       };
     }
 
@@ -1126,6 +1142,22 @@ export class AcpAgentAdapter implements AgentAdapter {
           }
         : undefined;
 
+    const adapterFailure: AdapterFailure | undefined = success
+      ? undefined
+      : isSessionError
+        ? {
+            category: "quality",
+            outcome: "fail-adapter-error",
+            retriable: isSessionErrorRetryable,
+            message: "ACP session ended with error stopReason",
+          }
+        : {
+            category: "quality",
+            outcome: "fail-unknown",
+            retriable: false,
+            message: `Session ended with stopReason: ${lastResponse?.stopReason ?? "none"}`,
+          };
+
     return {
       success,
       exitCode: success ? 0 : 1,
@@ -1137,6 +1169,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       estimatedCost,
       tokenUsage,
       protocolIds,
+      adapterFailure,
     };
   }
 
