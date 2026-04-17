@@ -459,6 +459,12 @@ export interface ContextV2Config {
   fallback: ContextV2FallbackConfig;
   /** External plugin providers to load (Phase 7+). Empty by default. */
   pluginProviders: ContextPluginProviderConfig[];
+  /**
+   * Per-package token budget overrides (AC-59).
+   * Keys are relative package paths from repoRoot (e.g. "packages/api").
+   * Values map stage names to token counts.
+   */
+  packageBudgets: Record<string, Record<string, number>>;
 }
 
 export interface ContextConfig {

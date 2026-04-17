@@ -545,6 +545,19 @@ const ContextV2ConfigSchema = z
      * Empty by default — operators add providers for RAG, graph, or KB use cases.
      */
     pluginProviders: z.array(ContextPluginProviderConfigSchema).default([]),
+    /**
+     * Per-package token budget overrides (AC-59).
+     * Keys are relative package paths from repoRoot (e.g. "packages/api").
+     * Use "" for the root package (non-monorepo or repo-level override).
+     * Values are per-stage budget maps: { "<stage>": <tokens> }.
+     * Absent stages fall back to the default stage budget in STAGE_CONTEXT_MAP.
+     *
+     * Example:
+     *   { "packages/api": { "execution": 15000, "tdd-implementer": 10000 } }
+     */
+    packageBudgets: z
+      .record(z.string(), z.record(z.string().min(1), z.number().int().positive()))
+      .default({}),
   })
   .default(() => ({
     enabled: false,
@@ -553,6 +566,7 @@ const ContextV2ConfigSchema = z
     rules: { allowLegacyClaudeMd: true },
     fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
     pluginProviders: [],
+    packageBudgets: {},
   }));
 
 const ContextConfigSchema = z.object({
@@ -974,6 +988,7 @@ export const NaxConfigSchema = z
         rules: { allowLegacyClaudeMd: true },
         fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         pluginProviders: [],
+        packageBudgets: {},
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),

@@ -15,7 +15,7 @@
  */
 
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { getLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
 import { getContextFiles } from "../../prd/types";
@@ -32,6 +32,28 @@ import type { ContextBundle, ContextRequest } from "./types";
  * ignored — prevents stale scratch from long-past runs contaminating context.
  */
 const DISK_DISCOVERY_TTL_MS = 4 * 60 * 60 * 1000;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-59: per-package budget resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the effective token budget for a stage, applying any per-package
+ * override from config.context.v2.packageBudgets (AC-59).
+ *
+ * packageBudgets keys are relative paths from repoRoot (e.g. "packages/api").
+ * An empty key "" matches non-monorepo or repo-root overrides.
+ */
+export function resolvePackageBudget(
+  packageBudgets: Record<string, Record<string, number>>,
+  packageDir: string,
+  repoRoot: string,
+  stage: string,
+  defaultBudget: number,
+): number {
+  const relKey = relative(repoRoot, packageDir);
+  return packageBudgets[relKey]?.[stage] ?? defaultBudget;
+}
 
 export const _stageAssemblerDeps = {
   readdir: (path: string): Promise<string[]> => readdir(path),
@@ -157,6 +179,9 @@ export async function assembleForStage(
     // packageDir is the story's package directory (equals repoRoot for non-monorepo).
     const packageDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
 
+    const packageBudgets = ctx.config.context.v2.packageBudgets ?? {};
+    const budgetTokens = resolvePackageBudget(packageBudgets, packageDir, ctx.workdir, stage, stageConfig.budgetTokens);
+
     const request: ContextRequest = {
       storyId: ctx.story.id,
       featureId: ctx.prd.feature,
@@ -164,7 +189,7 @@ export async function assembleForStage(
       packageDir,
       stage,
       role: stageConfig.role,
-      budgetTokens: stageConfig.budgetTokens,
+      budgetTokens,
       touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
       storyScratchDirs,
       priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   _stageAssemblerDeps,
   discoverSessionScratchDirsOnDisk,
+  resolvePackageBudget,
 } from "../../../../src/context/engine/stage-assembler";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,5 +183,59 @@ describe("discoverSessionScratchDirsOnDisk — Finding 2", () => {
 
     const result = await discoverSessionScratchDirsOnDisk(PROJECT_DIR, FEATURE, STORY, TTL_4H);
     expect(result).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-59: resolvePackageBudget
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolvePackageBudget — AC-59 per-package stage budgets", () => {
+  const DEFAULT = 8_000;
+  const REPO_ROOT = "/repo";
+
+  test("returns default budget when packageBudgets is empty", () => {
+    const result = resolvePackageBudget({}, "/repo", REPO_ROOT, "execution", DEFAULT);
+    expect(result).toBe(DEFAULT);
+  });
+
+  test("returns default budget for non-monorepo (packageDir === repoRoot)", () => {
+    const budgets = { "": { execution: 15_000 } };
+    const result = resolvePackageBudget(budgets, "/repo", REPO_ROOT, "execution", DEFAULT);
+    expect(result).toBe(15_000);
+  });
+
+  test("returns package override when matching package path and stage", () => {
+    const budgets = { "packages/api": { execution: 15_000 } };
+    const result = resolvePackageBudget(budgets, "/repo/packages/api", REPO_ROOT, "execution", DEFAULT);
+    expect(result).toBe(15_000);
+  });
+
+  test("returns default when package is known but stage has no override", () => {
+    const budgets = { "packages/api": { execution: 15_000 } };
+    const result = resolvePackageBudget(budgets, "/repo/packages/api", REPO_ROOT, "tdd-implementer", DEFAULT);
+    expect(result).toBe(DEFAULT);
+  });
+
+  test("returns default when package is not in packageBudgets", () => {
+    const budgets = { "packages/api": { execution: 15_000 } };
+    const result = resolvePackageBudget(budgets, "/repo/packages/core", REPO_ROOT, "execution", DEFAULT);
+    expect(result).toBe(DEFAULT);
+  });
+
+  test("different packages get independent overrides", () => {
+    const budgets = {
+      "packages/api": { execution: 15_000 },
+      "packages/core": { execution: 6_000 },
+    };
+    expect(resolvePackageBudget(budgets, "/repo/packages/api", REPO_ROOT, "execution", DEFAULT)).toBe(15_000);
+    expect(resolvePackageBudget(budgets, "/repo/packages/core", REPO_ROOT, "execution", DEFAULT)).toBe(6_000);
+  });
+
+  test("different stages get independent overrides for same package", () => {
+    const budgets = { "packages/api": { execution: 15_000, "tdd-implementer": 10_000 } };
+    expect(resolvePackageBudget(budgets, "/repo/packages/api", REPO_ROOT, "execution", DEFAULT)).toBe(15_000);
+    expect(resolvePackageBudget(budgets, "/repo/packages/api", REPO_ROOT, "tdd-implementer", DEFAULT)).toBe(10_000);
+    expect(resolvePackageBudget(budgets, "/repo/packages/api", REPO_ROOT, "verify", DEFAULT)).toBe(DEFAULT);
   });
 });
