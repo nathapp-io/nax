@@ -1,6 +1,7 @@
 /**
  * Unit tests for src/context/engine/stage-assembler.ts — disk-backed session
- * scratch discovery (Finding 2 from the Context Engine v2 architecture review).
+ * scratch discovery (Finding 2 from the Context Engine v2 architecture review)
+ * and AC-24/AC-51 ContextRequest propagation (#504).
  *
  * Tests call `discoverSessionScratchDirsOnDisk` directly so the return value
  * is observable. The helper is exported from stage-assembler for this purpose.
@@ -9,8 +10,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   _stageAssemblerDeps,
+  assembleForStage,
   discoverSessionScratchDirsOnDisk,
 } from "../../../../src/context/engine/stage-assembler";
+import type { ContextBundle, ContextRequest } from "../../../../src/context/engine/types";
+import type { PipelineContext } from "../../../../src/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -182,5 +186,129 @@ describe("discoverSessionScratchDirsOnDisk — Finding 2", () => {
 
     const result = await discoverSessionScratchDirsOnDisk(PROJECT_DIR, FEATURE, STORY, TTL_4H);
     expect(result).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-24 / AC-51 — deterministic + planDigestBoost propagation (#504)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Minimal PipelineContext for assembleForStage tests */
+function makeCtx(overrides: {
+  deterministic?: boolean;
+  testStrategy?: string;
+} = {}): PipelineContext {
+  return {
+    config: {
+      context: {
+        v2: {
+          enabled: true,
+          pluginProviders: [],
+          deterministic: overrides.deterministic,
+        },
+      },
+      autoMode: { defaultAgent: "claude" },
+    },
+    rootConfig: { autoMode: { defaultAgent: "claude" } },
+    prd: { feature: "test-feature", userStories: [] },
+    story: { id: "US-001" },
+    stories: [],
+    routing: { agent: undefined, testStrategy: overrides.testStrategy },
+    projectDir: undefined, // prevents manifest writing in tests
+    workdir: "/repo",
+    hooks: {},
+  } as unknown as PipelineContext;
+}
+
+/** Mock orchestrator that captures the last assemble() request via a mutable ref. */
+function makeMockOrchestrator() {
+  const ref: { captured: ContextRequest | null } = { captured: null };
+  const orchestrator = {
+    assemble: async (r: ContextRequest): Promise<ContextBundle> => {
+      ref.captured = r;
+      return {
+        pushMarkdown: "",
+        digest: "abc",
+        manifest: {
+          requestId: "req-1",
+          stage: "execution",
+          totalBudgetTokens: 0,
+          usedTokens: 0,
+          includedChunks: [],
+          excludedChunks: [],
+          floorItems: [],
+          digestTokens: 0,
+          buildMs: 0,
+        },
+        packedChunks: [],
+      } as unknown as ContextBundle;
+    },
+  };
+  return { ref, orchestrator };
+}
+
+describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
+  let origReaddir: typeof _stageAssemblerDeps.readdir;
+  let origReadDescriptor: typeof _stageAssemblerDeps.readDescriptor;
+  let origCreateOrchestrator: typeof _stageAssemblerDeps.createOrchestrator;
+
+  beforeEach(() => {
+    origReaddir = _stageAssemblerDeps.readdir;
+    origReadDescriptor = _stageAssemblerDeps.readDescriptor;
+    origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
+    // Suppress disk discovery
+    _stageAssemblerDeps.readdir = async () => { throw new Error("ENOENT"); };
+    _stageAssemblerDeps.readDescriptor = async () => null;
+  });
+
+  afterEach(() => {
+    _stageAssemblerDeps.readdir = origReaddir;
+    _stageAssemblerDeps.readDescriptor = origReadDescriptor;
+    _stageAssemblerDeps.createOrchestrator = origCreateOrchestrator;
+  });
+
+  test("AC-24: passes deterministic:true when config flag is set", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    await assembleForStage(makeCtx({ deterministic: true }), "execution");
+
+    expect(mock.ref.captured?.deterministic).toBe(true);
+  });
+
+  test("AC-24: passes deterministic:false when config flag is unset", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    await assembleForStage(makeCtx({ deterministic: false }), "execution");
+
+    expect(mock.ref.captured?.deterministic).toBe(false);
+  });
+
+  test("AC-51: passes planDigestBoost from routing testStrategy (tdd-simple → 1.5)", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
+
+    expect(mock.ref.captured?.planDigestBoost).toBe(1.5);
+  });
+
+  test("AC-51: planDigestBoost is undefined for three-session-tdd (uses multi-session digest)", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    await assembleForStage(makeCtx({ testStrategy: "three-session-tdd" }), "tdd-implementer");
+
+    expect(mock.ref.captured?.planDigestBoost).toBeUndefined();
+  });
+
+  test("AC-51: planDigestBoost 1.5 for no-test strategy", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    await assembleForStage(makeCtx({ testStrategy: "no-test" }), "execution");
+
+    expect(mock.ref.captured?.planDigestBoost).toBe(1.5);
   });
 });
