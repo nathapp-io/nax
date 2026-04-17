@@ -294,6 +294,17 @@ export interface AgentAdapter {
   deriveSessionName(descriptor: SessionDescriptor): string;
 
   /**
+   * Close a physical agent session by its protocol-specific handle (Phase 3).
+   * Called by pipeline stages via sessionManager.closeStory() or explicit close.
+   * Best-effort — errors are swallowed.
+   *
+   * @param handle - The ACP session name (from descriptor.handle or deriveSessionName())
+   * @param workdir - Working directory used when the session was created
+   */
+  closePhysicalSession(handle: string, workdir: string): Promise<void>;
+
+  /**
+   * @deprecated Phase 3 (#477): use closePhysicalSession() instead.
    * Close a named session that was kept open with keepSessionOpen: true.
    * Best-effort — errors are swallowed. No-op for adapters that do not support
    * named sessions (e.g. future non-ACP adapters).

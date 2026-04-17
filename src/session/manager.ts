@@ -211,6 +211,39 @@ export class SessionManager implements ISessionManager {
     return { ...updated };
   }
 
+  resume(storyId: string, role: import("./types").SessionRole): SessionDescriptor | null {
+    const terminal: SessionState[] = ["COMPLETED", "FAILED"];
+    for (const session of this._sessions.values()) {
+      if (session.storyId === storyId && session.role === role && !terminal.includes(session.state)) {
+        return { ...session };
+      }
+    }
+    return null;
+  }
+
+  closeStory(storyId: string): SessionDescriptor[] {
+    const terminal: SessionState[] = ["COMPLETED", "FAILED"];
+    const closed: SessionDescriptor[] = [];
+    const now = _sessionManagerDeps.now();
+
+    for (const [id, session] of this._sessions.entries()) {
+      if (session.storyId !== storyId) continue;
+      if (terminal.includes(session.state)) continue;
+
+      const updated: SessionDescriptor = { ...session, state: "COMPLETED", lastActivityAt: now };
+      this._sessions.set(id, updated);
+      closed.push({ ...updated });
+
+      getLogger().debug("session", "Session closed by closeStory", {
+        storyId,
+        sessionId: id,
+        priorState: session.state,
+      });
+    }
+
+    return closed;
+  }
+
   getForStory(storyId: string): SessionDescriptor[] {
     return Array.from(this._sessions.values())
       .filter((s) => s.storyId === storyId)

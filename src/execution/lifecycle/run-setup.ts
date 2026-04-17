@@ -135,11 +135,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     emitError: (reason: string) => {
       pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
     },
-    // Close open ACP sessions on SIGINT/SIGTERM so acpx processes don't stay alive
-    onShutdown: async () => {
-      const { sweepFeatureSessions } = await import("../../agents/acp/adapter");
-      await sweepFeatureSessions(workdir, feature, pidRegistry).catch(() => {});
-    },
+    // Phase 3 (#477): session sweep on shutdown handled by SessionManager.closeStory()
+    // called in run-completion.ts. No-op here since sidecar no longer exists.
+    onShutdown: async () => {},
   });
 
   // Load PRD (before try block so it's accessible in finally for onRunEnd)
@@ -169,9 +167,8 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
   }
 
-  // Sweep stale ACP sessions from previous crashed runs (safety net)
-  const { sweepStaleFeatureSessions } = await import("../../agents/acp/adapter");
-  await sweepStaleFeatureSessions(workdir, feature, undefined, pidRegistry).catch(() => {});
+  // Phase 3 (#477): stale session sweep via sidecar removed.
+  // Orphan detection is now handled by SessionManager.sweepOrphans() at run boundaries.
 
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
