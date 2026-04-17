@@ -41,6 +41,7 @@ export const _stageAssemblerDeps = {
     return f.json();
   },
   now: (): number => Date.now(),
+  createOrchestrator: createDefaultOrchestrator,
 };
 
 export interface StageAssembleOptions {
@@ -151,7 +152,12 @@ export async function assembleForStage(
       pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir ?? ctx.workdir) : [];
     const storyScratchDirs = await getStoryScratchDirs(ctx, options);
 
-    const orchestrator = createDefaultOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);
+    const orchestrator = _stageAssemblerDeps.createOrchestrator(
+      ctx.story,
+      ctx.config,
+      storyScratchDirs,
+      pluginProviders,
+    );
 
     // AC-54: resolve dual workdir fields. repoRoot is the project root (where .nax/ lives);
     // packageDir is the story's package directory (equals repoRoot for non-monorepo).
@@ -181,6 +187,11 @@ export async function assembleForStage(
       sessionId: ctx.sessionId,
       agentId:
         ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude",
+      // AC-24: propagate determinism flag to every assembled stage, not just the context stage.
+      deterministic: ctx.config.context.v2.deterministic,
+      // AC-51: propagate planDigestBoost from the routing test strategy so the boost applies
+      // in every stage that assembleForStage() serves (execution, rectify, tdd-*, review-*, etc.).
+      planDigestBoost: getStageContextConfig(ctx.routing?.testStrategy ?? "").planDigestBoost,
     };
 
     const bundle = await orchestrator.assemble(request);
