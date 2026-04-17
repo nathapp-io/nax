@@ -18,6 +18,20 @@ import { gitWithTimeout } from "../../../utils/git";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Options
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface GitHistoryProviderOptions {
+  /**
+   * Scope of the git working directory for history queries (AC-55).
+   * "repo" — runs git log in repoRoot (full repo history).
+   * "package" — runs git log in packageDir (monorepo package boundary).
+   * Default: "repo" (preserves Phase 3 behavior).
+   */
+  historyScope?: "repo" | "package";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -75,11 +89,15 @@ export class GitHistoryProvider implements IContextProvider {
   readonly id = "git-history";
   readonly kind = "history" as const;
 
+  private readonly historyScope: "repo" | "package";
+
+  constructor(options: GitHistoryProviderOptions = {}) {
+    this.historyScope = options.historyScope ?? "repo";
+  }
+
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
-    // AC-55 (future): use request.packageDir for package-scoped git history.
-    // For now, default to repoRoot to preserve existing behavior.
-    const workdir = request.repoRoot;
+    const workdir = this.historyScope === "package" ? request.packageDir : request.repoRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
