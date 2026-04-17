@@ -181,6 +181,12 @@ export interface PipelineContext {
   /** Accumulated cost across all prior escalation attempts (BUG-067) */
   accumulatedAttemptCost?: number;
   /**
+   * Number of agent-swap hops completed for this story (Phase 5.5).
+   * Incremented by executionStage each time rebuildForSwap triggers a new agent.
+   * Checked against config.context.v2.fallback.maxHopsPerStory to cap swaps.
+   */
+  agentSwapCount?: number;
+  /**
    * Set of review check names that already passed in a previous review pass within this
    * pipeline run. When autofix retries from "review", checks in this set are skipped to
    * avoid redundant re-runs (e.g. a 45s semantic check after a lint-only fix). (#136)

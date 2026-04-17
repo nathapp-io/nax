@@ -3,128 +3,24 @@
  *
  * Spawns the agent session(s) to execute the story/stories.
  * Handles both single-session (test-after) and three-session TDD.
- *
- * @returns
- * - `continue`: Agent session succeeded
- * - `fail`: Agent not found or prompt missing
- * - `escalate`: Agent session failed (will retry with higher tier)
- * - `pause`: Three-session TDD fallback (backward compatible, no failureCategory)
- *
- * TDD failure routing by failureCategory:
- * - `isolation-violation` (strict mode) → escalate + ctx.retryAsLite=true
- * - `isolation-violation` (lite mode)   → escalate
- * - `session-failure`                   → escalate
- * - `tests-failing`                     → escalate
- * - `verifier-rejected`                 → escalate
- * - `greenfield-no-tests`               → escalate (tier-escalation switches to test-after)
- * - no category / unknown               → pause (backward compatible)
- *
- * @example
- * ```ts
- * // Single session (test-after)
- * await executionStage.execute(ctx);
- * // ctx.agentResult: { success: true, estimatedCost: 0.05, ... }
- *
- * // Three-session TDD
- * await executionStage.execute(ctx);
- * // ctx.agentResult: { success: true, estimatedCost: 0.15, ... }
- * ```
+ * On availability failure, attempts agent-swap (Phase 5.5) before tier escalation.
  */
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { createContextToolRuntime } from "../../context/engine";
+import { rebuildForSwap, resolveSwapTarget, shouldAttemptSwap } from "../../execution/escalation/agent-swap";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
-import type { FailureCategory } from "../../tdd";
 import { runThreeSessionTddFromCtx } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { isAmbiguousOutput, routeTddFailure } from "./execution-helpers";
 
-/**
- * Resolve the effective working directory for a story.
- * When story.workdir is set, returns join(repoRoot, story.workdir).
- * Otherwise returns the repo root unchanged.
- *
- * MW-001 runtime check: throws if the resolved workdir does not exist on disk.
- */
-export function resolveStoryWorkdir(repoRoot: string, storyWorkdir?: string): string {
-  if (!storyWorkdir) return repoRoot;
-  const resolved = join(repoRoot, storyWorkdir);
-  if (!existsSync(resolved)) {
-    throw new Error(`[execution] story.workdir "${storyWorkdir}" does not exist at "${resolved}"`);
-  }
-  return resolved;
-}
-
-/**
- * Detect if agent output contains ambiguity signals
- * Checks for keywords that indicate the agent is unsure about the implementation
- */
-export function isAmbiguousOutput(output: string): boolean {
-  if (!output) return false;
-
-  const ambiguityKeywords = [
-    "unclear",
-    "ambiguous",
-    "need clarification",
-    "please clarify",
-    "which one",
-    "not sure which",
-  ];
-
-  const lowerOutput = output.toLowerCase();
-  return ambiguityKeywords.some((keyword) => lowerOutput.includes(keyword));
-}
-
-/**
- * Determine the pipeline action for a failed TDD result, based on its failureCategory.
- *
- * This is a pure routing function — it mutates only `ctx.retryAsLite` when needed.
- * Exported for unit testing.
- *
- * @param failureCategory  - Category set by the TDD orchestrator (or undefined)
- * @param isLiteMode       - Whether the story was running in tdd-lite mode
- * @param ctx              - Pipeline context (mutated: ctx.retryAsLite may be set)
- * @param reviewReason     - Human-readable reason string from the TDD result
- */
-export function routeTddFailure(
-  failureCategory: FailureCategory | undefined,
-  isLiteMode: boolean,
-  ctx: Pick<PipelineContext, "retryAsLite">,
-  reviewReason?: string,
-): StageResult {
-  if (failureCategory === "isolation-violation") {
-    // Strict mode: request a lite-mode retry on next attempt
-    if (!isLiteMode) {
-      ctx.retryAsLite = true;
-    }
-    return { action: "escalate" };
-  }
-
-  if (
-    failureCategory === "session-failure" ||
-    failureCategory === "tests-failing" ||
-    failureCategory === "verifier-rejected"
-  ) {
-    return { action: "escalate" };
-  }
-
-  // S5: greenfield-no-tests → escalate so tier-escalation can switch to test-after
-  if (failureCategory === "greenfield-no-tests") {
-    return { action: "escalate" };
-  }
-
-  // Default: no category or unknown — backward-compatible pause for human review
-  return {
-    action: "pause",
-    reason: reviewReason || "Three-session TDD requires review",
-  };
-}
+// Re-export helpers so existing importers continue to work.
+export { isAmbiguousOutput, resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
 
 export const executionStage: PipelineStage = {
   name: "execution",
@@ -349,6 +245,81 @@ export const executionStage: PipelineStage = {
     }
 
     if (!result.success) {
+      // Phase 5.5: agent-swap on availability failure, before tier escalation
+      const fallbackConfig = ctx.config.context?.v2?.fallback;
+      const { adapterFailure } = result;
+      if (
+        fallbackConfig &&
+        adapterFailure &&
+        _executionDeps.shouldAttemptSwap(adapterFailure, fallbackConfig, ctx.agentSwapCount ?? 0, ctx.contextBundle)
+      ) {
+        const currentAgentId = ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent;
+        const swapTarget = _executionDeps.resolveSwapTarget(
+          currentAgentId,
+          fallbackConfig.map,
+          ctx.agentSwapCount ?? 0,
+        );
+        const swapAgent = swapTarget ? (ctx.agentGetFn ?? _executionDeps.getAgent)(swapTarget) : null;
+        if (swapAgent && swapTarget && ctx.contextBundle) {
+          ctx.contextBundle = _executionDeps.rebuildForSwap(ctx.contextBundle, swapTarget, adapterFailure);
+          ctx.agentSwapCount = (ctx.agentSwapCount ?? 0) + 1;
+          logger.info("execution", "Agent-swap triggered", {
+            storyId: ctx.story.id,
+            fromAgent: currentAgentId,
+            toAgent: swapTarget,
+            failureOutcome: result.adapterFailure?.outcome,
+          });
+          const swapResult = await swapAgent.run({
+            prompt: ctx.prompt,
+            workdir: ctx.workdir,
+            modelTier: effectiveTier,
+            modelDef: resolveModelForAgent(
+              ctx.rootConfig.models,
+              swapTarget,
+              effectiveTier,
+              ctx.rootConfig.autoMode.defaultAgent,
+            ),
+            timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+            dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
+            pipelineStage: "run",
+            config: ctx.config,
+            projectDir: ctx.projectDir,
+            maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+            pidRegistry: ctx.pidRegistry,
+            featureName: ctx.prd.feature,
+            storyId: ctx.story.id,
+            sessionRole: "implementer",
+            keepSessionOpen,
+            contextPullTools: ctx.contextBundle.pullTools,
+            contextToolRuntime: createContextToolRuntime({
+              bundle: ctx.contextBundle,
+              story: ctx.story,
+              config: ctx.config,
+              workdir: ctx.workdir,
+              projectDir: ctx.projectDir,
+              runCounter: ctx.contextToolRunCounter,
+            }),
+            interactionBridge: buildInteractionBridge(ctx.interaction, {
+              featureName: ctx.prd.feature,
+              storyId: ctx.story.id,
+              stage: "execution",
+            }),
+          });
+          ctx.agentResult = swapResult;
+          if (swapResult.success) {
+            logger.info("execution", "Agent-swap succeeded", {
+              storyId: ctx.story.id,
+              toAgent: swapTarget,
+            });
+            return { action: "continue" };
+          }
+          logger.warn("execution", "Agent-swap retry also failed — escalating", {
+            storyId: ctx.story.id,
+            toAgent: swapTarget,
+          });
+        }
+      }
+
       logger.error("execution", "Agent session failed", {
         exitCode: result.exitCode,
         stderr: result.stderr || "",
@@ -379,4 +350,7 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
+  shouldAttemptSwap,
+  resolveSwapTarget,
+  rebuildForSwap,
 };
