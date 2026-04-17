@@ -59,7 +59,7 @@ function dedupeScratchDirs(dirs: Array<string | undefined>): string[] {
  * Best-effort: any I/O or parse failure on one descriptor is logged and skipped,
  * never propagated. Returns [] when the sessions directory does not exist.
  */
-async function discoverSessionScratchDirsOnDisk(
+export async function discoverSessionScratchDirsOnDisk(
   projectDir: string,
   featureName: string,
   storyId: string,
@@ -118,12 +118,7 @@ async function getStoryScratchDirs(ctx: PipelineContext, options: StageAssembleO
 
   const diskDirs =
     ctx.projectDir && ctx.prd.feature
-      ? await discoverSessionScratchDirsOnDisk(
-          ctx.projectDir,
-          ctx.prd.feature,
-          ctx.story.id,
-          DISK_DISCOVERY_TTL_MS,
-        )
+      ? await discoverSessionScratchDirsOnDisk(ctx.projectDir, ctx.prd.feature, ctx.story.id, DISK_DISCOVERY_TTL_MS)
       : [];
 
   return dedupeScratchDirs([ctx.sessionScratchDir, ...managerDirs, ...diskDirs]);
@@ -152,7 +147,8 @@ export async function assembleForStage(
   try {
     // Defensive check: test fixtures may bypass Zod and omit `pluginProviders`.
     const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
-    const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir ?? ctx.workdir) : [];
+    const pluginProviders =
+      pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir ?? ctx.workdir) : [];
     const storyScratchDirs = await getStoryScratchDirs(ctx, options);
 
     const orchestrator = createDefaultOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);

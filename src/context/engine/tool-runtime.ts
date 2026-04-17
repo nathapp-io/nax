@@ -25,9 +25,11 @@ export function createContextToolRuntime(options: {
   story: UserStory;
   config: NaxConfig;
   workdir: string;
+  /** Repo root — used for feature-context resolution under .nax in monorepos (Finding 1). */
+  projectDir?: string;
   runCounter?: RunCallCounter;
 }): ContextToolRuntime | undefined {
-  const { bundle, story, config, workdir } = options;
+  const { bundle, story, config, workdir, projectDir } = options;
   if (bundle.pullTools.length === 0) return undefined;
 
   const descriptors = descriptorByName(bundle);
@@ -57,6 +59,7 @@ export function createContextToolRuntime(options: {
             workdir,
             getBudget(tool),
             tool.maxTokensPerCall,
+            projectDir,
           );
         case "query_feature_context":
           return handleQueryFeatureContext(
@@ -66,6 +69,7 @@ export function createContextToolRuntime(options: {
             workdir,
             getBudget(tool),
             tool.maxTokensPerCall,
+            projectDir,
           );
         default:
           throw new Error(`No runtime handler for context tool: ${name}`);

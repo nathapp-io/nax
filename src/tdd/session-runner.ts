@@ -231,6 +231,7 @@ export async function runTddSession(
           story,
           config,
           workdir,
+          projectDir,
         })
       : undefined,
     interactionBridge,

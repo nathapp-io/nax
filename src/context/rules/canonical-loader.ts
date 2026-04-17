@@ -59,7 +59,7 @@ const BANNED_PATTERNS: BannedPattern[] = [
   { regex: /<system-reminder>/i, description: "agent XML tag <system-reminder>" },
   { regex: /CLAUDE\.md/, description: "agent-specific file reference CLAUDE.md" },
   { regex: /\.claude\//, description: "agent-specific directory .claude/" },
-  { regex: /\bthe [A-Z][a-zA-Z]+ tool\b/, description: "agent-specific tool-name phrasing" },
+  { regex: /\bthe [A-Za-z]+ tool\b/i, description: "agent-specific tool-name phrasing" },
   { regex: /\bIMPORTANT:/, description: "shouting-style IMPORTANT:" },
   { regex: /\p{Extended_Pictographic}/u, description: "emoji character" },
 ];

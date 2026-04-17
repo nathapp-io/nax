@@ -11,6 +11,7 @@
  */
 
 import type { ScoredChunk } from "./scoring";
+import type { ChunkRole } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -71,30 +72,49 @@ export interface DedupeResult {
  *
  * Input chunks should already be sorted by score descending so that the
  * highest-score representative is encountered first.
+ *
+ * AC-9: the kept representative inherits the union of all duplicates' audience
+ * tags. This matters when a chunk tagged `[reviewer]` is near-identical to
+ * one tagged `[implementer]` — the surviving representative carries both
+ * audiences so a later role filter can correctly admit it.
  */
 export function dedupeChunks(chunks: ScoredChunk[]): DedupeResult {
   const kept: ScoredChunk[] = [];
   const keptTrigrams: Set<string>[] = [];
   const droppedIds: string[] = [];
+  const unionedRoles: Array<Set<ChunkRole>> = [];
 
   for (const chunk of chunks) {
     const ct = trigrams(chunk.content);
-    let isDuplicate = false;
+    let duplicateOf: number | null = null;
 
-    for (const kt of keptTrigrams) {
-      if (jaccardSimilarity(ct, kt) >= SIMILARITY_THRESHOLD) {
-        isDuplicate = true;
+    for (let i = 0; i < keptTrigrams.length; i++) {
+      const keptCt = keptTrigrams[i];
+      if (keptCt && jaccardSimilarity(ct, keptCt) >= SIMILARITY_THRESHOLD) {
+        duplicateOf = i;
         break;
       }
     }
 
-    if (isDuplicate) {
+    if (duplicateOf !== null) {
       droppedIds.push(chunk.id);
+      const roleSet = unionedRoles[duplicateOf];
+      if (roleSet) {
+        for (const r of chunk.role) roleSet.add(r);
+      }
     } else {
+      unionedRoles.push(new Set(chunk.role));
       kept.push(chunk);
       keptTrigrams.push(ct);
     }
   }
 
-  return { kept, droppedIds };
+  // Rewrite kept chunks with the unioned role arrays.
+  const keptWithUnionedRoles = kept.map((c, i) => {
+    const union = unionedRoles[i];
+    if (!union || union.size === c.role.length) return c;
+    return { ...c, role: Array.from(union) };
+  });
+
+  return { kept: keptWithUnionedRoles, droppedIds };
 }

@@ -16,7 +16,7 @@ import type { InteractionChain } from "../interaction/chain";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
-import { appendScratchEntry, writeDigestFile } from "../session/scratch-writer";
+import { appendScratchEntry, readDigestFile, writeDigestFile } from "../session/scratch-writer";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
@@ -530,18 +530,51 @@ export async function runThreeSessionTddFromCtx(
       return created;
     };
 
+    /**
+     * Resolve the prior-stage digest for a TDD role. Prefers the in-memory
+     * map populated by the previous role in this pipeline run; falls back to
+     * reading `digest-<priorStage>.txt` from any known story scratch dir so
+     * crash-resume and cross-iteration escalation keep digest continuity (M4).
+     */
+    const resolvePriorDigest = async (role: TddSessionRole): Promise<string | undefined> => {
+      if (role === "test-writer") return ctx.contextBundle?.digest;
+      const priorRole: TddSessionRole = role === "implementer" ? "test-writer" : "implementer";
+      const inMemory = priorDigestByRole.get(priorRole);
+      if (inMemory) return inMemory;
+      const priorStageKey = stageByRole[priorRole];
+      for (const dir of storyScratchDirs) {
+        try {
+          const onDisk = await readDigestFile(dir, priorStageKey);
+          if (onDisk) return onDisk;
+        } catch {
+          // best-effort; missing digest is not an error
+        }
+      }
+      return undefined;
+    };
+
     getTddContextBundle = async (role) => {
-      ensureRoleScratchDir(role);
+      const scratchDir = ensureRoleScratchDir(role);
       const bundle = await assembleForStage(ctx, stageByRole[role], {
-        priorStageDigest:
-          role === "test-writer"
-            ? ctx.contextBundle?.digest
-            : priorDigestByRole.get(role === "implementer" ? "test-writer" : "implementer"),
+        priorStageDigest: await resolvePriorDigest(role),
         storyScratchDirs: [...storyScratchDirs],
       });
       if (bundle) {
         priorDigestByRole.set(role, bundle.digest);
         ctx.contextBundle = bundle;
+        // M4: persist the digest eagerly at assemble-time so a crash before
+        // session outcome still leaves a digest for the next role to pick up.
+        if (scratchDir) {
+          try {
+            await writeDigestFile(scratchDir, stageByRole[role], bundle.digest);
+          } catch (error) {
+            getLogger().warn("tdd", "Failed to persist TDD stage digest — continuing", {
+              storyId: ctx.story.id,
+              role,
+              error: errorMessage(error),
+            });
+          }
+        }
       }
       return bundle ?? undefined;
     };

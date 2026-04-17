@@ -132,6 +132,7 @@ export class ReviewOrchestrator {
     priorFailures?: Array<{ stage: string; modelTier: string }>,
     featureContextMarkdown?: string,
     contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle },
+    projectDir?: string,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -192,6 +193,7 @@ export class ReviewOrchestrator {
         priorFailures,
         featureContextMarkdown,
         contextBundles,
+        projectDir,
       );
     } else {
       // Always split: mechanical checks first, then LLM checks independently.
@@ -221,6 +223,7 @@ export class ReviewOrchestrator {
         priorFailures,
         featureContextMarkdown,
         contextBundles,
+        projectDir,
       );
 
       // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
@@ -273,6 +276,7 @@ export class ReviewOrchestrator {
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
             contextBundles?.semantic,
+            projectDir,
           ),
           _orchestratorDeps.runAdversarialReview(
             workdir,
@@ -286,6 +290,7 @@ export class ReviewOrchestrator {
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
             contextBundles?.adversarial,
+            projectDir,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -500,6 +505,7 @@ export class ReviewOrchestrator {
       ctx.story.priorFailures,
       ctx.featureContextMarkdown,
       contextBundles,
+      ctx.projectDir,
     );
   }
 }

@@ -95,6 +95,33 @@ describe("dedupeChunks", () => {
     const result = dedupeChunks(chunks);
     expect(result.kept[0].id).toBe("high:1");
   });
+
+  test("AC-9: kept representative inherits the union of duplicates' audience tags", () => {
+    const content = "Validate request payload against the JSON Schema before hydration";
+    const chunks = [
+      makeScored({ id: "a:1", role: ["reviewer"], score: 0.9, content }),
+      makeScored({ id: "b:1", role: ["implementer"], score: 0.7, content }),
+      makeScored({ id: "c:1", role: ["tdd"], score: 0.5, content }),
+    ];
+    const result = dedupeChunks(chunks);
+    expect(result.kept).toHaveLength(1);
+    expect(result.kept[0].id).toBe("a:1");
+    const roles = new Set(result.kept[0].role);
+    expect(roles.has("reviewer")).toBe(true);
+    expect(roles.has("implementer")).toBe(true);
+    expect(roles.has("tdd")).toBe(true);
+  });
+
+  test("non-duplicate chunks retain their original role arrays", () => {
+    const chunks = [
+      makeScored({ id: "a:1", role: ["reviewer"], content: "wholly unique content about X" }),
+      makeScored({ id: "b:1", role: ["implementer"], content: "entirely different content about Y" }),
+    ];
+    const result = dedupeChunks(chunks);
+    expect(result.kept).toHaveLength(2);
+    expect(result.kept.find((c) => c.id === "a:1")?.role).toEqual(["reviewer"]);
+    expect(result.kept.find((c) => c.id === "b:1")?.role).toEqual(["implementer"]);
+  });
 });
 
 describe("SIMILARITY_THRESHOLD", () => {

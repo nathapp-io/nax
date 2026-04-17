@@ -151,6 +151,92 @@ describe("ContextOrchestrator.assemble()", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Agent profile gates (AC-32, AC-33)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ContextOrchestrator.assemble() — agent profile ceiling (AC-32)", () => {
+  test("claude profile (16k) overflows on a 20k feature chunk despite 50k stage budget", async () => {
+    const bigChunk = makeChunkResult({ id: "fc:1", content: "a".repeat(80_000), tokens: 20_000 });
+    const provider = makeProvider("test-provider", bigChunk);
+    const orch = new ContextOrchestrator([provider]);
+
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: 50_000,
+      agentId: "claude",
+    });
+    expect(bundle.manifest.totalBudgetTokens).toBe(50_000);
+    // The agent-profile ceiling (16k) forces floor overage on a 20k feature chunk,
+    // which would fit under a naive 50k stage budget.
+    expect(bundle.manifest.floorOverageItems).toBeDefined();
+    expect(bundle.manifest.floorOverageItems?.length).toBeGreaterThan(0);
+  });
+
+  test("unknown agent id falls back to 8k conservative ceiling", async () => {
+    const chunk = makeChunkResult({ id: "fc:1", content: "a".repeat(36_000), tokens: 9_000 });
+    const provider = makeProvider("test-provider", chunk);
+    const orch = new ContextOrchestrator([provider]);
+
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: 50_000,
+      agentId: "some-unknown-agent",
+    });
+    // Conservative profile is 8k; feature chunk of 9k tokens overflows.
+    expect(bundle.manifest.floorOverageItems?.length).toBeGreaterThan(0);
+  });
+
+  test("stage budget wins when smaller than profile ceiling", async () => {
+    const chunk = makeChunkResult({ id: "fc:1", tokens: 500 });
+    const provider = makeProvider("test-provider", chunk);
+    const orch = new ContextOrchestrator([provider]);
+
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: 1_000, // smaller than 8k conservative and 16k claude
+      agentId: "claude",
+    });
+    // No overage: 500 fits in 1k
+    expect(bundle.manifest.floorOverageItems).toBeUndefined();
+  });
+});
+
+describe("ContextOrchestrator.assemble() — pull tool capability gate (AC-33)", () => {
+  test("conservative default profile (supportsToolCalls=false) surfaces zero pull tools", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      // tdd-test-writer has pull tools in stage-config.
+      stage: "tdd-test-writer",
+      providerIds: undefined, // use stage-config default
+      agentId: "some-unknown-agent", // → conservative default → supportsToolCalls=false
+      pullConfig: {
+        enabled: true,
+        allowedTools: [],
+        maxCallsPerSession: 5,
+      },
+    });
+    expect(bundle.pullTools).toHaveLength(0);
+  });
+
+  test("claude profile surfaces configured pull tools", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      stage: "tdd-test-writer",
+      providerIds: undefined,
+      agentId: "claude",
+      pullConfig: {
+        enabled: true,
+        allowedTools: [],
+        maxCallsPerSession: 5,
+      },
+    });
+    expect(bundle.pullTools.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // rebuildForAgent()
 // ─────────────────────────────────────────────────────────────────────────────
 

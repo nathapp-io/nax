@@ -43,8 +43,10 @@ export interface PackResult {
   usedTokens: number;
   /** Effective budget ceiling used (min of budgetTokens, availableBudgetTokens) */
   effectiveBudget: number;
-  /** IDs of chunks that were floor-forced (caused budget overflow) */
-  floorItemIds: string[];
+  /** IDs of ALL floor-kind chunks that were packed (static + feature) */
+  floorPackedIds: string[];
+  /** IDs of floor-kind chunks that caused the budget to be exceeded (subset of floorPackedIds) */
+  floorOverageIds: string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,7 +69,8 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
 
   const packed: PackedChunk[] = [];
   const budgetExcludedIds: string[] = [];
-  const floorItemIds: string[] = [];
+  const floorPackedIds: string[] = [];
+  const floorOverageIds: string[] = [];
   let usedTokens = 0;
 
   // Pass 1: floor items — always include
@@ -76,8 +79,9 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     const packedChunk: PackedChunk = { ...chunk };
     if (overflows) {
       packedChunk.reason = "budget-exceeded-by-floor";
-      floorItemIds.push(chunk.id);
+      floorOverageIds.push(chunk.id);
     }
+    floorPackedIds.push(chunk.id);
     packed.push(packedChunk);
     usedTokens += chunk.tokens;
   }
@@ -92,5 +96,5 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     }
   }
 
-  return { packed, budgetExcludedIds, usedTokens, effectiveBudget, floorItemIds };
+  return { packed, budgetExcludedIds, usedTokens, effectiveBudget, floorPackedIds, floorOverageIds };
 }

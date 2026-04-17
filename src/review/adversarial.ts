@@ -142,6 +142,7 @@ export async function runAdversarialReview(
   blockingThreshold?: "error" | "warning" | "info",
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
+  projectDir?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -297,6 +298,7 @@ export async function runAdversarialReview(
           story: contextToolStory,
           config: naxConfig ?? DEFAULT_CONFIG,
           workdir,
+          projectDir,
         })
       : undefined,
   } as const;

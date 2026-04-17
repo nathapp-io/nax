@@ -202,6 +202,7 @@ export async function handleQueryNeighbor(
   workdir: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
+  projectDir?: string,
 ): Promise<string> {
   budget.consume();
 
@@ -209,6 +210,7 @@ export async function handleQueryNeighbor(
   const request: ContextRequest = {
     storyId: "_pull-tool",
     workdir,
+    projectDir,
     stage: "pull-tool",
     role: "implementer",
     budgetTokens: maxTokensPerCall,
@@ -265,6 +267,7 @@ export async function handleQueryFeatureContext(
   workdir: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
+  projectDir?: string,
 ): Promise<string> {
   budget.consume();
 
@@ -272,6 +275,7 @@ export async function handleQueryFeatureContext(
   const request: ContextRequest = {
     storyId: story.id,
     workdir,
+    projectDir,
     stage: "pull-tool",
     role: "reviewer",
     budgetTokens: maxTokensPerCall,

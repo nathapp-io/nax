@@ -75,7 +75,8 @@ describe("packChunks — budget floor", () => {
     const result = packChunks(chunks, 100);  // budget << chunk size
     expect(result.packed).toHaveLength(1);
     expect(result.packed[0].id).toBe("rules:1");
-    expect(result.floorItemIds).toContain("rules:1");
+    expect(result.floorPackedIds).toContain("rules:1");
+    expect(result.floorOverageIds).toContain("rules:1");
     expect(result.packed[0].reason).toBe("budget-exceeded-by-floor");
     expect(result.usedTokens).toBe(5000);
   });
@@ -86,7 +87,8 @@ describe("packChunks — budget floor", () => {
     ];
     const result = packChunks(chunks, 500);
     expect(result.packed[0].id).toBe("feat:1");
-    expect(result.floorItemIds).toContain("feat:1");
+    expect(result.floorPackedIds).toContain("feat:1");
+    expect(result.floorOverageIds).toContain("feat:1");
   });
 
   test("floor items packed first, then non-floor fills remaining budget", () => {
@@ -112,7 +114,8 @@ describe("packChunks — budget floor", () => {
     ];
     const result = packChunks(chunks, 1000);
     expect(result.packed[0].reason).toBeUndefined();
-    expect(result.floorItemIds).toHaveLength(0);
+    expect(result.floorPackedIds).toContain("rules:1");
+    expect(result.floorOverageIds).toHaveLength(0);
   });
 });
 

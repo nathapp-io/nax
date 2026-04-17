@@ -247,6 +247,7 @@ export const executionStage: PipelineStage = {
           story: ctx.story,
           config: ctx.config,
           workdir: ctx.workdir,
+          projectDir: ctx.projectDir,
           runCounter: ctx.contextToolRunCounter,
         })
       : undefined;

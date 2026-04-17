@@ -143,10 +143,17 @@ export interface ContextManifest {
     reason: "below-min-score" | "budget" | "dedupe" | "role-filter" | "stale";
   }>;
   /**
-   * Chunk IDs that were floor-included even though they caused the used token
-   * count to exceed budgetTokens.  Recorded so callers can see the overage.
+   * All chunk IDs that were floor-packed (static + feature kinds).
+   * Every chunk that the budget floor rule included lands here, whether or not
+   * it caused an overage. Operators can check this to verify that floor
+   * providers actually contributed to the bundle.
    */
   floorItems: string[];
+  /**
+   * Subset of floorItems whose inclusion pushed usedTokens past budgetTokens.
+   * Empty when the floor fit comfortably within budget.
+   */
+  floorOverageItems?: string[];
   /** Tokens used by the digest string */
   digestTokens: number;
   /** Wall-clock time for the assemble() call in milliseconds */

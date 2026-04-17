@@ -15,7 +15,7 @@
 import { randomUUID } from "node:crypto";
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
-import { AGENT_PROFILES } from "./agent-profiles";
+import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { buildDigest, digestTokens } from "./digest";
@@ -204,6 +204,24 @@ export class ContextOrchestrator {
     const role = request.role ?? stageConfig.role;
     const effectiveMinScore = request.minScore ?? MIN_SCORE;
 
+    // Resolve agent profile (AC-32, AC-33). Unknown agents fall back to the
+    // conservative default; a warning is logged so operators can see why
+    // the bundle was sized for the safe profile.
+    const agentId = request.agentId ?? "claude";
+    const { profile: agentProfile, isDefault: agentProfileIsDefault } = getAgentProfile(agentId);
+    if (agentProfileIsDefault) {
+      logger.warn("context-v2", "Unknown agent id — using CONSERVATIVE_DEFAULT_PROFILE", {
+        storyId: request.storyId,
+        stage: request.stage,
+        agentId,
+      });
+    }
+
+    // AC-32: agent profile tightens the budget ceiling. Effective budget is
+    // min(stage budget, agent preferred prompt tokens, caller availableBudget).
+    const profileBudget = agentProfile.caps.preferredPromptTokens;
+    const effectiveBudgetTokens = Math.min(request.budgetTokens, profileBudget);
+
     // Step 1: filter providers to those applicable for this stage.
     // request.providerIds (test-only override) takes precedence; otherwise stageConfig.providerIds.
     const allowedIds = request.providerIds ?? stageConfig.providerIds;
@@ -218,7 +236,11 @@ export class ContextOrchestrator {
           const result = await fetchWithTimeout(provider, request);
           const durationMs = _orchestratorDeps.now() - providerStart;
           const status = result.chunks.length === 0 ? ("empty" as const) : ("ok" as const);
-          return { provider, result, providerStatus: { providerId: provider.id, status, chunkCount: result.chunks.length, durationMs } };
+          return {
+            provider,
+            result,
+            providerStatus: { providerId: provider.id, status, chunkCount: result.chunks.length, durationMs },
+          };
         } catch (err) {
           const durationMs = _orchestratorDeps.now() - providerStart;
           const errMsg = errorMessage(err);
@@ -227,7 +249,11 @@ export class ContextOrchestrator {
             storyId: request.storyId,
             error: errMsg,
           });
-          return { provider, result: { chunks: [], pullTools: [] }, providerStatus: { providerId: provider.id, status, chunkCount: 0, durationMs, error: errMsg } };
+          return {
+            provider,
+            result: { chunks: [], pullTools: [] },
+            providerStatus: { providerId: provider.id, status, chunkCount: 0, durationMs, error: errMsg },
+          };
         }
       }),
     );
@@ -237,26 +263,39 @@ export class ContextOrchestrator {
     const providerResults = fetchResults.map(({ providerStatus }) => providerStatus);
     // Phase 4: build pull tool descriptors from stage config + PULL_TOOL_REGISTRY.
     // Provider-level result.pullTools is reserved for Phase 7 and ignored here.
-    const allPullTools = buildPullToolDescriptors(stageConfig.pullToolNames ?? [], request.pullConfig);
+    // AC-33: gate pull tools on agent capability. When the agent cannot invoke
+    // tool calls, we must not surface any — the adapter cannot register them.
+    const allPullTools = agentProfile.caps.supportsToolCalls
+      ? buildPullToolDescriptors(stageConfig.pullToolNames ?? [], request.pullConfig)
+      : [];
 
-    // Step 3: score
+    // Step 3: score (role × freshness × kind). Role-mismatch sets roleFiltered
+    // but the chunk still enters dedupe so audience unions can promote it.
     const scored = scoreChunks(allRaw, role, effectiveMinScore);
 
-    // Separate role-filtered and below-min-score chunks
-    const roleFiltered = scored.filter((c) => c.roleFiltered);
-    const belowMin = scored.filter((c) => !c.roleFiltered && c.belowMinScore);
-    const eligible = scored.filter((c) => !c.roleFiltered && !c.belowMinScore);
+    // Step 4: dedupe ALL scored chunks (AC-9). The dedupe pass unions audience
+    // tags onto the kept representative; role filtering runs on the unioned
+    // roles in step 5.
+    const sortedAll = [...scored].sort((a, b) => b.score - a.score);
+    const { kept: dedupedKept, droppedIds: dedupeDropped } = dedupeChunks(sortedAll);
 
-    // Step 4: dedupe on eligible chunks (sort by score desc first for best-representative)
-    const sortedEligible = [...eligible].sort((a, b) => b.score - a.score);
-    const { kept, droppedIds: dedupeDropped } = dedupeChunks(sortedEligible);
+    // Step 5: role filter post-dedupe. Recompute roleFiltered using the unioned
+    // roles so a chunk whose dropped duplicate was role-matched is retained.
+    const postRoleFilter = dedupedKept.map((c) => {
+      const matches = c.role.includes(role) || c.role.includes("all");
+      return matches ? { ...c, roleFiltered: false } : { ...c, roleFiltered: true };
+    });
+    const roleFiltered = postRoleFilter.filter((c) => c.roleFiltered);
 
-    // Step 5 & 6 already handled by scoreChunks (role filter + min score)
+    // Step 6: min-score filter (already marked in step 3; still applies after dedupe).
+    const belowMin = postRoleFilter.filter((c) => !c.roleFiltered && c.belowMinScore);
+    const kept = postRoleFilter.filter((c) => !c.roleFiltered && !c.belowMinScore);
 
-    // Step 7: greedy pack
-    const { packed, budgetExcludedIds, usedTokens, floorItemIds } = packChunks(
+    // Step 7: greedy pack. Apply agent-profile ceiling to the stage budget so
+    // the final budget is min(stage, profile, caller availableBudget).
+    const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds } = packChunks(
       kept,
-      request.budgetTokens,
+      effectiveBudgetTokens,
       request.availableBudgetTokens,
     );
 
@@ -284,7 +323,8 @@ export class ContextOrchestrator {
         ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const })),
         ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const })),
       ],
-      floorItems: floorItemIds,
+      floorItems: floorPackedIds,
+      floorOverageItems: floorOverageIds.length > 0 ? floorOverageIds : undefined,
       digestTokens: dTokens,
       buildMs,
       providerResults,
@@ -311,6 +351,11 @@ export class ContextOrchestrator {
 
   /**
    * Re-render from prior.chunks without fetching providers.
+   *
+   * ⚠ STATUS: library-only today. No caller in the runner or escalation paths
+   * currently invokes this method on an availability failure — adapters do not
+   * yet emit AdapterFailure, so Phase 5.5's agent-swap story is not observable
+   * from a production run. See the tracking issue for the runner wiring plan.
    *
    * Phase 5.5: accepts an optional RebuildOptions object. When options.newAgentId
    * and options.failure are provided this is an availability-fallback rebuild —
@@ -383,9 +428,13 @@ export class ContextOrchestrator {
       rebuildInfo,
     };
 
+    // AC-33: strip pull tools if the new agent cannot invoke tool calls.
+    const targetProfile = getAgentProfile(targetAgentId).profile;
+    const rebuiltPullTools = targetProfile.caps.supportsToolCalls ? prior.pullTools : [];
+
     return {
       pushMarkdown,
-      pullTools: prior.pullTools,
+      pullTools: rebuiltPullTools,
       digest,
       manifest,
       // Return the full packedChunks (including any injected failure-note) so

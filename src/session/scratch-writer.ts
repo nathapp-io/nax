@@ -105,11 +105,24 @@ export function scratchFilePath(scratchDir: string): string {
  * @param scratchDir - Absolute path to the session scratch directory
  * @param entry      - Structured observation to record
  */
+/** Cap on per-entry output-tail payload written to disk (chars). */
+const SCRATCH_OUTPUT_TAIL_MAX_CHARS = 2048;
+
+function truncateOutputFields(entry: ScratchEntry): ScratchEntry {
+  if (entry.kind === "verify-result" && entry.rawOutputTail.length > SCRATCH_OUTPUT_TAIL_MAX_CHARS) {
+    return { ...entry, rawOutputTail: entry.rawOutputTail.slice(-SCRATCH_OUTPUT_TAIL_MAX_CHARS) };
+  }
+  if (entry.kind === "tdd-session" && entry.outputTail.length > SCRATCH_OUTPUT_TAIL_MAX_CHARS) {
+    return { ...entry, outputTail: entry.outputTail.slice(-SCRATCH_OUTPUT_TAIL_MAX_CHARS) };
+  }
+  return entry;
+}
+
 export async function appendScratchEntry(scratchDir: string, entry: ScratchEntry): Promise<void> {
   const filePath = scratchFilePath(scratchDir);
   await _scratchWriterDeps.mkdirp(dirname(filePath));
   const existing = await _scratchWriterDeps.readFile(filePath);
-  const line = JSON.stringify(entry);
+  const line = JSON.stringify(truncateOutputFields(entry));
   await _scratchWriterDeps.writeFile(filePath, existing ? `${existing}${line}\n` : `${line}\n`);
 }
 

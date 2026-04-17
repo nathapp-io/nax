@@ -18,7 +18,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Plugin providers (Phase 7)
  */
 
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { ContextPluginProviderConfig } from "../../../config/runtime-types";
 import { getLogger } from "../../../logger";
 import type { IContextProvider } from "../types";
@@ -119,6 +119,14 @@ function extractProvider(mod: unknown): IContextProvider | null {
  * this prevents accidental or malicious escapes from the project boundary.
  */
 export function resolveModuleSpecifier(specifier: string, workdir: string): string {
+  // Reject absolute paths — plugin modules must be bare package names or
+  // project-relative paths. An absolute specifier would bypass the workdir
+  // sandboxing guard and allow arbitrary file imports.
+  if (isAbsolute(specifier)) {
+    throw new Error(
+      `Plugin module path must be a bare package name or a project-relative path (./... or ../...): got absolute "${specifier}"`,
+    );
+  }
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
     const resolvedWorkdir = resolve(workdir);
     const resolved = resolve(join(workdir, specifier));

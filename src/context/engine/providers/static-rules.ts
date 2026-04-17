@@ -145,9 +145,29 @@ export class StaticRulesProvider implements IContextProvider {
   private async fetchLegacy(request: ContextRequest): Promise<ContextProviderResult> {
     const logger = getLogger();
     const chunks: RawChunk[] = [];
+    const rootDir = request.projectDir ?? request.workdir;
+
+    // Detect multiple candidates so operators know which one was chosen when more than one exists.
+    const existingCandidates: string[] = [];
+    for (const fileName of LEGACY_CANDIDATE_FILES) {
+      try {
+        if (await _staticRulesDeps.fileExists(join(rootDir, fileName))) {
+          existingCandidates.push(fileName);
+        }
+      } catch {
+        // ignore probe failures; the main loop will surface real errors.
+      }
+    }
+    if (existingCandidates.length > 1) {
+      logger.warn("static-rules", "Multiple legacy candidate files found — preferring the first in precedence order", {
+        storyId: request.storyId,
+        candidates: existingCandidates,
+        chosen: existingCandidates[0],
+      });
+    }
 
     for (const fileName of LEGACY_CANDIDATE_FILES) {
-      const filePath = join(request.projectDir ?? request.workdir, fileName);
+      const filePath = join(rootDir, fileName);
 
       try {
         const exists = await _staticRulesDeps.fileExists(filePath);

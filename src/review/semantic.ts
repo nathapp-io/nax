@@ -142,6 +142,7 @@ export async function runSemanticReview(
   blockingThreshold?: "error" | "warning" | "info",
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
+  projectDir?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -447,6 +448,7 @@ export async function runSemanticReview(
           story: contextToolStory,
           config: naxConfig ?? DEFAULT_CONFIG,
           workdir,
+          projectDir,
         })
       : undefined,
   } as const;
