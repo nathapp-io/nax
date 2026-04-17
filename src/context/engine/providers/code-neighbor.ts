@@ -24,6 +24,7 @@
 import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
+import { isRelativeAndSafe } from "../../../utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -286,7 +287,7 @@ export class CodeNeighborProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
-    const filesToProcess = touchedFiles.slice(0, MAX_FILES);
+    const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
     const sections: string[] = [];
     for (const file of filesToProcess) {

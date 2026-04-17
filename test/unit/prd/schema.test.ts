@@ -492,6 +492,45 @@ describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SEC-503: contextFiles path traversal prevention
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — SEC-503 contextFiles path security", () => {
+  test("throws when a contextFiles entry contains '..'", () => {
+    const story = makeStory({ contextFiles: ["../../../etc/passwd"] });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
+      /contextFiles.*\.\./i,
+    );
+  });
+
+  test("throws when a contextFiles entry is an absolute path", () => {
+    const story = makeStory({ contextFiles: ["/etc/passwd"] });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
+      /contextFiles.*absolute/i,
+    );
+  });
+
+  test("throws on subtle traversal: foo/../../../etc/passwd", () => {
+    const story = makeStory({ contextFiles: ["foo/../../../etc/passwd"] });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
+      /contextFiles.*\.\./i,
+    );
+  });
+
+  test("accepts valid relative contextFiles paths", () => {
+    const story = makeStory({ contextFiles: ["src/auth.ts", "test/auth.test.ts"] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].contextFiles).toEqual(["src/auth.ts", "test/auth.test.ts"]);
+  });
+
+  test("accepts nested relative paths without traversal", () => {
+    const story = makeStory({ contextFiles: ["packages/api/src/index.ts"] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].contextFiles).toEqual(["packages/api/src/index.ts"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // suggestedCriteria validation
 // ---------------------------------------------------------------------------
 

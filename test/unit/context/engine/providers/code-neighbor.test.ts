@@ -348,3 +348,53 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     expect(cwds.filter((c) => c === "/repo")).toHaveLength(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-503: path traversal prevention
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CodeNeighborProvider — SEC-503 path traversal prevention", () => {
+  test("drops touchedFiles with '..' traversal — never reads them", async () => {
+    const readPaths: string[] = [];
+    _codeNeighborDeps.fileExists = async (p: string) => {
+      readPaths.push(p);
+      return false;
+    };
+    _codeNeighborDeps.glob = () => [];
+
+    const p = new CodeNeighborProvider();
+    await p.fetch(makeRequest({ touchedFiles: ["../../../etc/passwd", "src/valid.ts"] }));
+
+    expect(readPaths.some((p) => p.includes("etc/passwd"))).toBe(false);
+  });
+
+  test("drops touchedFiles with absolute paths — never reads them", async () => {
+    const readPaths: string[] = [];
+    _codeNeighborDeps.fileExists = async (p: string) => {
+      readPaths.push(p);
+      return false;
+    };
+    _codeNeighborDeps.glob = () => [];
+
+    const p = new CodeNeighborProvider();
+    await p.fetch(makeRequest({ touchedFiles: ["/etc/passwd", "src/valid.ts"] }));
+
+    expect(readPaths.some((rp) => rp.includes("etc/passwd"))).toBe(false);
+  });
+
+  test("still processes safe files when unsafe ones are present", async () => {
+    const readPaths: string[] = [];
+    _codeNeighborDeps.fileExists = async (p: string) => {
+      readPaths.push(p);
+      return true;
+    };
+    _codeNeighborDeps.readFile = async () => "";
+    _codeNeighborDeps.glob = () => [];
+
+    const p = new CodeNeighborProvider();
+    await p.fetch(makeRequest({ touchedFiles: ["../evil", "src/valid.ts"] }));
+
+    expect(readPaths.some((rp) => rp.includes("valid.ts"))).toBe(true);
+    expect(readPaths.some((rp) => rp.includes("evil"))).toBe(false);
+  });
+});
