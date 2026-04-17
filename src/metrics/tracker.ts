@@ -6,9 +6,10 @@
 
 import path from "node:path";
 import { resolveModelForAgent } from "../config/schema";
+import { loadContextManifests } from "../context/engine/manifest-store";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
-import type { RunMetrics, StoryMetrics } from "./types";
+import type { ContextProviderMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
 
 /**
@@ -38,7 +39,45 @@ import { TokenUsage } from "./types";
  * // }
  * ```
  */
-export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): StoryMetrics {
+async function deriveContextMetrics(
+  projectDir: string,
+  storyId: string,
+  featureId: string,
+): Promise<StoryMetrics["context"] | undefined> {
+  const stored = await loadContextManifests(projectDir, storyId, featureId);
+  if (stored.length === 0) return undefined;
+
+  const providers: Record<string, ContextProviderMetrics> = {};
+
+  for (const { manifest } of stored) {
+    if (!manifest.providerResults) continue;
+    for (const pr of manifest.providerResults) {
+      const existing = providers[pr.providerId];
+      const kept = manifest.includedChunks.filter((id) => id.startsWith(`${pr.providerId}:`)).length;
+      if (existing) {
+        existing.tokensProduced += pr.tokensProduced;
+        existing.chunksProduced += pr.chunkCount;
+        existing.chunksKept += kept;
+        existing.wallClockMs += pr.durationMs;
+        if (pr.status === "timeout") existing.timedOut = true;
+        if (pr.status === "failed") existing.failed = true;
+      } else {
+        providers[pr.providerId] = {
+          tokensProduced: pr.tokensProduced,
+          chunksProduced: pr.chunkCount,
+          chunksKept: kept,
+          wallClockMs: pr.durationMs,
+          timedOut: pr.status === "timeout",
+          failed: pr.status === "failed",
+        };
+      }
+    }
+  }
+
+  return Object.keys(providers).length === 0 ? undefined : { providers };
+}
+
+export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): Promise<StoryMetrics> {
   const story = ctx.story;
   const routing = ctx.routing;
   const agentResult = ctx.agentResult;
@@ -79,6 +118,10 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     routing.testStrategy === "three-session-tdd" || routing.testStrategy === "three-session-tdd-lite";
   const fullSuiteGatePassed = isTddStrategy ? (ctx.fullSuiteGatePassed ?? false) : false;
 
+  const featureId = ctx.prd.feature;
+  const contextMetrics =
+    ctx.projectDir && featureId ? await deriveContextMetrics(ctx.projectDir, story.id, featureId) : undefined;
+
   return {
     storyId: story.id,
     complexity: routing.complexity,
@@ -113,6 +156,7 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     ...(ctx.verifyResult?.scopeTestFallback !== undefined && {
       scopeTestFallback: ctx.verifyResult.scopeTestFallback,
     }),
+    ...(contextMetrics !== undefined && { context: contextMetrics }),
   };
 }
 

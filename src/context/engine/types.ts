@@ -179,6 +179,8 @@ export interface ContextManifest {
     status: "ok" | "empty" | "failed" | "timeout";
     chunkCount: number;
     durationMs: number;
+    /** Total tokens across all chunks returned by this provider */
+    tokensProduced: number;
     error?: string;
   }>;
   /**

@@ -53,6 +53,18 @@ export class TokenUsage {
 }
 
 /**
+ * Aggregated context provider metrics across all pipeline stages for a story.
+ */
+export interface ContextProviderMetrics {
+  tokensProduced: number;
+  chunksProduced: number;
+  chunksKept: number;
+  wallClockMs: number;
+  timedOut: boolean;
+  failed: boolean;
+}
+
+/**
  * Per-story execution metrics
  */
 export interface StoryMetrics {
@@ -96,6 +108,13 @@ export interface StoryMetrics {
   tokens?: TokenUsage;
   /** When ScopedStrategy.verify() falls back to full suite due to threshold (US-002) */
   scopeTestFallback?: boolean;
+  /**
+   * Per-provider context engine metrics aggregated across all pipeline stages.
+   * Absent when context engine v2 was not active or no manifests were found.
+   */
+  context?: {
+    providers: Record<string, ContextProviderMetrics>;
+  };
   /**
    * Per-reviewer metrics for the review stage.
    * Populated when semantic or adversarial review runs.
