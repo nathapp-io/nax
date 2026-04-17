@@ -76,6 +76,90 @@ describe("SessionManager.create()", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// descriptor persistence (Finding 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionManager.create() — descriptor persistence", () => {
+  let originalWriteDescriptor: typeof _sessionManagerDeps.writeDescriptor;
+
+  beforeEach(() => {
+    originalWriteDescriptor = _sessionManagerDeps.writeDescriptor;
+  });
+
+  test("writes descriptor.json when scratchDir is resolved", async () => {
+    const writes: Array<{ scratchDir: string; descriptor: unknown }> = [];
+    _sessionManagerDeps.writeDescriptor = async (scratchDir, descriptor) => {
+      writes.push({ scratchDir, descriptor });
+    };
+
+    const mgr = new SessionManager();
+    mgr.create({
+      role: "test-writer",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
+
+    // Fire-and-forget — give the microtask queue a chance to drain
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.scratchDir).toBe(
+      "/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001",
+    );
+    const persisted = writes[0]?.descriptor as { storyId?: string; role?: string };
+    expect(persisted.storyId).toBe("US-001");
+    expect(persisted.role).toBe("test-writer");
+
+    _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
+  });
+
+  test("skips descriptor write when scratchDir cannot be resolved", async () => {
+    const writes: Array<unknown> = [];
+    _sessionManagerDeps.writeDescriptor = async (scratchDir) => {
+      writes.push(scratchDir);
+    };
+
+    const mgr = new SessionManager();
+    mgr.create({ role: "main", agent: "claude", workdir: "/repo" });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toHaveLength(0);
+
+    _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
+  });
+
+  test("descriptor write failure does not throw from create()", async () => {
+    _sessionManagerDeps.writeDescriptor = async () => {
+      throw new Error("disk full");
+    };
+
+    const mgr = new SessionManager();
+    expect(() =>
+      mgr.create({
+        role: "main",
+        agent: "claude",
+        workdir: "/repo",
+        projectDir: "/repo",
+        featureName: "auth",
+        storyId: "US-001",
+      }),
+    ).not.toThrow();
+
+    // Let the rejected promise settle so the logger.warn branch runs.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // get()
 // ─────────────────────────────────────────────────────────────────────────────
 

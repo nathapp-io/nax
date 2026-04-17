@@ -14,6 +14,8 @@
  * See: docs/reviews/context-engine-v2-branch-review.md §1, §2
  */
 
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { getLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
 import { getContextFiles } from "../../prd/types";
@@ -23,6 +25,23 @@ import { createDefaultOrchestrator } from "./orchestrator-factory";
 import { loadPluginProviders } from "./providers/plugin-loader";
 import { getStageContextConfig } from "./stage-config";
 import type { ContextBundle, ContextRequest } from "./types";
+
+/**
+ * Disk-discovery TTL. Matches DEFAULT_ORPHAN_TTL_MS in SessionManager so the
+ * two cleanup/aging concepts stay aligned. Descriptors older than this are
+ * ignored — prevents stale scratch from long-past runs contaminating context.
+ */
+const DISK_DISCOVERY_TTL_MS = 4 * 60 * 60 * 1000;
+
+export const _stageAssemblerDeps = {
+  readdir: (path: string): Promise<string[]> => readdir(path),
+  readDescriptor: async (path: string): Promise<unknown> => {
+    const f = Bun.file(path);
+    if (!(await f.exists())) return null;
+    return f.json();
+  },
+  now: (): number => Date.now(),
+};
 
 export interface StageAssembleOptions {
   priorStageDigest?: string;
@@ -34,7 +53,60 @@ function dedupeScratchDirs(dirs: Array<string | undefined>): string[] {
   return [...new Set(dirs.filter((dir): dir is string => Boolean(dir)))];
 }
 
-function getStoryScratchDirs(ctx: PipelineContext, options: StageAssembleOptions): string[] {
+/**
+ * Enumerate on-disk session descriptors for the given feature and return
+ * scratch-dir paths belonging to the given story, filtered by TTL.
+ * Best-effort: any I/O or parse failure on one descriptor is logged and skipped,
+ * never propagated. Returns [] when the sessions directory does not exist.
+ */
+async function discoverSessionScratchDirsOnDisk(
+  projectDir: string,
+  featureName: string,
+  storyId: string,
+  ttlMs: number,
+): Promise<string[]> {
+  const logger = getLogger();
+  const sessionsRoot = join(projectDir, ".nax", "features", featureName, "sessions");
+
+  let entries: string[];
+  try {
+    entries = await _stageAssemblerDeps.readdir(sessionsRoot);
+  } catch {
+    // Sessions directory does not exist yet — first run of this feature.
+    return [];
+  }
+
+  const cutoff = _stageAssemblerDeps.now() - ttlMs;
+  const found: string[] = [];
+
+  for (const entry of entries) {
+    const descriptorPath = join(sessionsRoot, entry, "descriptor.json");
+    try {
+      const parsed = (await _stageAssemblerDeps.readDescriptor(descriptorPath)) as {
+        storyId?: string;
+        scratchDir?: string;
+        lastActivityAt?: string;
+      } | null;
+
+      if (!parsed || parsed.storyId !== storyId || !parsed.scratchDir) continue;
+
+      const activity = parsed.lastActivityAt ? Date.parse(parsed.lastActivityAt) : Number.NaN;
+      if (Number.isNaN(activity) || activity < cutoff) continue;
+
+      found.push(parsed.scratchDir);
+    } catch (err) {
+      logger.debug("context-v2", "Skipped malformed session descriptor", {
+        storyId,
+        descriptorPath,
+        error: errorMessage(err),
+      });
+    }
+  }
+
+  return found;
+}
+
+async function getStoryScratchDirs(ctx: PipelineContext, options: StageAssembleOptions): Promise<string[]> {
   if (options.storyScratchDirs) {
     return dedupeScratchDirs(options.storyScratchDirs);
   }
@@ -43,7 +115,18 @@ function getStoryScratchDirs(ctx: PipelineContext, options: StageAssembleOptions
     ctx.sessionManager
       ?.getForStory(ctx.story.id)
       .flatMap((session) => (session.scratchDir ? [session.scratchDir] : [])) ?? [];
-  return dedupeScratchDirs([ctx.sessionScratchDir, ...managerDirs]);
+
+  const diskDirs =
+    ctx.projectDir && ctx.prd.feature
+      ? await discoverSessionScratchDirsOnDisk(
+          ctx.projectDir,
+          ctx.prd.feature,
+          ctx.story.id,
+          DISK_DISCOVERY_TTL_MS,
+        )
+      : [];
+
+  return dedupeScratchDirs([ctx.sessionScratchDir, ...managerDirs, ...diskDirs]);
 }
 
 /**
@@ -69,8 +152,8 @@ export async function assembleForStage(
   try {
     // Defensive check: test fixtures may bypass Zod and omit `pluginProviders`.
     const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
-    const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.workdir) : [];
-    const storyScratchDirs = getStoryScratchDirs(ctx, options);
+    const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir ?? ctx.workdir) : [];
+    const storyScratchDirs = await getStoryScratchDirs(ctx, options);
 
     const orchestrator = createDefaultOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);
 
@@ -78,6 +161,7 @@ export async function assembleForStage(
       storyId: ctx.story.id,
       featureId: ctx.prd.feature,
       workdir: ctx.workdir,
+      projectDir: ctx.projectDir,
       stage,
       role: stageConfig.role,
       budgetTokens: stageConfig.budgetTokens,

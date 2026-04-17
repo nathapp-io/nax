@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
@@ -45,6 +46,17 @@ export const _sessionManagerDeps = {
   uuid: () => randomUUID(),
   sessionScratchDir: (projectDir: string, featureName: string, sessionId: string): string =>
     join(projectDir, ".nax", "features", featureName, "sessions", sessionId),
+  /**
+   * Persist a minimal session descriptor to <scratchDir>/descriptor.json for
+   * cross-iteration disk discovery (Finding 2 from the Context Engine v2
+   * architecture review). Creates the scratch directory if it does not exist.
+   * `handle` is omitted — it is process-bound and cannot be rehydrated.
+   */
+  writeDescriptor: async (scratchDir: string, descriptor: SessionDescriptor): Promise<void> => {
+    await mkdir(scratchDir, { recursive: true });
+    const { handle: _handle, ...persistable } = descriptor;
+    await Bun.write(join(scratchDir, "descriptor.json"), JSON.stringify(persistable, null, 2));
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +108,20 @@ export class SessionManager implements ISessionManager {
     };
 
     this._sessions.set(id, descriptor);
+
+    // Fire-and-forget descriptor write for cross-iteration/cross-invocation
+    // disk discovery (Finding 2). Failures do not block session creation —
+    // disk discovery is a best-effort supplement to the in-memory registry.
+    if (scratchDir) {
+      void _sessionManagerDeps.writeDescriptor(scratchDir, descriptor).catch((err) => {
+        getLogger().warn("session", "Failed to persist session descriptor", {
+          storyId: options.storyId,
+          sessionId: id,
+          scratchDir,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
 
     getLogger().debug("session", "Session created", {
       storyId: options.storyId,
