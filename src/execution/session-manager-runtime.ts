@@ -1,5 +1,5 @@
 import type { AgentGetFn } from "../pipeline/types";
-import type { ISessionManager, SessionDescriptor } from "../session/types";
+import type { ISessionManager, SessionDescriptor, SessionState } from "../session/types";
 
 async function closePhysicalSession(
   descriptor: SessionDescriptor,
@@ -22,9 +22,34 @@ async function closeStorylessSession(
   descriptor: SessionDescriptor,
   agentGetFn?: AgentGetFn,
 ): Promise<number> {
-  sessionManager.transition(descriptor.id, "COMPLETED");
+  const transitionChain: SessionState[] = getStorylessCloseChain(descriptor.state);
+  for (const targetState of transitionChain) {
+    try {
+      sessionManager.transition(descriptor.id, targetState);
+    } catch {
+      // Best-effort cleanup: invalid transition states must not block teardown.
+    }
+  }
+
   await closePhysicalSession(descriptor, agentGetFn);
   return 1;
+}
+
+function getStorylessCloseChain(state: SessionState): SessionState[] {
+  switch (state) {
+    case "CREATED":
+      return ["RUNNING", "COMPLETED"];
+    case "PAUSED":
+      return ["RESUMING", "RUNNING", "COMPLETED"];
+    case "RESUMING":
+      return ["RUNNING", "COMPLETED"];
+    case "RUNNING":
+      return ["COMPLETED"];
+    case "CLOSING":
+      return ["COMPLETED"];
+    default:
+      return [];
+  }
 }
 
 export async function closeStorySessions(

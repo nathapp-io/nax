@@ -115,4 +115,24 @@ describe("closeAllRunSessions()", () => {
     expect(closePhysicalSession).toHaveBeenNthCalledWith(1, "nax-1", "/workdir");
     expect(closePhysicalSession).toHaveBeenNthCalledWith(2, "nax-2", "/workdir/b");
   });
+
+  test("walks a valid transition chain for a storyless PAUSED session", async () => {
+    const storyless = makeSessionDescriptor({ id: "sess-2", state: "PAUSED", handle: "nax-2", workdir: "/workdir/b" });
+    const sessionManager: SessionManagerLike = {
+      closeStory: mock(() => []),
+      listActive: mock(() => [storyless]),
+      transition: mock(() => storyless),
+    };
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    const closed = await closeAllRunSessions(sessionManager, agentGetFn);
+
+    expect(closed).toBe(1);
+    expect(sessionManager.transition).toHaveBeenNthCalledWith(1, "sess-2", "RESUMING");
+    expect(sessionManager.transition).toHaveBeenNthCalledWith(2, "sess-2", "RUNNING");
+    expect(sessionManager.transition).toHaveBeenNthCalledWith(3, "sess-2", "COMPLETED");
+    expect(closePhysicalSession).toHaveBeenCalledTimes(1);
+    expect(closePhysicalSession).toHaveBeenCalledWith("nax-2", "/workdir/b");
+  });
 });
