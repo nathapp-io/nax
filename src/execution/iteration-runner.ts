@@ -163,6 +163,10 @@ export async function runIteration(
 
   const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
 
+  // C1: Force-close all non-terminal sessions for this story so listActive()
+  // reflects the true state. Physical close is handled per-stage (closePhysicalSession).
+  pipelineContext.sessionManager?.closeStory(story.id);
+
   // #410: Destroy reviewerSession on escalation — completion stage is bypassed when the pipeline
   // returns escalate, so we must clean up here to avoid leaking the ACP reviewer session.
   const reviewerSessionOnEscalate = pipelineResult.context.reviewerSession;

@@ -215,6 +215,12 @@ export class SessionManager implements ISessionManager {
     const terminal: SessionState[] = ["COMPLETED", "FAILED"];
     for (const session of this._sessions.values()) {
       if (session.storyId === storyId && session.role === role && !terminal.includes(session.state)) {
+        getLogger().debug("session", "Session resumed", {
+          storyId,
+          sessionId: session.id,
+          role,
+          state: session.state,
+        });
         return { ...session };
       }
     }
