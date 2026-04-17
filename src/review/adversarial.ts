@@ -322,7 +322,7 @@ export async function runAdversarialReview(
       storyId: story.id,
       cause: String(err),
     });
-    void agent.closeSession(adversarialSessionName, workdir);
+    void agent.closePhysicalSession(adversarialSessionName, workdir);
     return {
       check: "adversarial",
       success: true,
@@ -364,7 +364,7 @@ export async function runAdversarialReview(
   // Close the session — covers both the happy path (no retry) and the retry-exhausted
   // path (retry threw or returned unparseable JSON, so keepSessionOpen: false on the
   // retry call may not have closed it). Best-effort: already-closed sessions no-op.
-  void agent.closeSession(adversarialSessionName, workdir);
+  void agent.closePhysicalSession(adversarialSessionName, workdir);
 
   // Parse response — fail-closed when LLM clearly intended to fail,
   // fail-open only when response is truly unparseable with no signal.

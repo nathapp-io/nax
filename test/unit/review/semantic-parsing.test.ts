@@ -48,6 +48,7 @@ function makeMockAgent(response: string): AgentAdapter {
     decompose: mock(async () => { throw new Error("not used"); }),
     complete: mock(async (_prompt: string) => response),
     closeSession: mock(async () => {}),
+    closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
 }
 

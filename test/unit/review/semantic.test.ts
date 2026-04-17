@@ -56,6 +56,7 @@ function makeMockAgent(response: string): AgentAdapter {
     decompose: mock(async () => { throw new Error("not used"); }),
     complete: mock(async (_prompt: string) => response),
     closeSession: mock(async () => {}),
+    closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
 }
 
@@ -861,6 +862,7 @@ function makeRunMockAgent(output: string, success = true): AgentAdapter {
     decompose: mock(async () => { throw new Error("decompose not used"); }),
     complete: mock(async (_prompt: string) => { throw new Error("complete() must NOT be called in non-debate path (US-003)"); }),
     closeSession: mock(async () => {}),
+    closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
 }
 

@@ -48,6 +48,17 @@ export interface RectificationLoopOptions {
    * Undefined for monorepo orchestrators (turbo/nx) — they do not support per-file expansion.
    */
   testScopedTemplate?: string;
+  /**
+   * In-process session registry (Phase 1+ plumbing). When provided, each rectification
+   * attempt's protocolIds are bound to the descriptor so the audit trail stays current
+   * across retries (G5: bindHandle after each agent.run() in the rectification loop).
+   */
+  sessionManager?: import("../session").ISessionManager;
+  /**
+   * nax session ID for the implementer session (sess-<uuid>).
+   * Required alongside sessionManager for bindHandle to work.
+   */
+  sessionId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,6 +149,8 @@ export async function runRectificationLoop(
     agentGetFn,
     projectDir,
     testScopedTemplate,
+    sessionManager,
+    sessionId,
   } = opts;
   const logger = getSafeLogger();
   const rectificationConfig = config.execution.rectification;
@@ -262,6 +275,17 @@ export async function runRectificationLoop(
       });
 
       costAccum += agentResult.estimatedCost ?? 0;
+
+      // G5: update session descriptor with latest protocolIds so the audit trail
+      // reflects the session that actually ran (may differ after internal retries).
+      if (sessionManager && sessionId && agentResult.protocolIds) {
+        try {
+          sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);
+        } catch {
+          // Session may not exist in manager (e.g. v2 context disabled) — ignore.
+        }
+      }
+
       if (agentResult.success) {
         logger?.info("rectification", `Agent ${label} session complete`, {
           storyId: story.id,
@@ -484,5 +508,7 @@ export function runRectificationLoopFromCtx(
     agentGetFn: ctx.agentGetFn,
     projectDir: ctx.projectDir,
     testScopedTemplate: opts.testScopedTemplate,
+    sessionManager: ctx.sessionManager,
+    sessionId: ctx.sessionId,
   });
 }
