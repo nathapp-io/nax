@@ -26,6 +26,26 @@ import { join, relative, resolve } from "node:path";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Options
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CodeNeighborProviderOptions {
+  /**
+   * Scope of the working directory for neighbor discovery (AC-56).
+   * "repo" — scans from repoRoot (full repo, default).
+   * "package" — scans from packageDir (monorepo package boundary).
+   */
+  neighborScope?: "repo" | "package";
+  /**
+   * Maximum neighbor traversal depth across the package boundary (AC-62).
+   * Only applies when neighborScope is "package".
+   * 0 (default) — no cross-package scanning.
+   * N > 0 — additionally scans repoRoot for cross-package reverse deps.
+   */
+  crossPackageDepth?: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -134,8 +154,11 @@ function siblingTestPath(filePath: string): string | null {
  * - forward deps (JS/TS import parse only — empty for other languages)
  * - reverse deps (all common source extensions)
  * - sibling test file (JS/TS/JSX/TSX only)
+ *
+ * extraGlobWorkdir: when provided (AC-62 crossPackageDepth > 0), also scans
+ * this directory for cross-package reverse deps.
  */
-async function collectNeighbors(filePath: string, workdir: string): Promise<string[]> {
+async function collectNeighbors(filePath: string, workdir: string, extraGlobWorkdir?: string): Promise<string[]> {
   const neighbors = new Set<string>();
 
   // Forward deps (JS/TS only)
@@ -151,25 +174,34 @@ async function collectNeighbors(filePath: string, workdir: string): Promise<stri
   // Quick check uses the base name (without extension) — broad but avoids parsing every file.
   const fileBaseName = (filePath.split("/").pop() ?? filePath).replace(/\.[^.]+$/, "");
   const fileNoExt = filePath.replace(/\.[^.]+$/, "");
-  const srcFiles = _codeNeighborDeps.glob(SOURCE_GLOB, workdir);
-  for (const srcFile of srcFiles) {
-    if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
-    if (srcFile === filePath) continue; // skip self — must be continue, not break
-    try {
-      const content = await _codeNeighborDeps.readFile(join(workdir, srcFile));
-      // Quick string check using base name before full JS/TS parse
-      if (content.includes(fileBaseName)) {
-        for (const spec of parseImportSpecifiers(content)) {
-          const resolved = resolveImport(spec, srcFile, workdir);
-          if (resolved === filePath || resolved === fileNoExt) {
-            neighbors.add(srcFile);
-            break;
+
+  const scanForReverseDeps = async (scanWorkdir: string) => {
+    const srcFiles = _codeNeighborDeps.glob(SOURCE_GLOB, scanWorkdir);
+    for (const srcFile of srcFiles) {
+      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
+      if (srcFile === filePath) continue;
+      try {
+        const content = await _codeNeighborDeps.readFile(join(scanWorkdir, srcFile));
+        if (content.includes(fileBaseName)) {
+          for (const spec of parseImportSpecifiers(content)) {
+            const resolved = resolveImport(spec, srcFile, scanWorkdir);
+            if (resolved === filePath || resolved === fileNoExt) {
+              neighbors.add(srcFile);
+              break;
+            }
           }
         }
+      } catch {
+        // Skip unreadable files
       }
-    } catch {
-      // Skip unreadable files
     }
+  };
+
+  await scanForReverseDeps(workdir);
+
+  // AC-62: cross-package reverse deps when extraGlobWorkdir is provided
+  if (extraGlobWorkdir) {
+    await scanForReverseDeps(extraGlobWorkdir);
   }
 
   // Sibling test (JS/TS/JSX/TSX only)
@@ -191,11 +223,22 @@ export class CodeNeighborProvider implements IContextProvider {
   readonly id = "code-neighbor";
   readonly kind = "neighbor" as const;
 
+  private readonly neighborScope: "repo" | "package";
+  private readonly crossPackageDepth: number;
+
+  constructor(options: CodeNeighborProviderOptions = {}) {
+    this.neighborScope = options.neighborScope ?? "repo";
+    this.crossPackageDepth = options.crossPackageDepth ?? 0;
+  }
+
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
-    // AC-56 (future): use request.packageDir for package-scoped neighbor tracing.
-    // For now, default to repoRoot to preserve existing behavior.
-    const workdir = request.repoRoot;
+    const workdir = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
+    // AC-62: when neighborScope is "package" and crossPackageDepth > 0, also scan repoRoot
+    const extraGlobWorkdir =
+      this.neighborScope === "package" && this.crossPackageDepth > 0 && request.packageDir !== request.repoRoot
+        ? request.repoRoot
+        : undefined;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
@@ -204,7 +247,7 @@ export class CodeNeighborProvider implements IContextProvider {
 
     const sections: string[] = [];
     for (const file of filesToProcess) {
-      const neighbors = await collectNeighbors(file, workdir);
+      const neighbors = await collectNeighbors(file, workdir, extraGlobWorkdir);
       if (neighbors.length > 0) {
         sections.push(`### ${file}\n${neighbors.map((n) => `- ${n}`).join("\n")}`);
       }
