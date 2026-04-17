@@ -138,6 +138,15 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...root.context.testCoverage,
         ...packageOverride.context?.testCoverage,
       },
+      v2: {
+        ...root.context.v2,
+        // AC-59: per-package stage budget overrides — deep-merge so each package
+        // can independently override individual stage budgets without clobbering others.
+        stages: {
+          ...root.context.v2?.stages,
+          ...packageOverride.context?.v2?.stages,
+        },
+      },
     },
     project: packageOverride.project !== undefined ? { ...root.project, ...packageOverride.project } : root.project,
   };

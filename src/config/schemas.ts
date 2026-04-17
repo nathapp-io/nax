@@ -545,6 +545,20 @@ const ContextV2ConfigSchema = z
      * Empty by default — operators add providers for RAG, graph, or KB use cases.
      */
     pluginProviders: z.array(ContextPluginProviderConfigSchema).default([]),
+    /**
+     * Per-stage token budget overrides (AC-59).
+     * Keys are pipeline stage names (e.g. "execution", "tdd-implementer").
+     * Set in per-package config (<repoRoot>/.nax/mono/<packageDir>/config.json)
+     * to override the default stage budget for a specific package.
+     *
+     * Example: { "execution": { "budgetTokens": 15000 } }
+     */
+    stages: z
+      .record(
+        z.string().min(1),
+        z.object({ budgetTokens: z.number().int().positive().optional() }),
+      )
+      .default({}),
   })
   .default(() => ({
     enabled: false,
@@ -553,6 +567,7 @@ const ContextV2ConfigSchema = z
     rules: { allowLegacyClaudeMd: true },
     fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
     pluginProviders: [],
+    stages: {},
   }));
 
 const ContextConfigSchema = z.object({
@@ -974,6 +989,7 @@ export const NaxConfigSchema = z
         rules: { allowLegacyClaudeMd: true },
         fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         pluginProviders: [],
+        stages: {},
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),
