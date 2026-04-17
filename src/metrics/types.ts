@@ -70,6 +70,22 @@ export interface ContextProviderMetrics {
 }
 
 /**
+ * A single agent-swap hop recorded by the execution stage (AC-41).
+ * Collected into ctx.agentFallbacks and surfaced in StoryMetrics.fallback.hops.
+ */
+export interface AgentFallbackHop {
+  storyId: string;
+  priorAgent: string;
+  newAgent: string;
+  /** adapterFailure.outcome — machine-readable failure code */
+  outcome: string;
+  /** adapterFailure.category — "availability" | "quality" */
+  category: string;
+  /** 1-indexed hop counter within this story's pipeline run */
+  hop: number;
+}
+
+/**
  * Per-story execution metrics
  */
 export interface StoryMetrics {
@@ -139,6 +155,13 @@ export interface StoryMetrics {
        */
       pollutionRatio: number;
     };
+  };
+  /**
+   * Agent-swap (fallback) hops recorded during execution (AC-41).
+   * Absent when no swaps occurred.
+   */
+  fallback?: {
+    hops: AgentFallbackHop[];
   };
   /**
    * Per-reviewer metrics for the review stage.

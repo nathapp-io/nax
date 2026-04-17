@@ -267,7 +267,19 @@ export const executionStage: PipelineStage = {
             adapterFailure,
             ctx.story.id,
           );
-          ctx.agentSwapCount = (ctx.agentSwapCount ?? 0) + 1;
+          const hopNumber = (ctx.agentSwapCount ?? 0) + 1;
+          ctx.agentSwapCount = hopNumber;
+          ctx.agentFallbacks = [
+            ...(ctx.agentFallbacks ?? []),
+            {
+              storyId: ctx.story.id,
+              priorAgent: currentAgentId,
+              newAgent: swapTarget,
+              outcome: adapterFailure.outcome,
+              category: adapterFailure.category,
+              hop: hopNumber,
+            },
+          ];
           logger.info("execution", "Agent-swap triggered", {
             storyId: ctx.story.id,
             fromAgent: currentAgentId,

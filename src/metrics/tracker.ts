@@ -169,6 +169,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
       scopeTestFallback: ctx.verifyResult.scopeTestFallback,
     }),
     ...(contextMetrics !== undefined && { context: contextMetrics }),
+    ...(ctx.agentFallbacks?.length && { fallback: { hops: ctx.agentFallbacks } }),
   };
 }
 
