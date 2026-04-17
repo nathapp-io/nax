@@ -192,3 +192,94 @@ describe("SessionScratchProvider", () => {
     expect(result.pullTools).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-42: cross-agent scratch neutralization
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionScratchProvider — AC-42 cross-agent neutralization", () => {
+  const TDD_CLAUDE_ENTRY = JSON.stringify({
+    kind: "tdd-session",
+    timestamp: "2026-01-01T00:02:00.000Z",
+    storyId: "US-001",
+    stage: "tdd-implementer",
+    role: "implementer",
+    success: true,
+    filesChanged: ["src/index.ts"],
+    outputTail: "I used the Read tool to inspect and the Bash tool to run tests.",
+    writtenByAgent: "claude",
+  });
+
+  const TDD_NO_AGENT_ENTRY = JSON.stringify({
+    kind: "tdd-session",
+    timestamp: "2026-01-01T00:02:00.000Z",
+    storyId: "US-001",
+    stage: "tdd-implementer",
+    role: "implementer",
+    success: true,
+    filesChanged: [],
+    outputTail: "I used the Read tool to inspect.",
+  });
+
+  test("neutralizes claude tool references when target agent differs", async () => {
+    mockScratchFile(`${TDD_CLAUDE_ENTRY}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "codex" }));
+
+    expect(result.chunks).toHaveLength(1);
+    const content = result.chunks[0].content;
+    expect(content).not.toContain("the Read tool");
+    expect(content).not.toContain("the Bash tool");
+    expect(content).toContain("a file read");
+    expect(content).toContain("a shell command");
+  });
+
+  test("does not neutralize when target agent matches source agent", async () => {
+    mockScratchFile(`${TDD_CLAUDE_ENTRY}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "claude" }));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("the Read tool");
+    expect(result.chunks[0].content).toContain("the Bash tool");
+  });
+
+  test("does not neutralize when no agentId on request", async () => {
+    mockScratchFile(`${TDD_CLAUDE_ENTRY}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("the Read tool");
+  });
+
+  test("does not neutralize when entry has no writtenByAgent", async () => {
+    mockScratchFile(`${TDD_NO_AGENT_ENTRY}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "codex" }));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("the Read tool");
+  });
+
+  test("verify-result entries are not neutralized (test runner output, not agent output)", async () => {
+    const entry = JSON.stringify({
+      kind: "verify-result",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      storyId: "US-001",
+      stage: "verify",
+      success: false,
+      status: "FAIL",
+      passCount: 0,
+      failCount: 1,
+      rawOutputTail: "Expected the Read tool to return value.",
+      writtenByAgent: "claude",
+    });
+    mockScratchFile(`${entry}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "codex" }));
+
+    // rawOutputTail is test runner output — preserved as-is
+    expect(result.chunks[0].content).toContain("the Read tool");
+  });
+});

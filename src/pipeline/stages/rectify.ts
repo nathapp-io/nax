@@ -92,6 +92,7 @@ export const rectifyStage: PipelineStage = {
           stage: "rectify",
           attempt: rectifyAttempt,
           succeeded,
+          writtenByAgent: ctx.routing?.agent ?? ctx.config.autoMode.defaultAgent,
         });
       } catch (scratchErr) {
         logger.warn("rectify", "Failed to write scratch entry — continuing", {

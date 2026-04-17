@@ -9,6 +9,8 @@
  *
  * Phase 1: reads verify-result and rectify-attempt entries.
  * Phase 2+: additional entry kinds (review findings, tool call results).
+ * AC-42: neutralizes agent-specific tool references when entry.writtenByAgent
+ *        differs from the target agent (request.agentId).
  *
  * See: docs/specs/SPEC-context-engine-v2.md §SessionScratchProvider
  */
@@ -16,6 +18,7 @@
 import { createHash } from "node:crypto";
 import type { ScratchEntry } from "../../../session/scratch-writer";
 import { scratchFilePath } from "../../../session/scratch-writer";
+import { neutralizeForAgent } from "../scratch-neutralizer";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,8 +63,14 @@ function parseJsonl(raw: string): ScratchEntry[] {
   return entries;
 }
 
-/** Render a ScratchEntry to human-readable Markdown for the push block */
-function renderEntry(entry: ScratchEntry): string {
+/**
+ * Render a ScratchEntry to human-readable Markdown for the push block.
+ *
+ * When entry.writtenByAgent is set and differs from targetAgentId, free-text
+ * fields (outputTail) are passed through neutralizeForAgent() to strip
+ * agent-specific tool-name references (AC-42).
+ */
+function renderEntry(entry: ScratchEntry, targetAgentId?: string): string {
   switch (entry.kind) {
     case "verify-result": {
       const status = entry.success ? "PASS" : `FAIL (${entry.failCount} failures)`;
@@ -79,7 +88,8 @@ function renderEntry(entry: ScratchEntry): string {
         `**TDD ${entry.role}** at ${entry.timestamp}: ${entry.success ? "succeeded" : "failed"}${changed}`,
       ];
       if (entry.outputTail.trim()) {
-        lines.push("```", entry.outputTail.trim(), "```");
+        const tail = neutralizeForAgent(entry.outputTail.trim(), entry.writtenByAgent ?? "", targetAgentId ?? "");
+        lines.push("```", tail, "```");
       }
       return lines.join("\n");
     }
@@ -92,7 +102,7 @@ function renderEntry(entry: ScratchEntry): string {
  * Read a scratch dir and produce a RawChunk for its most recent entries.
  * Returns null when the dir has no scratch file or the file is empty.
  */
-async function readScratchDir(scratchDir: string): Promise<RawChunk | null> {
+async function readScratchDir(scratchDir: string, targetAgentId?: string): Promise<RawChunk | null> {
   const filePath = scratchFilePath(scratchDir);
   if (!(await _sessionScratchDeps.fileExists(filePath))) return null;
 
@@ -102,7 +112,7 @@ async function readScratchDir(scratchDir: string): Promise<RawChunk | null> {
 
   // Take most recent N entries (tail of the JSONL)
   const entries = allEntries.slice(-MAX_ENTRIES_PER_DIR);
-  const content = entries.map(renderEntry).join("\n\n");
+  const content = entries.map((e) => renderEntry(e, targetAgentId)).join("\n\n");
 
   // Truncate content to the token ceiling so the reported token count
   // matches the actual content length. Without truncation the packing stage
@@ -144,7 +154,7 @@ export class SessionScratchProvider implements IContextProvider {
 
     const chunks: RawChunk[] = [];
     for (const dir of dirs) {
-      const chunk = await readScratchDir(dir);
+      const chunk = await readScratchDir(dir, request.agentId);
       if (chunk) chunks.push(chunk);
     }
 
