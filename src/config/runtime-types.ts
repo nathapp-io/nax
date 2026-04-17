@@ -465,6 +465,13 @@ export interface ContextV2Config {
    * Keys are stage names; value overrides the default stage budgetTokens.
    */
   stages: Record<string, { budgetTokens?: number }>;
+  /** Session scratch retention settings (AC-20) */
+  session: {
+    /** Days to retain completed session scratch dirs before purging. */
+    retentionDays: number;
+    /** When true and the feature run fully completes, archive to _archive/ instead of deleting. */
+    archiveOnFeatureArchive: boolean;
+  };
 }
 
 export interface ContextConfig {

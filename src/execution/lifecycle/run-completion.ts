@@ -18,6 +18,7 @@ import { pipelineEventBus } from "../../pipeline/event-bus";
 import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
+import { purgeStaleScratch } from "../../session/scratch-purge";
 import type { StatusWriter } from "../status-writer";
 import { runDeferredRegression } from "./run-regression";
 
@@ -50,6 +51,12 @@ export interface RunCompletionOptions {
   skipRegression?: boolean;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
   agentGetFn?: AgentGetFn;
+  /**
+   * Absolute path to the project root (where .nax/ lives).
+   * Defaults to workdir when absent (non-monorepo).
+   * Used for session scratch purge (AC-20).
+   */
+  projectDir?: string;
 }
 
 export interface RunCompletionResult {
@@ -227,6 +234,27 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     await saveRunMetrics(workdir, runMetrics);
   } catch (err) {
     logger?.warn("run.complete", "Failed to save run metrics", { error: String(err) });
+  }
+
+  // AC-20: purge stale session scratch dirs
+  const effectiveProjectDir = options.projectDir ?? workdir;
+  const sessionCfg = config.context?.v2?.session;
+  if (sessionCfg?.retentionDays) {
+    const featureComplete = isComplete(prd);
+    const archiveInsteadOfDelete = sessionCfg.archiveOnFeatureArchive && featureComplete;
+    try {
+      const purged = await purgeStaleScratch(
+        effectiveProjectDir,
+        feature,
+        sessionCfg.retentionDays,
+        archiveInsteadOfDelete,
+      );
+      if (purged > 0) {
+        logger?.info("run.complete", "Purged stale session scratch dirs", { feature, purged });
+      }
+    } catch (err) {
+      logger?.warn("run.complete", "Failed to purge stale session scratch", { error: String(err) });
+    }
   }
 
   // Log run completion
