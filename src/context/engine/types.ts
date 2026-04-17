@@ -370,6 +370,13 @@ export interface ContextRequest {
    * (e.g. a rectify provider surfacing prior failure patterns).
    */
   failureHints?: string[];
+  /**
+   * Determinism mode (AC-24).
+   * When true, the orchestrator skips providers that declare `deterministic: false`.
+   * Ensures two runs with identical inputs produce identical push blocks.
+   * Sourced from config.context.v2.deterministic.
+   */
+  deterministic?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -416,6 +423,12 @@ export interface IContextProvider {
   readonly id: string;
   /** Chunk kind produced by this provider */
   readonly kind: ChunkKind;
+  /**
+   * Whether this provider produces deterministic output (AC-24).
+   * Absent or true = deterministic. false = non-deterministic (e.g. LLM-based, random sampling).
+   * When ContextRequest.deterministic is true, non-deterministic providers are skipped.
+   */
+  readonly deterministic?: boolean;
   /**
    * Fetch context chunks for the given request.
    * Must not throw — return empty chunks array on failure and log internally.

@@ -225,7 +225,10 @@ export class ContextOrchestrator {
     // Step 1: filter providers to those applicable for this stage.
     // request.providerIds (test-only override) takes precedence; otherwise stageConfig.providerIds.
     const allowedIds = request.providerIds ?? stageConfig.providerIds;
-    const activeProviders = this.providers.filter((p) => allowedIds.includes(p.id));
+    // AC-24: determinism mode — skip providers that declare deterministic: false.
+    const activeProviders = this.providers.filter(
+      (p) => allowedIds.includes(p.id) && !(request.deterministic === true && p.deterministic === false),
+    );
 
     // Step 2: parallel fetch with timeout — failures return empty, never throw.
     // Per-provider status is recorded for manifest auditability (Finding 3).

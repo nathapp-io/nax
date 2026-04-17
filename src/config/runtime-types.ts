@@ -465,6 +465,11 @@ export interface ContextV2Config {
    * Keys are stage names; value overrides the default stage budgetTokens.
    */
   stages: Record<string, { budgetTokens?: number }>;
+  /**
+   * Determinism mode (AC-24).
+   * When true, providers declaring `deterministic: false` are excluded from assembly.
+   */
+  deterministic: boolean;
   /** Session scratch retention settings (AC-20) */
   session: {
     /** Days to retain completed session scratch dirs before purging. */
