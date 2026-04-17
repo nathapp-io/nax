@@ -76,7 +76,8 @@ function renderEntry(entry: ScratchEntry, targetAgentId?: string): string {
       const status = entry.success ? "PASS" : `FAIL (${entry.failCount} failures)`;
       const lines = [`**Verify** at ${entry.timestamp}: ${status} — ${entry.passCount} pass / ${entry.failCount} fail`];
       if (!entry.success && entry.rawOutputTail) {
-        lines.push("```", entry.rawOutputTail.trim(), "```");
+        const tail = neutralizeForAgent(entry.rawOutputTail.trim(), entry.writtenByAgent ?? "", targetAgentId ?? "");
+        lines.push("```", tail, "```");
       }
       return lines.join("\n");
     }
