@@ -262,7 +262,7 @@ describe("SessionScratchProvider — AC-42 cross-agent neutralization", () => {
     expect(result.chunks[0].content).toContain("the Read tool");
   });
 
-  test("verify-result entries are not neutralized (test runner output, not agent output)", async () => {
+  test("does not neutralize rawOutputTail in verify-result when writtenByAgent is absent (pure test runner output)", async () => {
     const entry = JSON.stringify({
       kind: "verify-result",
       timestamp: "2026-01-01T00:00:00.000Z",
@@ -273,13 +273,61 @@ describe("SessionScratchProvider — AC-42 cross-agent neutralization", () => {
       passCount: 0,
       failCount: 1,
       rawOutputTail: "Expected the Read tool to return value.",
+      // no writtenByAgent — pure test runner output
+    });
+    mockScratchFile(`${entry}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "codex" }));
+
+    // No writtenByAgent → writtenByAgent ?? "" === targetAgentId ?? "" is false,
+    // but neutralizeForAgent("", "") is a no-op, so content preserved
+    expect(result.chunks[0].content).toContain("the Read tool");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M1: AC-42 verify-result.rawOutputTail must also be neutralized
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionScratchProvider — #508-M1 verify-result rawOutputTail neutralization", () => {
+  test("neutralizes rawOutputTail in verify-result when writtenByAgent differs from target agent", async () => {
+    const entry = JSON.stringify({
+      kind: "verify-result",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      storyId: "US-001",
+      stage: "verify",
+      success: false,
+      status: "FAIL",
+      passCount: 0,
+      failCount: 1,
+      rawOutputTail: "I used the Read tool to inspect the file before failing.",
       writtenByAgent: "claude",
     });
     mockScratchFile(`${entry}\n`);
     const provider = new SessionScratchProvider();
     const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "codex" }));
 
-    // rawOutputTail is test runner output — preserved as-is
+    expect(result.chunks[0].content).not.toContain("the Read tool");
+    expect(result.chunks[0].content).toContain("a file read");
+  });
+
+  test("does not neutralize rawOutputTail in verify-result when target matches source", async () => {
+    const entry = JSON.stringify({
+      kind: "verify-result",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      storyId: "US-001",
+      stage: "verify",
+      success: false,
+      status: "FAIL",
+      passCount: 0,
+      failCount: 1,
+      rawOutputTail: "I used the Read tool here.",
+      writtenByAgent: "claude",
+    });
+    mockScratchFile(`${entry}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "claude" }));
+
     expect(result.chunks[0].content).toContain("the Read tool");
   });
 });

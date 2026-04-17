@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _runSetupDeps } from "../../../../src/execution/lifecycle/run-setup";
+import { _runSetupDeps, warnFallbackMisconfiguration } from "../../../../src/execution/lifecycle/run-setup";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -85,5 +85,105 @@ describe("setupRun — project detection logging (AC-4)", () => {
     // 'Detected: typescript/web (vitest, biome)'
     // 'Using explicit config: language=go, type=cli; detected: testFramework=go-test'
     expect(true).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M4: AC-35 pre-flight fallback misconfiguration warning
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", () => {
+  function makeConfig(fallbackMap: Record<string, string[]> = {}) {
+    return {
+      context: {
+        v2: {
+          fallback: {
+            enabled: Object.keys(fallbackMap).length > 0,
+            map: fallbackMap,
+          },
+        },
+      },
+    } as unknown as import("../../../../src/config").NaxConfig;
+  }
+
+  function makeLogger() {
+    const warns: Array<[string, string, Record<string, unknown>]> = [];
+    const logger = {
+      warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warns.push([stage, msg, ctx]),
+      info: () => {},
+      debug: () => {},
+      error: () => {},
+    };
+    return { logger, warns };
+  }
+
+  test("emits warn for each fallback candidate not resolved by agentGetFn", () => {
+    const { logger, warns } = makeLogger();
+    const agentGetFn = (name: string) => (name === "codex" ? {} : undefined);
+
+    warnFallbackMisconfiguration(
+      makeConfig({ claude: ["codex", "gemini"] }),
+      agentGetFn as (name: string) => unknown,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns.length).toBe(1);
+    expect(warns[0]?.[0]).toBe("fallback");
+    expect(warns[0]?.[2]).toMatchObject({ candidate: "gemini" });
+  });
+
+  test("does not warn when all candidates resolve", () => {
+    const { logger, warns } = makeLogger();
+    const agentGetFn = (_name: string) => ({});
+
+    warnFallbackMisconfiguration(
+      makeConfig({ claude: ["codex"] }),
+      agentGetFn as (name: string) => unknown,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
+
+  test("does not warn when fallback is disabled (enabled: false)", () => {
+    const { logger, warns } = makeLogger();
+    const agentGetFn = (_name: string) => undefined;
+    const config = {
+      context: { v2: { fallback: { enabled: false, map: { claude: ["gemini"] } } } },
+    } as unknown as import("../../../../src/config").NaxConfig;
+
+    warnFallbackMisconfiguration(
+      config,
+      agentGetFn as (name: string) => unknown,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
+
+  test("does not warn when agentGetFn is undefined (skip check when resolver unavailable)", () => {
+    const { logger, warns } = makeLogger();
+
+    warnFallbackMisconfiguration(
+      makeConfig({ claude: ["gemini"] }),
+      undefined,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
+
+  test("deduplicates warnings for the same candidate across multiple primary agents", () => {
+    const { logger, warns } = makeLogger();
+    const agentGetFn = (_name: string) => undefined;
+
+    warnFallbackMisconfiguration(
+      makeConfig({ claude: ["gemini"], codex: ["gemini"] }),
+      agentGetFn as (name: string) => unknown,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    const geminiWarns = warns.filter((w) => (w[2] as Record<string, unknown>).candidate === "gemini");
+    expect(geminiWarns).toHaveLength(1);
   });
 });

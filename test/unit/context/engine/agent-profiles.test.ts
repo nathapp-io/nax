@@ -120,3 +120,48 @@ describe("getAgentProfile", () => {
     expect(profile.caps.systemPromptStyle).toBe("plain");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-H6: AC-27 missing built-in profiles (gemini, cursor, local)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AGENT_PROFILES — #508-H6 AC-27 built-in profiles", () => {
+  test("contains gemini profile", () => {
+    expect("gemini" in AGENT_PROFILES).toBe(true);
+  });
+
+  test("contains cursor profile", () => {
+    expect("cursor" in AGENT_PROFILES).toBe(true);
+  });
+
+  test("contains local profile", () => {
+    expect("local" in AGENT_PROFILES).toBe(true);
+  });
+
+  test("getAgentProfile('gemini') returns isDefault: false", () => {
+    const { isDefault } = getAgentProfile("gemini");
+    expect(isDefault).toBe(false);
+  });
+
+  test("getAgentProfile('cursor') returns isDefault: false", () => {
+    const { isDefault } = getAgentProfile("cursor");
+    expect(isDefault).toBe(false);
+  });
+
+  test("getAgentProfile('local') returns isDefault: false", () => {
+    const { isDefault } = getAgentProfile("local");
+    expect(isDefault).toBe(false);
+  });
+
+  test("gemini has positive maxContextTokens", () => {
+    expect(AGENT_PROFILES["gemini"]?.caps.maxContextTokens).toBeGreaterThan(0);
+  });
+
+  test("local toolSchemaDialect is none (conservative default for local LLMs)", () => {
+    expect(AGENT_PROFILES["local"]?.caps.toolSchemaDialect).toBe("none");
+  });
+
+  test("local supportsToolCalls is false", () => {
+    expect(AGENT_PROFILES["local"]?.caps.supportsToolCalls).toBe(false);
+  });
+});

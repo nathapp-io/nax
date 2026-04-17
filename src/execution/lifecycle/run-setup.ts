@@ -39,6 +39,37 @@ export const _runSetupDeps = {
   detectProjectProfile,
 };
 
+/**
+ * Emit a warning for each fallback candidate in config.context.v2.fallback.map
+ * that cannot be resolved by agentGetFn (AC-35 pre-flight check).
+ *
+ * Deduplicates warnings so each unconfigured candidate is reported once even
+ * if it appears under multiple primary agents.
+ */
+export function warnFallbackMisconfiguration(
+  config: NaxConfig,
+  agentGetFn: ((name: string) => unknown) | undefined,
+  logger: ReturnType<typeof getSafeLogger>,
+): void {
+  if (!agentGetFn) return;
+  const fallback = config.context?.v2?.fallback;
+  if (!fallback?.enabled || !fallback.map) return;
+
+  const warned = new Set<string>();
+  for (const [primaryAgent, candidates] of Object.entries(fallback.map)) {
+    for (const candidate of candidates) {
+      if (warned.has(candidate)) continue;
+      if (!agentGetFn(candidate)) {
+        logger?.warn("fallback", "Fallback candidate not available — will be skipped if triggered", {
+          primaryAgent,
+          candidate,
+        });
+        warned.add(candidate);
+      }
+    }
+  }
+}
+
 export interface RunSetupOptions {
   prdPath: string;
   workdir: string;
@@ -84,6 +115,10 @@ export interface RunSetupResult {
  */
 export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult> {
   const logger = getSafeLogger();
+
+  // AC-35: pre-flight warning for unconfigured fallback candidates
+  warnFallbackMisconfiguration(options.config, options.agentGetFn, logger);
+
   const {
     prdPath,
     workdir,

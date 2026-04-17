@@ -84,11 +84,7 @@ export const CONSERVATIVE_DEFAULT_PROFILE: AgentProfile = {
 // Built-in profiles
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Registry of built-in agent profiles.
- * Phase 5.5 ships claude + codex.
- * Phase 8 adds gemini, cursor, local.
- */
+/** Registry of built-in agent profiles (AC-27). */
 export const AGENT_PROFILES: Record<string, AgentProfile> = {
   claude: {
     caps: {
@@ -110,6 +106,39 @@ export const AGENT_PROFILES: Record<string, AgentProfile> = {
       supportsMarkdown: true,
       systemPromptStyle: "xml-tagged",
       toolSchemaDialect: "openai",
+    },
+  },
+  gemini: {
+    caps: {
+      maxContextTokens: 1_000_000,
+      preferredPromptTokens: 16_000,
+      supportsToolCalls: true,
+      supportsSystemPrompt: true,
+      supportsMarkdown: true,
+      systemPromptStyle: "markdown-sections",
+      toolSchemaDialect: "openai",
+    },
+  },
+  cursor: {
+    caps: {
+      maxContextTokens: 128_000,
+      preferredPromptTokens: 12_000,
+      supportsToolCalls: true,
+      supportsSystemPrompt: true,
+      supportsMarkdown: true,
+      systemPromptStyle: "markdown-sections",
+      toolSchemaDialect: "openai",
+    },
+  },
+  local: {
+    caps: {
+      maxContextTokens: 32_000,
+      preferredPromptTokens: 8_000,
+      supportsToolCalls: false,
+      supportsSystemPrompt: true,
+      supportsMarkdown: true,
+      systemPromptStyle: "plain",
+      toolSchemaDialect: "none",
     },
   },
 };
