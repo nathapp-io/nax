@@ -164,7 +164,9 @@ export async function assembleForStage(
       packageDir,
       stage,
       role: stageConfig.role,
-      budgetTokens: stageConfig.budgetTokens,
+      // AC-59: per-package stage budget — reads from ctx.config which is already the
+      // merged config (root + <repoRoot>/.nax/mono/<packageDir>/config.json overlay).
+      budgetTokens: ctx.config.context?.v2?.stages?.[stage]?.budgetTokens ?? stageConfig.budgetTokens,
       touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
       storyScratchDirs,
       priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,

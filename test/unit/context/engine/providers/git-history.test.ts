@@ -51,7 +51,7 @@ function mockGit(responses: Map<string, { stdout: string; exitCode: number }>) {
 /** Installs a mock that captures workdirs and returns success for every file */
 function captureWorkdirs(): string[] {
   const captured: string[] = [];
-  _gitHistoryDeps.gitWithTimeout = async (args: string[], workdir: string) => {
+  _gitHistoryDeps.gitWithTimeout = async (_args: string[], workdir: string) => {
     captured.push(workdir);
     return { stdout: "abc1234 feat: something", exitCode: 0 };
   };
@@ -204,11 +204,11 @@ describe("GitHistoryProvider — AC-55 historyScope", () => {
     touchedFiles: ["src/service.ts"],
   };
 
-  test("default historyScope is 'repo' — uses repoRoot", async () => {
+  test("default historyScope is 'package' — uses packageDir", async () => {
     const workdirs = captureWorkdirs();
     const p = new GitHistoryProvider();
     await p.fetch(MONOREPO_REQUEST);
-    expect(workdirs[0]).toBe("/repo");
+    expect(workdirs[0]).toBe("/repo/packages/api");
   });
 
   test("historyScope 'repo' — uses repoRoot", async () => {

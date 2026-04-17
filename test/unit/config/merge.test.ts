@@ -600,3 +600,61 @@ describe("mergePackageConfig — project field (US-001)", () => {
     expect(root.project?.language).toBe(origLang);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-59: per-package context.v2.stages budget overrides
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () => {
+  test("root context.v2.stages is preserved when no package override", () => {
+    const root = makeRoot();
+    const result = mergePackageConfig(root, { quality: { requireTests: false } } as Partial<NaxConfig>);
+    expect(result.context.v2.stages).toEqual({});
+  });
+
+  test("package override sets a stage budget", () => {
+    const root = makeRoot();
+    const result = mergePackageConfig(root, {
+      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
+    } as Partial<NaxConfig>);
+    expect(result.context.v2.stages.execution?.budgetTokens).toBe(15_000);
+  });
+
+  test("package override does not clobber other stages from root", () => {
+    const root = {
+      ...makeRoot(),
+      context: {
+        ...makeRoot().context,
+        v2: { ...makeRoot().context.v2, stages: { verify: { budgetTokens: 4_000 } } },
+      },
+    };
+    const result = mergePackageConfig(root, {
+      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
+    } as Partial<NaxConfig>);
+    expect(result.context.v2.stages.execution?.budgetTokens).toBe(15_000);
+    expect(result.context.v2.stages.verify?.budgetTokens).toBe(4_000);
+  });
+
+  test("package override wins over root for same stage", () => {
+    const root = {
+      ...makeRoot(),
+      context: {
+        ...makeRoot().context,
+        v2: { ...makeRoot().context.v2, stages: { execution: { budgetTokens: 8_000 } } },
+      },
+    };
+    const result = mergePackageConfig(root, {
+      context: { v2: { stages: { execution: { budgetTokens: 20_000 } } } } as unknown as Partial<NaxConfig["context"]>,
+    } as Partial<NaxConfig>);
+    expect(result.context.v2.stages.execution?.budgetTokens).toBe(20_000);
+  });
+
+  test("does not mutate root context.v2.stages", () => {
+    const root = makeRoot();
+    const origStages = root.context.v2.stages;
+    mergePackageConfig(root, {
+      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
+    } as Partial<NaxConfig>);
+    expect(root.context.v2.stages).toBe(origStages);
+  });
+});

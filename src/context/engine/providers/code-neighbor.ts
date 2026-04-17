@@ -23,6 +23,7 @@
 
 import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
+import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,15 +33,15 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 export interface CodeNeighborProviderOptions {
   /**
    * Scope of the working directory for neighbor discovery (AC-56).
-   * "repo" — scans from repoRoot (full repo, default).
-   * "package" — scans from packageDir (monorepo package boundary).
+   * "repo" — scans from repoRoot (full repo).
+   * "package" — scans from packageDir (monorepo package boundary, default).
    */
   neighborScope?: "repo" | "package";
   /**
    * Maximum neighbor traversal depth across the package boundary (AC-62).
    * Only applies when neighborScope is "package".
-   * 0 (default) — no cross-package scanning.
-   * N > 0 — additionally scans repoRoot for cross-package reverse deps.
+   * 0 — no cross-package scanning.
+   * 1 (default) — additionally scans repoRoot for cross-package reverse deps.
    */
   crossPackageDepth?: number;
 }
@@ -74,6 +75,7 @@ const SOURCE_GLOB = "src/**/*.{ts,tsx,js,jsx,py,go,rs,java,rb,php,cs,cpp,c,h}";
 export const _codeNeighborDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
+  discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
   glob: (pattern: string, cwd: string): string[] => {
     const g = new Bun.Glob(pattern);
     const results: string[] = [];
@@ -155,10 +157,10 @@ function siblingTestPath(filePath: string): string | null {
  * - reverse deps (all common source extensions)
  * - sibling test file (JS/TS/JSX/TSX only)
  *
- * extraGlobWorkdir: when provided (AC-62 crossPackageDepth > 0), also scans
- * this directory for cross-package reverse deps.
+ * extraGlobWorkdirs: when provided (AC-62 crossPackageDepth > 0), also scans
+ * each directory for cross-package reverse deps (workspace package dirs or repoRoot).
  */
-async function collectNeighbors(filePath: string, workdir: string, extraGlobWorkdir?: string): Promise<string[]> {
+async function collectNeighbors(filePath: string, workdir: string, extraGlobWorkdirs?: string[]): Promise<string[]> {
   const neighbors = new Set<string>();
 
   // Forward deps (JS/TS only)
@@ -199,9 +201,12 @@ async function collectNeighbors(filePath: string, workdir: string, extraGlobWork
 
   await scanForReverseDeps(workdir);
 
-  // AC-62: cross-package reverse deps when extraGlobWorkdir is provided
-  if (extraGlobWorkdir) {
-    await scanForReverseDeps(extraGlobWorkdir);
+  // AC-62: cross-package reverse deps — scan each extra workdir (workspace packages)
+  if (extraGlobWorkdirs) {
+    for (const extraDir of extraGlobWorkdirs) {
+      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
+      await scanForReverseDeps(extraDir);
+    }
   }
 
   // Sibling test (JS/TS/JSX/TSX only)
@@ -209,6 +214,40 @@ async function collectNeighbors(filePath: string, workdir: string, extraGlobWork
   if (testPath) neighbors.add(testPath);
 
   return [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-62 workspace detection helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the extra glob workdirs for cross-package scanning (AC-62).
+ *
+ * When neighborScope is "package" and crossPackageDepth > 0 in a monorepo,
+ * detects workspace packages (pnpm-workspace.yaml, package.json#workspaces, etc.)
+ * and returns their absolute paths as scan roots (excluding the current packageDir).
+ * Falls back to [repoRoot] when workspace detection finds nothing — this scans
+ * the whole repo as a safe fallback for non-standard monorepo layouts.
+ *
+ * Returns undefined when cross-package scanning is not needed.
+ */
+async function resolveExtraGlobWorkdirs(
+  neighborScope: "repo" | "package",
+  crossPackageDepth: number,
+  repoRoot: string,
+  packageDir: string,
+): Promise<string[] | undefined> {
+  if (neighborScope !== "package" || crossPackageDepth <= 0 || packageDir === repoRoot) {
+    return undefined;
+  }
+  try {
+    const relPkgDirs = await _codeNeighborDeps.discoverWorkspacePackages(repoRoot);
+    if (relPkgDirs.length === 0) return [repoRoot];
+    // Convert relative workspace dirs to absolute, excluding the current package
+    return relPkgDirs.map((rel) => join(repoRoot, rel)).filter((abs) => abs !== packageDir);
+  } catch {
+    return [repoRoot];
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -227,18 +266,22 @@ export class CodeNeighborProvider implements IContextProvider {
   private readonly crossPackageDepth: number;
 
   constructor(options: CodeNeighborProviderOptions = {}) {
-    this.neighborScope = options.neighborScope ?? "repo";
-    this.crossPackageDepth = options.crossPackageDepth ?? 0;
+    this.neighborScope = options.neighborScope ?? "package";
+    this.crossPackageDepth = options.crossPackageDepth ?? 1;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
     const workdir = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
-    // AC-62: when neighborScope is "package" and crossPackageDepth > 0, also scan repoRoot
-    const extraGlobWorkdir =
-      this.neighborScope === "package" && this.crossPackageDepth > 0 && request.packageDir !== request.repoRoot
-        ? request.repoRoot
-        : undefined;
+    // AC-62: cross-package scanning — detect shared workspace dirs instead of scanning full repoRoot.
+    // Only active when neighborScope "package", crossPackageDepth > 0, and this is a monorepo
+    // (packageDir !== repoRoot). Falls back to [repoRoot] when no workspace packages are found.
+    const extraGlobWorkdirs = await resolveExtraGlobWorkdirs(
+      this.neighborScope,
+      this.crossPackageDepth,
+      request.repoRoot,
+      request.packageDir,
+    );
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
@@ -247,7 +290,7 @@ export class CodeNeighborProvider implements IContextProvider {
 
     const sections: string[] = [];
     for (const file of filesToProcess) {
-      const neighbors = await collectNeighbors(file, workdir, extraGlobWorkdir);
+      const neighbors = await collectNeighbors(file, workdir, extraGlobWorkdirs);
       if (neighbors.length > 0) {
         sections.push(`### ${file}\n${neighbors.map((n) => `- ${n}`).join("\n")}`);
       }

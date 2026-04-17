@@ -459,6 +459,12 @@ export interface ContextV2Config {
   fallback: ContextV2FallbackConfig;
   /** External plugin providers to load (Phase 7+). Empty by default. */
   pluginProviders: ContextPluginProviderConfig[];
+  /**
+   * Per-stage token budget overrides (AC-59).
+   * Set via per-package config (<repoRoot>/.nax/mono/<packageDir>/config.json).
+   * Keys are stage names; value overrides the default stage budgetTokens.
+   */
+  stages: Record<string, { budgetTokens?: number }>;
 }
 
 export interface ContextConfig {

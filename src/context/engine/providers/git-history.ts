@@ -26,7 +26,7 @@ export interface GitHistoryProviderOptions {
    * Scope of the git working directory for history queries (AC-55).
    * "repo" — runs git log in repoRoot (full repo history).
    * "package" — runs git log in packageDir (monorepo package boundary).
-   * Default: "repo" (preserves Phase 3 behavior).
+   * Default: "package" (monorepo-safe; scopes history to the story's package).
    */
   historyScope?: "repo" | "package";
 }
@@ -92,7 +92,7 @@ export class GitHistoryProvider implements IContextProvider {
   private readonly historyScope: "repo" | "package";
 
   constructor(options: GitHistoryProviderOptions = {}) {
-    this.historyScope = options.historyScope ?? "repo";
+    this.historyScope = options.historyScope ?? "package";
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
