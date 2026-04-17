@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
+import type { CodeNeighborProviderOptions } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,5 +245,80 @@ describe("CodeNeighborProvider", () => {
     setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     expect(result.pullTools).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-56 + AC-62: neighborScope and crossPackageDepth options
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth", () => {
+  const MONOREPO_REQUEST: ContextRequest = {
+    storyId: "US-002",
+    repoRoot: "/repo",
+    packageDir: "/repo/packages/api",
+    stage: "execution",
+    role: "implementer",
+    budgetTokens: 8_000,
+    touchedFiles: ["src/service.ts"],
+  };
+
+  /** Captures which cwds were passed to glob */
+  function captureGlobCwds(): string[] {
+    const captured: string[] = [];
+    _codeNeighborDeps.glob = (_pattern: string, cwd: string) => {
+      captured.push(cwd);
+      return [];
+    };
+    _codeNeighborDeps.fileExists = async () => false;
+    _codeNeighborDeps.readFile = async () => "";
+    return captured;
+  }
+
+  test("default neighborScope is 'repo' — glob runs in repoRoot", async () => {
+    const cwds = captureGlobCwds();
+    const p = new CodeNeighborProvider();
+    await p.fetch(MONOREPO_REQUEST);
+    expect(cwds).toContain("/repo");
+    expect(cwds).not.toContain("/repo/packages/api");
+  });
+
+  test("neighborScope 'repo' — glob runs in repoRoot", async () => {
+    const cwds = captureGlobCwds();
+    const p = new CodeNeighborProvider({ neighborScope: "repo" } as CodeNeighborProviderOptions);
+    await p.fetch(MONOREPO_REQUEST);
+    expect(cwds).toContain("/repo");
+    expect(cwds).not.toContain("/repo/packages/api");
+  });
+
+  test("neighborScope 'package' — glob runs in packageDir", async () => {
+    const cwds = captureGlobCwds();
+    const p = new CodeNeighborProvider({ neighborScope: "package" } as CodeNeighborProviderOptions);
+    await p.fetch(MONOREPO_REQUEST);
+    expect(cwds).toContain("/repo/packages/api");
+    expect(cwds).not.toContain("/repo");
+  });
+
+  test("non-monorepo: neighborScope 'package' uses repoRoot when packageDir === repoRoot", async () => {
+    const cwds = captureGlobCwds();
+    const p = new CodeNeighborProvider({ neighborScope: "package" } as CodeNeighborProviderOptions);
+    await p.fetch(makeRequest({ touchedFiles: ["src/a.ts"] })); // packageDir === repoRoot
+    expect(cwds).toContain("/repo");
+  });
+
+  test("crossPackageDepth 0 (default) with neighborScope 'package' — glob only in packageDir", async () => {
+    const cwds = captureGlobCwds();
+    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions);
+    await p.fetch(MONOREPO_REQUEST);
+    expect(cwds.filter((c) => c === "/repo/packages/api")).toHaveLength(1);
+    expect(cwds).not.toContain("/repo");
+  });
+
+  test("crossPackageDepth 1 with neighborScope 'package' — also scans repoRoot", async () => {
+    const cwds = captureGlobCwds();
+    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    await p.fetch(MONOREPO_REQUEST);
+    expect(cwds).toContain("/repo/packages/api");
+    expect(cwds).toContain("/repo");
   });
 });
