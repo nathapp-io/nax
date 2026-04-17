@@ -131,3 +131,69 @@ describe("FeatureContextProviderV2", () => {
     expect(result.chunks).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M6: AC-46 proportional staleness scoring
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("FeatureContextProviderV2 — #508-M6 proportional staleness scoring", () => {
+  // Content: 2 entries in same section. Entry 0 is contradicted by entry 1
+  // (shares >= 3 significant terms, entry 1 has negation "no longer").
+  // Stale entries: 1 of 2 → ratio = 0.5
+  // Effective multiplier: 1.0 - (1.0 - 0.4) * 0.5 = 0.7
+  const PARTIAL_STALE_CONTENT = [
+    "## Authentication",
+    "",
+    "The service fetches data from postgres database using active connections.",
+    "",
+    "The service no longer fetches data from postgres database — removed active connections.",
+  ].join("\n");
+
+  // Plain content — no stale entries
+  const NO_STALE_CONTENT = "## Summary\n\nThe project is a standard TypeScript CLI.";
+
+  function makeStaleConfig(): NaxConfig {
+    return {
+      context: { v2: { staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 } } },
+    } as unknown as NaxConfig;
+  }
+
+  test("chunk has no scoreMultiplier when no entries are stale", async () => {
+    mockV1Provider({ content: NO_STALE_CONTENT, estimatedTokens: 20 });
+    const provider = new FeatureContextProviderV2(STORY, makeStaleConfig());
+    const result = await provider.fetch(makeRequest());
+
+    const chunk = result.chunks[0];
+    expect(chunk).toBeDefined();
+    expect(chunk.scoreMultiplier).toBeUndefined();
+    expect(chunk.staleCandidate).toBeFalsy();
+  });
+
+  test("chunk gets proportional scoreMultiplier (~0.7) when half of entries are stale via contradiction", async () => {
+    // 2 entries in same section. Entry 0 is contradicted by entry 1
+    // (shares 7 significant terms, entry 1 has "no longer" negation).
+    // stale count = 1, total = 2, ratio = 0.5
+    // effective multiplier = 1.0 - (1.0 - 0.4) * 0.5 = 0.7
+    mockV1Provider({ content: PARTIAL_STALE_CONTENT, estimatedTokens: 30 });
+    const provider = new FeatureContextProviderV2(STORY, makeStaleConfig());
+    const result = await provider.fetch(makeRequest());
+
+    const chunk = result.chunks[0];
+    expect(chunk).toBeDefined();
+    expect(chunk.staleCandidate).toBe(true);
+    // RED: old whole-chunk taint returns 0.4; GREEN: proportional returns 0.7
+    expect(chunk.scoreMultiplier).toBeCloseTo(0.7, 5);
+  });
+
+  test("chunk scoreMultiplier is strictly less than full penalty when only some entries are stale", async () => {
+    mockV1Provider({ content: PARTIAL_STALE_CONTENT, estimatedTokens: 30 });
+    const provider = new FeatureContextProviderV2(STORY, makeStaleConfig());
+    const result = await provider.fetch(makeRequest());
+
+    const chunk = result.chunks[0];
+    expect(chunk).toBeDefined();
+    expect(chunk.staleCandidate).toBe(true);
+    // Proportional penalty must be strictly less severe than full 0.4 penalty
+    expect(chunk.scoreMultiplier).toBeGreaterThan(0.4);
+  });
+});
