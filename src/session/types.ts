@@ -190,6 +190,19 @@ export interface ISessionManager {
    * Throws NaxError if the session ID is unknown.
    */
   bindHandle(id: string, handle: string, protocolIds: ProtocolIds): SessionDescriptor;
+  /**
+   * Look up an existing non-terminal session by storyId + role (Phase 3).
+   * Returns the descriptor if found, null otherwise.
+   * Used by rectification loops to resume the implementer session across attempts.
+   */
+  resume(storyId: string, role: SessionRole): SessionDescriptor | null;
+  /**
+   * Force-close all non-terminal sessions for a story (Phase 3).
+   * Transitions each matching session to COMPLETED regardless of current state.
+   * Returns the descriptors of sessions that were closed.
+   * Physical session close must be handled by the caller (via adapter.closePhysicalSession).
+   */
+  closeStory(storyId: string): SessionDescriptor[];
   /** List all active (non-terminal) sessions */
   listActive(): SessionDescriptor[];
   /**

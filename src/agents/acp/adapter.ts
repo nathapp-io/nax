@@ -12,7 +12,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { join } from "node:path";
 import { resolvePermissions } from "../../config/permissions";
 import { AllAgentsUnavailableError } from "../../errors";
 import { getSafeLogger } from "../../logger";
@@ -292,263 +291,10 @@ export async function closeAcpSession(session: AcpSession): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ACP session sidecar persistence
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Path to the ACP sessions sidecar file for a feature. */
-function acpSessionsPath(workdir: string, featureName: string): string {
-  return join(workdir, ".nax", "features", featureName, "acp-sessions.json");
-}
-
-/**
- * Sidecar entry — session name, agent name, and lifecycle status.
- *
- * status:
- *   "in-flight"  — session is actively running. If found on the next run, the
- *                  previous process crashed without reaching the finally block.
- *                  Treat as stale: discard and create a fresh session.
- *   "open"       — session was intentionally kept open for retry (e.g. rectification
- *                  loop). Safe to resume on the next run.
- *   (absent)     — legacy entry written before this field existed. Treat as "open".
- */
-type SidecarStatus = "in-flight" | "open";
-type SidecarEntry = string | { sessionName: string; agentName: string; status?: SidecarStatus };
-
-/** Extract sessionName from a sidecar entry (handles legacy string format). */
-function sidecarSessionName(entry: SidecarEntry): string {
-  return typeof entry === "string" ? entry : entry.sessionName;
-}
-
-/** Extract agentName from a sidecar entry (defaults to "claude" for legacy entries). */
-function sidecarAgentName(entry: SidecarEntry): string {
-  return typeof entry === "string" ? "claude" : entry.agentName;
-}
-
-/** Extract status from a sidecar entry (absent/legacy entries treated as "open"). */
-function sidecarStatus(entry: SidecarEntry): SidecarStatus {
-  if (typeof entry === "string") return "open";
-  return entry.status ?? "open";
-}
-
-/** Persist a session name to the sidecar file. Best-effort — errors are swallowed. */
-export async function saveAcpSession(
-  workdir: string,
-  featureName: string,
-  storyId: string,
-  sessionName: string,
-  agentName = "claude",
-  status: SidecarStatus = "open",
-): Promise<void> {
-  try {
-    const path = acpSessionsPath(workdir, featureName);
-    let data: Record<string, SidecarEntry> = {};
-    try {
-      const existing = await Bun.file(path).text();
-      data = JSON.parse(existing);
-    } catch {
-      // File doesn't exist yet — start fresh
-    }
-    data[storyId] = { sessionName, agentName, status };
-    await Bun.write(path, JSON.stringify(data, null, 2));
-  } catch (err) {
-    getSafeLogger()?.warn("acp-adapter", "Failed to save session to sidecar", { error: String(err) });
-  }
-}
-
-/** Clear a session name from the sidecar file. Best-effort — errors are swallowed. */
-export async function clearAcpSession(
-  workdir: string,
-  featureName: string,
-  storyId: string,
-  sessionRole?: string,
-): Promise<void> {
-  try {
-    const path = acpSessionsPath(workdir, featureName);
-    let data: Record<string, SidecarEntry> = {};
-    try {
-      const existing = await Bun.file(path).text();
-      data = JSON.parse(existing);
-    } catch {
-      return; // File doesn't exist — nothing to clear
-    }
-    const sidecarKey = sessionRole ? `${storyId}:${sessionRole}` : storyId;
-    delete data[sidecarKey];
-    await Bun.write(path, JSON.stringify(data, null, 2));
-  } catch (err) {
-    getSafeLogger()?.warn("acp-adapter", "Failed to clear session from sidecar", { error: String(err) });
-  }
-}
-
-/** Read a persisted session name from the sidecar file. Returns null if not found. */
-export async function readAcpSession(workdir: string, featureName: string, storyId: string): Promise<string | null> {
-  const entry = await readAcpSessionEntry(workdir, featureName, storyId);
-  return entry ? sidecarSessionName(entry) : null;
-}
-
-/**
- * Read a full sidecar entry (name + agent + status). Returns null if not found.
- * Use this when you need to inspect the lifecycle status of a persisted session.
- */
-export async function readAcpSessionEntry(
-  workdir: string,
-  featureName: string,
-  storyId: string,
-): Promise<SidecarEntry | null> {
-  try {
-    const path = acpSessionsPath(workdir, featureName);
-    const existing = await Bun.file(path).text();
-    const data: Record<string, SidecarEntry> = JSON.parse(existing);
-    return data[storyId] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// Single-session close — used by reviewers to close the session on the happy
-// path (no retry needed) when keepSessionOpen: true was used on the initial call
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Close a single named ACP session and remove it from the sidecar.
- * Best-effort — errors are logged, not thrown.
- *
- * Use this when keepSessionOpen: true was passed on an agent.run() call but
- * the caller decides no follow-up turn is needed and must close the session
- * explicitly (e.g. reviewer happy path — initial JSON parsed OK, no retry).
- */
-export async function closeNamedAcpSession(
-  workdir: string,
-  sessionName: string,
-  agentName: string,
-  sidecar?: { featureName: string; storyId: string; sessionRole?: string },
-): Promise<void> {
-  const logger = getSafeLogger();
-  const cmdStr = `acpx ${agentName}`;
-  const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, undefined);
-  try {
-    await client.start();
-    try {
-      if (client.closeSession) {
-        await client.closeSession(sessionName, agentName);
-      } else if (client.loadSession) {
-        const session = await client.loadSession(sessionName, agentName, "approve-reads");
-        if (session) await session.close().catch(() => {});
-      }
-    } catch (err) {
-      logger?.warn("acp-adapter", `[close] Failed to close session ${sessionName}`, { error: String(err) });
-    }
-  } finally {
-    await client.close().catch(() => {});
-  }
-  if (sidecar) {
-    await clearAcpSession(workdir, sidecar.featureName, sidecar.storyId, sidecar.sessionRole);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Session sweep — close open sessions at run boundaries
-// ─────────────────────────────────────────────────────────────────────────────
-
-const MAX_SESSION_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
-
-/**
- * Close all open sessions tracked in the sidecar file for a feature.
- * Called at run-end to ensure no sessions leak past the run boundary.
- */
-export async function sweepFeatureSessions(
-  workdir: string,
-  featureName: string,
-  pidRegistry?: import("../../execution/pid-registry").PidRegistry,
-): Promise<void> {
-  const path = acpSessionsPath(workdir, featureName);
-  let sessions: Record<string, SidecarEntry>;
-  try {
-    const text = await Bun.file(path).text();
-    sessions = JSON.parse(text) as Record<string, SidecarEntry>;
-  } catch {
-    return; // No sidecar — nothing to sweep
-  }
-
-  const entries = Object.entries(sessions);
-  if (entries.length === 0) return;
-
-  const logger = getSafeLogger();
-  logger?.info("acp-adapter", `[sweep] Closing ${entries.length} open sessions for feature: ${featureName}`);
-
-  // Group sessions by agent name so we create one client per agent
-  const byAgent = new Map<string, string[]>();
-  for (const [, entry] of entries) {
-    const agent = sidecarAgentName(entry);
-    const name = sidecarSessionName(entry);
-    if (!byAgent.has(agent)) byAgent.set(agent, []);
-    byAgent.get(agent)?.push(name);
-  }
-
-  for (const [agentName, sessionNames] of byAgent) {
-    const cmdStr = `acpx ${agentName}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, pidRegistry);
-    try {
-      await client.start();
-      for (const sessionName of sessionNames) {
-        try {
-          if (client.closeSession) {
-            await client.closeSession(sessionName, agentName);
-          } else if (client.loadSession) {
-            // Back-compat fallback for mock/test clients that only implement loadSession().
-            const session = await client.loadSession(sessionName, agentName, "approve-reads");
-            if (session) await session.close().catch(() => {});
-          }
-        } catch (err) {
-          logger?.warn("acp-adapter", `[sweep] Failed to close session ${sessionName}`, { error: String(err) });
-        }
-      }
-    } finally {
-      await client.close().catch(() => {});
-    }
-  }
-
-  // Clear sidecar after sweep
-  try {
-    await Bun.write(path, JSON.stringify({}, null, 2));
-  } catch (err) {
-    logger?.warn("acp-adapter", "[sweep] Failed to clear sidecar after sweep", { error: String(err) });
-  }
-}
-
-/**
- * Sweep stale sessions if the sidecar file is older than maxAgeMs.
- * Called at startup as a safety net for sessions orphaned by crashes.
- */
-export async function sweepStaleFeatureSessions(
-  workdir: string,
-  featureName: string,
-  maxAgeMs = MAX_SESSION_AGE_MS,
-  pidRegistry?: import("../../execution/pid-registry").PidRegistry,
-): Promise<void> {
-  const path = acpSessionsPath(workdir, featureName);
-  const file = Bun.file(path);
-  if (!(await file.exists())) return;
-
-  const ageMs = Date.now() - file.lastModified;
-  if (ageMs < maxAgeMs) return; // Recent sidecar — skip
-
-  getSafeLogger()?.info(
-    "acp-adapter",
-    `[sweep] Sidecar is ${Math.round(ageMs / 60000)}m old — sweeping stale sessions`,
-    {
-      featureName,
-      ageMs,
-    },
-  );
-
-  await sweepFeatureSessions(workdir, featureName, pidRegistry);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Output helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+
 
 /**
  * Extract combined assistant output text from a session response.
@@ -766,9 +512,8 @@ export class AcpAgentAdapter implements AgentAdapter {
               attempt: sessionErrorRetries,
               maxAttempts: maxSessionRetries,
             });
-            if (options.featureName && options.storyId) {
-              await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
-            }
+            // Phase 3 (#477): sidecar clear removed — session re-creation is handled
+            // by _runWithClient on the next iteration (new sessionName derived fresh).
             continue;
           }
 
@@ -887,29 +632,13 @@ export class AcpAgentAdapter implements AgentAdapter {
     const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds, options.pidRegistry);
     await client.start();
 
-    // 1. Resolve session name: explicit > sidecar > derived
-    // BUG-456: Guard against crash-orphaned sessions. A sidecar entry with
-    // status "in-flight" means the previous run never reached its finally block
-    // (process crashed). Resuming such a session is unsafe — the agent's prior
-    // turn may claim success, causing the implementer to skip re-implementation.
-    // Discard the entry and start with a fresh session name instead.
-    let sessionName = options.acpSessionName;
-    if (!sessionName && options.featureName && options.storyId) {
-      // #90: Key sidecar by storyId:role to prevent verifier resuming implementer's session
-      const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
-      const existingEntry = await readAcpSessionEntry(options.workdir, options.featureName, sidecarKey);
-      if (existingEntry && sidecarStatus(existingEntry) === "in-flight") {
-        getSafeLogger()?.warn("acp-adapter", "Discarding crash-orphaned session — previous run never completed", {
-          sessionName: sidecarSessionName(existingEntry),
-          storyId: options.storyId,
-          sessionRole: options.sessionRole,
-        });
-        await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
-      } else if (existingEntry) {
-        sessionName = sidecarSessionName(existingEntry);
-      }
-    }
-    sessionName ??= buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
+    // 1. Resolve session name: descriptor.handle > explicit acpSessionName > derived from options
+    // Phase 3 (#477): crash guard and sidecar lookup removed — SessionManager owns crash recovery
+    // via the CREATED/RUNNING state machine (orphan detection via sweepOrphans()).
+    const sessionName =
+      (options.session ? this.deriveSessionName(options.session) : undefined) ??
+      options.acpSessionName ??
+      buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
     // 2. Resolve permission mode from config via single source of truth.
     const resolvedPerm = resolvePermissions(options.config, options.pipelineStage ?? "run");
@@ -919,15 +648,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       stage: options.pipelineStage ?? "run",
     });
 
-    // 3. Write "in-flight" marker BEFORE the session starts. If the process
-    // crashes, the finally block never runs, leaving this marker intact.
-    // On the next run the guard above detects "in-flight" and discards the entry.
-    if (options.featureName && options.storyId) {
-      const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
-      await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName, "in-flight");
-    }
-
-    // 5. Ensure session (resume existing or create new)
+    // 3. Ensure session (resume existing or create new)
     const { session, resumed: sessionResumed } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
 
     // Capture protocol IDs immediately after session is established (Phase 1 plumbing).
@@ -1062,41 +783,20 @@ export class AcpAgentAdapter implements AgentAdapter {
       // Compute success here so finally can use it for conditional close.
       runState.succeeded = !timedOut && lastResponse?.stopReason === "end_turn";
     } finally {
-      // 6. Cleanup — close session and clear sidecar only on success.
-      // On failure, keep session open so retry can resume with full context.
-      // When keepSessionOpen=true (e.g. rectification loop), skip close even on success
-      // so all attempts share the same conversation context.
-      // Exception: session errors ("needs reconnect") mean the session is broken —
-      // close it so the retry loop creates a fresh one instead of resuming the same broken session.
+      // 6. Cleanup — close the physical ACP session on success or session-broken.
+      // On failure with keepSessionOpen=false, also close (retry will create a new session).
+      // On success with keepSessionOpen=true, keep open so the next turn resumes context.
+      // Phase 3 (#477): sidecar writes removed — SessionManager owns persistence.
       const isSessionBroken = !runState.succeeded && lastResponse?.stopReason === "error";
-      if (runState.succeeded && !options.keepSessionOpen) {
-        await closeAcpSession(session);
-        if (options.featureName && options.storyId) {
-          await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
+      if ((runState.succeeded && !options.keepSessionOpen) || isSessionBroken) {
+        if (isSessionBroken) {
+          getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         }
-      } else if (isSessionBroken) {
-        getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         await closeAcpSession(session);
-        // Clear the sidecar so the next run does not see an "in-flight" marker and
-        // emit a misleading crash-orphan warning — a broken session is a clean exit.
-        if (options.featureName && options.storyId) {
-          await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
-        }
       } else if (!runState.succeeded) {
-        // BUG-456: Promote from "in-flight" → "open" so the next run knows this
-        // is a legitimate retry (not a crash survivor) and safely resumes the session.
         getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
-        if (options.featureName && options.storyId) {
-          const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
-          await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName, "open");
-        }
       } else {
-        // keepSessionOpen=true success: also promote to "open" so the next turn resumes safely.
         getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepSessionOpen=true)", { sessionName });
-        if (options.featureName && options.storyId) {
-          const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
-          await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName, "open");
-        }
       }
       await client.close().catch(() => {});
     }
@@ -1484,8 +1184,28 @@ export class AcpAgentAdapter implements AgentAdapter {
     return !this._unavailableAgents.has(agentName);
   }
 
+  async closePhysicalSession(handle: string, workdir: string): Promise<void> {
+    const cmdStr = `acpx ${this.name}`;
+    const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, undefined);
+    try {
+      await client.start();
+      try {
+        if (client.closeSession) {
+          await client.closeSession(handle, this.name);
+        } else if (client.loadSession) {
+          const session = await client.loadSession(handle, this.name, "approve-reads");
+          if (session) await session.close().catch(() => {});
+        }
+      } catch (err) {
+        getSafeLogger()?.warn("acp-adapter", `[close] Failed to close session ${handle}`, { error: String(err) });
+      }
+    } finally {
+      await client.close().catch(() => {});
+    }
+  }
+
   async closeSession(sessionName: string, workdir: string): Promise<void> {
-    await closeNamedAcpSession(workdir, sessionName, this.name);
+    await this.closePhysicalSession(sessionName, workdir);
   }
 
   private resolveCurrentAgent(config: import("../../config").NaxConfig | undefined): string {

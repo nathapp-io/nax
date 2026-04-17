@@ -13,7 +13,6 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
-import { sweepFeatureSessions } from "../agents/acp/adapter";
 import { createAgentRegistry } from "../agents/registry";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
@@ -246,10 +245,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
     // Cleanup crash handlers (MEM-1 fix)
     cleanupCrashHandlers();
 
-    // Sweep any remaining open ACP sessions for this feature
-    logger?.debug("execution", "Runner finally — sweeping ACP sessions");
-    await sweepFeatureSessions(workdir, feature).catch(() => {});
-    logger?.debug("execution", "Runner finally — ACP sweep done");
+    // Phase 3 (#477): sidecar sweep removed — SessionManager.closeStory() handles
+    // session cleanup at story completion. Orphan sweep is via SessionManager.sweepOrphans().
 
     // Resolve current branch at runtime
     let branch = "";
