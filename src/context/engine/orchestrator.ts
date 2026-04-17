@@ -12,7 +12,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §ContextOrchestrator
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
@@ -104,6 +104,7 @@ function toContextChunk(packed: PackedChunk): ContextChunk {
     role: packed.role,
     content: packed.content,
     tokens: packed.tokens,
+    rawScore: packed.rawScore,
     score: packed.score,
     reason: packed.reason,
   };
@@ -280,6 +281,33 @@ export class ContextOrchestrator {
     // Collect all raw chunks with providerIds
     const allRaw = fetchResults.flatMap(({ provider, result }) => result.chunks.map((c) => enrichRaw(c, provider.id)));
     const providerResults = fetchResults.map(({ providerStatus }) => providerStatus);
+
+    // Amendment B AC-51: inject plan digest as a boosted RawChunk when planDigestBoost > 1.
+    // This replaces raw "## Prior Stage Summary" markdown rendering for single-session modes,
+    // making the digest compete in scoring/packing and appear in manifest.includedChunks.
+    if (request.priorStageDigest && (request.planDigestBoost ?? 1.0) > 1.0) {
+      const boost = request.planDigestBoost ?? 1.0;
+      const hash = createHash("sha256").update(request.priorStageDigest).digest("hex").slice(0, 8);
+      const tokens = Math.ceil(request.priorStageDigest.length / 4);
+      allRaw.push({
+        id: `plan-digest:${hash}`,
+        providerId: "plan-digest",
+        kind: "session",
+        scope: "session",
+        role: ["all"],
+        content: request.priorStageDigest,
+        tokens,
+        rawScore: 0.9 * boost,
+      });
+      providerResults.push({
+        providerId: "plan-digest",
+        status: "ok",
+        chunkCount: 1,
+        durationMs: 0,
+        tokensProduced: tokens,
+      });
+    }
+
     // Phase 4: build pull tool descriptors from stage config + PULL_TOOL_REGISTRY.
     // Provider-level result.pullTools is reserved for Phase 7 and ignored here.
     // AC-33: gate pull tools on agent capability. When the agent cannot invoke

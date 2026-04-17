@@ -21,6 +21,7 @@ import { createDefaultOrchestrator, createRunCallCounter } from "../../context/e
 import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { writeContextManifest } from "../../context/engine/manifest-store";
 import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
+import { getStageContextConfig } from "../../context/engine/stage-config";
 import { FeatureContextProvider } from "../../context/providers/feature-context";
 import type { ContextElement } from "../../context/types";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
@@ -128,6 +129,9 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     sessionId: ctx.sessionId,
     agentId: agentName,
     deterministic: ctx.config.context.v2.deterministic,
+    // Amendment B AC-51: pass planDigestBoost from the routing strategy's stage config.
+    // single-session, tdd-simple, no-test, and batch strategies declare planDigestBoost >= 1.5.
+    planDigestBoost: getStageContextConfig(ctx.routing?.testStrategy ?? "").planDigestBoost,
   };
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.

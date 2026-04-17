@@ -124,6 +124,8 @@ export interface ContextChunk {
   content: string;
   /** Estimated token count */
   tokens: number;
+  /** Provider's raw relevance score before adjustments (preserved for traceability) */
+  rawScore?: number;
   /** Final score after role × freshness × kind adjustments */
   score: number;
   /** True when chunk is detected as stale (post-GA: staleness signal) */
@@ -383,6 +385,14 @@ export interface ContextRequest {
    * Sourced from config.context.v2.deterministic.
    */
   deterministic?: boolean;
+  /**
+   * Plan digest score multiplier (Amendment B AC-51).
+   * When > 1.0 and priorStageDigest is present, the orchestrator injects the plan
+   * digest as a scored RawChunk (id: "plan-digest:<hash>") with
+   * rawScore = 0.9 * planDigestBoost instead of using raw "## Prior Stage Summary" rendering.
+   * Sourced from StageContextConfig.planDigestBoost for single-session modes.
+   */
+  planDigestBoost?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
