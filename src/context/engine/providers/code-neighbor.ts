@@ -32,15 +32,15 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 export interface CodeNeighborProviderOptions {
   /**
    * Scope of the working directory for neighbor discovery (AC-56).
-   * "repo" — scans from repoRoot (full repo, default).
-   * "package" — scans from packageDir (monorepo package boundary).
+   * "repo" — scans from repoRoot (full repo).
+   * "package" — scans from packageDir (monorepo package boundary, default).
    */
   neighborScope?: "repo" | "package";
   /**
    * Maximum neighbor traversal depth across the package boundary (AC-62).
    * Only applies when neighborScope is "package".
-   * 0 (default) — no cross-package scanning.
-   * N > 0 — additionally scans repoRoot for cross-package reverse deps.
+   * 0 — no cross-package scanning.
+   * 1 (default) — additionally scans repoRoot for cross-package reverse deps.
    */
   crossPackageDepth?: number;
 }
@@ -227,8 +227,8 @@ export class CodeNeighborProvider implements IContextProvider {
   private readonly crossPackageDepth: number;
 
   constructor(options: CodeNeighborProviderOptions = {}) {
-    this.neighborScope = options.neighborScope ?? "repo";
-    this.crossPackageDepth = options.crossPackageDepth ?? 0;
+    this.neighborScope = options.neighborScope ?? "package";
+    this.crossPackageDepth = options.crossPackageDepth ?? 1;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {

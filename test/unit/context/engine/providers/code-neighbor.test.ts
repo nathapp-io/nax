@@ -275,12 +275,12 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     return captured;
   }
 
-  test("default neighborScope is 'repo' — glob runs in repoRoot", async () => {
+  test("default neighborScope is 'package' — glob runs in packageDir (and repoRoot via crossPackageDepth=1)", async () => {
     const cwds = captureGlobCwds();
     const p = new CodeNeighborProvider();
     await p.fetch(MONOREPO_REQUEST);
-    expect(cwds).toContain("/repo");
-    expect(cwds).not.toContain("/repo/packages/api");
+    expect(cwds).toContain("/repo/packages/api");
+    expect(cwds).toContain("/repo"); // crossPackageDepth defaults to 1
   });
 
   test("neighborScope 'repo' — glob runs in repoRoot", async () => {
@@ -291,9 +291,9 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     expect(cwds).not.toContain("/repo/packages/api");
   });
 
-  test("neighborScope 'package' — glob runs in packageDir", async () => {
+  test("neighborScope 'package' crossPackageDepth 0 — glob only in packageDir", async () => {
     const cwds = captureGlobCwds();
-    const p = new CodeNeighborProvider({ neighborScope: "package" } as CodeNeighborProviderOptions);
+    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions);
     await p.fetch(MONOREPO_REQUEST);
     expect(cwds).toContain("/repo/packages/api");
     expect(cwds).not.toContain("/repo");
@@ -306,7 +306,7 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     expect(cwds).toContain("/repo");
   });
 
-  test("crossPackageDepth 0 (default) with neighborScope 'package' — glob only in packageDir", async () => {
+  test("crossPackageDepth 0 with neighborScope 'package' — glob only in packageDir", async () => {
     const cwds = captureGlobCwds();
     const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions);
     await p.fetch(MONOREPO_REQUEST);
