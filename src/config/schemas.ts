@@ -574,6 +574,33 @@ export const ContextV2ConfigSchema = z
       })
       .default(() => ({ retentionDays: 7, archiveOnFeatureArchive: true })),
     /**
+     * Built-in provider scope configuration (#507).
+     * Controls which working directory each built-in provider uses when
+     * executing git/glob queries in monorepo setups.
+     */
+    providers: z
+      .object({
+        /**
+         * Working directory scope for GitHistoryProvider (#507).
+         * "package" — run git log in packageDir (monorepo-safe default).
+         * "repo" — run git log in repoRoot (full repo history).
+         */
+        historyScope: z.enum(["repo", "package"]).default("package"),
+        /**
+         * Working directory scope for CodeNeighborProvider (#507).
+         * "package" — scan neighbours within packageDir (monorepo-safe default).
+         * "repo" — scan neighbours in repoRoot.
+         */
+        neighborScope: z.enum(["repo", "package"]).default("package"),
+        /**
+         * Cross-package scan depth for CodeNeighborProvider in monorepo mode (#507).
+         * 0 disables cross-package scanning. Default: 1 (one package level up).
+         * Only active when neighborScope is "package" and the story has a workdir.
+         */
+        crossPackageDepth: z.number().int().min(0).default(1),
+      })
+      .default({ historyScope: "package", neighborScope: "package", crossPackageDepth: 1 }),
+    /**
      * Staleness detection for feature context entries (Amendment A AC-46/AC-47).
      * Downweights old or contradicted entries in context.md so stale advice
      * does not crowd out fresh context. No chunks are auto-removed — humans
@@ -609,6 +636,7 @@ export const ContextV2ConfigSchema = z
     deterministic: false,
     session: { retentionDays: 7, archiveOnFeatureArchive: true },
     staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
+    providers: { historyScope: "package" as const, neighborScope: "package" as const, crossPackageDepth: 1 },
   }));
 
 const ContextConfigSchema = z.object({
@@ -1034,6 +1062,7 @@ export const NaxConfigSchema = z
         deterministic: false,
         session: { retentionDays: 7, archiveOnFeatureArchive: true },
         staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
+        providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1 },
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),
