@@ -17,17 +17,22 @@ import type { ContextRequest } from "../../../../../src/context/engine/types";
 let origFileExists: typeof _codeNeighborDeps.fileExists;
 let origReadFile: typeof _codeNeighborDeps.readFile;
 let origGlob: typeof _codeNeighborDeps.glob;
+let origDiscoverWorkspacePackages: typeof _codeNeighborDeps.discoverWorkspacePackages;
 
 beforeEach(() => {
   origFileExists = _codeNeighborDeps.fileExists;
   origReadFile = _codeNeighborDeps.readFile;
   origGlob = _codeNeighborDeps.glob;
+  origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
+  // Default: no workspace packages (non-monorepo fallback)
+  _codeNeighborDeps.discoverWorkspacePackages = async () => [];
 });
 
 afterEach(() => {
   _codeNeighborDeps.fileExists = origFileExists;
   _codeNeighborDeps.readFile = origReadFile;
   _codeNeighborDeps.glob = origGlob;
+  _codeNeighborDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,11 +319,32 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     expect(cwds).not.toContain("/repo");
   });
 
-  test("crossPackageDepth 1 with neighborScope 'package' — also scans repoRoot", async () => {
+  test("crossPackageDepth 1 with neighborScope 'package' — falls back to repoRoot when no workspace detected", async () => {
     const cwds = captureGlobCwds();
+    // discoverWorkspacePackages already returns [] from beforeEach → fallback to repoRoot
     const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
     await p.fetch(MONOREPO_REQUEST);
     expect(cwds).toContain("/repo/packages/api");
     expect(cwds).toContain("/repo");
+  });
+
+  test("crossPackageDepth 1 — workspace detection scans detected package dirs (excludes current packageDir)", async () => {
+    const cwds = captureGlobCwds();
+    // Simulate workspace detection finding packages/api and packages/web
+    _codeNeighborDeps.discoverWorkspacePackages = async () => ["packages/api", "packages/web"];
+    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    await p.fetch(MONOREPO_REQUEST);
+    // packages/api is the current packageDir — excluded
+    expect(cwds).toContain("/repo/packages/api"); // primary workdir scan
+    expect(cwds).toContain("/repo/packages/web"); // cross-package scan
+    expect(cwds).not.toContain("/repo"); // not fallback — workspace was detected
+  });
+
+  test("crossPackageDepth 1 — non-monorepo (packageDir === repoRoot) skips cross-package scan", async () => {
+    const cwds = captureGlobCwds();
+    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    await p.fetch(makeRequest({ touchedFiles: ["src/a.ts"] })); // packageDir === repoRoot
+    // Only one glob call (primary workdir), no cross-package
+    expect(cwds.filter((c) => c === "/repo")).toHaveLength(1);
   });
 });
