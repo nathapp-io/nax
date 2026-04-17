@@ -181,4 +181,45 @@ describe("SessionManager.closeStory()", () => {
     mgr.closeStory("US-001");
     expect(mgr.resume("US-001", "implementer")).toBeNull();
   });
+
+  test("force-closes PAUSED session", () => {
+    const mgr = new SessionManager();
+    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    mgr.transition(desc.id, "RUNNING");
+    mgr.transition(desc.id, "PAUSED");
+    const closed = mgr.closeStory("US-001");
+    expect(closed).toHaveLength(1);
+    expect(closed[0].state).toBe("COMPLETED");
+    expect(mgr.get(desc.id)?.state).toBe("COMPLETED");
+  });
+
+  test("force-closes RESUMING session", () => {
+    const mgr = new SessionManager();
+    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    mgr.transition(desc.id, "RUNNING");
+    mgr.transition(desc.id, "PAUSED");
+    mgr.transition(desc.id, "RESUMING");
+    const closed = mgr.closeStory("US-001");
+    expect(closed).toHaveLength(1);
+    expect(closed[0].state).toBe("COMPLETED");
+  });
+
+  test("force-closes CLOSING session", () => {
+    const mgr = new SessionManager();
+    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    mgr.transition(desc.id, "RUNNING");
+    mgr.transition(desc.id, "CLOSING");
+    const closed = mgr.closeStory("US-001");
+    expect(closed).toHaveLength(1);
+    expect(closed[0].state).toBe("COMPLETED");
+  });
+
+  test("resume() returns null for PAUSED session after closeStory()", () => {
+    const mgr = new SessionManager();
+    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    mgr.transition(desc.id, "RUNNING");
+    mgr.transition(desc.id, "PAUSED");
+    mgr.closeStory("US-001");
+    expect(mgr.resume("US-001", "implementer")).toBeNull();
+  });
 });

@@ -6,7 +6,7 @@
  * thin wrapper functions on top of AcpClient/AcpSession.
  *
  * Session naming: nax-<gitRootHash8>-<feature>-<story>[-<role>]
- * Persistence: nax/features/<feature>/acp-sessions.json sidecar
+ * Persistence: SessionManager disk-backed descriptors at .nax/features/<feature>/sessions/<id>/descriptor.json
  *
  * See: docs/specs/acp-session-mode.md
  */
@@ -22,6 +22,7 @@ import { parseAgentError } from "./parse-agent-error";
 import { writePromptAudit } from "./prompt-audit";
 import { createSpawnAcpClient } from "./spawn-client";
 
+import type { AdapterFailure } from "../../context/engine";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -34,7 +35,6 @@ import type {
   PlanOptions,
   PlanResult,
 } from "../types";
-import type { AdapterFailure } from "../../context/engine/types";
 import { CompleteError } from "../types";
 import { estimateCostFromTokenUsage } from "./cost";
 import type { AgentRegistryEntry } from "./types";
@@ -293,8 +293,6 @@ export async function closeAcpSession(session: AcpSession): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Output helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-
 
 /**
  * Extract combined assistant output text from a session response.
@@ -784,7 +782,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       runState.succeeded = !timedOut && lastResponse?.stopReason === "end_turn";
     } finally {
       // 6. Cleanup — close the physical ACP session on success or session-broken.
-      // On failure with keepSessionOpen=false, also close (retry will create a new session).
+      // On failure (any), keep session open so retry can resume with context.
       // On success with keepSessionOpen=true, keep open so the next turn resumes context.
       // Phase 3 (#477): sidecar writes removed — SessionManager owns persistence.
       const isSessionBroken = !runState.succeeded && lastResponse?.stopReason === "error";
@@ -812,7 +810,12 @@ export class AcpAgentAdapter implements AgentAdapter {
         durationMs,
         estimatedCost: 0,
         protocolIds,
-        adapterFailure: { category: "quality", outcome: "fail-timeout", retriable: true, message: `Session timed out after ${options.timeoutSeconds}s` },
+        adapterFailure: {
+          category: "quality",
+          outcome: "fail-timeout",
+          retriable: true,
+          message: `Session timed out after ${options.timeoutSeconds}s`,
+        },
       };
     }
 

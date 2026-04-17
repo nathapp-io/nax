@@ -58,7 +58,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   if (!ctx.sessionScratchDir) {
     if (ctx.sessionManager && ctx.prd.feature) {
       const session = ctx.sessionManager.create({
-        role: "main",
+        role: "implementer",
         agent: agentName,
         workdir: ctx.workdir,
         projectDir: ctx.projectDir,
