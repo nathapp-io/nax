@@ -266,10 +266,12 @@ describe("loadCanonicalRules", () => {
     expect(rules[0]?.content).toBe("## Style\n\nContent.");
   });
 
-  test("parses frontmatter priority and appliesTo", async () => {
+  test("parses frontmatter priority, paths, and appliesTo", async () => {
     setupFiles({
       "/project/.nax/rules/agents.md": `---
 priority: 50
+paths:
+  - "packages/api/**"
 appliesTo:
   - "src/agents/**"
   - "test/agents/**"
@@ -278,8 +280,20 @@ Only for agent files.`,
     });
     const rules = await loadCanonicalRules("/project");
     expect(rules[0]?.priority).toBe(50);
+    expect(rules[0]?.paths).toEqual(["packages/api/**"]);
     expect(rules[0]?.appliesTo).toEqual(["src/agents/**", "test/agents/**"]);
     expect(rules[0]?.content).toBe("Only for agent files.");
+  });
+
+  test("parses paths: as single string into array", async () => {
+    setupFiles({ "/project/.nax/rules/api.md": `---\npaths: "packages/api/**"\n---\nAPI rule.` });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules[0]?.paths).toEqual(["packages/api/**"]);
+  });
+
+  test("throws RulesFrontmatterError when paths: is empty string", async () => {
+    setupFiles({ "/project/.nax/rules/bad.md": `---\npaths: ""\n---\nContent.` });
+    await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
   });
 
   test("throws RulesFrontmatterError on malformed frontmatter", async () => {

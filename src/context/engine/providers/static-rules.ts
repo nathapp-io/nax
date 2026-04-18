@@ -14,7 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { getLogger } from "../../../logger";
 import { errorMessage } from "../../../utils/errors";
 import {
@@ -145,6 +145,22 @@ function ruleMatchesTouchedFiles(appliesTo: string[] | undefined, touchedFiles: 
   return files.some((file) => patterns.some((pattern) => pattern.test(file)));
 }
 
+/**
+ * Returns true when the rule's `paths:` frontmatter (package-scope filter) matches
+ * the current package directory relative to the repo root.
+ * Rules with no `paths:` field are global and always match.
+ * Single-package repos (packageDir === repoRoot) always match regardless of paths.
+ */
+function ruleMatchesPackage(paths: string[] | undefined, repoRoot: string, packageDir: string): boolean {
+  if (!paths || paths.length === 0) return true;
+  if (packageDir === repoRoot) return true;
+
+  const rel = normalizePath(relative(repoRoot, packageDir));
+  const patterns = paths.map((p) => globToRegex(normalizePath(p)));
+  // Also test rel + "/" so that "packages/api/**" matches the base dir "packages/api"
+  return patterns.some((pattern) => pattern.test(rel) || pattern.test(`${rel}/`));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,12 +182,28 @@ export class StaticRulesProvider implements IContextProvider {
 
     // Phase 5.1 + AC-57: try canonical store first, then overlay package rules if monorepo
     try {
-      const repoRules = await _staticRulesDeps.loadCanonicalRules(request.repoRoot);
+      const repoRulesAll = await _staticRulesDeps.loadCanonicalRules(request.repoRoot);
+
+      // Apply paths: frontmatter filter — repo-level rules with a paths: key only load for matching packages
+      const repoRules = repoRulesAll.filter((rule) =>
+        ruleMatchesPackage(rule.paths, request.repoRoot, request.packageDir),
+      );
+
+      if (repoRulesAll.length > 0 && repoRules.length < repoRulesAll.length) {
+        logger.debug("static-rules", "Package-scope filter applied to repo-level rules", {
+          storyId: request.storyId,
+          total: repoRulesAll.length,
+          matched: repoRules.length,
+          packageDir: request.packageDir,
+        });
+      }
 
       // AC-57: in monorepos, load package-level rules and overlay (package wins on same fileName)
       let mergedRules: CanonicalRule[] = repoRules;
+      let packageRulesCount = 0;
       if (request.packageDir !== request.repoRoot) {
         const packageRules = await _staticRulesDeps.loadCanonicalRules(request.packageDir);
+        packageRulesCount = packageRules.length;
         if (packageRules.length > 0) {
           const merged = new Map<string, CanonicalRule>();
           for (const rule of repoRules) merged.set(canonicalRuleId(rule), rule);
@@ -184,6 +216,19 @@ export class StaticRulesProvider implements IContextProvider {
         (a, b) =>
           canonicalRulePriority(a) - canonicalRulePriority(b) || canonicalRuleId(a).localeCompare(canonicalRuleId(b)),
       );
+
+      // #558: rules exist but none apply to this package context — skip legacy fallback
+      if (mergedRules.length === 0 && (repoRulesAll.length > 0 || packageRulesCount > 0)) {
+        logger.warn("static-rules", "Canonical rules found but none apply to this package context", {
+          storyId: request.storyId,
+          repoRulesTotal: repoRulesAll.length,
+          repoRulesMatchedPaths: repoRules.length,
+          packageRulesCount,
+          repoRoot: request.repoRoot,
+          packageDir: request.packageDir,
+        });
+        return { chunks: [], pullTools: [] };
+      }
 
       if (mergedRules.length > 0) {
         const scopedRules = mergedRules.filter((rule) => ruleMatchesTouchedFiles(rule.appliesTo, request.touchedFiles));
@@ -251,10 +296,12 @@ export class StaticRulesProvider implements IContextProvider {
       throw err;
     }
 
-    // No canonical rules found. Apply legacy fallback policy.
+    // No canonical rules found at repo or package level. Apply legacy fallback policy.
     if (!this.allowLegacyClaudeMd) {
-      logger.warn("static-rules", "No .nax/rules/ found and allowLegacyClaudeMd is false — loading zero rules", {
+      logger.warn("static-rules", "No canonical rules found at repo or package level — loading zero rules", {
         storyId: request.storyId,
+        repoRoot: request.repoRoot,
+        packageDir: request.packageDir,
       });
       return { chunks: [], pullTools: [] };
     }
@@ -262,10 +309,12 @@ export class StaticRulesProvider implements IContextProvider {
     // allowLegacyClaudeMd: true — emit deprecation warning and fall back to legacy files
     logger.warn(
       "static-rules",
-      "No .nax/rules/ found — falling back to legacy rule files (deprecation warning). " +
+      "No canonical rules found at repo or package level — falling back to legacy rule files (deprecation warning). " +
         "Run `nax rules migrate` to create the canonical store.",
       {
         storyId: request.storyId,
+        repoRoot: request.repoRoot,
+        packageDir: request.packageDir,
       },
     );
 

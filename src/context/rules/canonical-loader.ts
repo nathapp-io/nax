@@ -201,13 +201,16 @@ export interface CanonicalRule {
   tokens?: number;
   /** Priority for truncation/sorting (lower = more important) */
   priority?: number;
-  /** Optional glob scopes that decide when this rule applies */
+  /** Package-scope filter: glob patterns matched against relative(repoRoot, packageDir). No value = applies everywhere. */
+  paths?: string[];
+  /** Touched-file filter: glob patterns matched against changed files in the story's git diff. No value = always applies. */
   appliesTo?: string[];
 }
 
 interface ParsedFrontmatter {
   content: string;
   priority: number;
+  paths?: string[];
   appliesTo?: string[];
 }
 
@@ -245,6 +248,20 @@ function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
     priority = Math.trunc(priorityRaw);
   }
 
+  const pathsRaw = doc.paths;
+  let paths: string[] | undefined;
+  if (pathsRaw !== undefined) {
+    if (typeof pathsRaw === "string") {
+      const trimmed = pathsRaw.trim();
+      if (!trimmed) throw new RulesFrontmatterError("frontmatter.paths cannot be empty", filePath);
+      paths = [trimmed];
+    } else if (Array.isArray(pathsRaw) && pathsRaw.every((v) => typeof v === "string" && v.trim())) {
+      paths = pathsRaw.map((v) => v.trim());
+    } else {
+      throw new RulesFrontmatterError("frontmatter.paths must be a string or string[]", filePath);
+    }
+  }
+
   const appliesRaw = doc.appliesTo;
   let appliesTo: string[] | undefined;
   if (appliesRaw !== undefined) {
@@ -262,6 +279,7 @@ function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
   return {
     content: raw.slice(close[0].length).trim(),
     priority,
+    ...(paths && { paths }),
     ...(appliesTo && { appliesTo }),
   };
 }
@@ -388,6 +406,7 @@ export async function loadCanonicalRules(
       content: parsed.content,
       tokens: estimateTokens(parsed.content),
       priority: parsed.priority,
+      ...(parsed.paths && { paths: parsed.paths }),
       ...(parsed.appliesTo && { appliesTo: parsed.appliesTo }),
     });
   }
