@@ -82,6 +82,30 @@ export const _sessionManagerDeps = {
 export class SessionManager implements ISessionManager {
   private readonly _sessions = new Map<string, SessionDescriptor>();
 
+  /**
+   * Fire-and-forget disk re-persistence on descriptor mutations.
+   *
+   * `writeDescriptor` is also called from `create()` for the initial write;
+   * subsequent mutations (transition, bindHandle, handoff) must re-persist so
+   * the on-disk copy stays in sync with the in-memory registry. Without this,
+   * the disk descriptor freezes at CREATED state with `protocolIds: null`
+   * forever, defeating cross-iteration disk discovery.
+   *
+   * Failures log a warning and are swallowed — disk persistence is
+   * supplementary to the in-memory Map, never authoritative.
+   */
+  private _persistDescriptor(descriptor: SessionDescriptor): void {
+    if (!descriptor.scratchDir) return;
+    void _sessionManagerDeps.writeDescriptor(descriptor.scratchDir, descriptor).catch((err) => {
+      getLogger().warn("session", "Failed to re-persist session descriptor", {
+        storyId: descriptor.storyId,
+        sessionId: descriptor.id,
+        scratchDir: descriptor.scratchDir,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
   create(options: CreateSessionOptions): SessionDescriptor {
     const now = _sessionManagerDeps.now();
     const id = `sess-${_sessionManagerDeps.uuid()}`;
@@ -173,6 +197,7 @@ export class SessionManager implements ISessionManager {
     }
 
     this._sessions.set(id, updated);
+    this._persistDescriptor(updated);
 
     getLogger().debug("session", "Session transitioned", {
       storyId: session.storyId,
@@ -201,6 +226,7 @@ export class SessionManager implements ISessionManager {
     };
 
     this._sessions.set(id, updated);
+    this._persistDescriptor(updated);
 
     getLogger().debug("session", "Session handle bound", {
       storyId: session.storyId,
@@ -226,6 +252,7 @@ export class SessionManager implements ISessionManager {
       lastActivityAt: _sessionManagerDeps.now(),
     };
     this._sessions.set(id, updated);
+    this._persistDescriptor(updated);
 
     getLogger().info("session", "Session handed off to fallback agent", {
       storyId: session.storyId,
