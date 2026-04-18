@@ -153,8 +153,27 @@ function resolveImport(specifier: string, fromFile: string, workdir: string): st
 }
 
 /**
- * Derive the sibling test file path for a source file.
- * Preserves the source extension for JSX/TSX files.
+ * Derive the colocated sibling test path for a source file.
+ * Returns the test file in the same directory as the source.
+ *   src/foo/bar.ts   → src/foo/bar.test.ts
+ *   src/foo/bar.tsx  → src/foo/bar.test.tsx
+ *   src/foo/bar.test.ts → null  (already a test file)
+ *
+ * Used by collectNeighbors to prefer colocated tests when they exist on disk,
+ * before falling back to the mirrored test/unit/ path. See #526 Bug 2.
+ */
+function colocalTestPath(filePath: string): string | null {
+  const match = filePath.match(/^(.+)\.(ts|tsx|js|jsx)$/);
+  if (!match) return null;
+  const base = match[1] ?? "";
+  if (base.endsWith(".test") || base.endsWith(".spec")) return null;
+  const ext = match[2] ?? "ts";
+  return `${base}.test.${ext}`;
+}
+
+/**
+ * Derive the mirrored sibling test file path for a source file.
+ * Maps src/ → test/unit/, preserving the source extension.
  *   src/foo/bar.ts       → test/unit/foo/bar.test.ts
  *   src/foo/bar.tsx      → test/unit/foo/bar.test.tsx
  *   src/foo/bar.test.ts  → null  (already a test file)
@@ -164,7 +183,7 @@ function resolveImport(specifier: string, fromFile: string, workdir: string): st
  * `.spec.spec.ts` hallucination that appeared when the provider was fed
  * a test file as a touched file (e.g. via PRD `contextFiles`). See #526.
  */
-function siblingTestPath(filePath: string): string | null {
+function mirroredTestPath(filePath: string): string | null {
   const srcMatch = filePath.match(/^src\/(.+)\.(ts|tsx|js|jsx)$/);
   if (!srcMatch) return null;
   const base = srcMatch[1] ?? "";
@@ -231,9 +250,16 @@ async function collectNeighbors(filePath: string, workdir: string, extraGlobWork
     }
   }
 
-  // Sibling test (JS/TS/JSX/TSX only)
-  const testPath = siblingTestPath(filePath);
-  if (testPath) neighbors.add(testPath);
+  // Sibling test (JS/TS/JSX/TSX only).
+  // Prefer colocated test (src/foo.test.ts) when it exists on disk (#526 Bug 2);
+  // fall back to the test/unit/ mirror hint for projects that use a separate test dir.
+  const colocal = colocalTestPath(filePath);
+  const mirrored = mirroredTestPath(filePath);
+  if (colocal && (await _codeNeighborDeps.fileExists(join(workdir, colocal)))) {
+    neighbors.add(colocal);
+  } else if (mirrored) {
+    neighbors.add(mirrored);
+  }
 
   return [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE);
 }

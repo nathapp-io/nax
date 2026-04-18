@@ -254,6 +254,47 @@ describe("CodeNeighborProvider", () => {
     expect(content).not.toContain("Button.test.ts\n");
   });
 
+  test("colocated test is preferred over test/unit/ mirror when it exists on disk (#526 Bug 2)", async () => {
+    // src/calc.test.ts exists on disk → use colocated path, not test/unit/calc.test.ts
+    setupDeps({
+      files: {
+        "src/calc.ts": "",
+        "src/calc.test.ts": "",
+      },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/calc.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("src/calc.test.ts");
+    expect(content).not.toContain("test/unit/calc.test.ts");
+  });
+
+  test("falls back to test/unit/ mirror when no colocated test exists on disk (#526 Bug 2)", async () => {
+    // src/calc.test.ts does NOT exist → fall back to test/unit/calc.test.ts hint
+    setupDeps({
+      files: { "src/calc.ts": "" },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/calc.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("test/unit/calc.test.ts");
+    expect(content).not.toContain("src/calc.test.ts");
+  });
+
+  test("colocated .tsx test preferred over test/unit/ mirror when it exists (#526 Bug 2)", async () => {
+    setupDeps({
+      files: {
+        "src/components/Button.tsx": "",
+        "src/components/Button.test.tsx": "",
+      },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/components/Button.tsx"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("src/components/Button.test.tsx");
+    expect(content).not.toContain("test/unit/components/Button.test.tsx");
+  });
+
   test("reverse-dep scan continues past self-reference (continue, not break)", async () => {
     // When the touched file appears in the glob results, the scan must continue
     // past it to find other reverse deps — a break would terminate early.
