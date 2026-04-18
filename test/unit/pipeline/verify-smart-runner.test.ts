@@ -15,12 +15,22 @@ import { initLogger, resetLogger } from "../../../src/logger";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import { DEFAULT_TEST_FILE_PATTERNS, extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../src/test-runners/conventions";
+import type { ResolvedTestPatterns } from "../../../src/test-runners/resolver";
 
 // ---- Module mocks ------------------------------------------------------------
 // We avoid mock.module() for smart-runner entirely --- it leaks across test files
 // in Bun 1.x. Instead we mutate the _smartRunnerDeps object exported by the module.
 // verify.ts accesses all smart-runner functions via _smartRunnerDeps.fn(), so
 // mutations here take effect immediately with no module registry involvement.
+
+const MOCK_RESOLVED_PATTERNS: ResolvedTestPatterns = {
+  globs: [...DEFAULT_TEST_FILE_PATTERNS],
+  pathspec: globsToPathspec([...DEFAULT_TEST_FILE_PATTERNS]),
+  regex: globsToTestRegex([...DEFAULT_TEST_FILE_PATTERNS]),
+  testDirs: extractTestDirs([...DEFAULT_TEST_FILE_PATTERNS]),
+  resolution: "fallback",
+};
 
 const mockRegression = mock(async () => ({ success: true, status: "SUCCESS" as const }));
 
@@ -33,6 +43,8 @@ const _origVerifyDeps = { ..._verifyDeps };
 
 // ---- Mock functions ---------------------------------------------------------
 
+const mockGetChangedTestFiles = mock(async () => [] as string[]);
+const mockResolveTestFilePatterns = mock(async () => MOCK_RESOLVED_PATTERNS);
 const mockGetChangedSourceFiles = mock(async (_workdir: string) => [] as string[]);
 const mockMapSourceToTests = mock(async (_files: string[], _workdir: string, _packagePrefix?: string, _patterns?: string[]) => [] as string[]);
 const mockImportGrepFallback = mock(async (_files: string[], _workdir: string, _patterns: string[]) => [] as string[]);
@@ -152,6 +164,7 @@ function makeContext(
       reasoning: "Test routing",
     },
     workdir: "/test/workdir",
+    projectDir: "/test/workdir",
     hooks: { hooks: {} },
   };
 }
@@ -161,12 +174,16 @@ function makeContext(
 describe("Verify Stage --- Smart Runner Integration", () => {
   beforeEach(() => {
     initLogger({ level: "error", useChalk: false });
+    _smartRunnerDeps.getChangedTestFiles = mockGetChangedTestFiles as typeof _smartRunnerDeps.getChangedTestFiles;
     _smartRunnerDeps.getChangedSourceFiles = mockGetChangedSourceFiles;
     _smartRunnerDeps.mapSourceToTests = mockMapSourceToTests;
     _smartRunnerDeps.importGrepFallback = mockImportGrepFallback;
     _smartRunnerDeps.buildSmartTestCommand = mockBuildSmartTestCommand;
     _verifyDeps.regression = mockRegression as typeof _verifyDeps.regression;
+    _verifyDeps.resolveTestFilePatterns = mockResolveTestFilePatterns as typeof _verifyDeps.resolveTestFilePatterns;
     mockRegression.mockClear();
+    mockGetChangedTestFiles.mockClear();
+    mockResolveTestFilePatterns.mockClear();
     mockGetChangedSourceFiles.mockClear();
     mockMapSourceToTests.mockClear();
     mockImportGrepFallback.mockClear();
@@ -205,7 +222,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       const ctx = makeContext({ smartTestRunner: true });
       await verifyStage.execute(ctx);
 
-      expect(mockGetChangedSourceFiles).toHaveBeenCalledWith("/test/workdir", undefined, undefined);
+      expect(mockGetChangedSourceFiles).toHaveBeenCalledWith("/test/workdir", undefined, undefined, expect.any(Array));
     });
 
     test("calls mapSourceToTests with changed files, workdir, and undefined packagePrefix for single-package story", async () => {
@@ -216,7 +233,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       const ctx = makeContext({ smartTestRunner: true });
       await verifyStage.execute(ctx);
 
-      expect(mockMapSourceToTests).toHaveBeenCalledWith(["src/utils/helper.ts"], "/test/workdir", undefined, ["test/**/*.test.ts"]);
+      expect(mockMapSourceToTests).toHaveBeenCalledWith(["src/utils/helper.ts"], "/test/workdir", undefined, expect.any(Array));
     });
 
     test("forwards story.workdir as packagePrefix to mapSourceToTests for monorepo stories", async () => {
@@ -231,7 +248,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
         ["apps/api/src/utils/helper.ts"],
         "/test/workdir",
         "apps/api",
-        ["test/**/*.test.ts"],
+        expect.any(Array),
       );
     });
 

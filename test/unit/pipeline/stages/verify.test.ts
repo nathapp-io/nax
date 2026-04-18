@@ -15,8 +15,19 @@ import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
+import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex, globsToPathspec, extractTestDirs } from "../../../../src/test-runners/conventions";
+import type { ResolvedTestPatterns } from "../../../../src/test-runners/resolver";
 import type { VerificationResult } from "../../../../src/verification";
 import type { ResolvedTestCommands } from "../../../../src/quality/command-resolver";
+
+/** Pre-built fallback patterns used to mock resolveTestFilePatterns without disk access */
+const MOCK_RESOLVED_PATTERNS: ResolvedTestPatterns = {
+  globs: DEFAULT_TEST_FILE_PATTERNS,
+  pathspec: globsToPathspec(DEFAULT_TEST_FILE_PATTERNS),
+  regex: globsToTestRegex(DEFAULT_TEST_FILE_PATTERNS),
+  testDirs: extractTestDirs(DEFAULT_TEST_FILE_PATTERNS),
+  resolution: "fallback",
+};
 
 const WORKDIR = `/tmp/nax-test-verify-${randomUUID()}`;
 
@@ -117,9 +128,13 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
 
     let regressionCalled = false;
     const origRegression = _verifyDeps.regression;
+    const origResolvePatterns = _verifyDeps.resolveTestFilePatterns;
+    const origGetChangedTest = _smartRunnerDeps.getChangedTestFiles;
     const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
+    _verifyDeps.resolveTestFilePatterns = mock(() => Promise.resolve(MOCK_RESOLVED_PATTERNS));
+    _smartRunnerDeps.getChangedTestFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
     _verifyDeps.regression = mock((): Promise<VerificationResult> => {
@@ -135,6 +150,8 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
       expect(result.action).toBe("continue");
     } finally {
       _verifyDeps.regression = origRegression;
+      _verifyDeps.resolveTestFilePatterns = origResolvePatterns;
+      _smartRunnerDeps.getChangedTestFiles = origGetChangedTest;
       _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
@@ -150,9 +167,13 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
 
     let regressionCalled = false;
     const origRegression = _verifyDeps.regression;
+    const origResolvePatterns = _verifyDeps.resolveTestFilePatterns;
+    const origGetChangedTest = _smartRunnerDeps.getChangedTestFiles;
     const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
+    _verifyDeps.resolveTestFilePatterns = mock(() => Promise.resolve(MOCK_RESOLVED_PATTERNS));
+    _smartRunnerDeps.getChangedTestFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
     _verifyDeps.regression = mock((): Promise<VerificationResult> => {
@@ -169,6 +190,8 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
       expect(result.action).toBe("continue");
     } finally {
       _verifyDeps.regression = origRegression;
+      _verifyDeps.resolveTestFilePatterns = origResolvePatterns;
+      _smartRunnerDeps.getChangedTestFiles = origGetChangedTest;
       _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
@@ -184,9 +207,13 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
 
     let regressionCalled = false;
     const origRegression = _verifyDeps.regression;
+    const origResolvePatterns = _verifyDeps.resolveTestFilePatterns;
+    const origGetChangedTest = _smartRunnerDeps.getChangedTestFiles;
     const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
+    _verifyDeps.resolveTestFilePatterns = mock(() => Promise.resolve(MOCK_RESOLVED_PATTERNS));
+    _smartRunnerDeps.getChangedTestFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
     _verifyDeps.regression = mock((): Promise<VerificationResult> => {
@@ -201,6 +228,8 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
       expect(regressionCalled).toBe(true);
     } finally {
       _verifyDeps.regression = origRegression;
+      _verifyDeps.resolveTestFilePatterns = origResolvePatterns;
+      _smartRunnerDeps.getChangedTestFiles = origGetChangedTest;
       _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
@@ -216,9 +245,13 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
 
     let regressionCalled = false;
     const origRegression = _verifyDeps.regression;
+    const origResolvePatterns = _verifyDeps.resolveTestFilePatterns;
+    const origGetChangedTest = _smartRunnerDeps.getChangedTestFiles;
     const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
+    _verifyDeps.resolveTestFilePatterns = mock(() => Promise.resolve(MOCK_RESOLVED_PATTERNS));
+    _smartRunnerDeps.getChangedTestFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
     _verifyDeps.regression = mock((): Promise<VerificationResult> => {
@@ -233,6 +266,8 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
       expect(regressionCalled).toBe(true);
     } finally {
       _verifyDeps.regression = origRegression;
+      _verifyDeps.resolveTestFilePatterns = origResolvePatterns;
+      _smartRunnerDeps.getChangedTestFiles = origGetChangedTest;
       _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
@@ -247,9 +282,13 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
     );
 
     const origRegression = _verifyDeps.regression;
+    const origResolvePatterns = _verifyDeps.resolveTestFilePatterns;
+    const origGetChangedTest = _smartRunnerDeps.getChangedTestFiles;
     const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
+    _verifyDeps.resolveTestFilePatterns = mock(() => Promise.resolve(MOCK_RESOLVED_PATTERNS));
+    _smartRunnerDeps.getChangedTestFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
     // regression throws to ensure it's truly not called
@@ -264,6 +303,8 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
       expect(result.action).toBe("continue");
     } finally {
       _verifyDeps.regression = origRegression;
+      _verifyDeps.resolveTestFilePatterns = origResolvePatterns;
+      _smartRunnerDeps.getChangedTestFiles = origGetChangedTest;
       _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }

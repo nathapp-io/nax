@@ -334,9 +334,7 @@ export async function getChangedTestFiles(
 
     // Scope to package directory — covers both co-located (src/) and separated (test/) layouts
     const scoped = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
-    return scoped
-      .filter((f) => testFileRegex.some((re) => re.test(f)))
-      .map((f) => join(repoRoot, f));
+    return scoped.filter((f) => testFileRegex.some((re) => re.test(f))).map((f) => join(repoRoot, f));
   } catch {
     return [];
   }

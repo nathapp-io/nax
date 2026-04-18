@@ -106,26 +106,29 @@ export const verifyStage: PipelineStage = {
       // Resolve test file patterns via ADR-009 SSOT — language-agnostic, config-driven,
       // per-package override-aware. ctx.projectDir is the repo root; story.workdir is the
       // package-relative path (e.g. "packages/lib").
-      const resolvedPatterns = await resolveTestFilePatterns(
-        ctx.config,
-        ctx.projectDir,
-        ctx.story.workdir,
-      );
+      // Guard: ctx.projectDir may be undefined in test fixtures; fall back to ctx.workdir
+      // (absolute path) to prevent a "undefined/.nax/..." relative-path write.
+      const repoRoot = ctx.projectDir ?? ctx.workdir;
+      const resolvedPatterns = await _verifyDeps.resolveTestFilePatterns(ctx.config, repoRoot, ctx.story.workdir);
 
       // Pass 0: detect changed test files directly from git diff (#557).
       // Test files are already tests — no source→test mapping needed. They are returned
-      // as absolute paths using ctx.projectDir as the repo root anchor.
+      // as absolute paths using repoRoot as the anchor.
       const changedTestFiles = await _smartRunnerDeps.getChangedTestFiles(
         ctx.workdir,
-        ctx.projectDir,
+        repoRoot,
         ctx.storyGitRef,
         ctx.story.workdir,
         [...resolvedPatterns.regex],
       );
       if (changedTestFiles.length > 0) {
-        logger.info("verify", `[smart-runner] Pass 0: ${changedTestFiles.length} changed test file(s) detected directly`, {
-          storyId: ctx.story.id,
-        });
+        logger.info(
+          "verify",
+          `[smart-runner] Pass 0: ${changedTestFiles.length} changed test file(s) detected directly`,
+          {
+            storyId: ctx.story.id,
+          },
+        );
         effectiveCommand = buildScopedCommand(changedTestFiles, rawTestCommand, testScopedTemplate);
         isFullSuite = false;
       } else {
@@ -140,12 +143,9 @@ export const verifyStage: PipelineStage = {
 
         // Pass 1: path convention mapping — pass packagePrefix and testFilePatterns for language-agnostic suffix derivation.
         // ctx.projectDir is the repo root; mapSourceToTests uses it as the absolute base for test path construction.
-        const pass1Files = await _smartRunnerDeps.mapSourceToTests(
-          sourceFiles,
-          ctx.projectDir,
-          ctx.story.workdir,
-          [...resolvedPatterns.globs],
-        );
+        const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.projectDir, ctx.story.workdir, [
+          ...resolvedPatterns.globs,
+        ]);
         if (pass1Files.length > 0) {
           logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
             storyId: ctx.story.id,
@@ -300,4 +300,5 @@ export const _verifyDeps = {
   regression,
   resolveTestCommands: resolveQualityTestCommands,
   appendScratch: appendScratchEntry,
+  resolveTestFilePatterns,
 };
