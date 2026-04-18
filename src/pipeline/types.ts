@@ -85,7 +85,12 @@ export interface PipelineContext {
    * and in monorepo mode (where workdir may be joined with story.workdir).
    */
   projectDir: string;
-  /** Working directory (project root) */
+  /**
+   * Agent-spawn working directory. Equals `projectDir` for single-package repos;
+   * equals `join(projectDir, story.workdir)` in monorepo mode when the story targets
+   * a sub-package. Providers and pipeline stages that need the repo root must use
+   * `projectDir` — never re-join `story.workdir` onto this value.
+   */
   workdir: string;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */
   prdPath?: string;
