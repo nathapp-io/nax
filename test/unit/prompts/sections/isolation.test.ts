@@ -19,11 +19,17 @@ describe("buildIsolationSection — test-writer role", () => {
     expect(result).toContain("stub");
   });
 
-  test("both modes include test filtering rule", () => {
-    const strictResult = buildIsolationSection("test-writer", "strict");
-    const liteResult = buildIsolationSection("test-writer", "lite");
+  test("both modes include test filtering rule with configured command", () => {
+    const strictResult = buildIsolationSection("test-writer", "strict", "bun test");
+    const liteResult = buildIsolationSection("test-writer", "lite", "bun test");
     expect(strictResult).toContain("bun test");
     expect(liteResult).toContain("bun test");
+  });
+
+  test("omits command example when no test command configured (#543)", () => {
+    const result = buildIsolationSection("test-writer", "strict");
+    expect(result).toContain("scope each run to the files you changed");
+    expect(result).not.toContain("bun test");
   });
 
   test("defaults to strict mode when no mode provided", () => {
@@ -45,8 +51,8 @@ describe("buildIsolationSection — implementer role", () => {
     expect(result.toLowerCase()).toMatch(/do not modify.*test|test.*do not modify/i);
   });
 
-  test("includes test filtering rule", () => {
-    const result = buildIsolationSection("implementer");
+  test("includes test filtering rule when command configured", () => {
+    const result = buildIsolationSection("implementer", undefined, "bun test");
     expect(result).toContain("bun test");
   });
 });
@@ -57,8 +63,8 @@ describe("buildIsolationSection — verifier role", () => {
     expect(result.toLowerCase()).toMatch(/read|inspect|review/);
   });
 
-  test("includes test filtering rule", () => {
-    const result = buildIsolationSection("verifier");
+  test("includes test filtering rule when command configured", () => {
+    const result = buildIsolationSection("verifier", undefined, "bun test");
     expect(result).toContain("bun test");
   });
 });
@@ -70,8 +76,8 @@ describe("buildIsolationSection — single-session role", () => {
     expect(result).toContain("src/");
   });
 
-  test("includes test filtering rule", () => {
-    const result = buildIsolationSection("single-session");
+  test("includes test filtering rule when command configured", () => {
+    const result = buildIsolationSection("single-session", undefined, "bun test");
     expect(result).toContain("bun test");
   });
 });

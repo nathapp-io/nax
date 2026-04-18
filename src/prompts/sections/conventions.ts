@@ -1,7 +1,7 @@
 /**
  * Conventions Section
  *
- * Includes bun test scoping warning and commit message instructions (non-overridable).
+ * Commit message and security instructions (non-overridable).
  */
 
 export function buildConventionsSection(): string {

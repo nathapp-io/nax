@@ -6,8 +6,8 @@ import { describe, expect, test } from "bun:test";
 import { buildTestFrameworkHint } from "../../../src/test-runners/detector";
 
 describe("buildTestFrameworkHint", () => {
-  test("returns Bun hint for empty command", () => {
-    expect(buildTestFrameworkHint("")).toBe("Use Bun test (describe/test/expect)");
+  test("returns neutral hint for empty command (#543)", () => {
+    expect(buildTestFrameworkHint("")).toBe("Use your project's test framework");
   });
 
   test("returns Bun hint for bun test command", () => {

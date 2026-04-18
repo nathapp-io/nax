@@ -300,12 +300,19 @@ Commit your fixes when done.${scopeConstraint}`;
     const maxChars = config?.maxFailureSummaryChars ?? 2000;
     const failureSummary = formatFailureSummary(failures, maxChars);
 
-    const cmd = testCommand ?? "bun test";
+    // #543: do not invent a `bun test` command for Go / Python / Rust packages.
+    // If no testCommand is configured, surface the file without a command so the
+    // agent uses its project's native test runner rather than a wrong default.
+    const cmd = testCommand ?? "";
 
     const failingFiles = Array.from(new Set(failures.map((f) => f.file)));
     const testCommands = failingFiles
       .map((file) => {
-        const scopedCmd = testScopedTemplate ? testScopedTemplate.replace("{{files}}", file) : `${cmd} ${file}`;
+        const scopedCmd = testScopedTemplate
+          ? testScopedTemplate.replace("{{files}}", file)
+          : cmd
+            ? `${cmd} ${file}`
+            : file;
         return `  ${scopedCmd}`;
       })
       .join("\n");
@@ -376,7 +383,7 @@ ${testCommands}
 - Do NOT modify test files unless there is a legitimate bug in the test itself.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.
-- When running tests, run ONLY the failing test files shown above — NEVER run \`${cmd}\` without a file filter.
+- When running tests, run ONLY the failing test files shown above${cmd ? ` — NEVER run \`${cmd}\` without a file filter` : " — never run the full test suite without a file filter"}.
 `;
   }
 

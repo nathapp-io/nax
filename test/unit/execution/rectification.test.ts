@@ -369,7 +369,7 @@ describe("createEscalatedRectificationPrompt", () => {
     expect(prompt).not.toContain("NEVER run `bun test`");
   });
 
-  test("defaults to bun test in filter instruction when no testCommand provided", () => {
+  test("uses neutral filter instruction when no testCommand provided (#543)", () => {
     const prompt = RectifierPromptBuilder.escalated(
       mockFailures,
       mockStory,
@@ -378,6 +378,20 @@ describe("createEscalatedRectificationPrompt", () => {
       "powerful",
       baseConfig,
     );
-    expect(prompt).toContain("NEVER run `bun test` without a file filter");
+    expect(prompt).toContain("never run the full test suite without a file filter");
+    expect(prompt).not.toContain("bun test");
+  });
+
+  test("references configured test command when provided", () => {
+    const prompt = RectifierPromptBuilder.escalated(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+      "go test",
+    );
+    expect(prompt).toContain("NEVER run `go test` without a file filter");
   });
 });

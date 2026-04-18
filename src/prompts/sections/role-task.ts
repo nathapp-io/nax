@@ -15,8 +15,6 @@
 
 import { buildTestFrameworkHint } from "../../test-runners";
 
-const DEFAULT_TEST_CMD = "bun test";
-
 export function buildRoleTaskSection(
   roleOrVariant:
     | "no-test"
@@ -46,7 +44,7 @@ export function buildRoleTaskSection(
     | "single-session"
     | "tdd-simple"
     | "batch";
-  const testCmd = testCommand ?? DEFAULT_TEST_CMD;
+  const testCmd = testCommand ?? "";
   const frameworkHint = buildTestFrameworkHint(testCmd);
 
   if (role === "no-test") {
@@ -161,6 +159,9 @@ Instructions:
   }
 
   if (role === "batch") {
+    const verifyCmdLine = testCmd
+      ? `  - Verify all tests pass: ${testCmd}`
+      : "  - Verify all tests pass using your project's test command";
     return `# Role: Batch Implementer
 
 Your task: Implement each story in order using TDD — write tests first, then implement, then verify.
@@ -171,7 +172,7 @@ Instructions:
   - Write failing tests FIRST covering the acceptance criteria
   - Run tests to confirm they fail (RED phase)
   - Implement the minimum code to make tests pass (GREEN phase)
-  - Verify all tests pass: ${testCmd}
+${verifyCmdLine}
   - Commit the story with its story ID in the commit message: git commit -m 'feat(<story-id>): <description>'
 - ${frameworkHint}
 - Do NOT commit multiple stories together — each story gets its own commit
