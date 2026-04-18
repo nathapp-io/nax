@@ -27,11 +27,13 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
+import { SessionManager } from "../../session";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
 import { PidRegistry } from "../pid-registry";
+import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
 
 /** Injectable deps for run-setup (enables testing without heavy side-effects) */
@@ -98,6 +100,7 @@ export interface RunSetupOptions {
 export interface RunSetupResult {
   statusWriter: StatusWriter;
   pidRegistry: PidRegistry;
+  sessionManager: SessionManager;
   cleanupCrashHandlers: () => void;
   pluginRegistry: PluginRegistry;
   prd: PRD;
@@ -149,6 +152,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // ── PID registry for orphan process cleanup (BUG-002) ───────
   const pidRegistry = new PidRegistry(workdir);
+  const sessionManager = new SessionManager();
 
   // Cleanup stale PIDs from previous crashed runs
   await pidRegistry.cleanupStale();
@@ -170,10 +174,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     emitError: (reason: string) => {
       pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
     },
-    // Per-story SessionManagers are local to iteration-runner.ts; closeStory() is
-    // called there after runPipeline() returns. A run-level manager (Phase 5.5) will
-    // enable closeStory for all in-flight sessions here on SIGTERM.
-    onShutdown: async () => {},
+    onShutdown: async () => {
+      await closeAllRunSessions(sessionManager, options.agentGetFn);
+    },
   });
 
   // Load PRD (before try block so it's accessible in finally for onRunEnd)
@@ -204,9 +207,11 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   }
 
   // Phase 3 (#477): stale session sweep via sidecar removed.
-  // SessionManager.sweepOrphans() handles orphan detection at run boundaries.
-  // Per-story SessionManagers are created in iteration-runner.ts; a run-level
-  // manager (Phase 5.5) will allow sweepOrphans() to be called here at startup.
+  // Run-level SessionManager now owns orphan sweeps at startup.
+  const sweptOrphans = sessionManager.sweepOrphans();
+  if (sweptOrphans > 0) {
+    logger?.info("session", "Swept orphan sessions at run setup", { sweptOrphans });
+  }
 
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
@@ -316,6 +321,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     return {
       statusWriter,
       pidRegistry,
+      sessionManager,
       cleanupCrashHandlers,
       pluginRegistry,
       prd,

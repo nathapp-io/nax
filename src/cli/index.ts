@@ -42,8 +42,10 @@ export { agentsListCommand } from "./agents";
 export { contextInspectCommand, type ContextInspectOptions } from "./context";
 export {
   rulesExportCommand,
+  rulesLintCommand,
   rulesMigrateCommand,
   neutralizeContent,
   type RulesExportOptions,
+  type RulesLintOptions,
   type RulesMigrateOptions,
 } from "./rules";

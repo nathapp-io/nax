@@ -23,9 +23,23 @@ import { getAllReadyStories } from "./helpers";
 import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { handlePipelineFailure } from "./pipeline-result-handler";
+import { closeStorySessions } from "./session-manager-runtime";
 import { selectIndependentBatch, selectNextStories } from "./story-selector";
 
 export type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
+
+const TERMINAL_ACTIONS = new Set(["fail", "skip", "pause"]);
+
+async function closeStoryIfTerminal(
+  ctx: SequentialExecutionContext,
+  storyId: string,
+  iter: { storiesCompletedDelta: number; finalAction?: string },
+): Promise<void> {
+  if (!ctx.sessionManager) return;
+  if (iter.storiesCompletedDelta > 0 || (iter.finalAction && TERMINAL_ACTIONS.has(iter.finalAction))) {
+    await closeStorySessions(ctx.sessionManager, storyId, ctx.agentGetFn);
+  }
+}
 
 export async function executeUnified(
   ctx: SequentialExecutionContext,
@@ -241,6 +255,17 @@ export async function executeUnified(
           storiesCompleted += batchResult.completed.length;
           prdDirty = true;
 
+          if (ctx.sessionManager) {
+            for (const story of batchResult.completed) {
+              await closeStorySessions(ctx.sessionManager, story.id, ctx.agentGetFn);
+            }
+            for (const failed of batchResult.failed) {
+              if (failed.pipelineResult.finalAction && TERMINAL_ACTIONS.has(failed.pipelineResult.finalAction)) {
+                await closeStorySessions(ctx.sessionManager, failed.story.id, ctx.agentGetFn);
+              }
+            }
+          }
+
           // Build per-story metrics for completed parallel batch stories
           const batchCompletedAt = new Date().toISOString();
           for (const story of batchResult.completed) {
@@ -374,6 +399,7 @@ export async function executeUnified(
             totalCost + singleIter.costDelta,
             singleIter.prdDirty,
           ];
+          await closeStoryIfTerminal(ctx, singleStory.id, singleIter);
 
           if (singleIter.prdDirty) {
             prd = await loadPRD(ctx.prdPath);
@@ -457,6 +483,7 @@ export async function executeUnified(
         totalCost + iter.costDelta,
         iter.prdDirty,
       ];
+      await closeStoryIfTerminal(ctx, selection.story.id, iter);
 
       if (ctx.interactionChain && isTriggerEnabled("cost-warning", ctx.config) && !warningSent) {
         const triggerCfg = ctx.config.interaction?.triggers?.["cost-warning"];

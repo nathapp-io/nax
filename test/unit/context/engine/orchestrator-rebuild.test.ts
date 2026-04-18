@@ -419,6 +419,20 @@ describe("rebuildForAgent — #508-M5 rebuildInfo chunk ID correlation", () => {
     expect(newIds.length).toBeGreaterThan(1);
   });
 
+  test("rebuildInfo contains prior→new chunk ID correlation map", async () => {
+    const provider = makeProvider("p1", makeChunkResult("chunk:abc"));
+    const orch = new ContextOrchestrator([provider]);
+    const original = await orch.assemble({ ...BASE_REQUEST, providerIds: ["p1"] });
+    const priorBundle = { ...original, agentId: "claude" };
+
+    const rebuilt = orch.rebuildForAgent(priorBundle, {
+      newAgentId: "codex",
+      failure: AVAILABILITY_FAILURE,
+    });
+
+    expect(rebuilt.manifest.rebuildInfo?.chunkIdMap).toEqual([{ priorChunkId: "chunk:abc", newChunkId: "chunk:abc" }]);
+  });
+
   test("rebuildInfo has no chunk ID fields when no failure (plain re-render)", async () => {
     const orch = new ContextOrchestrator([]);
     const original = await orch.assemble(BASE_REQUEST);

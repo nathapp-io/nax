@@ -15,7 +15,6 @@ import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
 import { savePRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { SessionManager } from "../session";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { WorktreeManager } from "../worktree/manager";
@@ -145,7 +144,7 @@ export async function runIteration(
     interaction: ctx.interactionChain ?? undefined,
     agentGetFn: ctx.agentGetFn,
     pidRegistry: ctx.pidRegistry,
-    sessionManager: new SessionManager(),
+    sessionManager: ctx.sessionManager,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
   };
 
@@ -162,18 +161,6 @@ export async function runIteration(
   await ctx.statusWriter.update(totalCost, iterations);
 
   const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
-
-  // G2: Close all non-terminal sessions — update in-memory state and close physical ACP sessions.
-  // closeStory() returns the descriptors it transitioned; for any with a handle we close
-  // the physical session so ACP doesn't accumulate orphaned sessions after abnormal exits
-  // (e.g. escalate with keepSessionOpen: true still set by the execution stage).
-  const closedSessionDescs = pipelineContext.sessionManager?.closeStory(story.id) ?? [];
-  for (const desc of closedSessionDescs) {
-    if (desc.handle) {
-      const adapter = pipelineContext.agentGetFn?.(desc.agent);
-      void adapter?.closePhysicalSession(desc.handle, desc.workdir).catch(() => {});
-    }
-  }
 
   // #410: Destroy reviewerSession on escalation — completion stage is bypassed when the pipeline
   // returns escalate, so we must clean up here to avoid leaking the ACP reviewer session.

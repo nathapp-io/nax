@@ -245,4 +245,18 @@ describe("context stage — Phase 2 digest threading", () => {
     expect(ctx.contextBundle).toBe(bundle);
     expect(ctx.featureContextMarkdown).toBe(bundle.pushMarkdown);
   });
+
+  test("threads availableBudgetTokens into ContextRequest", async () => {
+    _contextStageDeps.readDigest = async () => "";
+    _contextStageDeps.writeDigest = async () => {};
+
+    let capturedRequest: ContextRequest | undefined;
+    mockOrchestrator(makeBundle(), (req) => {
+      capturedRequest = req;
+    });
+
+    await contextStage.execute(makeCtx());
+
+    expect(capturedRequest?.availableBudgetTokens).toBeGreaterThan(0);
+  });
 });

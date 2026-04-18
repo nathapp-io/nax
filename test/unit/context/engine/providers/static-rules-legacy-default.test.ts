@@ -18,18 +18,22 @@ import type { ContextRequest } from "../../../../../src/context/engine/types";
 
 let origReadFile: typeof _staticRulesDeps.readFile;
 let origFileExists: typeof _staticRulesDeps.fileExists;
+let origGlobInDir: typeof _staticRulesDeps.globInDir;
 let origLoadCanonicalRules: typeof _staticRulesDeps.loadCanonicalRules;
 
 beforeEach(() => {
   origReadFile = _staticRulesDeps.readFile;
   origFileExists = _staticRulesDeps.fileExists;
+  origGlobInDir = _staticRulesDeps.globInDir;
   origLoadCanonicalRules = _staticRulesDeps.loadCanonicalRules;
   _staticRulesDeps.loadCanonicalRules = async () => [];
+  _staticRulesDeps.globInDir = () => [];
 });
 
 afterEach(() => {
   _staticRulesDeps.readFile = origReadFile;
   _staticRulesDeps.fileExists = origFileExists;
+  _staticRulesDeps.globInDir = origGlobInDir;
   _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
 });
 

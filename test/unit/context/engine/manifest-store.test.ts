@@ -3,7 +3,9 @@ import {
   _manifestStoreDeps,
   contextManifestPath,
   loadContextManifests,
+  rebuildManifestPath,
   writeContextManifest,
+  writeRebuildManifest,
 } from "../../../../src/context/engine/manifest-store";
 import { withDepsRestore } from "../../../helpers/deps";
 
@@ -46,5 +48,52 @@ describe("manifest-store", () => {
     expect(manifests[0]?.featureId).toBe("feat-auth");
     expect(manifests[0]?.stage).toBe("review-semantic");
     expect(manifests[0]?.manifest.includedChunks).toEqual(["chunk:1"]);
+  });
+
+  test("writeRebuildManifest appends rebuild events into rebuild-manifest.json", async () => {
+    const writes = new Map<string, string>();
+    _manifestStoreDeps.mkdirp = async () => undefined;
+    _manifestStoreDeps.writeFile = async (path, content) => {
+      writes.set(path, content);
+      return content.length;
+    };
+    _manifestStoreDeps.fileExists = async (path) => writes.has(path);
+    _manifestStoreDeps.readFile = async (path) => writes.get(path) ?? "";
+
+    expect(rebuildManifestPath("/repo", "feat-auth", "US-001")).toBe(
+      "/repo/.nax/features/feat-auth/stories/US-001/rebuild-manifest.json",
+    );
+
+    await writeRebuildManifest("/repo", "feat-auth", "US-001", {
+      requestId: "req-1",
+      stage: "execution",
+      priorAgentId: "claude",
+      newAgentId: "codex",
+      failureCategory: "availability",
+      failureOutcome: "fail-quota",
+      priorChunkIds: ["chunk:a"],
+      newChunkIds: ["chunk:a", "failure-note:1"],
+      chunkIdMap: [{ priorChunkId: "chunk:a", newChunkId: "chunk:a" }],
+      createdAt: "2026-04-18T00:00:00.000Z",
+    });
+    await writeRebuildManifest("/repo", "feat-auth", "US-001", {
+      requestId: "req-2",
+      stage: "execution",
+      priorAgentId: "codex",
+      newAgentId: "gemini",
+      failureCategory: "availability",
+      failureOutcome: "fail-service-down",
+      priorChunkIds: ["chunk:b"],
+      newChunkIds: ["chunk:b", "failure-note:2"],
+      chunkIdMap: [{ priorChunkId: "chunk:b", newChunkId: "chunk:b" }],
+      createdAt: "2026-04-18T00:01:00.000Z",
+    });
+
+    const path = rebuildManifestPath("/repo", "feat-auth", "US-001");
+    const parsed = JSON.parse(writes.get(path) ?? "{}") as { storyId: string; events: Array<{ requestId: string }> };
+    expect(parsed.storyId).toBe("US-001");
+    expect(parsed.events).toHaveLength(2);
+    expect(parsed.events[0]?.requestId).toBe("req-1");
+    expect(parsed.events[1]?.requestId).toBe("req-2");
   });
 });

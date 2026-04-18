@@ -204,12 +204,14 @@ describe("ContextOrchestrator.assemble() — agent profile ceiling (AC-32)", () 
 
 describe("ContextOrchestrator.assemble() — pull tool capability gate (AC-33)", () => {
   test("conservative default profile (supportsToolCalls=false) surfaces zero pull tools", async () => {
+    // Pull-tool gate is orthogonal to provider registration — use an empty
+    // test-override providerIds list so AC-16 validation does not trip on the
+    // tdd-test-writer stage config (which references providers not registered here).
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({
       ...BASE_REQUEST,
-      // tdd-test-writer has pull tools in stage-config.
       stage: "tdd-test-writer",
-      providerIds: undefined, // use stage-config default
+      providerIds: [],
       agentId: "some-unknown-agent", // → conservative default → supportsToolCalls=false
       pullConfig: {
         enabled: true,
@@ -225,7 +227,7 @@ describe("ContextOrchestrator.assemble() — pull tool capability gate (AC-33)",
     const bundle = await orch.assemble({
       ...BASE_REQUEST,
       stage: "tdd-test-writer",
-      providerIds: undefined,
+      providerIds: [],
       agentId: "claude",
       pullConfig: {
         enabled: true,

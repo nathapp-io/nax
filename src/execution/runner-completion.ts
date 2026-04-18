@@ -16,6 +16,7 @@ import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import { isComplete } from "../prd";
 import type { PRD } from "../prd";
+import type { ISessionManager } from "../session";
 import { autoCommitIfDirty } from "../utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
@@ -51,6 +52,8 @@ export interface RunnerCompletionOptions {
   agentGetFn?: AgentGetFn;
   /** Path to prd.json — required for acceptance fix story writes */
   prdPath: string;
+  /** Run-level SessionManager shared across this run. */
+  sessionManager?: ISessionManager;
 }
 
 /**
@@ -195,6 +198,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     config: options.config,
     agentGetFn: options.agentGetFn,
     skipRegression: regressionAlreadyPassed,
+    sessionManager: options.sessionManager,
   });
 
   const { durationMs, runCompletedAt, finalCounts } = completionResult;

@@ -53,6 +53,9 @@ import {
   pluginsListCommand,
   promptsCommand,
   promptsInitCommand,
+  rulesExportCommand,
+  rulesLintCommand,
+  rulesMigrateCommand,
   runReplanLoop,
   runsListCommand,
   runsShowCommand,
@@ -1296,6 +1299,84 @@ context
         feature: options.feature,
         json: options.json,
         storyId,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── rules ────────────────────────────────────────────
+const rules = program.command("rules").description("Manage canonical rules store (.nax/rules)");
+
+rules
+  .command("lint")
+  .description("Validate canonical rules neutrality/frontmatter (root + package overlays)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    try {
+      await rulesLintCommand({ dir: workdir });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+rules
+  .command("export")
+  .description("Export canonical rules to an agent shim file (CLAUDE.md / AGENTS.md / GEMINI.md)")
+  .requiredOption("-a, --agent <id>", "Target agent (claude|codex|gemini|cursor)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--dry-run", "Preview output without writing", false)
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    try {
+      await rulesExportCommand({
+        dir: workdir,
+        agent: options.agent,
+        dryRun: options.dryRun,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+rules
+  .command("migrate")
+  .description("Migrate legacy CLAUDE.md + .claude/rules/*.md into .nax/rules/")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("-f, --force", "Overwrite existing .nax/rules/* files", false)
+  .option("--dry-run", "Preview output without writing", false)
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    try {
+      await rulesMigrateCommand({
+        dir: workdir,
+        force: options.force,
+        dryRun: options.dryRun,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));

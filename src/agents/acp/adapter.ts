@@ -1187,7 +1187,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     return !this._unavailableAgents.has(agentName);
   }
 
-  async closePhysicalSession(handle: string, workdir: string): Promise<void> {
+  async closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void> {
     const cmdStr = `acpx ${this.name}`;
     const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, undefined);
     try {
@@ -1195,9 +1195,15 @@ export class AcpAgentAdapter implements AgentAdapter {
       try {
         if (client.closeSession) {
           await client.closeSession(handle, this.name);
+          // AC-83: hard-terminate (acpx stop) when force=true, e.g. for errored sessions
+          if (options?.force) {
+            await (client as { forceStop?: (agentName: string) => Promise<void> })
+              .forceStop?.(this.name)
+              .catch(() => {});
+          }
         } else if (client.loadSession) {
           const session = await client.loadSession(handle, this.name, "approve-reads");
-          if (session) await session.close().catch(() => {});
+          if (session) await session.close({ forceTerminate: options?.force }).catch(() => {});
         }
       } catch (err) {
         getSafeLogger()?.warn("acp-adapter", `[close] Failed to close session ${handle}`, { error: String(err) });

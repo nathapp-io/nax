@@ -16,6 +16,8 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { tryLlmBatchRoute } from "../routing";
 import { clearCache as clearLlmCache } from "../routing/strategies/llm";
+import { SessionManager } from "../session";
+import type { ISessionManager } from "../session";
 import { precomputeBatchPlan } from "./batching";
 import { getAllReadyStories } from "./helpers";
 import type { PidRegistry } from "./pid-registry";
@@ -51,6 +53,8 @@ export interface RunnerExecutionOptions {
   pidRegistry?: PidRegistry;
   /** Interaction chain for cost/pre-merge triggers during sequential execution. */
   interactionChain?: InteractionChain | null;
+  /** Run-level SessionManager shared across story iterations. */
+  sessionManager?: ISessionManager;
 }
 
 /**
@@ -153,6 +157,7 @@ export async function runExecutionPhase(
       eventEmitter: options.eventEmitter,
       statusWriter: options.statusWriter,
       logFilePath: options.logFilePath,
+      sessionManager: options.sessionManager ?? new SessionManager(),
       runId: options.runId,
       startTime: options.startTime,
       parallelCount: options.parallel,

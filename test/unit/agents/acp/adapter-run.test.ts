@@ -232,7 +232,7 @@ describe("run() — rate limit retry", () => {
     const session = makeSession({
       promptFn: async (_: string) => {
         attempts++;
-        if (attempts < 3) throw new Error("Rate limit exceeded — 429 Too Many Requests");
+        if (attempts < 3) throw new Error("statusCode=429");
         return {
           messages: [{ role: "assistant", content: "Done." }],
           stopReason: "end_turn",
@@ -259,7 +259,7 @@ describe("run() — rate limit retry", () => {
     const session = makeSession({
       promptFn: async (_: string) => {
         attempts++;
-        if (attempts < 3) throw new Error("rate limit");
+        if (attempts < 3) throw new Error("statusCode=429");
         return {
           messages: [{ role: "assistant", content: "Done." }],
           stopReason: "end_turn",
@@ -283,7 +283,7 @@ describe("run() — rate limit retry", () => {
 
     const session = makeSession({
       promptFn: async (_: string) => {
-        throw new Error("rate limit exceeded");
+        throw new Error("statusCode=429");
       },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));

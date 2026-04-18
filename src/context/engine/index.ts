@@ -53,8 +53,14 @@ export { assembleForStage, getBundleMarkdown } from "./stage-assembler";
 export type { StageAssembleOptions } from "./stage-assembler";
 export { createContextToolRuntime } from "./tool-runtime";
 export type { ContextToolRuntime } from "./tool-runtime";
-export { writeContextManifest, loadContextManifests, contextManifestPath } from "./manifest-store";
-export type { StoredContextManifest } from "./manifest-store";
+export {
+  writeContextManifest,
+  writeRebuildManifest,
+  loadContextManifests,
+  contextManifestPath,
+  rebuildManifestPath,
+} from "./manifest-store";
+export type { StoredContextManifest, RebuildManifestEntry } from "./manifest-store";
 
 export type {
   AdapterFailure,

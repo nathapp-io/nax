@@ -227,12 +227,9 @@ export interface ContextManifest {
     priorChunkIds: string[];
     /** Chunk IDs in the rebuilt bundle, including any injected failure-note (AC-39). */
     newChunkIds: string[];
+    /** Best-effort correlation from prior chunk ID to rebuilt chunk ID (AC-39). */
+    chunkIdMap: Array<{ priorChunkId: string; newChunkId: string }>;
   };
-  /**
-   * Provider IDs in request.providerIds that matched no registered provider (AC-16).
-   * Absent when all IDs are known or providerIds is empty.
-   */
-  unknownProviderIds?: string[];
   /**
    * First 300 chars of each included chunk's content (Amendment A AC-45).
    * Written at assemble() time; used by annotateManifestEffectiveness() post-story

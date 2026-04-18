@@ -8,9 +8,11 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { NaxError } from "../../../../src/errors";
 import {
+  applyCanonicalRulesBudget,
   lintForNeutrality,
   loadCanonicalRules,
   NeutralityLintError,
+  RulesFrontmatterError,
   CANONICAL_RULES_DIR,
   _canonicalLoaderDeps,
 } from "../../../../src/context/rules/canonical-loader";
@@ -71,19 +73,20 @@ describe("lintForNeutrality", () => {
   test("flags <system-reminder> tag", () => {
     const violations = lintForNeutrality("<system-reminder>Do this.</system-reminder>", "rules.md");
     expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("system-reminder");
+    expect(violations[0]?.pattern).toContain("XML tag");
   });
 
   test("flags CLAUDE.md reference", () => {
     const violations = lintForNeutrality("See CLAUDE.md for more info.", "rules.md");
     expect(violations.length).toBeGreaterThan(0);
     expect(violations[0]?.pattern).toContain("CLAUDE.md");
+    expect(violations[0]?.ruleId).toBe("claude-reference");
   });
 
   test("flags .claude/ directory reference", () => {
     const violations = lintForNeutrality("Rules are in .claude/rules/.", "rules.md");
     expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain(".claude/");
+    expect(violations[0]?.pattern).toContain("directory");
   });
 
   test("flags 'the Grep tool' phrasing", () => {
@@ -115,6 +118,23 @@ describe("lintForNeutrality", () => {
     expect(violations[0]?.file).toBe("test-file.md");
   });
 
+  test("supports per-line override marker for CLAUDE.md reference", () => {
+    const violations = lintForNeutrality(
+      "<!-- nax-rules-allow: claude-reference --> See CLAUDE.md for migration notes.",
+      "rules.md",
+    );
+    expect(violations).toHaveLength(0);
+  });
+
+  test("override applies only to the same line", () => {
+    const violations = lintForNeutrality(
+      "<!-- nax-rules-allow: claude-reference -->\nSee CLAUDE.md for migration notes.",
+      "rules.md",
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.ruleId).toBe("claude-reference");
+  });
+
   test("only flags one violation per line (most specific pattern wins)", () => {
     // Line has both CLAUDE.md and IMPORTANT: — only one violation per line
     const violations = lintForNeutrality("IMPORTANT: See CLAUDE.md", "rules.md");
@@ -129,14 +149,14 @@ describe("lintForNeutrality", () => {
 describe("NeutralityLintError", () => {
   test("is a NaxError", () => {
     const err = new NeutralityLintError([{
-      file: "a.md", lineNumber: 1, line: "CLAUDE.md", pattern: "agent-specific file",
+      file: "a.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific file",
     }]);
     expect(err).toBeInstanceOf(NaxError);
     expect(err.code).toBe("NEUTRALITY_LINT_FAILED");
   });
 
   test("exposes violations array", () => {
-    const violation = { file: "a.md", lineNumber: 5, line: "IMPORTANT:", pattern: "shouting" };
+    const violation = { file: "a.md", lineNumber: 5, line: "IMPORTANT:", ruleId: "important-shouting", pattern: "shouting" };
     const err = new NeutralityLintError([violation]);
     expect(err.violations).toHaveLength(1);
     expect(err.violations[0]).toEqual(violation);
@@ -144,7 +164,7 @@ describe("NeutralityLintError", () => {
 
   test("message includes file and line number", () => {
     const err = new NeutralityLintError([{
-      file: "coding.md", lineNumber: 12, line: "CLAUDE.md", pattern: "agent-specific",
+      file: "coding.md", lineNumber: 12, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific",
     }]);
     expect(err.message).toContain("coding.md");
     expect(err.message).toContain("12");
@@ -172,6 +192,27 @@ describe("loadCanonicalRules", () => {
     // globInDir sorts alphabetically; fileName is the basename
     expect(rules[0]?.fileName).toBe("coding-style.md");
     expect(rules[1]?.fileName).toBe("testing.md");
+  });
+
+  test("loads nested one-level rule files", async () => {
+    setupFiles({
+      "/project/.nax/rules/core.md": "Core rule.",
+      "/project/.nax/rules/frontend/style.md": "Frontend style rule.",
+    });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(2);
+    expect(rules.map((r) => r.path)).toContain("core.md");
+    expect(rules.map((r) => r.path)).toContain("frontend/style.md");
+  });
+
+  test("ignores files deeper than one nested level", async () => {
+    setupFiles({
+      "/project/.nax/rules/core.md": "Core rule.",
+      "/project/.nax/rules/frontend/react/style.md": "Too deep rule.",
+    });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.path).toBe("core.md");
   });
 
   test("each rule has fileName (basename) and content", async () => {
@@ -223,6 +264,66 @@ describe("loadCanonicalRules", () => {
     setupFiles({ "/project/.nax/rules/style.md": "\n\n## Style\n\nContent.\n\n" });
     const rules = await loadCanonicalRules("/project");
     expect(rules[0]?.content).toBe("## Style\n\nContent.");
+  });
+
+  test("parses frontmatter priority and appliesTo", async () => {
+    setupFiles({
+      "/project/.nax/rules/agents.md": `---
+priority: 50
+appliesTo:
+  - "src/agents/**"
+  - "test/agents/**"
+---
+Only for agent files.`,
+    });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules[0]?.priority).toBe(50);
+    expect(rules[0]?.appliesTo).toEqual(["src/agents/**", "test/agents/**"]);
+    expect(rules[0]?.content).toBe("Only for agent files.");
+  });
+
+  test("throws RulesFrontmatterError on malformed frontmatter", async () => {
+    setupFiles({
+      "/project/.nax/rules/bad.md": `---
+priority: [not-a-number]
+---
+Broken`,
+    });
+    await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
+  });
+
+  test("applies budget truncation when budgetTokens is provided", async () => {
+    setupFiles({
+      "/project/.nax/rules/a.md": `---
+priority: 1
+---
+${"A".repeat(800)}`,
+      "/project/.nax/rules/b.md": `---
+priority: 2
+---
+${"B".repeat(800)}`,
+      "/project/.nax/rules/c.md": `---
+priority: 3
+---
+${"C".repeat(800)}`,
+    });
+    const rules = await loadCanonicalRules("/project", { budgetTokens: 200 });
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules.length).toBeLessThan(3);
+  });
+});
+
+describe("applyCanonicalRulesBudget", () => {
+  test("keeps higher-priority rules first when truncating", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(400), tokens: 100, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(400), tokens: 100, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 200);
+    expect(result.rules).toHaveLength(2);
+    expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(result.droppedCount).toBe(1);
   });
 });
 

@@ -1,6 +1,6 @@
 # ADR-008: Session Lifecycle Across All Agent Roles
 
-**Status:** Proposed
+**Status:** Partially superseded by [ADR-011](ADR-011-session-manager-ownership.md) — the per-role *policy* below is retained verbatim; the `keepSessionOpen` *primitive* is replaced by state-machine transitions. See ADR-011 §Mapping for the translation.
 **Date:** 2026-04-14
 **Author:** William Khoo, Claude
 **Supersedes:** ADR-007 (partial — the implementer portion is retained here verbatim; see §6)

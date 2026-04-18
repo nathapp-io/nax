@@ -17,7 +17,11 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { getLogger } from "../../../logger";
 import { errorMessage } from "../../../utils/errors";
-import { loadCanonicalRules } from "../../rules/canonical-loader";
+import {
+  DEFAULT_CANONICAL_RULES_BUDGET_TOKENS,
+  applyCanonicalRulesBudget,
+  loadCanonicalRules,
+} from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -28,6 +32,13 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 export const _staticRulesDeps = {
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
   fileExists: async (path: string): Promise<boolean> => Bun.file(path).exists(),
+  globInDir: (dir: string): string[] => {
+    try {
+      return [...new Bun.Glob("**/*.md").scanSync({ cwd: dir, absolute: false })].sort().map((f) => join(dir, f));
+    } catch {
+      return [];
+    }
+  },
   loadCanonicalRules,
 };
 
@@ -40,6 +51,7 @@ export const _staticRulesDeps = {
  * Only used when .nax/rules/ is absent and allowLegacyClaudeMd is true.
  */
 const LEGACY_CANDIDATE_FILES = ["CLAUDE.md", ".cursorrules", "AGENTS.md"];
+const LEGACY_RULES_DIR = ".claude/rules";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Options
@@ -52,6 +64,8 @@ export interface StaticRulesProviderOptions {
    * Set true only during migration to the canonical .nax/rules/ store.
    */
   allowLegacyClaudeMd?: boolean;
+  /** Token budget for static rules chunk emission. Default: 8192 */
+  budgetTokens?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +80,71 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+function canonicalRuleId(rule: CanonicalRule): string {
+  return rule.id ?? rule.fileName.replace(/\.md$/i, "");
+}
+
+function canonicalRulePath(rule: CanonicalRule): string {
+  return rule.path ?? rule.fileName;
+}
+
+function canonicalRulePriority(rule: CanonicalRule): number {
+  return rule.priority ?? 100;
+}
+
+function normalizePath(path: string): string {
+  return path.replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+function globToRegex(pattern: string): RegExp {
+  let regex = "";
+  let i = 0;
+  while (i < pattern.length) {
+    const c = pattern[i];
+    if (c === "*") {
+      if (pattern[i + 1] === "*") {
+        const beforeSlash = i > 0 && pattern[i - 1] === "/";
+        const afterSlash = pattern[i + 2] === "/";
+        if (beforeSlash && afterSlash) {
+          regex = `${regex.slice(0, -1)}(?:.*\\/)?`;
+          i += 3;
+        } else if (afterSlash) {
+          regex += "(?:.*\\/)?";
+          i += 3;
+        } else {
+          regex += ".*";
+          i += 2;
+        }
+        continue;
+      }
+      regex += "[^/]*";
+      i++;
+      continue;
+    }
+    if (c === "?") {
+      regex += "[^/]";
+      i++;
+      continue;
+    }
+    if (".+^${}()|[]\\".includes(c)) {
+      regex += `\\${c}`;
+    } else {
+      regex += c;
+    }
+    i++;
+  }
+  return new RegExp(`(?:^|/)${regex}$`);
+}
+
+function ruleMatchesTouchedFiles(appliesTo: string[] | undefined, touchedFiles: string[] | undefined): boolean {
+  if (!appliesTo || appliesTo.length === 0) return true;
+  if (!touchedFiles || touchedFiles.length === 0) return true;
+
+  const files = touchedFiles.map((f) => normalizePath(f));
+  const patterns = appliesTo.map((p) => globToRegex(normalizePath(p)));
+  return files.some((file) => patterns.some((pattern) => pattern.test(file)));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,9 +154,11 @@ export class StaticRulesProvider implements IContextProvider {
   readonly kind = "static" as const;
 
   private readonly allowLegacyClaudeMd: boolean;
+  private readonly budgetTokens: number;
 
   constructor(options: StaticRulesProviderOptions = {}) {
     this.allowLegacyClaudeMd = options.allowLegacyClaudeMd ?? false;
+    this.budgetTokens = options.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
@@ -93,24 +174,60 @@ export class StaticRulesProvider implements IContextProvider {
         const packageRules = await _staticRulesDeps.loadCanonicalRules(request.packageDir);
         if (packageRules.length > 0) {
           const merged = new Map<string, CanonicalRule>();
-          for (const rule of repoRules) merged.set(rule.fileName, rule);
-          for (const rule of packageRules) merged.set(rule.fileName, rule);
+          for (const rule of repoRules) merged.set(canonicalRuleId(rule), rule);
+          for (const rule of packageRules) merged.set(canonicalRuleId(rule), rule);
           mergedRules = [...merged.values()];
         }
       }
 
+      mergedRules.sort(
+        (a, b) =>
+          canonicalRulePriority(a) - canonicalRulePriority(b) || canonicalRuleId(a).localeCompare(canonicalRuleId(b)),
+      );
+
       if (mergedRules.length > 0) {
-        const chunks = mergedRules.map((rule) => {
+        const scopedRules = mergedRules.filter((rule) => ruleMatchesTouchedFiles(rule.appliesTo, request.touchedFiles));
+        const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens);
+        if (budgetResult.totalTokens >= Math.floor(this.budgetTokens * 0.75)) {
+          logger.warn("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
+            storyId: request.storyId,
+            totalTokens: budgetResult.totalTokens,
+            budgetTokens: this.budgetTokens,
+            droppedCount: budgetResult.droppedCount,
+          });
+        }
+        if (budgetResult.droppedCount > 0) {
+          logger.warn("static-rules", "Canonical rules truncated by static rules budget", {
+            storyId: request.storyId,
+            totalTokens: budgetResult.totalTokens,
+            usedTokens: budgetResult.usedTokens,
+            budgetTokens: this.budgetTokens,
+            droppedCount: budgetResult.droppedCount,
+          });
+        }
+
+        const effectiveRules = budgetResult.rules;
+        if (effectiveRules.length === 0) {
+          logger.warn("static-rules", "No canonical rules fit in static rules budget", {
+            storyId: request.storyId,
+            budgetTokens: this.budgetTokens,
+            totalScopedRules: scopedRules.length,
+          });
+          return { chunks: [], pullTools: [] };
+        }
+        const chunks = effectiveRules.map((rule) => {
           const hash = contentHash8(rule.content);
           const tokens = estimateTokens(rule.content);
+          const ruleId = canonicalRuleId(rule);
+          const rulePath = canonicalRulePath(rule);
           return {
             // Include fileName so two rules with identical content but different names
             // are not deduplicated by the packing stage (content-hash collision).
-            id: `static-rules:${rule.fileName}:${hash}`,
+            id: `static-rules:${ruleId}:${hash}`,
             kind: "static" as const,
             scope: "project" as const,
             role: ["all"] as ["all"],
-            content: `### ${rule.fileName}\n\n${rule.content}`,
+            content: `### ${rulePath}\n\n${rule.content}`,
             tokens,
             rawScore: 1.0,
           } satisfies RawChunk;
@@ -118,7 +235,8 @@ export class StaticRulesProvider implements IContextProvider {
 
         logger.debug("static-rules", "Loaded canonical rules", {
           storyId: request.storyId,
-          fileCount: chunks.length,
+          fileCount: effectiveRules.length,
+          totalCanonicalRules: mergedRules.length,
         });
 
         return { chunks, pullTools: [] };
@@ -182,8 +300,31 @@ export class StaticRulesProvider implements IContextProvider {
       });
     }
 
+    const legacySources: Array<{ sourceId: string; filePath: string; heading: string }> = [];
+
     for (const fileName of LEGACY_CANDIDATE_FILES) {
-      const filePath = join(rootDir, fileName);
+      legacySources.push({
+        sourceId: fileName,
+        filePath: join(rootDir, fileName),
+        heading: fileName,
+      });
+    }
+
+    const rulesDir = join(rootDir, LEGACY_RULES_DIR);
+    const nestedRulePaths = _staticRulesDeps.globInDir(rulesDir);
+    for (const filePath of nestedRulePaths) {
+      const normalized = normalizePath(filePath);
+      const rulesRoot = normalizePath(`${rulesDir}/`);
+      const rel = normalized.startsWith(rulesRoot) ? normalized.slice(rulesRoot.length) : normalized;
+      legacySources.push({
+        sourceId: `${LEGACY_RULES_DIR}/${rel}`,
+        filePath,
+        heading: `${LEGACY_RULES_DIR}/${rel}`,
+      });
+    }
+
+    for (const { sourceId, filePath, heading } of legacySources) {
+      const fileName = heading;
 
       try {
         const exists = await _staticRulesDeps.fileExists(filePath);
@@ -196,11 +337,11 @@ export class StaticRulesProvider implements IContextProvider {
         const tokens = estimateTokens(content);
 
         chunks.push({
-          id: `static-rules:${hash}`,
+          id: `static-rules:legacy:${sourceId}:${hash}`,
           kind: "static",
           scope: "project",
           role: ["all"],
-          content: `### ${fileName}\n\n${content.trim()}`,
+          content: `### ${heading}\n\n${content.trim()}`,
           tokens,
           rawScore: 1.0,
         });
@@ -210,9 +351,6 @@ export class StaticRulesProvider implements IContextProvider {
           file: fileName,
           tokens,
         });
-
-        // Only load the first candidate found
-        break;
       } catch (err) {
         logger.warn("static-rules", `Failed to read ${fileName} — skipping`, {
           storyId: request.storyId,

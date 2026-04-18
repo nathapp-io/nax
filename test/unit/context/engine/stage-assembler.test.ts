@@ -311,4 +311,13 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
     expect(mock.ref.captured?.planDigestBoost).toBe(1.5);
   });
+
+  test("threads availableBudgetTokens from stage assembly call site", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
+
+    expect(mock.ref.captured?.availableBudgetTokens).toBeGreaterThan(0);
+  });
 });
