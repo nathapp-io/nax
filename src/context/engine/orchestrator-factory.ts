@@ -52,12 +52,13 @@ export function createDefaultOrchestrator(
   // Phase 3: git history and code neighbors (always registered; active only when
   // request.touchedFiles is non-empty and the stage includes these provider IDs)
   // #507: scope is read from config so operators can tune for monorepo setups.
-  const providerConfig = config.context.v2.providers;
-  providers.push(new GitHistoryProvider({ historyScope: providerConfig.historyScope }));
+  // Optional-chain: tests that bypass Zod schema may omit the providers sub-object.
+  const providerConfig = config.context?.v2?.providers;
+  providers.push(new GitHistoryProvider({ historyScope: providerConfig?.historyScope ?? "package" }));
   providers.push(
     new CodeNeighborProvider({
-      neighborScope: providerConfig.neighborScope,
-      crossPackageDepth: providerConfig.crossPackageDepth,
+      neighborScope: providerConfig?.neighborScope ?? "package",
+      crossPackageDepth: providerConfig?.crossPackageDepth ?? 1,
     }),
   );
   // Phase 7: plugin providers (RAG, graph, KB, etc.)

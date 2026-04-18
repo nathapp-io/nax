@@ -15,6 +15,9 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Session model
  */
 
+// node:fs/promises exception: Bun has no native atomic-append or recursive-mkdir
+// equivalent. appendFile uses O_APPEND (atomic for concurrent writers); mkdir
+// uses { recursive: true } to avoid EEXIST races. Both are safe cross-platform.
 import { appendFile as fsAppendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 

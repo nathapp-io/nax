@@ -108,5 +108,5 @@ Result: passing.
 
 ## Remaining Larger Items (Not Fully Closed Here)
 
-- Full run-level centralized SessionManager ownership (startup/shutdown sweep + complete lifecycle ownership) is still larger-scope work.
+- ~~Full run-level centralized SessionManager ownership (startup/shutdown sweep + complete lifecycle ownership) is still larger-scope work.~~ **Landed** in `85de63ee` (centralize at run level), `a5adc21d` (close on shutdown/completion), `15620b9b` (terminal outcomes only).
 - Some broader spec acceptance items outside these targeted fixes may still require separate follow-up slices.
