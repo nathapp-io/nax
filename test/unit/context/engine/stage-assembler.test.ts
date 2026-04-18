@@ -197,6 +197,12 @@ describe("discoverSessionScratchDirsOnDisk — Finding 2", () => {
 function makeCtx(overrides: {
   deterministic?: boolean;
   testStrategy?: string;
+  /** Override the agent-spawn workdir (ctx.workdir). Defaults to "/repo". */
+  workdir?: string;
+  /** Override the repo root (ctx.projectDir). Defaults to undefined to suppress manifest writes. */
+  projectDir?: string;
+  /** Override story.workdir (relative sub-package path). */
+  storyWorkdir?: string;
 } = {}): PipelineContext {
   return {
     config: {
@@ -211,11 +217,11 @@ function makeCtx(overrides: {
     },
     rootConfig: { autoMode: { defaultAgent: "claude" } },
     prd: { feature: "test-feature", userStories: [] },
-    story: { id: "US-001" },
+    story: { id: "US-001", ...(overrides.storyWorkdir && { workdir: overrides.storyWorkdir }) },
     stories: [],
     routing: { agent: undefined, testStrategy: overrides.testStrategy },
-    projectDir: undefined, // prevents manifest writing in tests
-    workdir: "/repo",
+    projectDir: overrides.projectDir, // undefined by default — prevents manifest writing in tests
+    workdir: overrides.workdir ?? "/repo",
     hooks: {},
   } as unknown as PipelineContext;
 }
@@ -319,5 +325,72 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
     await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
 
     expect(mock.ref.captured?.availableBudgetTokens).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #556 — monorepo ctx.workdir contamination regression
+//
+// iteration-runner.ts resolves ctx.workdir to join(repoRoot, story.workdir).
+// assembleForStage must NOT re-join story.workdir onto ctx.workdir — doing so
+// doubles the sub-package path (e.g. /repo/packages/lib/packages/lib).
+// repoRoot in the ContextRequest must come from ctx.projectDir.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleForStage — Issue #556 monorepo workdir contamination", () => {
+  let origReaddir: typeof _stageAssemblerDeps.readdir;
+  let origReadDescriptor: typeof _stageAssemblerDeps.readDescriptor;
+  let origCreateOrchestrator: typeof _stageAssemblerDeps.createOrchestrator;
+
+  beforeEach(() => {
+    origReaddir = _stageAssemblerDeps.readdir;
+    origReadDescriptor = _stageAssemblerDeps.readDescriptor;
+    origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
+    _stageAssemblerDeps.readdir = async () => { throw new Error("ENOENT"); };
+    _stageAssemblerDeps.readDescriptor = async () => null;
+  });
+
+  afterEach(() => {
+    _stageAssemblerDeps.readdir = origReaddir;
+    _stageAssemblerDeps.readDescriptor = origReadDescriptor;
+    _stageAssemblerDeps.createOrchestrator = origCreateOrchestrator;
+  });
+
+  test("repoRoot is ctx.projectDir and packageDir is ctx.workdir in monorepo mode", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    // Simulate what iteration-runner.ts sets on PipelineContext for a monorepo story:
+    //   projectDir = repo root (stable), workdir = join(repoRoot, story.workdir)
+    await assembleForStage(
+      makeCtx({
+        projectDir: "/repo",
+        workdir: "/repo/packages/lib",
+        storyWorkdir: "packages/lib",
+      }),
+      "execution",
+    );
+
+    expect(mock.ref.captured?.repoRoot).toBe("/repo");
+    expect(mock.ref.captured?.packageDir).toBe("/repo/packages/lib");
+  });
+
+  test("repoRoot and packageDir are equal for single-package repos", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+
+    // Single-package: iteration-runner sets workdir === projectDir, story.workdir unset
+    await assembleForStage(
+      makeCtx({
+        projectDir: "/repo",
+        workdir: "/repo",
+      }),
+      "execution",
+    );
+
+    expect(mock.ref.captured?.repoRoot).toBe("/repo");
+    expect(mock.ref.captured?.packageDir).toBe("/repo");
   });
 });

@@ -150,8 +150,7 @@ export async function assembleForStage(
   try {
     // Defensive check: test fixtures may bypass Zod and omit `pluginProviders`.
     const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
-    const pluginProviders =
-      pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir ?? ctx.workdir) : [];
+    const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir) : [];
     const storyScratchDirs = await getStoryScratchDirs(ctx, options);
 
     const orchestrator = _stageAssemblerDeps.createOrchestrator(
@@ -163,15 +162,16 @@ export async function assembleForStage(
 
     // AC-54: resolve dual workdir fields. repoRoot is the project root (where .nax/ lives);
     // packageDir is the story's package directory (equals repoRoot for non-monorepo).
-    const packageDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // iteration-runner.ts already resolves ctx.workdir to the package dir (join(repoRoot, story.workdir));
+    // do not re-join story.workdir here or the path will be doubled in monorepo mode.
     const targetAgentId =
       ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude";
 
     const request: ContextRequest = {
       storyId: ctx.story.id,
       featureId: ctx.prd.feature,
-      repoRoot: ctx.workdir,
-      packageDir,
+      repoRoot: ctx.projectDir,
+      packageDir: ctx.workdir,
       stage,
       role: stageConfig.role,
       // AC-59: per-package stage budget — reads from ctx.config which is already the
