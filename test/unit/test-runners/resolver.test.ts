@@ -120,6 +120,30 @@ describe("resolveTestFilePatterns — resolution chain", () => {
     expect(resolved.resolution).toBe("fallback");
   });
 
+  test("detected: uses packageDir as detection workdir so patterns are package-relative", async () => {
+    const config = makeConfig(); // no root config
+    let capturedWorkdir: string | undefined;
+    _resolverDeps.detectTestFilePatterns = async (wd) => {
+      capturedWorkdir = wd;
+      return { patterns: ["src/**/*.test.ts"], confidence: "medium", sources: [] };
+    };
+
+    await resolveTestFilePatterns(config, WORKDIR, "packages/lib");
+    expect(capturedWorkdir).toBe(`${WORKDIR}/packages/lib`);
+  });
+
+  test("detected: uses repo root as detection workdir when no packageDir", async () => {
+    const config = makeConfig();
+    let capturedWorkdir: string | undefined;
+    _resolverDeps.detectTestFilePatterns = async (wd) => {
+      capturedWorkdir = wd;
+      return { patterns: [], confidence: "empty", sources: [] };
+    };
+
+    await resolveTestFilePatterns(config, WORKDIR);
+    expect(capturedWorkdir).toBe(WORKDIR);
+  });
+
   test("boolean smartTestRunner (true) is treated as no explicit patterns → fallback", async () => {
     const config = {
       ...makeConfig(),
