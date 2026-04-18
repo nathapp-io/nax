@@ -17,6 +17,7 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | `import from "src/module/internal-file"` | `import from "src/module"` (barrel) | Prevents singleton fragmentation (BUG-035) |
 | Files > 400 lines | Split by concern | Unmaintainable; violates project convention |
 | Prompt-building functions outside `src/prompts/builders/` | Add a method to the appropriate builder class | Orphan prompts scatter LLM instruction logic across subsystems, making them impossible to audit, test, or optimise centrally (see Prompt Builder Convention below) |
+| Inline test-file classification outside `src/test-runners/` | `resolveTestFilePatterns(config, workdir, packageDir)` SSOT | ADR-009 — nax is language-agnostic and monorepo-aware. Hardcoded `test/unit/`, `.test.ts`, `_test.go`, `\.spec\.` regexes fragment the truth and break under polyglot monorepos (see Test-File Classification Convention below) |
 
 ## Prompt Builder Convention
 
@@ -86,3 +87,56 @@ const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
 | Copy-pasted mock setup across files | `test/helpers/` shared factories | DRY; single place to update when interfaces change |
 | Spawning full `nax` process in tests | Mock the relevant module | Prechecks fail in temp dirs; slow; flaky |
 | Real signal sending (`process.kill`) | Mock `process.on()` | Can kill the test runner |
+
+## Test-File Classification Convention
+
+**All "is this a test file?" / "where is the sibling test?" logic goes through `resolveTestFilePatterns(config, workdir, packageDir)` — no exceptions.**
+
+nax orchestrates polyglot monorepos. Hardcoding TS-centric patterns anywhere outside `src/test-runners/` will silently break Go / Python / Rust / polyglot repos and stale out when users configure custom `testFilePatterns`. Enforced by ADR-009.
+
+### ❌ Wrong — inline regex in a provider / pipeline stage / review module
+
+```typescript
+// src/context/engine/providers/code-neighbor.ts
+function siblingTestPath(filePath: string): string | null {
+  const m = filePath.match(/^src\/(.+)\.(ts|tsx|js|jsx)$/);
+  // ...
+  return `test/unit/${m[1]}.test.${m[2]}`;
+}
+
+// src/review/diff-utils.ts
+const isTest = /\.test\.ts$/.test(path);
+
+// src/pipeline/stages/foo.ts
+if (path.endsWith(".spec.ts")) { ... }
+```
+
+Banned patterns to grep for when reviewing PRs:
+- Hardcoded directory names: `test/unit/`, `test/integration/`, `__tests__/`
+- Hardcoded extensions: `.test.ts`, `.spec.ts`, `_test.go`, `_test.py`
+- Inline regex: `/\.test\.ts$/`, `/\.(test|spec)\.(tsx?|jsx?)$/`
+
+### ✅ Correct — consult the resolver SSOT
+
+```typescript
+import { resolveTestFilePatterns } from "../../test-runners/resolver";
+
+const resolved = await resolveTestFilePatterns(config, workdir, story.workdir);
+
+// Classification — use .regex
+const isTest = resolved.regex.some((re) => re.test(filePath));
+
+// Diff exclusion — use .pathspec
+const args = ["git", "diff", ...resolved.pathspec];
+
+// Directory listing — use .testDirs + .globs
+for (const glob of resolved.globs) { /* ... */ }
+```
+
+### Threading into providers
+
+`ContextRequest` carries `resolvedTestPatterns?: ResolvedTestPatterns`. Providers that need sibling-test derivation MUST read it from the request — never re-derive from `filePath` alone.
+
+### Scope
+
+Applies to `src/context/`, `src/pipeline/`, `src/review/`, `src/tdd/`, `src/verification/`, `src/acceptance/`, `src/plugins/`, `src/analyze/`. The only module permitted to hold raw patterns is `src/test-runners/`.

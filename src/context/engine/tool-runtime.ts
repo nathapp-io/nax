@@ -7,7 +7,11 @@
  */
 
 import type { NaxConfig } from "../../config/types";
+import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
+import { resolveTestFilePatterns } from "../../test-runners/resolver";
+import type { ResolvedTestPatterns } from "../../test-runners/resolver";
+import { errorMessage } from "../../utils/errors";
 import { PullToolBudget, createRunCallCounter, handleQueryFeatureContext, handleQueryNeighbor } from "./pull-tools";
 import type { RunCallCounter } from "./pull-tools";
 import type { ContextBundle, ToolDescriptor } from "./types";
@@ -36,6 +40,26 @@ export function createContextToolRuntime(options: {
   const runCounter = options.runCounter ?? createRunCallCounter();
   const maxCallsPerRun = config.context?.v2?.pull?.maxCallsPerRun ?? 50;
 
+  // ADR-009 SSOT: resolve test patterns once per runtime (one per story) so
+  // pull-tool handlers can inject them into ContextRequest without re-resolving
+  // on every agent call. Lazily computed on first use; failures are logged and
+  // the handler degrades to skipping sibling-test hinting.
+  let resolvedTestPatternsPromise: Promise<ResolvedTestPatterns | undefined> | null = null;
+  async function getResolvedTestPatterns(): Promise<ResolvedTestPatterns | undefined> {
+    if (resolvedTestPatternsPromise === null) {
+      resolvedTestPatternsPromise = resolveTestFilePatterns(config, repoRoot, story.workdir || undefined, {
+        storyId: story.id,
+      }).catch((err) => {
+        getLogger().warn("context", "Pull-tool runtime: failed to resolve test patterns", {
+          storyId: story.id,
+          error: errorMessage(err),
+        });
+        return undefined;
+      });
+    }
+    return resolvedTestPatternsPromise;
+  }
+
   function getBudget(tool: ToolDescriptor): PullToolBudget {
     const existing = budgets.get(tool.name);
     if (existing) return existing;
@@ -52,13 +76,16 @@ export function createContextToolRuntime(options: {
       }
 
       switch (name) {
-        case "query_neighbor":
+        case "query_neighbor": {
+          const patterns = await getResolvedTestPatterns();
           return handleQueryNeighbor(
             input as { filePath: string; depth?: number },
             repoRoot,
             getBudget(tool),
             tool.maxTokensPerCall,
+            patterns,
           );
+        }
         case "query_feature_context":
           return handleQueryFeatureContext(
             input as { filter?: string },
