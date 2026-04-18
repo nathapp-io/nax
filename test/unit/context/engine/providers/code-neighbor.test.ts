@@ -12,6 +12,26 @@ import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } fr
 import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { CodeNeighborProviderOptions } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
+import type { ResolvedTestPatterns } from "../../../../../src/test-runners/resolver";
+import { extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../../../src/test-runners/conventions";
+
+/**
+ * Build a ResolvedTestPatterns value from test-file globs.
+ * Mirrors what resolveTestFilePatterns() produces via buildResolved() — keeps
+ * the test setup honest and consistent with the production SSOT path (ADR-009).
+ */
+function makePatterns(globs: readonly string[]): ResolvedTestPatterns {
+  return {
+    globs,
+    pathspec: globsToPathspec(globs),
+    regex: globsToTestRegex(globs),
+    testDirs: extractTestDirs(globs),
+    resolution: "root-config",
+  };
+}
+
+/** Default pattern used by most tests: `test/unit/<name>.test.ts` mirrored layout. */
+const DEFAULT_TEST_PATTERNS = makePatterns(["test/unit/**/*.test.ts"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -50,6 +70,7 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
     stage: "execution",
     role: "implementer",
     budgetTokens: 8_000,
+    resolvedTestPatterns: DEFAULT_TEST_PATTERNS,
     ...overrides,
   };
 }
@@ -252,6 +273,92 @@ describe("CodeNeighborProvider", () => {
     const content = result.chunks[0]?.content ?? "";
     expect(content).toContain("test/unit/components/Button.test.tsx");
     expect(content).not.toContain("Button.test.ts\n");
+  });
+
+  // ───────── ADR-009 compliance — resolver-driven sibling-test derivation ────────
+
+  test("no sibling-test hint when resolvedTestPatterns is absent on request (ADR-009)", async () => {
+    // When the caller has not threaded the resolver output, providers must NOT
+    // fall back to hardcoded test/unit/ + .test.ts assumptions (#526 ADR-009).
+    setupDeps({ globFiles: [] });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/missing.ts"], resolvedTestPatterns: undefined }));
+    expect(result.chunks).toHaveLength(0);
+  });
+
+  test("colocated test is preferred over mirrored hint when it exists on disk (#526 Bug 2)", async () => {
+    // Fixture uses colocated layout — src/calc.test.ts exists on disk.
+    // Provider should pick it instead of hallucinating test/unit/calc.test.ts.
+    setupDeps({
+      files: { "src/calc.ts": "", "src/calc.test.ts": "" },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({
+      touchedFiles: ["src/calc.ts"],
+      resolvedTestPatterns: makePatterns(["**/*.test.ts"]),
+    }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("src/calc.test.ts");
+    expect(content).not.toContain("test/unit/");
+  });
+
+  test("falls back to mirrored hint when no colocated test exists (#526 Bug 2)", async () => {
+    // No file on disk → emit mirrored hint so TDD agent knows where to write.
+    setupDeps({ files: { "src/calc.ts": "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({
+      touchedFiles: ["src/calc.ts"],
+      resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]),
+    }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("test/unit/calc.test.ts");
+  });
+
+  test("Go pattern: src/foo.go → src/foo_test.go (language-agnostic)", async () => {
+    setupDeps({ files: { "src/foo.go": "", "src/foo_test.go": "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({
+      touchedFiles: ["src/foo.go"],
+      resolvedTestPatterns: makePatterns(["**/*_test.go"]),
+    }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("src/foo_test.go");
+    expect(content).not.toContain(".test.ts");
+  });
+
+  test("Go pattern: src/foo_test.go input does not hallucinate _test_test.go (#526 Bug 1, language-agnostic)", async () => {
+    setupDeps({ files: { "src/foo_test.go": "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({
+      touchedFiles: ["src/foo_test.go"],
+      resolvedTestPatterns: makePatterns(["**/*_test.go"]),
+    }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).not.toContain("_test_test.go");
+  });
+
+  test("monorepo-tiny scenario: packages/lib/src/util.ts + colocated util.test.ts → colocated wins", async () => {
+    setupDeps({
+      files: {
+        "packages/lib/src/util.ts": "",
+        "packages/lib/src/util.test.ts": "",
+      },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({
+      touchedFiles: ["packages/lib/src/util.ts"],
+      resolvedTestPatterns: makePatterns(["**/*.test.ts"]),
+    }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("packages/lib/src/util.test.ts");
+    expect(content).not.toContain("test/unit/");
+  });
+
+  test("monorepo-tiny scenario: mirrored hint preserves package prefix", async () => {
+    // No colocated file; mirrored candidate should live under the same package.
+    setupDeps({ files: { "packages/lib/src/util.ts": "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({
+      touchedFiles: ["packages/lib/src/util.ts"],
+      resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]),
+    }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).toContain("packages/lib/test/unit/util.test.ts");
   });
 
   test("reverse-dep scan continues past self-reference (continue, not break)", async () => {

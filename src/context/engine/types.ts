@@ -429,6 +429,14 @@ export interface ContextRequest {
    * Sourced from StageContextConfig.planDigestBoost for single-session modes.
    */
   planDigestBoost?: number;
+  /**
+   * Resolved test-file patterns for this story (ADR-009 SSOT).
+   * Resolved once per request via resolveTestFilePatterns(config, workdir, packageDir)
+   * and threaded through so providers never classify test files via inline regex.
+   * Providers that need to know "is this a test file?" or "where is the sibling test?"
+   * consult this field instead of hardcoding extensions or directory names.
+   */
+  resolvedTestPatterns?: import("../../test-runners/resolver").ResolvedTestPatterns;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

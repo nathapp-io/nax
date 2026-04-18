@@ -29,6 +29,7 @@ import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
 import { getContextFiles } from "../../prd";
 import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
+import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -104,6 +105,21 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // Phase 3: derive files touched by this story for git history + neighbor providers.
   const touchedFiles = getContextFiles(ctx.story);
 
+  // ADR-009 SSOT: resolve test-file patterns once per request and thread them
+  // through so providers never classify test files via inline regex.
+  // Failure is non-fatal — providers degrade by skipping sibling-test hinting.
+  let resolvedTestPatterns: import("../../test-runners/resolver").ResolvedTestPatterns | undefined;
+  try {
+    resolvedTestPatterns = await resolveTestFilePatterns(ctx.config, ctx.workdir, ctx.story.workdir || undefined, {
+      storyId: ctx.story.id,
+    });
+  } catch (err) {
+    logger.warn("context", "Failed to resolve test-file patterns — providers will skip sibling-test hints", {
+      storyId: ctx.story.id,
+      error: errorMessage(err),
+    });
+  }
+
   const request: ContextRequest = {
     storyId: ctx.story.id,
     // Trim trailing slash before taking the last path segment so
@@ -134,6 +150,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     // Amendment B AC-51: pass planDigestBoost from the routing strategy's stage config.
     // single-session, tdd-simple, no-test, and batch strategies declare planDigestBoost >= 1.5.
     planDigestBoost: getStageContextConfig(ctx.routing?.testStrategy ?? "").planDigestBoost,
+    ...(resolvedTestPatterns && { resolvedTestPatterns }),
   };
 
   // Phase 7: load any plugin providers (RAG, graph, KB) configured for this project.

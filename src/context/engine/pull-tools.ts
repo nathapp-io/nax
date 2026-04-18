@@ -202,6 +202,7 @@ export async function handleQueryNeighbor(
   repoRoot: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
+  resolvedTestPatterns?: import("../../test-runners/resolver").ResolvedTestPatterns,
 ): Promise<string> {
   budget.consume();
 
@@ -214,6 +215,7 @@ export async function handleQueryNeighbor(
     role: "implementer",
     budgetTokens: maxTokensPerCall,
     touchedFiles: [input.filePath],
+    ...(resolvedTestPatterns && { resolvedTestPatterns }),
   };
   const result = await provider.fetch(request);
 
