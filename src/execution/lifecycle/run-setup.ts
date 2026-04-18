@@ -33,6 +33,7 @@ import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
 import { PidRegistry } from "../pid-registry";
+import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
 
 /** Injectable deps for run-setup (enables testing without heavy side-effects) */
@@ -173,10 +174,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     emitError: (reason: string) => {
       pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
     },
-    // Per-story SessionManagers are local to iteration-runner.ts; closeStory() is
-    // called there after runPipeline() returns. A run-level manager (Phase 5.5) will
-    // enable closeStory for all in-flight sessions here on SIGTERM.
-    onShutdown: async () => {},
+    onShutdown: async () => {
+      await closeAllRunSessions(sessionManager, options.agentGetFn);
+    },
   });
 
   // Load PRD (before try block so it's accessible in finally for onRunEnd)

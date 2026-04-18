@@ -18,7 +18,9 @@ import { pipelineEventBus } from "../../pipeline/event-bus";
 import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
+import type { ISessionManager } from "../../session";
 import { purgeStaleScratch } from "../../session/scratch-purge";
+import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
 import { runDeferredRegression } from "./run-regression";
 
@@ -29,6 +31,7 @@ import { runDeferredRegression } from "./run-regression";
 export const _runCompletionDeps = {
   runDeferredRegression,
   fireHook,
+  closeAllRunSessions,
 };
 
 export interface RunCompletionOptions {
@@ -57,6 +60,8 @@ export interface RunCompletionOptions {
    * Used for session scratch purge (AC-20).
    */
   projectDir?: string;
+  /** Optional run-level session manager for final active-session teardown. */
+  sessionManager?: ISessionManager;
 }
 
 export interface RunCompletionResult {
@@ -197,6 +202,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
 
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();
+
+  if (options.sessionManager) {
+    await _runCompletionDeps.closeAllRunSessions(options.sessionManager, options.agentGetFn);
+  }
 
   // Compute final story counts before emitting completion event (RL-002)
   const finalCounts = countStories(prd);

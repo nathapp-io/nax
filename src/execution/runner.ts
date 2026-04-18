@@ -227,6 +227,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       pluginRegistry,
       eventEmitter,
       agentGetFn,
+      sessionManager,
     });
 
     const { durationMs, acceptancePassed } = completionResult;
