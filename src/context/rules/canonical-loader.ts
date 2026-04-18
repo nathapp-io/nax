@@ -421,7 +421,7 @@ export async function loadCanonicalRules(
       (a.id ?? a.fileName).localeCompare(b.id ?? b.fileName),
   );
 
-  logger.debug("canonical-loader", "Loaded canonical rules", {
+  logger.debug("canonical-loader", "Scanned canonical rules store", {
     fileCount: rules.length,
     files: rules.map((r) => r.path),
   });

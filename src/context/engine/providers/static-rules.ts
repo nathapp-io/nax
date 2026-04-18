@@ -282,6 +282,7 @@ export class StaticRulesProvider implements IContextProvider {
           storyId: request.storyId,
           fileCount: effectiveRules.length,
           totalCanonicalRules: mergedRules.length,
+          files: effectiveRules.map((r) => canonicalRulePath(r)),
         });
 
         return { chunks, pullTools: [] };
