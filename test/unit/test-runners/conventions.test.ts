@@ -4,7 +4,10 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_SCAN_TEST_DIRS,
+  DEFAULT_SEPARATED_TEST_DIRS,
   DEFAULT_TEST_FILE_PATTERNS,
+  DEFAULT_TS_DERIVE_SUFFIXES,
   globsToTestRegex,
   isTestFileByPatterns,
 } from "../../../src/test-runners/conventions";
@@ -82,6 +85,45 @@ describe("globsToTestRegex", () => {
     // The `.` in `.test.ts` must be escaped so it doesn't match any char
     expect(re.test("fooXtestXts")).toBe(false);
     expect(re.test("foo.test.ts")).toBe(true);
+  });
+});
+
+describe("DEFAULT_SCAN_TEST_DIRS", () => {
+  test("is a non-empty frozen list", () => {
+    expect(DEFAULT_SCAN_TEST_DIRS.length).toBeGreaterThan(0);
+    expect(Object.isFrozen(DEFAULT_SCAN_TEST_DIRS)).toBe(true);
+  });
+
+  test("includes common test directory names", () => {
+    expect(DEFAULT_SCAN_TEST_DIRS).toContain("test");
+    expect(DEFAULT_SCAN_TEST_DIRS).toContain("tests");
+    expect(DEFAULT_SCAN_TEST_DIRS).toContain("__tests__");
+  });
+});
+
+describe("DEFAULT_TS_DERIVE_SUFFIXES", () => {
+  test("is a non-empty frozen list", () => {
+    expect(DEFAULT_TS_DERIVE_SUFFIXES.length).toBeGreaterThan(0);
+    expect(Object.isFrozen(DEFAULT_TS_DERIVE_SUFFIXES)).toBe(true);
+  });
+
+  test("includes both .test and .spec variants for TS and JS", () => {
+    expect(DEFAULT_TS_DERIVE_SUFFIXES).toContain(".test.ts");
+    expect(DEFAULT_TS_DERIVE_SUFFIXES).toContain(".spec.ts");
+    expect(DEFAULT_TS_DERIVE_SUFFIXES).toContain(".test.js");
+    expect(DEFAULT_TS_DERIVE_SUFFIXES).toContain(".spec.js");
+  });
+});
+
+describe("DEFAULT_SEPARATED_TEST_DIRS", () => {
+  test("is a non-empty frozen list", () => {
+    expect(DEFAULT_SEPARATED_TEST_DIRS.length).toBeGreaterThan(0);
+    expect(Object.isFrozen(DEFAULT_SEPARATED_TEST_DIRS)).toBe(true);
+  });
+
+  test("includes test/unit and test/integration", () => {
+    expect(DEFAULT_SEPARATED_TEST_DIRS).toContain("test/unit");
+    expect(DEFAULT_SEPARATED_TEST_DIRS).toContain("test/integration");
   });
 });
 

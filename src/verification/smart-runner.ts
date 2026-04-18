@@ -4,7 +4,7 @@
  * Detects changed TypeScript source files using git diff,
  * enabling targeted test runs on only the files that changed.
  */
-import { DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
+import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { gitWithTimeout } from "../utils/git";
 
 /**
@@ -195,9 +195,10 @@ export async function mapSourceToTests(
     const candidates: string[] = [];
 
     for (const suffix of testSuffixes) {
-      // Separated test directories
-      candidates.push(`${testBase}/test/unit/${innerRelative}${suffix}`);
-      candidates.push(`${testBase}/test/integration/${innerRelative}${suffix}`);
+      // Separated test directories (driven by SSOT — see conventions.ts)
+      for (const testDir of DEFAULT_SEPARATED_TEST_DIRS) {
+        candidates.push(`${testBase}/${testDir}/${innerRelative}${suffix}`);
+      }
       // Co-located: next to the source file (e.g. NestJS .spec.ts, Vitest .test.ts, Go _test.go)
       candidates.push(`${workdir}/${sourceWithoutExt}${suffix}`);
     }
@@ -332,14 +333,16 @@ export function reverseMapTestToSource(testFiles: string[], workdir: string): st
     // Normalize the path to be relative to workdir
     let relativePath = testFile.startsWith(workdir) ? testFile.slice(workdir.length + 1) : testFile;
 
-    // Remove test/unit/ or test/integration/ prefix
-    if (relativePath.startsWith("test/unit/")) {
-      relativePath = relativePath.slice("test/unit/".length);
-    } else if (relativePath.startsWith("test/integration/")) {
-      relativePath = relativePath.slice("test/integration/".length);
-    } else {
-      continue; // Not a recognized test file pattern
+    // Remove separated test dir prefix (driven by SSOT — see conventions.ts)
+    let stripped = false;
+    for (const testDir of DEFAULT_SEPARATED_TEST_DIRS) {
+      if (relativePath.startsWith(`${testDir}/`)) {
+        relativePath = relativePath.slice(`${testDir}/`.length);
+        stripped = true;
+        break;
+      }
     }
+    if (!stripped) continue;
 
     // Replace .test.ts with .ts and add src/ prefix
     const sourcePath = `src/${relativePath.replace(/\.test\.ts$/, ".ts")}`;

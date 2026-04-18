@@ -191,3 +191,27 @@ export function extractTestDirs(globs: readonly string[]): string[] {
   }
   return [...dirs];
 }
+
+/** Candidate test directory roots for heuristic detection when no resolver patterns are available */
+export const DEFAULT_SCAN_TEST_DIRS: readonly string[] = Object.freeze([
+  "test",
+  "tests",
+  "__tests__",
+  "src/__tests__",
+  "spec",
+]);
+
+/** Default TS/JS test file suffixes used when glob resolver yields no patterns */
+export const DEFAULT_TS_DERIVE_SUFFIXES: readonly string[] = Object.freeze([
+  ".test.ts",
+  ".test.js",
+  ".test.tsx",
+  ".test.jsx",
+  ".spec.ts",
+  ".spec.js",
+  ".spec.tsx",
+  ".spec.jsx",
+]);
+
+/** Separated test subdirectory paths probed by mapSourceToTests (pass-1 discovery) */
+export const DEFAULT_SEPARATED_TEST_DIRS: readonly string[] = Object.freeze(["test/unit", "test/integration"]);

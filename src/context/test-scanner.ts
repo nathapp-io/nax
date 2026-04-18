@@ -10,7 +10,7 @@ import path from "node:path";
 import { Glob } from "bun";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
-import { extractTestDirs } from "../test-runners/conventions";
+import { DEFAULT_SCAN_TEST_DIRS, DEFAULT_TS_DERIVE_SUFFIXES, extractTestDirs } from "../test-runners/conventions";
 
 // ============================================================================
 // Types
@@ -117,9 +117,6 @@ export function extractTestStructure(source: string): { describes: DescribeBlock
 // File Scanning
 // ============================================================================
 
-/** Fallback test directory names used when resolver patterns yield no dirs */
-const COMMON_TEST_DIRS = ["test", "tests", "__tests__", "src/__tests__", "spec"];
-
 /**
  * Extract trailing suffixes from glob patterns (everything after the last `*`).
  * e.g., "test/**\/*.test.ts" → ".test.ts", "**\/*_test.go" → "_test.go"
@@ -139,18 +136,6 @@ function extractGlobSuffixes(globs: readonly string[]): string[] {
   return suffixes;
 }
 
-/** Default TS/JS suffixes used when no resolvedGlobs are provided */
-const DEFAULT_DERIVE_SUFFIXES = [
-  ".test.ts",
-  ".test.js",
-  ".test.tsx",
-  ".test.jsx",
-  ".spec.ts",
-  ".spec.js",
-  ".spec.tsx",
-  ".spec.jsx",
-];
-
 /**
  * Derive test file patterns from source file paths.
  *
@@ -164,8 +149,8 @@ const DEFAULT_DERIVE_SUFFIXES = [
  */
 export function deriveTestPatterns(contextFiles: string[], resolvedGlobs?: readonly string[]): string[] {
   const patterns = new Set<string>();
-  const suffixes = resolvedGlobs ? extractGlobSuffixes(resolvedGlobs) : DEFAULT_DERIVE_SUFFIXES;
-  const effectiveSuffixes = suffixes.length > 0 ? suffixes : DEFAULT_DERIVE_SUFFIXES;
+  const suffixes = resolvedGlobs ? extractGlobSuffixes(resolvedGlobs) : DEFAULT_TS_DERIVE_SUFFIXES;
+  const effectiveSuffixes = suffixes.length > 0 ? suffixes : DEFAULT_TS_DERIVE_SUFFIXES;
 
   for (const filePath of contextFiles) {
     const basename = path.basename(filePath);
@@ -184,10 +169,9 @@ export function deriveTestPatterns(contextFiles: string[], resolvedGlobs?: reado
         "",
       );
       if (simpleBasename !== basenameNoExt) {
-        patterns.add(`${simpleBasename}.test.ts`);
-        patterns.add(`${simpleBasename}.test.js`);
-        patterns.add(`${simpleBasename}.spec.ts`);
-        patterns.add(`${simpleBasename}.spec.js`);
+        for (const suffix of DEFAULT_TS_DERIVE_SUFFIXES) {
+          patterns.add(`${simpleBasename}${suffix}`);
+        }
       }
     }
   }
@@ -202,7 +186,7 @@ export function deriveTestPatterns(contextFiles: string[], resolvedGlobs?: reado
 async function detectTestDir(workdir: string, resolvedGlobs?: readonly string[]): Promise<string | null> {
   const resolvedDirs = resolvedGlobs ? extractTestDirs(resolvedGlobs) : [];
   const candidateDirs =
-    resolvedDirs.length > 0 ? [...new Set([...resolvedDirs, ...COMMON_TEST_DIRS])] : COMMON_TEST_DIRS;
+    resolvedDirs.length > 0 ? [...new Set([...resolvedDirs, ...DEFAULT_SCAN_TEST_DIRS])] : DEFAULT_SCAN_TEST_DIRS;
 
   for (const dir of candidateDirs) {
     const fullPath = path.join(workdir, dir);
