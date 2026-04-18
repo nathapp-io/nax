@@ -222,7 +222,7 @@ Message: Expected counter to be 0, received 3
 
 isolation scope: Implement source code in src/ to make tests pass. Do not modify test files. Run tests frequently to track progress.
 
-When running tests, run ONLY test files related to your changes (e.g. \`bun test <path/to/test-file>\`). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.
+When running tests, run ONLY test files related to your changes (scope each run to the files you changed). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.
 
 ---
 
@@ -318,7 +318,7 @@ Message: Race condition: counter increment is not atomic
 
 isolation scope: Implement source code in src/ to make tests pass. Do not modify test files. Run tests frequently to track progress.
 
-When running tests, run ONLY test files related to your changes (e.g. \`bun test <path/to/test-file>\`). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.
+When running tests, run ONLY test files related to your changes (scope each run to the files you changed). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.
 
 ---
 

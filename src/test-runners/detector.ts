@@ -55,7 +55,10 @@ export function isTestFile(filePath: string, testFilePatterns?: readonly string[
  */
 export function buildTestFrameworkHint(testCommand: string): string {
   const cmd = testCommand.trim();
-  if (!cmd || cmd.startsWith("bun test")) return "Use Bun test (describe/test/expect)";
+  // #543: do not assume Bun when no command is configured — that falsely tells
+  // Go / Python / Rust packages to run `bun test`.
+  if (!cmd) return "Use your project's test framework";
+  if (cmd.startsWith("bun test")) return "Use Bun test (describe/test/expect)";
   if (cmd.startsWith("pytest") || cmd.startsWith("python -m pytest")) return "Use pytest";
   if (cmd.startsWith("cargo test")) return "Use Rust's cargo test";
   if (cmd.startsWith("go test")) return "Use Go's testing package";

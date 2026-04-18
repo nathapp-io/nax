@@ -13,10 +13,12 @@
  * - buildIsolationSection("lite") → test-writer, lite
  */
 
-const DEFAULT_TEST_CMD = "bun test";
-
 function buildTestFilterRule(testCommand: string): string {
-  return `When running tests, run ONLY test files related to your changes (e.g. \`${testCommand} <path/to/test-file>\`). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
+  // #543: do not invent a `bun test` example for Go / Python / Rust packages.
+  const example = testCommand
+    ? `e.g. \`${testCommand} <path/to/test-file>\``
+    : "scope each run to the files you changed";
+  return `When running tests, run ONLY test files related to your changes (${example}). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
 }
 
 export function buildIsolationSection(
@@ -46,7 +48,7 @@ export function buildIsolationSection(
     | "single-session"
     | "tdd-simple"
     | "batch";
-  const testCmd = testCommand ?? DEFAULT_TEST_CMD;
+  const testCmd = testCommand ?? "";
 
   const header = "# Isolation Rules";
   const footer = `\n\n${buildTestFilterRule(testCmd)}`;
