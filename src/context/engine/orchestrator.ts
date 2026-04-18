@@ -234,24 +234,29 @@ export class ContextOrchestrator {
       (p) => allowedIds.includes(p.id) && !(request.deterministic === true && p.deterministic === false),
     );
 
-    // AC-16: detect providerIds that matched no registered provider.
-    const registeredIds = new Set(this.providers.map((p) => p.id));
-    const unknownProviderIds = allowedIds.filter((id) => !registeredIds.has(id));
-    if (unknownProviderIds.length > 0) {
-      logger.error("context-v2", "Unknown provider IDs in request", {
-        storyId: request.storyId,
-        stage: request.stage,
-        unknownProviderIds,
-        availableProviderIds: [...registeredIds].sort(),
-      });
-      throw new NaxError(
-        `Unknown context provider ID(s): ${unknownProviderIds.join(", ")}. Available providers: ${[...registeredIds].sort().join(", ")}`,
-        "CONTEXT_UNKNOWN_PROVIDER_IDS",
-        {
-          stage: "context-v2",
+    // AC-16: detect providerIds configured by the user that matched no registered provider.
+    // The check is scoped to config-derived IDs (stageConfig.providerIds) — request.providerIds
+    // is a test-only override and is intentionally permitted to reference unregistered IDs so
+    // tests can assert "unknown ID filters to empty" semantics without registering stubs.
+    if (request.providerIds === undefined) {
+      const registeredIds = new Set(this.providers.map((p) => p.id));
+      const unknownProviderIds = stageConfig.providerIds.filter((id) => !registeredIds.has(id));
+      if (unknownProviderIds.length > 0) {
+        logger.error("context-v2", "Unknown provider IDs in stage config", {
           storyId: request.storyId,
-        },
-      );
+          stage: request.stage,
+          unknownProviderIds,
+          availableProviderIds: [...registeredIds].sort(),
+        });
+        throw new NaxError(
+          `Unknown context provider ID(s): ${unknownProviderIds.join(", ")}. Available providers: ${[...registeredIds].sort().join(", ")}`,
+          "CONTEXT_UNKNOWN_PROVIDER_IDS",
+          {
+            stage: "context-v2",
+            storyId: request.storyId,
+          },
+        );
+      }
     }
 
     // Step 2: parallel fetch with timeout — failures return empty, never throw.
