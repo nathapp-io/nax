@@ -10,6 +10,7 @@ import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { createContextToolRuntime } from "../../context/engine";
+import { writeRebuildManifest } from "../../context/engine/manifest-store";
 import { rebuildForSwap, resolveSwapTarget, shouldAttemptSwap } from "../../execution/escalation/agent-swap";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
@@ -281,6 +282,27 @@ export const executionStage: PipelineStage = {
 
           // Rebuild context for the target agent profile before the retry run.
           workingBundle = _executionDeps.rebuildForSwap(workingBundle, swapTarget, failure, ctx.story.id);
+          if (ctx.projectDir && ctx.prd.feature && workingBundle.manifest.rebuildInfo) {
+            try {
+              await _executionDeps.writeRebuildManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, {
+                requestId: workingBundle.manifest.requestId,
+                stage: "execution",
+                priorAgentId: workingBundle.manifest.rebuildInfo.priorAgentId,
+                newAgentId: workingBundle.manifest.rebuildInfo.newAgentId,
+                failureCategory: workingBundle.manifest.rebuildInfo.failureCategory,
+                failureOutcome: workingBundle.manifest.rebuildInfo.failureOutcome,
+                priorChunkIds: workingBundle.manifest.rebuildInfo.priorChunkIds,
+                newChunkIds: workingBundle.manifest.rebuildInfo.newChunkIds,
+                chunkIdMap: workingBundle.manifest.rebuildInfo.chunkIdMap,
+                createdAt: new Date().toISOString(),
+              });
+            } catch (err) {
+              logger.warn("execution", "Failed to write rebuild manifest", {
+                storyId: ctx.story.id,
+                error: String(err),
+              });
+            }
+          }
           const hopNumber = (ctx.agentSwapCount ?? 0) + 1;
           ctx.agentSwapCount = hopNumber;
           ctx.agentFallbacks = [
@@ -412,4 +434,5 @@ export const _executionDeps = {
   shouldAttemptSwap,
   resolveSwapTarget,
   rebuildForSwap,
+  writeRebuildManifest,
 };

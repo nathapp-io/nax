@@ -427,6 +427,8 @@ export interface ContextV2RulesConfig {
    * Default true during migration period; set false to enforce canonical-only.
    */
   allowLegacyClaudeMd: boolean;
+  /** Token budget ceiling for canonical rules chunks. */
+  budgetTokens: number;
 }
 
 /**

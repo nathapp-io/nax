@@ -2,8 +2,7 @@
  * ContextOrchestrator — #508-M12 unknown providerIds validation tests
  *
  * AC-16/AC-23: When request.providerIds contains an ID that matches no
- * registered provider, the orchestrator must warn and record it in
- * manifest.unknownProviderIds. Unknown IDs must not silently disappear.
+ * registered provider, the orchestrator must fail fast with a clear error.
  *
  * Kept in a separate file because orchestrator.test.ts exceeds 400 lines.
  */
@@ -38,40 +37,34 @@ function makeProvider(id: string): IContextProvider {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ContextOrchestrator — #508-M12 unknown providerIds validation", () => {
-  test("manifest.unknownProviderIds contains ID when it matches no registered provider", async () => {
+  test("throws when providerIds contains an unknown ID", async () => {
     const orch = new ContextOrchestrator([makeProvider("real-provider")]);
-    const result = await orch.assemble({ ...BASE_REQUEST, providerIds: ["does-not-exist"] });
-
-    // RED: field does not exist yet.
-    // GREEN: manifest records the unknown ID.
-    expect(result.manifest.unknownProviderIds).toEqual(["does-not-exist"]);
+    await expect(orch.assemble({ ...BASE_REQUEST, providerIds: ["does-not-exist"] })).rejects.toMatchObject({
+      code: "CONTEXT_UNKNOWN_PROVIDER_IDS",
+    });
   });
 
-  test("manifest.unknownProviderIds is undefined when all providerIds are known", async () => {
+  test("succeeds when all providerIds are known", async () => {
     const orch = new ContextOrchestrator([makeProvider("real-provider")]);
     const result = await orch.assemble({ ...BASE_REQUEST, providerIds: ["real-provider"] });
-
-    expect(result.manifest.unknownProviderIds).toBeUndefined();
+    expect(result.manifest.includedChunks).toBeDefined();
   });
 
-  test("manifest.unknownProviderIds lists only the unknown IDs (mix of known and unknown)", async () => {
+  test("throws when providerIds mix known and unknown IDs", async () => {
     const orch = new ContextOrchestrator([makeProvider("known-a"), makeProvider("known-b")]);
-    const result = await orch.assemble({
-      ...BASE_REQUEST,
-      providerIds: ["known-a", "ghost-id", "known-b", "phantom-id"],
+    await expect(
+      orch.assemble({
+        ...BASE_REQUEST,
+        providerIds: ["known-a", "ghost-id", "known-b", "phantom-id"],
+      }),
+    ).rejects.toMatchObject({
+      code: "CONTEXT_UNKNOWN_PROVIDER_IDS",
     });
-
-    const unknown = result.manifest.unknownProviderIds ?? [];
-    expect(unknown).toContain("ghost-id");
-    expect(unknown).toContain("phantom-id");
-    expect(unknown).not.toContain("known-a");
-    expect(unknown).not.toContain("known-b");
   });
 
-  test("manifest.unknownProviderIds is undefined when providerIds is empty", async () => {
+  test("succeeds when providerIds is empty", async () => {
     const orch = new ContextOrchestrator([makeProvider("p1")]);
     const result = await orch.assemble({ ...BASE_REQUEST, providerIds: [] });
-
-    expect(result.manifest.unknownProviderIds).toBeUndefined();
+    expect(result.manifest.includedChunks).toBeDefined();
   });
 });

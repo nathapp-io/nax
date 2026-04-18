@@ -8,6 +8,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { NaxError } from "../../../../src/errors";
 import {
+  applyCanonicalRulesBudget,
   lintForNeutrality,
   loadCanonicalRules,
   NeutralityLintError,
@@ -289,6 +290,40 @@ priority: [not-a-number]
 Broken`,
     });
     await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
+  });
+
+  test("applies budget truncation when budgetTokens is provided", async () => {
+    setupFiles({
+      "/project/.nax/rules/a.md": `---
+priority: 1
+---
+${"A".repeat(800)}`,
+      "/project/.nax/rules/b.md": `---
+priority: 2
+---
+${"B".repeat(800)}`,
+      "/project/.nax/rules/c.md": `---
+priority: 3
+---
+${"C".repeat(800)}`,
+    });
+    const rules = await loadCanonicalRules("/project", { budgetTokens: 200 });
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules.length).toBeLessThan(3);
+  });
+});
+
+describe("applyCanonicalRulesBudget", () => {
+  test("keeps higher-priority rules first when truncating", () => {
+    const rules = [
+      { fileName: "a.md", id: "a", content: "A".repeat(400), tokens: 100, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(400), tokens: 100, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(400), tokens: 100, priority: 3 },
+    ];
+    const result = applyCanonicalRulesBudget(rules, 200);
+    expect(result.rules).toHaveLength(2);
+    expect(result.rules.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(result.droppedCount).toBe(1);
   });
 });
 

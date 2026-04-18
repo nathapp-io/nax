@@ -7,6 +7,7 @@
 
 import type { NaxConfig } from "../../config/types";
 import type { UserStory } from "../../prd";
+import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "../rules/canonical-loader";
 import { ContextOrchestrator } from "./orchestrator";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
@@ -38,8 +39,9 @@ export function createDefaultOrchestrator(
   additionalProviders: IContextProvider[] = [],
 ): ContextOrchestrator {
   const allowLegacyClaudeMd = config.context?.v2?.rules?.allowLegacyClaudeMd ?? false;
+  const rulesBudgetTokens = config.context?.v2?.rules?.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
   const providers: IContextProvider[] = [
-    new StaticRulesProvider({ allowLegacyClaudeMd }),
+    new StaticRulesProvider({ allowLegacyClaudeMd, budgetTokens: rulesBudgetTokens }),
     new FeatureContextProviderV2(story, config),
   ];
   if (storyScratchDirs && storyScratchDirs.length > 0) {

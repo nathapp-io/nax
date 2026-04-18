@@ -1,7 +1,7 @@
 /**
  * `nax rules` CLI Commands (Phase 5.1)
  *
- * Provides two commands for managing the canonical rules store (.nax/rules/):
+ * Provides commands for managing the canonical rules store (.nax/rules/):
  *
  *   nax rules export --agent=<id>
  *     One-way generation of per-agent shim files (CLAUDE.md, AGENTS.md,
@@ -13,6 +13,10 @@
  *     with basic neutralization applied (removes Claude-specific phrasing).
  *     The operator reviews the diff before committing. Existing .nax/rules/
  *     files are preserved unless --force is passed.
+ *
+ *   nax rules lint
+ *     Validates neutrality/frontmatter for canonical rules in the repo root
+ *     and any package overlays.
  *
  * See: docs/specs/SPEC-context-engine-v2.md §Canonical rules delivery
  */
@@ -42,6 +46,13 @@ export const _rulesCLIDeps = {
   },
   mkdir: async (path: string): Promise<void> => {
     await mkdir(path, { recursive: true });
+  },
+  globCanonicalRuleFiles: (workdir: string): string[] => {
+    try {
+      return [...new Bun.Glob("**/.nax/rules/**/*.md").scanSync({ cwd: workdir, absolute: false })].sort();
+    } catch {
+      return [];
+    }
   },
   loadCanonicalRules,
 };
@@ -172,6 +183,11 @@ export interface RulesMigrateOptions {
   dryRun?: boolean;
 }
 
+export interface RulesLintOptions {
+  /** Project working directory (default: process.cwd()) */
+  dir?: string;
+}
+
 interface MigrateSource {
   sourcePath: string;
   targetFileName: string;
@@ -279,4 +295,39 @@ export async function rulesMigrateCommand(options: RulesMigrateOptions): Promise
       );
     }
   }
+}
+
+function collectCanonicalRuleRoots(workdir: string): string[] {
+  const roots = new Set<string>([workdir]);
+  const files = _rulesCLIDeps.globCanonicalRuleFiles(workdir);
+  for (const rel of files) {
+    const normalized = rel.replaceAll("\\", "/");
+    const marker = "/.nax/rules/";
+    const idx = normalized.indexOf(marker);
+    if (idx <= 0) continue; // root rules stay mapped to workdir
+    const packageRel = normalized.slice(0, idx);
+    if (!packageRel) continue;
+    roots.add(join(workdir, packageRel));
+  }
+  return [...roots].sort();
+}
+
+/**
+ * `nax rules lint`
+ *
+ * Validates canonical rules neutrality/frontmatter for the repository root
+ * and any package-local `.nax/rules/` stores found under the workdir.
+ */
+export async function rulesLintCommand(options: RulesLintOptions): Promise<void> {
+  const workdir = options.dir ?? process.cwd();
+  const roots = collectCanonicalRuleRoots(workdir);
+
+  let totalRuleFiles = 0;
+  for (const root of roots) {
+    const rules = await _rulesCLIDeps.loadCanonicalRules(root);
+    totalRuleFiles += rules.length;
+  }
+
+  const scopeLabel = roots.length === 1 ? "repo root" : `${roots.length} rule roots`;
+  console.log(`[OK] Canonical rules lint passed (${totalRuleFiles} file(s) across ${scopeLabel}).`);
 }

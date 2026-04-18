@@ -10,6 +10,7 @@ import { NaxError } from "../../../src/errors";
 import {
   neutralizeContent,
   rulesExportCommand,
+  rulesLintCommand,
   rulesMigrateCommand,
   _rulesCLIDeps,
 } from "../../../src/cli/rules";
@@ -22,6 +23,7 @@ let origReadFile: typeof _rulesCLIDeps.readFile;
 let origWriteFile: typeof _rulesCLIDeps.writeFile;
 let origFileExists: typeof _rulesCLIDeps.fileExists;
 let origGlobInDir: typeof _rulesCLIDeps.globInDir;
+let origGlobCanonicalRuleFiles: typeof _rulesCLIDeps.globCanonicalRuleFiles;
 let origMkdir: typeof _rulesCLIDeps.mkdir;
 let origLoadCanonicalRules: typeof _rulesCLIDeps.loadCanonicalRules;
 
@@ -32,6 +34,7 @@ beforeEach(() => {
   origWriteFile = _rulesCLIDeps.writeFile;
   origFileExists = _rulesCLIDeps.fileExists;
   origGlobInDir = _rulesCLIDeps.globInDir;
+  origGlobCanonicalRuleFiles = _rulesCLIDeps.globCanonicalRuleFiles;
   origMkdir = _rulesCLIDeps.mkdir;
   origLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
 
@@ -41,6 +44,7 @@ beforeEach(() => {
   _rulesCLIDeps.writeFile = async (path, content) => { written[path] = content; };
   _rulesCLIDeps.fileExists = async () => false;
   _rulesCLIDeps.globInDir = () => [];
+  _rulesCLIDeps.globCanonicalRuleFiles = () => [];
   _rulesCLIDeps.mkdir = async () => {};
   _rulesCLIDeps.loadCanonicalRules = async () => [];
 });
@@ -50,6 +54,7 @@ afterEach(() => {
   _rulesCLIDeps.writeFile = origWriteFile;
   _rulesCLIDeps.fileExists = origFileExists;
   _rulesCLIDeps.globInDir = origGlobInDir;
+  _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
   _rulesCLIDeps.mkdir = origMkdir;
   _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
 });
@@ -270,5 +275,43 @@ describe("rulesMigrateCommand", () => {
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     await rulesMigrateCommand({ dir: "/project" });
     expect(createdDirs.some((d) => d.includes(".nax/rules"))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rulesLintCommand
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rulesLintCommand", () => {
+  test("lints repo root when no package overlays are present", async () => {
+    const calls: string[] = [];
+    _rulesCLIDeps.loadCanonicalRules = async (workdir: string) => {
+      calls.push(workdir);
+      return [];
+    };
+    _rulesCLIDeps.globCanonicalRuleFiles = () => [];
+
+    await rulesLintCommand({ dir: "/project" });
+
+    expect(calls).toEqual(["/project"]);
+  });
+
+  test("lints package overlays discovered from nested canonical rule paths", async () => {
+    const calls: string[] = [];
+    _rulesCLIDeps.loadCanonicalRules = async (workdir: string) => {
+      calls.push(workdir);
+      return [];
+    };
+    _rulesCLIDeps.globCanonicalRuleFiles = () => [
+      ".nax/rules/root.md",
+      "packages/api/.nax/rules/api.md",
+      "packages/web/.nax/rules/web.md",
+    ];
+
+    await rulesLintCommand({ dir: "/repo" });
+
+    expect(calls).toContain("/repo");
+    expect(calls).toContain("/repo/packages/api");
+    expect(calls).toContain("/repo/packages/web");
   });
 });

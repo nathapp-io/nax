@@ -40,6 +40,14 @@ function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
 }
 
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function renderEntryContent(section: string, text: string): string {
+  return section ? `### ${section}\n\n${text}` : text;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,7 +85,7 @@ export class FeatureContextProviderV2 implements IContextProvider {
       }
 
       const hash = contentHash8(result.content);
-      let chunk: RawChunk = {
+      const baseChunk: RawChunk = {
         id: `feature-context:${hash}`,
         kind: "feature",
         scope: "feature",
@@ -87,6 +95,8 @@ export class FeatureContextProviderV2 implements IContextProvider {
         rawScore: 1.0,
       };
 
+      let chunks: RawChunk[] = [baseChunk];
+
       // Amendment A AC-46/AC-47: staleness detection (read-time, no LLM).
       const stalenessConfig = this.config.context?.v2?.staleness;
       if (stalenessConfig?.enabled !== false) {
@@ -94,22 +104,36 @@ export class FeatureContextProviderV2 implements IContextProvider {
         const scoreMultiplier = stalenessConfig?.scoreMultiplier ?? 0.4;
 
         const entries = parseFeatureContextEntries(result.content);
-        if (entries.length > 0) {
+        if (entries.length > 1) {
           const contradicted = detectContradictions(entries);
           const ageStale = selectStaleByAge(entries, maxStoryAge);
-          const staleCount = contradicted.size + ageStale.size;
-          const staleRatio = staleCount / entries.length;
-          const isStale = staleRatio > 0;
-          const effectiveMultiplier = isStale ? 1.0 - (1.0 - scoreMultiplier) * staleRatio : scoreMultiplier;
-          chunk = applyStaleness(chunk, { isStale, scoreMultiplier: effectiveMultiplier });
+          chunks = entries.map((entry) => {
+            const entryContent = renderEntryContent(entry.section, entry.text);
+            const entryChunk: RawChunk = {
+              id: `feature-context:${hash}:entry-${entry.index}`,
+              kind: "feature",
+              scope: "feature",
+              role: ["implementer", "reviewer", "tdd"],
+              content: entryContent,
+              tokens: estimateTokens(entryContent),
+              rawScore: 1.0,
+            };
+            const isStale = contradicted.has(entry.index) || ageStale.has(entry.index);
+            return applyStaleness(entryChunk, { isStale, scoreMultiplier });
+          });
 
-          if (isStale) {
+          if (chunks.some((chunk) => chunk.staleCandidate)) {
             logger.debug("feature-context-v2", "Stale entries detected in feature context", {
               storyId: request.storyId,
               contradicted: contradicted.size,
               ageStale: ageStale.size,
             });
           }
+        } else if (entries.length === 1) {
+          const contradicted = detectContradictions(entries);
+          const ageStale = selectStaleByAge(entries, maxStoryAge);
+          const isStale = contradicted.has(entries[0].index) || ageStale.has(entries[0].index);
+          chunks = [applyStaleness(baseChunk, { isStale, scoreMultiplier })];
         }
       }
 
@@ -119,7 +143,7 @@ export class FeatureContextProviderV2 implements IContextProvider {
         tokens: result.estimatedTokens,
       });
 
-      return { chunks: [chunk], pullTools: [] };
+      return { chunks, pullTools: [] };
     } catch (err) {
       logger.warn("feature-context-v2", "Failed to fetch feature context — returning empty", {
         storyId: request.storyId,

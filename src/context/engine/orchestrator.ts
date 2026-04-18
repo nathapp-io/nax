@@ -13,6 +13,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
+import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import { errorMessage } from "../../utils/errors";
 import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
@@ -237,10 +238,20 @@ export class ContextOrchestrator {
     const registeredIds = new Set(this.providers.map((p) => p.id));
     const unknownProviderIds = allowedIds.filter((id) => !registeredIds.has(id));
     if (unknownProviderIds.length > 0) {
-      logger.warn("context-v2", "Unknown provider IDs in request — no matching provider registered", {
+      logger.error("context-v2", "Unknown provider IDs in request", {
         storyId: request.storyId,
+        stage: request.stage,
         unknownProviderIds,
+        availableProviderIds: [...registeredIds].sort(),
       });
+      throw new NaxError(
+        `Unknown context provider ID(s): ${unknownProviderIds.join(", ")}. Available providers: ${[...registeredIds].sort().join(", ")}`,
+        "CONTEXT_UNKNOWN_PROVIDER_IDS",
+        {
+          stage: "context-v2",
+          storyId: request.storyId,
+        },
+      );
     }
 
     // Step 2: parallel fetch with timeout — failures return empty, never throw.
@@ -399,7 +410,6 @@ export class ContextOrchestrator {
       packageDir: request.packageDir,
       ...(Object.keys(chunkSummaries).length > 0 && { chunkSummaries }),
       ...(staleChunkIds.length > 0 && { staleChunks: staleChunkIds }),
-      ...(unknownProviderIds.length > 0 && { unknownProviderIds }),
     };
 
     logger.debug("context-v2", "Bundle assembled", {
@@ -489,6 +499,12 @@ export class ContextOrchestrator {
             failureOutcome: failure.outcome,
             priorChunkIds,
             newChunkIds: packedChunks.map((c) => c.id),
+            chunkIdMap: priorChunkIds
+              .map((priorChunkId, index) => {
+                const newChunkId = packedChunks[index]?.id;
+                return newChunkId ? { priorChunkId, newChunkId } : null;
+              })
+              .filter((entry): entry is { priorChunkId: string; newChunkId: string } => entry !== null),
           }
         : undefined;
 

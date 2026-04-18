@@ -91,6 +91,8 @@ const BANNED_PATTERNS: BannedPattern[] = [
 ];
 
 const FRONTMATTER_PRIORITY_DEFAULT = 100;
+export const DEFAULT_CANONICAL_RULES_BUDGET_TOKENS = 8_192;
+const RULES_BUDGET_WARNING_RATIO = 0.75;
 const RULE_ALLOW_MARKER = /<!--\s*nax-rules-allow:\s*([a-z0-9,\s-]+)\s*-->/gi;
 
 export interface NeutralityViolation {
@@ -263,6 +265,54 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+export interface CanonicalRulesBudgetResult {
+  rules: CanonicalRule[];
+  totalTokens: number;
+  usedTokens: number;
+  droppedCount: number;
+}
+
+/**
+ * Apply tail-biased truncation using canonical ordering:
+ * lower priority first, then rule id/path alphabetical.
+ *
+ * Rules that exceed budget are dropped from the tail so higher-priority rules
+ * survive whenever possible.
+ */
+export function applyCanonicalRulesBudget(rules: CanonicalRule[], budgetTokens: number): CanonicalRulesBudgetResult {
+  if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) {
+    return {
+      rules: [],
+      totalTokens: rules.reduce((sum, r) => sum + (r.tokens ?? estimateTokens(r.content)), 0),
+      usedTokens: 0,
+      droppedCount: rules.length,
+    };
+  }
+
+  const totalTokens = rules.reduce((sum, rule) => sum + (rule.tokens ?? estimateTokens(rule.content)), 0);
+  let usedTokens = 0;
+  const kept: CanonicalRule[] = [];
+
+  for (const rule of rules) {
+    const tokens = rule.tokens ?? estimateTokens(rule.content);
+    if (usedTokens + tokens > budgetTokens) continue;
+    kept.push(rule);
+    usedTokens += tokens;
+  }
+
+  return {
+    rules: kept,
+    totalTokens,
+    usedTokens,
+    droppedCount: Math.max(0, rules.length - kept.length),
+  };
+}
+
+export interface LoadCanonicalRulesOptions {
+  /** Optional ceiling for loaded canonical rules. When omitted, no truncation is applied. */
+  budgetTokens?: number;
+}
+
 /**
  * Load all `.md` files from `.nax/rules/` under the given workdir.
  * Files are sorted alphabetically to ensure deterministic ordering.
@@ -270,7 +320,10 @@ function estimateTokens(text: string): number {
  * Throws NeutralityLintError if any file contains banned markers.
  * Returns an empty array if the `.nax/rules/` directory does not exist.
  */
-export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule[]> {
+export async function loadCanonicalRules(
+  workdir: string,
+  options: LoadCanonicalRulesOptions = {},
+): Promise<CanonicalRule[]> {
   const logger = _canonicalLoaderDeps.getLogger();
   const rulesDir = join(workdir, CANONICAL_RULES_DIR);
 
@@ -349,5 +402,30 @@ export async function loadCanonicalRules(workdir: string): Promise<CanonicalRule
     files: rules.map((r) => r.path),
   });
 
-  return rules;
+  if (options.budgetTokens === undefined) {
+    return rules;
+  }
+
+  const budgetResult = applyCanonicalRulesBudget(rules, options.budgetTokens);
+  const warningThreshold = Math.floor(options.budgetTokens * RULES_BUDGET_WARNING_RATIO);
+  if (budgetResult.totalTokens >= warningThreshold) {
+    logger.warn("canonical-loader", "Canonical rules are approaching/exceeding budget", {
+      fileCount: rules.length,
+      totalTokens: budgetResult.totalTokens,
+      budgetTokens: options.budgetTokens,
+      warningThreshold,
+      droppedCount: budgetResult.droppedCount,
+    });
+  }
+  if (budgetResult.droppedCount > 0) {
+    logger.warn("canonical-loader", "Canonical rules truncated by budget (tail-biased by priority)", {
+      droppedCount: budgetResult.droppedCount,
+      keptCount: budgetResult.rules.length,
+      totalTokens: budgetResult.totalTokens,
+      usedTokens: budgetResult.usedTokens,
+      budgetTokens: options.budgetTokens,
+    });
+  }
+
+  return budgetResult.rules;
 }

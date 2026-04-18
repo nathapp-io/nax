@@ -133,10 +133,10 @@ describe("FeatureContextProviderV2", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// #508-M6: AC-46 proportional staleness scoring
+// #508-M6: AC-46 per-entry staleness scoring
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("FeatureContextProviderV2 — #508-M6 proportional staleness scoring", () => {
+describe("FeatureContextProviderV2 — #508-M6 per-entry staleness scoring", () => {
   // Content: 2 entries in same section. Entry 0 is contradicted by entry 1
   // (shares >= 3 significant terms, entry 1 has negation "no longer").
   // Stale entries: 1 of 2 → ratio = 0.5
@@ -169,7 +169,7 @@ describe("FeatureContextProviderV2 — #508-M6 proportional staleness scoring", 
     expect(chunk.staleCandidate).toBeFalsy();
   });
 
-  test("chunk gets proportional scoreMultiplier (~0.7) when half of entries are stale via contradiction", async () => {
+  test("only stale entry chunks get scoreMultiplier when one of two entries is contradicted", async () => {
     // 2 entries in same section. Entry 0 is contradicted by entry 1
     // (shares 7 significant terms, entry 1 has "no longer" negation).
     // stale count = 1, total = 2, ratio = 0.5
@@ -178,22 +178,22 @@ describe("FeatureContextProviderV2 — #508-M6 proportional staleness scoring", 
     const provider = new FeatureContextProviderV2(STORY, makeStaleConfig());
     const result = await provider.fetch(makeRequest());
 
-    const chunk = result.chunks[0];
-    expect(chunk).toBeDefined();
-    expect(chunk.staleCandidate).toBe(true);
-    // RED: old whole-chunk taint returns 0.4; GREEN: proportional returns 0.7
-    expect(chunk.scoreMultiplier).toBeCloseTo(0.7, 5);
+    expect(result.chunks).toHaveLength(2);
+    const staleChunks = result.chunks.filter((c) => c.staleCandidate);
+    const freshChunks = result.chunks.filter((c) => !c.staleCandidate);
+    expect(staleChunks).toHaveLength(1);
+    expect(freshChunks).toHaveLength(1);
+    expect(staleChunks[0]?.scoreMultiplier).toBeCloseTo(0.4, 5);
+    expect(freshChunks[0]?.scoreMultiplier).toBeUndefined();
   });
 
-  test("chunk scoreMultiplier is strictly less than full penalty when only some entries are stale", async () => {
+  test("entry chunk IDs are deterministic and indexed", async () => {
     mockV1Provider({ content: PARTIAL_STALE_CONTENT, estimatedTokens: 30 });
     const provider = new FeatureContextProviderV2(STORY, makeStaleConfig());
-    const result = await provider.fetch(makeRequest());
-
-    const chunk = result.chunks[0];
-    expect(chunk).toBeDefined();
-    expect(chunk.staleCandidate).toBe(true);
-    // Proportional penalty must be strictly less severe than full 0.4 penalty
-    expect(chunk.scoreMultiplier).toBeGreaterThan(0.4);
+    const r1 = await provider.fetch(makeRequest());
+    const r2 = await provider.fetch(makeRequest());
+    expect(r1.chunks.map((c) => c.id)).toEqual(r2.chunks.map((c) => c.id));
+    expect(r1.chunks[0]?.id).toMatch(/:entry-0$/);
+    expect(r1.chunks[1]?.id).toMatch(/:entry-1$/);
   });
 });

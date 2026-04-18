@@ -494,8 +494,13 @@ const ContextV2RulesConfigSchema = z
      * Set true only during migration to the canonical .nax/rules/ store.
      */
     allowLegacyClaudeMd: z.boolean().default(false),
+    /**
+     * Token ceiling for canonical rules. Lower-priority rules are tail-truncated
+     * when this budget is exceeded.
+     */
+    budgetTokens: z.number().int().min(512).default(8192),
   })
-  .default(() => ({ allowLegacyClaudeMd: false }));
+  .default(() => ({ allowLegacyClaudeMd: false, budgetTokens: 8192 }));
 
 // Context Engine plugin provider config (Phase 7)
 const ContextPluginProviderConfigSchema = z.object({
@@ -628,7 +633,7 @@ export const ContextV2ConfigSchema = z
     enabled: false,
     minScore: 0.1,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-    rules: { allowLegacyClaudeMd: false },
+    rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 },
     fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
     pluginProviders: [],
     stages: {},
@@ -1054,7 +1059,7 @@ export const NaxConfigSchema = z
         enabled: false,
         minScore: 0.1,
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
-        rules: { allowLegacyClaudeMd: false },
+        rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 },
         fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         pluginProviders: [],
         stages: {},

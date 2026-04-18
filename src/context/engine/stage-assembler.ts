@@ -16,6 +16,7 @@
 
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
 import { getContextFiles } from "../../prd/types";
@@ -203,6 +204,9 @@ export async function assembleForStage(
     }
     return bundle;
   } catch (err) {
+    if (err instanceof NaxError && err.code === "CONTEXT_UNKNOWN_PROVIDER_IDS") {
+      throw err;
+    }
     logger.warn("context-v2", `assembleForStage failed for stage "${stage}"`, {
       storyId: ctx.story.id,
       error: errorMessage(err),

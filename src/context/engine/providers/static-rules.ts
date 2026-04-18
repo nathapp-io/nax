@@ -17,7 +17,11 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { getLogger } from "../../../logger";
 import { errorMessage } from "../../../utils/errors";
-import { loadCanonicalRules } from "../../rules/canonical-loader";
+import {
+  DEFAULT_CANONICAL_RULES_BUDGET_TOKENS,
+  applyCanonicalRulesBudget,
+  loadCanonicalRules,
+} from "../../rules/canonical-loader";
 import type { CanonicalRule } from "../../rules/canonical-loader";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -60,6 +64,8 @@ export interface StaticRulesProviderOptions {
    * Set true only during migration to the canonical .nax/rules/ store.
    */
   allowLegacyClaudeMd?: boolean;
+  /** Token budget for static rules chunk emission. Default: 8192 */
+  budgetTokens?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -148,9 +154,11 @@ export class StaticRulesProvider implements IContextProvider {
   readonly kind = "static" as const;
 
   private readonly allowLegacyClaudeMd: boolean;
+  private readonly budgetTokens: number;
 
   constructor(options: StaticRulesProviderOptions = {}) {
     this.allowLegacyClaudeMd = options.allowLegacyClaudeMd ?? false;
+    this.budgetTokens = options.budgetTokens ?? DEFAULT_CANONICAL_RULES_BUDGET_TOKENS;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
@@ -179,7 +187,35 @@ export class StaticRulesProvider implements IContextProvider {
 
       if (mergedRules.length > 0) {
         const scopedRules = mergedRules.filter((rule) => ruleMatchesTouchedFiles(rule.appliesTo, request.touchedFiles));
-        const chunks = scopedRules.map((rule) => {
+        const budgetResult = applyCanonicalRulesBudget(scopedRules, this.budgetTokens);
+        if (budgetResult.totalTokens >= Math.floor(this.budgetTokens * 0.75)) {
+          logger.warn("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
+            storyId: request.storyId,
+            totalTokens: budgetResult.totalTokens,
+            budgetTokens: this.budgetTokens,
+            droppedCount: budgetResult.droppedCount,
+          });
+        }
+        if (budgetResult.droppedCount > 0) {
+          logger.warn("static-rules", "Canonical rules truncated by static rules budget", {
+            storyId: request.storyId,
+            totalTokens: budgetResult.totalTokens,
+            usedTokens: budgetResult.usedTokens,
+            budgetTokens: this.budgetTokens,
+            droppedCount: budgetResult.droppedCount,
+          });
+        }
+
+        const effectiveRules = budgetResult.rules;
+        if (effectiveRules.length === 0) {
+          logger.warn("static-rules", "No canonical rules fit in static rules budget", {
+            storyId: request.storyId,
+            budgetTokens: this.budgetTokens,
+            totalScopedRules: scopedRules.length,
+          });
+          return { chunks: [], pullTools: [] };
+        }
+        const chunks = effectiveRules.map((rule) => {
           const hash = contentHash8(rule.content);
           const tokens = estimateTokens(rule.content);
           const ruleId = canonicalRuleId(rule);
@@ -199,7 +235,7 @@ export class StaticRulesProvider implements IContextProvider {
 
         logger.debug("static-rules", "Loaded canonical rules", {
           storyId: request.storyId,
-          fileCount: scopedRules.length,
+          fileCount: effectiveRules.length,
           totalCanonicalRules: mergedRules.length,
         });
 

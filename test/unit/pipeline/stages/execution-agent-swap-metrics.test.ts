@@ -106,6 +106,7 @@ const origDetect = _executionDeps.detectMergeConflict;
 const origShouldSwap = _executionDeps.shouldAttemptSwap;
 const origResolveSwap = _executionDeps.resolveSwapTarget;
 const origRebuild = _executionDeps.rebuildForSwap;
+const origWriteRebuildManifest = _executionDeps.writeRebuildManifest;
 
 afterEach(() => {
   _executionDeps.getAgent = origGetAgent;
@@ -114,6 +115,7 @@ afterEach(() => {
   _executionDeps.shouldAttemptSwap = origShouldSwap;
   _executionDeps.resolveSwapTarget = origResolveSwap;
   _executionDeps.rebuildForSwap = origRebuild;
+  _executionDeps.writeRebuildManifest = origWriteRebuildManifest;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +129,7 @@ describe("execution stage — AC-41 fallback observability", () => {
     _executionDeps.shouldAttemptSwap = () => true;
     _executionDeps.resolveSwapTarget = () => "codex";
     _executionDeps.rebuildForSwap = () => makeBundle();
+    _executionDeps.writeRebuildManifest = async () => {};
 
     _executionDeps.getAgent = (agentId: string) =>
       ({
@@ -164,9 +167,14 @@ describe("execution stage — AC-41 fallback observability", () => {
   test("records hop in ctx.agentFallbacks even when swap also fails", async () => {
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
-    _executionDeps.shouldAttemptSwap = () => true;
+    let shouldSwapCalls = 0;
+    _executionDeps.shouldAttemptSwap = () => {
+      shouldSwapCalls++;
+      return shouldSwapCalls === 1;
+    };
     _executionDeps.resolveSwapTarget = () => "codex";
     _executionDeps.rebuildForSwap = () => makeBundle();
+    _executionDeps.writeRebuildManifest = async () => {};
 
     _executionDeps.getAgent = (_agentId: string) =>
       ({
@@ -197,6 +205,7 @@ describe("execution stage — AC-41 fallback observability", () => {
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
     _executionDeps.shouldAttemptSwap = () => false;
+    _executionDeps.writeRebuildManifest = async () => {};
 
     _executionDeps.getAgent = () =>
       ({
@@ -231,6 +240,7 @@ describe("execution stage — AC-41 fallback observability", () => {
     };
     _executionDeps.resolveSwapTarget = () => "codex";
     _executionDeps.rebuildForSwap = () => makeBundle();
+    _executionDeps.writeRebuildManifest = async () => {};
 
     _executionDeps.getAgent = () =>
       ({
@@ -258,5 +268,60 @@ describe("execution stage — AC-41 fallback observability", () => {
     // The new hop should be hop=2
     expect(ctx.agentFallbacks).toHaveLength(2);
     expect(ctx.agentFallbacks![1].hop).toBe(2);
+  });
+
+  test("writes rebuild-manifest event when swap rebuildInfo exists", async () => {
+    _executionDeps.validateAgentForTier = () => true;
+    _executionDeps.detectMergeConflict = () => false;
+    _executionDeps.shouldAttemptSwap = () => true;
+    _executionDeps.resolveSwapTarget = () => "codex";
+    _executionDeps.rebuildForSwap = () =>
+      ({
+        ...makeBundle(),
+        manifest: {
+          ...makeBundle().manifest,
+          requestId: "req-rebuild",
+          rebuildInfo: {
+            priorAgentId: "claude",
+            newAgentId: "codex",
+            failureCategory: "availability",
+            failureOutcome: "fail-quota",
+            priorChunkIds: ["chunk:a"],
+            newChunkIds: ["chunk:a", "failure-note:1"],
+            chunkIdMap: [{ priorChunkId: "chunk:a", newChunkId: "chunk:a" }],
+          },
+        },
+      }) as ContextBundle;
+
+    const writes: Array<Record<string, unknown>> = [];
+    _executionDeps.writeRebuildManifest = async (_projectDir, _featureId, _storyId, entry) => {
+      writes.push(entry as unknown as Record<string, unknown>);
+    };
+
+    _executionDeps.getAgent = (agentId: string) =>
+      ({
+        name: agentId,
+        capabilities: { supportedTiers: ["fast"] },
+        run: async () => {
+          if (agentId === "claude") {
+            return {
+              success: false,
+              exitCode: 1,
+              output: "",
+              rateLimited: false,
+              durationMs: 0,
+              adapterFailure: { category: "availability", outcome: "fail-quota" },
+            };
+          }
+          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
+        },
+        deriveSessionName: () => "nax-test-session",
+      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+
+    const ctx = makeCtx({ projectDir: "/repo" });
+    await executionStage.execute(ctx);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.requestId).toBe("req-rebuild");
+    expect(writes[0]?.stage).toBe("execution");
   });
 });

@@ -49,6 +49,10 @@ export function contextManifestPath(projectDir: string, featureId: string, story
   return join(contextStoryDir(projectDir, featureId, storyId), `context-manifest-${stage}.json`);
 }
 
+export function rebuildManifestPath(projectDir: string, featureId: string, storyId: string): string {
+  return join(contextStoryDir(projectDir, featureId, storyId), "rebuild-manifest.json");
+}
+
 export async function writeContextManifest(
   projectDir: string,
   featureId: string,
@@ -59,6 +63,50 @@ export async function writeContextManifest(
   const filePath = contextManifestPath(projectDir, featureId, storyId, stage);
   await _manifestStoreDeps.mkdirp(dirname(filePath));
   await _manifestStoreDeps.writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+export interface RebuildManifestEntry {
+  requestId: string;
+  stage: string;
+  priorAgentId: string;
+  newAgentId: string;
+  failureCategory: string;
+  failureOutcome: string;
+  priorChunkIds: string[];
+  newChunkIds: string[];
+  chunkIdMap: Array<{ priorChunkId: string; newChunkId: string }>;
+  createdAt: string;
+}
+
+interface RebuildManifestFile {
+  storyId: string;
+  events: RebuildManifestEntry[];
+}
+
+export async function writeRebuildManifest(
+  projectDir: string,
+  featureId: string,
+  storyId: string,
+  entry: RebuildManifestEntry,
+): Promise<void> {
+  const filePath = rebuildManifestPath(projectDir, featureId, storyId);
+  await _manifestStoreDeps.mkdirp(dirname(filePath));
+
+  const current: RebuildManifestFile = { storyId, events: [] };
+  if (await _manifestStoreDeps.fileExists(filePath)) {
+    try {
+      const raw = await _manifestStoreDeps.readFile(filePath);
+      const parsed = JSON.parse(raw) as RebuildManifestFile;
+      if (Array.isArray(parsed.events)) {
+        current.events = parsed.events;
+      }
+    } catch {
+      // Fall through — malformed files are replaced with a valid manifest.
+    }
+  }
+
+  current.events.push(entry);
+  await _manifestStoreDeps.writeFile(filePath, `${JSON.stringify(current, null, 2)}\n`);
 }
 
 export interface StoredContextManifest {

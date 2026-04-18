@@ -162,6 +162,19 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     expect(result.chunks[0]?.content).not.toContain("Legacy rules.");
   });
 
+  test("applies rules budget truncation tail-biased by priority", async () => {
+    setupCanonical([
+      { fileName: "a.md", id: "a", content: "A".repeat(800), tokens: 200, priority: 1 },
+      { fileName: "b.md", id: "b", content: "B".repeat(800), tokens: 200, priority: 2 },
+      { fileName: "c.md", id: "c", content: "C".repeat(800), tokens: 200, priority: 3 },
+    ]);
+    const provider = new StaticRulesProvider({ budgetTokens: 400 });
+    const result = await provider.fetch(BASE_REQUEST);
+    expect(result.chunks).toHaveLength(2);
+    expect(result.chunks[0]?.id).toContain("a");
+    expect(result.chunks[1]?.id).toContain("b");
+  });
+
   test("propagates NeutralityLintError without falling back to legacy", async () => {
     _staticRulesDeps.loadCanonicalRules = async () => {
       throw new NeutralityLintError([
