@@ -63,3 +63,4 @@ prompt.txt
 .nax-wt/
 tmp/.ci-test-output.txt
 logs/
+.worktrees
