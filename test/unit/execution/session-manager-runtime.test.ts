@@ -40,7 +40,7 @@ describe("closeStorySessions()", () => {
     expect(sessionManager.closeStory).toHaveBeenCalledWith("US-001");
     expect(agentGetFn).toHaveBeenCalledTimes(1);
     expect(closePhysicalSession).toHaveBeenCalledTimes(1);
-    expect(closePhysicalSession).toHaveBeenCalledWith("nax-story-1", "/workdir/a");
+    expect(closePhysicalSession).toHaveBeenCalledWith("nax-story-1", "/workdir/a", undefined);
   });
 
   test("does not close a physical session when the handle is missing", async () => {
@@ -72,6 +72,55 @@ describe("closeStorySessions()", () => {
 
     await expect(closeStorySessions(sessionManager, "US-001", agentGetFn)).resolves.toBe(1);
     expect(closePhysicalSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("closeStorySessions() — AC-83 force-terminate", () => {
+  test("passes force=true to closePhysicalSession when descriptor was FAILED", async () => {
+    const failedDescriptor = makeSessionDescriptor({ id: "sess-1", state: "FAILED", handle: "nax-1", workdir: "/workdir/a" });
+    const sessionManager: SessionManagerLike = {
+      closeStory: mock(() => [failedDescriptor]),
+      listActive: mock(() => []),
+    };
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await closeStorySessions(sessionManager, "US-001", agentGetFn);
+
+    expect(closePhysicalSession).toHaveBeenCalledWith("nax-1", "/workdir/a", { force: true });
+  });
+
+  test("does not pass force when descriptor was not FAILED", async () => {
+    const runningDescriptor = makeSessionDescriptor({ id: "sess-1", state: "RUNNING", handle: "nax-1", workdir: "/workdir/a" });
+    const sessionManager: SessionManagerLike = {
+      closeStory: mock(() => [runningDescriptor]),
+      listActive: mock(() => []),
+    };
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await closeStorySessions(sessionManager, "US-001", agentGetFn);
+
+    expect(closePhysicalSession).toHaveBeenCalledWith("nax-1", "/workdir/a", undefined);
+  });
+});
+
+describe("closeAllRunSessions() — idempotency (H-5)", () => {
+  test("second call is a no-op when sessionManager returns no active sessions", async () => {
+    const session = makeSessionDescriptor({ id: "sess-1", storyId: "US-001", handle: "nax-1" });
+    const closeStory = mock(() => [session]);
+    const listActive = mock()
+      .mockImplementationOnce(() => [session]) // first call — one active session
+      .mockImplementationOnce(() => []); // second call — already closed
+    const sessionManager: SessionManagerLike = { closeStory, listActive };
+    const agentGetFn = mock(() => ({ closePhysicalSession: mock(async () => {}) }));
+
+    const first = await closeAllRunSessions(sessionManager, agentGetFn);
+    const second = await closeAllRunSessions(sessionManager, agentGetFn);
+
+    expect(first).toBe(1);
+    expect(second).toBe(0);
+    expect(closeStory).toHaveBeenCalledTimes(1); // only called on first run
   });
 });
 
@@ -112,8 +161,9 @@ describe("closeAllRunSessions()", () => {
     expect(sessionManager.transition).toHaveBeenCalledTimes(1);
     expect(sessionManager.transition).toHaveBeenCalledWith("sess-2", "COMPLETED");
     expect(closePhysicalSession).toHaveBeenCalledTimes(2);
-    expect(closePhysicalSession).toHaveBeenNthCalledWith(1, "nax-1", "/workdir");
-    expect(closePhysicalSession).toHaveBeenNthCalledWith(2, "nax-2", "/workdir/b");
+    // RUNNING sessions are not force-terminated (undefined third arg)
+    expect(closePhysicalSession).toHaveBeenNthCalledWith(1, "nax-1", "/workdir", undefined);
+    expect(closePhysicalSession).toHaveBeenNthCalledWith(2, "nax-2", "/workdir/b", undefined);
   });
 
   test("walks a valid transition chain for a storyless PAUSED session", async () => {
@@ -133,6 +183,7 @@ describe("closeAllRunSessions()", () => {
     expect(sessionManager.transition).toHaveBeenNthCalledWith(2, "sess-2", "RUNNING");
     expect(sessionManager.transition).toHaveBeenNthCalledWith(3, "sess-2", "COMPLETED");
     expect(closePhysicalSession).toHaveBeenCalledTimes(1);
-    expect(closePhysicalSession).toHaveBeenCalledWith("nax-2", "/workdir/b");
+    // PAUSED sessions are not force-terminated (undefined third arg)
+    expect(closePhysicalSession).toHaveBeenCalledWith("nax-2", "/workdir/b", undefined);
   });
 });

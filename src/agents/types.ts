@@ -300,8 +300,9 @@ export interface AgentAdapter {
    *
    * @param handle - The ACP session name (from descriptor.handle or deriveSessionName())
    * @param workdir - Working directory used when the session was created
+   * @param options.force - When true, uses hard termination (acpx stop) after close (AC-83)
    */
-  closePhysicalSession(handle: string, workdir: string): Promise<void>;
+  closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void>;
 
   /**
    * @deprecated Phase 3 (#477): use closePhysicalSession() instead.

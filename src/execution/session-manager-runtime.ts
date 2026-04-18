@@ -1,14 +1,19 @@
 import type { AgentGetFn } from "../pipeline/types";
 import type { ISessionManager, SessionDescriptor, SessionState } from "../session/types";
 
-async function closePhysicalSession(descriptor: SessionDescriptor, agentGetFn?: AgentGetFn): Promise<void> {
+async function closePhysicalSession(
+  descriptor: SessionDescriptor,
+  agentGetFn?: AgentGetFn,
+  force?: boolean,
+): Promise<void> {
   if (!descriptor.handle) return;
 
   const adapter = agentGetFn?.(descriptor.agent);
   if (!adapter) return;
 
   try {
-    await adapter.closePhysicalSession(descriptor.handle, descriptor.workdir);
+    // AC-83: pass force=true for errored sessions so the adapter can hard-terminate
+    await adapter.closePhysicalSession(descriptor.handle, descriptor.workdir, force ? { force: true } : undefined);
   } catch {
     // Best-effort cleanup: session close errors must not block run teardown.
   }
@@ -28,7 +33,9 @@ async function closeStorylessSession(
     }
   }
 
-  await closePhysicalSession(descriptor, agentGetFn);
+  // AC-83: force hard-terminate when the session was already in FAILED state
+  const force = descriptor.state === "FAILED";
+  await closePhysicalSession(descriptor, agentGetFn, force);
   return 1;
 }
 
@@ -57,7 +64,9 @@ export async function closeStorySessions(
   const closedSessions = sessionManager.closeStory(storyId);
 
   for (const descriptor of closedSessions) {
-    await closePhysicalSession(descriptor, agentGetFn);
+    // AC-83: force hard-terminate for sessions that were already in FAILED state
+    const force = descriptor.state === "FAILED";
+    await closePhysicalSession(descriptor, agentGetFn, force);
   }
 
   return closedSessions.length;

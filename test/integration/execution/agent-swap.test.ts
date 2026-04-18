@@ -351,6 +351,35 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     expect(ctx.agentSwapCount).toBe(2);
   });
 
+  test("all fallback candidates fail — returns escalate (H-4 exhaustion)", async () => {
+    const primaryAgent = makeFailingAgent("claude");
+    const firstSwapAgent = makeFailingAgent("codex");
+    const secondSwapAgent = makeFailingAgent("gemini");
+    const config = makeConfig(true);
+    config.context.v2.fallback.map = { claude: ["codex", "gemini"] };
+    config.context.v2.fallback.maxHopsPerStory = 3;
+    const ctx = makeCtx(config, bundle);
+
+    _executionDeps.getAgent = mock((name: string) => {
+      if (name === "codex") return firstSwapAgent;
+      if (name === "gemini") return secondSwapAgent;
+      return primaryAgent;
+    });
+    ctx.agentGetFn = (name: string) => {
+      if (name === "codex") return firstSwapAgent as AgentAdapter;
+      if (name === "gemini") return secondSwapAgent as AgentAdapter;
+      return primaryAgent as AgentAdapter;
+    };
+
+    const result = await executionStage.execute(ctx);
+
+    expect(result).toEqual({ action: "escalate" });
+    expect((firstSwapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((secondSwapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    // agentSwapCount reflects all hops attempted
+    expect(ctx.agentSwapCount).toBe(2);
+  });
+
   test("swap retry prompt includes rebuilt fallback context", async () => {
     const primaryAgent = makeFailingAgent("claude");
     const swapAgent = makeSucceedingAgent("codex");
