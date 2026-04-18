@@ -17,7 +17,7 @@
  * Injectable `_resolverDeps` follows the project `_deps` pattern.
  */
 
-import { dirname, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { NaxConfig } from "../config/types";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
@@ -164,8 +164,12 @@ export async function resolveTestFilePatterns(
     return buildResolved(rootPatterns, "root-config");
   }
 
-  // 3. Detection (Phase 1 stub returns empty; Phase 2 adds real detection)
-  const detected = await _resolverDeps.detectTestFilePatterns(workdir);
+  // 3. Detection — scan from the package directory when available so auto-detected
+  // patterns are package-relative (e.g. "src/**/*.test.ts") rather than rooted
+  // at the repo (e.g. "packages/lib/src/**/*.test.ts"), which would produce
+  // doubled paths when joined with packageDir in code-neighbor.
+  const detectionWorkdir = packageDir ? join(workdir, packageDir) : workdir;
+  const detected = await _resolverDeps.detectTestFilePatterns(detectionWorkdir);
   if (detected.confidence !== "empty" && detected.patterns.length > 0) {
     getSafeLogger()?.info("resolver", "Test patterns auto-detected", {
       ...(options?.storyId !== undefined && { storyId: options.storyId }),
