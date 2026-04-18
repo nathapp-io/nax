@@ -8,6 +8,16 @@
 - TypeScript strict mode. No `any` unless unavoidable (document why).
 - Target: Bun 1.3.7+.
 
+## Polyglot / Monorepo Awareness
+
+nax is itself TypeScript-on-Bun, but it **orchestrates polyglot monorepos** (TS, Go, Python, Rust, polyglot). Any code that classifies test files, derives test-file paths, detects frameworks, or scans the filesystem must be language-agnostic and package-scope-aware. See [monorepo-awareness.md](./monorepo-awareness.md) for the full ruleset — this is as important as the Bun-native rule above.
+
+Quick rules of thumb:
+- Use `packageDir` (not `workdir`) for anything scoped to one package.
+- `process.cwd()` is banned outside CLI entry points.
+- Test-file classification: `resolveTestFilePatterns()` — never inline regex.
+- Test commands, globs, extensions: config-driven, not hardcoded.
+
 ## File Size
 
 - **400-line hard limit** for all source and test files.
