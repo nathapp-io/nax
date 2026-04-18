@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
 import { NaxError } from "../../../src/errors";
 import type { SessionState } from "../../../src/session/types";
@@ -155,6 +155,136 @@ describe("SessionManager.create() — descriptor persistence", () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// descriptor re-persistence on mutation (Finding from hello-lint dogfood)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionManager — descriptor re-persistence on mutation", () => {
+  let originalWriteDescriptor: typeof _sessionManagerDeps.writeDescriptor;
+  let writes: Array<{ state: string; protocolIds: { recordId: string | null; sessionId: string | null }; agent: string; handle?: string }>;
+
+  beforeEach(() => {
+    originalWriteDescriptor = _sessionManagerDeps.writeDescriptor;
+    writes = [];
+    _sessionManagerDeps.writeDescriptor = async (_scratchDir, descriptor) => {
+      writes.push({
+        state: descriptor.state,
+        protocolIds: descriptor.protocolIds,
+        agent: descriptor.agent,
+        handle: descriptor.handle,
+      });
+    };
+  });
+
+  const drainMicrotasks = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  test("transition() re-persists the descriptor with the new state", async () => {
+    const mgr = new SessionManager();
+    const s = mgr.create({
+      role: "main",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
+    await drainMicrotasks();
+    writes.length = 0; // drop the create() write
+
+    mgr.transition(s.id, "RUNNING");
+    await drainMicrotasks();
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.state).toBe("RUNNING");
+  });
+
+  test("bindHandle() re-persists the descriptor with protocolIds + handle", async () => {
+    const mgr = new SessionManager();
+    const s = mgr.create({
+      role: "main",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
+    await drainMicrotasks();
+    writes.length = 0;
+
+    mgr.bindHandle(s.id, "nax-abcd-auth-US-001", { recordId: "rec-1", sessionId: "sid-1" });
+    await drainMicrotasks();
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.handle).toBe("nax-abcd-auth-US-001");
+    expect(writes[0]?.protocolIds).toEqual({ recordId: "rec-1", sessionId: "sid-1" });
+  });
+
+  test("handoff() re-persists the descriptor with the new agent", async () => {
+    const mgr = new SessionManager();
+    const s = mgr.create({
+      role: "main",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
+    await drainMicrotasks();
+    writes.length = 0;
+
+    mgr.handoff?.(s.id, "codex", "fail-auth");
+    await drainMicrotasks();
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.agent).toBe("codex");
+  });
+
+  test("re-persistence is skipped when the session has no scratchDir", async () => {
+    const mgr = new SessionManager();
+    const s = mgr.create({ role: "main", agent: "claude", workdir: "/repo" });
+    await drainMicrotasks();
+    writes.length = 0;
+
+    mgr.transition(s.id, "RUNNING");
+    mgr.bindHandle(s.id, "nax-x", { recordId: "r", sessionId: "s" });
+    mgr.handoff?.(s.id, "codex");
+    await drainMicrotasks();
+
+    expect(writes).toHaveLength(0);
+  });
+
+  test("a write failure during re-persistence does not throw from the mutation call", async () => {
+    const mgr = new SessionManager();
+    const s = mgr.create({
+      role: "main",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
+    await drainMicrotasks();
+    _sessionManagerDeps.writeDescriptor = async () => {
+      throw new Error("disk full");
+    };
+
+    expect(() => mgr.transition(s.id, "RUNNING")).not.toThrow();
+    expect(() => mgr.bindHandle(s.id, "nax-x", { recordId: "r", sessionId: "s" })).not.toThrow();
+    expect(() => mgr.handoff?.(s.id, "codex")).not.toThrow();
+
+    await drainMicrotasks();
+
+    _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
+  });
+
+  afterEach(() => {
     _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
   });
 });
