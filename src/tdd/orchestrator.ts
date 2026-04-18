@@ -56,6 +56,12 @@ export interface ThreeSessionTddOptions {
   getTddContextBundle?: (role: TddSessionRole) => Promise<import("../context/engine").ContextBundle | undefined>;
   /** Persist per-session outcomes (scratch, digests, metrics) as soon as they exist. */
   recordTddSessionOutcome?: (result: TddSessionResult) => Promise<void>;
+  /**
+   * #541: Bind a TDD session's ACP protocolIds to a pre-created session descriptor.
+   * Returns `{ sessionManager, sessionId }` when the orchestrator has a descriptor
+   * for this role; undefined when no sessionManager is configured.
+   */
+  getTddSessionBinding?: (role: TddSessionRole) => import("./session-runner").TddSessionBinding | undefined;
   constitution?: string;
   dryRun?: boolean;
   lite?: boolean;
@@ -82,6 +88,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     tddContextBundles,
     getTddContextBundle,
     recordTddSessionOutcome,
+    getTddSessionBinding,
     constitution,
     dryRun = false,
     lite = false,
@@ -195,6 +202,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       projectDir,
       featureContextMarkdown,
       testWriterBundle,
+      getTddSessionBinding?.("test-writer"),
     );
     sessions.push(session1);
     await recordTddSessionOutcome?.(session1);
@@ -315,6 +323,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     projectDir,
     featureContextMarkdown,
     implementerBundle,
+    getTddSessionBinding?.("implementer"),
   );
   sessions.push(session2);
   await recordTddSessionOutcome?.(session2);
@@ -369,6 +378,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     projectDir,
     featureContextMarkdown,
     verifierBundle,
+    getTddSessionBinding?.("verifier"),
   );
   sessions.push(session3);
   await recordTddSessionOutcome?.(session3);
@@ -497,6 +507,14 @@ export async function runThreeSessionTddFromCtx(
   let tddContextBundles: ThreeSessionTddOptions["tddContextBundles"];
   let getTddContextBundle: ThreeSessionTddOptions["getTddContextBundle"];
   let recordTddSessionOutcome: ThreeSessionTddOptions["recordTddSessionOutcome"];
+  // #541: per-role session descriptor id, populated lazily when scratch dir is created.
+  const sessionIdByRole = new Map<TddSessionRole, string>();
+  const getTddSessionBinding: ThreeSessionTddOptions["getTddSessionBinding"] = (role) => {
+    if (!ctx.sessionManager) return undefined;
+    const id = sessionIdByRole.get(role);
+    if (!id) return undefined;
+    return { sessionManager: ctx.sessionManager, sessionId: id };
+  };
 
   // Defensive check: test fixtures may bypass Zod and omit `context.v2`.
   if (ctx.config.context?.v2?.enabled) {
@@ -514,17 +532,22 @@ export async function runThreeSessionTddFromCtx(
       const existing = scratchDirByRole.get(role);
       if (existing !== undefined) return existing;
 
-      const created =
-        ctx.sessionManager && ctx.prd.feature
-          ? ctx.sessionManager.create({
-              role,
-              agent: ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
-              workdir: ctx.workdir,
-              projectDir: ctx.projectDir,
-              featureName: ctx.prd.feature,
-              storyId: ctx.story.id,
-            }).scratchDir
-          : ctx.sessionScratchDir;
+      let created: string | undefined;
+      if (ctx.sessionManager && ctx.prd.feature) {
+        const descriptor = ctx.sessionManager.create({
+          role,
+          agent: ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+          workdir: ctx.workdir,
+          projectDir: ctx.projectDir,
+          featureName: ctx.prd.feature,
+          storyId: ctx.story.id,
+        });
+        created = descriptor.scratchDir;
+        // #541: remember the descriptor id so runTddSession can bind handle later.
+        sessionIdByRole.set(role, descriptor.id);
+      } else {
+        created = ctx.sessionScratchDir;
+      }
       scratchDirByRole.set(role, created);
       if (created) storyScratchDirs.add(created);
       return created;
@@ -621,6 +644,7 @@ export async function runThreeSessionTddFromCtx(
     tddContextBundles,
     getTddContextBundle,
     recordTddSessionOutcome,
+    getTddSessionBinding,
     constitution: ctx.constitution?.content,
     dryRun: opts.dryRun ?? false,
     lite: opts.lite ?? false,

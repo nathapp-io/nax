@@ -13,6 +13,7 @@ import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
+import type { ISessionManager } from "../session/types";
 import { autoCommitIfDirty as _autoCommitIfDirtyFn } from "../utils/git";
 import { captureGitRef as _captureGitRef } from "../utils/git";
 import { cleanupProcessTree as _cleanupProcessTree } from "./cleanup";
@@ -107,6 +108,15 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
   logger.info("tdd", "Successfully rolled back git changes", { ref });
 }
 
+/**
+ * Binding used to tie a TDD session's ACP protocolIds back to a pre-created
+ * session descriptor so the audit trail includes recordId/sessionId (#541).
+ */
+export interface TddSessionBinding {
+  sessionManager: ISessionManager;
+  sessionId: string;
+}
+
 /** Run a single TDD session */
 export async function runTddSession(
   role: TddSessionRole,
@@ -125,6 +135,7 @@ export async function runTddSession(
   projectDir?: string,
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
+  sessionBinding?: TddSessionBinding,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
@@ -235,6 +246,20 @@ export async function runTddSession(
       : undefined,
     interactionBridge,
   });
+
+  // #541: bind ACP protocolIds to the pre-created session descriptor so the
+  // audit trail can correlate storyId → sess-<uuid> → recordId for TDD roles.
+  // Mirrors the pattern used in src/pipeline/stages/execution.ts:208.
+  if (sessionBinding && result.protocolIds) {
+    const descriptor = sessionBinding.sessionManager.get(sessionBinding.sessionId);
+    if (descriptor) {
+      sessionBinding.sessionManager.bindHandle(
+        sessionBinding.sessionId,
+        agent.deriveSessionName(descriptor),
+        result.protocolIds,
+      );
+    }
+  }
 
   // BUG-21 Fix: Clean up orphaned child processes if agent failed
   if (!result.success && result.pid) {
