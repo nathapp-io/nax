@@ -4,6 +4,7 @@
  * Detects changed TypeScript source files using git diff,
  * enabling targeted test runs on only the files that changed.
  */
+import { join } from "node:path";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { gitWithTimeout } from "../utils/git";
 
@@ -19,22 +20,6 @@ const _bunDeps = {
   file: (path: string) => Bun.file(path),
 };
 
-/**
- * Get TypeScript source files changed since the previous commit.
- *
- * Runs `git diff --name-only HEAD~1` in the given workdir and filters
- * results to only `.ts` files under `src/`. Returns an empty array on
- * any git error (not a repo, no previous commit, etc.).
- *
- * @param workdir - Working directory to run git command in
- * @returns Array of changed .ts file paths relative to the repo root
- *
- * @example
- * ```typescript
- * const files = await getChangedSourceFiles("/path/to/repo");
- * // Returns: ["src/foo/bar.ts", "src/utils/git.ts"]
- * ```
- */
 /**
  * Map source files to their corresponding test files.
  *
@@ -276,15 +261,22 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
  * story's workdir (e.g. `"packages/api"`), the filter is scoped to
  * `<packagePrefix>/src/` instead of just `src/`.
  *
+ * When `testFileRegex` is provided, files matching any of those regexes are
+ * excluded from the return value (they are test files, not source files).
+ * Callers should pass `resolvedTestPatterns.regex` from `resolveTestFilePatterns()`
+ * so classification is language-agnostic and config-driven (ADR-009).
+ *
  * @param workdir       - Working directory to run git command in
  * @param baseRef       - Git ref for diff base (default: HEAD~1)
  * @param packagePrefix - Story workdir relative to repo root (e.g. "packages/api")
+ * @param testFileRegex - Optional regexes to exclude test files from the result
  * @returns Array of changed .ts file paths relative to the git root
  */
 export async function getChangedSourceFiles(
   workdir: string,
   baseRef?: string,
   packagePrefix?: string,
+  testFileRegex: RegExp[] = [],
 ): Promise<string[]> {
   try {
     // FEAT-010: Use per-attempt baseRef for precise diff; fall back to HEAD~1 if not provided
@@ -297,7 +289,54 @@ export async function getChangedSourceFiles(
 
     // MW-006: scope filter to package prefix in monorepo
     const srcPrefix = packagePrefix ? `${packagePrefix}/src/` : "src/";
-    return lines.filter((f) => f.startsWith(srcPrefix) && f.endsWith(".ts"));
+    const tsFiles = lines.filter((f) => f.startsWith(srcPrefix) && f.endsWith(".ts"));
+    if (testFileRegex.length === 0) return tsFiles;
+    // Exclude test files so they don't get passed to source→test mapping (#557)
+    return tsFiles.filter((f) => !testFileRegex.some((re) => re.test(f)));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get test files changed since the given git ref, scoped to the package.
+ *
+ * Unlike `getChangedSourceFiles`, this function scans the ENTIRE package directory
+ * (not just `src/`) so it catches both co-located test files (e.g. `src/foo.test.ts`)
+ * and separated test files (e.g. `test/unit/foo.test.ts`). Changed test files are
+ * returned as absolute paths ready for direct execution — no source→test mapping
+ * needed since they are already tests.
+ *
+ * Classification uses `testFileRegex` from `resolveTestFilePatterns()` so the
+ * detection is language-agnostic and config-driven (ADR-009).
+ *
+ * @param workdir       - Working directory to run git command in (package dir or repo root)
+ * @param repoRoot      - Absolute path to the repository root (for constructing absolute paths)
+ * @param baseRef       - Git ref for diff base (default: HEAD~1)
+ * @param packagePrefix - Story workdir relative to repo root (e.g. "packages/lib")
+ * @param testFileRegex - Regexes identifying test files (from resolveTestFilePatterns().regex)
+ * @returns Absolute paths of changed test files
+ */
+export async function getChangedTestFiles(
+  workdir: string,
+  repoRoot: string,
+  baseRef?: string,
+  packagePrefix?: string,
+  testFileRegex: RegExp[] = [],
+): Promise<string[]> {
+  if (testFileRegex.length === 0) return [];
+  try {
+    const ref = baseRef ?? "HEAD~1";
+    const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", ref], workdir);
+    if (exitCode !== 0) return [];
+
+    const lines = stdout.trim().split("\n").filter(Boolean);
+
+    // Scope to package directory — covers both co-located (src/) and separated (test/) layouts
+    const scoped = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
+    return scoped
+      .filter((f) => testFileRegex.some((re) => re.test(f)))
+      .map((f) => join(repoRoot, f));
   } catch {
     return [];
   }
@@ -373,6 +412,7 @@ export const _smartRunnerDeps = {
   /** Wraps Bun.file — injectable for testing. */
   file: _bunDeps.file,
   getChangedSourceFiles,
+  getChangedTestFiles,
   mapSourceToTests,
   importGrepFallback,
   buildSmartTestCommand,

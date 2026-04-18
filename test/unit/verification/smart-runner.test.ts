@@ -4,6 +4,7 @@ import { withDepsRestore } from "../../helpers/deps";
 import {
   buildSmartTestCommand,
   getChangedSourceFiles,
+  getChangedTestFiles,
   mapSourceToTests,
 } from "../../../src/verification/smart-runner";
 
@@ -290,5 +291,169 @@ describe("getChangedSourceFiles", () => {
     const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/api");
 
     expect(result).toEqual([]);
+  });
+
+  // Issue #557 — co-located test files should be excluded when testFileRegex is provided
+  test("excludes co-located test files when testFileRegex is provided", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.ts",
+      "packages/lib/src/util.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/lib", [/\.test\.ts$/]);
+
+    expect(result).toEqual(["packages/lib/src/util.ts"]);
+  });
+
+  test("returns all .ts files when testFileRegex is empty (backward-compatible)", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.ts",
+      "packages/lib/src/util.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/lib");
+
+    // Without testFileRegex: both returned (existing behavior)
+    expect(result).toContain("packages/lib/src/util.ts");
+    expect(result).toContain("packages/lib/src/util.test.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getChangedTestFiles — Issue #557
+// ---------------------------------------------------------------------------
+
+describe("getChangedTestFiles", () => {
+  withDepsRestore(_gitDeps, ["spawn"]);
+  afterEach(() => {
+    mock.restore();
+  });
+
+  const TS_TEST_REGEX = [/\.test\.ts$/, /\.spec\.ts$/];
+
+  test("returns absolute paths of changed co-located test files", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.ts",
+      "packages/lib/src/util.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
+
+    expect(result).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
+  });
+
+  test("returns absolute paths of changed separated test files", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.ts",
+      "packages/lib/test/unit/util.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
+
+    expect(result).toEqual(["/fake/repo/packages/lib/test/unit/util.test.ts"]);
+  });
+
+  test("detects both co-located and separated test files in the same diff", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.test.ts",
+      "packages/lib/test/unit/other.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
+
+    expect(result).toHaveLength(2);
+    expect(result).toContain("/fake/repo/packages/lib/src/util.test.ts");
+    expect(result).toContain("/fake/repo/packages/lib/test/unit/other.test.ts");
+  });
+
+  test("scopes to packagePrefix — ignores test files from other packages", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.test.ts",
+      "packages/app/src/index.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
+
+    expect(result).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
+  });
+
+  test("returns empty when no test files changed", async () => {
+    const gitOutput = ["packages/lib/src/util.ts"].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
+
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty when testFileRegex is empty", async () => {
+    const gitOutput = ["packages/lib/src/util.test.ts"].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", []);
+
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty when git exits with non-zero code", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/fake/repo", "/fake/repo", undefined, undefined, TS_TEST_REGEX);
+
+    expect(result).toEqual([]);
+  });
+
+  test("works without packagePrefix for single-package repos", async () => {
+    const gitOutput = ["src/util.ts", "test/unit/util.test.ts"].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles("/repo", "/repo", undefined, undefined, TS_TEST_REGEX);
+
+    expect(result).toEqual(["/repo/test/unit/util.test.ts"]);
+  });
+
+  test("is language-agnostic — detects Go test files via regex", async () => {
+    const gitOutput = [
+      "packages/backend/pkg/auth/auth.go",
+      "packages/backend/pkg/auth/auth_test.go",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles(
+      "/repo/packages/backend",
+      "/repo",
+      undefined,
+      "packages/backend",
+      [/_test\.go$/],
+    );
+
+    expect(result).toEqual(["/repo/packages/backend/pkg/auth/auth_test.go"]);
   });
 });
