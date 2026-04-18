@@ -155,14 +155,22 @@ function resolveImport(specifier: string, fromFile: string, workdir: string): st
 /**
  * Derive the sibling test file path for a source file.
  * Preserves the source extension for JSX/TSX files.
- *   src/foo/bar.ts  → test/unit/foo/bar.test.ts
- *   src/foo/bar.tsx → test/unit/foo/bar.test.tsx
+ *   src/foo/bar.ts       → test/unit/foo/bar.test.ts
+ *   src/foo/bar.tsx      → test/unit/foo/bar.test.tsx
+ *   src/foo/bar.test.ts  → null  (already a test file)
+ *   src/foo/bar.spec.ts  → null  (already a test file)
+ *
+ * Returning null for test-file inputs prevents the `.test.test.ts` /
+ * `.spec.spec.ts` hallucination that appeared when the provider was fed
+ * a test file as a touched file (e.g. via PRD `contextFiles`). See #526.
  */
 function siblingTestPath(filePath: string): string | null {
   const srcMatch = filePath.match(/^src\/(.+)\.(ts|tsx|js|jsx)$/);
   if (!srcMatch) return null;
+  const base = srcMatch[1] ?? "";
+  if (base.endsWith(".test") || base.endsWith(".spec")) return null;
   const ext = srcMatch[2] ?? "ts";
-  return `test/unit/${srcMatch[1]}.test.${ext}`;
+  return `test/unit/${base}.test.${ext}`;
 }
 
 /**
