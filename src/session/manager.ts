@@ -292,6 +292,7 @@ export class SessionManager implements ISessionManager {
 
       const updated: SessionDescriptor = { ...session, state: "COMPLETED", lastActivityAt: now };
       this._sessions.set(id, updated);
+      this._persistDescriptor(updated);
       closed.push({ ...updated });
 
       getLogger().debug("session", "Session closed by closeStory", {
