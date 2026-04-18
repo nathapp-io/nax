@@ -226,6 +226,29 @@ describe("SessionManager — descriptor re-persistence on mutation", () => {
     expect(writes[0]?.protocolIds).toEqual({ recordId: "rec-1", sessionId: "sid-1" });
   });
 
+  test("closeStory() re-persists the descriptor with state=COMPLETED", async () => {
+    const mgr = new SessionManager();
+    const s = mgr.create({
+      role: "main",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
+    mgr.transition(s.id, "RUNNING");
+    await drainMicrotasks();
+    writes.length = 0;
+
+    const closed = mgr.closeStory("US-001");
+    await drainMicrotasks();
+
+    expect(closed).toHaveLength(1);
+    expect(closed[0]?.state).toBe("COMPLETED");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.state).toBe("COMPLETED");
+  });
+
   test("handoff() re-persists the descriptor with the new agent", async () => {
     const mgr = new SessionManager();
     const s = mgr.create({
