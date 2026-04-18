@@ -152,10 +152,74 @@ Write the assembled bundle to the session scratch directory so subsequent stages
 
 ---
 
+## Post-Acceptance Amendments
+
+The core decisions (D1–D8) have been extended by four amendment specs after this ADR was accepted. Each adds primitives on top of the existing architecture — none reverse a decision above.
+
+### Amendment A — Context pollution prevention (AC-44–49, Accepted 2026-04-17)
+
+Adds three deterministic post-hoc signals to the packer, none of which invoke an LLM:
+
+- **Min-score floor** (`config.context.v2.minScore`, default 0.1) — chunks scoring below threshold are dropped before packing; floor items (static rules, feature context) are exempt.
+- **Staleness flag** (`src/context/engine/staleness.ts`) — age-based + contradiction-based detection annotates chunks with `staleCandidate: true` and multiplies their score by a configured factor (default 0.4). Human removal is still required; the flag surfaces candidates.
+- **Pollution metrics** (`src/context/engine/pollution.ts`) — per-run aggregates (`droppedBelowMinScore`, `staleChunksInjected`, `pollutionRatio`) written to `StoryMetrics.context.pollution`, surfaced in `nax status` when ratio > 0.3.
+
+Effectiveness classification (`src/context/engine/effectiveness.ts`) annotates each chunk post-story as `followed | contradicted | ignored | unknown` based on deterministic signals (agent output, review findings, diff). Ops-facing only — no feedback loop into scoring.
+
+Spec: [SPEC-context-engine-v2-amendments.md](../specs/SPEC-context-engine-v2-amendments.md) §Amendment A.
+
+### Amendment B — Execution-mode stage sequences (AC-50–53, Accepted 2026-04-17)
+
+Adds `planDigestBoost: 1.5` to `STAGE_CONTEXT_MAP` for single-session, tdd-simple, no-test, and batch modes. The prior-stage plan digest's `rawScore` is multiplied by the boost when the stage opts in, giving it competitive footing against fresh provider chunks in scoring/packing. Does not change the digest content or threading mechanism (D4 preserved).
+
+Spec: [SPEC-context-engine-v2-amendments.md](../specs/SPEC-context-engine-v2-amendments.md) §Amendment B.
+
+### Amendment C — Monorepo scoping (AC-54–62, Accepted 2026-04-17)
+
+Introduces dual-workdir resolution in `ContextRequest`:
+
+- **`repoRoot`** (renamed from `workdir`) — absolute path to the git root.
+- **`packageDir`** (new) — absolute path to the story's target package; equals `repoRoot` in non-monorepo projects.
+
+Provider scopes become configurable:
+- `GitHistoryProvider.historyScope: "package" | "repo"` (default `package`)
+- `CodeNeighborProvider.neighborScope: "package" | "repo"` + `crossPackageDepth: 0 | 1 | 2` (defaults `package`, depth 1)
+- `StaticRulesProvider` overlays `<repoRoot>/.nax/rules/` with `<packageDir>/.nax/rules/`; same-filename entries → package wins (AC-57).
+
+`FeatureContextProviderV2` remains repo-scoped (AC-58) — features are cross-cutting. Manifest records both paths (AC-60) for audit.
+
+Spec: [SPEC-context-engine-v2-amendments.md](../specs/SPEC-context-engine-v2-amendments.md) §Amendment C.
+
+### Amendment D — Session Manager ownership (AC-63–78, Accepted 2026-04-18)
+
+Moves session lifecycle out of the adapter into a dedicated `SessionManager`. This is a cross-cutting architectural change with its own ADR; see **[ADR-011](ADR-011-session-manager-ownership.md)** for ownership boundary, 7-state machine, force-terminate (AC-83), handoff semantics, and mapping from ADR-008's `keepSessionOpen` primitive.
+
+Intersection with this ADR: `SessionScratchProvider` now reads `descriptor.scratchDir` from the manager rather than re-deriving it from `(workdir, feature, storyId)`. D4's digest threading continues to work unchanged because digests persist on the descriptor, not the physical session.
+
+Spec: [SPEC-session-manager-integration.md](../specs/SPEC-session-manager-integration.md).
+
+### Additional post-acceptance hardening (not amendment-level)
+
+- **AC-16 unknown provider validation** — `assemble()` throws `CONTEXT_UNKNOWN_PROVIDER_IDS` when a stage config references an unregistered provider. Test-override `request.providerIds` filters silently (intentional; test-only).
+- **AC-19 `nax context inspect`** — CLI manifest formatter ([src/cli/context.ts](../../src/cli/context.ts)).
+- **AC-20 scratch retention** — `purgeStaleScratch()` runs at run completion; retention days configurable.
+- **AC-24 determinism mode** — `request.deterministic: true` excludes providers marked `deterministic: false`.
+- **AC-25 provider cost accounting** — per-provider `costUsd` rolled up into `StoryMetrics.context.providers[*].costUsd`.
+- **AC-41 agent-swap observability** — `ctx.agentFallbacks[]` records every swap hop; surfaced as `StoryMetrics.fallback.hops[]`.
+- **AC-42 cross-agent scratch neutralization** — scratch entries are rewritten to drop agent-specific tooling references before being replayed for a fallback agent ([src/context/engine/scratch-neutralizer.ts](../../src/context/engine/scratch-neutralizer.ts)).
+
+---
+
 ## References
 
 - [SPEC-context-engine-v2.md](../specs/SPEC-context-engine-v2.md) — full implementation spec
+- [SPEC-context-engine-v2-amendments.md](../specs/SPEC-context-engine-v2-amendments.md) — Amendments A–D
+- [SPEC-context-engine-v2-compilation.md](../specs/SPEC-context-engine-v2-compilation.md) — compiled view
+- [SPEC-context-engine-agent-fallback.md](../specs/SPEC-context-engine-agent-fallback.md) — fallback taxonomy + handoff
+- [SPEC-context-engine-canonical-rules.md](../specs/SPEC-context-engine-canonical-rules.md) — canonical rules store design
+- [SPEC-session-manager-integration.md](../specs/SPEC-session-manager-integration.md) — Amendment D mechanism spec
 - [SPEC-feature-context-engine.md](../specs/SPEC-feature-context-engine.md) — v1 spec (superseded for new providers; storage layout unchanged)
 - `src/context/engine/` — implementation
-- `test/unit/context/engine/` — unit tests (473 tests, 26 files)
+- `test/unit/context/engine/` — unit tests (37 files)
 - ADR-007, ADR-008 — session lifecycle decisions that motivated Phase 5.5 availability fallback
+- [ADR-011](ADR-011-session-manager-ownership.md) — session manager ownership (Amendment D)
