@@ -14,6 +14,7 @@ import { getLogger } from "../../logger";
 import { resolveQualityTestCommands } from "../../quality/command-resolver";
 import { appendScratchEntry } from "../../session/scratch-writer";
 import { DEFAULT_TEST_FILE_PATTERNS } from "../../test-runners/conventions";
+import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { errorMessage } from "../../utils/errors";
 import { logTestOutput } from "../../utils/log-test-output";
 import { detectRuntimeCrash } from "../../verification/crash-detector";
@@ -102,35 +103,68 @@ export const verifyStage: PipelineStage = {
         });
       }
     } else if (smartRunnerConfig.enabled) {
-      // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
-      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef, ctx.story.workdir);
+      // Resolve test file patterns via ADR-009 SSOT — language-agnostic, config-driven,
+      // per-package override-aware. ctx.projectDir is the repo root; story.workdir is the
+      // package-relative path (e.g. "packages/lib").
+      // Guard: ctx.projectDir may be undefined in test fixtures; fall back to ctx.workdir
+      // (absolute path) to prevent a "undefined/.nax/..." relative-path write.
+      const repoRoot = ctx.projectDir ?? ctx.workdir;
+      const resolvedPatterns = await _verifyDeps.resolveTestFilePatterns(ctx.config, repoRoot, ctx.story.workdir);
 
-      // Pass 1: path convention mapping — pass packagePrefix and testFilePatterns for language-agnostic suffix derivation
-      const pass1Files = await _smartRunnerDeps.mapSourceToTests(
-        sourceFiles,
+      // Pass 0: detect changed test files directly from git diff (#557).
+      // Test files are already tests — no source→test mapping needed. They are returned
+      // as absolute paths using repoRoot as the anchor.
+      const changedTestFiles = await _smartRunnerDeps.getChangedTestFiles(
         ctx.workdir,
+        repoRoot,
+        ctx.storyGitRef,
         ctx.story.workdir,
-        smartRunnerConfig.testFilePatterns,
+        [...resolvedPatterns.regex],
       );
-      if (pass1Files.length > 0) {
-        logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
-          storyId: ctx.story.id,
-        });
-        effectiveCommand = buildScopedCommand(pass1Files, rawTestCommand, testScopedTemplate);
+      if (changedTestFiles.length > 0) {
+        logger.info(
+          "verify",
+          `[smart-runner] Pass 0: ${changedTestFiles.length} changed test file(s) detected directly`,
+          {
+            storyId: ctx.story.id,
+          },
+        );
+        effectiveCommand = buildScopedCommand(changedTestFiles, rawTestCommand, testScopedTemplate);
         isFullSuite = false;
-      } else if (smartRunnerConfig.fallback === "import-grep") {
-        // Pass 2: import-grep fallback.
-        // Phase 1 interim: importGrepFallback requires string[]; resolver not yet wired here.
-        // Phase 2 will call resolveTestFilePatterns() upstream and pass resolved.globs instead.
-        const pass2Files = await _smartRunnerDeps.importGrepFallback(sourceFiles, ctx.workdir, [
-          ...(smartRunnerConfig.testFilePatterns ?? DEFAULT_TEST_FILE_PATTERNS),
+      } else {
+        // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos.
+        // Exclude test files (already handled above) so mapSourceToTests only receives source files.
+        const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(
+          ctx.workdir,
+          ctx.storyGitRef,
+          ctx.story.workdir,
+          [...resolvedPatterns.regex],
+        );
+
+        // Pass 1: path convention mapping — pass packagePrefix and testFilePatterns for language-agnostic suffix derivation.
+        // ctx.projectDir is the repo root; mapSourceToTests uses it as the absolute base for test path construction.
+        const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.projectDir, ctx.story.workdir, [
+          ...resolvedPatterns.globs,
         ]);
-        if (pass2Files.length > 0) {
-          logger.info("verify", `[smart-runner] Pass 2: import-grep matched ${pass2Files.length} test files`, {
+        if (pass1Files.length > 0) {
+          logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
             storyId: ctx.story.id,
           });
-          effectiveCommand = buildScopedCommand(pass2Files, rawTestCommand, testScopedTemplate);
+          effectiveCommand = buildScopedCommand(pass1Files, rawTestCommand, testScopedTemplate);
           isFullSuite = false;
+        } else if (smartRunnerConfig.fallback === "import-grep") {
+          // Pass 2: import-grep fallback — scan package dir for test files importing the changed sources.
+          // ctx.workdir (package dir) keeps the scan scoped to the story's package.
+          const pass2Files = await _smartRunnerDeps.importGrepFallback(sourceFiles, ctx.workdir, [
+            ...resolvedPatterns.globs,
+          ]);
+          if (pass2Files.length > 0) {
+            logger.info("verify", `[smart-runner] Pass 2: import-grep matched ${pass2Files.length} test files`, {
+              storyId: ctx.story.id,
+            });
+            effectiveCommand = buildScopedCommand(pass2Files, rawTestCommand, testScopedTemplate);
+            isFullSuite = false;
+          }
         }
       }
     }
@@ -266,4 +300,5 @@ export const _verifyDeps = {
   regression,
   resolveTestCommands: resolveQualityTestCommands,
   appendScratch: appendScratchEntry,
+  resolveTestFilePatterns,
 };
