@@ -209,6 +209,43 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks).toHaveLength(0);
   });
 
+  test("sibling test path: .test.ts input does not hallucinate .test.test.ts (#526)", async () => {
+    setupDeps({
+      files: { "src/greeting.test.ts": "" },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/greeting.test.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    // Must not produce the hallucinated .test.test.ts path
+    expect(content).not.toContain("greeting.test.test.ts");
+    expect(content).not.toContain(".test.test.");
+  });
+
+  test("sibling test path: .spec.ts input does not hallucinate .spec.spec.ts (#526)", async () => {
+    setupDeps({
+      files: { "src/greeting.spec.ts": "" },
+      globFiles: [],
+    });
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/greeting.spec.ts"] }));
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).not.toContain("greeting.spec.spec.ts");
+    expect(content).not.toContain(".spec.spec.");
+  });
+
+  test("sibling test path: .test.tsx / .spec.tsx also guarded (#526)", async () => {
+    setupDeps({
+      files: {
+        "src/components/Button.test.tsx": "",
+        "src/components/Button.spec.jsx": "",
+      },
+      globFiles: [],
+    });
+    const r1 = await provider.fetch(makeRequest({ touchedFiles: ["src/components/Button.test.tsx"] }));
+    const r2 = await provider.fetch(makeRequest({ touchedFiles: ["src/components/Button.spec.jsx"] }));
+    expect(r1.chunks[0]?.content ?? "").not.toContain("Button.test.test.");
+    expect(r2.chunks[0]?.content ?? "").not.toContain("Button.spec.spec.");
+  });
+
   test(".tsx file sibling maps to .test.tsx not .test.ts", async () => {
     setupDeps({ files: { "src/components/Button.tsx": "" }, globFiles: [] });
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/components/Button.tsx"] }));
