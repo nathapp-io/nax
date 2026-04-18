@@ -18,6 +18,7 @@
 import { createHash } from "node:crypto";
 import type { ScratchEntry } from "../../../session/scratch-writer";
 import { scratchFilePath } from "../../../session/scratch-writer";
+import { filterNaxInternalPaths } from "../../../utils/path-filters";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -84,7 +85,9 @@ function renderEntry(entry: ScratchEntry, targetAgentId?: string): string {
     case "rectify-attempt":
       return `**Rectify** attempt ${entry.attempt} at ${entry.timestamp}: ${entry.succeeded ? "succeeded" : "failed"}`;
     case "tdd-session": {
-      const changed = entry.filesChanged.length > 0 ? ` — changed: ${entry.filesChanged.join(", ")}` : "";
+      // #542: drop .nax/ bookkeeping noise so the prompt only surfaces real code changes.
+      const userChanged = filterNaxInternalPaths(entry.filesChanged);
+      const changed = userChanged.length > 0 ? ` — changed: ${userChanged.join(", ")}` : "";
       const lines = [
         `**TDD ${entry.role}** at ${entry.timestamp}: ${entry.success ? "succeeded" : "failed"}${changed}`,
       ];
