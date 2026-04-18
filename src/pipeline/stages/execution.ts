@@ -12,6 +12,7 @@ import { resolvePermissions } from "../../config/permissions";
 import { createContextToolRuntime } from "../../context/engine";
 import { writeRebuildManifest } from "../../context/engine/manifest-store";
 import { rebuildForSwap, resolveSwapTarget, shouldAttemptSwap } from "../../execution/escalation/agent-swap";
+import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -228,6 +229,10 @@ export const executionStage: PipelineStage = {
       );
       if (!shouldProceed) {
         logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
+        // H-1: mark session FAILED + force-close the physical handle (AC-83).
+        if (ctx.sessionManager && ctx.sessionId) {
+          await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
+        }
         return { action: "fail", reason: "Merge conflict detected" };
       }
     }
@@ -410,6 +415,11 @@ export const executionStage: PipelineStage = {
       if (result.rateLimited) {
         logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
       }
+      // H-1: mark session FAILED + force-close the physical handle (AC-83).
+      // Fires after fallback exhaustion or when fallback is unconfigured.
+      if (ctx.sessionManager && ctx.sessionId) {
+        await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
+      }
       return { action: "escalate" };
     }
 
@@ -435,4 +445,5 @@ export const _executionDeps = {
   resolveSwapTarget,
   rebuildForSwap,
   writeRebuildManifest,
+  failAndClose,
 };

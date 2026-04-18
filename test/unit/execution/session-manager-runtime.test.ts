@@ -1,11 +1,12 @@
 import { describe, expect, mock, test } from "bun:test";
-import { closeAllRunSessions, closeStorySessions } from "../../../src/execution/session-manager-runtime";
+import { closeAllRunSessions, closeStorySessions, failAndClose } from "../../../src/execution/session-manager-runtime";
 import type { SessionDescriptor, SessionState } from "../../../src/session/types";
 
 type SessionManagerLike = {
   closeStory(storyId: string): SessionDescriptor[];
   listActive(): SessionDescriptor[];
   transition?(id: string, to: SessionState): SessionDescriptor;
+  get?(id: string): SessionDescriptor | null;
 };
 
 const makeSessionDescriptor = (overrides: Partial<SessionDescriptor> = {}): SessionDescriptor =>
@@ -121,6 +122,79 @@ describe("closeAllRunSessions() — idempotency (H-5)", () => {
     expect(first).toBe(1);
     expect(second).toBe(0);
     expect(closeStory).toHaveBeenCalledTimes(1); // only called on first run
+  });
+});
+
+describe("failAndClose() — H-1", () => {
+  test("transitions session to FAILED and force-closes physical handle", async () => {
+    const runningSession = makeSessionDescriptor({ id: "sess-1", state: "RUNNING", handle: "nax-1", workdir: "/workdir/a" });
+    const failedSession = { ...runningSession, state: "FAILED" as SessionState };
+    const get = mock()
+      .mockImplementationOnce(() => runningSession) // initial guard check
+      .mockImplementationOnce(() => failedSession); // after transition
+    const transition = mock(() => failedSession);
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await failAndClose({ get, transition }, "sess-1", agentGetFn);
+
+    expect(transition).toHaveBeenCalledWith("sess-1", "FAILED");
+    expect(closePhysicalSession).toHaveBeenCalledWith("nax-1", "/workdir/a", { force: true });
+  });
+
+  test("is a no-op when session is already in a terminal state", async () => {
+    const terminalSession = makeSessionDescriptor({ id: "sess-1", state: "COMPLETED" });
+    const get = mock(() => terminalSession);
+    const transition = mock(() => terminalSession);
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await failAndClose({ get, transition }, "sess-1", agentGetFn);
+
+    expect(transition).not.toHaveBeenCalled();
+    expect(closePhysicalSession).not.toHaveBeenCalled();
+  });
+
+  test("is a no-op when session is unknown", async () => {
+    const get = mock(() => null);
+    const transition = mock();
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await failAndClose({ get, transition }, "sess-missing", agentGetFn);
+
+    expect(transition).not.toHaveBeenCalled();
+    expect(closePhysicalSession).not.toHaveBeenCalled();
+  });
+
+  test("swallows transition errors and skips physical close", async () => {
+    const runningSession = makeSessionDescriptor({ id: "sess-1", state: "RUNNING", handle: "nax-1" });
+    const get = mock(() => runningSession);
+    const transition = mock(() => {
+      throw new Error("invalid transition");
+    });
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await expect(failAndClose({ get, transition }, "sess-1", agentGetFn)).resolves.toBeUndefined();
+    expect(closePhysicalSession).not.toHaveBeenCalled();
+  });
+
+  test("skips physical close when the session has no handle", async () => {
+    const runningSession = makeSessionDescriptor({ id: "sess-1", state: "RUNNING", handle: undefined });
+    const failedSession = { ...runningSession, state: "FAILED" as SessionState };
+    const get = mock()
+      .mockImplementationOnce(() => runningSession)
+      .mockImplementationOnce(() => failedSession);
+    const transition = mock(() => failedSession);
+    const closePhysicalSession = mock(async () => {});
+    const agentGetFn = mock(() => ({ closePhysicalSession }));
+
+    await failAndClose({ get, transition }, "sess-1", agentGetFn);
+
+    expect(transition).toHaveBeenCalledTimes(1);
+    expect(agentGetFn).not.toHaveBeenCalled();
+    expect(closePhysicalSession).not.toHaveBeenCalled();
   });
 });
 

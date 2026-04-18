@@ -72,6 +72,39 @@ export async function closeStorySessions(
   return closedSessions.length;
 }
 
+/**
+ * Transition a session to FAILED and force-close its physical handle.
+ *
+ * Called by the execution stage at terminal failure points (agent exhaustion,
+ * merge conflict abort). Preserves state fidelity for audit, orphan sweep, and
+ * metrics; ensures AC-83 force-terminate fires even though run-completion
+ * teardown skips FAILED sessions (listActive() filters them out as terminal).
+ *
+ * No-op if the session is unknown, already in a terminal state, or the
+ * transition is rejected. Physical close is best-effort.
+ */
+export async function failAndClose(
+  sessionManager: Pick<ISessionManager, "get" | "transition">,
+  sessionId: string,
+  agentGetFn?: AgentGetFn,
+): Promise<void> {
+  const descriptor = sessionManager.get(sessionId);
+  if (!descriptor) return;
+  if (descriptor.state === "FAILED" || descriptor.state === "COMPLETED") return;
+
+  try {
+    sessionManager.transition(sessionId, "FAILED");
+  } catch {
+    // Invalid transition — bail out; do not force-close a session in unknown state.
+    return;
+  }
+
+  const failed = sessionManager.get(sessionId);
+  if (failed) {
+    await closePhysicalSession(failed, agentGetFn, true);
+  }
+}
+
 export async function closeAllRunSessions(
   sessionManager: Pick<ISessionManager, "listActive" | "closeStory" | "transition">,
   agentGetFn?: AgentGetFn,
