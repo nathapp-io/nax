@@ -48,6 +48,23 @@ export function isTestFile(filePath: string, testFilePatterns?: readonly string[
 }
 
 /**
+ * Map a test command string to a human-readable framework hint for agent prompts.
+ *
+ * Centralised in src/test-runners/ so callers (e.g. prompt builders) do not
+ * inline language-detection logic outside the SSOT module (ADR-009).
+ */
+export function buildTestFrameworkHint(testCommand: string): string {
+  const cmd = testCommand.trim();
+  if (!cmd || cmd.startsWith("bun test")) return "Use Bun test (describe/test/expect)";
+  if (cmd.startsWith("pytest") || cmd.startsWith("python -m pytest")) return "Use pytest";
+  if (cmd.startsWith("cargo test")) return "Use Rust's cargo test";
+  if (cmd.startsWith("go test")) return "Use Go's testing package";
+  if (cmd.includes("vitest")) return "Use Vitest (describe/test/expect)";
+  if (cmd.includes("jest") || cmd === "npm test" || cmd === "yarn test") return "Use Jest (describe/test/expect)";
+  return "Use your project's test framework";
+}
+
+/**
  * Detect the test framework that produced the given output.
  *
  * Inspects summary lines and failure markers to identify the runner.

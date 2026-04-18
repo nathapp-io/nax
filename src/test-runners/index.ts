@@ -11,7 +11,10 @@
  */
 
 export {
+  DEFAULT_SCAN_TEST_DIRS,
+  DEFAULT_SEPARATED_TEST_DIRS,
   DEFAULT_TEST_FILE_PATTERNS,
+  DEFAULT_TS_DERIVE_SUFFIXES,
   extractTestDirs,
   globsToPathspec,
   globsToTestRegex,
@@ -20,7 +23,7 @@ export {
 export { createTestFileClassifier } from "./classifier";
 export type { DetectionResult, DetectionSource } from "./detect";
 export { detectTestFilePatterns } from "./detect";
-export { detectFramework, isTestFile } from "./detector";
+export { buildTestFrameworkHint, detectFramework, isTestFile } from "./detector";
 export type { Framework } from "./detector";
 export {
   _resolverDeps,

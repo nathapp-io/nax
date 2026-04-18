@@ -13,21 +13,9 @@
  * - buildRoleTaskSection("lite") → implementer, lite
  */
 
-const DEFAULT_TEST_CMD = "bun test";
+import { buildTestFrameworkHint } from "../../test-runners";
 
-/**
- * Build a human-readable hint about which test framework to use.
- * Derives from the configured test command; falls back to Bun test hint.
- */
-function buildTestFrameworkHint(testCommand: string): string {
-  const cmd = testCommand.trim();
-  if (!cmd || cmd.startsWith("bun test")) return "Use Bun test (describe/test/expect)";
-  if (cmd.startsWith("pytest")) return "Use pytest";
-  if (cmd.startsWith("cargo test")) return "Use Rust's cargo test";
-  if (cmd.startsWith("go test")) return "Use Go's testing package";
-  if (cmd.includes("jest") || cmd === "npm test" || cmd === "yarn test") return "Use Jest (describe/test/expect)";
-  return "Use your project's test framework";
-}
+const DEFAULT_TEST_CMD = "bun test";
 
 export function buildRoleTaskSection(
   roleOrVariant:

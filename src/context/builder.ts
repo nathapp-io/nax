@@ -262,7 +262,11 @@ async function addFileElements(
 
   if (contextFiles.length === 0) return;
   const filesToLoad = contextFiles.slice(0, MAX_FILES);
-  const workdir = storyContext.workdir || process.cwd();
+  const { workdir } = storyContext;
+  if (!workdir) {
+    getLogger().warn("context", "workdir not set — cannot load context files", { storyId: story.id });
+    return;
+  }
 
   for (const relativeFilePath of filesToLoad) {
     try {
