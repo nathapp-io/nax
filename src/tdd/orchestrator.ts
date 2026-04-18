@@ -534,14 +534,25 @@ export async function runThreeSessionTddFromCtx(
 
       let created: string | undefined;
       if (ctx.sessionManager && ctx.prd.feature) {
-        const descriptor = ctx.sessionManager.create({
-          role,
-          agent: ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
-          workdir: ctx.workdir,
-          projectDir: ctx.projectDir,
-          featureName: ctx.prd.feature,
-          storyId: ctx.story.id,
-        });
+        // #540: the context stage (src/pipeline/stages/context.ts) pre-creates an
+        // implementer-role descriptor that owns ctx.sessionId + ctx.sessionScratchDir.
+        // Reuse it here instead of creating a second implementer descriptor for the
+        // TDD implementer session — otherwise the run leaves two implementer
+        // descriptors on disk with only one ever binding protocolIds.
+        const reuseExisting =
+          role === "implementer" && ctx.sessionId && ctx.sessionScratchDir
+            ? ctx.sessionManager.get(ctx.sessionId)
+            : undefined;
+        const descriptor =
+          reuseExisting ??
+          ctx.sessionManager.create({
+            role,
+            agent: ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+            workdir: ctx.workdir,
+            projectDir: ctx.projectDir,
+            featureName: ctx.prd.feature,
+            storyId: ctx.story.id,
+          });
         created = descriptor.scratchDir;
         // #541: remember the descriptor id so runTddSession can bind handle later.
         sessionIdByRole.set(role, descriptor.id);
