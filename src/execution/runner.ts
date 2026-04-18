@@ -146,7 +146,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
     getTotalStories: () => (prd ? countStories(prd).total : 0),
   });
 
-  const { statusWriter, pidRegistry, cleanupCrashHandlers, pluginRegistry, interactionChain } = setupResult;
+  const { statusWriter, pidRegistry, sessionManager, cleanupCrashHandlers, pluginRegistry, interactionChain } =
+    setupResult;
   prd = setupResult.prd;
 
   try {
@@ -175,6 +176,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         onBeforeStory: () => registry.resetStoryState(),
         pidRegistry,
         interactionChain,
+        sessionManager,
       },
       prd,
       pluginRegistry,

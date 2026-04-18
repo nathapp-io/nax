@@ -13,6 +13,7 @@ import type { RoutingResult } from "../pipeline/types";
 import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
+import type { ISessionManager } from "../session";
 import type { StoryBatch } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { PidRegistry } from "./pid-registry";
@@ -31,6 +32,8 @@ export interface SequentialExecutionContext {
   eventEmitter?: PipelineEventEmitter;
   statusWriter: StatusWriter;
   logFilePath?: string;
+  /** Run-level SessionManager shared across all iterations in this run. */
+  sessionManager?: ISessionManager;
   runId: string;
   startTime: number;
   batchPlan: StoryBatch[];
