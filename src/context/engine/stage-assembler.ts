@@ -150,8 +150,7 @@ export async function assembleForStage(
   try {
     // Defensive check: test fixtures may bypass Zod and omit `pluginProviders`.
     const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
-    const pluginProviders =
-      pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir) : [];
+    const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir) : [];
     const storyScratchDirs = await getStoryScratchDirs(ctx, options);
 
     const orchestrator = _stageAssemblerDeps.createOrchestrator(
