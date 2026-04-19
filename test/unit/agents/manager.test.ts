@@ -160,8 +160,11 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
     expect(makeManager().nextCandidate("claude", 0)).toBe("codex");
   });
 
-  test("returns null when hop exceeds candidates", () => {
-    expect(makeManager().nextCandidate("claude", 1)).toBeNull();
+  test("returns first available candidate regardless of hopsSoFar (unavailable filtering is the guard)", () => {
+    // nextCandidate always returns the first available candidate. The hop count does not act
+    // as an index — agents are filtered out via markUnavailable before nextCandidate is called,
+    // so the filter is the guard for exhaustion, not the hop index.
+    expect(makeManager().nextCandidate("claude", 1)).toBe("codex");
   });
 
   test("returns null for unknown agent", () => {

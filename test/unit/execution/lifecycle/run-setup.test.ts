@@ -6,10 +6,8 @@
  * receives the auto-detected value.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { rmSync } from "node:fs";
 import { _runSetupDeps, warnFallbackMisconfiguration } from "../../../../src/execution/lifecycle/run-setup";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,12 +93,10 @@ describe("setupRun — project detection logging (AC-4)", () => {
 describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", () => {
   function makeConfig(fallbackMap: Record<string, string[]> = {}) {
     return {
-      context: {
-        v2: {
-          fallback: {
-            enabled: Object.keys(fallbackMap).length > 0,
-            map: fallbackMap,
-          },
+      agent: {
+        fallback: {
+          enabled: Object.keys(fallbackMap).length > 0,
+          map: fallbackMap,
         },
       },
     } as unknown as import("../../../../src/config").NaxConfig;
@@ -149,7 +145,7 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     const { logger, warns } = makeLogger();
     const agentGetFn = (_name: string) => undefined;
     const config = {
-      context: { v2: { fallback: { enabled: false, map: { claude: ["gemini"] } } } },
+      agent: { fallback: { enabled: false, map: { claude: ["gemini"] } } },
     } as unknown as import("../../../../src/config").NaxConfig;
 
     warnFallbackMisconfiguration(

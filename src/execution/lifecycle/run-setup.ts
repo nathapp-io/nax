@@ -42,7 +42,7 @@ export const _runSetupDeps = {
 };
 
 /**
- * Emit a warning for each fallback candidate in config.context.v2.fallback.map
+ * Emit a warning for each fallback candidate in config.agent.fallback.map
  * that cannot be resolved by agentGetFn (AC-35 pre-flight check).
  *
  * Deduplicates warnings so each unconfigured candidate is reported once even
@@ -54,7 +54,7 @@ export function warnFallbackMisconfiguration(
   logger: ReturnType<typeof getSafeLogger>,
 ): void {
   if (!agentGetFn) return;
-  const fallback = config.context?.v2?.fallback;
+  const fallback = config.agent?.fallback;
   if (!fallback?.enabled || !fallback.map) return;
 
   const warned = new Set<string>();
