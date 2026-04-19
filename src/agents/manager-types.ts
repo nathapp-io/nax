@@ -5,7 +5,7 @@
 
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
-import type { AgentResult, AgentRunOptions, CompleteResult } from "./types";
+import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
 
 export interface AgentFallbackRecord {
   storyId?: string;
@@ -84,4 +84,11 @@ export interface IAgentManager {
    * Full loop logic lands in Phase 5.
    */
   runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome>;
+
+  /**
+   * One-shot completion with cross-agent fallback.
+   * Mirrors runWithFallback but for complete() calls.
+   * Swaps on availability failures when agent.fallback.enabled.
+   */
+  completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome>;
 }

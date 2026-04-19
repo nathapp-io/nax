@@ -12,6 +12,7 @@ import type { AdapterFailure } from "../context/engine/types";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type {
+  AgentCompleteOutcome,
   AgentFallbackRecord,
   AgentManagerEventName,
   AgentManagerEvents,
@@ -20,7 +21,7 @@ import type {
   IAgentManager,
 } from "./manager-types";
 import type { AgentRegistry } from "./registry";
-import type { AgentResult } from "./types";
+import type { AgentResult, CompleteOptions, CompleteResult } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -219,6 +220,74 @@ export class AgentManager implements IAgentManager {
 
       logger?.info("agent-manager", "Agent swap triggered", {
         storyId: request.runOptions.storyId,
+        fromAgent: currentAgent,
+        toAgent: next,
+        hop: hopsSoFar,
+      });
+
+      currentAgent = next;
+    }
+  }
+
+  async completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome> {
+    const logger = getSafeLogger();
+    const fallbacks: AgentFallbackRecord[] = [];
+    let currentAgent = this.getDefault();
+    let hopsSoFar = 0;
+
+    while (true) {
+      const adapter = this._registry?.getAgent(currentAgent);
+      if (!adapter) {
+        return {
+          result: { output: "", costUsd: 0, source: "fallback" },
+          fallbacks,
+        };
+      }
+
+      let result: CompleteResult;
+      try {
+        result = await adapter.complete(prompt, options);
+      } catch (err) {
+        result = {
+          output: "",
+          costUsd: 0,
+          source: "fallback",
+          adapterFailure: {
+            category: "quality",
+            outcome: "fail-unknown",
+            retriable: false,
+            message: String(err).slice(0, 500),
+          },
+        };
+      }
+
+      if (!result.adapterFailure) return { result, fallbacks };
+
+      // Pass a truthy sentinel bundle so shouldSwap's !bundle guard passes.
+      // completeWithFallback never rebuilds context (no bundle in complete flow).
+      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, {} as ContextBundle)) {
+        return { result, fallbacks };
+      }
+
+      const next = this.nextCandidate(currentAgent, hopsSoFar);
+      if (!next) return { result, fallbacks };
+
+      this.markUnavailable(currentAgent, result.adapterFailure);
+      hopsSoFar += 1;
+
+      const hop: AgentFallbackRecord = {
+        priorAgent: currentAgent,
+        newAgent: next,
+        hop: hopsSoFar,
+        outcome: result.adapterFailure.outcome,
+        category: result.adapterFailure.category,
+        timestamp: new Date().toISOString(),
+        costUsd: result.costUsd ?? 0,
+      };
+      fallbacks.push(hop);
+      this._emitter.emit("onSwapAttempt", hop);
+
+      logger?.info("agent-manager", "complete() swap triggered", {
         fromAgent: currentAgent,
         toAgent: next,
         hop: hopsSoFar,
