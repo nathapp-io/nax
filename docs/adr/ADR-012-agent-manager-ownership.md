@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Date:** 2026-04-18
 **Author:** William Khoo, Claude
-**Related:** ADR-011 (SessionManager precedent); #474 (Phase 5.5 fallback)
+**Related:** ADR-011 (SessionManager precedent); #474 (Phase 5.5 fallback); #523 (prompt-audit on SessionManager); #529 (AgentRunOptions cleanup); #518 (credential validation); #519 (fallback aggregates)
 
 ---
 
@@ -39,6 +39,18 @@ The T16.3 failure was the canary. The real forcing function is polyglot agent su
 
 Move agent *lifecycle and policy* out of the ACP adapter and out of the context engine into a dedicated `AgentManager` (mirrors the SessionManager extraction of ADR-011). Consolidate all three configs under `config.agent`.
 
+### Retry-layer separation (scope clarification)
+
+Three retry layers exist today. This ADR moves **only one** of them.
+
+| Layer | Current owner | Post-ADR owner | Scope |
+|:---|:---|:---|:---|
+| **Availability retry** (auth / 429 / service-down → swap agent) | `AcpAgentAdapter._unavailableAgents`, `resolveFallbackOrder`, execution-stage inline loop | **AgentManager** (this ADR) | Cross-agent policy |
+| **Transport retry** (broken socket, `QUEUE_DISCONNECTED_BEFORE_COMPLETION`, stale session) | `AcpAgentAdapter` — `sessionErrorRetryable` loop | **Adapter** (unchanged) | Protocol-level, same agent |
+| **Payload-shape retry** (JSON parse failed → re-ask LLM) | `src/review/semantic.ts`, `src/review/adversarial.ts` | **Caller** (unchanged) | Output validation, same agent |
+
+Reviewers must not conflate these. AgentManager owns *only* availability-category swaps. Transport and payload retries stay where they are and continue to operate against a single agent. This keeps the ownership boundary crisp and prevents a T16.3-style silent regression where a JSON-parse retry gets swallowed by `runWithFallback` and swaps the agent mid-review.
+
 ### Ownership boundary
 
 ```
@@ -63,7 +75,23 @@ ContextOrchestrator  (src/context/engine/)
 Owns:
   - rebuildForAgent(bundle, targetProfile) — called by AgentManager
   - Does NOT own: "should we swap?" decision
+
+SessionManager  (src/session/manager.ts — ADR-011 + #523)
+─────────────────────────────────────────
+Owns:
+  - Stable session id (sess-<uuid>)
+  - Prompt audit (per #523, moved from ACP adapter)
+  - handoff(id, newAgent) — called by AgentManager on swap
+  - Does NOT own: agent selection or fallback policy
 ```
+
+### Cross-ADR relationships
+
+- **#523 (prompt-audit → SessionManager):** audit ownership lives on SessionManager, not AgentManager. AgentManager emits `onSwapAttempt` events; SessionManager correlates them into the audit trail via stable `sess-<uuid>`. #523 is non-blocking and can land in parallel with #552 Phase 1-3.
+- **#529 (AgentRunOptions cleanup):** deletes `buildSessionName`, `keepSessionOpen`, `acpSessionName` from `AgentRunOptions`. **Blocks Phase 4** of this ADR — Phase 4 rewrites the same auth/rate-limit handlers in `AcpAgentAdapter` that #529 touches. Landing #529 first avoids merging around legacy Phase-5.5 comments and touching the same lines twice.
+- **#518 (credential pre-validation):** AgentManager is the natural owner of startup credential pruning. **Folded into Phase 2** of this ADR.
+- **#519 (run-level fallback aggregates):** consumes `AgentFallbackRecord`. **Folded into Phase 5** of this ADR.
+- **Cost tracking:** no new cost manager needed. `src/agents/cost/` already populates `AgentResult.estimatedCost` + `tokenUsage`, and `src/metrics/tracker.ts` aggregates across stories. AgentManager annotates each failed hop's cost into `AgentFallbackRecord.costUsd` so #519 can report "cost of wasted attempts."
 
 ### Canonical config shape — `config.agent`
 
@@ -111,6 +139,12 @@ Shim lives for 3 canary releases, then removed. Users get a clear migration mess
 
 Adapters become dumb: `run()` returns `RunResult` with `adapterFailure: { category, outcome, retriable, message }`. They no longer throw `AllAgentsUnavailableError`. The manager decides what to do.
 
+### `run()` vs `complete()` — not consolidated
+
+`AgentAdapter.run()` (multi-turn, tool use, interaction bridge) and `AgentAdapter.complete()` (one-shot, no tools, returns `CompleteResult { output, costUsd, source }`) remain **separate entry points**. Their option shapes diverge enough (~18 fields each, ~4 overlap) that merging them produces option-soup without simplifying any call site.
+
+AgentManager exposes `runWithFallback(request)` in this ADR. A parallel `completeWithFallback(prompt, options)` is **out of scope** here — today `complete()` has no fallback at all, which is a latent gap tracked as **#567**. Phase 1 only requires `getDefault()` to satisfy `complete()` call sites; `completeWithFallback()` lands between Phase 4 and Phase 5 so Phase 5 execution-stage consolidation only has to think about one fallback primitive.
+
 ---
 
 ## Consequences
@@ -139,37 +173,114 @@ Adapters become dumb: `run()` returns `RunResult` with `adapterFailure: { catego
 
 ## Implementation Plan (Phased)
 
-**Phase 1 — AgentManager skeleton (no behaviour change)**
+### Sequencing
+
+- **#529 must land before Phase 4.** Phase 4 rewrites the same `AcpAgentAdapter` handlers that #529 cleans up; doing them in the wrong order merges around Phase-5.5 comments and touches the same lines twice.
+- **#518 folds into Phase 2** (credential pre-validation lives on AgentManager).
+- **#519 folds into Phase 5** (fallback aggregates consume `AgentFallbackRecord`).
+- **#523 is non-blocking** and can land in parallel with Phase 1-3.
+
+### Phase 1 — AgentManager skeleton (no behaviour change)
+
+**Deliverables:**
 - Create `src/agents/manager.ts` with `IAgentManager` interface.
 - Manager wraps existing `createAgentRegistry(config)` and exposes `getDefault()`, `isUnavailable()`, `markUnavailable()` as pass-throughs to current state.
 - Thread `agentManager` through `PipelineContext` and `Runner`.
 - All call sites still read `config.autoMode.defaultAgent`; no migration yet.
 
-**Phase 2 — Config consolidation + migration shim**
+**Acceptance criteria:**
+- [ ] `IAgentManager` interface exported from `src/agents/manager.ts` (reachable via `src/agents` barrel).
+- [ ] `PipelineContext.agentManager` populated by `Runner` — exactly one instance per run.
+- [ ] `AgentManager.getDefault()` returns `config.autoMode.defaultAgent` unchanged (legacy pass-through).
+- [ ] `shouldSwap`, `nextCandidate`, `runWithFallback` methods exist as thin wrappers over current code paths.
+- [ ] All existing tests pass without modification — no call-site changes yet.
+- [ ] `test/unit/agents/manager.test.ts` covers `getDefault()`, per-run state isolation, event emission on `markUnavailable()`.
+- [ ] No config changes.
+
+### Phase 2 — Config consolidation + migration shim
+
+**Deliverables:**
 - Add `AgentConfigSchema` with `default`, `fallback`, inheriting existing `protocol` + `maxInteractionTurns`.
 - Add migration shim in `loader.ts` (pre-parse, logs warn on each legacy key).
 - Update `src/config/defaults.ts` — `config.agent` becomes the canonical location.
+- **Fold #518:** `AgentManager.validateCredentials()` runs at `runSetupPhase`, prunes fallback candidates with missing credentials, fails fast if primary missing.
 
-**Phase 3 — Migrate call sites (codemod + manual review)**
+**Acceptance criteria:**
+- [ ] `AgentConfigSchema` in `src/config/schemas.ts` uses Zod `.default()` values (no hand-maintained defaults — per `config-patterns.md`).
+- [ ] `applyAgentConfigMigration()` migrates all 3 legacy keys (`autoMode.defaultAgent`, `autoMode.fallbackOrder`, `context.v2.fallback`) with warn-once semantics.
+- [ ] Mixed legacy + canonical config: canonical wins, warning still emitted.
+- [ ] `AgentManager.getDefault()` reads from `config.agent.default` first, falls back to legacy during Phase 1-5.
+- [ ] `AgentManager.validateCredentials()` called from `runSetupPhase()` — missing fallback candidate → warning + pruned; missing primary → `NaxError`.
+- [ ] T16.3 `fallback-probe` fixture exhibits observable swap (canary pass) — schema propagation alone unblocks the silent no-op.
+- [ ] `test/unit/config/loader-migration.test.ts` covers 3 keys × 3 shape variants.
+- [ ] `test/unit/execution/lifecycle/run-setup.test.ts` covers credential pre-validation.
+
+### Phase 3 — Migrate call sites (codemod + manual review)
+
+**Deliverables (one PR per subsystem):**
 - Replace `config.autoMode.defaultAgent` → `agentManager.getDefault()` at all 79 sites via codemod.
 - Replace `config.autoMode.fallbackOrder` → `agentManager.resolveFallbackChain(agent)` at 3 sites.
 - Replace `config.context.v2.fallback` → `agentManager.getFallbackConfig()` at 2 sites.
-- Per-PR commit per subsystem: routing / execution / tdd / acceptance / debate / review / autofix.
+- Per-PR commit per subsystem: routing / execution / tdd / acceptance / debate / review / autofix / CLI.
 
-**Phase 4 — Adapter cleanup**
-- Remove `AcpAgentAdapter._unavailableAgents`, `resolveFallbackOrder()`, `_unavailableAgents` markers.
+**Acceptance criteria:**
+- [ ] `grep -rn "config.autoMode.defaultAgent" src/` outside `src/config/` returns 0 hits.
+- [ ] `grep -rn "config.autoMode.fallbackOrder" src/` outside `src/config/` returns 0 hits.
+- [ ] `grep -rn "context.v2.fallback" src/` outside `src/config/` returns 0 hits.
+- [ ] Each sub-PR passes the full test suite independently.
+- [ ] No behaviour change — manager is still a pass-through to legacy code paths.
+- [ ] Codemod artefact preserved in `scripts/codemods/agent-manager-migration.ts` for auditability.
+
+### Phase 4 — Adapter cleanup *(requires #529 merged first)*
+
+**Deliverables:**
+- Remove `AcpAgentAdapter._unavailableAgents`, `resolveFallbackOrder()`, `markUnavailable()`.
 - Auth / rate-limit handlers now return `adapterFailure: { category: "availability", outcome: "fail-auth" | "fail-rate-limit", retriable: true }` instead of throwing `AllAgentsUnavailableError`.
 - Delete `AllAgentsUnavailableError` class (no longer thrown).
 
-**Phase 5 — Execution-stage consolidation**
-- Collapse the inline swap loop in `pipeline/stages/execution.ts` into `agentManager.runWithFallback(request)`.
-- `src/execution/escalation/agent-swap.ts` becomes a thin adapter over AgentManager (or deletes entirely, logic moves into manager).
-- `ContextOrchestrator.rebuildForAgent` becomes the only context-side API; `context.v2.fallback` schema entry is removed (shim still accepts the legacy key).
+**Acceptance criteria:**
+- [ ] `AcpAgentAdapter._unavailableAgents` private state deleted.
+- [ ] `AcpAgentAdapter.resolveFallbackOrder()` deleted.
+- [ ] `AllAgentsUnavailableError` deleted from `src/errors.ts` and `src/agents/index.ts`.
+- [ ] Auth / rate-limit handlers return `adapterFailure`, never throw.
+- [ ] Invariant test: adapter never throws for classifiable failures — last-resort catch in `runWithFallback` stays as backstop only.
+- [ ] Transport retries (`sessionErrorRetryable` loop, `QUEUE_DISCONNECTED_BEFORE_COMPLETION`) remain in adapter, unchanged.
+- [ ] Payload-shape retries in `src/review/semantic.ts`, `src/review/adversarial.ts` untouched.
+- [ ] #529 is closed before this phase opens its PR.
 
-**Phase 6 — Remove migration shim**
+### Phase 5 — Execution-stage consolidation
+
+**Deliverables:**
+- Collapse the inline swap loop in `pipeline/stages/execution.ts` into `agentManager.runWithFallback(request)`.
+- `src/execution/escalation/agent-swap.ts` deleted (logic moves into manager).
+- `ContextOrchestrator.rebuildForAgent` becomes the only context-side API; `context.v2.fallback` schema entry is removed (shim still accepts the legacy key).
+- **Fold #519:** `AgentFallbackRecord.costUsd` populated per hop; `RunSummary.fallback` aggregates surfaced.
+
+**Acceptance criteria:**
+- [ ] `src/pipeline/stages/execution.ts` LOC reduced by ≥120.
+- [ ] `src/execution/escalation/agent-swap.ts` deleted.
+- [ ] `context.v2.fallback` schema entry removed (shim still accepts legacy key for 3 canaries).
+- [ ] `AgentFallbackRecord` includes `costUsd: number` populated from failed-hop `RunResult.estimatedCost`.
+- [ ] `RunSummary.fallback: { totalHops, perPair, exhaustedStories, totalWastedCostUsd }` surfaced.
+- [ ] Snapshot tests for `context-manifest-rebuild-*.json` unchanged.
+- [ ] T16.3 dogfood: `agentFallbacks: [{priorAgent: "claude", newAgent: "codex", hop: 1, costUsd: ...}]` appears in `run.complete`.
+- [ ] `test/unit/metrics/tracker.test.ts` covers aggregation.
+
+### Phase 6 — Remove migration shim
+
+**Deliverables:**
 - 3 canaries after Phase 2 lands, delete the shim.
 - Schema no longer accepts `autoMode.defaultAgent`, `autoMode.fallbackOrder`, `context.v2.fallback`.
 - `AllAgentsUnavailableError` stays deleted.
+
+**Acceptance criteria:**
+- [ ] `applyAgentConfigMigration()` deleted from `src/config/loader.ts`.
+- [ ] `defaultAgent`, `fallbackOrder` removed from `AutoModeConfigSchema`.
+- [ ] `ContextV2FallbackConfigSchema` removed.
+- [ ] Loading a pre-migration config → Zod validation error with clear "migrate to `agent.*` per ADR-012" message.
+- [ ] 3 canary releases have passed between Phase 2 and this phase.
+- [ ] CHANGELOG breaking-change note added.
+- [ ] `docs/architecture/conventions.md` and `.claude/rules/config-patterns.md` updated.
 
 ---
 
