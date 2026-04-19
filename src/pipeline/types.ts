@@ -92,6 +92,8 @@ export interface PipelineContext {
    * `projectDir` — never re-join `story.workdir` onto this value.
    */
   workdir: string;
+  /** Dependency-preparation context for worktree execution, if one was created. */
+  worktreeDependencyContext?: import("../worktree/types").WorktreeDependencyContext;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */
   prdPath?: string;
   /** Feature directory (optional, e.g., nax/features/my-feature/) */

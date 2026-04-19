@@ -170,6 +170,7 @@ export const executionStage: PipelineStage = {
     const result = await agent.run({
       prompt: ctx.prompt,
       workdir: ctx.workdir,
+      env: ctx.worktreeDependencyContext?.env,
       modelTier: effectiveTier,
       modelDef: resolveModelForAgent(
         ctx.rootConfig.models,

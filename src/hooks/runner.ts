@@ -7,6 +7,7 @@
 import { join } from "node:path";
 import { buildAllowedEnv } from "../agents/shared/env";
 import { getLogger } from "../logger";
+import { parseCommandToArgv } from "../utils/command-argv";
 import { loadJsonFile } from "../utils/json-file";
 import { killProcessGroup } from "../utils/process-kill";
 import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
@@ -130,78 +131,7 @@ export function validateHookCommand(command: string): void {
   }
 }
 
-/**
- * Parse command string into argv array using POSIX-style quote-aware parsing.
- *
- * Handles:
- * - Single-quoted tokens: 'foo bar' → one argument, no escape processing
- * - Double-quoted tokens: "foo bar" → one argument, \\ and \" escape sequences
- * - Unquoted tokens: split on whitespace
- * - ~/path expansion using the sanitized HOME from buildAllowedEnv (safe against HOME injection)
- *
- * @param command - Command string
- * @returns Array of command and arguments
- */
-export function parseCommandToArgv(command: string): string[] {
-  // Use the same sanitized HOME that agent subprocesses receive, not raw process.env.HOME.
-  // buildAllowedEnv validates that HOME is an absolute path (falls back to os.homedir()).
-  const safeEnv = buildAllowedEnv();
-  const home = (safeEnv.HOME as string | undefined) ?? "";
-
-  const args: string[] = [];
-  let current = "";
-  let i = 0;
-  const s = command.trim();
-
-  while (i < s.length) {
-    const ch = s[i];
-
-    if (ch === " " || ch === "\t") {
-      // Whitespace outside quotes — flush token
-      if (current.length > 0) {
-        args.push(current);
-        current = "";
-      }
-      i++;
-      continue;
-    }
-
-    if (ch === "'") {
-      // Single-quoted: consume until closing ', no escape processing
-      i++;
-      while (i < s.length && s[i] !== "'") {
-        current += s[i++];
-      }
-      i++; // skip closing '
-      continue;
-    }
-
-    if (ch === '"') {
-      // Double-quoted: consume until closing ", handle \\ and \"
-      i++;
-      while (i < s.length && s[i] !== '"') {
-        if (s[i] === "\\" && i + 1 < s.length && (s[i + 1] === '"' || s[i + 1] === "\\")) {
-          current += s[i + 1];
-          i += 2;
-        } else {
-          current += s[i++];
-        }
-      }
-      i++; // skip closing "
-      continue;
-    }
-
-    current += ch;
-    i++;
-  }
-
-  if (current.length > 0) {
-    args.push(current);
-  }
-
-  // Expand leading ~/ using sanitized home directory
-  return args.map((token) => (token.startsWith("~/") && home ? home + token.slice(1) : token));
-}
+export { parseCommandToArgv };
 
 /**
  * Execute a single hook

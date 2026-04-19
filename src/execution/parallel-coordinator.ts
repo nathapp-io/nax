@@ -202,6 +202,7 @@ export async function executeParallel(
       config,
       baseContext,
       worktreePaths,
+      new Map(),
       maxConcurrency,
       eventEmitter,
       storyEffectiveConfigs,

@@ -20,6 +20,8 @@ import type { PipelineRunResult } from "../pipeline/runner";
 import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
+import { prepareWorktreeDependencies } from "../worktree/dependencies";
+import type { WorktreeDependencyContext } from "../worktree/types";
 
 /**
  * Result returned by runParallelBatch.
@@ -74,6 +76,7 @@ export const _parallelBatchDeps = {
     _config: NaxConfig,
     _context: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">,
     _worktreePaths: Map<string, string>,
+    _dependencyContexts: Map<string, WorktreeDependencyContext>,
     _maxConcurrency: number,
     _eventEmitter?: PipelineEventEmitter,
     _storyEffectiveConfigs?: Map<string, NaxConfig>,
@@ -85,6 +88,7 @@ export const _parallelBatchDeps = {
       _config,
       _context,
       _worktreePaths,
+      _dependencyContexts,
       _maxConcurrency,
       _eventEmitter,
       _storyEffectiveConfigs,
@@ -105,6 +109,7 @@ export const _parallelBatchDeps = {
     const { rectifyConflictedStory } = await import("./merge-conflict-rectify");
     return rectifyConflictedStory(opts);
   },
+  prepareWorktreeDependencies,
 };
 
 /**
@@ -150,17 +155,65 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
       }),
   );
 
+  const dependencyContexts = new Map<string, WorktreeDependencyContext>();
+  const readyStories: UserStory[] = [];
+  const preExecutionFailures: RunParallelBatchResult["failed"] = [];
+  for (const story of stories) {
+    const worktreeRoot = worktreePaths.get(story.id);
+    if (!worktreeRoot) continue;
+
+    const effectiveConfig = storyEffectiveConfigs.get(story.id) ?? config;
+    try {
+      const dependencyContext = await _parallelBatchDeps.prepareWorktreeDependencies({
+        projectRoot: workdir,
+        worktreeRoot,
+        storyId: story.id,
+        storyWorkdir: story.workdir,
+        config: effectiveConfig,
+      });
+      dependencyContexts.set(story.id, dependencyContext);
+      readyStories.push(story);
+    } catch (error) {
+      preExecutionFailures.push({
+        story,
+        pipelineResult: {
+          success: false,
+          finalAction: "fail",
+          reason: error instanceof Error ? error.message : String(error),
+          stoppedAtStage: "worktree-dependencies",
+          context: { ...pipelineContext, story, stories: [story], workdir: worktreeRoot } as PipelineContext,
+        },
+      });
+      try {
+        await worktreeManager.remove(workdir, story.id);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+
   // 2. Execute all stories in parallel
-  const workerResult = await _parallelBatchDeps.executeParallelBatch(
-    stories,
-    workdir,
-    config,
-    pipelineContext,
-    worktreePaths,
-    maxConcurrency,
-    eventEmitter,
-    storyEffectiveConfigs.size > 0 ? storyEffectiveConfigs : undefined,
-  );
+  const workerResult: import("./parallel-worker").ParallelBatchResult =
+    readyStories.length > 0
+      ? await _parallelBatchDeps.executeParallelBatch(
+          readyStories,
+          workdir,
+          config,
+          pipelineContext,
+          worktreePaths,
+          dependencyContexts,
+          maxConcurrency,
+          eventEmitter,
+          storyEffectiveConfigs.size > 0 ? storyEffectiveConfigs : undefined,
+        )
+      : {
+          pipelinePassed: [],
+          merged: [],
+          failed: [],
+          totalCost: 0,
+          mergeConflicts: [],
+          storyCosts: new Map(),
+        };
   // Batch execution complete — record end time for stories resolved in the batch
   const batchEndMs = Date.now();
 
@@ -208,15 +261,18 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // We always ensure pipelineResult is defined so downstream consumers (e.g. reporter)
   // can rely on it unconditionally. When pipelineResult is absent from the worker result,
   // we synthesize a minimal PipelineRunResult with success=false and the error message.
-  const failed: RunParallelBatchResult["failed"] = workerResult.failed.map((f) => ({
-    story: f.story,
-    pipelineResult: f.pipelineResult ?? {
-      success: false,
-      finalAction: "fail" as const,
-      reason: f.error,
-      context: { ...pipelineContext, story: f.story, stories: [f.story], workdir } as PipelineContext,
-    },
-  }));
+  const failed: RunParallelBatchResult["failed"] = [
+    ...preExecutionFailures,
+    ...workerResult.failed.map((f) => ({
+      story: f.story,
+      pipelineResult: f.pipelineResult ?? {
+        success: false,
+        finalAction: "fail" as const,
+        reason: f.error,
+        context: { ...pipelineContext, story: f.story, stories: [f.story], workdir } as PipelineContext,
+      },
+    })),
+  ];
 
   // 5. Rectify merge conflicts sequentially
   // Track per-story end times: conflicts extend past batchEndMs into rectification.
@@ -226,7 +282,7 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   for (const story of [...workerResult.pipelinePassed, ...workerResult.merged]) {
     storyEndTimes.set(story.id, batchEndMs);
   }
-  for (const { story } of workerResult.failed) {
+  for (const { story } of failed) {
     storyEndTimes.set(story.id, batchEndMs);
   }
 

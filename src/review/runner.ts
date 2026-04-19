@@ -153,8 +153,9 @@ async function runCheck(
   command: string,
   workdir: string,
   storyId?: string,
+  env?: Record<string, string | undefined>,
 ): Promise<ReviewCheckResult> {
-  const result = await runQualityCommand({ commandName: check, command, workdir, storyId });
+  const result = await runQualityCommand({ commandName: check, command, workdir, storyId, env });
   return {
     check,
     command: result.command,
@@ -208,6 +209,7 @@ export async function runReview(
   executionConfig?: ExecutionConfig,
   qualityCommands?: QualityConfig["commands"],
   storyId?: string,
+  env?: Record<string, string | undefined>,
   storyGitRef?: string,
   story?: SemanticStory,
   modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
@@ -370,7 +372,7 @@ export async function runReview(
     }
 
     // Run the check
-    const result = await runCheck(checkName, command, workdir, storyId);
+    const result = await runCheck(checkName, command, workdir, storyId, env);
     checks.push(result);
 
     // Track first failure

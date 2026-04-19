@@ -244,6 +244,32 @@ describe("AC-2: runParallelBatch — failed stories", () => {
   });
 });
 
+describe("worktree dependency preparation", () => {
+  test("prepares dependencies before executeParallelBatch runs", async () => {
+    const story = makeStory("US-010", { workdir: "packages/app" });
+    const prd = makePrd([story]);
+    const ctx = makeCtx(tmpDir);
+    const callOrder: string[] = [];
+
+    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
+      create: mock(async () => {}),
+      remove: mock(async () => {}),
+    })) as typeof _parallelBatchDeps.createWorktreeManager;
+    _parallelBatchDeps.prepareWorktreeDependencies = mock(async () => {
+      callOrder.push("prepare");
+      return { cwd: `${tmpDir}/.nax-wt/US-010/packages/app`, env: { PATH: "/tmp/bin" } };
+    }) as typeof _parallelBatchDeps.prepareWorktreeDependencies;
+    _parallelBatchDeps.executeParallelBatch = mock(async () => {
+      callOrder.push("execute");
+      return makeWorkerBatchResult();
+    });
+
+    await runParallelBatch({ stories: [story], ctx, prd });
+
+    expect(callOrder).toEqual(["prepare", "execute"]);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-3: merge conflicts
 // ─────────────────────────────────────────────────────────────────────────────

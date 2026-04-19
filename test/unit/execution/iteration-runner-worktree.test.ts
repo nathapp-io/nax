@@ -43,9 +43,24 @@ describe("_iterationRunnerDeps.worktreeManager (EXEC-002)", () => {
     // It should be a function (the real existsSync from node:fs)
     expect(typeof _iterationRunnerDeps.existsSync).toBe("function");
   });
+
+  test("iteration runner exposes dependency-prep and runPipeline deps", () => {
+    expect(typeof _iterationRunnerDeps.prepareWorktreeDependencies).toBe("function");
+    expect(typeof _iterationRunnerDeps.runPipeline).toBe("function");
+  });
 });
 
 describe("worktree creation gating (EXEC-002)", () => {
+  test("source calls prepareWorktreeDependencies before runPipeline", async () => {
+    const src = await Bun.file("src/execution/iteration-runner.ts").text();
+    const prepIndex = src.indexOf("prepareWorktreeDependencies");
+    const runPipelineIndex = src.indexOf("runPipeline(defaultPipeline");
+
+    expect(prepIndex).toBeGreaterThan(-1);
+    expect(runPipelineIndex).toBeGreaterThan(-1);
+    expect(prepIndex).toBeLessThan(runPipelineIndex);
+  });
+
   test("worktreeManager.create is NOT called when storyIsolation is 'shared'", async () => {
     // When storyIsolation === "shared", no worktree operations should occur.
     // We verify by checking that create() is never called on the manager.
