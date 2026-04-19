@@ -8,7 +8,6 @@ import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
-import { applyAgentConfigMigration } from "./agent-migration";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { migrateLegacyTestPattern } from "./migrations";
@@ -137,9 +136,8 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   }
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-    const globalConf = applyAgentConfigMigration(
-      applyBatchModeCompat(applyRemovedStrategyCompat(migrateLegacyTestPattern(globalConfStripped, logger))),
-      logger,
+    const globalConf = applyBatchModeCompat(
+      applyRemovedStrategyCompat(migrateLegacyTestPattern(globalConfStripped, logger)),
     );
     rawConfig = deepMergeConfig(rawConfig, globalConf);
   }
@@ -149,9 +147,8 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
-      const resolvedProjConf = applyAgentConfigMigration(
-        applyBatchModeCompat(applyRemovedStrategyCompat(migrateLegacyTestPattern(projConfStripped, logger))),
-        logger,
+      const resolvedProjConf = applyBatchModeCompat(
+        applyRemovedStrategyCompat(migrateLegacyTestPattern(projConfStripped, logger)),
       );
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
     }
