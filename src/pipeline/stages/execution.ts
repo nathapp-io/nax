@@ -10,6 +10,7 @@ import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { ContextOrchestrator, createContextToolRuntime } from "../../context/engine";
+import type { AdapterFailure, ContextBundle } from "../../context/engine";
 import { writeRebuildManifest } from "../../context/engine/manifest-store";
 import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
@@ -392,12 +393,8 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
-  rebuildForAgent: (
-    prior: import("../../context/engine/types").ContextBundle,
-    newAgentId: string,
-    failure: import("../../context/engine/types").AdapterFailure,
-    storyId?: string,
-  ) => new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
+  rebuildForAgent: (prior: ContextBundle, newAgentId: string, failure: AdapterFailure, storyId?: string) =>
+    new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
   writeRebuildManifest,
   failAndClose,
 };
