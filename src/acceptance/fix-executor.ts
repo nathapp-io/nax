@@ -6,7 +6,7 @@
  */
 
 import { resolveDefaultAgent } from "../agents";
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter, AgentRunOptions } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
@@ -46,7 +46,7 @@ export async function executeSourceFix(
     resolveDefaultAgent(config),
   );
 
-  const sessionName = buildSessionName(workdir, featureName, storyId, "source-fix");
+  const sessionName = computeAcpHandle(workdir, featureName, storyId, "source-fix");
 
   const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
     testOutput: options.testOutput,
@@ -117,7 +117,7 @@ export async function executeTestFix(
     resolveDefaultAgent(config),
   );
 
-  const sessionName = buildSessionName(workdir, featureName, storyId, "test-fix");
+  const sessionName = computeAcpHandle(workdir, featureName, storyId, "test-fix");
 
   const prompt = new AcceptancePromptBuilder().buildTestFixPrompt({
     testOutput: options.testOutput,

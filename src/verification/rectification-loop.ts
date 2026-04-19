@@ -8,7 +8,7 @@
  */
 
 import { getAgent as _getAgent, resolveDefaultAgent } from "../agents";
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
 import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
@@ -165,7 +165,7 @@ export async function runRectificationLoop(
   };
 
   let costAccum = 0;
-  const rectificationSessionName = buildSessionName(workdir, featureName, story.id, "implementer");
+  const rectificationSessionName = computeAcpHandle(workdir, featureName, story.id, "implementer");
 
   const succeeded = await runSharedRectificationLoop({
     stage: "rectification",

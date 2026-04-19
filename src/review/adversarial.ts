@@ -13,7 +13,7 @@
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
  */
 
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
@@ -265,7 +265,7 @@ export async function runAdversarialReview(
   }
 
   // Adversarial review uses its own session (NOT the implementer session).
-  const adversarialSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-adversarial");
+  const adversarialSessionName = computeAcpHandle(workdir, featureName, story.id, "reviewer-adversarial");
   const contextToolStory: UserStory = {
     id: story.id,
     title: story.title,

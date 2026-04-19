@@ -50,7 +50,7 @@ export const _sessionRunnerDeps = {
         featureContextMarkdown?: string,
       ) => Promise<string>),
 };
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import type { IsolationCheck } from "./types";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
@@ -212,7 +212,7 @@ export async function runTddSession(
   // return a stale name from a prior run, causing the implementer to resume the wrong session
   // and breaking session continuity with the TDD gate and autofix. (ADR-008)
   const acpSessionName =
-    role === "implementer" && featureName ? buildSessionName(workdir, featureName, story.id, "implementer") : undefined;
+    role === "implementer" && featureName ? computeAcpHandle(workdir, featureName, story.id, "implementer") : undefined;
 
   // Run the agent
   const result = await agent.run({

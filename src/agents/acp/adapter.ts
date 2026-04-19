@@ -178,7 +178,7 @@ function resolveRegistryEntry(agentName: string): AgentRegistryEntry {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a deterministic ACP session name.
+ * Compute a deterministic ACP session handle.
  *
  * Format: nax-<gitRootHash8>-<featureName>-<storyId>[-<sessionRole>]
  *
@@ -186,7 +186,7 @@ function resolveRegistryEntry(agentName: string): AgentRegistryEntry {
  * cross-worktree session name collisions. Each git worktree has a distinct
  * root path, so different worktrees of the same repo get different hashes.
  */
-export function buildSessionName(
+export function computeAcpHandle(
   workdir: string,
   featureName?: string,
   storyId?: string,
@@ -438,7 +438,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   deriveSessionName(descriptor: import("../../session/types").SessionDescriptor): string {
-    return buildSessionName(descriptor.workdir, descriptor.featureName, descriptor.storyId, descriptor.role);
+    return computeAcpHandle(descriptor.workdir, descriptor.featureName, descriptor.storyId, descriptor.role);
   }
 
   buildCommand(_options: AgentRunOptions): string[] {
@@ -636,7 +636,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     const sessionName =
       (options.session ? this.deriveSessionName(options.session) : undefined) ??
       options.acpSessionName ??
-      buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
+      computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
     // 2. Resolve permission mode from config via single source of truth.
     const resolvedPerm = resolvePermissions(options.config, options.pipelineStage ?? "run");
@@ -915,7 +915,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       try {
         const completeSessionName =
           _options?.sessionName ??
-          buildSessionName(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
+          computeAcpHandle(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
 
         // Audit: fire-and-forget prompt write — never blocks or throws

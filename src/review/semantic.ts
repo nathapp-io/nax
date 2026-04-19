@@ -7,7 +7,7 @@
  * is handled by lint/typecheck, not semantic review.
  */
 
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
@@ -407,7 +407,7 @@ export async function runSemanticReview(
   // Call LLM via agent.run() with own reviewer session (not the implementer session).
   // The reviewer works from diff + tools, not from implementer conversation history.
   // See #414: supersedes #262 US-003 session-sharing design.
-  const reviewerSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-semantic");
+  const reviewerSessionName = computeAcpHandle(workdir, featureName, story.id, "reviewer-semantic");
   const contextToolStory: UserStory = {
     id: story.id,
     title: story.title,

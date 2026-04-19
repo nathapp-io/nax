@@ -6,7 +6,7 @@
  */
 
 import { resolveDefaultAgent } from "../agents";
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
@@ -72,7 +72,7 @@ export async function diagnoseAcceptanceFailure(
 
   const { testOutput, testFileContent, config, workdir, featureName, storyId } = options;
 
-  const sessionName = buildSessionName(workdir, featureName, storyId, "diagnose");
+  const sessionName = computeAcpHandle(workdir, featureName, storyId, "diagnose");
 
   const resolvedModel = resolveConfiguredModel(
     config.models,

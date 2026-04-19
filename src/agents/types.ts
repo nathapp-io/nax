@@ -295,7 +295,7 @@ export interface AgentAdapter {
    * Derive the protocol-specific session name for the given descriptor (Phase 1 plumbing).
    * Used by pipeline stages to obtain the handle string for sessionManager.bindHandle().
    *
-   * ACP: "nax-<hash8>-<feature>-<storyId>-<role>" (same formula as buildSessionName)
+   * ACP: "nax-<hash8>-<feature>-<storyId>-<role>" (same formula as computeAcpHandle)
    * CLI: not applicable — returns empty string.
    */
   deriveSessionName(descriptor: SessionDescriptor): string;
@@ -317,7 +317,7 @@ export interface AgentAdapter {
    * Best-effort — errors are swallowed. No-op for adapters that do not support
    * named sessions (e.g. future non-ACP adapters).
    *
-   * @param sessionName - The session name returned by buildSessionName()
+   * @param sessionName - The session name returned by computeAcpHandle()
    * @param workdir - Working directory used when the session was created
    */
   closeSession(sessionName: string, workdir: string): Promise<void>;
