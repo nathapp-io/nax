@@ -161,6 +161,8 @@ export async function runIteration(
   });
   await ctx.statusWriter.update(totalCost, iterations);
 
+  ctx.agentManager?.reset();
+
   const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
 
   // #410: Destroy reviewerSession on escalation — completion stage is bypassed when the pipeline
