@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { resolveDefaultAgent } from "../agents";
 import { createAgentRegistry, getAgent } from "../agents/registry";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
 import { buildDecomposePromptAsync } from "../agents/shared/decompose-prompt";
@@ -41,7 +42,7 @@ const DEFAULT_TIMEOUT_SECONDS = 600;
 
 function resolvePlanModelSelection(config: NaxConfig, preferredAgent: string) {
   const selection = config.plan?.model ?? "balanced";
-  const defaultAgent = config.autoMode?.defaultAgent ?? preferredAgent;
+  const defaultAgent = config.agent?.default ?? preferredAgent;
   try {
     return resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, preferredAgent, selection, defaultAgent);
   } catch (err) {
@@ -171,7 +172,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const outputPath = join(outputDir, "prd.json");
   await _planDeps.mkdirp(outputDir);
 
-  const defaultAgentName = config?.autoMode?.defaultAgent ?? "claude";
+  const defaultAgentName = resolveDefaultAgent(config);
 
   // Timeout: from plan config, or DEFAULT_TIMEOUT_SECONDS
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
@@ -600,7 +601,7 @@ export async function planDecomposeCommand(
 
   const siblings = prd.userStories.filter((s) => s.id !== options.storyId);
 
-  const defaultAgentName = config?.autoMode?.defaultAgent ?? "claude";
+  const defaultAgentName = resolveDefaultAgent(config);
   const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
   const agentName = resolvedPlanModel.agent;
   const adapter = _planDeps.getAgent(agentName, config);

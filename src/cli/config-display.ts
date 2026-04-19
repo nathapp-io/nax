@@ -202,7 +202,7 @@ function displayConfigWithDescriptions(
       // Only show path for 2-level paths (e.g., "autoMode.enabled", "models.fast")
       // to keep deeply nested descriptions concise
       const isDirectSubsection = pathParts.length === 2;
-      const isKeySection = ["prompts", "autoMode", "models", "routing"].includes(pathParts[0]);
+      const isKeySection = ["prompts", "autoMode", "models", "routing", "agent"].includes(pathParts[0]);
       const shouldIncludePath = isKeySection && isDirectSubsection;
       const comment = shouldIncludePath ? `${currentPathStr}: ${description}` : description;
       console.log(`${indentStr}# ${comment}`);

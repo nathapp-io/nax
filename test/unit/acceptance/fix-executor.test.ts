@@ -302,9 +302,9 @@ describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", ()
     const runCall = getRunMockCalls(mockAgent)[0][0];
     const expectedModelDef = resolveModelForAgent(
       config.models,
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
       config.acceptance.fix.fixModel as "balanced",
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
     );
     expect(runCall.modelDef).toEqual(expectedModelDef);
   });
@@ -352,9 +352,9 @@ describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", ()
     const runCall = getRunMockCalls(mockAgent)[0][0];
     const expectedModelDef = resolveModelForAgent(
       config.models,
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
       "powerful",
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
     );
     expect(runCall.modelDef).toEqual(expectedModelDef);
   });
@@ -752,9 +752,9 @@ describe("executeTestFix()", () => {
     const calls = getRunMockCalls(agent);
     const expectedModelDef = resolveModelForAgent(
       config.models,
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
       config.acceptance.fix.fixModel,
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
     );
     expect(calls[0]?.[0].modelDef).toEqual(expectedModelDef);
   });

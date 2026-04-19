@@ -19,6 +19,14 @@ function cfg(overrides: Record<string, unknown>): NaxConfig {
   return {
     ...(DEFAULT_CONFIG as NaxConfig),
     ...overrides,
+    agent: {
+      ...(DEFAULT_CONFIG as NaxConfig).agent,
+      ...((overrides.agent as object) ?? {}),
+      fallback: {
+        ...(DEFAULT_CONFIG as NaxConfig).agent?.fallback,
+        ...(((overrides.agent as Record<string, unknown>)?.fallback as object) ?? {}),
+      },
+    },
     autoMode: {
       ...(DEFAULT_CONFIG as NaxConfig).autoMode,
       ...((overrides.autoMode as object) ?? {}),
@@ -30,12 +38,14 @@ function cfg(overrides: Record<string, unknown>): NaxConfig {
   } as NaxConfig;
 }
 
-describe("validateConfig — fallbackOrder agent key validation", () => {
-  test("returns error when fallbackOrder contains agent not in models", () => {
+describe("validateConfig — agent.fallback.map agent key validation", () => {
+  test("returns error when fallback map references agent not in models", () => {
     const config = cfg({
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
-      autoMode: {
-        fallbackOrder: ["codex"],
+      agent: {
+        fallback: {
+          map: { claude: ["codex"] },
+        },
       },
     });
 
@@ -43,14 +53,16 @@ describe("validateConfig — fallbackOrder agent key validation", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("codex"))).toBe(true);
-    expect(result.errors.some((e) => e.toLowerCase().includes("fallbackorder") || e.toLowerCase().includes("fallback"))).toBe(true);
+    expect(result.errors.some((e) => e.toLowerCase().includes("fallback"))).toBe(true);
   });
 
-  test("returns error when fallbackOrder contains multiple agents missing from models", () => {
+  test("returns error when fallback map contains multiple agents missing from models", () => {
     const config = cfg({
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
-      autoMode: {
-        fallbackOrder: ["codex", "gemini"],
+      agent: {
+        fallback: {
+          map: { claude: ["codex", "gemini"] },
+        },
       },
     });
 
@@ -62,14 +74,16 @@ describe("validateConfig — fallbackOrder agent key validation", () => {
     expect(errors).toMatch(/gemini/);
   });
 
-  test("passes when fallbackOrder agents all exist in models", () => {
+  test("passes when all fallback map agents exist in models", () => {
     const config = cfg({
       models: {
         claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
         codex: { fast: "codex-mini", balanced: "codex-mid", powerful: "codex-full" },
       },
-      autoMode: {
-        fallbackOrder: ["claude", "codex"],
+      agent: {
+        fallback: {
+          map: { claude: ["codex"] },
+        },
       },
     });
 
@@ -81,7 +95,7 @@ describe("validateConfig — fallbackOrder agent key validation", () => {
     expect(fallbackErrors).toHaveLength(0);
   });
 
-  test("passes when fallbackOrder is the default ['claude'] and models has claude", () => {
+  test("passes when fallback map is empty (default) and models has claude", () => {
     const result = validateConfig(DEFAULT_CONFIG as NaxConfig);
     const fallbackErrors = result.errors.filter((e) => e.toLowerCase().includes("fallback"));
     expect(fallbackErrors).toHaveLength(0);
@@ -131,7 +145,6 @@ describe("validateConfig — tierOrder agent key validation", () => {
         codex: { fast: "codex-mini", balanced: "codex-mid", powerful: "codex-full" },
       },
       autoMode: {
-        fallbackOrder: ["claude"],
         escalation: {
           enabled: true,
           tierOrder: [{ tier: "fast", attempts: 5, agent: "codex" }],
@@ -152,7 +165,6 @@ describe("validateConfig — tierOrder agent key validation", () => {
     const config = cfg({
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
-        fallbackOrder: ["claude"],
         escalation: {
           enabled: true,
           tierOrder: [
@@ -177,7 +189,6 @@ describe("validateConfig — tierOrder agent key validation", () => {
     const config = cfg({
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
-        fallbackOrder: ["claude"],
         escalation: {
           enabled: true,
           tierOrder: [
@@ -198,15 +209,19 @@ describe("validateConfig — tierOrder agent key validation", () => {
   });
 });
 
-describe("validateConfig — combined fallbackOrder and tierOrder validation", () => {
-  test("passes when all fallbackOrder and tierOrder agents exist in models", () => {
+describe("validateConfig — combined agent.fallback.map and tierOrder validation", () => {
+  test("passes when all fallback map and tierOrder agents exist in models", () => {
     const config = cfg({
       models: {
         claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
         codex: { fast: "codex-mini", balanced: "codex-mid", powerful: "codex-full" },
       },
+      agent: {
+        fallback: {
+          map: { claude: ["codex"] },
+        },
+      },
       autoMode: {
-        fallbackOrder: ["claude", "codex"],
         escalation: {
           enabled: true,
           tierOrder: [

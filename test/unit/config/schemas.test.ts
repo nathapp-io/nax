@@ -34,7 +34,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
     const models = result.data.models as Record<string, unknown>;
 
     // Top-level keys should be agent names, not tier names
@@ -55,7 +55,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
     const models = result.data.models as Record<string, Record<string, unknown>>;
     const agentMap = models[defaultAgent];
 
@@ -76,7 +76,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
     const models = result.data.models as Record<string, Record<string, unknown>>;
 
     expect(models[defaultAgent]).toBeDefined();
@@ -93,7 +93,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
     const models = result.data.models as Record<string, Record<string, unknown>>;
     const agentMap = models[defaultAgent];
 

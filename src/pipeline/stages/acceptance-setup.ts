@@ -227,7 +227,7 @@ export const acceptanceSetupStage: PipelineStage = {
     if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
-      const defaultAgent = ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent;
+      const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
       let resolvedAcceptanceModel: ResolvedConfiguredModel | undefined;
       try {
         resolvedAcceptanceModel = resolveConfiguredModel(

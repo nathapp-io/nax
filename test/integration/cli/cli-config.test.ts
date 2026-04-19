@@ -6,8 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configCommand } from "../../../src/cli/config";
 import { loadConfig } from "../../../src/config/loader";
@@ -294,8 +293,8 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Should format small arrays inline
-      expect(output).toMatch(/fallbackOrder: \[/);
+      // Should format small arrays inline (fallbackOrder was removed in ADR-012 Phase 6; tierOrder is a small inline array)
+      expect(output).toMatch(/tierOrder: \[/);
     });
 
     test("truncates long arrays", async () => {
@@ -334,7 +333,8 @@ describe("Config Command", () => {
 
       expect(output).toContain("autoMode:");
       expect(output).toContain("enabled:");
-      expect(output).toContain("defaultAgent:");
+      // defaultAgent was removed from autoMode in ADR-012 Phase 6; it now lives at agent.default
+      expect(output).toContain("agent:");
       expect(output).toContain("complexityRouting:");
       expect(output).toContain("escalation:");
     });
@@ -614,8 +614,10 @@ describe("Config Command", () => {
       writeFileSync(
         join(naxDir, "config.json"),
         JSON.stringify({
-          autoMode: {
-            fallbackOrder: ["codex", "claude"],
+          agent: {
+            fallback: {
+              map: { codex: ["claude"], claude: ["codex"] },
+            },
           },
         }),
       );
@@ -627,9 +629,8 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Should show array field
-      expect(output).toContain("autoMode.fallbackOrder");
-      expect(output).toContain("[...2]"); // Compact array format
+      // Should show nested object field
+      expect(output).toContain("agent.fallback.map");
     });
 
     test("mutually exclusive with --explain", async () => {

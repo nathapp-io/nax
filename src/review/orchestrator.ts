@@ -465,7 +465,7 @@ export class ReviewOrchestrator {
     ctx.retrySkipChecks = undefined;
 
     const agentResolver = ctx.agentGetFn ?? undefined;
-    const agentName = ctx.rootConfig.autoMode?.defaultAgent;
+    const agentName = ctx.agentManager?.getDefault() ?? "claude";
     const modelResolver = agentName
       ? (_tier: string) => (agentResolver ? (agentResolver(agentName) ?? null) : null)
       : undefined;

@@ -24,15 +24,6 @@ describe("FIELD_DESCRIPTIONS.models (US-001-4)", () => {
   });
 });
 
-describe("FIELD_DESCRIPTIONS.autoMode.fallbackOrder (US-001-4)", () => {
-  test("fallbackOrder description exists", () => {
-    expect(FIELD_DESCRIPTIONS["autoMode.fallbackOrder"]).toBeDefined();
-  });
-
-  test("fallbackOrder description mentions per-agent shape", () => {
-    expect(FIELD_DESCRIPTIONS["autoMode.fallbackOrder"].toLowerCase()).toContain("per-agent");
-  });
-});
 
 describe("FIELD_DESCRIPTIONS.precheck.storySizeGate action and maxReplanAttempts (US-001)", () => {
   test("precheck.storySizeGate.action description exists", () => {

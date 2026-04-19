@@ -95,7 +95,7 @@ export function resolveDebaterModel(debater: Debater, config: NaxConfig): string
   const modelSelection = { agent: debater.agent, model: debater.model ?? "fast" };
   if (!config?.models) return debater.model;
   try {
-    const defaultAgent = config.autoMode?.defaultAgent ?? debater.agent;
+    const defaultAgent = resolveDefaultAgent(config);
     return resolveConfiguredModel(config.models, debater.agent, modelSelection, defaultAgent).modelDef.model;
   } catch {
     // Config resolution failed — return raw model string as fallback (backward compat)
@@ -159,8 +159,7 @@ export function pipelineStageForDebate(stage: string): PipelineStage {
 export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, config: NaxConfig): ModelDef {
   const configModels = config?.models ?? DEFAULT_CONFIG.models;
   // Use optional chaining throughout: config may be partially-constructed in tests.
-  const configDefaultAgent =
-    config?.agent?.default ?? config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
+  const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
 
   try {
     return resolveConfiguredModel(
@@ -302,8 +301,7 @@ export async function resolveOutcome(
     const adapter = _debateSessionDeps.getAgent(agentName, config);
     if (adapter) {
       const configModels = config?.models ?? DEFAULT_CONFIG.models;
-      const configDefaultAgent =
-        config?.agent?.default ?? config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
+      const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
       const synthesisSessionName =
         workdir !== undefined ? computeAcpHandle(workdir, featureName, storyId, "synthesis") : undefined;
       const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
@@ -347,8 +345,7 @@ export async function resolveOutcome(
   if (resolverConfig.type === "custom") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
     const configModels = config?.models ?? DEFAULT_CONFIG.models;
-    const configDefaultAgent =
-      config?.agent?.default ?? config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
+    const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
     const judgeSessionName =
       workdir !== undefined ? computeAcpHandle(workdir, featureName, storyId, "judge") : undefined;
     const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };

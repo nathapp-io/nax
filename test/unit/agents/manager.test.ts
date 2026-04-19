@@ -26,13 +26,12 @@ const qualityFailure = { category: "quality" as const, outcome: "fail-quality" a
 const mockBundle = {} as import("../../../src/context/engine").ContextBundle;
 
 describe("AgentManager — Phase 1 pass-through", () => {
-  test("getDefault() reads config.autoMode.defaultAgent when agent.default is unset", () => {
-    const config: NaxConfig = {
+  test("getDefault() returns built-in default when config.agent.default is unset", () => {
+    const mgr = new AgentManager({
       ...DEFAULT_CONFIG,
-      autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
-    };
-    const manager = new AgentManager(config);
-    expect(manager.getDefault()).toBe("claude");
+      agent: { ...DEFAULT_CONFIG.agent, default: undefined },
+    } as NaxConfig);
+    expect(mgr.getDefault()).toBe("claude");
   });
 
   test("isUnavailable() is false by default", () => {

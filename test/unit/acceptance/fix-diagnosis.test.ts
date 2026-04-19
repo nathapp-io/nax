@@ -228,9 +228,9 @@ describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveMode
     const runCall = getRunMockCalls(mockAgent)[0][0];
     const expectedModelDef = resolveModelForAgent(
       config.models,
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
       config.acceptance.fix.diagnoseModel as "fast",
-      config.autoMode.defaultAgent,
+      config.agent?.default ?? "claude",
     );
     expect(runCall.modelDef).toEqual(expectedModelDef);
   });

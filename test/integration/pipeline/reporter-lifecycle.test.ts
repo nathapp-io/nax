@@ -162,7 +162,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
 
     // Create minimal config (mock agent registered via _registryTestAdapters)
     config = {
-      agent: { protocol: "acp" },
+      agent: { protocol: "acp", default: "mock" },
       agents: {
         mock: { enabled: true },
       },
@@ -172,7 +172,6 @@ describe("Reporter Lifecycle Events (US-004)", () => {
         defaultTestStrategy: "unit",
       },
       autoMode: {
-        defaultAgent: "mock",
         complexityRouting: {
           simple: "fast",
           moderate: "balanced",

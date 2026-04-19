@@ -7,6 +7,7 @@
  * is handled by lint/typecheck, not semantic review.
  */
 
+import { resolveDefaultAgent } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
@@ -420,7 +421,7 @@ export async function runSemanticReview(
     escalations: [],
     attempts: 0,
   };
-  const defaultAgent = naxConfig?.autoMode?.defaultAgent ?? "claude";
+  const defaultAgent = naxConfig ? resolveDefaultAgent(naxConfig) : "claude";
   let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
   try {
     if (naxConfig?.models) {

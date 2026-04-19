@@ -39,7 +39,7 @@ export function validateConfig(config: NaxConfig): ValidationResult {
   if (!config.models) {
     errors.push("models mapping is required");
   } else {
-    const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+    const defaultAgent = config.agent?.default ?? "claude";
     const agentModels = config.models[defaultAgent];
     if (!agentModels) {
       errors.push(`models.${defaultAgent} is required (default agent has no model map)`);
@@ -77,9 +77,10 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     errors.push(`sessionTimeoutSeconds must be > 0, got ${config.execution.sessionTimeoutSeconds}`);
   }
 
-  // Auto mode config
-  if (!config.autoMode.defaultAgent || config.autoMode.defaultAgent.trim() === "") {
-    errors.push("defaultAgent must be non-empty");
+  // Agent config
+  const agentDefault = config.agent?.default;
+  if (!agentDefault || agentDefault.trim() === "") {
+    errors.push("agent.default must be non-empty");
   }
 
   if (!config.autoMode.escalation.tierOrder || config.autoMode.escalation.tierOrder.length === 0) {
@@ -92,14 +93,17 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     }
   }
 
-  // Validate fallbackOrder and tierOrder agents exist as keys in models (AC5 — US-001-5)
-  if (config.models && config.autoMode?.fallbackOrder) {
+  // Validate agent.fallback.map agents exist as keys in models (AC5 — US-001-5)
+  if (config.models && config.agent?.fallback?.map) {
     const modelKeys = Object.keys(config.models);
-    for (const agent of config.autoMode.fallbackOrder) {
+    const fallbackAgents = new Set<string>();
+    for (const [primary, candidates] of Object.entries(config.agent.fallback.map)) {
+      fallbackAgents.add(primary);
+      for (const c of candidates) fallbackAgents.add(c);
+    }
+    for (const agent of fallbackAgents) {
       if (!modelKeys.includes(agent)) {
-        errors.push(
-          `autoMode.fallbackOrder: agent "${agent}" is not a key in models (available: ${modelKeys.join(", ")})`,
-        );
+        errors.push(`agent.fallback.map: agent "${agent}" is not a key in models (available: ${modelKeys.join(", ")})`);
       }
     }
   }
@@ -117,7 +121,7 @@ export function validateConfig(config: NaxConfig): ValidationResult {
   }
 
   // Validate complexityRouting values reference tiers that exist in models config
-  const defaultAgentKey = config.autoMode?.defaultAgent ?? "claude";
+  const defaultAgentKey = config.agent?.default ?? "claude";
   const configuredTiers = Object.keys(config.models[defaultAgentKey] ?? {});
   const complexities = ["simple", "medium", "complex", "expert"] as const;
   for (const complexity of complexities) {

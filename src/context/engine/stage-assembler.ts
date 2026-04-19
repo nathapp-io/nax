@@ -164,8 +164,7 @@ export async function assembleForStage(
     // packageDir is the story's package directory (equals repoRoot for non-monorepo).
     // iteration-runner.ts already resolves ctx.workdir to the package dir (join(repoRoot, story.workdir));
     // do not re-join story.workdir here or the path will be doubled in monorepo mode.
-    const targetAgentId =
-      ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude";
+    const targetAgentId = ctx.routing.agent ?? ctx.agentManager?.getDefault() ?? "claude";
 
     const request: ContextRequest = {
       storyId: ctx.story.id,

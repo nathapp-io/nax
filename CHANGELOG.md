@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## Unreleased
+
+### Breaking
+
+- `autoMode.defaultAgent` and `autoMode.fallbackOrder` config fields removed. Use `agent.default` and `agent.fallback.map` instead (ADR-012 Phase 6). Loading a legacy config now fails Zod validation.
+
 ## [0.51.2] — 2026-03-22
 
 ### Added  

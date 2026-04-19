@@ -480,7 +480,7 @@ async function runAgentRectification(
       // #411: Capture HEAD before agent runs so checkResult can detect file changes.
       refBeforeAttempt = await _autofixDeps.captureGitRef(ctx.workdir);
       ctx.autofixAttempt = consumed + attempt;
-      const agent = agentGetFn(ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent);
+      const agent = agentGetFn(ctx.agentManager?.getDefault() ?? "claude");
       if (!agent) {
         logger.error("autofix", "Agent not found — cannot run agent rectification", { storyId: ctx.story.id });
         throw new Error("AUTOFIX_AGENT_NOT_FOUND");
@@ -488,7 +488,7 @@ async function runAgentRectification(
 
       const modelTier =
         ctx.story.routing?.modelTier ?? ctx.rootConfig.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
-      const defaultAgent = ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent;
+      const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
       const modelDef = resolveModelForAgent(
         ctx.rootConfig.models,
         ctx.routing.agent ?? defaultAgent,

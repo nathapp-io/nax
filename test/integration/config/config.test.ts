@@ -69,33 +69,33 @@ describe("Config Validation", () => {
     }
   });
 
-  test("rejects empty defaultAgent", () => {
+  test("rejects empty agent.default", () => {
     const config = {
       ...DEFAULT_CONFIG,
-      autoMode: {
-        ...DEFAULT_CONFIG.autoMode,
-        defaultAgent: "",
+      agent: {
+        ...DEFAULT_CONFIG.agent,
+        default: "",
       },
     };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
-      expect(errorMessages.some((msg) => msg.includes("defaultAgent must be non-empty"))).toBe(true);
+      expect(errorMessages.some((msg) => msg.includes("agent.default must be non-empty"))).toBe(true);
     }
   });
 
-  test("rejects whitespace-only defaultAgent", () => {
+  test("rejects whitespace-only agent.default", () => {
     const config = {
       ...DEFAULT_CONFIG,
-      autoMode: {
-        ...DEFAULT_CONFIG.autoMode,
-        defaultAgent: "   ",
+      agent: {
+        ...DEFAULT_CONFIG.agent,
+        default: "   ",
       },
     };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
-    // Zod's min(1) validation will trim and reject whitespace
+    // Zod's .trim().min(1) validation rejects whitespace-only strings
   });
 
   test("rejects empty tierOrder", () => {
@@ -159,9 +159,9 @@ describe("Config Validation", () => {
         maxIterations: 0,
         costLimit: -5,
       },
-      autoMode: {
-        ...DEFAULT_CONFIG.autoMode,
-        defaultAgent: "",
+      agent: {
+        ...DEFAULT_CONFIG.agent,
+        default: "",
       },
     };
     const result = NaxConfigSchema.safeParse(config);

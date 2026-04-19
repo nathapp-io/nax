@@ -6,9 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { configCommand } from "../../../src/cli/config";
 import { loadConfig } from "../../../src/config/loader";
 import { makeTempDir } from "../../helpers/temp";
@@ -189,7 +187,7 @@ describe("config --explain: autoMode multi-agent section", () => {
     await configCommand(config, { explain: true });
 
     const output = consoleOutput.join("\n");
-    expect(output).toContain("autoMode.defaultAgent");
+    expect(output).toContain("agent.default");
   });
 
   test("explain output documents fallbackOrder configuration", async () => {
@@ -197,7 +195,7 @@ describe("config --explain: autoMode multi-agent section", () => {
     await configCommand(config, { explain: true });
 
     const output = consoleOutput.join("\n");
-    expect(output).toContain("autoMode.fallbackOrder");
+    expect(output).toContain("agent.fallback");
   });
 
   test("explain output includes documentation for fallback logic", async () => {
@@ -205,10 +203,10 @@ describe("config --explain: autoMode multi-agent section", () => {
     await configCommand(config, { explain: true });
 
     const output = consoleOutput.join("\n");
-    // Should explain what fallback order does and when it's used
-    const fallbackSectionStart = output.indexOf("fallbackOrder");
+    // fallbackOrder was removed in ADR-012 Phase 6; fallback config now lives at agent.fallback
+    const fallbackSectionStart = output.indexOf("agent.fallback");
     expect(fallbackSectionStart).toBeGreaterThan(-1);
-    // The description should mention rate-limited or retry concepts
+    // The description should mention fallback concepts
     const hasFallbackLogicDoc =
       output.includes("rate-limited") || output.includes("fallback") || output.includes("retry");
     expect(hasFallbackLogicDoc).toBe(true);
@@ -246,8 +244,8 @@ describe("config --explain: autoMode multi-agent section", () => {
     const output = consoleOutput.join("\n");
     // The description should include examples like 'claude', 'codex'
     const defaultAgentSection = output.substring(
-      output.indexOf("autoMode.defaultAgent"),
-      output.indexOf("autoMode.defaultAgent") + 500,
+      output.indexOf("agent.default"),
+      output.indexOf("agent.default") + 500,
     );
     const hasExamples =
       defaultAgentSection.includes("claude") ||

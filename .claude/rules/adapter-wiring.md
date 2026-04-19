@@ -89,8 +89,9 @@ Bare `getAgent()` from `src/agents/registry.ts` always returns CLI adapters from
 
 **In pipeline stages** (have `ctx: PipelineContext`):
 ```typescript
-// ctx.agentGetFn is threaded from runner.ts via createAgentRegistry(config)
-const agent = (ctx.agentGetFn ?? _deps.getAgent)(ctx.config.autoMode.defaultAgent);
+// ctx.agentManager is threaded from runner.ts — use getDefault() for the configured default agent
+const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
+const agent = (ctx.agentGetFn ?? _deps.getAgent)(defaultAgent);
 ```
 
 **In standalone modules** (outside pipeline, have `config: NaxConfig`):
