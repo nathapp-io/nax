@@ -13,6 +13,7 @@
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
  */
 
+import { resolveDefaultAgent } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
@@ -141,7 +142,6 @@ export async function runAdversarialReview(
   blockingThreshold?: "error" | "warning" | "info",
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
-  projectDir?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -249,7 +249,7 @@ export async function runAdversarialReview(
   const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 
   // Resolve model definition
-  const defaultAgent = naxConfig?.autoMode?.defaultAgent ?? "claude";
+  const defaultAgent = naxConfig ? resolveDefaultAgent(naxConfig) : "claude";
   let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
   try {
     if (naxConfig?.models) {

@@ -6,6 +6,7 @@
  */
 
 import type { SemanticVerdict } from "../acceptance/types";
+import { resolveDefaultAgent } from "../agents";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
@@ -244,7 +245,7 @@ export function createReviewerSession(
 
   function resolveRunParams(semanticConfig: SemanticReviewConfig) {
     const modelTier = semanticConfig.modelTier;
-    const defaultAgent = _config.autoMode?.defaultAgent ?? "claude";
+    const defaultAgent = resolveDefaultAgent(_config);
     const modelDef = resolveModelForAgent(_config.models, defaultAgent, modelTier, defaultAgent);
     const timeoutSeconds = semanticConfig.timeoutMs
       ? Math.ceil(semanticConfig.timeoutMs / 1000)

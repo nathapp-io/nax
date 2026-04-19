@@ -24,12 +24,12 @@ import type { ModelDef, NaxConfig } from "../../config/schema";
  * @throws Error if no balanced model is configured and no adapter default provided
  */
 export function resolveBalancedModelDef(
-  config: Pick<NaxConfig, "models" | "autoMode"> | Partial<NaxConfig>,
+  config: Pick<NaxConfig, "models" | "agent"> | Partial<NaxConfig>,
   adapterDefault?: ModelDef,
 ): ModelDef {
   const configWithModels = config as Partial<NaxConfig>;
   const models = configWithModels.models as Record<string, Record<string, unknown>> | undefined;
-  const defaultAgent = configWithModels.autoMode?.defaultAgent ?? "claude";
+  const defaultAgent = configWithModels.agent?.default ?? "claude";
 
   // Try to get balanced tier from defaultAgent
   const balancedEntry = models?.[defaultAgent]?.balanced;

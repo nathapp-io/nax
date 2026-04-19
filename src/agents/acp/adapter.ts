@@ -860,7 +860,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             _options.config.models,
             agentName,
             tier,
-            _options.config.autoMode?.defaultAgent ?? agentName,
+            _options.config.agent?.default ?? agentName,
           ).model;
         } catch {
           // fall through to "default"
@@ -1017,7 +1017,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       const config = options.config;
       const { resolveModelForAgent } = await import("../../config/schema");
       try {
-        const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+        const defaultAgent = config.agent?.default ?? "claude";
         modelDef = resolveModelForAgent(config.models ?? {}, defaultAgent, tier, defaultAgent);
       } catch {
         // resolveModelForAgent can throw on malformed entries
