@@ -264,6 +264,13 @@ export interface AgentAdapter {
   /** Check if the agent binary is available on this machine. */
   isInstalled(): Promise<boolean>;
 
+  /**
+   * Probe whether the agent has usable credentials (env var, ping, etc.).
+   * Optional — adapters that do not implement it are treated as always credentialed.
+   * Used by AgentManager.validateCredentials() at run start.
+   */
+  hasCredentials?(): Promise<boolean>;
+
   /** Run the agent with a prompt and return the result. */
   run(options: AgentRunOptions): Promise<AgentResult>;
 

@@ -13,6 +13,7 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
+import { AgentManager } from "../agents";
 import { createAgentRegistry } from "../agents/registry";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
@@ -116,6 +117,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // Create protocol-aware agent registry (ACP wiring — ACP-003/registry-wiring)
   const registry = createAgentRegistry(config);
   const agentGetFn = registry.getAgent.bind(registry);
+  const agentManager = new AgentManager(config, registry);
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
   // biome-ignore lint/suspicious/noExplicitAny: PRD type initialized during setup
@@ -139,6 +141,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     headless,
     formatterMode,
     agentGetFn,
+    agentManager,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
     // BUG-017: Pass getters for run.complete event on SIGTERM
@@ -177,6 +180,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         pidRegistry,
         interactionChain,
         sessionManager,
+        agentManager,
       },
       prd,
       pluginRegistry,
@@ -228,6 +232,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       eventEmitter,
       agentGetFn,
       sessionManager,
+      agentManager,
     });
 
     const { durationMs, acceptancePassed } = completionResult;

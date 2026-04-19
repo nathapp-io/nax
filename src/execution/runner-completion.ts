@@ -54,6 +54,8 @@ export interface RunnerCompletionOptions {
   prdPath: string;
   /** Run-level SessionManager shared across this run. */
   sessionManager?: ISessionManager;
+  /** Per-run AgentManager (ADR-012). Reserved for future use in completion phase. */
+  agentManager?: import("../agents").IAgentManager;
 }
 
 /**

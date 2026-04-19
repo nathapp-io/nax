@@ -55,6 +55,8 @@ export interface RunnerExecutionOptions {
   interactionChain?: InteractionChain | null;
   /** Run-level SessionManager shared across story iterations. */
   sessionManager?: ISessionManager;
+  /** Per-run AgentManager (ADR-012). Threaded into SequentialExecutionContext. */
+  agentManager?: import("../agents").IAgentManager;
 }
 
 /**
@@ -165,6 +167,7 @@ export async function runExecutionPhase(
       onBeforeStory: options.onBeforeStory,
       pidRegistry: options.pidRegistry,
       interactionChain: options.interactionChain,
+      agentManager: options.agentManager,
       batchPlan,
     },
     prd,

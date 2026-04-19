@@ -16,3 +16,13 @@ export { validateAgentForTier, validateAgentFeature, describeAgentCapabilities }
 export type { AgentVersionInfo } from "./shared/version-detection";
 export { getAgentVersion, getAgentVersions } from "./shared/version-detection";
 export { AllAgentsUnavailableError } from "../errors";
+export { AgentManager } from "./manager";
+export type {
+  IAgentManager,
+  AgentFallbackRecord,
+  AgentRunOutcome,
+  AgentCompleteOutcome,
+  AgentManagerEvents,
+  AgentManagerEventName,
+  AgentRunRequest,
+} from "./manager-types";

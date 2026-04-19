@@ -145,6 +145,7 @@ export async function runIteration(
     agentGetFn: ctx.agentGetFn,
     pidRegistry: ctx.pidRegistry,
     sessionManager: ctx.sessionManager,
+    agentManager: ctx.agentManager,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
   };
 

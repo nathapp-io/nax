@@ -542,6 +542,8 @@ Detail for each dependency — what lands where, what code moves, what tests cov
 
 #### #518 — Fallback credential pre-validation (folds into Phase 2)
 
+**Status:** Implemented in PR (feat/agent-manager-foundation)
+
 **What moves to AgentManager:**
 
 ```typescript
