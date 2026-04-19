@@ -6,10 +6,8 @@
  * receives the auto-detected value.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { rmSync } from "node:fs";
 import { _runSetupDeps, warnFallbackMisconfiguration } from "../../../../src/execution/lifecycle/run-setup";
 
 // ─────────────────────────────────────────────────────────────────────────────
