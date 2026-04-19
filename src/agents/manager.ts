@@ -133,48 +133,61 @@ export class AgentManager implements IAgentManager {
     let hopsSoFar = 0;
     const MAX_RATE_LIMIT_RETRIES = 3;
     let rateLimitRetry = 0;
+    let currentBundle = request.bundle;
+    let currentFailure: import("../context/engine/types").AdapterFailure | undefined;
+    let finalPrompt: string | undefined;
 
     while (true) {
-      const adapter = this._registry?.getAgent(currentAgent);
-      if (!adapter) {
-        logger?.warn("agent-manager", "No adapter available", {
-          storyId: request.runOptions.storyId,
-          agent: currentAgent,
-        });
-        const result: AgentResult = {
-          success: false,
-          exitCode: 1,
-          output: `Agent "${currentAgent}" not found in registry`,
-          rateLimited: false,
-          durationMs: 0,
-          estimatedCost: 0,
-        };
-        return { result, fallbacks };
-      }
-
       let result: AgentResult;
-      try {
-        result = await adapter.run(request.runOptions);
-      } catch (err) {
-        result = {
-          success: false,
-          exitCode: 1,
-          output: err instanceof Error ? err.message : String(err),
-          rateLimited: false,
-          durationMs: 0,
-          estimatedCost: 0,
-          adapterFailure: {
-            category: "quality",
-            outcome: "fail-unknown",
-            retriable: false,
-            message: String(err).slice(0, 500),
-          },
-        };
+      let updatedBundle = currentBundle;
+
+      if (request.executeHop) {
+        const hopOut = await request.executeHop(currentAgent, currentBundle, currentFailure);
+        result = hopOut.result;
+        updatedBundle = hopOut.bundle ?? currentBundle;
+        finalPrompt = hopOut.prompt ?? finalPrompt;
+      } else {
+        const adapter = this._registry?.getAgent(currentAgent);
+        if (!adapter) {
+          logger?.warn("agent-manager", "No adapter available", {
+            storyId: request.runOptions.storyId,
+            agent: currentAgent,
+          });
+          const noAdapterResult: AgentResult = {
+            success: false,
+            exitCode: 1,
+            output: `Agent "${currentAgent}" not found in registry`,
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCost: 0,
+          };
+          return { result: noAdapterResult, fallbacks, finalBundle: currentBundle, finalPrompt };
+        }
+        try {
+          result = await adapter.run(request.runOptions);
+        } catch (err) {
+          result = {
+            success: false,
+            exitCode: 1,
+            output: err instanceof Error ? err.message : String(err),
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCost: 0,
+            adapterFailure: {
+              category: "quality",
+              outcome: "fail-unknown",
+              retriable: false,
+              message: String(err).slice(0, 500),
+            },
+          };
+        }
       }
 
-      if (result.success) return { result, fallbacks };
+      if (result.success) return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
 
-      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, request.bundle)) {
+      const bundleForSwapCheck = updatedBundle ?? request.bundle;
+
+      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, bundleForSwapCheck)) {
         // Preserve legacy rate-limit backoff when no swap candidates are available
         if (result.adapterFailure?.outcome === "fail-rate-limit" && rateLimitRetry < MAX_RATE_LIMIT_RETRIES) {
           rateLimitRetry += 1;
@@ -190,13 +203,13 @@ export class AgentManager implements IAgentManager {
         if (hopsSoFar > 0) {
           this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
         }
-        return { result, fallbacks };
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
       }
 
       const next = this.nextCandidate(currentAgent, hopsSoFar);
       if (!next) {
         this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
-        return { result, fallbacks };
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
       }
 
       const adapterFailure = result.adapterFailure ?? {
@@ -209,6 +222,8 @@ export class AgentManager implements IAgentManager {
       hopsSoFar += 1;
       // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
       rateLimitRetry = 0;
+      currentBundle = updatedBundle;
+      currentFailure = adapterFailure;
 
       const hop: AgentFallbackRecord = {
         storyId: request.runOptions.storyId,
