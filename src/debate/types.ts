@@ -30,7 +30,7 @@ export interface Debater {
 export interface ResolverConfig {
   /** Strategy for resolving debate outcome */
   type: ResolverType;
-  /** Optional agent to use as resolver (resolved from config.autoMode.defaultAgent when absent) */
+  /** Optional agent to use as resolver (defaults to resolveDefaultAgent(config) when absent) */
   agent?: string;
   /** Model override for the resolver agent — accepts tier labels ("fast"|"balanced"|"powerful"),
    *  shorthand aliases ("haiku"|"sonnet"|"opus"), or a full model ID. Defaults to "fast" when absent. */
@@ -53,7 +53,7 @@ export interface DebateStageConfig {
   mode: DebateMode;
   /** Number of debate rounds */
   rounds: number;
-  /** Optional debaters array — resolved from config.autoMode.defaultAgent when absent (min 2 entries) */
+  /** Optional debaters array — defaults to resolveDefaultAgent(config) for each entry when absent (min 2 entries) */
   debaters?: Debater[];
   /** Timeout for debate session in seconds (default: 600) */
   timeoutSeconds: number;

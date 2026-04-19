@@ -236,7 +236,7 @@ export const verifyStage: PipelineStage = {
           passCount: result.passCount ?? 0,
           failCount: result.failCount ?? 0,
           rawOutputTail: (result.output ?? "").slice(-500),
-          writtenByAgent: ctx.routing?.agent ?? ctx.agentManager?.getDefault() ?? ctx.config.autoMode.defaultAgent,
+          writtenByAgent: ctx.routing?.agent ?? ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent,
         });
       } catch (scratchErr) {
         logger.warn("verify", "Failed to write scratch entry — continuing", {
