@@ -458,33 +458,6 @@ const ContextV2PullConfigSchema = z
   })
   .default(() => ({ enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 }));
 
-// Context Engine v2 availability-fallback config (Phase 5.5)
-const ContextV2FallbackConfigSchema = z
-  .object({
-    /**
-     * Enable agent-swap fallback on availability failures (rate-limit, quota, auth, service-down).
-     * Default false — operators must opt in by populating the fallback map.
-     */
-    enabled: z.boolean().default(false),
-    /**
-     * Also trigger agent fallback on quality failures (review/verify reject).
-     * Default false — quality failures route to tier escalation by default.
-     */
-    onQualityFailure: z.boolean().default(false),
-    /**
-     * Maximum number of agent hops per story.
-     * Once exhausted the story is marked failed with "all-agents-unavailable".
-     */
-    maxHopsPerStory: z.number().int().min(1).max(10).default(2),
-    /**
-     * Fallback order per agent id.
-     * Example: { "claude": ["codex", "gemini"], "codex": ["claude"] }
-     * Empty map → fallback is never attempted even when enabled.
-     */
-    map: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
-  })
-  .default(() => ({ enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} }));
-
 // Context Engine v2 rules config (Phase 5.1)
 const ContextV2RulesConfigSchema = z
   .object({
@@ -541,8 +514,6 @@ export const ContextV2ConfigSchema = z
     pull: ContextV2PullConfigSchema,
     /** Canonical rules store configuration (Phase 5.1+) */
     rules: ContextV2RulesConfigSchema,
-    /** Availability-fallback configuration (Phase 5.5+) */
-    fallback: ContextV2FallbackConfigSchema,
     /**
      * External plugin provider registrations (Phase 7+).
      * Each entry loads a module that exports an IContextProvider-compatible object.
@@ -634,7 +605,6 @@ export const ContextV2ConfigSchema = z
     minScore: 0.1,
     pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
     rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 },
-    fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
     pluginProviders: [],
     stages: {},
     deterministic: false,
@@ -1076,7 +1046,6 @@ export const NaxConfigSchema = z
         minScore: 0.1,
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5, maxCallsPerRun: 50 },
         rules: { allowLegacyClaudeMd: false, budgetTokens: 8192 },
-        fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         pluginProviders: [],
         stages: {},
         deterministic: false,

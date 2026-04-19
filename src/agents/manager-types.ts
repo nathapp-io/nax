@@ -21,6 +21,10 @@ export interface AgentFallbackRecord {
 export interface AgentRunOutcome {
   result: AgentResult;
   fallbacks: AgentFallbackRecord[];
+  /** The context bundle used by the final (successful or last failed) hop. */
+  finalBundle?: ContextBundle;
+  /** The prompt used by the final (successful or last failed) hop. */
+  finalPrompt?: string;
 }
 
 export interface AgentCompleteOutcome {
@@ -41,6 +45,20 @@ export interface AgentRunRequest {
   runOptions: AgentRunOptions;
   bundle?: ContextBundle;
   sessionId?: string;
+  /**
+   * Per-hop executor. When provided, replaces the internal adapter.run() call for every hop
+   * (primary AND fallback). Called with:
+   *   - agentName: which agent to use for this hop
+   *   - bundle: the context bundle at the start of this hop (rebuilt between hops)
+   *   - failure: the AdapterFailure that triggered this hop; undefined for the primary hop
+   * Returns the agent result, the bundle used (may differ after rebuild), and the prompt used.
+   * Used by execution stage to inject context rebuild, session handoff, and prompt building.
+   */
+  executeHop?: (
+    agentName: string,
+    bundle: ContextBundle | undefined,
+    failure: AdapterFailure | undefined,
+  ) => Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }>;
 }
 
 export interface IAgentManager {

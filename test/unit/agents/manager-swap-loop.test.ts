@@ -93,6 +93,65 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   });
 });
 
+describe("AgentManager.runWithFallback — executeHop callback", () => {
+  test("calls executeHop for primary hop (failure=undefined)", async () => {
+    const calls: Array<{ agentName: string; failure: unknown }> = [];
+    const m = new AgentManager(makeConfig(), undefined /* no registry — executeHop replaces it */);
+    const outcome = await m.runWithFallback({
+      runOptions: {} as never,
+      bundle: mockBundle,
+      executeHop: async (agentName, bundle, failure) => {
+        calls.push({ agentName, failure });
+        return {
+          result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCost: 0 },
+          bundle,
+          prompt: "test",
+        };
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].agentName).toBe("claude");
+    expect(calls[0].failure).toBeUndefined();
+    expect(outcome.result.success).toBe(true);
+    expect(outcome.finalPrompt).toBe("test");
+  });
+
+  test("calls executeHop for swap hop with failure set", async () => {
+    const calls: Array<{ agentName: string; failure: unknown }> = [];
+    let hop = 0;
+    const m = new AgentManager(makeConfig({ claude: ["codex"] }), undefined);
+    const outcome = await m.runWithFallback({
+      runOptions: {} as never,
+      bundle: mockBundle,
+      executeHop: async (agentName, bundle, failure) => {
+        calls.push({ agentName, failure });
+        hop++;
+        const success = hop === 2; // first fails, second succeeds
+        return {
+          result: {
+            success,
+            exitCode: success ? 0 : 1,
+            output: "",
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCost: 0,
+            adapterFailure: success ? undefined : availFailure,
+          },
+          bundle,
+          prompt: `prompt-${agentName}`,
+        };
+      },
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].agentName).toBe("claude");
+    expect(calls[0].failure).toBeUndefined();
+    expect(calls[1].agentName).toBe("codex");
+    expect(calls[1].failure).toEqual(availFailure);
+    expect(outcome.fallbacks).toHaveLength(1);
+    expect(outcome.finalPrompt).toBe("prompt-codex");
+  });
+});
+
 describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate)", () => {
   const origSleep = _agentManagerDeps.sleep;
 

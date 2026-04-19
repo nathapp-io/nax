@@ -3,19 +3,20 @@
  *
  * Spawns the agent session(s) to execute the story/stories.
  * Handles both single-session (test-after) and three-session TDD.
- * On availability failure, attempts agent-swap (Phase 5.5) before tier escalation.
+ * On availability failure, delegates swap policy to AgentManager.runWithFallback().
  */
 
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
-import { createContextToolRuntime } from "../../context/engine";
+import { ContextOrchestrator, createContextToolRuntime } from "../../context/engine";
+import type { AdapterFailure, ContextBundle } from "../../context/engine";
 import { writeRebuildManifest } from "../../context/engine/manifest-store";
-import { rebuildForSwap, resolveSwapTarget, shouldAttemptSwap } from "../../execution/escalation/agent-swap";
 import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
+import { RectifierPromptBuilder } from "../../prompts";
 import { runThreeSessionTddFromCtx } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -23,12 +24,6 @@ import { isAmbiguousOutput, routeTddFailure } from "./execution-helpers";
 
 // Re-export helpers so existing importers continue to work.
 export { isAmbiguousOutput, resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
-
-function buildSwapPrompt(basePrompt: string, pushMarkdown?: string): string {
-  const trimmed = pushMarkdown?.trim();
-  if (!trimmed) return basePrompt;
-  return `${trimmed}\n\n${basePrompt}`;
-}
 
 export const executionStage: PipelineStage = {
   name: "execution",
@@ -157,17 +152,7 @@ export const executionStage: PipelineStage = {
     // G3: Resolve descriptor for Phase 1+ session tracking.
     const sessionDescriptor = ctx.sessionManager && ctx.sessionId ? ctx.sessionManager.get(ctx.sessionId) : undefined;
 
-    const contextToolRuntime = ctx.contextBundle
-      ? createContextToolRuntime({
-          bundle: ctx.contextBundle,
-          story: ctx.story,
-          config: ctx.config,
-          repoRoot: ctx.workdir,
-          runCounter: ctx.contextToolRunCounter,
-        })
-      : undefined;
-
-    const result = await agent.run({
+    const baseRunOptions: import("../../agents/types").AgentRunOptions = {
       prompt: ctx.prompt,
       workdir: ctx.workdir,
       modelTier: effectiveTier,
@@ -188,27 +173,140 @@ export const executionStage: PipelineStage = {
       storyId: ctx.story.id,
       sessionRole: "implementer",
       keepOpen,
-      // G3: pass descriptor so adapter uses it for session name derivation (Phase 1+).
-      // Backward-compatible — featureName/storyId/sessionRole kept as fallback.
-      ...(sessionDescriptor && { session: sessionDescriptor }),
-      contextPullTools: ctx.contextBundle?.pullTools,
-      contextToolRuntime,
       interactionBridge: buildInteractionBridge(ctx.interaction, {
         featureName: ctx.prd.feature,
         storyId: ctx.story.id,
         stage: "execution",
       }),
-    });
+    };
 
-    ctx.agentResult = result;
+    const { result, fallbacks, finalBundle, finalPrompt } = await (ctx.agentManager
+      ? ctx.agentManager.runWithFallback({
+          runOptions: baseRunOptions,
+          bundle: ctx.contextBundle,
+          executeHop: async (agentName, bundle, failure) => {
+            const hopAgent = (ctx.agentGetFn ?? _executionDeps.getAgent)(agentName);
+            if (!hopAgent) {
+              return {
+                result: {
+                  success: false,
+                  exitCode: 1,
+                  output: `Agent "${agentName}" not found`,
+                  rateLimited: false,
+                  durationMs: 0,
+                  estimatedCost: 0,
+                },
+                bundle,
+                prompt: ctx.prompt,
+              };
+            }
 
-    // Phase 1: bind protocol IDs to the session descriptor so the SessionManager
-    // can correlate storyId → sess-<uuid> → acpx recordId in post-run audits.
-    if (ctx.sessionManager && ctx.sessionId && result.protocolIds) {
-      const descriptor = ctx.sessionManager.get(ctx.sessionId);
-      if (descriptor) {
-        ctx.sessionManager.bindHandle(ctx.sessionId, agent.deriveSessionName(descriptor), result.protocolIds);
-      }
+            let workingBundle = bundle;
+            // ctx.prompt is guaranteed non-empty: the guard `if (!ctx.prompt) return fail`
+            // fires before this callback is ever constructed (single-session path).
+            let prompt: string = ctx.prompt ?? "";
+
+            if (failure && bundle) {
+              workingBundle = _executionDeps.rebuildForAgent(bundle, agentName, failure, ctx.story.id);
+              if (ctx.projectDir && ctx.prd.feature && workingBundle.manifest.rebuildInfo) {
+                try {
+                  await _executionDeps.writeRebuildManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, {
+                    requestId: workingBundle.manifest.requestId,
+                    stage: "execution",
+                    priorAgentId: workingBundle.manifest.rebuildInfo.priorAgentId,
+                    newAgentId: workingBundle.manifest.rebuildInfo.newAgentId,
+                    failureCategory: workingBundle.manifest.rebuildInfo.failureCategory,
+                    failureOutcome: workingBundle.manifest.rebuildInfo.failureOutcome,
+                    priorChunkIds: workingBundle.manifest.rebuildInfo.priorChunkIds,
+                    newChunkIds: workingBundle.manifest.rebuildInfo.newChunkIds,
+                    chunkIdMap: workingBundle.manifest.rebuildInfo.chunkIdMap,
+                    createdAt: new Date().toISOString(),
+                  });
+                } catch (err) {
+                  logger.warn("execution", "Failed to write rebuild manifest", {
+                    storyId: ctx.story.id,
+                    error: String(err),
+                  });
+                }
+              }
+              prompt = RectifierPromptBuilder.swapHandoff(ctx.prompt ?? "", workingBundle.pushMarkdown);
+            }
+
+            const session = failure
+              ? ctx.sessionManager && ctx.sessionId
+                ? ctx.sessionManager.handoff?.(ctx.sessionId, agentName, failure.outcome)
+                : undefined
+              : sessionDescriptor;
+
+            const hopResult = await hopAgent.run({
+              ...baseRunOptions,
+              prompt,
+              modelDef: resolveModelForAgent(ctx.rootConfig.models, agentName, effectiveTier, defaultAgent),
+              contextPullTools: workingBundle?.pullTools,
+              contextToolRuntime: workingBundle
+                ? createContextToolRuntime({
+                    bundle: workingBundle,
+                    story: ctx.story,
+                    config: ctx.config,
+                    repoRoot: ctx.workdir,
+                    runCounter: ctx.contextToolRunCounter,
+                  })
+                : undefined,
+              ...(session && { session }),
+            });
+
+            ctx.agentResult = hopResult;
+
+            if (ctx.sessionManager && ctx.sessionId && hopResult.protocolIds) {
+              const descriptor = ctx.sessionManager.get(ctx.sessionId);
+              if (descriptor) {
+                ctx.sessionManager.bindHandle(
+                  ctx.sessionId,
+                  hopAgent.deriveSessionName(descriptor),
+                  hopResult.protocolIds,
+                );
+              }
+            }
+
+            return { result: hopResult, bundle: workingBundle, prompt };
+          },
+        })
+      : (async () => {
+          const contextToolRuntime = ctx.contextBundle
+            ? createContextToolRuntime({
+                bundle: ctx.contextBundle,
+                story: ctx.story,
+                config: ctx.config,
+                repoRoot: ctx.workdir,
+                runCounter: ctx.contextToolRunCounter,
+              })
+            : undefined;
+          const r = await agent.run({
+            ...baseRunOptions,
+            contextPullTools: ctx.contextBundle?.pullTools,
+            contextToolRuntime,
+            ...(sessionDescriptor && { session: sessionDescriptor }),
+          });
+          ctx.agentResult = r;
+          if (ctx.sessionManager && ctx.sessionId && r.protocolIds) {
+            const descriptor = ctx.sessionManager.get(ctx.sessionId);
+            if (descriptor) {
+              ctx.sessionManager.bindHandle(ctx.sessionId, agent.deriveSessionName(descriptor), r.protocolIds);
+            }
+          }
+          return { result: r, fallbacks: [], finalBundle: ctx.contextBundle, finalPrompt: ctx.prompt };
+        })());
+
+    ctx.agentSwapCount = fallbacks.length;
+    if (fallbacks.length > 0) {
+      ctx.agentFallbacks = fallbacks.map((f) => ({
+        storyId: f.storyId ?? ctx.story.id,
+        priorAgent: f.priorAgent,
+        newAgent: f.newAgent,
+        outcome: f.outcome,
+        category: f.category,
+        hop: f.hop,
+      }));
     }
 
     // BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
@@ -228,7 +326,6 @@ export const executionStage: PipelineStage = {
       );
       if (!shouldProceed) {
         logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
-        // H-1: mark session FAILED + force-close the physical handle (AC-83).
         if (ctx.sessionManager && ctx.sessionId) {
           await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
         }
@@ -255,171 +352,6 @@ export const executionStage: PipelineStage = {
     }
 
     if (!result.success) {
-      // Phase 5.5: agent-swap on availability failure, before tier escalation
-      // Merge canonical agent.fallback (optional fields) with context.v2.fallback (required fields)
-      // so Phase-5.5 loop works with either config location. Full removal is Phase 5.
-      const rawFallback =
-        ctx.config.agent?.fallback?.enabled === true
-          ? ctx.config.agent.fallback
-          : ctx.config.context?.v2?.fallback?.enabled === true
-            ? ctx.config.context.v2.fallback
-            : undefined;
-      const fallbackConfig = rawFallback
-        ? {
-            enabled: rawFallback.enabled ?? false,
-            onQualityFailure: rawFallback.onQualityFailure ?? false,
-            maxHopsPerStory: rawFallback.maxHopsPerStory ?? 2,
-            map: rawFallback.map ?? {},
-          }
-        : undefined;
-      if (fallbackConfig && ctx.contextBundle) {
-        const primaryAgentId = ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent;
-        const basePrompt = ctx.prompt;
-        let priorAgentId = primaryAgentId;
-        let workingBundle = ctx.contextBundle;
-        let failure = result.adapterFailure;
-
-        while (_executionDeps.shouldAttemptSwap(failure, fallbackConfig, ctx.agentSwapCount ?? 0, workingBundle)) {
-          if (!failure) break;
-
-          const swapTarget = _executionDeps.resolveSwapTarget(
-            primaryAgentId,
-            fallbackConfig.map,
-            ctx.agentSwapCount ?? 0,
-          );
-          if (!swapTarget) break;
-
-          const swapAgent = (ctx.agentGetFn ?? _executionDeps.getAgent)(swapTarget);
-          if (!swapAgent) {
-            logger.warn("execution", "Swap target unavailable — trying next candidate", {
-              storyId: ctx.story.id,
-              target: swapTarget,
-            });
-            ctx.agentSwapCount = (ctx.agentSwapCount ?? 0) + 1;
-            continue;
-          }
-
-          // Rebuild context for the target agent profile before the retry run.
-          workingBundle = _executionDeps.rebuildForSwap(workingBundle, swapTarget, failure, ctx.story.id);
-          if (ctx.projectDir && ctx.prd.feature && workingBundle.manifest.rebuildInfo) {
-            try {
-              await _executionDeps.writeRebuildManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, {
-                requestId: workingBundle.manifest.requestId,
-                stage: "execution",
-                priorAgentId: workingBundle.manifest.rebuildInfo.priorAgentId,
-                newAgentId: workingBundle.manifest.rebuildInfo.newAgentId,
-                failureCategory: workingBundle.manifest.rebuildInfo.failureCategory,
-                failureOutcome: workingBundle.manifest.rebuildInfo.failureOutcome,
-                priorChunkIds: workingBundle.manifest.rebuildInfo.priorChunkIds,
-                newChunkIds: workingBundle.manifest.rebuildInfo.newChunkIds,
-                chunkIdMap: workingBundle.manifest.rebuildInfo.chunkIdMap,
-                createdAt: new Date().toISOString(),
-              });
-            } catch (err) {
-              logger.warn("execution", "Failed to write rebuild manifest", {
-                storyId: ctx.story.id,
-                error: String(err),
-              });
-            }
-          }
-          const hopNumber = (ctx.agentSwapCount ?? 0) + 1;
-          ctx.agentSwapCount = hopNumber;
-          ctx.agentFallbacks = [
-            ...(ctx.agentFallbacks ?? []),
-            {
-              storyId: ctx.story.id,
-              priorAgent: priorAgentId,
-              newAgent: swapTarget,
-              outcome: failure.outcome,
-              category: failure.category,
-              hop: hopNumber,
-            },
-          ];
-
-          logger.info("execution", "Agent-swap triggered", {
-            storyId: ctx.story.id,
-            fromAgent: priorAgentId,
-            toAgent: swapTarget,
-            failureOutcome: failure?.outcome,
-            hop: hopNumber,
-          });
-
-          const handoffSession =
-            ctx.sessionManager && ctx.sessionId
-              ? ctx.sessionManager.handoff?.(ctx.sessionId, swapTarget, failure?.outcome)
-              : undefined;
-
-          const swapPrompt = buildSwapPrompt(basePrompt, workingBundle.pushMarkdown);
-          const swapResult = await swapAgent.run({
-            prompt: swapPrompt,
-            workdir: ctx.workdir,
-            modelTier: effectiveTier,
-            modelDef: resolveModelForAgent(
-              ctx.rootConfig.models,
-              swapTarget,
-              effectiveTier,
-              ctx.rootConfig.autoMode.defaultAgent,
-            ),
-            timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-            dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
-            pipelineStage: "run",
-            config: ctx.config,
-            projectDir: ctx.projectDir,
-            maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-            pidRegistry: ctx.pidRegistry,
-            featureName: ctx.prd.feature,
-            storyId: ctx.story.id,
-            sessionRole: "implementer",
-            keepOpen,
-            ...(handoffSession && { session: handoffSession }),
-            contextPullTools: workingBundle.pullTools,
-            contextToolRuntime: createContextToolRuntime({
-              bundle: workingBundle,
-              story: ctx.story,
-              config: ctx.config,
-              repoRoot: ctx.workdir,
-              runCounter: ctx.contextToolRunCounter,
-            }),
-            interactionBridge: buildInteractionBridge(ctx.interaction, {
-              featureName: ctx.prd.feature,
-              storyId: ctx.story.id,
-              stage: "execution",
-            }),
-          });
-          ctx.agentResult = swapResult;
-
-          if (ctx.sessionManager && ctx.sessionId && swapResult.protocolIds) {
-            const descriptor = ctx.sessionManager.get(ctx.sessionId);
-            if (descriptor) {
-              ctx.sessionManager.bindHandle(
-                ctx.sessionId,
-                swapAgent.deriveSessionName(descriptor),
-                swapResult.protocolIds,
-              );
-            }
-          }
-
-          if (swapResult.success) {
-            ctx.contextBundle = workingBundle;
-            ctx.prompt = swapPrompt;
-            logger.info("execution", "Agent-swap succeeded", {
-              storyId: ctx.story.id,
-              toAgent: swapTarget,
-              hop: hopNumber,
-            });
-            return { action: "continue" };
-          }
-
-          logger.warn("execution", "Agent-swap attempt failed — evaluating next candidate", {
-            storyId: ctx.story.id,
-            toAgent: swapTarget,
-            hop: hopNumber,
-          });
-          priorAgentId = swapTarget;
-          failure = swapResult.adapterFailure;
-        }
-      }
-
       logger.error("execution", "Agent session failed", {
         storyId: ctx.story.id,
         exitCode: result.exitCode,
@@ -429,13 +361,14 @@ export const executionStage: PipelineStage = {
       if (result.rateLimited) {
         logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
       }
-      // H-1: mark session FAILED + force-close the physical handle (AC-83).
-      // Fires after fallback exhaustion or when fallback is unconfigured.
       if (ctx.sessionManager && ctx.sessionId) {
         await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
       }
       return { action: "escalate" };
     }
+
+    if (finalBundle) ctx.contextBundle = finalBundle;
+    if (finalPrompt && finalPrompt !== ctx.prompt) ctx.prompt = finalPrompt;
 
     logger.info("execution", "Agent session complete", {
       storyId: ctx.story.id,
@@ -455,9 +388,8 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
-  shouldAttemptSwap,
-  resolveSwapTarget,
-  rebuildForSwap,
+  rebuildForAgent: (prior: ContextBundle, newAgentId: string, failure: AdapterFailure, storyId?: string) =>
+    new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
   writeRebuildManifest,
   failAndClose,
 };

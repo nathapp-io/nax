@@ -194,7 +194,7 @@ export interface PipelineContext {
   /**
    * Number of agent-swap hops completed for this story (Phase 5.5).
    * Incremented by executionStage each time rebuildForSwap triggers a new agent.
-   * Checked against config.context.v2.fallback.maxHopsPerStory to cap swaps.
+   * Checked against config.agent.fallback.maxHopsPerStory to cap swaps.
    */
   agentSwapCount?: number;
   /**

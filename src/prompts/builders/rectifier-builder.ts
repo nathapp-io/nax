@@ -620,6 +620,20 @@ Do NOT add new features — only fix the quality check errors.
 Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
 
+  /**
+   * Prepends handoff markdown to a base prompt when swapping to a new agent.
+   *
+   * Used by execution.ts during agent fallback: when an agent is unavailable
+   * and nax swaps to a different agent, the new agent needs context about
+   * what happened before (prior context, rebuild info, etc.). This function
+   * composes that delta into the prompt.
+   */
+  static swapHandoff(basePrompt: string, pushMarkdown?: string): string {
+    const trimmed = pushMarkdown?.trim();
+    if (!trimmed) return basePrompt;
+    return `${trimmed}\n\n${basePrompt}`;
+  }
+
   private s(id: string, content: string): PromptSection {
     return { id, content, overridable: false };
   }

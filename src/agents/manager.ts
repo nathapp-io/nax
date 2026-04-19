@@ -7,8 +7,7 @@
 
 import { EventEmitter } from "node:events";
 import type { NaxConfig } from "../config";
-import type { ContextBundle } from "../context/engine";
-import type { AdapterFailure } from "../context/engine/types";
+import type { AdapterFailure, ContextBundle } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type {
@@ -116,65 +115,79 @@ export class AgentManager implements IAgentManager {
     return fallback.onQualityFailure ?? false;
   }
 
-  nextCandidate(current: string, hopsSoFar: number): string | null {
+  nextCandidate(current: string, _hopsSoFar: number): string | null {
     const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
+    // Filter out pruned and already-unavailable candidates; return the first available one.
+    // Callers pass the primary agent (not the most-recently-failed agent) so flat maps like
+    // { claude: ["codex", "gemini"] } work correctly: unavailable agents are filtered out and
+    // the next available candidate in order is returned.
     const candidates = (map[current] ?? []).filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
-    // Index by hopsSoFar: works correctly when `current` stays the default agent throughout the chain.
-    // Multi-hop chains (claude→codex, codex→gemini with separate map entries) are not yet supported —
-    // hop 1 would index map["codex"][1] and skip index 0. Operators should use a flat map for now:
-    // { claude: ["codex", "gemini"] }.
-    return candidates[hopsSoFar] ?? null;
+    return candidates[0] ?? null;
   }
 
   async runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome> {
     const logger = getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
-    let currentAgent = this.getDefault();
+    const primaryAgent = this.getDefault();
+    let currentAgent = primaryAgent;
     let hopsSoFar = 0;
     const MAX_RATE_LIMIT_RETRIES = 3;
     let rateLimitRetry = 0;
+    let currentBundle = request.bundle;
+    let currentFailure: AdapterFailure | undefined;
+    let finalPrompt: string | undefined;
 
     while (true) {
-      const adapter = this._registry?.getAgent(currentAgent);
-      if (!adapter) {
-        logger?.warn("agent-manager", "No adapter available", {
-          storyId: request.runOptions.storyId,
-          agent: currentAgent,
-        });
-        const result: AgentResult = {
-          success: false,
-          exitCode: 1,
-          output: `Agent "${currentAgent}" not found in registry`,
-          rateLimited: false,
-          durationMs: 0,
-          estimatedCost: 0,
-        };
-        return { result, fallbacks };
-      }
-
       let result: AgentResult;
-      try {
-        result = await adapter.run(request.runOptions);
-      } catch (err) {
-        result = {
-          success: false,
-          exitCode: 1,
-          output: err instanceof Error ? err.message : String(err),
-          rateLimited: false,
-          durationMs: 0,
-          estimatedCost: 0,
-          adapterFailure: {
-            category: "quality",
-            outcome: "fail-unknown",
-            retriable: false,
-            message: String(err).slice(0, 500),
-          },
-        };
+      let updatedBundle = currentBundle;
+
+      if (request.executeHop) {
+        const hopOut = await request.executeHop(currentAgent, currentBundle, currentFailure);
+        result = hopOut.result;
+        updatedBundle = hopOut.bundle ?? currentBundle;
+        finalPrompt = hopOut.prompt ?? finalPrompt;
+      } else {
+        const adapter = this._registry?.getAgent(currentAgent);
+        if (!adapter) {
+          logger?.warn("agent-manager", "No adapter available", {
+            storyId: request.runOptions.storyId,
+            agent: currentAgent,
+          });
+          const noAdapterResult: AgentResult = {
+            success: false,
+            exitCode: 1,
+            output: `Agent "${currentAgent}" not found in registry`,
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCost: 0,
+          };
+          return { result: noAdapterResult, fallbacks, finalBundle: currentBundle, finalPrompt };
+        }
+        try {
+          result = await adapter.run(request.runOptions);
+        } catch (err) {
+          result = {
+            success: false,
+            exitCode: 1,
+            output: err instanceof Error ? err.message : String(err),
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCost: 0,
+            adapterFailure: {
+              category: "quality",
+              outcome: "fail-unknown",
+              retriable: false,
+              message: String(err).slice(0, 500),
+            },
+          };
+        }
       }
 
-      if (result.success) return { result, fallbacks };
+      if (result.success) return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
 
-      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, request.bundle)) {
+      const bundleForSwapCheck = updatedBundle ?? request.bundle;
+
+      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, bundleForSwapCheck)) {
         // Preserve legacy rate-limit backoff when no swap candidates are available
         if (result.adapterFailure?.outcome === "fail-rate-limit" && rateLimitRetry < MAX_RATE_LIMIT_RETRIES) {
           rateLimitRetry += 1;
@@ -190,13 +203,7 @@ export class AgentManager implements IAgentManager {
         if (hopsSoFar > 0) {
           this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
         }
-        return { result, fallbacks };
-      }
-
-      const next = this.nextCandidate(currentAgent, hopsSoFar);
-      if (!next) {
-        this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
-        return { result, fallbacks };
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
       }
 
       const adapterFailure = result.adapterFailure ?? {
@@ -205,10 +212,22 @@ export class AgentManager implements IAgentManager {
         retriable: false,
         message: "",
       };
+      // Mark the current agent unavailable BEFORE calling nextCandidate so the filter
+      // in nextCandidate excludes the just-failed agent and selects the true next one.
       this.markUnavailable(currentAgent, adapterFailure);
+
+      // Look up the fallback chain by the primary agent so flat maps like
+      // { claude: ["codex", "gemini"] } work correctly across multiple hops.
+      const next = this.nextCandidate(primaryAgent, hopsSoFar);
+      if (!next) {
+        this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+      }
       hopsSoFar += 1;
       // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
       rateLimitRetry = 0;
+      currentBundle = updatedBundle;
+      currentFailure = adapterFailure;
 
       const hop: AgentFallbackRecord = {
         storyId: request.runOptions.storyId,
@@ -237,7 +256,8 @@ export class AgentManager implements IAgentManager {
   async completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome> {
     const logger = getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
-    let currentAgent = this.getDefault();
+    const primaryAgent = this.getDefault();
+    let currentAgent = primaryAgent;
     let hopsSoFar = 0;
 
     while (true) {
@@ -274,10 +294,11 @@ export class AgentManager implements IAgentManager {
         return { result, fallbacks };
       }
 
-      const next = this.nextCandidate(currentAgent, hopsSoFar);
+      // Mark unavailable before nextCandidate so the filter excludes the just-failed agent.
+      this.markUnavailable(currentAgent, result.adapterFailure);
+      const next = this.nextCandidate(primaryAgent, hopsSoFar);
       if (!next) return { result, fallbacks };
 
-      this.markUnavailable(currentAgent, result.adapterFailure);
       hopsSoFar += 1;
 
       const hop: AgentFallbackRecord = {
