@@ -134,7 +134,7 @@ export const verifyStage: PipelineStage = {
       } else {
         // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos.
         // Exclude test files (already handled above) so mapSourceToTests only receives source files.
-        const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(
+        const nonTestFiles = await _smartRunnerDeps.getChangedNonTestFiles(
           ctx.workdir,
           ctx.storyGitRef,
           ctx.story.workdir,
@@ -143,7 +143,7 @@ export const verifyStage: PipelineStage = {
 
         // Pass 1: path convention mapping — pass packagePrefix and testFilePatterns for language-agnostic suffix derivation.
         // ctx.projectDir is the repo root; mapSourceToTests uses it as the absolute base for test path construction.
-        const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.projectDir, ctx.story.workdir, [
+        const pass1Files = await _smartRunnerDeps.mapSourceToTests(nonTestFiles, ctx.projectDir, ctx.story.workdir, [
           ...resolvedPatterns.globs,
         ]);
         if (pass1Files.length > 0) {
@@ -155,7 +155,7 @@ export const verifyStage: PipelineStage = {
         } else if (smartRunnerConfig.fallback === "import-grep") {
           // Pass 2: import-grep fallback — scan package dir for test files importing the changed sources.
           // ctx.workdir (package dir) keeps the scan scoped to the story's package.
-          const pass2Files = await _smartRunnerDeps.importGrepFallback(sourceFiles, ctx.workdir, [
+          const pass2Files = await _smartRunnerDeps.importGrepFallback(nonTestFiles, ctx.workdir, [
             ...resolvedPatterns.globs,
           ]);
           if (pass2Files.length > 0) {

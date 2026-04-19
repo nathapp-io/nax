@@ -200,13 +200,11 @@ const origRegressionDeps = {
   runVerification: _regressionDeps.runVerification,
   runRectificationLoop: _regressionDeps.runRectificationLoop,
   parseTestOutput: _regressionDeps.parseTestOutput,
-  reverseMapTestToSource: _regressionDeps.reverseMapTestToSource,
 };
 
 describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
   beforeEach(() => {
     _regressionDeps.runRectificationLoop = mock(async () => false);
-    _regressionDeps.reverseMapTestToSource = mock(() => []);
   });
 
   afterEach(() => {

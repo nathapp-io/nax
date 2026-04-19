@@ -1,8 +1,14 @@
 /**
  * Smart Runner — Git diff file detection
  *
- * Detects changed TypeScript source files using git diff,
- * enabling targeted test runs on only the files that changed.
+ * Smart-runner resolves scope in ordered passes:
+ * 1. changed test files run directly
+ * 2. changed non-test files map to likely tests by path convention
+ * 3. changed non-test files fall back to import/content grep
+ *
+ * The key input is "changed non-test files", not "TypeScript source files".
+ * Smart-runner has to work across package layouts and languages, so only test
+ * classification is hard-filtered here. Everything else stays generic.
  */
 import { join } from "node:path";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
@@ -85,8 +91,8 @@ function extractPatternSuffix(pattern: string): string | null {
  * @internal
  */
 function extractSearchTerms(sourceFile: string): string[] {
-  const withoutSrc = sourceFile.replace(/^src\//, "");
-  const withoutExt = withoutSrc.replace(/\.ts$/, "");
+  const withoutPrefix = sourceFile.replace(/^(?:.*\/)?src\//, "");
+  const withoutExt = withoutPrefix.replace(/\.[^.]+$/, "");
   const parts = withoutExt.split("/");
   const basename = parts[parts.length - 1];
   // Use "/basename" to avoid matching short names as plain words
@@ -251,18 +257,16 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
 }
 
 /**
- * Get TypeScript source files changed since the previous commit.
+ * Get changed non-test files since the previous commit.
  *
- * Runs `git diff --name-only <ref>` in the given workdir and filters
- * results to only `.ts` files under the relevant source prefix.
+ * Runs `git diff --name-only <ref>` in the given workdir and returns changed
+ * files scoped to the relevant package. Test-file filtering is config-driven
+ * via `testFileRegex`; everything else remains language- and layout-agnostic.
  *
- * In a monorepo, git returns paths relative to the git root (e.g.
- * `packages/api/src/foo.ts`). When `packagePrefix` is set to the
- * story's workdir (e.g. `"packages/api"`), the filter is scoped to
- * `<packagePrefix>/src/` instead of just `src/`.
+ * When `packagePrefix` is set to the story's workdir (e.g. `"packages/api"`),
+ * the filter is scoped to `<packagePrefix>/` so nested packages stay isolated.
+ * When `testFileRegex` is provided, matching files are excluded.
  *
- * When `testFileRegex` is provided, files matching any of those regexes are
- * excluded from the return value (they are test files, not source files).
  * Callers should pass `resolvedTestPatterns.regex` from `resolveTestFilePatterns()`
  * so classification is language-agnostic and config-driven (ADR-009).
  *
@@ -270,9 +274,9 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
  * @param baseRef       - Git ref for diff base (default: HEAD~1)
  * @param packagePrefix - Story workdir relative to repo root (e.g. "packages/api")
  * @param testFileRegex - Optional regexes to exclude test files from the result
- * @returns Array of changed .ts file paths relative to the git root
+ * @returns Array of changed non-test file paths relative to the git root
  */
-export async function getChangedSourceFiles(
+export async function getChangedNonTestFiles(
   workdir: string,
   baseRef?: string,
   packagePrefix?: string,
@@ -287,12 +291,9 @@ export async function getChangedSourceFiles(
 
     const lines = stdout.trim().split("\n").filter(Boolean);
 
-    // MW-006: scope filter to package prefix in monorepo
-    const srcPrefix = packagePrefix ? `${packagePrefix}/src/` : "src/";
-    const tsFiles = lines.filter((f) => f.startsWith(srcPrefix) && f.endsWith(".ts"));
-    if (testFileRegex.length === 0) return tsFiles;
-    // Exclude test files so they don't get passed to source→test mapping (#557)
-    return tsFiles.filter((f) => !testFileRegex.some((re) => re.test(f)));
+    const scoped = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
+    if (testFileRegex.length === 0) return scoped;
+    return scoped.filter((f) => !testFileRegex.some((re) => re.test(f)));
   } catch {
     return [];
   }
@@ -301,7 +302,7 @@ export async function getChangedSourceFiles(
 /**
  * Get test files changed since the given git ref, scoped to the package.
  *
- * Unlike `getChangedSourceFiles`, this function scans the ENTIRE package directory
+ * Unlike `getChangedNonTestFiles`, this function scans the ENTIRE package directory
  * (not just `src/`) so it catches both co-located test files (e.g. `src/foo.test.ts`)
  * and separated test files (e.g. `test/unit/foo.test.ts`). Changed test files are
  * returned as absolute paths ready for direct execution — no source→test mapping
@@ -341,58 +342,6 @@ export async function getChangedTestFiles(
 }
 
 /**
- * Map test files back to their corresponding source files.
- *
- * For each test file path, converts it back to the likely source file path.
- * Handles both `test/unit/` and `test/integration/` conventions.
- * Only processes .test.ts files (not .test.js).
- *
- * @param testFiles - Array of test file paths (e.g. `["/repo/test/unit/foo/bar.test.ts"]`)
- * @param workdir - Absolute path to the repository root (to normalize paths)
- * @returns Source file paths (e.g. `["src/foo/bar.ts"]`)
- *
- * @example
- * ```typescript
- * const sources = reverseMapTestToSource(["/repo/test/unit/foo/bar.test.ts"], "/repo");
- * // Returns: ["src/foo/bar.ts"]
- * ```
- */
-export function reverseMapTestToSource(testFiles: string[], workdir: string): string[] {
-  const result: string[] = [];
-  const seenPaths = new Set<string>();
-
-  for (const testFile of testFiles) {
-    // Only process .test.ts files
-    if (!testFile.endsWith(".test.ts")) {
-      continue;
-    }
-
-    // Normalize the path to be relative to workdir
-    let relativePath = testFile.startsWith(workdir) ? testFile.slice(workdir.length + 1) : testFile;
-
-    // Remove separated test dir prefix (driven by SSOT — see conventions.ts)
-    let stripped = false;
-    for (const testDir of DEFAULT_SEPARATED_TEST_DIRS) {
-      if (relativePath.startsWith(`${testDir}/`)) {
-        relativePath = relativePath.slice(`${testDir}/`.length);
-        stripped = true;
-        break;
-      }
-    }
-    if (!stripped) continue;
-
-    // Replace .test.ts with .ts and add src/ prefix
-    const sourcePath = `src/${relativePath.replace(/\.test\.ts$/, ".ts")}`;
-
-    if (!seenPaths.has(sourcePath)) {
-      result.push(sourcePath);
-      seenPaths.add(sourcePath);
-    }
-  }
-
-  return result;
-}
-
 /**
  * Injectable dependencies for testing.
  * Allows tests to swap implementations without using mock.module(),
@@ -409,10 +358,9 @@ export const _smartRunnerDeps = {
   glob: _bunDeps.glob,
   /** Wraps Bun.file — injectable for testing. */
   file: _bunDeps.file,
-  getChangedSourceFiles,
+  getChangedNonTestFiles,
   getChangedTestFiles,
   mapSourceToTests,
   importGrepFallback,
   buildSmartTestCommand,
-  reverseMapTestToSource,
 };

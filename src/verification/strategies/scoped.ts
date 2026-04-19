@@ -11,7 +11,7 @@
  */
 
 import { getLogger } from "../../logger";
-import { DEFAULT_TEST_FILE_PATTERNS } from "../../test-runners/conventions";
+import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "../../test-runners/conventions";
 import type { IVerificationStrategy, StructuredTestFailure, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { parseTestOutput } from "../parser";
@@ -66,45 +66,60 @@ export class ScopedStrategy implements IVerificationStrategy {
     let effectiveCommand = ctx.testCommand;
     let isFullSuite = true;
     let scopeTestFallback: boolean | undefined;
+    let thresholdFallback = false;
 
     if (smartCfg.enabled && ctx.storyGitRef && !isMonorepoOrchestrator) {
-      const sourceFiles = await _scopedDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
-
+      const nonTestFiles = await _scopedDeps.getChangedNonTestFiles(
+        ctx.workdir,
+        ctx.storyGitRef,
+        undefined,
+        globsToTestRegex(smartCfg.testFilePatterns),
+      );
       const threshold = ctx.config?.quality?.scopeTestThreshold ?? 10;
-      if (sourceFiles.length > threshold) {
+      const pass1Files = await _scopedDeps.mapSourceToTests(nonTestFiles, ctx.workdir);
+      if (pass1Files.length > threshold) {
         logger.warn(
           "verify[scoped]",
-          `Source file count ${sourceFiles.length} exceeds threshold ${threshold} — falling back to full suite`,
+          `Scoped test file count ${pass1Files.length} exceeds threshold ${threshold} — falling back to full suite`,
           {
             storyId: ctx.storyId,
           },
         );
         effectiveCommand = ctx.config?.quality?.commands?.test ?? ctx.testCommand;
         scopeTestFallback = true;
-      } else {
-        const pass1Files = await _scopedDeps.mapSourceToTests(sourceFiles, ctx.workdir);
-        if (pass1Files.length > 0) {
-          logger.info("verify[scoped]", `Pass 1: path convention matched ${pass1Files.length} test files`, {
+        thresholdFallback = true;
+      } else if (pass1Files.length > 0) {
+        logger.info("verify[scoped]", `Pass 1: path convention matched ${pass1Files.length} test files`, {
+          storyId: ctx.storyId,
+        });
+        effectiveCommand = buildScopedCommand(pass1Files, ctx.testCommand, ctx.testScopedTemplate);
+        isFullSuite = false;
+      } else if (smartCfg.fallback === "import-grep") {
+        const pass2Files = await _scopedDeps.importGrepFallback(nonTestFiles, ctx.workdir, smartCfg.testFilePatterns);
+        if (pass2Files.length > threshold) {
+          logger.warn(
+            "verify[scoped]",
+            `Scoped test file count ${pass2Files.length} exceeds threshold ${threshold} — falling back to full suite`,
+            {
+              storyId: ctx.storyId,
+            },
+          );
+          effectiveCommand = ctx.config?.quality?.commands?.test ?? ctx.testCommand;
+          scopeTestFallback = true;
+          thresholdFallback = true;
+        } else if (pass2Files.length > 0) {
+          logger.info("verify[scoped]", `Pass 2: import-grep matched ${pass2Files.length} test files`, {
             storyId: ctx.storyId,
           });
-          effectiveCommand = buildScopedCommand(pass1Files, ctx.testCommand, ctx.testScopedTemplate);
+          effectiveCommand = buildScopedCommand(pass2Files, ctx.testCommand, ctx.testScopedTemplate);
           isFullSuite = false;
-        } else if (smartCfg.fallback === "import-grep") {
-          const pass2Files = await _scopedDeps.importGrepFallback(sourceFiles, ctx.workdir, smartCfg.testFilePatterns);
-          if (pass2Files.length > 0) {
-            logger.info("verify[scoped]", `Pass 2: import-grep matched ${pass2Files.length} test files`, {
-              storyId: ctx.storyId,
-            });
-            effectiveCommand = buildScopedCommand(pass2Files, ctx.testCommand, ctx.testScopedTemplate);
-            isFullSuite = false;
-          }
         }
       }
     }
 
     // Defer to regression gate when no scoped tests found and mode is deferred.
     // Exception: monorepo orchestrators run per-story (they carry their own change filter).
-    if (isFullSuite && regressionMode === "deferred" && !isMonorepoOrchestrator) {
+    if (isFullSuite && regressionMode === "deferred" && !isMonorepoOrchestrator && !thresholdFallback) {
       logger.info("verify[scoped]", "No mapped tests — deferring to run-end (mode: deferred)", {
         storyId: ctx.storyId,
       });
@@ -166,7 +181,7 @@ export class ScopedStrategy implements IVerificationStrategy {
  * Injectable deps for testing.
  */
 export const _scopedDeps = {
-  getChangedSourceFiles: _smartRunnerDeps.getChangedSourceFiles,
+  getChangedNonTestFiles: _smartRunnerDeps.getChangedNonTestFiles,
   mapSourceToTests: _smartRunnerDeps.mapSourceToTests,
   importGrepFallback: _smartRunnerDeps.importGrepFallback,
   buildSmartTestCommand: _smartRunnerDeps.buildSmartTestCommand,

@@ -45,7 +45,7 @@ const _origVerifyDeps = { ..._verifyDeps };
 
 const mockGetChangedTestFiles = mock(async () => [] as string[]);
 const mockResolveTestFilePatterns = mock(async () => MOCK_RESOLVED_PATTERNS);
-const mockGetChangedSourceFiles = mock(async (_workdir: string) => [] as string[]);
+const mockGetChangedNonTestFiles = mock(async (_workdir: string) => [] as string[]);
 const mockMapSourceToTests = mock(async (_files: string[], _workdir: string, _packagePrefix?: string, _patterns?: string[]) => [] as string[]);
 const mockImportGrepFallback = mock(async (_files: string[], _workdir: string, _patterns: string[]) => [] as string[]);
 const mockBuildSmartTestCommand = mock((testFiles: string[], baseCommand: string) => {
@@ -175,7 +175,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
   beforeEach(() => {
     initLogger({ level: "error", useChalk: false });
     _smartRunnerDeps.getChangedTestFiles = mockGetChangedTestFiles as typeof _smartRunnerDeps.getChangedTestFiles;
-    _smartRunnerDeps.getChangedSourceFiles = mockGetChangedSourceFiles;
+    _smartRunnerDeps.getChangedNonTestFiles = mockGetChangedNonTestFiles;
     _smartRunnerDeps.mapSourceToTests = mockMapSourceToTests;
     _smartRunnerDeps.importGrepFallback = mockImportGrepFallback;
     _smartRunnerDeps.buildSmartTestCommand = mockBuildSmartTestCommand;
@@ -184,7 +184,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
     mockRegression.mockClear();
     mockGetChangedTestFiles.mockClear();
     mockResolveTestFilePatterns.mockClear();
-    mockGetChangedSourceFiles.mockClear();
+    mockGetChangedNonTestFiles.mockClear();
     mockMapSourceToTests.mockClear();
     mockImportGrepFallback.mockClear();
     mockBuildSmartTestCommand.mockClear();
@@ -198,7 +198,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
 
   describe("AC1: uses scoped test command when smart runner finds test files", () => {
     test("passes scoped command to regression when test files are mapped", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
+      mockGetChangedNonTestFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
       mockMapSourceToTests.mockImplementation(async () => ["/test/workdir/test/unit/foo/bar.test.ts"]);
       mockBuildSmartTestCommand.mockImplementation(
         (testFiles: string[], baseCommand: string) => `${baseCommand.split(" ")[0]} ${baseCommand.split(" ")[1]} ${testFiles.join(" ")}`,
@@ -214,19 +214,19 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       expect(callArgs.command).not.toBe("bun test test/");
     });
 
-    test("calls getChangedSourceFiles with workdir", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => []);
+    test("calls getChangedNonTestFiles with workdir", async () => {
+      mockGetChangedNonTestFiles.mockImplementation(async () => []);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
       const ctx = makeContext({ smartTestRunner: true });
       await verifyStage.execute(ctx);
 
-      expect(mockGetChangedSourceFiles).toHaveBeenCalledWith("/test/workdir", undefined, undefined, expect.any(Array));
+      expect(mockGetChangedNonTestFiles).toHaveBeenCalledWith("/test/workdir", undefined, undefined, expect.any(Array));
     });
 
     test("calls mapSourceToTests with changed files, workdir, and undefined packagePrefix for single-package story", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => ["src/utils/helper.ts"]);
+      mockGetChangedNonTestFiles.mockImplementation(async () => ["src/utils/helper.ts"]);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
@@ -237,7 +237,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
     });
 
     test("forwards story.workdir as packagePrefix to mapSourceToTests for monorepo stories", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => ["apps/api/src/utils/helper.ts"]);
+      mockGetChangedNonTestFiles.mockImplementation(async () => ["apps/api/src/utils/helper.ts"]);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
@@ -254,7 +254,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
 
     test("calls buildSmartTestCommand with mapped test files and base command", async () => {
       const testFiles = ["/test/workdir/test/unit/utils/helper.test.ts"];
-      mockGetChangedSourceFiles.mockImplementation(async () => ["src/utils/helper.ts"]);
+      mockGetChangedNonTestFiles.mockImplementation(async () => ["src/utils/helper.ts"]);
       mockMapSourceToTests.mockImplementation(async () => testFiles);
       mockBuildSmartTestCommand.mockImplementation((_files: string[], cmd: string) => cmd);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
@@ -268,7 +268,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
 
   describe("AC2: falls back to full suite when no test files map", () => {
     test("uses original testCommand when mapSourceToTests returns empty array", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
+      mockGetChangedNonTestFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
@@ -280,8 +280,8 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       expect(callArgs.command).toBe("bun test test/");
     });
 
-    test("uses original testCommand when getChangedSourceFiles returns empty array", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => []);
+    test("uses original testCommand when getChangedNonTestFiles returns empty array", async () => {
+      mockGetChangedNonTestFiles.mockImplementation(async () => []);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
@@ -294,7 +294,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
     });
 
     test("does not call buildSmartTestCommand when no test files mapped", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => []);
+      mockGetChangedNonTestFiles.mockImplementation(async () => []);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
@@ -306,13 +306,13 @@ describe("Verify Stage --- Smart Runner Integration", () => {
   });
 
   describe("AC3: skips smart runner entirely when config.execution.smartTestRunner is false", () => {
-    test("does not call getChangedSourceFiles when smartTestRunner is false", async () => {
+    test("does not call getChangedNonTestFiles when smartTestRunner is false", async () => {
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
       const ctx = makeContext({ smartTestRunner: false });
       await verifyStage.execute(ctx);
 
-      expect(mockGetChangedSourceFiles).not.toHaveBeenCalled();
+      expect(mockGetChangedNonTestFiles).not.toHaveBeenCalled();
     });
 
     test("does not call mapSourceToTests when smartTestRunner is false", async () => {
@@ -338,7 +338,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
 
   describe("AC4: logs the mode used", () => {
     test("returns continue when smart runner runs targeted tests and they pass", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
+      mockGetChangedNonTestFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
       mockMapSourceToTests.mockImplementation(async () => ["/test/workdir/test/unit/foo/bar.test.ts"]);
       mockBuildSmartTestCommand.mockImplementation((_files: string[], cmd: string) => `${cmd} scoped`);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
@@ -350,7 +350,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
     });
 
     test("returns continue when falling back to full suite and tests pass", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => []);
+      mockGetChangedNonTestFiles.mockImplementation(async () => []);
       mockMapSourceToTests.mockImplementation(async () => []);
       mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
 
@@ -370,7 +370,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
     });
 
     test("returns continue when targeted tests fail (hands off to rectify)", async () => {
-      mockGetChangedSourceFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
+      mockGetChangedNonTestFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
       mockMapSourceToTests.mockImplementation(async () => ["/test/workdir/test/unit/foo/bar.test.ts"]);
       mockBuildSmartTestCommand.mockImplementation((_files: string[], cmd: string) => `${cmd} scoped`);
       mockRegression.mockImplementation(async () => ({ success: false, status: 1 }));

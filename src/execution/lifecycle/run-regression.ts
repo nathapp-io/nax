@@ -17,7 +17,6 @@ import { hasCommitsForStory } from "../../utils/git";
 import { parseTestOutput } from "../../verification";
 import { runRectificationLoop } from "../../verification/rectification-loop";
 import { fullSuite } from "../../verification/runners";
-import { reverseMapTestToSource } from "../../verification/smart-runner";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -27,7 +26,6 @@ export const _regressionDeps = {
   runVerification: fullSuite,
   runRectificationLoop,
   parseTestOutput,
-  reverseMapTestToSource,
 };
 
 export interface DeferredRegressionOptions {
@@ -78,7 +76,7 @@ async function findResponsibleStory(
  *
  * Steps:
  * 1. Run full test suite
- * 2. If failures, reverse-map test files to source files to stories
+ * 2. If failures, map failing test files directly back to responsible stories
  * 3. For each affected story, attempt targeted rectification
  * 4. Re-run full suite to confirm fixes
  * 5. Return results with affected story list
@@ -193,7 +191,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     };
   }
 
-  // Step 2: Parse failures and map to source files to stories
+  // Step 2: Parse failures and map failing test files to responsible stories
   const testSummary = _regressionDeps.parseTestOutput(fullSuiteResult.output);
 
   // Guard: if no test results could be parsed (0 pass + 0 fail), the test runner
@@ -239,14 +237,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       affectedStoriesObjs.set(story.id, story);
     }
   } else {
-    // Map test files to source files to stories
     const testFilesArray = Array.from(testFilesInFailures);
-    const sourceFilesArray = _regressionDeps.reverseMapTestToSource(testFilesArray, workdir);
-
-    logger?.info("regression", "Mapped test files to source files", {
-      testFiles: testFilesArray.length,
-      sourceFiles: sourceFilesArray.length,
-    });
 
     for (const testFile of testFilesArray) {
       const responsibleStory = await findResponsibleStory(testFile, workdir, passedStories);

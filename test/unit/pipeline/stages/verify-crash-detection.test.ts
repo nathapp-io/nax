@@ -136,10 +136,10 @@ describe("verifyStage - sets RUNTIME_CRASH status for panic(main thread)", () =>
     );
 
     const origRegression = _verifyDeps.regression;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origGetChanged = _smartRunnerDeps.getChangedNonTestFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve(["src/foo.ts"]));
+    _smartRunnerDeps.getChangedNonTestFiles = mock(() => Promise.resolve(["src/foo.ts"]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve(["test/unit/foo.test.ts"]));
     _verifyDeps.regression = mock(() => Promise.resolve(crashResult("panic(main thread)")));
 
@@ -151,7 +151,7 @@ describe("verifyStage - sets RUNTIME_CRASH status for panic(main thread)", () =>
       expect(ctx.verifyResult?.status).toBe("RUNTIME_CRASH");
     } finally {
       _verifyDeps.regression = origRegression;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.getChangedNonTestFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
@@ -171,10 +171,10 @@ describe("verifyStage - sets RUNTIME_CRASH status for Segmentation fault", () =>
     );
 
     const origRegression = _verifyDeps.regression;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origGetChanged = _smartRunnerDeps.getChangedNonTestFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve(["src/foo.ts"]));
+    _smartRunnerDeps.getChangedNonTestFiles = mock(() => Promise.resolve(["src/foo.ts"]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve(["test/unit/foo.test.ts"]));
     _verifyDeps.regression = mock(() => Promise.resolve(crashResult("Segmentation fault")));
 
@@ -185,7 +185,7 @@ describe("verifyStage - sets RUNTIME_CRASH status for Segmentation fault", () =>
       expect(ctx.verifyResult?.status).toBe("RUNTIME_CRASH");
     } finally {
       _verifyDeps.regression = origRegression;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.getChangedNonTestFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
@@ -205,10 +205,10 @@ describe("verifyStage - sets RUNTIME_CRASH status for Bun has crashed", () => {
     );
 
     const origRegression = _verifyDeps.regression;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origGetChanged = _smartRunnerDeps.getChangedNonTestFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve(["src/foo.ts"]));
+    _smartRunnerDeps.getChangedNonTestFiles = mock(() => Promise.resolve(["src/foo.ts"]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve(["test/unit/foo.test.ts"]));
     _verifyDeps.regression = mock(() => Promise.resolve(crashResult("Bun has crashed")));
 
@@ -219,7 +219,7 @@ describe("verifyStage - sets RUNTIME_CRASH status for Bun has crashed", () => {
       expect(ctx.verifyResult?.status).toBe("RUNTIME_CRASH");
     } finally {
       _verifyDeps.regression = origRegression;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.getChangedNonTestFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
@@ -233,10 +233,10 @@ describe("verifyStage - sets RUNTIME_CRASH status for Bun has crashed", () => {
     );
 
     const origRegression = _verifyDeps.regression;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origGetChanged = _smartRunnerDeps.getChangedNonTestFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve(["src/foo.ts"]));
+    _smartRunnerDeps.getChangedNonTestFiles = mock(() => Promise.resolve(["src/foo.ts"]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve(["test/unit/foo.test.ts"]));
     _verifyDeps.regression = mock(() => Promise.resolve(crashResult("oh no: Bun has crashed")));
 
@@ -247,7 +247,7 @@ describe("verifyStage - sets RUNTIME_CRASH status for Bun has crashed", () => {
       expect(ctx.verifyResult?.status).toBe("RUNTIME_CRASH");
     } finally {
       _verifyDeps.regression = origRegression;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.getChangedNonTestFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
@@ -271,10 +271,10 @@ describe("verifyStage - crash output still returns escalate action", () => {
     );
 
     const origRegression = _verifyDeps.regression;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origGetChanged = _smartRunnerDeps.getChangedNonTestFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve(["src/foo.ts"]));
+    _smartRunnerDeps.getChangedNonTestFiles = mock(() => Promise.resolve(["src/foo.ts"]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve(["test/unit/foo.test.ts"]));
     _verifyDeps.regression = mock(() => Promise.resolve(crashResult("panic(main thread)")));
 
@@ -286,7 +286,7 @@ describe("verifyStage - crash output still returns escalate action", () => {
       expect(result.action).toBe("escalate");
     } finally {
       _verifyDeps.regression = origRegression;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.getChangedNonTestFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
@@ -300,10 +300,10 @@ describe("verifyStage - crash output still returns escalate action", () => {
     );
 
     const origRegression = _verifyDeps.regression;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origGetChanged = _smartRunnerDeps.getChangedNonTestFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve(["src/foo.ts"]));
+    _smartRunnerDeps.getChangedNonTestFiles = mock(() => Promise.resolve(["src/foo.ts"]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve(["test/unit/foo.test.ts"]));
     _verifyDeps.regression = mock(() => Promise.resolve(crashResult("Segmentation fault")));
 
@@ -314,7 +314,7 @@ describe("verifyStage - crash output still returns escalate action", () => {
       expect(ctx.verifyResult?.success).toBe(false);
     } finally {
       _verifyDeps.regression = origRegression;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.getChangedNonTestFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
@@ -338,10 +338,10 @@ describe("verifyStage - normal test failure still produces TEST_FAILURE", () => 
     );
 
     const origRegression = _verifyDeps.regression;
-    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origGetChanged = _smartRunnerDeps.getChangedNonTestFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
-    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve(["src/foo.ts"]));
+    _smartRunnerDeps.getChangedNonTestFiles = mock(() => Promise.resolve(["src/foo.ts"]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve(["test/unit/foo.test.ts"]));
     _verifyDeps.regression = mock(() => Promise.resolve(testFailureResult()));
 
@@ -353,7 +353,7 @@ describe("verifyStage - normal test failure still produces TEST_FAILURE", () => 
       expect(ctx.verifyResult?.status).toBe("TEST_FAILURE");
     } finally {
       _verifyDeps.regression = origRegression;
-      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.getChangedNonTestFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
