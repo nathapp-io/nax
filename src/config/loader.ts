@@ -10,6 +10,7 @@ import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
+import { applyAgentConfigMigration } from "./agent-migration";
 import { migrateLegacyTestPattern } from "./migrations";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { PROJECT_NAX_DIR, globalConfigDir } from "./paths";
@@ -136,8 +137,11 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   }
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-    const globalConf = applyBatchModeCompat(
-      applyRemovedStrategyCompat(migrateLegacyTestPattern(globalConfStripped, logger)),
+    const globalConf = applyAgentConfigMigration(
+      applyBatchModeCompat(
+        applyRemovedStrategyCompat(migrateLegacyTestPattern(globalConfStripped, logger)),
+      ),
+      logger,
     );
     rawConfig = deepMergeConfig(rawConfig, globalConf);
   }
@@ -147,8 +151,11 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
-      const resolvedProjConf = applyBatchModeCompat(
-        applyRemovedStrategyCompat(migrateLegacyTestPattern(projConfStripped, logger)),
+      const resolvedProjConf = applyAgentConfigMigration(
+        applyBatchModeCompat(
+          applyRemovedStrategyCompat(migrateLegacyTestPattern(projConfStripped, logger)),
+        ),
+        logger,
       );
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
     }

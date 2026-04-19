@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
+import { NaxConfigSchema } from "../../../src/config/schemas";
 
 describe("AgentManager — Phase 1 pass-through", () => {
   test("getDefault() reads config.autoMode.defaultAgent when agent.default is unset", () => {
@@ -92,5 +93,13 @@ describe("AgentManager — Phase 1 pass-through", () => {
     });
     expect(outcome.result.success).toBe(true);
     expect(outcome.fallbacks).toEqual([]);
+  });
+
+  test("getDefault() prefers agent.default when both are set", () => {
+    const config = NaxConfigSchema.parse({
+      agent: { default: "codex" },
+    }) as NaxConfig;
+    const manager = new AgentManager(config);
+    expect(manager.getDefault()).toBe("codex");
   });
 });
