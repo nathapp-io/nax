@@ -65,7 +65,8 @@ export async function runTestWriterRectification(
   keepOpen = true,
 ): Promise<number> {
   const logger = getLogger();
-  const twAgent = agentGetFn(ctx.rootConfig.autoMode.defaultAgent);
+  const defaultAgent = ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent;
+  const twAgent = agentGetFn(defaultAgent);
   if (!twAgent) {
     logger.warn("autofix", "Agent not found — skipping test-writer rectification", { storyId: ctx.story.id });
     return 0;
@@ -75,12 +76,7 @@ export async function runTestWriterRectification(
   // Use the TDD test-writer tier from config — consistent with how the TDD orchestrator
   // selects the tier for the test-writer session (tdd.orchestrator.ts:150).
   const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
-  const modelDef = resolveModelForAgent(
-    ctx.rootConfig.models,
-    ctx.rootConfig.autoMode.defaultAgent,
-    modelTier,
-    ctx.rootConfig.autoMode.defaultAgent,
-  );
+  const modelDef = resolveModelForAgent(ctx.rootConfig.models, defaultAgent, modelTier, defaultAgent);
   try {
     const twResult = await twAgent.run({
       prompt: twPrompt,

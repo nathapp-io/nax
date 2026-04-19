@@ -227,18 +227,19 @@ export const acceptanceSetupStage: PipelineStage = {
     if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
+      const defaultAgent = ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent;
       let resolvedAcceptanceModel: ResolvedConfiguredModel | undefined;
       try {
         resolvedAcceptanceModel = resolveConfiguredModel(
           ctx.rootConfig.models,
-          ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+          ctx.routing.agent ?? defaultAgent,
           ctx.config.acceptance.model ?? "fast",
-          ctx.rootConfig.autoMode.defaultAgent,
+          defaultAgent,
         );
       } catch {
         resolvedAcceptanceModel = undefined;
       }
-      const agentName = resolvedAcceptanceModel?.agent ?? ctx.rootConfig.autoMode.defaultAgent;
+      const agentName = resolvedAcceptanceModel?.agent ?? defaultAgent;
       const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(agentName);
 
       // Refine criteria per-story (preserves storyId association for per-group filtering)

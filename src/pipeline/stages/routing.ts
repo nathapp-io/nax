@@ -30,7 +30,7 @@ export const routingStage: PipelineStage = {
     const defaultRoutingAgent = ctx.config.execution?.agent ?? "claude";
     const routingModelSelection = ctx.config.routing.llm?.model ?? "fast";
     const configModels = ctx.config.models ?? DEFAULT_CONFIG.models;
-    const configDefaultAgent = ctx.config.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
+    const configDefaultAgent = ctx.agentManager?.getDefault() ?? ctx.config.autoMode.defaultAgent;
     const agentName =
       ctx.config.routing.strategy === "llm"
         ? resolveConfiguredModel(configModels, defaultRoutingAgent, routingModelSelection, configDefaultAgent).agent

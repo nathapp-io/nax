@@ -38,11 +38,12 @@ export const executionStage: PipelineStage = {
     const logger = getLogger();
 
     // HARD FAILURE: No agent available — cannot proceed without an agent
-    const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(ctx.rootConfig.autoMode.defaultAgent);
+    const defaultAgent = ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent;
+    const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(defaultAgent);
     if (!agent) {
       return {
         action: "fail",
-        reason: `Agent "${ctx.rootConfig.autoMode.defaultAgent}" not found`,
+        reason: `Agent "${defaultAgent}" not found`,
       };
     }
 
@@ -174,9 +175,9 @@ export const executionStage: PipelineStage = {
       modelTier: effectiveTier,
       modelDef: resolveModelForAgent(
         ctx.rootConfig.models,
-        ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+        ctx.routing.agent ?? defaultAgent,
         effectiveTier,
-        ctx.rootConfig.autoMode.defaultAgent,
+        defaultAgent,
       ),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
