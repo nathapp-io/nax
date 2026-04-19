@@ -12,7 +12,7 @@
 import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "../../acceptance/content-loader";
 import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
 import { findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions } from "../../acceptance/test-path";
-import { getAgent } from "../../agents/registry";
+import { getAgent, resolveDefaultAgent } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
@@ -236,7 +236,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       .filter((s) => !s.id.startsWith("US-FIX-"))
       .flatMap((s) => s.acceptanceCriteria).length;
 
-    const agentName = ctx.config.autoMode.defaultAgent;
+    const agentName = resolveDefaultAgent(ctx.config);
     const agent = (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName);
     if (!agent) {
       logger?.error("acceptance", "Agent not found for diagnosis", { storyId: firstStory?.id, agentName });

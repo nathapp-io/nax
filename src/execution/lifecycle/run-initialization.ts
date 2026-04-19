@@ -9,7 +9,7 @@
  */
 
 import { join } from "node:path";
-import { getAgent } from "../../agents/registry";
+import { getAgent, resolveDefaultAgent } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
 import { getSafeLogger } from "../../logger";
@@ -125,23 +125,23 @@ async function checkAgentInstalled(config: NaxConfig, dryRun: boolean, agentGetF
   if (dryRun) return;
 
   const logger = getSafeLogger();
-  const agent = (agentGetFn ?? _reconcileDeps.getAgent)(config.autoMode.defaultAgent);
+  const agent = (agentGetFn ?? _reconcileDeps.getAgent)(resolveDefaultAgent(config));
 
   if (!agent) {
     logger?.error("execution", "Agent not found", {
-      agent: config.autoMode.defaultAgent,
+      agent: resolveDefaultAgent(config),
     });
-    throw new AgentNotFoundError(config.autoMode.defaultAgent);
+    throw new AgentNotFoundError(resolveDefaultAgent(config));
   }
 
   const installed = await agent.isInstalled();
   if (!installed) {
     logger?.error("execution", "Agent is not installed or not in PATH", {
-      agent: config.autoMode.defaultAgent,
+      agent: resolveDefaultAgent(config),
       binary: agent.binary,
     });
     logger?.error("execution", "Please install the agent and try again");
-    throw new AgentNotInstalledError(config.autoMode.defaultAgent, agent.binary);
+    throw new AgentNotInstalledError(resolveDefaultAgent(config), agent.binary);
   }
 }
 
