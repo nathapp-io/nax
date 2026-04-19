@@ -1,9 +1,8 @@
 /**
  * AgentManager — owns agent lifecycle and fallback policy (ADR-012).
  *
- * Phase 1: skeleton only. Methods that will later drive cross-agent swap
- * (shouldSwap, nextCandidate, runWithFallback) are intentional pass-throughs
- * that preserve existing adapter behaviour. Phase 5 replaces them with real logic.
+ * Phase 4: implements real shouldSwap, nextCandidate, runWithFallback, and
+ * completeWithFallback. Adapter-owned fallback state removed.
  */
 
 import { EventEmitter } from "node:events";
@@ -98,12 +97,20 @@ export class AgentManager implements IAgentManager {
     return raw.filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
   }
 
-  shouldSwap(_failure: AdapterFailure | undefined, _hopsSoFar: number, _bundle: ContextBundle | undefined): boolean {
-    return false;
+  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, bundle: ContextBundle | undefined): boolean {
+    if (!failure) return false;
+    const fallback = this._config.agent?.fallback;
+    if (!fallback?.enabled) return false;
+    if (!bundle) return false;
+    if (hopsSoFar >= (fallback.maxHopsPerStory ?? 2)) return false;
+    if (failure.category === "availability") return true;
+    return fallback.onQualityFailure ?? false;
   }
 
-  nextCandidate(_current: string, _hopsSoFar: number): string | null {
-    return null;
+  nextCandidate(current: string, hopsSoFar: number): string | null {
+    const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
+    const candidates = (map[current] ?? []).filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
+    return candidates[hopsSoFar] ?? null;
   }
 
   async runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome> {
