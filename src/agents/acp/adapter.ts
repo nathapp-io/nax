@@ -525,6 +525,7 @@ export class AcpAgentAdapter implements AgentAdapter {
                 outcome: "fail-rate-limit",
                 retriable: true,
                 message: (result.output ?? "").slice(0, 500),
+                ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
               },
             };
           }
@@ -971,7 +972,39 @@ export class AcpAgentAdapter implements AgentAdapter {
       }
     };
 
-    return await tryOneAgent(this.name);
+    try {
+      return await tryOneAgent(this.name);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      const parsed = _fallbackDeps.parseAgentError(error.message);
+      if (parsed.type === "auth") {
+        return {
+          output: error.message,
+          costUsd: 0,
+          source: "fallback",
+          adapterFailure: {
+            category: "availability",
+            outcome: "fail-auth",
+            retriable: false,
+            message: error.message.slice(0, 500),
+          },
+        };
+      }
+      if (parsed.type === "rate-limit") {
+        return {
+          output: error.message,
+          costUsd: 0,
+          source: "fallback",
+          adapterFailure: {
+            category: "availability",
+            outcome: "fail-rate-limit",
+            retriable: true,
+            message: error.message.slice(0, 500),
+          },
+        };
+      }
+      throw err;
+    }
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
