@@ -16,10 +16,12 @@ import { ContextOrchestrator } from "../../../src/context/engine/orchestrator";
 import type { AdapterFailure, ContextBundle, ContextProviderResult, IContextProvider } from "../../../src/context/engine/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
+import { AgentManager } from "../../../src/agents/manager";
 import { executionStage, _executionDeps } from "../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { AgentAdapter } from "../../../src/agents/types";
+import type { AgentRegistry } from "../../../src/agents/registry";
 import { _gitDeps } from "../../../src/utils/git";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,18 +31,12 @@ import { _gitDeps } from "../../../src/utils/git";
 const origGetAgent = _executionDeps.getAgent;
 const origValidateAgent = _executionDeps.validateAgentForTier;
 const origDetectMerge = _executionDeps.detectMergeConflict;
-const origShouldSwap = _executionDeps.shouldAttemptSwap;
-const origResolveSwap = _executionDeps.resolveSwapTarget;
-const origRebuildForSwap = _executionDeps.rebuildForSwap;
 const origGitSpawn = _gitDeps.spawn;
 
 afterEach(() => {
   _executionDeps.getAgent = origGetAgent;
   _executionDeps.validateAgentForTier = origValidateAgent;
   _executionDeps.detectMergeConflict = origDetectMerge;
-  _executionDeps.shouldAttemptSwap = origShouldSwap;
-  _executionDeps.resolveSwapTarget = origResolveSwap;
-  _executionDeps.rebuildForSwap = origRebuildForSwap;
   _gitDeps.spawn = origGitSpawn;
 });
 
@@ -120,23 +116,21 @@ function makeConfig(swapEnabled: boolean): NaxConfig {
       claude: { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" },
       codex: { fast: "codex-fast", balanced: "codex-balanced", powerful: "codex-powerful" },
     },
-    context: {
-      ...DEFAULT_CONFIG.context,
-      v2: {
-        ...DEFAULT_CONFIG.context.v2,
-        fallback: {
-          enabled: swapEnabled,
-          onQualityFailure: false,
-          maxHopsPerStory: 1,
-          map: { claude: ["codex"] },
-        },
+    agent: {
+      ...(DEFAULT_CONFIG.agent ?? {}),
+      fallback: {
+        enabled: swapEnabled,
+        onQualityFailure: false,
+        maxHopsPerStory: 1,
+        map: { claude: ["codex"] },
       },
     },
   } as unknown as NaxConfig;
 }
 
 function makeCtx(config: NaxConfig, bundle: ContextBundle): PipelineContext {
-  return {
+  // Lazy registry: delegates getAgent() to ctx.agentGetFn so tests can override it after construction.
+  const ctx = {
     config,
     prd: makePRD(),
     story: makeStory(),
@@ -155,6 +149,16 @@ function makeCtx(config: NaxConfig, bundle: ContextBundle): PipelineContext {
     hooks: {} as PipelineContext["hooks"],
     contextBundle: bundle,
   } as unknown as PipelineContext;
+
+  const lazyRegistry: AgentRegistry = {
+    getAgent: (name: string) => (ctx.agentGetFn ? ctx.agentGetFn(name) as AgentAdapter | undefined : undefined),
+    getInstalledAgents: async () => [],
+    checkAgentHealth: async () => [],
+    protocol: "acp",
+    resetStoryState: () => {},
+  };
+  ctx.agentManager = new AgentManager(config, lazyRegistry);
+  return ctx;
 }
 
 function makeFailingAgent(name: string): AgentAdapter {
@@ -274,7 +278,8 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "escalate" });
-    expect(ctx.agentSwapCount).toBeUndefined();
+    // When agentManager is used, agentSwapCount is set to 0 (no swaps); undefined is also acceptable.
+    expect(ctx.agentSwapCount ?? 0).toBe(0);
   });
 
   test("escalates when swap agent also fails", async () => {
@@ -305,7 +310,8 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "escalate" });
-    expect(ctx.agentSwapCount).toBeUndefined();
+    // When agentManager is used, agentSwapCount is set to 0 (no swaps); undefined is also acceptable.
+    expect(ctx.agentSwapCount ?? 0).toBe(0);
   });
 
   test("respects maxHopsPerStory cap — does not swap when already at limit", async () => {
@@ -328,8 +334,8 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     const firstSwapAgent = makeFailingAgent("codex");
     const secondSwapAgent = makeSucceedingAgent("gemini");
     const config = makeConfig(true);
-    config.context.v2.fallback.map = { claude: ["codex", "gemini"] };
-    config.context.v2.fallback.maxHopsPerStory = 2;
+    config.agent!.fallback!.map = { claude: ["codex", "gemini"] };
+    config.agent!.fallback!.maxHopsPerStory = 2;
     const ctx = makeCtx(config, bundle);
 
     _executionDeps.getAgent = mock((name: string) => {
@@ -356,8 +362,8 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     const firstSwapAgent = makeFailingAgent("codex");
     const secondSwapAgent = makeFailingAgent("gemini");
     const config = makeConfig(true);
-    config.context.v2.fallback.map = { claude: ["codex", "gemini"] };
-    config.context.v2.fallback.maxHopsPerStory = 3;
+    config.agent!.fallback!.map = { claude: ["codex", "gemini"] };
+    config.agent!.fallback!.maxHopsPerStory = 3;
     const ctx = makeCtx(config, bundle);
 
     _executionDeps.getAgent = mock((name: string) => {

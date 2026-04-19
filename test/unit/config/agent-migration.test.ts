@@ -23,14 +23,16 @@ describe("applyAgentConfigMigration", () => {
     expect((out.agent as any).fallback.enabled).toBe(true);
   });
 
-  test("migrates context.v2.fallback → agent.fallback", () => {
+  test("context.v2.fallback is no longer migrated — removed in ADR-012 Phase 5", () => {
+    // context.v2.fallback was removed from the schema in Phase 5.
+    // The shim no longer migrates it; the field is simply ignored by the schema.
     const logger = makeLogger();
     const out = applyAgentConfigMigration(
       { context: { v2: { fallback: { enabled: true, map: { claude: ["codex"] } } } } },
       logger,
     );
-    expect((out.agent as any).fallback.map).toEqual({ claude: ["codex"] });
-    expect((out.agent as any).fallback.enabled).toBe(true);
+    expect((out.agent as any)?.fallback).toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   test("canonical-only config passes through unchanged, no warnings", () => {

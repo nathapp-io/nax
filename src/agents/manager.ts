@@ -115,20 +115,21 @@ export class AgentManager implements IAgentManager {
     return fallback.onQualityFailure ?? false;
   }
 
-  nextCandidate(current: string, hopsSoFar: number): string | null {
+  nextCandidate(current: string, _hopsSoFar: number): string | null {
     const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
+    // Filter out pruned and already-unavailable candidates; return the first available one.
+    // Callers pass the primary agent (not the most-recently-failed agent) so flat maps like
+    // { claude: ["codex", "gemini"] } work correctly: unavailable agents are filtered out and
+    // the next available candidate in order is returned.
     const candidates = (map[current] ?? []).filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
-    // Index by hopsSoFar: works correctly when `current` stays the default agent throughout the chain.
-    // Multi-hop chains (claude→codex, codex→gemini with separate map entries) are not yet supported —
-    // hop 1 would index map["codex"][1] and skip index 0. Operators should use a flat map for now:
-    // { claude: ["codex", "gemini"] }.
-    return candidates[hopsSoFar] ?? null;
+    return candidates[0] ?? null;
   }
 
   async runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome> {
     const logger = getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
-    let currentAgent = this.getDefault();
+    const primaryAgent = this.getDefault();
+    let currentAgent = primaryAgent;
     let hopsSoFar = 0;
     const MAX_RATE_LIMIT_RETRIES = 3;
     let rateLimitRetry = 0;
@@ -205,19 +206,23 @@ export class AgentManager implements IAgentManager {
         return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
       }
 
-      const next = this.nextCandidate(currentAgent, hopsSoFar);
-      if (!next) {
-        this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
-        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
-      }
-
       const adapterFailure = result.adapterFailure ?? {
         category: "quality" as const,
         outcome: "fail-unknown" as const,
         retriable: false,
         message: "",
       };
+      // Mark the current agent unavailable BEFORE calling nextCandidate so the filter
+      // in nextCandidate excludes the just-failed agent and selects the true next one.
       this.markUnavailable(currentAgent, adapterFailure);
+
+      // Look up the fallback chain by the primary agent so flat maps like
+      // { claude: ["codex", "gemini"] } work correctly across multiple hops.
+      const next = this.nextCandidate(primaryAgent, hopsSoFar);
+      if (!next) {
+        this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+      }
       hopsSoFar += 1;
       // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
       rateLimitRetry = 0;
@@ -251,7 +256,8 @@ export class AgentManager implements IAgentManager {
   async completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome> {
     const logger = getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
-    let currentAgent = this.getDefault();
+    const primaryAgent = this.getDefault();
+    let currentAgent = primaryAgent;
     let hopsSoFar = 0;
 
     while (true) {
@@ -288,10 +294,11 @@ export class AgentManager implements IAgentManager {
         return { result, fallbacks };
       }
 
-      const next = this.nextCandidate(currentAgent, hopsSoFar);
+      // Mark unavailable before nextCandidate so the filter excludes the just-failed agent.
+      this.markUnavailable(currentAgent, result.adapterFailure);
+      const next = this.nextCandidate(primaryAgent, hopsSoFar);
       if (!next) return { result, fallbacks };
 
-      this.markUnavailable(currentAgent, result.adapterFailure);
       hopsSoFar += 1;
 
       const hop: AgentFallbackRecord = {

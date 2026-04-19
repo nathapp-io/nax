@@ -95,12 +95,10 @@ describe("setupRun — project detection logging (AC-4)", () => {
 describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", () => {
   function makeConfig(fallbackMap: Record<string, string[]> = {}) {
     return {
-      context: {
-        v2: {
-          fallback: {
-            enabled: Object.keys(fallbackMap).length > 0,
-            map: fallbackMap,
-          },
+      agent: {
+        fallback: {
+          enabled: Object.keys(fallbackMap).length > 0,
+          map: fallbackMap,
         },
       },
     } as unknown as import("../../../../src/config").NaxConfig;
@@ -149,7 +147,7 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     const { logger, warns } = makeLogger();
     const agentGetFn = (_name: string) => undefined;
     const config = {
-      context: { v2: { fallback: { enabled: false, map: { claude: ["gemini"] } } } },
+      agent: { fallback: { enabled: false, map: { claude: ["gemini"] } } },
     } as unknown as import("../../../../src/config").NaxConfig;
 
     warnFallbackMisconfiguration(
