@@ -34,7 +34,7 @@ export const reviewStage: PipelineStage = {
 
     // Build agent resolver for dialogue session creation
     const agentResolver = ctx.agentGetFn ?? getAgent;
-    const agentName = ctx.rootConfig.autoMode?.defaultAgent;
+    const agentName = ctx.agentManager?.getDefault() ?? "claude";
 
     // AC3: When dialogue is enabled (non-debate) and a session already exists (retry loop), use reReview()
     if (dialogueEnabled && !reviewDebateEnabled && ctx.reviewerSession) {

@@ -64,7 +64,7 @@ export async function runTestWriterRectification(
   keepOpen = true,
 ): Promise<number> {
   const logger = getLogger();
-  const defaultAgent = ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent;
+  const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
   const twAgent = agentGetFn(defaultAgent);
   if (!twAgent) {
     logger.warn("autofix", "Agent not found — skipping test-writer rectification", { storyId: ctx.story.id });

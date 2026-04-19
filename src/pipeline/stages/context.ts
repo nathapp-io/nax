@@ -51,8 +51,7 @@ export const _contextStageDeps = {
 
 async function runV2Path(ctx: PipelineContext): Promise<void> {
   const logger = getLogger();
-  const agentName =
-    ctx.routing.agent ?? ctx.rootConfig?.autoMode?.defaultAgent ?? ctx.config.autoMode?.defaultAgent ?? "claude";
+  const agentName = ctx.routing.agent ?? ctx.agentManager?.getDefault() ?? "claude";
 
   // Derive the session scratch directory for this pipeline run.
   // ctx.sessionId is owned by this (context) stage — it pre-allocates a UUID
