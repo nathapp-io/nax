@@ -57,8 +57,9 @@ export class WorktreeManager {
   }
 
   /**
-   * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>
-   * and symlinks node_modules and .env from project root.
+   * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>.
+   * Dependency preparation is handled outside WorktreeManager; only non-dependency
+   * runtime files such as .env are mirrored here when present.
    *
    * If a worktree or branch for this story already exists (orphaned from a
    * previous crashed run), it is removed first so we get a clean slate.
@@ -127,19 +128,6 @@ export class WorktreeManager {
         throw error;
       }
       throw new Error(`Failed to create worktree: ${String(error)}`);
-    }
-
-    // Symlink node_modules if it exists
-    const nodeModulesSource = join(projectRoot, "node_modules");
-    if (existsSync(nodeModulesSource)) {
-      const nodeModulesTarget = join(worktreePath, "node_modules");
-      try {
-        symlinkSync(nodeModulesSource, nodeModulesTarget, "dir");
-      } catch (error) {
-        // Clean up worktree if symlinking fails
-        await this.remove(projectRoot, storyId);
-        throw new Error(`Failed to symlink node_modules: ${errorMessage(error)}`);
-      }
     }
 
     // Symlink .env if it exists

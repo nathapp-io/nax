@@ -54,7 +54,13 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
     timeoutRetryCount: options.timeoutRetryCount,
   });
 
-  const normalizedEnv = normalizeEnvironment(process.env as Record<string, string | undefined>, options.stripEnvVars);
+  const normalizedEnv = normalizeEnvironment(
+    {
+      ...(process.env as Record<string, string | undefined>),
+      ...(options.env ?? {}),
+    },
+    options.stripEnvVars,
+  );
 
   const execution = await executeWithTimeout(finalCommand, options.timeoutSeconds, normalizedEnv, {
     shell: options.shell,

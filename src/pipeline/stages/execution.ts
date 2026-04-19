@@ -155,6 +155,7 @@ export const executionStage: PipelineStage = {
     const baseRunOptions: import("../../agents/types").AgentRunOptions = {
       prompt: ctx.prompt,
       workdir: ctx.workdir,
+      env: ctx.worktreeDependencyContext?.env,
       modelTier: effectiveTier,
       modelDef: resolveModelForAgent(
         ctx.rootConfig.models,

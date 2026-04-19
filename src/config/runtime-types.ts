@@ -99,6 +99,14 @@ export interface SmartTestRunnerConfig {
   fallback: "import-grep" | "full-suite";
 }
 
+/** Worktree dependency preparation strategy (WT-DEPS-001) */
+export interface WorktreeDependenciesConfig {
+  /** How nax should prepare a fresh worktree before story execution */
+  mode: "inherit" | "provision" | "off";
+  /** Explicit provisioning command override (valid only in provision mode) */
+  setupCommand?: string | null;
+}
+
 /** Execution limits */
 export interface ExecutionConfig {
   /** Max iterations per feature run (auto-calculated from tierOrder sum if not set) */
@@ -145,6 +153,8 @@ export interface ExecutionConfig {
   /** Enable smart test runner to scope test runs to changed files (default: true).
    * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
   smartTestRunner?: boolean | SmartTestRunnerConfig;
+  /** Strategy for preparing fresh git worktrees before story execution. */
+  worktreeDependencies: WorktreeDependenciesConfig;
   /** Configured agent binary: claude, codex, opencode, gemini, aider (default: claude) */
   agent?: string;
   /** Git HEAD ref captured before agent ran — passed through pipeline for plugin reviewers (FEAT-010) */

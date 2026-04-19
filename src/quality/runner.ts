@@ -31,6 +31,8 @@ export interface QualityCommandOptions {
   storyId?: string;
   /** Hard timeout in milliseconds. Defaults to 120 000 ms. */
   timeoutMs?: number;
+  /** Optional environment overrides for the spawned process. */
+  env?: Record<string, string | undefined>;
 }
 
 export interface QualityCommandResult {
@@ -61,7 +63,7 @@ export const _qualityRunnerDeps = {
  * to avoid deadlocking on output larger than the OS pipe buffer (~64 KB).
  */
 export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
-  const { commandName, command, workdir, storyId, timeoutMs = DEFAULT_TIMEOUT_MS } = opts;
+  const { commandName, command, workdir, storyId, timeoutMs = DEFAULT_TIMEOUT_MS, env } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
 
@@ -76,6 +78,10 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
+      env: {
+        ...(process.env as Record<string, string | undefined>),
+        ...(env ?? {}),
+      },
     });
 
     let timedOut = false;

@@ -71,6 +71,13 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
     execution: {
       ...root.execution,
       ...packageOverride.execution,
+      worktreeDependencies:
+        packageOverride.execution?.worktreeDependencies !== undefined
+          ? {
+              ...root.execution.worktreeDependencies,
+              ...packageOverride.execution.worktreeDependencies,
+            }
+          : root.execution.worktreeDependencies,
       smartTestRunner: packageOverride.execution?.smartTestRunner ?? root.execution.smartTestRunner,
       regressionGate: {
         ...root.execution.regressionGate,

@@ -13,10 +13,11 @@ import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
-import { savePRD } from "../prd";
+import { markStoryFailed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
+import { prepareWorktreeDependencies } from "../worktree/dependencies";
 import { WorktreeManager } from "../worktree/manager";
 import { handleDryRun } from "./dry-run";
 import type { SequentialExecutionContext } from "./executor-types";
@@ -114,11 +115,41 @@ export async function runIteration(
       )
     : ctx.config;
 
+  let dependencyContext: import("../worktree/types").WorktreeDependencyContext | undefined;
+  if (ctx.config.execution.storyIsolation === "worktree") {
+    try {
+      dependencyContext = await _iterationRunnerDeps.prepareWorktreeDependencies({
+        projectRoot: ctx.workdir,
+        worktreeRoot: effectiveWorkdir,
+        storyId: story.id,
+        storyWorkdir: story.workdir,
+        config: effectiveConfig,
+      });
+    } catch (error) {
+      markStoryFailed(prd, story.id, "dependency-prep", "worktree-dependencies", ctx.statusWriter);
+      await savePRD(prd, ctx.prdPath);
+      try {
+        await _iterationRunnerDeps.worktreeManager.remove(ctx.workdir, story.id);
+      } catch {
+        // best-effort cleanup
+      }
+      return {
+        prd,
+        storiesCompletedDelta: 0,
+        costDelta: 0,
+        prdDirty: true,
+        finalAction: "fail",
+        reason: errorMessage(error),
+      };
+    }
+  }
+
   // EXEC-002: In worktree mode, effectiveWorkdir is the worktree root.
   // Monorepo subpackages (story.workdir) are resolved relative to the worktree root so
   // the agent operates in the correct package directory within the isolated worktree.
-  const resolvedWorkdir =
-    ctx.config.execution.storyIsolation === "worktree"
+  const resolvedWorkdir = dependencyContext?.cwd
+    ? dependencyContext.cwd
+    : ctx.config.execution.storyIsolation === "worktree"
       ? story.workdir
         ? join(effectiveWorkdir, story.workdir)
         : effectiveWorkdir
@@ -135,6 +166,7 @@ export async function runIteration(
     routing,
     projectDir: ctx.workdir,
     workdir: resolvedWorkdir,
+    worktreeDependencyContext: dependencyContext,
     prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,
@@ -163,7 +195,7 @@ export async function runIteration(
 
   ctx.agentManager?.reset();
 
-  const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
+  const pipelineResult = await _iterationRunnerDeps.runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
 
   // #410: Destroy reviewerSession on escalation — completion stage is bypassed when the pipeline
   // returns escalate, so we must clean up here to avoid leaking the ACP reviewer session.
@@ -253,6 +285,8 @@ export async function runIteration(
  */
 export const _iterationRunnerDeps = {
   loadConfigForWorkdir,
+  prepareWorktreeDependencies,
+  runPipeline,
   existsSync,
   worktreeManager: new WorktreeManager(),
 };
