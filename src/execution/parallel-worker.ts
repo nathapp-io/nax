@@ -16,6 +16,11 @@ import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import type { WorktreeDependencyContext } from "../worktree/types";
 
+export const _parallelWorkerDeps = {
+  routeTask,
+  executeStoryInWorktree,
+};
+
 /**
  * Execute a single story in its worktree
  */
@@ -143,20 +148,26 @@ export async function executeParallelBatch(
       continue;
     }
 
-    const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
-
     // #93: Override config with per-story resolved config (PKG-003) if available
     const storyConfig = storyEffectiveConfigs?.get(story.id);
     const storyContext = storyConfig ? { ...context, config: storyConfig } : context;
+    const routing = _parallelWorkerDeps.routeTask(
+      story.title,
+      story.description,
+      story.acceptanceCriteria,
+      story.tags,
+      storyConfig ?? config,
+    );
 
-    const executePromise = executeStoryInWorktree(
-      story,
-      worktreePath,
-      dependencyContext,
-      storyContext,
-      routing as RoutingResult,
-      eventEmitter,
-    )
+    const executePromise = _parallelWorkerDeps
+      .executeStoryInWorktree(
+        story,
+        worktreePath,
+        dependencyContext,
+        storyContext,
+        routing as RoutingResult,
+        eventEmitter,
+      )
       .then((result) => {
         results.totalCost += result.cost;
         results.storyCosts.set(story.id, result.cost);

@@ -117,7 +117,7 @@ const smartTestRunnerFieldSchema = z
 
 const WorktreeDependenciesConfigSchema = z
   .object({
-    mode: z.enum(["inherit", "provision", "off"]).default("inherit"),
+    mode: z.enum(["inherit", "provision", "off"]).default("off"),
     setupCommand: z.string().nullable().default(null),
   })
   .superRefine((value, ctx) => {
@@ -167,7 +167,7 @@ const ExecutionConfigSchema = z.object({
     .optional(),
   smartTestRunner: smartTestRunnerFieldSchema,
   worktreeDependencies: WorktreeDependenciesConfigSchema.default({
-    mode: "inherit",
+    mode: "off",
     setupCommand: null,
   }),
   storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
@@ -951,7 +951,7 @@ export const NaxConfigSchema = z
       permissionProfile: "unrestricted",
       smartTestRunner: true,
       worktreeDependencies: {
-        mode: "inherit",
+        mode: "off",
         setupCommand: null,
       },
       storyIsolation: "shared",

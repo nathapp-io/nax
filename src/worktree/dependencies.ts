@@ -41,7 +41,7 @@ export async function prepareWorktreeDependencies(
     case "inherit":
       return resolveInheritedDependencies(options, resolvedCwd);
     case "provision":
-      return provisionDependencies(options.config, resolvedCwd);
+      return provisionDependencies(options.config, options.worktreeRoot, resolvedCwd);
   }
 }
 
@@ -71,7 +71,11 @@ function hasDependencyManifests(worktreeRoot: string, resolvedCwd: string): bool
   );
 }
 
-async function provisionDependencies(config: NaxConfig, resolvedCwd: string): Promise<WorktreeDependencyContext> {
+async function provisionDependencies(
+  config: NaxConfig,
+  worktreeRoot: string,
+  resolvedCwd: string,
+): Promise<WorktreeDependencyContext> {
   const setupCommand = config.execution.worktreeDependencies.setupCommand;
   if (!setupCommand) {
     throw new WorktreeDependencyPreparationError(
@@ -86,7 +90,10 @@ async function provisionDependencies(config: NaxConfig, resolvedCwd: string): Pr
   }
 
   const proc = _worktreeDependencyDeps.spawn(argv, {
-    cwd: resolvedCwd,
+    // Provisioning must run from the worktree root so workspace/monorepo install
+    // commands (bun/pnpm/yarn workspaces) operate on the repo-level manifest.
+    // Story execution still happens from the returned resolvedCwd.
+    cwd: worktreeRoot,
     stdout: "pipe",
     stderr: "pipe",
   });

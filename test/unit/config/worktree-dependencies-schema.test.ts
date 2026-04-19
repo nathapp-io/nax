@@ -13,9 +13,9 @@ function withWorktreeDependencies(value: unknown): Record<string, unknown> {
 }
 
 describe("execution.worktreeDependencies schema", () => {
-  test("defaults mode to inherit when omitted", () => {
+  test("defaults mode to off when omitted", () => {
     const config = NaxConfigSchema.parse({});
-    expect(config.execution.worktreeDependencies.mode).toBe("inherit");
+    expect(config.execution.worktreeDependencies.mode).toBe("off");
     expect(config.execution.worktreeDependencies.setupCommand).toBeNull();
   });
 
@@ -51,8 +51,8 @@ describe("execution.worktreeDependencies schema", () => {
     expect(result.success).toBe(false);
   });
 
-  test("DEFAULT_CONFIG defaults mode to inherit", () => {
-    expect(DEFAULT_CONFIG.execution.worktreeDependencies.mode).toBe("inherit");
+  test("DEFAULT_CONFIG defaults mode to off", () => {
+    expect(DEFAULT_CONFIG.execution.worktreeDependencies.mode).toBe("off");
     expect(DEFAULT_CONFIG.execution.worktreeDependencies.setupCommand).toBeNull();
   });
 });

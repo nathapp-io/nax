@@ -50,7 +50,7 @@ describe("prepareWorktreeDependencies", () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  test("provision parses setupCommand to argv and runs it in the story package cwd", async () => {
+  test("provision parses setupCommand to argv and runs it from the worktree root", async () => {
     const spawnMock = mock(() => ({
       exited: Promise.resolve(0),
       stdout: textStream(),
@@ -70,7 +70,7 @@ describe("prepareWorktreeDependencies", () => {
 
     expect(result).toEqual({ cwd: "/repo/.nax-wt/US-002/packages/web" });
     expect(spawnMock).toHaveBeenCalledWith(["bun", "install", "--frozen-lockfile"], {
-      cwd: "/repo/.nax-wt/US-002/packages/web",
+      cwd: "/repo/.nax-wt/US-002",
       stdout: "pipe",
       stderr: "pipe",
     });
