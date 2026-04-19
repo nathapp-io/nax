@@ -79,11 +79,10 @@ export class AgentManager implements IAgentManager {
       const ok = await adapter.hasCredentials();
       if (ok) continue;
       if (name === primary) {
-        throw new NaxError(
-          `Primary agent "${name}" has no usable credentials`,
-          "AGENT_CREDENTIALS_MISSING",
-          { stage: "run-setup", agent: name },
-        );
+        throw new NaxError(`Primary agent "${name}" has no usable credentials`, "AGENT_CREDENTIALS_MISSING", {
+          stage: "run-setup",
+          agent: name,
+        });
       }
       this._logger.warn("agent-manager", "Fallback candidate pruned — missing credentials", {
         primary,

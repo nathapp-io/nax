@@ -14,10 +14,7 @@
 
 type Logger = { warn: (scope: string, message: string, data?: Record<string, unknown>) => void } | null;
 
-export function applyAgentConfigMigration(
-  conf: Record<string, unknown>,
-  logger: Logger,
-): Record<string, unknown> {
+export function applyAgentConfigMigration(conf: Record<string, unknown>, logger: Logger): Record<string, unknown> {
   const migrated = { ...conf };
   const agent = { ...((migrated.agent as Record<string, unknown> | undefined) ?? {}) };
 
@@ -28,11 +25,9 @@ export function applyAgentConfigMigration(
   // 1. autoMode.defaultAgent → agent.default
   // Always warn when legacy key is present; only migrate if canonical key is absent.
   if (typeof autoMode?.defaultAgent === "string") {
-    logger?.warn(
-      "config",
-      "autoMode.defaultAgent is deprecated — use agent.default (see ADR-012)",
-      { legacy: autoMode.defaultAgent },
-    );
+    logger?.warn("config", "autoMode.defaultAgent is deprecated — use agent.default (see ADR-012)", {
+      legacy: autoMode.defaultAgent,
+    });
     if (agent.default === undefined) {
       agent.default = autoMode.defaultAgent;
     }
@@ -41,11 +36,9 @@ export function applyAgentConfigMigration(
   // 2. autoMode.fallbackOrder: [primary, ...rest] → agent.fallback.map: { primary: [...rest] }
   if (Array.isArray(autoMode?.fallbackOrder) && (autoMode.fallbackOrder as unknown[]).length > 1) {
     const list = autoMode.fallbackOrder as string[];
-    logger?.warn(
-      "config",
-      "autoMode.fallbackOrder is deprecated — use agent.fallback.map (see ADR-012)",
-      { legacy: list },
-    );
+    logger?.warn("config", "autoMode.fallbackOrder is deprecated — use agent.fallback.map (see ADR-012)", {
+      legacy: list,
+    });
     const [primary, ...rest] = list;
     const fallback = { ...((agent.fallback as Record<string, unknown> | undefined) ?? {}) };
     const map = { ...((fallback.map as Record<string, string[]> | undefined) ?? {}) };
@@ -57,11 +50,7 @@ export function applyAgentConfigMigration(
 
   // 3. context.v2.fallback → agent.fallback
   if (ctxV2?.fallback !== undefined && agent.fallback === undefined) {
-    logger?.warn(
-      "config",
-      "context.v2.fallback is deprecated — use agent.fallback (see ADR-012)",
-      {},
-    );
+    logger?.warn("config", "context.v2.fallback is deprecated — use agent.fallback (see ADR-012)", {});
     agent.fallback = ctxV2.fallback as Record<string, unknown>;
   }
 

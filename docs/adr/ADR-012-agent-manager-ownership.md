@@ -189,13 +189,13 @@ AgentManager exposes `runWithFallback(request)` in this ADR. A parallel `complet
 - All call sites still read `config.autoMode.defaultAgent`; no migration yet.
 
 **Acceptance criteria:**
-- [ ] `IAgentManager` interface exported from `src/agents/manager.ts` (reachable via `src/agents` barrel).
-- [ ] `PipelineContext.agentManager` populated by `Runner` — exactly one instance per run.
-- [ ] `AgentManager.getDefault()` returns `config.autoMode.defaultAgent` unchanged (legacy pass-through).
-- [ ] `shouldSwap`, `nextCandidate`, `runWithFallback` methods exist as thin wrappers over current code paths.
-- [ ] All existing tests pass without modification — no call-site changes yet.
-- [ ] `test/unit/agents/manager.test.ts` covers `getDefault()`, per-run state isolation, event emission on `markUnavailable()`.
-- [ ] No config changes.
+- [x] `IAgentManager` interface exported from `src/agents/manager.ts` (reachable via `src/agents` barrel).
+- [x] `PipelineContext.agentManager` populated by `Runner` — exactly one instance per run.
+- [x] `AgentManager.getDefault()` returns `config.autoMode.defaultAgent` unchanged (legacy pass-through).
+- [x] `shouldSwap`, `nextCandidate`, `runWithFallback` methods exist as thin wrappers over current code paths.
+- [x] All existing tests pass without modification — no call-site changes yet.
+- [x] `test/unit/agents/manager.test.ts` covers `getDefault()`, per-run state isolation, event emission on `markUnavailable()`.
+- [x] No config changes.
 
 ### Phase 2 — Config consolidation + migration shim
 
@@ -206,14 +206,14 @@ AgentManager exposes `runWithFallback(request)` in this ADR. A parallel `complet
 - **Fold #518:** `AgentManager.validateCredentials()` runs at `runSetupPhase`, prunes fallback candidates with missing credentials, fails fast if primary missing.
 
 **Acceptance criteria:**
-- [ ] `AgentConfigSchema` in `src/config/schemas.ts` uses Zod `.default()` values (no hand-maintained defaults — per `config-patterns.md`).
-- [ ] `applyAgentConfigMigration()` migrates all 3 legacy keys (`autoMode.defaultAgent`, `autoMode.fallbackOrder`, `context.v2.fallback`) with warn-once semantics.
-- [ ] Mixed legacy + canonical config: canonical wins, warning still emitted.
-- [ ] `AgentManager.getDefault()` reads from `config.agent.default` first, falls back to legacy during Phase 1-5.
-- [ ] `AgentManager.validateCredentials()` called from `runSetupPhase()` — missing fallback candidate → warning + pruned; missing primary → `NaxError`.
-- [ ] T16.3 `fallback-probe` fixture exhibits observable swap (canary pass) — schema propagation alone unblocks the silent no-op.
-- [ ] `test/unit/config/loader-migration.test.ts` covers 3 keys × 3 shape variants.
-- [ ] `test/unit/execution/lifecycle/run-setup.test.ts` covers credential pre-validation.
+- [x] `AgentConfigSchema` in `src/config/schemas.ts` uses Zod `.default()` values (no hand-maintained defaults — per `config-patterns.md`).
+- [x] `applyAgentConfigMigration()` migrates all 3 legacy keys (`autoMode.defaultAgent`, `autoMode.fallbackOrder`, `context.v2.fallback`) with warn-once semantics.
+- [x] Mixed legacy + canonical config: canonical wins, warning still emitted.
+- [x] `AgentManager.getDefault()` reads from `config.agent.default` first, falls back to legacy during Phase 1-5.
+- [x] `AgentManager.validateCredentials()` called from `runSetupPhase()` — missing fallback candidate → warning + pruned; missing primary → `NaxError`.
+- [x] T16.3 `fallback-probe` fixture exhibits observable swap (canary pass) — schema propagation alone unblocks the silent no-op.
+- [x] `test/unit/config/loader-migration.test.ts` covers 3 keys × 3 shape variants.
+- [x] `test/unit/execution/lifecycle/run-setup.test.ts` covers credential pre-validation.
 
 ### Phase 3 — Migrate call sites (codemod + manual review)
 

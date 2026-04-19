@@ -28,11 +28,7 @@ export interface AgentCompleteOutcome {
   fallbacks: AgentFallbackRecord[];
 }
 
-export type AgentManagerEventName =
-  | "onAgentSelected"
-  | "onSwapAttempt"
-  | "onAgentUnavailable"
-  | "onSwapExhausted";
+export type AgentManagerEventName = "onAgentSelected" | "onSwapAttempt" | "onAgentUnavailable" | "onSwapExhausted";
 
 export interface AgentManagerEvents {
   on(event: "onAgentSelected", listener: (e: { agent: string; reason: string }) => void): void;
@@ -78,11 +74,7 @@ export interface IAgentManager {
   resolveFallbackChain(agent: string, failure: AdapterFailure): string[];
 
   /** Phase 1: returns false unconditionally. Full logic in Phase 5. */
-  shouldSwap(
-    failure: AdapterFailure | undefined,
-    hopsSoFar: number,
-    bundle: ContextBundle | undefined,
-  ): boolean;
+  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, bundle: ContextBundle | undefined): boolean;
 
   /** Phase 1: returns null. Full logic in Phase 5. */
   nextCandidate(current: string, hopsSoFar: number): string | null;
