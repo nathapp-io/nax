@@ -307,11 +307,11 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     expect(ctx.agentSwapCount ?? 0).toBe(0);
   });
 
-  test("respects maxHopsPerStory cap — does not swap when already at limit", async () => {
+  test("respects maxHopsPerStory cap — does not swap when cap is zero", async () => {
     const primaryAgent = makeFailingAgent("claude");
     const config = makeConfig(true);
+    config.agent!.fallback!.maxHopsPerStory = 0;
     const ctx = makeCtx(config, bundle);
-    ctx.agentSwapCount = 1; // already used the one allowed hop
 
     _executionDeps.getAgent = mock(() => primaryAgent);
     ctx.agentGetFn = () => primaryAgent as AgentAdapter;
@@ -319,7 +319,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "escalate" });
-    expect(ctx.agentSwapCount).toBe(1); // unchanged
+    expect(ctx.agentSwapCount ?? 0).toBe(0);
   });
 
   test("tries the next fallback candidate when the first swap candidate fails", async () => {
