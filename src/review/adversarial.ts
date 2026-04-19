@@ -281,7 +281,6 @@ export async function runAdversarialReview(
 
   const runOpts = {
     workdir,
-    acpSessionName: adversarialSessionName,
     timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
     modelTier: adversarialConfig.modelTier,
     modelDef: resolvedModelDef,

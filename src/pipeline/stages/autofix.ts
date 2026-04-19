@@ -512,7 +512,6 @@ async function runAgentRectification(
           featureName: ctx.prd.feature,
           storyId: ctx.story.id,
           sessionRole: "implementer",
-          acpSessionName: implementerSession,
           keepSessionOpen: !isLastAttempt,
         });
         sessionConfirmedOpen = true;

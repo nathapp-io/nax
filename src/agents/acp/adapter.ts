@@ -630,12 +630,12 @@ export class AcpAgentAdapter implements AgentAdapter {
     const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds, options.pidRegistry);
     await client.start();
 
-    // 1. Resolve session name: descriptor.handle > explicit acpSessionName > derived from options
+    // 1. Resolve session name: descriptor.handle > explicit sessionHandle > derived from options
     // Phase 3 (#477): crash guard and sidecar lookup removed — SessionManager owns crash recovery
     // via the CREATED/RUNNING state machine (orphan detection via sweepOrphans()).
     const sessionName =
       (options.session ? this.deriveSessionName(options.session) : undefined) ??
-      options.acpSessionName ??
+      options.sessionHandle ??
       computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
     // 2. Resolve permission mode from config via single source of truth.

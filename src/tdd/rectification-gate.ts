@@ -231,7 +231,6 @@ async function runRectificationLoop(
         featureName,
         storyId: story.id,
         sessionRole: "implementer",
-        acpSessionName: rectificationSessionName,
         keepSessionOpen: !isLastAttempt,
       });
 

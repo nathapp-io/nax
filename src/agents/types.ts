@@ -101,8 +101,13 @@ export interface AgentRunOptions {
   };
   /** PID registry for cleanup on crash/SIGTERM */
   pidRegistry?: import("../execution/pid-registry").PidRegistry;
-  /** ACP session name to resume for plan→run session continuity */
-  acpSessionName?: string;
+  /**
+   * Explicit ACP session handle override. When set, the adapter uses this
+   * name instead of auto-deriving from featureName/storyId/sessionRole.
+   * Use only when a non-standard session name is required (e.g. generation-scoped
+   * reviewer sessions in dialogue.ts). Most callers should omit this field.
+   */
+  sessionHandle?: string;
   /** Feature name for ACP session naming and logging */
   featureName?: string;
   /** Story ID for ACP session naming and logging */
@@ -137,7 +142,7 @@ export interface AgentRunOptions {
   /**
    * Session descriptor from SessionManager (Phase 1 plumbing — optional for backward compat).
    * When provided, the adapter MAY use descriptor.id/role/handle for audit correlation.
-   * Phase 5.5: replaces acpSessionName, featureName, storyId, sessionRole, keepSessionOpen.
+   * Phase 5.5: replaces sessionHandle, featureName, storyId, sessionRole, keepOpen.
    */
   session?: SessionDescriptor;
 }

@@ -432,7 +432,6 @@ export async function runSemanticReview(
 
   const runOpts = {
     workdir,
-    acpSessionName: reviewerSessionName,
     timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
     modelTier: semanticConfig.modelTier,
     modelDef: resolvedModelDef,

@@ -6,7 +6,6 @@
  * findings by file scope and route test-file findings to a test-writer session.
  */
 
-import { computeAcpHandle } from "../../agents/acp/adapter";
 import type { createAgentRegistry } from "../../agents/registry";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
@@ -71,7 +70,6 @@ export async function runTestWriterRectification(
     logger.warn("autofix", "Agent not found — skipping test-writer rectification", { storyId: ctx.story.id });
     return 0;
   }
-  const testWriterSession = computeAcpHandle(ctx.workdir, ctx.prd.feature, ctx.story.id, "test-writer");
   const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story);
   // Use the TDD test-writer tier from config — consistent with how the TDD orchestrator
   // selects the tier for the test-writer session (tdd.orchestrator.ts:150).
@@ -92,7 +90,6 @@ export async function runTestWriterRectification(
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
       sessionRole: "test-writer",
-      acpSessionName: testWriterSession,
       keepSessionOpen: keepOpen,
     });
     return twResult.estimatedCost ?? 0;

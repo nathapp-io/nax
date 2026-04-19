@@ -229,7 +229,7 @@ export function createReviewerSession(
    * Tracks session lifecycle for compaction-triggered resets.
    * - generation: incremented each time history overflow causes a session reset.
    * - pendingCompactionContext: when non-null, the next agent.run() call must
-   *   inject this compacted context as initial context and use a new acpSessionName
+   *   inject this compacted context as initial context and use a new sessionHandle
    *   to start a fresh session (satisfying AC4 session destruction + recreation).
    */
   const sessionState = {
@@ -253,26 +253,26 @@ export function createReviewerSession(
   }
 
   /**
-   * Builds the effective prompt and acpSessionName for an agent.run() call.
+   * Builds the effective prompt and sessionHandle for an agent.run() call.
    *
    * When a compaction reset occurred (pendingCompactionContext is set), the
    * compacted context is prepended to the prompt so the fresh session receives
    * the full prior conversation summary as initial context (AC4).
-   * acpSessionName is set to a generation-scoped name so the adapter creates
+   * sessionHandle is set to a generation-scoped name so the adapter creates
    * a new session rather than reusing the previous one.
    */
-  function buildEffectiveRunArgs(prompt: string): { effectivePrompt: string; acpSessionName: string | undefined } {
+  function buildEffectiveRunArgs(prompt: string): { effectivePrompt: string; sessionHandle: string | undefined } {
     if (sessionState.pendingCompactionContext !== null) {
       const context = sessionState.pendingCompactionContext;
       sessionState.pendingCompactionContext = null;
       return {
         effectivePrompt: `${context}\n\n---\n\n${prompt}`,
-        acpSessionName: `nax-reviewer-${storyId}-gen${sessionState.generation}`,
+        sessionHandle: `nax-reviewer-${storyId}-gen${sessionState.generation}`,
       };
     }
-    const acpSessionName =
+    const sessionHandle =
       sessionState.generation > 1 ? `nax-reviewer-${storyId}-gen${sessionState.generation}` : undefined;
-    return { effectivePrompt: prompt, acpSessionName };
+    return { effectivePrompt: prompt, sessionHandle };
   }
 
   return {
@@ -297,7 +297,7 @@ export function createReviewerSession(
 
       const prompt = promptBuilder.buildReviewPrompt(diff, story);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
-      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
+      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
       const result = await agent.run({
         prompt: effectivePrompt,
@@ -311,7 +311,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
-        acpSessionName,
+        sessionHandle,
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -343,7 +343,7 @@ export function createReviewerSession(
       const previousFindings = lastCheckResult.checkResult.findings;
       const prompt = promptBuilder.buildReReviewPrompt(updatedDiff, previousFindings);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
-      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
+      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
       const result = await agent.run({
         prompt: effectivePrompt,
@@ -357,7 +357,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
-        acpSessionName,
+        sessionHandle,
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -374,7 +374,7 @@ export function createReviewerSession(
         // compactHistory() returns the summary string; store it so the next
         // agent.run() call injects it as initial context for the new session.
         // Incrementing sessionState.generation causes buildEffectiveRunArgs()
-        // to use a new acpSessionName, which forces the adapter to create a
+        // to use a new sessionHandle, which forces the adapter to create a
         // fresh session rather than resuming the previous one.
         const compactedSummary = compactHistory(history);
         sessionState.generation++;
@@ -403,7 +403,7 @@ export function createReviewerSession(
           excludePatterns: [],
         } as SemanticReviewConfig);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(effectiveSemanticConfig);
-      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(question);
+      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(question);
 
       const result = await agent.run({
         prompt: effectivePrompt,
@@ -417,7 +417,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
-        acpSessionName,
+        sessionHandle,
       });
 
       history.push({ role: "implementer", content: question });
@@ -443,7 +443,7 @@ export function createReviewerSession(
 
       const prompt = promptBuilder.buildResolverPrompt(proposals, critiques, diffContext, story, resolverContext);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
-      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
+      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
       const result = await agent.run({
         prompt: effectivePrompt,
@@ -457,7 +457,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
-        acpSessionName,
+        sessionHandle,
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -501,7 +501,7 @@ export function createReviewerSession(
         resolverContext,
       );
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
-      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
+      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
       const result = await agent.run({
         prompt: effectivePrompt,
@@ -515,7 +515,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
-        acpSessionName,
+        sessionHandle,
       });
 
       history.push({ role: "implementer", content: prompt });

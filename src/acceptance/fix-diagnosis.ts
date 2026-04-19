@@ -6,7 +6,6 @@
  */
 
 import { resolveDefaultAgent } from "../agents";
-import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
@@ -72,8 +71,6 @@ export async function diagnoseAcceptanceFailure(
 
   const { testOutput, testFileContent, config, workdir, featureName, storyId } = options;
 
-  const sessionName = computeAcpHandle(workdir, featureName, storyId, "diagnose");
-
   const resolvedModel = resolveConfiguredModel(
     config.models,
     resolveDefaultAgent(config),
@@ -104,7 +101,6 @@ export async function diagnoseAcceptanceFailure(
       modelDef: resolvedModel.modelDef,
       timeoutSeconds,
       sessionRole: "diagnose",
-      acpSessionName: sessionName,
       featureName,
       storyId,
       config,
