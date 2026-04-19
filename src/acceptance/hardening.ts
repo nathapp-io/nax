@@ -5,6 +5,7 @@
  * Passing criteria are promoted from suggestedCriteria → acceptanceCriteria.
  */
 
+import { resolveDefaultAgent } from "../agents";
 import type { AgentAdapter } from "../agents/types";
 import { type ModelDef, resolveConfiguredModel } from "../config";
 import type { NaxConfig } from "../config";
@@ -99,9 +100,9 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     try {
       const resolvedModel = resolveConfiguredModel(
         ctx.config.models,
-        ctx.config.autoMode?.defaultAgent ?? "claude",
+        resolveDefaultAgent(ctx.config),
         ctx.config.acceptance?.model ?? "fast",
-        ctx.config.autoMode?.defaultAgent ?? "claude",
+        resolveDefaultAgent(ctx.config),
       );
       modelDef = resolvedModel.modelDef;
       modelTier = resolvedModel.modelTier ?? "fast";

@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import { resolveDefaultAgent } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
@@ -177,9 +178,9 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       const modelTier = this.config.model ?? "fast";
       resolvedModel = resolveModelForAgent(
         naxConfig.models,
-        naxConfig.autoMode.defaultAgent,
+        resolveDefaultAgent(naxConfig),
         modelTier,
-        naxConfig.autoMode.defaultAgent,
+        resolveDefaultAgent(naxConfig),
       ).model;
     } catch {
       // Model resolution failed (e.g. no naxConfig provided) — proceed without a model

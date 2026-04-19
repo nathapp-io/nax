@@ -68,7 +68,7 @@ export interface PipelineContext {
   /**
    * Root-level NaxConfig loaded from .nax/config.json. Unmerged with package overrides.
    * Use only for fields that must reflect the global project config:
-   * autoMode.defaultAgent, models, autoMode.escalation.
+   * agent.default (ADR-012), models, autoMode.escalation.
    */
   rootConfig: NaxConfig;
   /** Full PRD document */

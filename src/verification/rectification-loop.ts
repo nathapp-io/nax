@@ -7,7 +7,7 @@
  * Used by: src/pipeline/stages/rectify.ts, src/execution/lifecycle/run-regression.ts
  */
 
-import { getAgent as _getAgent } from "../agents";
+import { getAgent as _getAgent, resolveDefaultAgent } from "../agents";
 import { buildSessionName } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
 import { createAgentRegistry } from "../agents/registry";
@@ -237,8 +237,8 @@ export async function runRectificationLoop(
     },
     runAttempt: async (attempt, rectificationPrompt) => {
       const agent = agentGetFn
-        ? agentGetFn(config.autoMode.defaultAgent)
-        : _rectificationDeps.getAgent(config.autoMode.defaultAgent, config);
+        ? agentGetFn(resolveDefaultAgent(config))
+        : _rectificationDeps.getAgent(resolveDefaultAgent(config), config);
       if (!agent) {
         logger?.error("rectification", "Agent not found, cannot retry");
         throw new Error("RECTIFICATION_AGENT_NOT_FOUND");
@@ -249,9 +249,9 @@ export async function runRectificationLoop(
         config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
       const modelDef = resolveModelForAgent(
         config.models,
-        story.routing?.agent ?? config.autoMode.defaultAgent,
+        story.routing?.agent ?? resolveDefaultAgent(config),
         modelTier,
-        config.autoMode.defaultAgent,
+        resolveDefaultAgent(config),
       );
 
       const isLastAttempt = attempt >= rectificationConfig.maxRetries;
@@ -402,7 +402,7 @@ export async function runRectificationLoop(
         return false;
       }
 
-      const agentName = escalatedAgent ?? story.routing?.agent ?? config.autoMode.defaultAgent;
+      const agentName = escalatedAgent ?? story.routing?.agent ?? resolveDefaultAgent(config);
       const agent = agentGetFn ? agentGetFn(agentName) : _rectificationDeps.getAgent(agentName, config);
       if (!agent) {
         return false;
@@ -412,7 +412,7 @@ export async function runRectificationLoop(
         config.models,
         agentName,
         escalatedTier,
-        config.autoMode.defaultAgent,
+        resolveDefaultAgent(config),
       );
       let escalationPrompt = RectifierPromptBuilder.escalated(
         testSummary.failures,

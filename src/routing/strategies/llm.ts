@@ -7,6 +7,7 @@
  */
 
 import type { AgentAdapter } from "../../agents";
+import { resolveDefaultAgent } from "../../agents";
 import type { ConfiguredModel, NaxConfig } from "../../config";
 import { resolveConfiguredModel } from "../../config";
 import { getLogger } from "../../logger";
@@ -142,7 +143,7 @@ async function callLlmOnce(
     config.models,
     adapter.name,
     modelSelection,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
   );
 
   let timeoutId: ReturnType<typeof setTimeout> | undefined;

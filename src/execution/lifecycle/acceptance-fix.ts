@@ -14,7 +14,7 @@ import { type DiagnoseOptions, diagnoseAcceptanceFailure } from "../../acceptanc
 import { executeSourceFix, executeTestFix } from "../../acceptance/fix-executor";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import type { DiagnosisResult, SemanticVerdict } from "../../acceptance/types";
-import { getAgent } from "../../agents/registry";
+import { getAgent, resolveDefaultAgent } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
 import { resolveConfiguredModel } from "../../config";
 import { getSafeLogger } from "../../logger";
@@ -93,9 +93,9 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
   // Slow path: full LLM diagnosis with previousFailure context
   const diagnosisAgentName = resolveConfiguredModel(
     diagnosisOpts.config.models,
-    diagnosisOpts.config.autoMode.defaultAgent,
+    resolveDefaultAgent(diagnosisOpts.config),
     diagnosisOpts.config.acceptance.fix.diagnoseModel,
-    diagnosisOpts.config.autoMode.defaultAgent,
+    resolveDefaultAgent(diagnosisOpts.config),
   ).agent;
   const diagnosisAgent = opts.getAgent?.(diagnosisAgentName) ?? agent;
   return await diagnoseAcceptanceFailure(diagnosisAgent, {
@@ -143,9 +143,9 @@ export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
 
   const fixAgentName = resolveConfiguredModel(
     ctx.config.models,
-    ctx.config.autoMode.defaultAgent,
+    resolveDefaultAgent(ctx.config),
     ctx.config.acceptance.fix.fixModel,
-    ctx.config.autoMode.defaultAgent,
+    resolveDefaultAgent(ctx.config),
   ).agent;
   const agent = (ctx.agentGetFn ?? _applyFixDeps.getAgent)(fixAgentName);
   if (!agent) {

@@ -6,6 +6,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import { createAgentRegistry } from "../agents/registry";
 import { resolveConfiguredModel } from "../config";
 import { getLogger } from "../logger";
@@ -29,9 +30,9 @@ export const _refineDeps = {
 
       const resolvedModel = resolveConfiguredModel(
         config.models,
-        config.autoMode.defaultAgent,
+        resolveDefaultAgent(config),
         config.acceptance?.model ?? "fast",
-        config.autoMode.defaultAgent,
+        resolveDefaultAgent(config),
       );
       const adapter = createAgentRegistry(config).getAgent(resolvedModel.agent);
       if (!adapter) throw new Error(`Agent "${resolvedModel.agent}" not found`);
@@ -103,9 +104,9 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
 
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
     config.acceptance?.model ?? "fast",
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
   );
   const prompt = new AcceptancePromptBuilder().buildRefinementPrompt(criteria, codebaseContext, {
     testStrategy,

@@ -5,6 +5,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -220,9 +221,9 @@ export async function runTddSession(
     modelTier,
     modelDef: resolveModelForAgent(
       config.models,
-      story.routing?.agent ?? config.autoMode.defaultAgent,
+      story.routing?.agent ?? resolveDefaultAgent(config),
       modelTier,
-      config.autoMode.defaultAgent,
+      resolveDefaultAgent(config),
     ),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     dangerouslySkipPermissions: resolvePermissions(config, "run").skipPermissions,
