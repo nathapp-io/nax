@@ -8,6 +8,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
@@ -128,9 +129,9 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   if (dryRun) {
     const modelDef = resolveModelForAgent(
       config.models,
-      story.routing?.agent ?? config.autoMode.defaultAgent,
+      story.routing?.agent ?? resolveDefaultAgent(config),
       modelTier,
-      config.autoMode.defaultAgent,
+      resolveDefaultAgent(config),
     );
     logger.info("tdd", "[DRY RUN] Would run 3-session TDD", {
       storyId: story.id,

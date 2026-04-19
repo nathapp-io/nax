@@ -7,6 +7,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import { buildSessionName } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
@@ -217,9 +218,9 @@ async function runRectificationLoop(
         modelTier: implementerTier,
         modelDef: resolveModelForAgent(
           config.models,
-          story.routing?.agent ?? config.autoMode.defaultAgent,
+          story.routing?.agent ?? resolveDefaultAgent(config),
           implementerTier,
-          config.autoMode.defaultAgent,
+          resolveDefaultAgent(config),
         ),
         timeoutSeconds: config.execution.sessionTimeoutSeconds,
         dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
