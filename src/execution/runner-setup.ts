@@ -34,6 +34,8 @@ export interface RunnerSetupOptions {
   getTotalStories: () => number;
   /** Protocol-aware agent resolver — created from createAgentRegistry(config) in runner.ts */
   agentGetFn?: AgentGetFn;
+  /** Per-run AgentManager (ADR-012). When provided, validateCredentials() is called during setup. */
+  agentManager?: import("../agents").IAgentManager;
 }
 
 /**
@@ -81,6 +83,7 @@ export async function runSetupPhase(options: RunnerSetupOptions): Promise<Runner
     getStoriesCompleted: options.getStoriesCompleted,
     getTotalStories: options.getTotalStories,
     agentGetFn: options.agentGetFn,
+    agentManager: options.agentManager,
   });
 
   return setupResult;

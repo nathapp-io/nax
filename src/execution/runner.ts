@@ -141,6 +141,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     headless,
     formatterMode,
     agentGetFn,
+    agentManager,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
     // BUG-017: Pass getters for run.complete event on SIGTERM

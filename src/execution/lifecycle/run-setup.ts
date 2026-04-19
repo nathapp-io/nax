@@ -95,6 +95,8 @@ export interface RunSetupOptions {
   getTotalStories: () => number;
   /** Protocol-aware agent resolver — passed from runner.ts registry */
   agentGetFn?: AgentGetFn;
+  /** Per-run AgentManager (ADR-012). When provided, validateCredentials() is called at run start. */
+  agentManager?: import("../../agents").IAgentManager;
 }
 
 export interface RunSetupResult {
@@ -121,6 +123,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // AC-35: pre-flight warning for unconfigured fallback candidates
   warnFallbackMisconfiguration(options.config, options.agentGetFn, logger);
+
+  if (options.agentManager) {
+    await options.agentManager.validateCredentials();
+  }
 
   const {
     prdPath,
