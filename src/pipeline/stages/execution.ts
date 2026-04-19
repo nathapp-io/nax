@@ -256,7 +256,18 @@ export const executionStage: PipelineStage = {
 
     if (!result.success) {
       // Phase 5.5: agent-swap on availability failure, before tier escalation
-      const fallbackConfig = ctx.config.context?.v2?.fallback;
+      // Merge canonical agent.fallback (optional fields) with context.v2.fallback (required fields)
+      // so Phase-5.5 loop works with either config location. Full removal is Phase 5.
+      const rawFallback = ctx.config.agent?.fallback ?? ctx.config.context?.v2?.fallback;
+      const fallbackConfig =
+        rawFallback && typeof rawFallback.enabled !== "undefined"
+          ? {
+              enabled: rawFallback.enabled ?? false,
+              onQualityFailure: rawFallback.onQualityFailure ?? false,
+              maxHopsPerStory: rawFallback.maxHopsPerStory ?? 2,
+              map: rawFallback.map ?? {},
+            }
+          : (rawFallback as import("../../config/runtime-types").ContextV2FallbackConfig | undefined);
       if (fallbackConfig && ctx.contextBundle) {
         const primaryAgentId = ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent;
         const basePrompt = ctx.prompt;
