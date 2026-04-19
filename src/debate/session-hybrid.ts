@@ -121,7 +121,7 @@ export async function runRebuttalLoop(
  * Run a hybrid-mode debate session.
  *
  * Proposal phase: all debaters run in parallel via allSettledBounded with
- * sessionRole 'debate-hybrid-{debaterIndex}' and keepSessionOpen: true.
+ * sessionRole 'debate-hybrid-{debaterIndex}' and keepOpen: true.
  * If fewer than 2 proposals succeed, returns the single-agent fallback result.
  * Rebuttal loop delegates to runRebuttalLoop() (SSOT).
  *

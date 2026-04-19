@@ -231,7 +231,7 @@ async function runRectificationLoop(
         featureName,
         storyId: story.id,
         sessionRole: "implementer",
-        keepSessionOpen: !isLastAttempt,
+        keepOpen: !isLastAttempt,
       });
 
       if (!rectifyResult.success && rectifyResult.pid) {

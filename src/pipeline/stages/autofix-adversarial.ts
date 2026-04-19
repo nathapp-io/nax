@@ -90,7 +90,7 @@ export async function runTestWriterRectification(
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
       sessionRole: "test-writer",
-      keepSessionOpen: keepOpen,
+      keepOpen,
     });
     return twResult.estimatedCost ?? 0;
   } catch {

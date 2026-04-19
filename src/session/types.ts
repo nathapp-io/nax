@@ -66,8 +66,8 @@ export type SessionRole =
   | "auto" // Auto-approve interaction (complete())
   | "diagnose" // Acceptance failure diagnosis (run())
   | "source-fix" // Acceptance source fix (run())
-  | "reviewer-semantic" // Semantic review — keepSessionOpen: true
-  | "reviewer-adversarial"; // Adversarial review — keepSessionOpen: true
+  | "reviewer-semantic" // Semantic review — keepOpen: true
+  | "reviewer-adversarial"; // Adversarial review — keepOpen: true
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Protocol IDs

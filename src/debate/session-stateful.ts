@@ -44,7 +44,7 @@ export async function runStatefulTurn(
   debater: Debater,
   prompt: string,
   roleKey: string,
-  keepSessionOpen: boolean,
+  keepOpen: boolean,
 ): Promise<SuccessfulProposal> {
   const modelTier = modelTierFromDebater(debater);
   const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
@@ -63,7 +63,7 @@ export async function runStatefulTurn(
     storyId: ctx.storyId,
     sessionRole: roleKey,
     maxInteractionTurns: ctx.config?.agent?.maxInteractionTurns,
-    keepSessionOpen,
+    keepOpen,
   });
 
   if (!runResult.success) {
@@ -102,7 +102,7 @@ export async function closeStatefulSession(
     storyId: ctx.storyId,
     sessionRole: roleKey,
     maxInteractionTurns: ctx.config?.agent?.maxInteractionTurns,
-    keepSessionOpen: false,
+    keepOpen: false,
   });
 
   return runResult.success ? runResult.estimatedCost : 0;

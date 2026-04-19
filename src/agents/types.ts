@@ -128,11 +128,11 @@ export interface AgentRunOptions {
   projectDir?: string;
   /**
    * When true, the adapter will NOT close the session after a successful run.
-   * Use this for rectification loops where the same session must persist across
-   * multiple attempts so the agent retains full conversation context.
-   * The caller is responsible for closing the session when the loop is done.
+   * Use for multi-attempt loops (rectification, review) where the same session
+   * must persist across calls so the agent retains conversation context.
+   * The caller is responsible for closing the session when the loop ends.
    */
-  keepSessionOpen?: boolean;
+  keepOpen?: boolean;
   /** Context-engine pull tools to expose for this run (ACP text-tool protocol). */
   contextPullTools?: ToolDescriptor[];
   /** Server-side runtime for resolving context-engine pull tool calls. */
@@ -318,7 +318,7 @@ export interface AgentAdapter {
 
   /**
    * @deprecated Phase 3 (#477): use closePhysicalSession() instead.
-   * Close a named session that was kept open with keepSessionOpen: true.
+   * Close a named session that was kept open with keepOpen: true.
    * Best-effort — errors are swallowed. No-op for adapters that do not support
    * named sessions (e.g. future non-ACP adapters).
    *

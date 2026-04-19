@@ -204,7 +204,7 @@ export async function runTddSession(
   // The rectification gate uses the same session name and will resume it directly — so
   // the implementer retains full context of what it built.
   // The session sweep (or the last rectification attempt) handles final cleanup.
-  const keepSessionOpen = role === "implementer" && (config.execution.rectification?.enabled ?? false);
+  const keepOpen = role === "implementer" && (config.execution.rectification?.enabled ?? false);
 
   // Run the agent
   const result = await agent.run({
@@ -226,7 +226,7 @@ export async function runTddSession(
     featureName,
     storyId: story.id,
     sessionRole: role,
-    keepSessionOpen,
+    keepOpen,
     contextPullTools: contextBundle?.pullTools,
     contextToolRuntime: contextBundle
       ? createContextToolRuntime({

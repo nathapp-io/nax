@@ -270,7 +270,7 @@ export async function runRectificationLoop(
         featureName,
         storyId: story.id,
         sessionRole: "implementer",
-        keepSessionOpen: !isLastAttempt,
+        keepOpen: !isLastAttempt,
       });
 
       costAccum += agentResult.estimatedCost ?? 0;

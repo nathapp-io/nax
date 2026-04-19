@@ -1,7 +1,7 @@
 /**
  * Reviewer-Implementer Dialogue
  *
- * Maintains a persistent reviewer session via agent.run() with keepSessionOpen: true.
+ * Maintains a persistent reviewer session via agent.run() with keepOpen: true.
  * The reviewer holds full conversation context across multiple review() calls.
  */
 
@@ -306,7 +306,7 @@ export function createReviewerSession(
         modelDef,
         timeoutSeconds,
         sessionRole: "reviewer",
-        keepSessionOpen: true,
+        keepOpen: true,
         pipelineStage: "review",
         config: _config,
         storyId,
@@ -352,7 +352,7 @@ export function createReviewerSession(
         modelDef,
         timeoutSeconds,
         sessionRole: "reviewer",
-        keepSessionOpen: true,
+        keepOpen: true,
         pipelineStage: "review",
         config: _config,
         storyId,
@@ -412,7 +412,7 @@ export function createReviewerSession(
         modelDef,
         timeoutSeconds,
         sessionRole: "reviewer",
-        keepSessionOpen: true,
+        keepOpen: true,
         pipelineStage: "review",
         config: _config,
         storyId,
@@ -452,7 +452,7 @@ export function createReviewerSession(
         modelDef,
         timeoutSeconds,
         sessionRole: "reviewer",
-        keepSessionOpen: true,
+        keepOpen: true,
         pipelineStage: "review",
         config: _config,
         storyId,
@@ -510,7 +510,7 @@ export function createReviewerSession(
         modelDef,
         timeoutSeconds,
         sessionRole: "reviewer",
-        keepSessionOpen: true,
+        keepOpen: true,
         pipelineStage: "review",
         config: _config,
         storyId,

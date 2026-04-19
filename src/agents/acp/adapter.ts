@@ -783,10 +783,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     } finally {
       // 6. Cleanup — close the physical ACP session on success or session-broken.
       // On failure (any), keep session open so retry can resume with context.
-      // On success with keepSessionOpen=true, keep open so the next turn resumes context.
+      // On success with keepOpen=true, keep open so the next turn resumes context.
       // Phase 3 (#477): sidecar writes removed — SessionManager owns persistence.
       const isSessionBroken = !runState.succeeded && lastResponse?.stopReason === "error";
-      if ((runState.succeeded && !options.keepSessionOpen) || isSessionBroken) {
+      if ((runState.succeeded && !options.keepOpen) || isSessionBroken) {
         if (isSessionBroken) {
           getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         }
@@ -794,7 +794,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       } else if (!runState.succeeded) {
         getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
       } else {
-        getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepSessionOpen=true)", { sessionName });
+        getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepOpen=true)", { sessionName });
       }
       await client.close().catch(() => {});
     }
