@@ -62,7 +62,7 @@ export interface AgentRunRequest {
 }
 
 export interface IAgentManager {
-  /** Resolve the default agent name. Reads config.agent.default, falls back to config.autoMode.defaultAgent during Phase 1-5. */
+  /** Resolve the default agent name. Reads config.agent.default (falls back to built-in "claude"). */
   getDefault(): string;
 
   /** True if the agent has been marked unavailable for this run. */

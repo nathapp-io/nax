@@ -55,7 +55,7 @@ export class AgentManager implements IAgentManager {
   getDefault(): string {
     const fromAgent = this._config.agent?.default;
     if (typeof fromAgent === "string" && fromAgent.length > 0) return fromAgent;
-    return this._config.autoMode.defaultAgent;
+    return "claude";
   }
 
   isUnavailable(agent: string): boolean {
