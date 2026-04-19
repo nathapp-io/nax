@@ -128,6 +128,12 @@ export interface PipelineContext {
   /** In-process session registry for story-level scratch aggregation and session lifecycle. */
   sessionManager?: import("../session").ISessionManager;
   /**
+   * Per-run AgentManager (ADR-012). Owns default-agent resolution, per-run
+   * unavailable-agent state, and cross-agent fallback policy. Phase 1: still
+   * pass-through; Phase 5 drives the full swap loop.
+   */
+  agentManager?: import("../agents").IAgentManager;
+  /**
    * nax session ID for the current story's main execution session.
    * Set by the execution stage after SessionManager.create().
    * Format: sess-<uuid>
