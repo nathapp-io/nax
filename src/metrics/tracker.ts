@@ -5,6 +5,7 @@
  */
 
 import path from "node:path";
+import { resolveDefaultAgent } from "../agents";
 import { resolveModelForAgent } from "../config/schema";
 import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
@@ -107,14 +108,14 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
 
   // Extract model name and agent from config
-  const agentUsed = routing.agent ?? ctx.config.autoMode.defaultAgent;
+  const agentUsed = routing.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
   let modelUsed: string = routing.modelTier;
   try {
     const modelDef = resolveModelForAgent(
       ctx.config.models,
       agentUsed,
       routing.modelTier,
-      ctx.config.autoMode.defaultAgent,
+      ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
     );
     modelUsed = modelDef.model;
   } catch {
@@ -203,14 +204,14 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
   const costPerStory = totalCost / stories.length;
   const durationPerStory = totalDuration / stories.length;
 
-  const batchAgentUsed = routing.agent ?? ctx.config.autoMode.defaultAgent;
+  const batchAgentUsed = routing.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
   let modelUsed: string = routing.modelTier;
   try {
     const modelDef = resolveModelForAgent(
       ctx.config.models,
       batchAgentUsed,
       routing.modelTier,
-      ctx.config.autoMode.defaultAgent,
+      ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
     );
     modelUsed = modelDef.model;
   } catch {

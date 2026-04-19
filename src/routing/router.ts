@@ -6,6 +6,7 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
+import { resolveDefaultAgent } from "../agents";
 import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
@@ -289,7 +290,7 @@ export async function tryLlmBatchRoute(
     config.models,
     preferredAgent,
     config.routing.llm?.model ?? "fast",
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
   ).agent;
   const resolvedAdapter = _deps.getAgent(routingAgent, config);
   if (!resolvedAdapter) return;

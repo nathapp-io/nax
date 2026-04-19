@@ -22,7 +22,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Auto mode configuration for agent orchestration. Enables multi-agent routing with model tier selection per task complexity and escalation on failures.",
   "autoMode.enabled": "Enable automatic agent selection and escalation",
   "autoMode.defaultAgent":
-    "Default agent to use when no specific agent is requested. Examples: 'claude' (Claude Code), 'codex' (GitHub Copilot), 'opencode' (OpenCode). The agent handles the main coding tasks.",
+    "Deprecated — use agent.default instead (see ADR-012). Default agent used for all AI operations.",
   "autoMode.fallbackOrder":
     'Fallback order for per-agent selection when the primary agent is rate-limited, unavailable, or fails. Specifies which agents in the per-agent model map to try in sequence. Example: ["claude", "codex"] means try Claude first, then Copilot. Each agent must have tiers defined in the models per-agent map.',
   "autoMode.complexityRouting":
