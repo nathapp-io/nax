@@ -548,7 +548,7 @@ export async function runThreeSessionTddFromCtx(
           reuseExisting ??
           ctx.sessionManager.create({
             role,
-            agent: ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
+            agent: ctx.routing.agent ?? ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent,
             workdir: ctx.workdir,
             projectDir: ctx.projectDir,
             featureName: ctx.prd.feature,
@@ -627,7 +627,7 @@ export async function runThreeSessionTddFromCtx(
           success: result.success,
           filesChanged: result.filesChanged,
           outputTail: result.outputTail ?? "",
-          writtenByAgent: ctx.routing?.agent ?? ctx.config.autoMode.defaultAgent,
+          writtenByAgent: ctx.routing?.agent ?? ctx.agentManager?.getDefault() ?? ctx.rootConfig.autoMode.defaultAgent,
         });
 
         const digest = priorDigestByRole.get(result.role);
