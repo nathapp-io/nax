@@ -3,8 +3,9 @@ import { _gitDeps } from "../../../src/utils/git";
 import { withDepsRestore } from "../../helpers/deps";
 import {
   buildSmartTestCommand,
-  getChangedSourceFiles,
+  getChangedNonTestFiles,
   getChangedTestFiles,
+  importGrepFallback,
   mapSourceToTests,
 } from "../../../src/verification/smart-runner";
 
@@ -187,15 +188,60 @@ describe("mapSourceToTests", () => {
   });
 });
 
-describe("getChangedSourceFiles", () => {
+describe("importGrepFallback", () => {
+  let originalGlob: typeof Bun.Glob;
+  let originalFile: typeof Bun.file;
+
+  beforeEach(() => {
+    originalGlob = Bun.Glob;
+    originalFile = Bun.file;
+  });
+
+  afterEach(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: restoring original
+    (Bun as any).Glob = originalGlob;
+    // biome-ignore lint/suspicious/noExplicitAny: restoring original
+    (Bun as any).file = originalFile;
+  });
+
+  test("matches nested monorepo src imports after stripping prefix before src/", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.Glob
+    (Bun as any).Glob = class {
+      constructor(_pattern: string) {}
+      async *scan(_workdir: string) {
+        yield "test/unit/auth/service.test.ts";
+      }
+    };
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.file
+    (Bun as any).file = (path: string) => ({
+      text: async () =>
+        path === "/repo/test/unit/auth/service.test.ts"
+          ? "import { service } from '../../src/auth/service';"
+          : "",
+    });
+
+    const result = await importGrepFallback(
+      ["packages/api/src/auth/service.ts"],
+      "/repo",
+      ["test/**/*.test.ts"],
+    );
+
+    expect(result).toEqual(["/repo/test/unit/auth/service.test.ts"]);
+  });
+});
+
+describe("getChangedNonTestFiles", () => {
   withDepsRestore(_gitDeps, ["spawn"]);
   afterEach(() => {
     mock.restore();
   });
 
-  test("returns only .ts files under src/", async () => {
+  test("returns changed non-test files without src/ or extension restrictions", async () => {
     const gitOutput = [
       "src/verification/smart-runner.ts",
+      "pkg/auth/service.go",
+      "scripts/bootstrap.sh",
       "src/utils/git.ts",
       "README.md",
       "src/index.js",
@@ -206,11 +252,15 @@ describe("getChangedSourceFiles", () => {
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo");
+    const result = await getChangedNonTestFiles("/fake/repo", undefined, undefined, [/\.test\.ts$/]);
 
     expect(result).toEqual([
       "src/verification/smart-runner.ts",
+      "pkg/auth/service.go",
+      "scripts/bootstrap.sh",
       "src/utils/git.ts",
+      "README.md",
+      "src/index.js",
       "src/config/schema.ts",
     ]);
   });
@@ -219,7 +269,7 @@ describe("getChangedSourceFiles", () => {
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo");
+    const result = await getChangedNonTestFiles("/fake/repo");
 
     expect(result).toEqual([]);
   });
@@ -230,56 +280,57 @@ describe("getChangedSourceFiles", () => {
       throw new Error("git not found");
     }) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo");
+    const result = await getChangedNonTestFiles("/fake/repo");
 
     expect(result).toEqual([]);
   });
 
-  test("filters out non-.ts src files", async () => {
-    const gitOutput = ["src/foo.js", "src/bar.tsx", "src/baz.ts"].join("\n");
+  test("returns all changed files when testFileRegex is empty", async () => {
+    const gitOutput = ["src/foo.js", "pkg/bar.rs", "src/baz.ts"].join("\n");
 
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo");
+    const result = await getChangedNonTestFiles("/fake/repo");
 
-    expect(result).toEqual(["src/baz.ts"]);
+    expect(result).toEqual(["src/foo.js", "pkg/bar.rs", "src/baz.ts"]);
   });
 
   test("returns empty array when no files changed", async () => {
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo");
+    const result = await getChangedNonTestFiles("/fake/repo");
 
     expect(result).toEqual([]);
   });
 
   // MW-006: package prefix scoping
-  test("filters to packagePrefix/src/ when packagePrefix is set", async () => {
+  test("filters to packagePrefix/ when packagePrefix is set", async () => {
     const gitOutput = [
       "src/index.ts",
       "packages/api/src/auth.ts",
+      "packages/api/pkg/auth.go",
       "packages/web/src/app.ts",
     ].join("\n");
 
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/api");
+    const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/api");
 
-    expect(result).toEqual(["packages/api/src/auth.ts"]);
+    expect(result).toEqual(["packages/api/src/auth.ts", "packages/api/pkg/auth.go"]);
   });
 
-  test("falls back to src/ prefix when packagePrefix is undefined", async () => {
+  test("returns all files when packagePrefix is undefined", async () => {
     const gitOutput = ["src/index.ts", "packages/api/src/auth.ts"].join("\n");
 
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo", undefined, undefined);
+    const result = await getChangedNonTestFiles("/fake/repo", undefined, undefined);
 
-    expect(result).toEqual(["src/index.ts"]);
+    expect(result).toEqual(["src/index.ts", "packages/api/src/auth.ts"]);
   });
 
   test("returns empty when packagePrefix does not match any changed files", async () => {
@@ -288,7 +339,7 @@ describe("getChangedSourceFiles", () => {
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/api");
+    const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/api");
 
     expect(result).toEqual([]);
   });
@@ -303,25 +354,27 @@ describe("getChangedSourceFiles", () => {
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/lib", [/\.test\.ts$/]);
+    const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/lib", [/\.test\.ts$/]);
 
     expect(result).toEqual(["packages/lib/src/util.ts"]);
   });
 
-  test("returns all .ts files when testFileRegex is empty (backward-compatible)", async () => {
+  test("returns all changed files when testFileRegex is empty (backward-compatible)", async () => {
     const gitOutput = [
       "packages/lib/src/util.ts",
       "packages/lib/src/util.test.ts",
+      "packages/lib/pkg/util.go",
     ].join("\n");
 
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
-    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/lib");
+    const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/lib");
 
-    // Without testFileRegex: both returned (existing behavior)
+    // Without testFileRegex: all changed package files are returned
     expect(result).toContain("packages/lib/src/util.ts");
     expect(result).toContain("packages/lib/src/util.test.ts");
+    expect(result).toContain("packages/lib/pkg/util.go");
   });
 });
 

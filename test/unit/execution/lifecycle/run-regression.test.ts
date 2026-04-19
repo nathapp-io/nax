@@ -102,8 +102,6 @@ describe("runDeferredRegression — initial suite passes", () => {
     });
     _regressionDeps.runRectificationLoop = mock(async () => false);
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 150, failed: 0, failures: [] }));
-    _regressionDeps.reverseMapTestToSource = mock(() => []);
-
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
     expect(result.success).toBe(true);
@@ -135,8 +133,6 @@ describe("runDeferredRegression — early exit after first story", () => {
       failed: 92,
       failures: [], // unmapped → all stories affected
     }));
-    _regressionDeps.reverseMapTestToSource = mock(() => []);
-
     const rectifiedStories: string[] = [];
     _regressionDeps.runRectificationLoop = mock(async (opts) => {
       rectifiedStories.push(opts.story.id);
@@ -176,8 +172,6 @@ describe("runDeferredRegression — early exit after second story", () => {
       failed: 92,
       failures: [],
     }));
-    _regressionDeps.reverseMapTestToSource = mock(() => []);
-
     const rectifiedStories: string[] = [];
     _regressionDeps.runRectificationLoop = mock(async (opts) => {
       rectifiedStories.push(opts.story.id);
@@ -213,8 +207,6 @@ describe("runDeferredRegression — no story fixes anything", () => {
       failed: 92,
       failures: [],
     }));
-    _regressionDeps.reverseMapTestToSource = mock(() => []);
-
     _regressionDeps.runRectificationLoop = mock(async () => false); // never fixed
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
@@ -249,8 +241,6 @@ describe("runDeferredRegression — test output context forwarding", () => {
       failed: 92,
       failures: [],
     }));
-    _regressionDeps.reverseMapTestToSource = mock(() => []);
-
     _regressionDeps.runRectificationLoop = mock(async (opts) => {
       capturedOutputs.push(opts.testOutput);
       return true;

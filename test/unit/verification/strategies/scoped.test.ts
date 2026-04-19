@@ -116,7 +116,7 @@ describe("ScopedStrategy", () => {
 
   test("returns SKIPPED when deferred mode and no mapped tests", async () => {
     const saved = { ..._scopedDeps };
-    _scopedDeps.getChangedSourceFiles = async () => [];
+    _scopedDeps.getChangedNonTestFiles = async () => [];
     _scopedDeps.mapSourceToTests = async () => [];
     _scopedDeps.importGrepFallback = async () => [];
 
@@ -131,7 +131,7 @@ describe("ScopedStrategy", () => {
 
   test("runs full suite when inline mode and no mapped tests", async () => {
     const saved = { ..._scopedDeps };
-    _scopedDeps.getChangedSourceFiles = async () => [];
+    _scopedDeps.getChangedNonTestFiles = async () => [];
     _scopedDeps.mapSourceToTests = async () => [];
     _scopedDeps.importGrepFallback = async () => [];
     _scopedDeps.regression = async () => ({
@@ -151,7 +151,7 @@ describe("ScopedStrategy", () => {
 
   test("returns PASS when tests pass", async () => {
     const saved = { ..._scopedDeps };
-    _scopedDeps.getChangedSourceFiles = async () => ["src/foo.ts"];
+    _scopedDeps.getChangedNonTestFiles = async () => ["src/foo.ts"];
     _scopedDeps.mapSourceToTests = async () => ["test/unit/foo.test.ts"];
     _scopedDeps.buildSmartTestCommand = (_files: string[], cmd: string) => `${cmd} test/unit/foo.test.ts`;
     _scopedDeps.regression = async () => ({
@@ -172,7 +172,7 @@ describe("ScopedStrategy", () => {
 
   test("returns TEST_FAILURE when tests fail", async () => {
     const saved = { ..._scopedDeps };
-    _scopedDeps.getChangedSourceFiles = async () => ["src/foo.ts"];
+    _scopedDeps.getChangedNonTestFiles = async () => ["src/foo.ts"];
     _scopedDeps.mapSourceToTests = async () => ["test/unit/foo.test.ts"];
     _scopedDeps.buildSmartTestCommand = (_files: string[], cmd: string) => cmd;
     _scopedDeps.regression = async () => ({
@@ -227,7 +227,7 @@ describe("ScopedStrategy — monorepo orchestrator bypass", () => {
     const capturedCommands: string[] = [];
     const saved = { ..._scopedDeps };
 
-    _scopedDeps.getChangedSourceFiles = async () => ["src/foo.ts"];
+    _scopedDeps.getChangedNonTestFiles = async () => ["src/foo.ts"];
     _scopedDeps.mapSourceToTests = async () => [];
     _scopedDeps.regression = async ({
       command,
@@ -253,7 +253,7 @@ describe("ScopedStrategy — monorepo orchestrator bypass", () => {
     const capturedCommands: string[] = [];
     const saved = { ..._scopedDeps };
 
-    _scopedDeps.getChangedSourceFiles = async () => ["src/foo.ts"];
+    _scopedDeps.getChangedNonTestFiles = async () => ["src/foo.ts"];
     _scopedDeps.mapSourceToTests = async () => [];
     _scopedDeps.regression = async ({
       command,
@@ -276,7 +276,7 @@ describe("ScopedStrategy — monorepo orchestrator bypass", () => {
   test("non-orchestrator command still defers in deferred mode when no tests mapped", async () => {
     const saved = { ..._scopedDeps };
 
-    _scopedDeps.getChangedSourceFiles = async () => [];
+    _scopedDeps.getChangedNonTestFiles = async () => [];
     _scopedDeps.mapSourceToTests = async () => [];
 
     const ctx = makeCtx({ testCommand: "bun test", regressionMode: "deferred" });
@@ -386,7 +386,7 @@ describe("ScopedStrategy — scopeTestThreshold fallback (US-001)", () => {
     const saved = { ..._scopedDeps };
     const capturedCommands: string[] = [];
 
-    _scopedDeps.getChangedSourceFiles = async () => ["src/foo.ts", "src/bar.ts", "src/baz.ts"];
+    _scopedDeps.getChangedNonTestFiles = async () => ["src/foo.ts", "src/bar.ts", "src/baz.ts"];
     _scopedDeps.mapSourceToTests = async () => [
       "test/unit/foo.test.ts",
       "test/unit/bar.test.ts",
@@ -423,7 +423,7 @@ describe("ScopedStrategy — scopeTestThreshold fallback (US-001)", () => {
     const manyFiles = Array.from({ length: 12 }, (_, i) => `src/file${i}.ts`);
     const manyTests = Array.from({ length: 12 }, (_, i) => `test/unit/file${i}.test.ts`);
 
-    _scopedDeps.getChangedSourceFiles = async () => manyFiles;
+    _scopedDeps.getChangedNonTestFiles = async () => manyFiles;
     _scopedDeps.mapSourceToTests = async () => manyTests;
     _scopedDeps.buildSmartTestCommand = (_files: string[], cmd: string) => {
       capturedCommands.push(`scoped:${_files.length} files`);
@@ -453,7 +453,7 @@ describe("ScopedStrategy — scopeTestThreshold fallback (US-001)", () => {
 
     const manyFiles = Array.from({ length: 12 }, (_, i) => `src/file${i}.ts`);
 
-    _scopedDeps.getChangedSourceFiles = async () => manyFiles;
+    _scopedDeps.getChangedNonTestFiles = async () => manyFiles;
     _scopedDeps.mapSourceToTests = async () => manyFiles;
     _scopedDeps.regression = async ({
       command,
@@ -483,7 +483,7 @@ describe("ScopedStrategy — scopeTestFallback flag (US-002)", () => {
 
     const manyFiles = Array.from({ length: 12 }, (_, i) => `src/file${i}.ts`);
 
-    _scopedDeps.getChangedSourceFiles = async () => manyFiles;
+    _scopedDeps.getChangedNonTestFiles = async () => manyFiles;
     _scopedDeps.mapSourceToTests = async () => manyFiles;
     _scopedDeps.regression = async () => ({
       success: true,
@@ -503,7 +503,7 @@ describe("ScopedStrategy — scopeTestFallback flag (US-002)", () => {
   test("when scoped strategy runs normally (no fallback), scopeTestFallback is absent", async () => {
     const saved = { ..._scopedDeps };
 
-    _scopedDeps.getChangedSourceFiles = async () => ["src/foo.ts", "src/bar.ts", "src/baz.ts"];
+    _scopedDeps.getChangedNonTestFiles = async () => ["src/foo.ts", "src/bar.ts", "src/baz.ts"];
     _scopedDeps.mapSourceToTests = async () => [
       "test/unit/foo.test.ts",
       "test/unit/bar.test.ts",
@@ -523,5 +523,76 @@ describe("ScopedStrategy — scopeTestFallback flag (US-002)", () => {
     Object.assign(_scopedDeps, saved);
 
     expect(result.scopeTestFallback).toBeUndefined();
+  });
+
+  test("threshold is based on mapped test files, not changed file count", async () => {
+    const saved = { ..._scopedDeps };
+    const capturedCommands: string[] = [];
+
+    _scopedDeps.getChangedNonTestFiles = async () => [
+      "README.md",
+      "docs/architecture.md",
+      "package.json",
+      "src/foo.ts",
+    ];
+    _scopedDeps.mapSourceToTests = async () => ["test/unit/foo.test.ts"];
+    _scopedDeps.buildSmartTestCommand = (_files: string[], cmd: string) => `${cmd} test/unit/foo.test.ts`;
+    _scopedDeps.regression = async ({
+      command,
+    }: { command: string; workdir: string; timeoutSeconds: number; acceptOnTimeout?: boolean }) => {
+      capturedCommands.push(command);
+      return { success: true, status: "SUCCESS" as const, countsTowardEscalation: false, output: "1 pass" };
+    };
+
+    const result = await new ScopedStrategy().execute(
+      makeCtxWithThreshold({
+        testCommand: "bun test",
+        config: {
+          ...makeCtxWithThreshold().config,
+          quality: { ...makeCtxWithThreshold().config!.quality, scopeTestThreshold: 1 },
+        },
+      }),
+    );
+
+    Object.assign(_scopedDeps, saved);
+
+    expect(result.success).toBe(true);
+    expect(result.scopeTestFallback).toBeUndefined();
+    expect(capturedCommands[0]).toContain("test/unit/foo.test.ts");
+  });
+
+  test("pass 2 falls back to full suite when mapped test file count exceeds threshold", async () => {
+    const saved = { ..._scopedDeps };
+    const capturedCommands: string[] = [];
+
+    _scopedDeps.getChangedNonTestFiles = async () => ["src/foo.ts"];
+    _scopedDeps.mapSourceToTests = async () => [];
+    _scopedDeps.importGrepFallback = async () => [
+      "test/unit/foo.test.ts",
+      "test/unit/bar.test.ts",
+      "test/unit/baz.test.ts",
+    ];
+    _scopedDeps.regression = async ({
+      command,
+    }: { command: string; workdir: string; timeoutSeconds: number; acceptOnTimeout?: boolean }) => {
+      capturedCommands.push(command);
+      return { success: true, status: "SUCCESS" as const, countsTowardEscalation: false, output: "1 pass" };
+    };
+
+    const result = await new ScopedStrategy().execute(
+      makeCtxWithThreshold({
+        testCommand: "bun test test/",
+        config: {
+          ...makeCtxWithThreshold().config,
+          quality: { ...makeCtxWithThreshold().config!.quality, scopeTestThreshold: 2 },
+        },
+      }),
+    );
+
+    Object.assign(_scopedDeps, saved);
+
+    expect(result.success).toBe(true);
+    expect(result.scopeTestFallback).toBe(true);
+    expect(capturedCommands[0]).toBe("bun test");
   });
 });
