@@ -22,7 +22,15 @@ import type {
 import type { AgentRegistry } from "./registry";
 import type { AgentResult } from "./types";
 
-type LoggerLike = { warn: (scope: string, msg: string, data?: Record<string, unknown>) => void };
+type LoggerLike = {
+  warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
+  info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
+};
+
+/** Injectable deps for testability (sleep). */
+export const _agentManagerDeps = {
+  sleep: (ms: number) => Bun.sleep(ms),
+};
 
 export class AgentManager implements IAgentManager {
   private readonly _config: NaxConfig;
@@ -36,7 +44,7 @@ export class AgentManager implements IAgentManager {
   constructor(config: NaxConfig, registry?: AgentRegistry, opts?: { logger?: LoggerLike }) {
     this._config = config;
     this._registry = registry;
-    this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {} };
+    this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {}, info: () => {} };
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
@@ -115,24 +123,109 @@ export class AgentManager implements IAgentManager {
 
   async runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome> {
     const logger = getSafeLogger();
-    const agent = this._registry?.getAgent(this.getDefault());
-    if (!agent) {
-      logger?.warn("agent-manager", "No adapter available", {
-        storyId: request.runOptions.storyId,
-        agent: this.getDefault(),
-      });
-      const result: AgentResult = {
-        success: false,
-        exitCode: 1,
-        output: "no adapter available",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    const fallbacks: AgentFallbackRecord[] = [];
+    let currentAgent = this.getDefault();
+    let hopsSoFar = 0;
+    const MAX_RATE_LIMIT_RETRIES = 3;
+    let rateLimitRetry = 0;
+
+    while (true) {
+      const adapter = this._registry?.getAgent(currentAgent);
+      if (!adapter) {
+        logger?.warn("agent-manager", "No adapter available", {
+          storyId: request.runOptions.storyId,
+          agent: currentAgent,
+        });
+        const result: AgentResult = {
+          success: false,
+          exitCode: 1,
+          output: `Agent "${currentAgent}" not found in registry`,
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCost: 0,
+        };
+        return { result, fallbacks };
+      }
+
+      let result: AgentResult;
+      try {
+        result = await adapter.run(request.runOptions);
+      } catch (err) {
+        result = {
+          success: false,
+          exitCode: 1,
+          output: err instanceof Error ? err.message : String(err),
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCost: 0,
+          adapterFailure: {
+            category: "quality",
+            outcome: "fail-unknown",
+            retriable: false,
+            message: String(err).slice(0, 500),
+          },
+        };
+      }
+
+      if (result.success) return { result, fallbacks };
+
+      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, request.bundle)) {
+        // Preserve legacy rate-limit backoff when no swap candidates are available
+        if (result.adapterFailure?.outcome === "fail-rate-limit" && rateLimitRetry < MAX_RATE_LIMIT_RETRIES) {
+          rateLimitRetry += 1;
+          const backoffMs = 2 ** rateLimitRetry * 1000;
+          logger?.info("agent-manager", "Rate-limited with no swap candidate — backing off", {
+            storyId: request.runOptions.storyId,
+            attempt: rateLimitRetry,
+            backoffMs,
+          });
+          await _agentManagerDeps.sleep(backoffMs);
+          continue;
+        }
+        if (hopsSoFar > 0) {
+          this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
+        }
+        return { result, fallbacks };
+      }
+
+      const next = this.nextCandidate(currentAgent, hopsSoFar);
+      if (!next) {
+        this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
+        return { result, fallbacks };
+      }
+
+      const adapterFailure = result.adapterFailure ?? {
+        category: "quality" as const,
+        outcome: "fail-unknown" as const,
+        retriable: false,
+        message: "",
       };
-      return { result, fallbacks: [] };
+      this.markUnavailable(currentAgent, adapterFailure);
+      hopsSoFar += 1;
+      rateLimitRetry = 0;
+
+      const hop: AgentFallbackRecord = {
+        storyId: request.runOptions.storyId,
+        priorAgent: currentAgent,
+        newAgent: next,
+        hop: hopsSoFar,
+        outcome: adapterFailure.outcome,
+        category: adapterFailure.category,
+        timestamp: new Date().toISOString(),
+        costUsd: result.estimatedCost ?? 0,
+      };
+      fallbacks.push(hop);
+      this._emitter.emit("onSwapAttempt", hop);
+
+      logger?.info("agent-manager", "Agent swap triggered", {
+        storyId: request.runOptions.storyId,
+        fromAgent: currentAgent,
+        toAgent: next,
+        hop: hopsSoFar,
+      });
+
+      currentAgent = next;
     }
-    const result = await agent.run(request.runOptions);
-    return { result, fallbacks: [] };
   }
 
   /** @internal — test helper */
