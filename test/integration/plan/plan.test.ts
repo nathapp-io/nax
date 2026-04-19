@@ -65,7 +65,7 @@ describe("planCommand", () => {
     };
 
     expect(config.plan.model).toBe("powerful");
-    expect(config.models[config.autoMode.defaultAgent]?.powerful).toBeDefined();
+    expect(config.models[config.agent?.default ?? "claude"]?.powerful).toBeDefined();
   });
 
   test("builds codebase context from scanner", async () => {
@@ -112,7 +112,7 @@ describe("planCommand", () => {
       };
 
       expect(config.plan.model).toBe(tier);
-      expect(config.models[config.autoMode.defaultAgent]?.[tier]).toBeDefined();
+      expect(config.models[config.agent?.default ?? "claude"]?.[tier]).toBeDefined();
     }
   });
 });

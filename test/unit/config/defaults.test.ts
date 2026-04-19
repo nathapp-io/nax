@@ -159,20 +159,3 @@ describe("DEFAULT_CONFIG.precheck.storySizeGate (US-001)", () => {
   });
 });
 
-describe("DEFAULT_CONFIG.autoMode.fallbackOrder (US-001-4)", () => {
-  test("fallbackOrder is ['claude']", () => {
-    expect(DEFAULT_CONFIG.autoMode.fallbackOrder).toEqual(["claude"]);
-  });
-
-  test("fallbackOrder is an array", () => {
-    expect(Array.isArray(DEFAULT_CONFIG.autoMode.fallbackOrder)).toBe(true);
-  });
-
-  test("fallbackOrder contains exactly one element", () => {
-    expect(DEFAULT_CONFIG.autoMode.fallbackOrder).toHaveLength(1);
-  });
-
-  test("fallbackOrder[0] is 'claude'", () => {
-    expect(DEFAULT_CONFIG.autoMode.fallbackOrder[0]).toBe("claude");
-  });
-});

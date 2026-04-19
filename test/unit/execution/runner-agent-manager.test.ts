@@ -7,6 +7,6 @@ describe("Runner → AgentManager wiring", () => {
   test("AgentManager constructed from config + registry", () => {
     const registry = createAgentRegistry(DEFAULT_CONFIG);
     const manager = new AgentManager(DEFAULT_CONFIG, registry);
-    expect(manager.getDefault()).toBe(DEFAULT_CONFIG.autoMode.defaultAgent);
+    expect(manager.getDefault()).toBe(DEFAULT_CONFIG.agent?.default ?? "claude");
   });
 });
