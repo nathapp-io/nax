@@ -159,8 +159,7 @@ export function pipelineStageForDebate(stage: string): PipelineStage {
 export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, config: NaxConfig): ModelDef {
   const configModels = config?.models ?? DEFAULT_CONFIG.models;
   // Use optional chaining to guard against partially-constructed configs (e.g. in tests).
-  const configDefaultAgent =
-    config?.agent?.default ?? config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
+  const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
 
   try {
     return resolveConfiguredModel(
