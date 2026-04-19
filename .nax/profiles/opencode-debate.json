@@ -11,10 +11,13 @@
             "powerful": "minimax/MiniMax-M2.7"
         }
     },
-  "autoMode": {
-    "defaultAgent": "opencode",
-    "fallbackOrder": ["opencode"]
-  },
+    "agent": {
+        "default": "opencode",
+        "fallback": {
+            "enabled": false,
+            "map": {}
+        }
+    },
     "debate": {
         "enabled": true,
         "agents": 2,

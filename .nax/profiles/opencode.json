@@ -1,6 +1,11 @@
 {
-  "autoMode": {
-    "defaultAgent": "opencode",
-    "fallbackOrder": ["opencode", "claude"]
+  "agent": {
+    "default": "opencode",
+    "fallback": {
+      "enabled": true,
+      "map": {
+        "opencode": ["claude"]
+      }
+    }
   }
 }

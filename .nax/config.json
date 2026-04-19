@@ -14,8 +14,6 @@
     },
     "autoMode": {
         "enabled": true,
-        "defaultAgent": "claude",
-        "fallbackOrder": ["claude"],
         "complexityRouting": {
             "simple": "fast",
             "medium": "balanced",
@@ -45,7 +43,15 @@
         "agents": ["claude", "codex", "gemini", "opencode"]
     },
     "agent": {
-        "protocol": "acp"
+        "protocol": "acp",
+        "default": "claude",
+        "fallback": {
+            "enabled": false,
+            "map": {},
+            "maxHopsPerStory": 2,
+            "onQualityFailure": false,
+            "rebuildContext": true
+        }
     },
     "routing": {
         "strategy": "llm",
