@@ -5,6 +5,7 @@
  * Runs a full agent session with sessionRole 'source-fix'.
  */
 
+import { resolveDefaultAgent } from "../agents";
 import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter, AgentRunOptions } from "../agents/types";
 import type { NaxConfig } from "../config";
@@ -40,9 +41,9 @@ export async function executeSourceFix(
 
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
     config.acceptance.fix.fixModel,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
   );
 
   const sessionName = buildSessionName(workdir, featureName, storyId, "source-fix");
@@ -111,9 +112,9 @@ export async function executeTestFix(
 
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
     config.acceptance.fix.fixModel,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
   );
 
   const sessionName = buildSessionName(workdir, featureName, storyId, "test-fix");

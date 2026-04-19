@@ -5,6 +5,7 @@
  * Determines whether the failure is due to a source bug, test bug, or both.
  */
 
+import { resolveDefaultAgent } from "../agents";
 import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
@@ -75,9 +76,9 @@ export async function diagnoseAcceptanceFailure(
 
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
     config.acceptance.fix.diagnoseModel,
-    config.autoMode.defaultAgent,
+    resolveDefaultAgent(config),
   );
 
   const imports = parseImportStatements(testFileContent);
