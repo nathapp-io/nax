@@ -237,32 +237,28 @@ describe("complete()", () => {
     ).rejects.toThrow(/timed out/i);
   });
 
-  test("retries on rate limit error and returns result on second attempt", async () => {
-    let calls = 0;
-    const session = makeSession({
-      promptFn: async (_: string) => {
-        calls++;
-        if (calls === 1) throw new Error('{"statusCode":429}');
-        return { messages: [{ role: "assistant", content: "Retried OK." }], stopReason: "end_turn" };
-      },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await new AcpAgentAdapter("claude").complete("Retry me");
-    expect(result.output).toBe("Retried OK.");
-    expect(calls).toBe(2);
-    expect(_acpAdapterDeps.sleep).toHaveBeenCalledTimes(1);
-  });
-
-  test("throws after exhausting all rate limit retries", async () => {
+  test("returns adapterFailure for rate-limit error instead of throwing", async () => {
     const session = makeSession({
       promptFn: async (_: string) => { throw new Error('{"statusCode":429}'); },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
+    const result = await new AcpAgentAdapter("claude").complete("Rate limited");
+    expect(result.adapterFailure).toBeDefined();
+    expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(result.adapterFailure?.category).toBe("availability");
+    expect(result.adapterFailure?.retriable).toBe(true);
+  });
+
+  test("still throws for unknown (non-classifiable) errors", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => { throw new Error("unexpected internal error"); },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
     await expect(
-      new AcpAgentAdapter("claude").complete("Fail all"),
-    ).rejects.toThrow(/429/);
+      new AcpAgentAdapter("claude").complete("Unknown fail"),
+    ).rejects.toThrow(/unexpected internal error/);
   });
 });
 

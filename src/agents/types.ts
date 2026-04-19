@@ -223,6 +223,8 @@ export interface CompleteResult {
   costUsd: number;
   /** How costUsd was derived */
   source: "exact" | "estimated" | "fallback";
+  /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */
+  adapterFailure?: AdapterFailure;
 }
 
 /**

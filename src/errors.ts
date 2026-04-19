@@ -57,16 +57,6 @@ export class StoryLimitExceededError extends NaxError {
 }
 
 /**
- * All agents in the fallback order are unavailable (rate-limited, auth-failed, etc.).
- */
-export class AllAgentsUnavailableError extends NaxError {
-  constructor(triedAgents: string[]) {
-    super(`All agents unavailable: ${triedAgents.join(", ")}`, "ALL_AGENTS_UNAVAILABLE", { triedAgents });
-    this.name = "AllAgentsUnavailableError";
-  }
-}
-
-/**
  * Another nax process is already running.
  */
 export class LockAcquisitionError extends NaxError {

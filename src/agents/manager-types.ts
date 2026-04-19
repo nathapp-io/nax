@@ -5,7 +5,7 @@
 
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
-import type { AgentResult, AgentRunOptions, CompleteResult } from "./types";
+import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
 
 export interface AgentFallbackRecord {
   storyId?: string;
@@ -66,22 +66,34 @@ export interface IAgentManager {
   /** Event surface. */
   readonly events: AgentManagerEvents;
 
-  /*
-   * Methods below are Phase-1 skeletons. Full behaviour lands in later phases.
-   */
-
-  /** Resolve the ordered fallback chain for a given agent given a failure. Phase 1: returns []. */
+  /** Resolve the ordered fallback chain for a given agent given a failure. */
   resolveFallbackChain(agent: string, failure: AdapterFailure): string[];
 
-  /** Phase 1: returns false unconditionally. Full logic in Phase 5. */
+  /**
+   * Returns true when the manager should attempt a swap to a fallback agent.
+   * Requires fallback.enabled, a context bundle, and an availability failure
+   * (or quality failure when onQualityFailure is set), within the hop cap.
+   */
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, bundle: ContextBundle | undefined): boolean;
 
-  /** Phase 1: returns null. Full logic in Phase 5. */
+  /**
+   * Returns the next candidate agent name for a given current agent and hop count,
+   * excluding pruned (no credentials) and already-unavailable agents.
+   * Returns null when no candidate is available.
+   */
   nextCandidate(current: string, hopsSoFar: number): string | null;
 
   /**
-   * Phase 1: thin wrapper that calls adapter.run() once and returns {result, fallbacks: []}.
-   * Full loop logic lands in Phase 5.
+   * Run the prompt with automatic agent-swap fallback on availability failures.
+   * Implements exponential backoff for rate-limit errors when no swap candidate
+   * is available (up to 3 attempts). Emits onSwapAttempt / onSwapExhausted events.
    */
   runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome>;
+
+  /**
+   * One-shot completion with cross-agent fallback.
+   * Mirrors runWithFallback but for complete() calls.
+   * Swaps on availability failures when agent.fallback.enabled.
+   */
+  completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome>;
 }

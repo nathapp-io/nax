@@ -208,14 +208,17 @@ export async function generateFromPRD(
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
-  const completeResult = await (options.adapter ?? _generatorPRDDeps.adapter).complete(prompt, {
+  const prdCompleteOpts = {
     model: options.modelDef.model,
     config: options.config,
     timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
     workdir: options.workdir,
     featureName: options.featureName,
     sessionRole: "acceptance-gen",
-  });
+  } as const;
+  const completeResult = options.agentManager
+    ? (await options.agentManager.completeWithFallback(prompt, prdCompleteOpts)).result
+    : await (options.adapter ?? _generatorPRDDeps.adapter).complete(prompt, prdCompleteOpts);
   const genCostUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
   const rawOutput = typeof completeResult === "string" ? completeResult : completeResult.output;
   let testCode = extractTestCode(rawOutput);

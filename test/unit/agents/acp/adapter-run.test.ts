@@ -222,67 +222,11 @@ describe("run() — rate limit retry", () => {
     mock.restore();
   });
 
-  test("retries up to 3 attempts on rate limit error then succeeds", async () => {
+  test("returns adapterFailure on first rate-limit error (no adapter-level retry)", async () => {
     let attempts = 0;
-    const sleepCalls: number[] = [];
-    _acpAdapterDeps.sleep = mock(async (ms: number) => {
-      sleepCalls.push(ms);
-    });
-
     const session = makeSession({
       promptFn: async (_: string) => {
         attempts++;
-        if (attempts < 3) throw new Error("statusCode=429");
-        return {
-          messages: [{ role: "assistant", content: "Done." }],
-          stopReason: "end_turn",
-          cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
-        };
-      },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
-
-    expect(attempts).toBe(3);
-    expect(result.success).toBe(true);
-    expect(sleepCalls.length).toBe(2);
-  });
-
-  test("backoff delay increases between retries", async () => {
-    let attempts = 0;
-    const sleepCalls: number[] = [];
-    _acpAdapterDeps.sleep = mock(async (ms: number) => {
-      sleepCalls.push(ms);
-    });
-
-    const session = makeSession({
-      promptFn: async (_: string) => {
-        attempts++;
-        if (attempts < 3) throw new Error("statusCode=429");
-        return {
-          messages: [{ role: "assistant", content: "Done." }],
-          stopReason: "end_turn",
-          cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
-        };
-      },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await new AcpAgentAdapter("claude").run(makeRunOptions());
-
-    expect(sleepCalls.length).toBe(2);
-    expect(sleepCalls[1]).toBeGreaterThan(sleepCalls[0]);
-  });
-
-  test("marks result as rateLimited=true after exhausting all 3 attempts", async () => {
-    const sleepCalls: number[] = [];
-    _acpAdapterDeps.sleep = mock(async (ms: number) => {
-      sleepCalls.push(ms);
-    });
-
-    const session = makeSession({
-      promptFn: async (_: string) => {
         throw new Error("statusCode=429");
       },
     });
@@ -290,9 +234,40 @@ describe("run() — rate limit retry", () => {
 
     const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
 
+    expect(attempts).toBe(1);
+    expect(result.success).toBe(false);
+    expect(result.rateLimited).toBe(true);
+    expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(result.adapterFailure?.category).toBe("availability");
+    expect(result.adapterFailure?.retriable).toBe(true);
+  });
+
+  test("does not sleep on rate-limit (retry is manager responsibility)", async () => {
+    const sleepCalls: number[] = [];
+    _acpAdapterDeps.sleep = mock(async (ms: number) => {
+      sleepCalls.push(ms);
+    });
+
+    const session = makeSession({
+      promptFn: async (_: string) => { throw new Error("statusCode=429"); },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await new AcpAgentAdapter("claude").run(makeRunOptions());
+
+    expect(sleepCalls.length).toBe(0);
+  });
+
+  test("marks result as rateLimited=true on rate-limit error", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => { throw new Error("statusCode=429"); },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
+
     expect(result.rateLimited).toBe(true);
     expect(result.success).toBe(false);
-    expect(sleepCalls.length).toBeLessThanOrEqual(2);
   });
 });
 
