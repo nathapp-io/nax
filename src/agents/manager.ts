@@ -7,8 +7,7 @@
 
 import { EventEmitter } from "node:events";
 import type { NaxConfig } from "../config";
-import type { ContextBundle } from "../context/engine";
-import type { AdapterFailure } from "../context/engine/types";
+import type { AdapterFailure, ContextBundle } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type {
