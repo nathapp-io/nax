@@ -136,7 +136,7 @@ describe("DebateSession.runPlan()", () => {
   });
 
   test("runs hybrid rebuttal loop when mode=hybrid and sessionMode=stateful", async () => {
-    const runCalls: Array<{ prompt: string; sessionRole?: string; keepSessionOpen?: boolean }> = [];
+    const runCalls: Array<{ prompt: string; sessionRole?: string; keepOpen?: boolean }> = [];
 
     _debateSessionDeps.getAgent = mock(() => ({
       name: "opencode",
@@ -148,11 +148,11 @@ describe("DebateSession.runPlan()", () => {
         features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
       },
       isInstalled: async () => true,
-      run: async (options: { prompt?: string; sessionRole?: string; keepSessionOpen?: boolean }) => {
+      run: async (options: { prompt?: string; sessionRole?: string; keepOpen?: boolean }) => {
         runCalls.push({
           prompt: options.prompt ?? "",
           sessionRole: options.sessionRole,
-          keepSessionOpen: options.keepSessionOpen,
+          keepOpen: options.keepOpen,
         });
         return {
           success: true,

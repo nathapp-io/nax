@@ -378,9 +378,9 @@ describe("runHybrid() — failed rebuttal turn is skipped with warning (AC5)", (
   });
 });
 
-// ─── AC6: rebuttal calls use same sessionRole as proposal and keepSessionOpen:true
+// ─── AC6: rebuttal calls use same sessionRole as proposal and keepOpen:true
 
-describe("runHybrid() — rebuttal calls use correct sessionRole and keepSessionOpen (AC6)", () => {
+describe("runHybrid() — rebuttal calls use correct sessionRole and keepOpen (AC6)", () => {
   test("every rebuttal runStatefulTurn call uses the same sessionRole as the proposal round for that debater", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
@@ -419,7 +419,7 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepSession
     expect(roles).toContain("debate-hybrid-1");
   });
 
-  test("every rebuttal runStatefulTurn call has keepSessionOpen: true", async () => {
+  test("every rebuttal runStatefulTurn call has keepOpen: true", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.getAgent = mock((name: string) =>
@@ -453,7 +453,7 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepSession
 
     expect(rebuttalCalls).toHaveLength(2);
     for (const call of rebuttalCalls) {
-      expect(call.keepSessionOpen).toBe(true);
+      expect(call.keepOpen).toBe(true);
     }
   });
 });

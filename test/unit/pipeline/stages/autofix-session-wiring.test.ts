@@ -1,13 +1,13 @@
 /**
  * Tests for PROMPT-001: autofix session continuity wiring.
  *
- * Verifies that runAgentRectification passes the correct acpSessionName and
- * keepSessionOpen values to agent.run(), and that continuation prompts are
- * used on retry when the session is confirmed open.
+ * Verifies that runAgentRectification passes the correct keepOpen values to
+ * agent.run(), and that continuation prompts are used on retry when the
+ * session is confirmed open.
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { buildSessionName } from "../../../../src/agents/acp/adapter";
+import { computeAcpHandle } from "../../../../src/agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import type { PipelineContext } from "../../../../src/pipeline/types";
@@ -78,7 +78,7 @@ function makeMockAgent(succeed = true) {
 // ---------------------------------------------------------------------------
 
 describe("autofix session wiring (PROMPT-001)", () => {
-  test("agent.run() receives acpSessionName matching buildSessionName(..., 'implementer')", async () => {
+  test("agent.run() receives sessionRole='implementer' for rectification", async () => {
     const agent = makeMockAgent(true);
     const ctx = makeCtxWithAgent(agent, 1);
 
@@ -95,11 +95,16 @@ describe("autofix session wiring (PROMPT-001)", () => {
 
     expect(agent.run).toHaveBeenCalledTimes(1);
     const runOpts = (agent.run.mock.calls as unknown[][])[0][0] as Record<string, unknown>;
-    const expected = buildSessionName(WORKDIR, FEATURE, STORY_ID, "implementer");
-    expect(runOpts.acpSessionName).toBe(expected);
+    // The adapter auto-derives the session handle from featureName + storyId + sessionRole.
+    // The caller no longer sets sessionHandle explicitly; verify sessionRole is set correctly.
+    expect(runOpts.sessionRole).toBe("implementer");
+    expect(runOpts.sessionHandle).toBeUndefined();
+    // Verify computeAcpHandle produces the expected name for documentation purposes
+    const expected = computeAcpHandle(WORKDIR, FEATURE, STORY_ID, "implementer");
+    expect(expected).toMatch(/^nax-[a-f0-9]+-my-feature-us-001-implementer$/);
   });
 
-  test("keepSessionOpen: false when maxAttempts=1 (single attempt is last attempt)", async () => {
+  test("keepOpen: false when maxAttempts=1 (single attempt is last attempt)", async () => {
     const agent = makeMockAgent(true);
     const ctx = makeCtxWithAgent(agent, 1);
 
@@ -114,10 +119,10 @@ describe("autofix session wiring (PROMPT-001)", () => {
 
     expect(agent.run).toHaveBeenCalledTimes(1);
     const runOpts = (agent.run.mock.calls as unknown[][])[0][0] as Record<string, unknown>;
-    expect(runOpts.keepSessionOpen).toBe(false);
+    expect(runOpts.keepOpen).toBe(false);
   });
 
-  test("keepSessionOpen: true on non-last attempt, false on last attempt", async () => {
+  test("keepOpen: true on non-last attempt, false on last attempt", async () => {
     const agent = makeMockAgent(false); // always fail so loop runs maxAttempts
     const ctx = makeCtxWithAgent(agent, 2);
     // Update review result after each attempt to keep failing
@@ -135,10 +140,10 @@ describe("autofix session wiring (PROMPT-001)", () => {
     expect(agent.run).toHaveBeenCalledTimes(2);
 
     const firstCallOpts = (agent.run.mock.calls as unknown[][])[0][0] as Record<string, unknown>;
-    expect(firstCallOpts.keepSessionOpen).toBe(true); // attempt 0, not last
+    expect(firstCallOpts.keepOpen).toBe(true); // attempt 0, not last
 
     const secondCallOpts = (agent.run.mock.calls as unknown[][])[1][0] as Record<string, unknown>;
-    expect(secondCallOpts.keepSessionOpen).toBe(false); // attempt 1 == maxAttempts-1, is last
+    expect(secondCallOpts.keepOpen).toBe(false); // attempt 1 == maxAttempts-1, is last
   });
 
   test("attempt 2 uses continuation prompt (shorter, no 'Story:' section header)", async () => {

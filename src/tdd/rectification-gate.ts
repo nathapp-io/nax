@@ -8,7 +8,7 @@
 
 import type { AgentAdapter } from "../agents";
 import { resolveDefaultAgent } from "../agents";
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -162,7 +162,7 @@ async function runRectificationLoop(
 
   // Build session name once so all rectification attempts share the same ACP session.
   // This preserves full conversation context across retries (the agent knows what it already tried).
-  const rectificationSessionName = buildSessionName(workdir, featureName, story.id, "implementer");
+  const rectificationSessionName = computeAcpHandle(workdir, featureName, story.id, "implementer");
   logger.debug("tdd", "Rectification session name (shared across all attempts)", {
     storyId: story.id,
     sessionName: rectificationSessionName,
@@ -231,8 +231,7 @@ async function runRectificationLoop(
         featureName,
         storyId: story.id,
         sessionRole: "implementer",
-        acpSessionName: rectificationSessionName,
-        keepSessionOpen: !isLastAttempt,
+        keepOpen: !isLastAttempt,
       });
 
       if (!rectifyResult.success && rectifyResult.pid) {

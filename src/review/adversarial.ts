@@ -13,7 +13,7 @@
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
  */
 
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
@@ -265,7 +265,7 @@ export async function runAdversarialReview(
   }
 
   // Adversarial review uses its own session (NOT the implementer session).
-  const adversarialSessionName = buildSessionName(workdir, featureName, story.id, "reviewer-adversarial");
+  const adversarialSessionName = computeAcpHandle(workdir, featureName, story.id, "reviewer-adversarial");
   const contextToolStory: UserStory = {
     id: story.id,
     title: story.title,
@@ -281,7 +281,6 @@ export async function runAdversarialReview(
 
   const runOpts = {
     workdir,
-    acpSessionName: adversarialSessionName,
     timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
     modelTier: adversarialConfig.modelTier,
     modelDef: resolvedModelDef,
@@ -305,10 +304,10 @@ export async function runAdversarialReview(
   let llmCost = 0;
   let retryAttempted = false;
   try {
-    // keepSessionOpen: true — session stays alive so the JSON retry prompt has
+    // keepOpen: true — session stays alive so the JSON retry prompt has
     // full conversation history. Closed explicitly below on the happy path, or
-    // by the retry call (keepSessionOpen: false) when a retry is needed.
-    const runResult = await agent.run({ prompt, ...runOpts, keepSessionOpen: true });
+    // by the retry call (keepOpen: false) when a retry is needed.
+    const runResult = await agent.run({ prompt, ...runOpts, keepOpen: true });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
     logger?.debug("adversarial", "LLM call complete", {
@@ -345,7 +344,7 @@ export async function runAdversarialReview(
       const retryResult = await agent.run({
         prompt: ReviewPromptBuilder.jsonRetry(),
         ...runOpts,
-        keepSessionOpen: false,
+        keepOpen: false,
       });
       rawResponse = retryResult.output;
       llmCost += retryResult.estimatedCost ?? 0;
@@ -361,7 +360,7 @@ export async function runAdversarialReview(
   }
 
   // Close the session — covers both the happy path (no retry) and the retry-exhausted
-  // path (retry threw or returned unparseable JSON, so keepSessionOpen: false on the
+  // path (retry threw or returned unparseable JSON, so keepOpen: false on the
   // retry call may not have closed it). Best-effort: already-closed sessions no-op.
   void agent.closePhysicalSession(adversarialSessionName, workdir);
 

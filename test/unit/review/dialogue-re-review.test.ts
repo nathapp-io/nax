@@ -94,7 +94,7 @@ const RE_REVIEW_RESPONSE = JSON.stringify({
   deltaSummary: "AC-1-not-satisfied is now resolved. AC-2-not-satisfied is still present.",
 });
 
-const CLARIFY_RESPONSE = "AC-1 requires that reReview() calls agent.run() with keepSessionOpen: true and includes the previous findings in the prompt.";
+const CLARIFY_RESPONSE = "AC-1 requires that reReview() calls agent.run() with keepOpen: true and includes the previous findings in the prompt.";
 
 type RunFn = (opts: AgentRunOptions) => Promise<AgentResult>;
 
@@ -192,9 +192,9 @@ describe("ReviewerSession.reReview() — agent.run() call parameters", () => {
     mock.restore();
   });
 
-  test("calls agent.run() with keepSessionOpen: true", async () => {
+  test("calls agent.run() with keepOpen: true", async () => {
     await session.reReview(UPDATED_DIFF);
-    expect(capturedOpts?.keepSessionOpen).toBe(true);
+    expect(capturedOpts?.keepOpen).toBe(true);
   });
 
   test("calls agent.run() with sessionRole: 'reviewer'", async () => {
@@ -448,9 +448,9 @@ describe("ReviewerSession.clarify() — agent.run() call and return value", () =
     expect(result).toBe(CLARIFY_RESPONSE);
   });
 
-  test("calls agent.run() with keepSessionOpen: true", async () => {
+  test("calls agent.run() with keepOpen: true", async () => {
     await session.clarify("What does AC-1 require exactly?");
-    expect(capturedOpts?.keepSessionOpen).toBe(true);
+    expect(capturedOpts?.keepOpen).toBe(true);
   });
 
   test("calls agent.run() with sessionRole: 'reviewer'", async () => {

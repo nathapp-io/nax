@@ -19,7 +19,7 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
-import { buildSessionName } from "../../agents/acp/adapter";
+import { computeAcpHandle } from "../../agents/acp/adapter";
 import { createAgentRegistry } from "../../agents/registry";
 import { resolveModelForAgent } from "../../config";
 import type { NaxConfig } from "../../config";
@@ -409,8 +409,8 @@ async function runAgentRectification(
 
   // Session continuity: the implementer session is open only on the very first autofix call
   // (consumed === 0). On subsequent cycles (after a review retry), the previous loop's last
-  // runAttempt used keepSessionOpen: false, so the session was closed before we re-enter.
-  const implementerSession = buildSessionName(ctx.workdir, ctx.prd.feature, ctx.story.id, "implementer");
+  // runAttempt used keepOpen: false, so the session was closed before we re-enter.
+  const implementerSession = computeAcpHandle(ctx.workdir, ctx.prd.feature, ctx.story.id, "implementer");
   let sessionConfirmedOpen = consumed === 0;
 
   const succeeded = await runSharedRectificationLoop({
@@ -512,8 +512,7 @@ async function runAgentRectification(
           featureName: ctx.prd.feature,
           storyId: ctx.story.id,
           sessionRole: "implementer",
-          acpSessionName: implementerSession,
-          keepSessionOpen: !isLastAttempt,
+          keepOpen: !isLastAttempt,
         });
         sessionConfirmedOpen = true;
       } catch (err) {

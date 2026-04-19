@@ -178,7 +178,7 @@ function resolveRegistryEntry(agentName: string): AgentRegistryEntry {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a deterministic ACP session name.
+ * Compute a deterministic ACP session handle.
  *
  * Format: nax-<gitRootHash8>-<featureName>-<storyId>[-<sessionRole>]
  *
@@ -186,7 +186,7 @@ function resolveRegistryEntry(agentName: string): AgentRegistryEntry {
  * cross-worktree session name collisions. Each git worktree has a distinct
  * root path, so different worktrees of the same repo get different hashes.
  */
-export function buildSessionName(
+export function computeAcpHandle(
   workdir: string,
   featureName?: string,
   storyId?: string,
@@ -438,7 +438,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   deriveSessionName(descriptor: import("../../session/types").SessionDescriptor): string {
-    return buildSessionName(descriptor.workdir, descriptor.featureName, descriptor.storyId, descriptor.role);
+    return computeAcpHandle(descriptor.workdir, descriptor.featureName, descriptor.storyId, descriptor.role);
   }
 
   buildCommand(_options: AgentRunOptions): string[] {
@@ -630,13 +630,13 @@ export class AcpAgentAdapter implements AgentAdapter {
     const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds, options.pidRegistry);
     await client.start();
 
-    // 1. Resolve session name: descriptor.handle > explicit acpSessionName > derived from options
+    // 1. Resolve session name: descriptor.handle > explicit sessionHandle > derived from options
     // Phase 3 (#477): crash guard and sidecar lookup removed — SessionManager owns crash recovery
     // via the CREATED/RUNNING state machine (orphan detection via sweepOrphans()).
     const sessionName =
       (options.session ? this.deriveSessionName(options.session) : undefined) ??
-      options.acpSessionName ??
-      buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
+      options.sessionHandle ??
+      computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
     // 2. Resolve permission mode from config via single source of truth.
     const resolvedPerm = resolvePermissions(options.config, options.pipelineStage ?? "run");
@@ -783,10 +783,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     } finally {
       // 6. Cleanup — close the physical ACP session on success or session-broken.
       // On failure (any), keep session open so retry can resume with context.
-      // On success with keepSessionOpen=true, keep open so the next turn resumes context.
+      // On success with keepOpen=true, keep open so the next turn resumes context.
       // Phase 3 (#477): sidecar writes removed — SessionManager owns persistence.
       const isSessionBroken = !runState.succeeded && lastResponse?.stopReason === "error";
-      if ((runState.succeeded && !options.keepSessionOpen) || isSessionBroken) {
+      if ((runState.succeeded && !options.keepOpen) || isSessionBroken) {
         if (isSessionBroken) {
           getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         }
@@ -794,7 +794,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       } else if (!runState.succeeded) {
         getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
       } else {
-        getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepSessionOpen=true)", { sessionName });
+        getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepOpen=true)", { sessionName });
       }
       await client.close().catch(() => {});
     }
@@ -915,7 +915,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       try {
         const completeSessionName =
           _options?.sessionName ??
-          buildSessionName(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
+          computeAcpHandle(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
 
         // Audit: fire-and-forget prompt write — never blocks or throws

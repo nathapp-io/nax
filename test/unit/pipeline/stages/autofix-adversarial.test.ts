@@ -287,11 +287,11 @@ describe("runTestWriterRectification", () => {
   // Session continuity (#437)
   // ─────────────────────────────────────────────────────────────────────────
 
-  test("keepSessionOpen defaults to true so session survives across autofix cycles", async () => {
+  test("keepOpen defaults to true so session survives across autofix cycles", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
     let capturedKeepSessionOpen: boolean | undefined;
     const mockRun = mock(async (opts: any) => {
-      capturedKeepSessionOpen = opts.keepSessionOpen;
+      capturedKeepSessionOpen = opts.keepOpen;
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentGetFn = mock(() => ({ run: mockRun }));
@@ -302,11 +302,11 @@ describe("runTestWriterRectification", () => {
     expect(capturedKeepSessionOpen).toBe(true);
   });
 
-  test("keepSessionOpen is false when caller passes keepOpen=false", async () => {
+  test("keepOpen is false when caller passes keepOpen=false", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
     let capturedKeepSessionOpen: boolean | undefined;
     const mockRun = mock(async (opts: any) => {
-      capturedKeepSessionOpen = opts.keepSessionOpen;
+      capturedKeepSessionOpen = opts.keepOpen;
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentGetFn = mock(() => ({ run: mockRun }));
@@ -317,11 +317,11 @@ describe("runTestWriterRectification", () => {
     expect(capturedKeepSessionOpen).toBe(false);
   });
 
-  test("uses the same acpSessionName across two calls (session resumability)", async () => {
+  test("uses the same sessionRole across two calls (session resumability)", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const capturedSessionNames: string[] = [];
+    const capturedSessionRoles: string[] = [];
     const mockRun = mock(async (opts: any) => {
-      capturedSessionNames.push(opts.acpSessionName);
+      capturedSessionRoles.push(opts.sessionRole);
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentGetFn = mock(() => ({ run: mockRun }));
@@ -330,7 +330,7 @@ describe("runTestWriterRectification", () => {
     await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
     await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
 
-    expect(capturedSessionNames).toHaveLength(2);
-    expect(capturedSessionNames[0]).toBe(capturedSessionNames[1]);
+    expect(capturedSessionRoles).toHaveLength(2);
+    expect(capturedSessionRoles[0]).toBe(capturedSessionRoles[1]);
   });
 });

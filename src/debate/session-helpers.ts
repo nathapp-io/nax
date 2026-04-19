@@ -1,5 +1,5 @@
 import { resolveDefaultAgent } from "../agents";
-import { buildSessionName } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import { createAgentRegistry, getAgent } from "../agents/registry";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
 import type { ModelTier, NaxConfig, ResolvedConfiguredModel } from "../config";
@@ -305,7 +305,7 @@ export async function resolveOutcome(
       const configDefaultAgent =
         config?.agent?.default ?? config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
       const synthesisSessionName =
-        workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "synthesis") : undefined;
+        workdir !== undefined ? computeAcpHandle(workdir, featureName, storyId, "synthesis") : undefined;
       const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
       const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
       let resolvedResolverModel: ResolvedConfiguredModel;
@@ -350,7 +350,7 @@ export async function resolveOutcome(
     const configDefaultAgent =
       config?.agent?.default ?? config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
     const judgeSessionName =
-      workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "judge") : undefined;
+      workdir !== undefined ? computeAcpHandle(workdir, featureName, storyId, "judge") : undefined;
     const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
     const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
     let resolvedResolverModel: ResolvedConfiguredModel;

@@ -101,8 +101,13 @@ export interface AgentRunOptions {
   };
   /** PID registry for cleanup on crash/SIGTERM */
   pidRegistry?: import("../execution/pid-registry").PidRegistry;
-  /** ACP session name to resume for plan→run session continuity */
-  acpSessionName?: string;
+  /**
+   * Explicit ACP session handle override. When set, the adapter uses this
+   * name instead of auto-deriving from featureName/storyId/sessionRole.
+   * Use only when a non-standard session name is required (e.g. generation-scoped
+   * reviewer sessions in dialogue.ts). Most callers should omit this field.
+   */
+  sessionHandle?: string;
   /** Feature name for ACP session naming and logging */
   featureName?: string;
   /** Story ID for ACP session naming and logging */
@@ -123,11 +128,11 @@ export interface AgentRunOptions {
   projectDir?: string;
   /**
    * When true, the adapter will NOT close the session after a successful run.
-   * Use this for rectification loops where the same session must persist across
-   * multiple attempts so the agent retains full conversation context.
-   * The caller is responsible for closing the session when the loop is done.
+   * Use for multi-attempt loops (rectification, review) where the same session
+   * must persist across calls so the agent retains conversation context.
+   * The caller is responsible for closing the session when the loop ends.
    */
-  keepSessionOpen?: boolean;
+  keepOpen?: boolean;
   /** Context-engine pull tools to expose for this run (ACP text-tool protocol). */
   contextPullTools?: ToolDescriptor[];
   /** Server-side runtime for resolving context-engine pull tool calls. */
@@ -137,7 +142,7 @@ export interface AgentRunOptions {
   /**
    * Session descriptor from SessionManager (Phase 1 plumbing — optional for backward compat).
    * When provided, the adapter MAY use descriptor.id/role/handle for audit correlation.
-   * Phase 5.5: replaces acpSessionName, featureName, storyId, sessionRole, keepSessionOpen.
+   * Phase 5.5: replaces sessionHandle, featureName, storyId, sessionRole, keepOpen.
    */
   session?: SessionDescriptor;
 }
@@ -295,7 +300,7 @@ export interface AgentAdapter {
    * Derive the protocol-specific session name for the given descriptor (Phase 1 plumbing).
    * Used by pipeline stages to obtain the handle string for sessionManager.bindHandle().
    *
-   * ACP: "nax-<hash8>-<feature>-<storyId>-<role>" (same formula as buildSessionName)
+   * ACP: "nax-<hash8>-<feature>-<storyId>-<role>" (same formula as computeAcpHandle)
    * CLI: not applicable — returns empty string.
    */
   deriveSessionName(descriptor: SessionDescriptor): string;
@@ -313,11 +318,11 @@ export interface AgentAdapter {
 
   /**
    * @deprecated Phase 3 (#477): use closePhysicalSession() instead.
-   * Close a named session that was kept open with keepSessionOpen: true.
+   * Close a named session that was kept open with keepOpen: true.
    * Best-effort — errors are swallowed. No-op for adapters that do not support
    * named sessions (e.g. future non-ACP adapters).
    *
-   * @param sessionName - The session name returned by buildSessionName()
+   * @param sessionName - The session name returned by computeAcpHandle()
    * @param workdir - Working directory used when the session was created
    */
   closeSession(sessionName: string, workdir: string): Promise<void>;

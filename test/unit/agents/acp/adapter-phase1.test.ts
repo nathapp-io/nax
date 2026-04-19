@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AcpAgentAdapter, _acpAdapterDeps, buildSessionName } from "../../../../src/agents/acp/adapter";
+import { AcpAgentAdapter, _acpAdapterDeps, computeAcpHandle } from "../../../../src/agents/acp/adapter";
 import { withDepsRestore } from "../../../helpers/deps";
 import type { AgentRunOptions } from "../../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
@@ -101,17 +101,17 @@ describe("AcpAgentAdapter.deriveSessionName", () => {
     };
   }
 
-  test("produces same name as buildSessionName for implementer role", () => {
+  test("produces same name as computeAcpHandle for implementer role", () => {
     const descriptor = makeDescriptor({ role: "implementer" });
     const derived = adapter.deriveSessionName(descriptor);
-    const expected = buildSessionName(workdir, "my-feat", "US-001", "implementer");
+    const expected = computeAcpHandle(workdir, "my-feat", "US-001", "implementer");
     expect(derived).toBe(expected);
   });
 
-  test("produces same name as buildSessionName for reviewer-semantic role", () => {
+  test("produces same name as computeAcpHandle for reviewer-semantic role", () => {
     const descriptor = makeDescriptor({ role: "reviewer-semantic" });
     const derived = adapter.deriveSessionName(descriptor);
-    const expected = buildSessionName(workdir, "my-feat", "US-001", "reviewer-semantic");
+    const expected = computeAcpHandle(workdir, "my-feat", "US-001", "reviewer-semantic");
     expect(derived).toBe(expected);
   });
 
@@ -121,7 +121,7 @@ describe("AcpAgentAdapter.deriveSessionName", () => {
     // deriveSessionName(descriptor) must produce the same name.
     const descriptor = makeDescriptor({ role: "implementer" });
     const fromDescriptor = adapter.deriveSessionName(descriptor);
-    const fromRunOptions = buildSessionName(workdir, "my-feat", "US-001", "implementer");
+    const fromRunOptions = computeAcpHandle(workdir, "my-feat", "US-001", "implementer");
     expect(fromDescriptor).toBe(fromRunOptions);
   });
 });

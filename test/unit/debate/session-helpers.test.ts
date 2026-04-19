@@ -15,7 +15,7 @@ import { readdirSync } from "node:fs";
 // RED: These imports fail until session-helpers.ts is created
 import { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "../../../src/debate/session-helpers";
 import type { DebateSessionOptions } from "../../../src/debate/session-helpers";
-import { buildSessionName } from "../../../src/agents/acp/adapter";
+import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 
@@ -257,7 +257,7 @@ describe("resolveOutcome() — workdir and featureName parameters (US-004 AC1)",
 
 // ─── AC2: synthesisResolver receives sessionName=implementer when workdir set ─
 
-describe("resolveOutcome() — synthesis resolver acpSessionName (US-004 AC2)", () => {
+describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", () => {
   let origGetAgent: typeof _debateSessionDeps.getAgent;
 
   beforeEach(() => {
@@ -269,7 +269,7 @@ describe("resolveOutcome() — synthesis resolver acpSessionName (US-004 AC2)", 
     mock.restore();
   });
 
-  test("passes sessionName=buildSessionName(workdir,featureName,storyId,'implementer') in completeOptions", async () => {
+  test("passes sessionName=computeAcpHandle(workdir,featureName,storyId,'implementer') in completeOptions", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
 
@@ -292,7 +292,7 @@ describe("resolveOutcome() — synthesis resolver acpSessionName (US-004 AC2)", 
 
     expect(captured.length).toBeGreaterThan(0);
     const capturedOpts = captured[0]?.opts;
-    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "synthesis");
+    const expectedSessionName = computeAcpHandle(workdir, featureName, storyId, "synthesis");
     expect(capturedOpts?.sessionName).toBe(expectedSessionName);
   });
 
@@ -320,7 +320,7 @@ describe("resolveOutcome() — synthesis resolver acpSessionName (US-004 AC2)", 
 
 // ─── AC3: judgeResolver receives sessionName=judge when workdir set ─────
 
-describe("resolveOutcome() — custom/judge resolver acpSessionName (US-004 AC3)", () => {
+describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)", () => {
   let origGetAgent: typeof _debateSessionDeps.getAgent;
 
   beforeEach(() => {
@@ -332,7 +332,7 @@ describe("resolveOutcome() — custom/judge resolver acpSessionName (US-004 AC3)
     mock.restore();
   });
 
-  test("custom resolver: passes sessionName=buildSessionName(...,'judge') in completeOptions", async () => {
+  test("custom resolver: passes sessionName=computeAcpHandle(...,'judge') in completeOptions", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
 
@@ -355,7 +355,7 @@ describe("resolveOutcome() — custom/judge resolver acpSessionName (US-004 AC3)
 
     expect(captured.length).toBeGreaterThan(0);
     const capturedOpts = captured[0]?.opts;
-    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "judge");
+    const expectedSessionName = computeAcpHandle(workdir, featureName, storyId, "judge");
     expect(capturedOpts?.sessionName).toBe(expectedSessionName);
   });
 

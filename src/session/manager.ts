@@ -77,7 +77,7 @@ export const _sessionManagerDeps = {
  *      protocolIds extracted from AgentResult (Phase 0: best-effort)
  *
  * This means the manager tracks sessions but is not yet the authority
- * for session naming — the adapter still uses buildSessionName() internally.
+ * for session naming — the adapter still uses computeAcpHandle() internally.
  */
 export class SessionManager implements ISessionManager {
   private readonly _sessions = new Map<string, SessionDescriptor>();

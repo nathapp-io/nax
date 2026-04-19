@@ -16,7 +16,7 @@
 
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AcpAgentAdapter, _acpAdapterDeps, buildSessionName, ensureAcpSession } from "../../../../src/agents/acp/adapter";
+import { AcpAgentAdapter, _acpAdapterDeps, computeAcpHandle, ensureAcpSession } from "../../../../src/agents/acp/adapter";
 import { withDepsRestore } from "../../../helpers/deps";
 import type { AcpClient } from "../../../../src/agents/acp/adapter";
 import type { AgentRunOptions } from "../../../../src/agents/types";
@@ -178,7 +178,7 @@ describe("AcpAgentAdapter — session mode (run)", () => {
       expect(capturedCmds.length).toBeGreaterThan(0);
     });
 
-    test("acpSessionName option does not affect createClient invocation", async () => {
+    test("sessionHandle option does not affect createClient invocation", async () => {
       const capturedCmds: string[] = [];
       const session = makeSession();
       _acpAdapterDeps.createClient = mock((cmd: string) => {
@@ -186,7 +186,7 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         return makeClient(session);
       });
 
-      await adapter.run({ ...BASE_OPTIONS, acpSessionName: "custom-session-xyz" });
+      await adapter.run({ ...BASE_OPTIONS, sessionHandle: "custom-session-xyz" });
 
       expect(capturedCmds.length).toBeGreaterThan(0);
     });
@@ -208,30 +208,30 @@ describe("AcpAgentAdapter — session mode (run)", () => {
     });
 
     test("different sessionRoles produce different session names", () => {
-      const writerName = buildSessionName("/proj/foo", "feat", "ST-001", "test-writer");
-      const implName   = buildSessionName("/proj/foo", "feat", "ST-001", "implementer");
-      const verName    = buildSessionName("/proj/foo", "feat", "ST-001", "verifier");
+      const writerName = computeAcpHandle("/proj/foo", "feat", "ST-001", "test-writer");
+      const implName   = computeAcpHandle("/proj/foo", "feat", "ST-001", "implementer");
+      const verName    = computeAcpHandle("/proj/foo", "feat", "ST-001", "verifier");
       expect(writerName).not.toBe(implName);
       expect(implName).not.toBe(verName);
       expect(writerName).not.toBe(verName);
     });
 
     test("different worktrees produce different session names", () => {
-      const main      = buildSessionName("/repos/nax",     "feat", "ST-001");
-      const worktree  = buildSessionName("/repos/nax-acp", "feat", "ST-001");
+      const main      = computeAcpHandle("/repos/nax",     "feat", "ST-001");
+      const worktree  = computeAcpHandle("/repos/nax-acp", "feat", "ST-001");
       expect(main).not.toBe(worktree);
     });
 
     test("same path always produces same session name (stable)", () => {
-      const a = buildSessionName("/repos/nax", "string-toolkit", "ST-001");
-      const b = buildSessionName("/repos/nax", "string-toolkit", "ST-001");
+      const a = computeAcpHandle("/repos/nax", "string-toolkit", "ST-001");
+      const b = computeAcpHandle("/repos/nax", "string-toolkit", "ST-001");
       expect(a).toBe(b);
     });
 
     test("session name contains 8-char cwd hash", () => {
       const workdir = "/repos/nax-test";
       const hash = createHash("sha256").update(workdir).digest("hex").slice(0, 8);
-      const name = buildSessionName(workdir, "feat", "ST-001");
+      const name = computeAcpHandle(workdir, "feat", "ST-001");
       expect(name).toContain(hash);
     });
   });

@@ -104,11 +104,11 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     const worktreePath = path.join(workdir, ".nax-wt", storyId);
 
     // BUG-122: Close stale ACP session from the original failed run before re-running.
-    // buildSessionName hashes the workdir path — same worktree path = same session name.
+    // computeAcpHandle hashes the workdir path — same worktree path = same session name.
     // The old Claude process may still be registered in acpx, causing prompt() to exit
     // with code 4 immediately. Close it explicitly so ensureAcpSession creates fresh.
-    const { buildSessionName } = await import("../agents/acp/adapter");
-    const staleSessionName = buildSessionName(worktreePath, prd.feature, storyId);
+    const { computeAcpHandle } = await import("../agents/acp/adapter");
+    const staleSessionName = computeAcpHandle(worktreePath, prd.feature, storyId);
     await closeStaleAcpSession(worktreePath, staleSessionName);
 
     // Step 3: Re-run the story pipeline

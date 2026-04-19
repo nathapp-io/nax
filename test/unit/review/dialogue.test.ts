@@ -6,7 +6,7 @@
  * AC2 — ReviewConfigSchema includes dialogue; DEFAULT_CONFIG.review.dialogue.enabled === false
  * AC3 — ReviewConfig interface includes dialogue? (compile-time check)
  * AC4 — createReviewerSession returns active session with empty history
- * AC5 — review() calls agent.run() with sessionRole='reviewer', keepSessionOpen=true, pipelineStage='review'
+ * AC5 — review() calls agent.run() with sessionRole='reviewer', keepOpen=true, pipelineStage='review'
  * AC6 — review() parses JSON into ReviewDialogueResult (checkResult + findingReasoning Map)
  * AC7 — review() appends exactly two DialogueMessage entries to history
  * AC8 — destroy() deactivates session; subsequent review() throws NaxError REVIEWER_SESSION_DESTROYED
@@ -34,7 +34,7 @@ const STORY: SemanticStory = {
   description: "Add ReviewDialogueConfig and implement ReviewerSession",
   acceptanceCriteria: [
     "createReviewerSession returns active session",
-    "review() calls agent.run() with keepSessionOpen: true",
+    "review() calls agent.run() with keepOpen: true",
   ],
 };
 
@@ -321,7 +321,7 @@ describe("createReviewerSession — initial state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC5 — review() calls agent.run() with sessionRole='reviewer', keepSessionOpen=true, pipelineStage='review'
+// AC5 — review() calls agent.run() with sessionRole='reviewer', keepOpen=true, pipelineStage='review'
 // ---------------------------------------------------------------------------
 
 describe("ReviewerSession.review() — agent.run() call parameters", () => {
@@ -370,9 +370,9 @@ describe("ReviewerSession.review() — agent.run() call parameters", () => {
     expect(capturedOpts?.sessionRole).toBe("reviewer");
   });
 
-  test("passes keepSessionOpen: true to agent.run()", async () => {
+  test("passes keepOpen: true to agent.run()", async () => {
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
-    expect(capturedOpts?.keepSessionOpen).toBe(true);
+    expect(capturedOpts?.keepOpen).toBe(true);
   });
 
   test("passes pipelineStage: 'review' to agent.run()", async () => {

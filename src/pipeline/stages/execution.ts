@@ -143,9 +143,7 @@ export const executionStage: PipelineStage = {
     }
 
     // Determine whether to keep session open for review or rectification
-    const keepSessionOpen = !!(
-      ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true
-    );
+    const keepOpen = !!(ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true);
 
     // G1: Advance state machine to RUNNING so resume() / listActive() see accurate state.
     // Guarded — ctx.sessionId may not have a manager entry when v2 context is disabled.
@@ -189,7 +187,7 @@ export const executionStage: PipelineStage = {
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
       sessionRole: "implementer",
-      keepSessionOpen,
+      keepOpen,
       // G3: pass descriptor so adapter uses it for session name derivation (Phase 1+).
       // Backward-compatible — featureName/storyId/sessionRole kept as fallback.
       ...(sessionDescriptor && { session: sessionDescriptor }),
@@ -357,7 +355,7 @@ export const executionStage: PipelineStage = {
             featureName: ctx.prd.feature,
             storyId: ctx.story.id,
             sessionRole: "implementer",
-            keepSessionOpen,
+            keepOpen,
             ...(handoffSession && { session: handoffSession }),
             contextPullTools: workingBundle.pullTools,
             contextToolRuntime: createContextToolRuntime({
