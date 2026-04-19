@@ -24,10 +24,7 @@ import type { AgentAdapter } from "../../../src/agents/types";
 import type { AgentRegistry } from "../../../src/agents/registry";
 import { _gitDeps } from "../../../src/utils/git";
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Saved deps for restoration
-// ─────────────────────────────────────────────────────────────────────────────
-
 const origGetAgent = _executionDeps.getAgent;
 const origValidateAgent = _executionDeps.validateAgentForTier;
 const origDetectMerge = _executionDeps.detectMergeConflict;
@@ -40,9 +37,7 @@ afterEach(() => {
   _gitDeps.spawn = origGitSpawn;
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 const QUOTA_FAILURE: AdapterFailure = {
   category: "availability",
@@ -200,9 +195,7 @@ function makeSucceedingAgent(name: string): AgentAdapter {
   } as unknown as AgentAdapter;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe("execution stage — agent-swap on availability failure (Phase 5.5)", () => {
   let bundle: ContextBundle;
