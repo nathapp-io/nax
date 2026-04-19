@@ -56,4 +56,41 @@ describe("AgentManager — Phase 1 pass-through", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
     expect(manager.nextCandidate("claude", 0)).toBeNull();
   });
+
+  test("runWithFallback() with no registry returns failure result and empty fallbacks", async () => {
+    const manager = new AgentManager(DEFAULT_CONFIG);
+    const outcome = await manager.runWithFallback({
+      runOptions: {
+        prompt: "test",
+        workdir: "/tmp",
+        modelTier: "fast",
+        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+        timeoutSeconds: 30,
+        config: DEFAULT_CONFIG,
+        storyId: "us-001",
+      },
+    });
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.fallbacks).toEqual([]);
+  });
+
+  test("runWithFallback() with registry delegates to adapter.run() once", async () => {
+    const mockResult = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0.001 };
+    const mockAdapter = { run: async () => mockResult };
+    const mockRegistry = { getAgent: (_: string) => mockAdapter as never };
+    const manager = new AgentManager(DEFAULT_CONFIG, mockRegistry as never);
+    const outcome = await manager.runWithFallback({
+      runOptions: {
+        prompt: "test",
+        workdir: "/tmp",
+        modelTier: "fast",
+        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+        timeoutSeconds: 30,
+        config: DEFAULT_CONFIG,
+        storyId: "us-001",
+      },
+    });
+    expect(outcome.result.success).toBe(true);
+    expect(outcome.fallbacks).toEqual([]);
+  });
 });

@@ -99,7 +99,14 @@ export class AgentManager implements IAgentManager {
   }
 
   /** @internal — test helper */
-  _emit(event: AgentManagerEventName, payload: AgentFallbackRecord | unknown): void {
+  _emit(
+    event: AgentManagerEventName,
+    payload:
+      | AgentFallbackRecord
+      | { agent: string; failure: AdapterFailure }
+      | { agent: string; reason: string }
+      | { storyId?: string; hops: number },
+  ): void {
     this._emitter.emit(event, payload);
   }
 }
