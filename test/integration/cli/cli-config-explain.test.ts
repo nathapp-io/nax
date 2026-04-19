@@ -203,10 +203,10 @@ describe("config --explain: autoMode multi-agent section", () => {
     await configCommand(config, { explain: true });
 
     const output = consoleOutput.join("\n");
-    // Should explain what fallback order does and when it's used
-    const fallbackSectionStart = output.indexOf("fallbackOrder");
+    // fallbackOrder was removed in ADR-012 Phase 6; fallback config now lives at agent.fallback
+    const fallbackSectionStart = output.indexOf("agent.fallback");
     expect(fallbackSectionStart).toBeGreaterThan(-1);
-    // The description should mention rate-limited or retry concepts
+    // The description should mention fallback concepts
     const hasFallbackLogicDoc =
       output.includes("rate-limited") || output.includes("fallback") || output.includes("retry");
     expect(hasFallbackLogicDoc).toBe(true);

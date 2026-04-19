@@ -293,8 +293,8 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Should format small arrays inline
-      expect(output).toMatch(/fallbackOrder: \[/);
+      // Should format small arrays inline (fallbackOrder was removed in ADR-012 Phase 6; tierOrder is a small inline array)
+      expect(output).toMatch(/tierOrder: \[/);
     });
 
     test("truncates long arrays", async () => {
@@ -333,7 +333,8 @@ describe("Config Command", () => {
 
       expect(output).toContain("autoMode:");
       expect(output).toContain("enabled:");
-      expect(output).toContain("defaultAgent:");
+      // defaultAgent was removed from autoMode in ADR-012 Phase 6; it now lives at agent.default
+      expect(output).toContain("agent:");
       expect(output).toContain("complexityRouting:");
       expect(output).toContain("escalation:");
     });
