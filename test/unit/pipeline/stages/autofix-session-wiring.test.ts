@@ -98,6 +98,7 @@ describe("autofix session wiring (PROMPT-001)", () => {
     // The adapter auto-derives the session handle from featureName + storyId + sessionRole.
     // The caller no longer sets sessionHandle explicitly; verify sessionRole is set correctly.
     expect(runOpts.sessionRole).toBe("implementer");
+    expect(runOpts.sessionHandle).toBeUndefined();
     // Verify computeAcpHandle produces the expected name for documentation purposes
     const expected = computeAcpHandle(WORKDIR, FEATURE, STORY_ID, "implementer");
     expect(expected).toMatch(/^nax-[a-f0-9]+-my-feature-us-001-implementer$/);
