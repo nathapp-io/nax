@@ -13,7 +13,6 @@
 
 import { createHash } from "node:crypto";
 import { resolvePermissions } from "../../config/permissions";
-import { AllAgentsUnavailableError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import { parseDecomposeOutput } from "../shared/decompose";
@@ -44,7 +43,6 @@ import type { AgentRegistryEntry } from "./types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_AGENT_OUTPUT_CHARS = 5000;
-const MAX_RATE_LIMIT_RETRIES = 3;
 const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
 const CONTEXT_TOOL_CALL_PATTERN = /<nax_tool_call\s+name="([^"]+)">\s*([\s\S]*?)\s*<\/nax_tool_call>/i;
 
@@ -414,7 +412,6 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly displayName: string;
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
-  private _unavailableAgents: Set<string>;
 
   constructor(
     agentName: string,
@@ -429,7 +426,6 @@ export class AcpAgentAdapter implements AgentAdapter {
       maxContextTokens: entry.maxContextTokens,
       features: new Set<"tdd" | "review" | "refactor" | "batch">(["tdd", "review", "refactor"]),
     };
-    this._unavailableAgents = new Set();
   }
 
   async isInstalled(): Promise<boolean> {
@@ -453,12 +449,11 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
-    // _unavailableAgents is reset between stories via AgentRegistry.resetStoryState(),
-    // called from the unified executor at each story boundary. Within a story,
-    // the set is intentionally shared between run() and complete() for fallback continuity.
     const startTime = Date.now();
     const config = options.config;
-    const hasActiveFallbacks = (config?.autoMode?.fallbackOrder?.length ?? 0) > 0;
+    const SESSION_ERROR_MAX_RETRIES = config?.execution?.sessionErrorMaxRetries ?? 1;
+    const SESSION_ERROR_RETRYABLE_MAX_RETRIES = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
+    let sessionErrorRetries = 0;
 
     getSafeLogger()?.debug("acp-adapter", `Starting run for ${this.name}`, {
       model: options.modelDef.model,
@@ -468,25 +463,12 @@ export class AcpAgentAdapter implements AgentAdapter {
       sessionRole: options.sessionRole,
     });
 
-    // Start with this agent if available; otherwise skip to first available fallback
-    let currentAgent: string = this.resolveCurrentAgent(config);
-
-    const rateLimitedRetryAfter = new Map<string, number | undefined>();
-    let sessionErrorRetries = 0;
-    // Max retries for non-retryable session errors (e.g. stale/locked session)
-    const SESSION_ERROR_MAX_RETRIES = config?.execution?.sessionErrorMaxRetries ?? 1;
-    // Max retries for acpx-retryable session errors (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION)
-    const SESSION_ERROR_RETRYABLE_MAX_RETRIES = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
-    // Legacy attempt counter used only when no fallback chain is configured
-    let legacyAttempt = 0;
-    let retryCount = 0;
-
     while (true) {
       try {
-        const result = await this._runWithClient(options, startTime, currentAgent);
+        const result = await this._runWithClient(options, startTime, this.name);
 
         if (!result.success) {
-          getSafeLogger()?.warn("acp-adapter", `Run failed for ${currentAgent}`, {
+          getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, {
             exitCode: result.exitCode,
             ...(result.output ? { output: result.output.slice(0, 500) } : {}),
           });
@@ -510,16 +492,41 @@ export class AcpAgentAdapter implements AgentAdapter {
               attempt: sessionErrorRetries,
               maxAttempts: maxSessionRetries,
             });
-            // Phase 3 (#477): sidecar clear removed — session re-creation is handled
-            // by _runWithClient on the next iteration (new sessionName derived fresh).
             continue;
           }
 
-          // AC 1-3: parse output for rate-limit/auth errors so the fallback retry
-          // loop below can handle them, regardless of whether fallbacks are configured.
           const parsed = _fallbackDeps.parseAgentError(result.output ?? "");
-          if (parsed.type === "rate-limit" || parsed.type === "auth") {
-            throw new Error(result.output ?? "agent run failed");
+          if (parsed.type === "auth") {
+            return {
+              success: false,
+              exitCode: result.exitCode ?? 1,
+              output: result.output ?? "",
+              rateLimited: false,
+              durationMs: Date.now() - startTime,
+              estimatedCost: result.estimatedCost ?? 0,
+              adapterFailure: {
+                category: "availability",
+                outcome: "fail-auth",
+                retriable: false,
+                message: (result.output ?? "").slice(0, 500),
+              },
+            };
+          }
+          if (parsed.type === "rate-limit") {
+            return {
+              success: false,
+              exitCode: result.exitCode ?? 1,
+              output: result.output ?? "",
+              rateLimited: true,
+              durationMs: Date.now() - startTime,
+              estimatedCost: result.estimatedCost ?? 0,
+              adapterFailure: {
+                category: "availability",
+                outcome: "fail-rate-limit",
+                retriable: true,
+                message: (result.output ?? "").slice(0, 500),
+              },
+            };
           }
         }
 
@@ -529,94 +536,52 @@ export class AcpAgentAdapter implements AgentAdapter {
         const parsed = _fallbackDeps.parseAgentError(error.message);
 
         if (parsed.type === "auth") {
-          this.markUnavailable(currentAgent);
-          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
-          const availableFallbacks = fallbacks.filter((a) => !this._unavailableAgents.has(a));
-          if (availableFallbacks.length === 0) {
-            getSafeLogger()?.error("agent-fallback", "All agents unavailable after auth failures", {
-              storyId: options.storyId,
-              unavailableAgents: [...this._unavailableAgents],
-            });
-            throw new AllAgentsUnavailableError([...this._unavailableAgents]);
-          }
-          retryCount++;
-          getSafeLogger()?.info("agent-fallback", "Falling back after auth error", {
-            storyId: options.storyId,
-            originalAgent: currentAgent,
-            fallbackAgent: availableFallbacks[0],
-            errorType: "auth",
-            retryCount,
-          });
-          currentAgent = availableFallbacks[0];
-        } else if (parsed.type === "rate-limit") {
-          rateLimitedRetryAfter.set(currentAgent, parsed.retryAfterSeconds);
-          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
-          const nextAvailable = fallbacks.find((a) => !rateLimitedRetryAfter.has(a));
-          if (nextAvailable) {
-            retryCount++;
-            getSafeLogger()?.info("agent-fallback", "Falling back after rate-limit", {
-              storyId: options.storyId,
-              originalAgent: currentAgent,
-              fallbackAgent: nextAvailable,
-              errorType: "rate-limit",
-              retryCount,
-            });
-            currentAgent = nextAvailable;
-          } else if (hasActiveFallbacks) {
-            // All fallback agents exhausted — sleep then restart from fallbackOrder[0]
-            const retryValues = [...rateLimitedRetryAfter.values()].filter((v): v is number => v !== undefined);
-            const sleepMs = retryValues.length > 0 ? Math.min(...retryValues) * 1000 : 30_000;
-            getSafeLogger()?.info("agent-fallback", "All agents rate-limited, waiting before retry", {
-              storyId: options.storyId,
-              waitMs: sleepMs,
-            });
-            await _fallbackDeps.sleep(sleepMs);
-            rateLimitedRetryAfter.clear();
-            const initialFallbacks = this.resolveFallbackOrder(config, this.name);
-            currentAgent = initialFallbacks[0] ?? this.name;
-          } else {
-            // No fallback chain — legacy exponential backoff for backward compat
-            if (legacyAttempt >= MAX_RATE_LIMIT_RETRIES - 1) {
-              const durationMs = Date.now() - startTime;
-              return {
-                success: false,
-                exitCode: 1,
-                output: error.message,
-                rateLimited: true,
-                durationMs,
-                estimatedCost: 0,
-                adapterFailure: {
-                  category: "availability",
-                  outcome: "fail-rate-limit",
-                  retriable: true,
-                  retryAfterSeconds: parsed.retryAfterSeconds,
-                  message: error.message.slice(0, 500),
-                },
-              };
-            }
-            legacyAttempt++;
-            const backoffMs = 2 ** legacyAttempt * 1000;
-            await _acpAdapterDeps.sleep(backoffMs);
-            rateLimitedRetryAfter.clear();
-          }
-        } else {
-          // Unknown error — return as failure result (consistent with legacy run() behavior)
-          const durationMs = Date.now() - startTime;
           return {
             success: false,
             exitCode: 1,
             output: error.message,
             rateLimited: false,
-            durationMs,
+            durationMs: Date.now() - startTime,
             estimatedCost: 0,
             adapterFailure: {
-              category: "quality",
-              outcome: "fail-unknown",
+              category: "availability",
+              outcome: "fail-auth",
               retriable: false,
               message: error.message.slice(0, 500),
             },
           };
         }
+        if (parsed.type === "rate-limit") {
+          return {
+            success: false,
+            exitCode: 1,
+            output: error.message,
+            rateLimited: true,
+            durationMs: Date.now() - startTime,
+            estimatedCost: 0,
+            adapterFailure: {
+              category: "availability",
+              outcome: "fail-rate-limit",
+              retriable: true,
+              message: error.message.slice(0, 500),
+            },
+          };
+        }
+        // Unknown error — return as failure result
+        return {
+          success: false,
+          exitCode: 1,
+          output: error.message,
+          rateLimited: false,
+          durationMs: Date.now() - startTime,
+          estimatedCost: 0,
+          adapterFailure: {
+            category: "quality",
+            outcome: "fail-unknown",
+            retriable: false,
+            message: error.message.slice(0, 500),
+          },
+        };
       }
     }
   }
@@ -1006,83 +971,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       }
     };
 
-    // Fallback retry loop: walk fallbackOrder on rate-limit/auth errors
-    const rateLimitedRetryAfter = new Map<string, number | undefined>();
-    const hasActiveFallbacks = (config?.autoMode?.fallbackOrder?.length ?? 0) > 0;
-    // Start with this agent if available; otherwise skip to first available fallback
-    let currentAgent: string = this.resolveCurrentAgent(config);
-    // Legacy attempt counter used only when no fallback chain is configured
-    let legacyAttempt = 0;
-    let retryCount = 0;
-
-    while (true) {
-      try {
-        return await tryOneAgent(currentAgent);
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        const parsed = _fallbackDeps.parseAgentError(error.message);
-
-        if (parsed.type === "auth") {
-          this.markUnavailable(currentAgent);
-          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
-          const availableFallbacks = fallbacks.filter((a) => !this._unavailableAgents.has(a));
-          if (availableFallbacks.length === 0) {
-            getSafeLogger()?.error("agent-fallback", "All agents unavailable after auth failures", {
-              storyId: _options?.storyId,
-              unavailableAgents: [...this._unavailableAgents],
-            });
-            throw new AllAgentsUnavailableError([...this._unavailableAgents]);
-          }
-          retryCount++;
-          getSafeLogger()?.info("agent-fallback", "Falling back after auth error", {
-            storyId: _options?.storyId,
-            originalAgent: currentAgent,
-            fallbackAgent: availableFallbacks[0],
-            errorType: "auth",
-            retryCount,
-          });
-          currentAgent = availableFallbacks[0];
-        } else if (parsed.type === "rate-limit") {
-          rateLimitedRetryAfter.set(currentAgent, parsed.retryAfterSeconds);
-          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
-          const nextAvailable = fallbacks.find((a) => !rateLimitedRetryAfter.has(a));
-          if (nextAvailable) {
-            retryCount++;
-            getSafeLogger()?.info("agent-fallback", "Falling back after rate-limit", {
-              storyId: _options?.storyId,
-              originalAgent: currentAgent,
-              fallbackAgent: nextAvailable,
-              errorType: "rate-limit",
-              retryCount,
-            });
-            currentAgent = nextAvailable;
-          } else if (hasActiveFallbacks) {
-            // All fallback agents exhausted — sleep then restart from fallbackOrder[0]
-            const retryValues = [...rateLimitedRetryAfter.values()].filter((v): v is number => v !== undefined);
-            const sleepMs = retryValues.length > 0 ? Math.min(...retryValues) * 1000 : 30_000;
-            getSafeLogger()?.info("agent-fallback", "All agents rate-limited, waiting before retry", {
-              storyId: _options?.storyId,
-              waitMs: sleepMs,
-            });
-            await _fallbackDeps.sleep(sleepMs);
-            rateLimitedRetryAfter.clear();
-            const initialFallbacks = this.resolveFallbackOrder(config, this.name);
-            currentAgent = initialFallbacks[0] ?? this.name;
-          } else {
-            // No fallback chain — old exponential backoff behavior (backward compat)
-            if (legacyAttempt >= MAX_RATE_LIMIT_RETRIES - 1) {
-              throw error;
-            }
-            legacyAttempt++;
-            const backoffMs = 2 ** legacyAttempt * 1000;
-            await _acpAdapterDeps.sleep(backoffMs);
-            rateLimitedRetryAfter.clear();
-          }
-        } else {
-          throw error;
-        }
-      }
-    }
+    return await tryOneAgent(this.name);
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
@@ -1122,15 +1011,11 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     if (!result.success) {
-      // Mark agent as unavailable when plan() fails
-      this.markUnavailable(this.name);
       throw new Error(`[acp-adapter] plan() failed: ${result.output}`);
     }
 
     const specContent = result.output.trim();
     if (!specContent) {
-      // Mark agent as unavailable when plan() returns empty output
-      this.markUnavailable(this.name);
       throw new Error("[acp-adapter] plan() returned empty spec content");
     }
 
@@ -1171,21 +1056,10 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   /**
-   * Reset per-story availability state.
-   * Called by AgentRegistry.resetStoryState() at each story boundary so transient
-   * auth failures in one story do not carry over to the next.
+   * No-op: per-story availability state is now owned by AgentManager (ADR-012 Phase 4).
+   * Kept for interface compatibility; callers in AgentRegistry.resetStoryState() are harmless.
    */
-  clearUnavailableAgents(): void {
-    this._unavailableAgents.clear();
-  }
-
-  private markUnavailable(agentName: string): void {
-    this._unavailableAgents.add(agentName);
-  }
-
-  private isAvailable(agentName: string): boolean {
-    return !this._unavailableAgents.has(agentName);
-  }
+  clearUnavailableAgents(): void {}
 
   async closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void> {
     const cmdStr = `acpx ${this.name}`;
@@ -1215,33 +1089,5 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async closeSession(sessionName: string, workdir: string): Promise<void> {
     await this.closePhysicalSession(sessionName, workdir);
-  }
-
-  private resolveCurrentAgent(config: import("../../config").NaxConfig | undefined): string {
-    if (this.isAvailable(this.name)) {
-      return this.name;
-    }
-    if (config) {
-      const available = this.resolveFallbackOrder(config, this.name);
-      return available[0] ?? this.name;
-    }
-    return this.name;
-  }
-
-  private resolveFallbackOrder(config: unknown, currentAgent: string): string[] {
-    if (!config) return [];
-    const typedConfig = config as { autoMode?: { fallbackOrder?: string[] } };
-    const fallbackOrder = typedConfig.autoMode?.fallbackOrder ?? [];
-
-    // Find the current agent's index
-    const currentIndex = fallbackOrder.indexOf(currentAgent);
-
-    // If current agent is not in the list, return all agents (filter unavailable)
-    if (currentIndex === -1) {
-      return fallbackOrder.filter((agent) => this.isAvailable(agent));
-    }
-
-    // Return agents after current agent, filtering out unavailable ones
-    return fallbackOrder.slice(currentIndex + 1).filter((agent) => this.isAvailable(agent));
   }
 }

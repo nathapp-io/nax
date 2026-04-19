@@ -15,7 +15,6 @@ export {
 export { validateAgentForTier, validateAgentFeature, describeAgentCapabilities } from "./shared/validation";
 export type { AgentVersionInfo } from "./shared/version-detection";
 export { getAgentVersion, getAgentVersions } from "./shared/version-detection";
-export { AllAgentsUnavailableError } from "../errors";
 export { AgentManager } from "./manager";
 export type {
   IAgentManager,
