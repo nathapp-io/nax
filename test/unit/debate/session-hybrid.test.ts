@@ -158,10 +158,10 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
   });
 });
 
-// ─── AC3: every proposal call uses keepSessionOpen: true ─────────────────────
+// ─── AC3: every proposal call uses keepOpen: true ─────────────────────
 
-describe("runHybrid() — keepSessionOpen for proposal calls (AC3)", () => {
-  test("all proposal run() calls have keepSessionOpen: true", async () => {
+describe("runHybrid() — keepOpen for proposal calls (AC3)", () => {
+  test("all proposal run() calls have keepOpen: true", async () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.getAgent = mock((name: string) =>
@@ -194,7 +194,7 @@ describe("runHybrid() — keepSessionOpen for proposal calls (AC3)", () => {
     const proposalCalls = runCalls.filter((c) => c.prompt === "test prompt");
     expect(proposalCalls.length).toBeGreaterThanOrEqual(2);
     for (const call of proposalCalls) {
-      expect(call.keepSessionOpen).toBe(true);
+      expect(call.keepOpen).toBe(true);
     }
   });
 });

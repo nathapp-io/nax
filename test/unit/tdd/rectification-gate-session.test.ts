@@ -117,7 +117,7 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("rectification session reuse", () => {
-  test("all attempts use the same acpSessionName", async () => {
+  test("all attempts use the same sessionRole", async () => {
     const story = makeStory();
     const config = makeConfig(2); // maxRetries=2
     const agent = makeAgent();
@@ -138,13 +138,14 @@ describe("rectification session reuse", () => {
 
     expect(agent.calls.length).toBe(2); // both attempts ran
 
-    const sessionNames = agent.calls.map((c) => c.acpSessionName);
-    // Both attempts must share the same session name
-    expect(sessionNames[0]).toBeDefined();
-    expect(sessionNames[0]).toBe(sessionNames[1]);
+    // The adapter auto-derives session handle from featureName + storyId + sessionRole.
+    // Both attempts must share the same sessionRole so the adapter uses the same session.
+    const sessionRoles = agent.calls.map((c) => c.sessionRole);
+    expect(sessionRoles[0]).toBeDefined();
+    expect(sessionRoles[0]).toBe(sessionRoles[1]);
   });
 
-  test("keepSessionOpen=true for all attempts except the last", async () => {
+  test("keepOpen=true for all attempts except the last", async () => {
     const story = makeStory();
     const config = makeConfig(3); // maxRetries=3 — three attempts
     const agent = makeAgent();
@@ -165,14 +166,14 @@ describe("rectification session reuse", () => {
 
     expect(agent.calls.length).toBe(3);
 
-    // Attempts 1 and 2 (not last): keepSessionOpen=true
-    expect(agent.calls[0]!.keepSessionOpen).toBe(true);
-    expect(agent.calls[1]!.keepSessionOpen).toBe(true);
-    // Last attempt: keepSessionOpen=false so session closes normally
-    expect(agent.calls[2]!.keepSessionOpen).toBe(false);
+    // Attempts 1 and 2 (not last): keepOpen=true
+    expect(agent.calls[0]!.keepOpen).toBe(true);
+    expect(agent.calls[1]!.keepOpen).toBe(true);
+    // Last attempt: keepOpen=false so session closes normally
+    expect(agent.calls[2]!.keepOpen).toBe(false);
   });
 
-  test("session closes on the last attempt (keepSessionOpen=false or undefined)", async () => {
+  test("session closes on the last attempt (keepOpen=false or undefined)", async () => {
     const story = makeStory();
     const config = makeConfig(2);
     const agent = makeAgent();
@@ -191,11 +192,11 @@ describe("rectification session reuse", () => {
     } as any);
 
     expect(agent.calls.length).toBe(2);
-    // Last attempt must NOT set keepSessionOpen=true
-    expect(agent.calls[1]!.keepSessionOpen).not.toBe(true);
+    // Last attempt must NOT set keepOpen=true
+    expect(agent.calls[1]!.keepOpen).not.toBe(true);
   });
 
-  test("all attempts use the same session name even without featureName", async () => {
+  test("all attempts use the same sessionRole even without featureName", async () => {
     const story = makeStory({ id: "US-002" });
     const config = makeConfig(2);
     const agent = makeAgent();
@@ -214,8 +215,8 @@ describe("rectification session reuse", () => {
     } as any); // no featureName
 
     expect(agent.calls.length).toBe(2);
-    const [name1, name2] = agent.calls.map((c) => c.acpSessionName);
-    expect(name1).toBeDefined();
-    expect(name1).toBe(name2);
+    const [role1, role2] = agent.calls.map((c) => c.sessionRole);
+    expect(role1).toBeDefined();
+    expect(role1).toBe(role2);
   });
 });

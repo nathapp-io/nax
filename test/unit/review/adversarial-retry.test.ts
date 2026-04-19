@@ -5,7 +5,7 @@
  * - Retry succeeds: initial response unparseable, retry returns valid JSON
  * - Retry failure: retry call throws, falls through to fail-open
  * - agent.run called twice when initial response is unparseable
- * - Retry call uses keepSessionOpen: false
+ * - Retry call uses keepOpen: false
  * - Cost accumulated from both initial and retry calls
  * - Logging: info on parse fail + retry, info on retry success, warn on exhaustion
  */
@@ -198,22 +198,22 @@ describe("runAdversarialReview — JSON retry succeeds", () => {
     expect((agent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
   });
 
-  test("retry call uses keepSessionOpen: false to close the session", async () => {
+  test("retry call uses keepOpen: false to close the session", async () => {
     const agent = makeMultiCallAgent(["this is not json at all", PASSING_RESPONSE]);
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
 
     const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[1][0] as Record<string, unknown>).keepSessionOpen).toBe(false);
+    expect((calls[1][0] as Record<string, unknown>).keepOpen).toBe(false);
   });
 
-  test("initial call uses keepSessionOpen: true so retry has conversation history (session closes by end of runReview, ADR-008)", async () => {
+  test("initial call uses keepOpen: true so retry has conversation history (session closes by end of runReview, ADR-008)", async () => {
     const agent = makeMultiCallAgent([PASSING_RESPONSE]);
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
 
     const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[0][0] as Record<string, unknown>).keepSessionOpen).toBe(true);
+    expect((calls[0][0] as Record<string, unknown>).keepOpen).toBe(true);
   });
 
   test("agent.closePhysicalSession called once to close the session after runReview completes", async () => {

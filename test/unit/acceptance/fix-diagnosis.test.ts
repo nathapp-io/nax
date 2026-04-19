@@ -4,7 +4,7 @@
  * Covers acceptance criteria:
  * 1. Receives agent adapter via parameter (never calls bare getAgent())
  * 2. Calls agent.run() with sessionRole 'diagnose'
- * 3. Session name follows pattern via buildSessionName()
+ * 3. Session name follows pattern via computeAcpHandle()
  * 4. Resolves diagnoseModel via resolveModelForAgent()
  * 5. Auto-detects source files from import statements
  * 6. Parses DiagnosisResult JSON from agent output
@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { diagnoseAcceptanceFailure } from "../../../src/acceptance/fix-diagnosis";
 import type { DiagnosisResult } from "../../../src/acceptance/types";
-import { buildSessionName } from "../../../src/agents/acp/adapter";
+import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/schema";
@@ -163,14 +163,14 @@ describe("AC-2: diagnoseAcceptanceFailure calls agent.run() with sessionRole dia
 // ---------------------------------------------------------------------------
 
 describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pattern", () => {
-  test("buildSessionName returns correct pattern for diagnose session", () => {
-    const sessionName = buildSessionName("/tmp/test-workdir", "my-feature", "US-001", "diagnose");
+  test("computeAcpHandle returns correct pattern for diagnose session", () => {
+    const sessionName = computeAcpHandle("/tmp/test-workdir", "my-feature", "US-001", "diagnose");
     const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
     expect(sessionName).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
     expect(sessionName).toMatch(/^nax-[a-f0-9]+-.+-\d+-diagnose$/);
   });
 
-  test("diagnoseAcceptanceFailure uses buildSessionName with 'diagnose' role", async () => {
+  test("diagnoseAcceptanceFailure passes featureName, storyId, and sessionRole='diagnose' to adapter", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -182,11 +182,13 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pat
       storyId: "US-001",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    const expectedSessionName = buildSessionName("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
-    expect(runCall.acpSessionName).toBe(expectedSessionName);
+    // The adapter auto-derives the session handle from featureName + storyId + sessionRole.
+    expect(runCall.sessionRole).toBe("diagnose");
+    expect(runCall.featureName).toBe("test-feature");
+    expect(runCall.storyId).toBe("US-001");
   });
 
-  test("session name is visible in acpx list when protocol is ACP", async () => {
+  test("session name is visible in acpx list when protocol is ACP (adapter derives handle)", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     expect(config.agent?.protocol).toBe("acp");
@@ -199,7 +201,10 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pat
       storyId: "US-001",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
+    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
+    expect(expectedHandle).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
+    expect(runCall.featureName).toBe("test-feature");
+    expect(runCall.sessionRole).toBe("diagnose");
   });
 });
 
@@ -562,10 +567,14 @@ describe("AC-10: ACP session visible in acpx list with correct session name", ()
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
     const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
-    expect(runCall.acpSessionName).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
+    // Adapter auto-derives handle; verify the formula is correct
+    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "my-feature", "US-001", "diagnose");
+    expect(expectedHandle).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
+    expect(runCall.featureName).toBe("my-feature");
+    expect(runCall.sessionRole).toBe("diagnose");
   });
 
-  test("ACP protocol ensures session appears in acpx list", async () => {
+  test("ACP protocol ensures session appears in acpx list (adapter derives handle)", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     config.agent = { protocol: "acp" };
@@ -578,7 +587,10 @@ describe("AC-10: ACP session visible in acpx list with correct session name", ()
       storyId: "US-001",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
+    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
+    expect(expectedHandle).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
+    expect(runCall.featureName).toBe("test-feature");
+    expect(runCall.sessionRole).toBe("diagnose");
   });
 });
 

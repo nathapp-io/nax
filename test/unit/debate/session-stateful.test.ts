@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { AgentAdapter, AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import { buildSessionName } from "../../../src/agents/acp/adapter";
+import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 
 function makeMockAdapter(
   name: string,
@@ -101,7 +101,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     expect(runCalls[0].storyId).toBe("US-003");
     expect(runCalls[0].featureName).toBe("feat-a");
     expect(runCalls[0].workdir).toBe("/tmp/work");
-    expect(runCalls[0].keepSessionOpen).toBe(false);
+    expect(runCalls[0].keepOpen).toBe(false);
     expect(runCalls[0].modelDef.model).not.toBe("fast");
     expect(runCalls[1].modelDef.model).not.toBe("balanced");
   });
@@ -175,10 +175,10 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     await session.run("review prompt");
 
     expect(runCalls.length).toBe(4);
-    expect(runCalls[0].keepSessionOpen).toBe(true);
-    expect(runCalls[1].keepSessionOpen).toBe(true);
-    expect(runCalls[2].keepSessionOpen).toBe(false);
-    expect(runCalls[3].keepSessionOpen).toBe(false);
+    expect(runCalls[0].keepOpen).toBe(true);
+    expect(runCalls[1].keepOpen).toBe(true);
+    expect(runCalls[2].keepOpen).toBe(false);
+    expect(runCalls[3].keepOpen).toBe(false);
     expect(runCalls[2].sessionRole).toBe("debate-review-0");
     expect(runCalls[3].sessionRole).toBe("debate-review-1");
   });
@@ -233,7 +233,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     const result = await session.run("review prompt");
     expect(result.outcome).toBe("passed");
     expect(result.debaters).toEqual(["claude"]);
-    expect(runCalls.some((c) => c.prompt === "Close this debate session." && c.keepSessionOpen === false)).toBe(true);
+    expect(runCalls.some((c) => c.prompt === "Close this debate session." && c.keepOpen === false)).toBe(true);
   });
 });
 
@@ -278,7 +278,7 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
     // The synthesis resolver's complete() should have been called with the synthesis sessionName.
     const synthesisCall = completeCalls.find((c) => c.opts !== undefined);
     expect(synthesisCall).toBeDefined();
-    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "synthesis");
+    const expectedSessionName = computeAcpHandle(workdir, featureName, storyId, "synthesis");
     expect(synthesisCall?.opts?.sessionName).toBe(expectedSessionName);
   });
 });

@@ -103,7 +103,7 @@ const MOCK_CONFIG = {
 // ---------------------------------------------------------------------------
 
 describe("ReviewerSession.resolveDebate()", () => {
-  test("calls agent.run() with keepSessionOpen: true and sessionRole: reviewer", async () => {
+  test("calls agent.run() with keepOpen: true and sessionRole: reviewer", async () => {
     const runFn = makeRunFn(PASSING_RESPONSE);
     const session = createReviewerSession(makeAdapter(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
@@ -111,7 +111,7 @@ describe("ReviewerSession.resolveDebate()", () => {
 
     expect(runFn).toHaveBeenCalledTimes(1);
     const opts = (runFn as ReturnType<typeof mock>).mock.calls[0][0] as AgentRunOptions;
-    expect(opts.keepSessionOpen).toBe(true);
+    expect(opts.keepOpen).toBe(true);
     expect(opts.sessionRole).toBe("reviewer");
     expect(opts.pipelineStage).toBe("review");
   });

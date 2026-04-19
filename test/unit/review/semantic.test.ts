@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildSessionName } from "../../../src/agents/acp/adapter";
+import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentResult } from "../../../src/agents/types";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
@@ -902,63 +902,74 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     expect(agent.complete).not.toHaveBeenCalled();
   });
 
-  test("agent.run() receives acpSessionName targeting own reviewer-semantic session (#414)", async () => {
+  test("agent.run() receives sessionRole='reviewer-semantic' and featureName for own session (#414)", async () => {
     const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
     const workdir = "/my/project";
     const featureName = "my-feature";
-    const expectedSession = buildSessionName(workdir, featureName, STORY.id, "reviewer-semantic");
 
     await runSemanticReview(workdir, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, featureName);
 
     expect(agent.run).toHaveBeenCalled();
     const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.acpSessionName).toBe(expectedSession);
+    // The adapter auto-derives the session handle from featureName + storyId + sessionRole.
+    expect(runOpts.sessionRole).toBe("reviewer-semantic");
+    expect(runOpts.featureName).toBe(featureName);
+    // Verify computeAcpHandle would derive the expected session name
+    const expectedSession = computeAcpHandle(workdir, featureName, STORY.id, "reviewer-semantic");
+    expect(expectedSession).toMatch(/^nax-[a-f0-9]+-my-feature-.+-reviewer-semantic$/);
   });
 
-  test("agent.run() initial call uses keepSessionOpen: true (session kept open for JSON retry)", async () => {
+  test("agent.run() initial call uses keepOpen: true (session kept open for JSON retry)", async () => {
     const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
     expect(agent.run).toHaveBeenCalled();
     const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.keepSessionOpen).toBe(true);
+    expect(runOpts.keepOpen).toBe(true);
   });
 
-  test("acpSessionName encodes workdir hash in session name", async () => {
+  test("session handle encodes workdir hash in session name (via computeAcpHandle)", async () => {
     const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
     const workdirA = "/project/alpha";
     const workdirB = "/project/beta";
-    const sessionA = buildSessionName(workdirA, "feat", STORY.id, "reviewer-semantic");
-    const sessionB = buildSessionName(workdirB, "feat", STORY.id, "reviewer-semantic");
+    const sessionA = computeAcpHandle(workdirA, "feat", STORY.id, "reviewer-semantic");
+    const sessionB = computeAcpHandle(workdirB, "feat", STORY.id, "reviewer-semantic");
 
     await runSemanticReview(workdirA, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "feat");
     const runOptsA = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
 
-    expect(runOptsA.acpSessionName).toBe(sessionA);
-    expect(runOptsA.acpSessionName).not.toBe(sessionB);
+    // The derived handle for workdirA should differ from workdirB
+    expect(sessionA).not.toBe(sessionB);
+    // The caller passes featureName and storyId so adapter can derive the correct handle
+    expect(runOptsA.featureName).toBe("feat");
+    expect(runOptsA.storyId).toBe(STORY.id);
   });
 
-  test("acpSessionName encodes featureName in session name", async () => {
+  test("session handle encodes featureName in session name (via computeAcpHandle)", async () => {
     const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
     const featureName = "semantic-continuity";
-    const expectedSession = buildSessionName("/tmp/wd", featureName, STORY.id, "reviewer-semantic");
+    const expectedSession = computeAcpHandle("/tmp/wd", featureName, STORY.id, "reviewer-semantic");
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, featureName);
 
     const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.acpSessionName).toBe(expectedSession);
+    // Adapter derives session from featureName; verify correct featureName is passed
+    expect(runOpts.featureName).toBe(featureName);
+    expect(expectedSession).toContain("semantic-continuity");
   });
 
-  test("acpSessionName encodes storyId in session name", async () => {
+  test("session handle encodes storyId in session name (via computeAcpHandle)", async () => {
     const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
     const storyWithDifferentId: SemanticStory = { ...STORY, id: "US-999" };
-    const expectedSession = buildSessionName("/tmp/wd", "feat", "US-999", "reviewer-semantic");
+    const expectedSession = computeAcpHandle("/tmp/wd", "feat", "US-999", "reviewer-semantic");
 
     await runSemanticReview("/tmp/wd", "abc123", storyWithDifferentId, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "feat");
 
     const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.acpSessionName).toBe(expectedSession);
+    // Adapter derives session from storyId; verify correct storyId is passed
+    expect(runOpts.storyId).toBe("US-999");
+    expect(expectedSession).toContain("us-999");
   });
 
   test("extracts rawResponse from AgentRunResult.output field — passed=true", async () => {

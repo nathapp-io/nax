@@ -1,5 +1,5 @@
 /**
- * Tests for session-runner.ts — keepSessionOpen for implementer role.
+ * Tests for session-runner.ts — keepOpen for implementer role.
  *
  * Uses injectable _sessionRunnerDeps instead of mock.module() to avoid
  * permanent module replacement that contaminates other test files.
@@ -99,40 +99,40 @@ afterEach(() => {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("session-runner implementer keepSessionOpen", () => {
-  test("implementer sets keepSessionOpen=true when rectification is enabled", async () => {
+describe("session-runner implementer keepOpen", () => {
+  test("implementer sets keepOpen=true when rectification is enabled", async () => {
     const agent = makeAgent();
     const config = makeConfig(true);
 
     await runTddSession("implementer", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
 
-    expect(agent.capturedOpts?.keepSessionOpen).toBe(true);
+    expect(agent.capturedOpts?.keepOpen).toBe(true);
   });
 
-  test("implementer sets keepSessionOpen=false when rectification is disabled", async () => {
+  test("implementer sets keepOpen=false when rectification is disabled", async () => {
     const agent = makeAgent();
     const config = makeConfig(false);
 
     await runTddSession("implementer", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
 
-    expect(agent.capturedOpts?.keepSessionOpen).toBe(false);
+    expect(agent.capturedOpts?.keepOpen).toBe(false);
   });
 
-  test("test-writer never sets keepSessionOpen regardless of rectification config", async () => {
+  test("test-writer never sets keepOpen regardless of rectification config", async () => {
     const agent = makeAgent();
     const config = makeConfig(true);
 
     await runTddSession("test-writer", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
 
-    expect(agent.capturedOpts?.keepSessionOpen).toBeFalsy();
+    expect(agent.capturedOpts?.keepOpen).toBeFalsy();
   });
 
-  test("verifier never sets keepSessionOpen regardless of rectification config", async () => {
+  test("verifier never sets keepOpen regardless of rectification config", async () => {
     const agent = makeAgent();
     const config = makeConfig(true);
 
     await runTddSession("verifier", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
 
-    expect(agent.capturedOpts?.keepSessionOpen).toBeFalsy();
+    expect(agent.capturedOpts?.keepOpen).toBeFalsy();
   });
 });

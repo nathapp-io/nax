@@ -4,7 +4,7 @@
  * Covers acceptance criteria:
  * 1. executeSourceFix() receives agent adapter via parameter (never calls bare getAgent())
  * 2. executeSourceFix() calls agent.run() with sessionRole 'source-fix'
- * 3. Session name follows pattern nax-<hash>-<feature>-<storyId>-source-fix via buildSessionName()
+ * 3. Session name follows pattern nax-<hash>-<feature>-<storyId>-source-fix via computeAcpHandle()
  * 4. executeSourceFix() resolves fixModel via resolveModelForAgent() — never passes raw tier
  * 5. executeSourceFix() includes failing test output and diagnosis reasoning in prompt
  * 6. executeSourceFix() does NOT use pipeline — calls adapter.run() directly
@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { executeSourceFix } from "../../../src/acceptance/fix-executor";
 import type { DiagnosisResult } from "../../../src/acceptance/types";
-import { buildSessionName } from "../../../src/agents/acp/adapter";
+import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/schema";
@@ -213,14 +213,14 @@ describe("AC-2: executeSourceFix calls agent.run() with sessionRole 'source-fix'
 // ---------------------------------------------------------------------------
 
 describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix pattern", () => {
-  test("buildSessionName returns correct pattern for source-fix session", () => {
-    const sessionName = buildSessionName("/tmp/test-workdir", "my-feature", "US-001", "source-fix");
+  test("computeAcpHandle returns correct pattern for source-fix session", () => {
+    const sessionName = computeAcpHandle("/tmp/test-workdir", "my-feature", "US-001", "source-fix");
     const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
     expect(sessionName).toBe(`nax-${hash}-my-feature-us-001-source-fix`);
     expect(sessionName).toMatch(/^nax-[a-f0-9]+-.+-\d+-source-fix$/);
   });
 
-  test("executeSourceFix uses buildSessionName with 'source-fix' role", async () => {
+  test("executeSourceFix passes featureName, storyId, and sessionRole='source-fix' to adapter", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -234,11 +234,13 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix p
       acceptanceTestPath: "/tmp/test/acceptance.test.ts",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    const expectedSessionName = buildSessionName("/tmp/test-workdir", "test-feature", "US-001", "source-fix");
-    expect(runCall.acpSessionName).toBe(expectedSessionName);
+    // The adapter auto-derives the session handle from featureName + storyId + sessionRole.
+    expect(runCall.sessionRole).toBe("source-fix");
+    expect(runCall.featureName).toBe("test-feature");
+    expect(runCall.storyId).toBe("US-001");
   });
 
-  test("session name includes storyId when provided", async () => {
+  test("session includes storyId when provided (via featureName+storyId+sessionRole combo)", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -252,11 +254,11 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix p
       acceptanceTestPath: "/tmp/test/acceptance.test.ts",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.acpSessionName).toContain("us-042");
-    expect(runCall.acpSessionName).toContain("source-fix");
+    expect(runCall.storyId).toBe("US-042");
+    expect(runCall.sessionRole).toBe("source-fix");
   });
 
-  test("session name is visible in acpx list when protocol is ACP", async () => {
+  test("session name is visible in acpx list when protocol is ACP (adapter derives handle from featureName+storyId+sessionRole)", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     expect(config.agent?.protocol).toBe("acp");
@@ -271,7 +273,10 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix p
       acceptanceTestPath: "/tmp/test/acceptance.test.ts",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-source-fix$/);
+    // Verify the adapter will derive a correct session name via computeAcpHandle
+    const expectedName = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "source-fix");
+    expect(expectedName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-source-fix$/);
+    expect(runCall.featureName).toBe("test-feature");
   });
 });
 
@@ -563,10 +568,14 @@ describe("AC-8: When config.agent.protocol is ACP, session appears in acpx list"
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
     const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
-    expect(runCall.acpSessionName).toBe(`nax-${hash}-my-feature-us-001-source-fix`);
+    // The adapter auto-derives the session handle; verify the derivation formula is correct
+    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "my-feature", "US-001", "source-fix");
+    expect(expectedHandle).toBe(`nax-${hash}-my-feature-us-001-source-fix`);
+    expect(runCall.featureName).toBe("my-feature");
+    expect(runCall.sessionRole).toBe("source-fix");
   });
 
-  test("ACP protocol ensures session appears in acpx list via acpSessionName", async () => {
+  test("ACP protocol ensures session appears in acpx list (adapter derives handle from featureName+storyId+sessionRole)", async () => {
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     config.agent = { protocol: "acp" };
@@ -581,7 +590,10 @@ describe("AC-8: When config.agent.protocol is ACP, session appears in acpx list"
       acceptanceTestPath: "/tmp/test/acceptance.test.ts",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-source-fix$/);
+    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "source-fix");
+    expect(expectedHandle).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-source-fix$/);
+    expect(runCall.featureName).toBe("test-feature");
+    expect(runCall.sessionRole).toBe("source-fix");
   });
 });
 
@@ -722,12 +734,15 @@ describe("executeTestFix()", () => {
     expect(calls[0]?.[0].sessionRole).toBe("test-fix");
   });
 
-  test("session name follows nax-<hash>-<feature>-<storyId>-test-fix pattern", async () => {
+  test("session name follows nax-<hash>-<feature>-<storyId>-test-fix pattern (adapter derives handle)", async () => {
     const agent = makeMockAgentAdapter();
     await executeTestFix(agent, makeTestFixOptions());
     const calls = getRunMockCalls(agent);
-    const expectedName = buildSessionName("/tmp/workdir", "test-feature", "US-001", "test-fix");
-    expect(calls[0]?.[0].acpSessionName).toBe(expectedName);
+    // Adapter auto-derives session handle from featureName + storyId + sessionRole
+    const expectedName = computeAcpHandle("/tmp/workdir", "test-feature", "US-001", "test-fix");
+    expect(expectedName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-test-fix$/);
+    expect(calls[0]?.[0].sessionRole).toBe("test-fix");
+    expect(calls[0]?.[0].featureName).toBe("test-feature");
   });
 
   test("resolves fixModel via resolveModelForAgent()", async () => {
