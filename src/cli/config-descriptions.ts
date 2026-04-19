@@ -21,10 +21,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   autoMode:
     "Auto mode configuration for agent orchestration. Enables multi-agent routing with model tier selection per task complexity and escalation on failures.",
   "autoMode.enabled": "Enable automatic agent selection and escalation",
-  "autoMode.defaultAgent":
-    "Deprecated — use agent.default instead (see ADR-012). Default agent used for all AI operations.",
-  "autoMode.fallbackOrder":
-    'Fallback order for per-agent selection when the primary agent is rate-limited, unavailable, or fails. Specifies which agents in the per-agent model map to try in sequence. Example: ["claude", "codex"] means try Claude first, then Copilot. Each agent must have tiers defined in the models per-agent map.',
+  "agent.default": "Default agent used when no routing override applies (e.g., 'claude', 'codex', 'gemini').",
+  "agent.fallback": "Agent fallback configuration — automatic agent swap on primary failure.",
+  "agent.fallback.map":
+    'Keyed fallback chain: primary agent → ordered list of candidates to try on availability failure. Example: { "claude": ["codex", "gemini"] }',
+  "agent.fallback.enabled": "Enable automatic fallback to candidate agents on primary failure.",
+  "agent.fallback.maxHopsPerStory": "Maximum number of agent swaps per story (default 2).",
   "autoMode.complexityRouting":
     "Model tier routing rules mapped to story complexity levels. Determines which model (fast/balanced/powerful) to use based on task complexity: simple → fast, medium → balanced, complex → powerful, expert → powerful.",
   "autoMode.complexityRouting.simple": "Model tier for simple tasks (low complexity, straightforward changes)",
@@ -250,15 +252,14 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "debate.stages.plan.resolver": "Resolver configuration — how debate outcomes are determined",
   "debate.stages.plan.resolver.type":
     "Resolver strategy: 'synthesis' (LLM synthesises all outputs) | 'majority-fail-closed' (majority vote, ties fail) | 'majority-fail-open' (majority vote, ties pass) | 'custom'",
-  "debate.stages.plan.resolver.agent":
-    "Agent used as resolver — resolved from config.autoMode.defaultAgent when absent",
+  "debate.stages.plan.resolver.agent": "Agent used as resolver — resolved from config.agent.default when absent",
   "debate.stages.plan.resolver.tieBreaker": "Tie-breaker strategy when votes are tied",
   "debate.stages.plan.resolver.maxPromptTokens": "Max prompt tokens passed to the resolver agent",
   "debate.stages.plan.sessionMode":
     "Session mode: 'stateful' (agents maintain context across rounds) | 'one-shot' (fresh session per round)",
   "debate.stages.plan.rounds": "Number of debate rounds (min: 1)",
   "debate.stages.plan.debaters":
-    "Optional array of debater agents (min 2 entries). Resolved from config.autoMode.defaultAgent when absent.",
+    "Optional array of debater agents (min 2 entries). Resolved from config.agent.default when absent.",
   "debate.stages.plan.debaters[].agent": "Agent name (e.g. 'claude', 'opencode')",
   "debate.stages.plan.debaters[].model":
     "Optional model override — resolved from config.models.fast at runtime when absent",

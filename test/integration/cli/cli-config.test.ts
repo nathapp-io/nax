@@ -6,8 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configCommand } from "../../../src/cli/config";
 import { loadConfig } from "../../../src/config/loader";
@@ -614,8 +613,10 @@ describe("Config Command", () => {
       writeFileSync(
         join(naxDir, "config.json"),
         JSON.stringify({
-          autoMode: {
-            fallbackOrder: ["codex", "claude"],
+          agent: {
+            fallback: {
+              map: { codex: ["claude"], claude: ["codex"] },
+            },
           },
         }),
       );
@@ -627,9 +628,8 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Should show array field
-      expect(output).toContain("autoMode.fallbackOrder");
-      expect(output).toContain("[...2]"); // Compact array format
+      // Should show nested object field
+      expect(output).toContain("agent.fallback.map");
     });
 
     test("mutually exclusive with --explain", async () => {
