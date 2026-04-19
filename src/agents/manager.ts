@@ -40,8 +40,7 @@ export class AgentManager implements IAgentManager {
   }
 
   getDefault(): string {
-    // config.agent?.default is added in Task 8 — cast until then (Phase-1 accommodation)
-    const fromAgent = (this._config as { agent?: { default?: string } } & NaxConfig).agent?.default;
+    const fromAgent = this._config.agent?.default;
     if (typeof fromAgent === "string" && fromAgent.length > 0) return fromAgent;
     return this._config.autoMode.defaultAgent;
   }

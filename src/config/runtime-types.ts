@@ -691,12 +691,30 @@ export interface PromptAuditConfig {
   dir?: string;
 }
 
+/** Agent fallback configuration */
+export interface AgentFallbackConfig {
+  /** Whether agent fallback is enabled (default: false) */
+  enabled?: boolean;
+  /** Fallback map: agent name → ordered list of fallback agent names */
+  map?: Record<string, string[]>;
+  /** Maximum fallback hops per story (default: 2, min 1, max 10) */
+  maxHopsPerStory?: number;
+  /** Whether to fall back on quality failure (default: false) */
+  onQualityFailure?: boolean;
+  /** Whether to rebuild context on fallback (default: true) */
+  rebuildContext?: boolean;
+}
+
 /** Agent protocol configuration (ACP-003) */
 export interface AgentConfig {
   /** Protocol to use for agent communication (always 'acp') */
   protocol?: "acp";
-  /** Max interaction turns when interactionBridge is active (default: 10) */
+  /** Default agent name to use (default: 'claude') */
+  default?: string;
+  /** Max interaction turns when interactionBridge is active (default: 20) */
   maxInteractionTurns?: number;
   /** Prompt audit — write every ACP-bound prompt to a file for auditing. */
   promptAudit?: PromptAuditConfig;
+  /** Agent fallback configuration */
+  fallback?: AgentFallbackConfig;
 }

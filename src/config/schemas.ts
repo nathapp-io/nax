@@ -725,10 +725,26 @@ const PromptAuditConfigSchema = z.object({
   dir: z.string().optional(),
 });
 
+const AgentFallbackConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  map: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
+  maxHopsPerStory: z.number().int().min(1).max(10).default(2),
+  onQualityFailure: z.boolean().default(false),
+  rebuildContext: z.boolean().default(true),
+});
+
 const AgentConfigSchema = z.object({
   protocol: z.literal("acp").default("acp"),
-  maxInteractionTurns: z.number().int().min(1).max(100).default(10),
+  default: z.string().trim().min(1, "agent.default must be non-empty").default("claude"),
+  maxInteractionTurns: z.number().int().min(1).max(100).default(20),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
+  fallback: AgentFallbackConfigSchema.default({
+    enabled: false,
+    map: {},
+    maxHopsPerStory: 2,
+    onQualityFailure: false,
+    rebuildContext: true,
+  }),
 });
 
 const PrecheckConfigSchema = z.object({
@@ -1087,8 +1103,10 @@ export const NaxConfigSchema = z
     }),
     agent: AgentConfigSchema.optional().default({
       protocol: "acp",
-      maxInteractionTurns: 10,
+      default: "claude",
+      maxInteractionTurns: 20,
       promptAudit: { enabled: false },
+      fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
     }),
     precheck: PrecheckConfigSchema.optional().default({
       storySizeGate: {
