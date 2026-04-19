@@ -16,6 +16,7 @@ import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
+import { RectifierPromptBuilder } from "../../prompts";
 import { runThreeSessionTddFromCtx } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -23,12 +24,6 @@ import { isAmbiguousOutput, routeTddFailure } from "./execution-helpers";
 
 // Re-export helpers so existing importers continue to work.
 export { isAmbiguousOutput, resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
-
-function buildSwapPrompt(basePrompt: string, pushMarkdown?: string): string {
-  const trimmed = pushMarkdown?.trim();
-  if (!trimmed) return basePrompt;
-  return `${trimmed}\n\n${basePrompt}`;
-}
 
 export const executionStage: PipelineStage = {
   name: "execution",
@@ -234,7 +229,7 @@ export const executionStage: PipelineStage = {
                   });
                 }
               }
-              prompt = buildSwapPrompt(ctx.prompt ?? "", workingBundle.pushMarkdown);
+              prompt = RectifierPromptBuilder.swapHandoff(ctx.prompt ?? "", workingBundle.pushMarkdown);
             }
 
             const session = failure
