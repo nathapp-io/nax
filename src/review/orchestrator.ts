@@ -279,6 +279,7 @@ export class ReviewOrchestrator {
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
             contextBundles?.semantic,
+            projectDir,
           ),
           _orchestratorDeps.runAdversarialReview(
             workdir,
@@ -292,6 +293,7 @@ export class ReviewOrchestrator {
             reviewConfig.blockingThreshold,
             featureContextMarkdown,
             contextBundles?.adversarial,
+            projectDir,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
