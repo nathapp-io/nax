@@ -34,6 +34,8 @@ export interface SequentialExecutionContext {
   logFilePath?: string;
   /** Run-level SessionManager shared across all iterations in this run. */
   sessionManager?: ISessionManager;
+  /** Per-run AgentManager (ADR-012). Set by runner.ts after registry creation. */
+  agentManager?: import("../agents").IAgentManager;
   runId: string;
   startTime: number;
   batchPlan: StoryBatch[];
