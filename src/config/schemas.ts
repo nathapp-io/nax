@@ -115,6 +115,21 @@ const smartTestRunnerFieldSchema = z
   }, SmartTestRunnerConfigSchema)
   .default(SMART_TEST_RUNNER_DEFAULT);
 
+const WorktreeDependenciesConfigSchema = z
+  .object({
+    mode: z.enum(["inherit", "provision", "off"]).default("inherit"),
+    setupCommand: z.string().nullable().default(null),
+  })
+  .superRefine((value, ctx) => {
+    if (value.mode !== "provision" && value.setupCommand !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["setupCommand"],
+        message: "execution.worktreeDependencies.setupCommand requires mode 'provision'",
+      });
+    }
+  });
+
 const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -151,6 +166,10 @@ const ExecutionConfigSchema = z.object({
     )
     .optional(),
   smartTestRunner: smartTestRunnerFieldSchema,
+  worktreeDependencies: WorktreeDependenciesConfigSchema.default({
+    mode: "inherit",
+    setupCommand: null,
+  }),
   storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
 });
 
@@ -931,6 +950,10 @@ export const NaxConfigSchema = z
       dangerouslySkipPermissions: true,
       permissionProfile: "unrestricted",
       smartTestRunner: true,
+      worktreeDependencies: {
+        mode: "inherit",
+        setupCommand: null,
+      },
       storyIsolation: "shared",
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     quality: QualityConfigSchema.default({

@@ -13,6 +13,8 @@ export type FailureCategory =
   | "verifier-rejected"
   /** Greenfield project with no test files — TDD not applicable (BUG-010) */
   | "greenfield-no-tests"
+  /** Worktree dependency preparation failed before pipeline execution started */
+  | "dependency-prep"
   | "runtime-crash";
 
 /** Isolation verification result */
