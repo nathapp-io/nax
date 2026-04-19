@@ -118,7 +118,7 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
   let response: string;
 
   try {
-    const completeResult = await _refineDeps.adapter.complete(prompt, {
+    const completeOpts = {
       jsonMode: true,
       maxTokens: 4096,
       model: resolvedModel.modelDef.model,
@@ -128,7 +128,10 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
       workdir,
       sessionRole: "refine",
       timeoutMs: config.acceptance?.timeoutMs ?? 120_000,
-    });
+    } as const;
+    const completeResult = context.agentManager
+      ? (await context.agentManager.completeWithFallback(prompt, completeOpts)).result
+      : await _refineDeps.adapter.complete(prompt, completeOpts);
     const costUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
     response = typeof completeResult === "string" ? completeResult : completeResult.output;
 

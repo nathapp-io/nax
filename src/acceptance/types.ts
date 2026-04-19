@@ -4,6 +4,7 @@
  * Types for generating acceptance tests from spec.md acceptance criteria.
  */
 
+import type { IAgentManager } from "../agents/manager-types";
 import type { AgentAdapter } from "../agents/types";
 import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
@@ -51,6 +52,8 @@ export interface RefinementContext {
   storyTitle?: string;
   /** Story description — additional context so the refiner avoids guessing function names */
   storyDescription?: string;
+  /** AgentManager for completeWithFallback — when provided, replaces direct adapter.complete() */
+  agentManager?: IAgentManager;
 }
 
 /**
@@ -113,6 +116,8 @@ export interface GenerateFromPRDOptions {
   testFramework?: string;
   /** Agent adapter to use for test generation — overrides _generatorPRDDeps.adapter */
   adapter?: AgentAdapter;
+  /** AgentManager for completeWithFallback — when provided, replaces direct adapter.complete() */
+  agentManager?: IAgentManager;
   /** Target language for test generation (e.g. 'go', 'python', 'rust') — defaults to TypeScript */
   language?: string;
   /** Implementation context — files to include in the prompt so the generator writes tests against the real API */
