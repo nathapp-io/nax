@@ -142,6 +142,7 @@ export async function runAdversarialReview(
   blockingThreshold?: "error" | "warning" | "info",
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
+  projectDir?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();

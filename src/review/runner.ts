@@ -153,8 +153,9 @@ async function runCheck(
   command: string,
   workdir: string,
   storyId?: string,
+  env?: Record<string, string | undefined>,
 ): Promise<ReviewCheckResult> {
-  const result = await runQualityCommand({ commandName: check, command, workdir, storyId });
+  const result = await runQualityCommand({ commandName: check, command, workdir, storyId, env });
   return {
     check,
     command: result.command,
@@ -221,6 +222,8 @@ export async function runReview(
     semantic?: import("../context/engine").ContextBundle;
     adversarial?: import("../context/engine").ContextBundle;
   },
+  projectDir?: string,
+  env?: Record<string, string | undefined>,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -305,6 +308,7 @@ export async function runReview(
         config.blockingThreshold,
         featureContextMarkdown,
         contextBundles?.semantic,
+        projectDir,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
@@ -346,6 +350,7 @@ export async function runReview(
         config.blockingThreshold,
         featureContextMarkdown,
         contextBundles?.adversarial,
+        projectDir,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
@@ -367,7 +372,7 @@ export async function runReview(
     }
 
     // Run the check
-    const result = await runCheck(checkName, command, workdir, storyId);
+    const result = await runCheck(checkName, command, workdir, storyId, env);
     checks.push(result);
 
     // Track first failure

@@ -70,7 +70,7 @@ describe("WorktreeManager", () => {
       expect(branchOutput).toContain(`nax/${storyId}`);
     });
 
-    test("symlinks node_modules from project root into worktree", async () => {
+    test("does not create a node_modules symlink in the worktree", async () => {
       const manager = new WorktreeManager();
       const storyId = "story-456";
 
@@ -82,13 +82,9 @@ describe("WorktreeManager", () => {
       await manager.create(projectRoot, storyId);
 
       const worktreePath = join(projectRoot, ".nax-wt", storyId);
-      const symlinkPath = join(worktreePath, "node_modules");
+      const nodeModulesInWorktree = join(worktreePath, "node_modules");
 
-      expect(existsSync(symlinkPath)).toBe(true);
-      // Check if it's a symlink by reading the link
-      const { lstatSync, readlinkSync } = await import("node:fs");
-      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
-      expect(readlinkSync(symlinkPath)).toBe(nodeModulesPath);
+      expect(existsSync(nodeModulesInWorktree)).toBe(false);
     });
 
     test("symlinks .env if present", async () => {

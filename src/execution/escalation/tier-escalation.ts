@@ -65,6 +65,7 @@ export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "p
       return "pause";
     case "session-failure":
     case "tests-failing":
+    case "dependency-prep":
       return "fail";
     default:
       // Exhaustive check: if a new FailureCategory is added, this will error

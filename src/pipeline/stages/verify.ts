@@ -195,6 +195,7 @@ export const verifyStage: PipelineStage = {
       workdir: ctx.workdir,
       command: effectiveCommand,
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+      env: ctx.worktreeDependencyContext?.env,
       acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,
     });
 

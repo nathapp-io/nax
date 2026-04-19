@@ -14,6 +14,12 @@ import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
+import type { WorktreeDependencyContext } from "../worktree/types";
+
+export const _parallelWorkerDeps = {
+  routeTask,
+  executeStoryInWorktree,
+};
 
 /**
  * Execute a single story in its worktree
@@ -21,6 +27,7 @@ import { captureGitRef, isGitRefValid } from "../utils/git";
 export async function executeStoryInWorktree(
   story: UserStory,
   worktreePath: string,
+  dependencyContext: WorktreeDependencyContext,
   context: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">,
   routing: RoutingResult,
   eventEmitter?: PipelineEventEmitter,
@@ -49,7 +56,8 @@ export async function executeStoryInWorktree(
       story,
       stories: [story],
       projectDir: context.projectDir,
-      workdir: story.workdir ? join(worktreePath, story.workdir) : worktreePath,
+      workdir: dependencyContext.cwd ?? (story.workdir ? join(worktreePath, story.workdir) : worktreePath),
+      worktreeDependencyContext: dependencyContext,
       routing,
       storyGitRef: storyGitRef ?? undefined,
     };
@@ -103,6 +111,7 @@ export async function executeParallelBatch(
   config: NaxConfig,
   context: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">,
   worktreePaths: Map<string, string>,
+  dependencyContexts: Map<string, WorktreeDependencyContext>,
   maxConcurrency: number,
   eventEmitter?: PipelineEventEmitter,
   // #93: Per-story effective configs (PKG-003) — if absent falls back to context.config
@@ -130,20 +139,35 @@ export async function executeParallelBatch(
       });
       continue;
     }
-
-    const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
+    const dependencyContext = dependencyContexts.get(story.id);
+    if (!dependencyContext) {
+      results.failed.push({
+        story,
+        error: "Worktree dependency context not prepared",
+      });
+      continue;
+    }
 
     // #93: Override config with per-story resolved config (PKG-003) if available
     const storyConfig = storyEffectiveConfigs?.get(story.id);
     const storyContext = storyConfig ? { ...context, config: storyConfig } : context;
+    const routing = _parallelWorkerDeps.routeTask(
+      story.title,
+      story.description,
+      story.acceptanceCriteria,
+      story.tags,
+      storyConfig ?? config,
+    );
 
-    const executePromise = executeStoryInWorktree(
-      story,
-      worktreePath,
-      storyContext,
-      routing as RoutingResult,
-      eventEmitter,
-    )
+    const executePromise = _parallelWorkerDeps
+      .executeStoryInWorktree(
+        story,
+        worktreePath,
+        dependencyContext,
+        storyContext,
+        routing as RoutingResult,
+        eventEmitter,
+      )
       .then((result) => {
         results.totalCost += result.cost;
         results.storyCosts.set(story.id, result.cost);
