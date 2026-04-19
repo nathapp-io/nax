@@ -23,5 +23,6 @@ export type {
   AgentRunOutcome,
   AgentCompleteOutcome,
   AgentManagerEvents,
+  AgentManagerEventName,
   AgentRunRequest,
 } from "./manager-types";
