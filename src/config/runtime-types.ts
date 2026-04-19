@@ -25,10 +25,6 @@ export interface EscalationEntry {
 /** Auto mode configuration */
 export interface AutoModeConfig {
   enabled: boolean;
-  /** Default agent to use */
-  defaultAgent: string;
-  /** Fallback order when agent is rate-limited */
-  fallbackOrder: string[];
   /** Model tier per complexity */
   complexityRouting: Record<Complexity, ModelTier>;
   /** Escalation config */

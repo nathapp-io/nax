@@ -493,7 +493,8 @@ program
 
     // Override config from CLI
     if (options.agent) {
-      config.autoMode.defaultAgent = options.agent;
+      config.agent ??= {};
+      config.agent.default = options.agent;
     }
     config.execution.maxIterations = Number.parseInt(options.maxIterations, 10);
 

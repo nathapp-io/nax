@@ -56,8 +56,6 @@ const TierConfigSchema = z.object({
 
 const AutoModeConfigSchema = z.object({
   enabled: z.boolean(),
-  defaultAgent: z.string().trim().min(1, "defaultAgent must be non-empty"),
-  fallbackOrder: z.array(z.string()),
   complexityRouting: z.object({
     simple: ModelTierSchema,
     medium: ModelTierSchema,
@@ -845,8 +843,6 @@ export const NaxConfigSchema = z
     }),
     autoMode: AutoModeConfigSchema.default({
       enabled: true,
-      defaultAgent: "claude",
-      fallbackOrder: ["claude"],
       complexityRouting: {
         simple: "fast",
         medium: "balanced",
