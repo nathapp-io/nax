@@ -134,7 +134,7 @@ export class AgentManager implements IAgentManager {
     const MAX_RATE_LIMIT_RETRIES = 3;
     let rateLimitRetry = 0;
     let currentBundle = request.bundle;
-    let currentFailure: import("../context/engine/types").AdapterFailure | undefined;
+    let currentFailure: AdapterFailure | undefined;
     let finalPrompt: string | undefined;
 
     while (true) {
