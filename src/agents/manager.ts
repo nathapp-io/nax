@@ -119,6 +119,10 @@ export class AgentManager implements IAgentManager {
   nextCandidate(current: string, hopsSoFar: number): string | null {
     const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
     const candidates = (map[current] ?? []).filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
+    // Index by hopsSoFar: works correctly when `current` stays the default agent throughout the chain.
+    // Multi-hop chains (claude→codex, codex→gemini with separate map entries) are not yet supported —
+    // hop 1 would index map["codex"][1] and skip index 0. Operators should use a flat map for now:
+    // { claude: ["codex", "gemini"] }.
     return candidates[hopsSoFar] ?? null;
   }
 
@@ -203,6 +207,7 @@ export class AgentManager implements IAgentManager {
       };
       this.markUnavailable(currentAgent, adapterFailure);
       hopsSoFar += 1;
+      // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
       rateLimitRetry = 0;
 
       const hop: AgentFallbackRecord = {
@@ -288,6 +293,7 @@ export class AgentManager implements IAgentManager {
       this._emitter.emit("onSwapAttempt", hop);
 
       logger?.info("agent-manager", "complete() swap triggered", {
+        storyId: options.storyId,
         fromAgent: currentAgent,
         toAgent: next,
         hop: hopsSoFar,

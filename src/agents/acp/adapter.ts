@@ -565,6 +565,7 @@ export class AcpAgentAdapter implements AgentAdapter {
               outcome: "fail-rate-limit",
               retriable: true,
               message: error.message.slice(0, 500),
+              ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
             },
           };
         }
@@ -1000,6 +1001,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             outcome: "fail-rate-limit",
             retriable: true,
             message: error.message.slice(0, 500),
+            ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
           },
         };
       }
