@@ -1,6 +1,5 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
-import { resolveDefaultAgent } from "../agents";
 import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -178,7 +177,7 @@ export async function executeUnified(
               story: { id: story.id, title: story.title, status: story.status, attempts: story.attempts },
               workdir: ctx.workdir,
               modelTier,
-              agent: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+              agent: ctx.agentManager?.getDefault() ?? ctx.config.autoMode.defaultAgent,
               iteration: iterations,
             });
             logger?.info("story.start", `${story.title}`, {
@@ -280,7 +279,7 @@ export async function executeUnified(
               storyId: story.id,
               complexity: story.routing?.complexity ?? "medium",
               modelTier: story.routing?.modelTier ?? "balanced",
-              modelUsed: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+              modelUsed: ctx.agentManager?.getDefault() ?? ctx.config.autoMode.defaultAgent,
               attempts: 1,
               finalTier: story.routing?.modelTier ?? "balanced",
               success: true,
@@ -302,7 +301,7 @@ export async function executeUnified(
                 storyId: conflict.story.id,
                 complexity: conflict.story.routing?.complexity ?? "medium",
                 modelTier: conflict.story.routing?.modelTier ?? "balanced",
-                modelUsed: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+                modelUsed: ctx.agentManager?.getDefault() ?? ctx.config.autoMode.defaultAgent,
                 attempts: 1,
                 finalTier: conflict.story.routing?.modelTier ?? "balanced",
                 success: true,
@@ -374,7 +373,7 @@ export async function executeUnified(
             },
             workdir: ctx.workdir,
             modelTier,
-            agent: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+            agent: ctx.agentManager?.getDefault() ?? ctx.config.autoMode.defaultAgent,
             iteration: iterations,
           });
           logger?.info("story.start", `${singleStory.title}`, {
@@ -465,7 +464,7 @@ export async function executeUnified(
         },
         workdir: ctx.workdir,
         modelTier,
-        agent: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+        agent: ctx.agentManager?.getDefault() ?? ctx.config.autoMode.defaultAgent,
         iteration: iterations,
       });
       logger?.info("story.start", `${selection.story.title}`, {
