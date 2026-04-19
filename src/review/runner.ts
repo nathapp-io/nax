@@ -209,7 +209,6 @@ export async function runReview(
   executionConfig?: ExecutionConfig,
   qualityCommands?: QualityConfig["commands"],
   storyId?: string,
-  env?: Record<string, string | undefined>,
   storyGitRef?: string,
   story?: SemanticStory,
   modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
@@ -224,6 +223,7 @@ export async function runReview(
     adversarial?: import("../context/engine").ContextBundle;
   },
   projectDir?: string,
+  env?: Record<string, string | undefined>,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();

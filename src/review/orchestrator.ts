@@ -120,7 +120,6 @@ export class ReviewOrchestrator {
     executionConfig: NaxConfig["execution"],
     plugins?: PluginRegistry,
     storyGitRef?: string,
-    env?: Record<string, string | undefined>,
     scopePrefix?: string,
     qualityCommands?: NaxConfig["quality"]["commands"],
     storyId?: string,
@@ -134,6 +133,7 @@ export class ReviewOrchestrator {
     featureContextMarkdown?: string,
     contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle },
     projectDir?: string,
+    env?: Record<string, string | undefined>,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -184,7 +184,6 @@ export class ReviewOrchestrator {
         executionConfig,
         qualityCommands,
         storyId,
-        env,
         storyGitRef,
         story,
         modelResolver,
@@ -196,6 +195,7 @@ export class ReviewOrchestrator {
         featureContextMarkdown,
         contextBundles,
         projectDir,
+        env,
       );
     } else {
       // Always split: mechanical checks first, then LLM checks independently.
@@ -215,7 +215,6 @@ export class ReviewOrchestrator {
         executionConfig,
         qualityCommands,
         storyId,
-        env,
         storyGitRef,
         story,
         modelResolver,
@@ -227,6 +226,7 @@ export class ReviewOrchestrator {
         featureContextMarkdown,
         contextBundles,
         projectDir,
+        env,
       );
 
       // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
@@ -307,7 +307,6 @@ export class ReviewOrchestrator {
           executionConfig,
           qualityCommands,
           storyId,
-          env,
           storyGitRef,
           story,
           modelResolver,
@@ -318,6 +317,8 @@ export class ReviewOrchestrator {
           priorFailures,
           featureContextMarkdown,
           contextBundles,
+          undefined,
+          env,
         );
         llmCheckResults = llmResult.checks;
       }
@@ -492,7 +493,6 @@ export class ReviewOrchestrator {
       ctx.config.execution,
       ctx.plugins,
       ctx.storyGitRef,
-      ctx.worktreeDependencyContext?.env,
       ctx.story.workdir, // relative path for git diff scoping (unchanged)
       ctx.config.quality?.commands,
       ctx.story.id,
@@ -511,6 +511,7 @@ export class ReviewOrchestrator {
       ctx.featureContextMarkdown,
       contextBundles,
       ctx.projectDir,
+      ctx.worktreeDependencyContext?.env,
     );
   }
 }
