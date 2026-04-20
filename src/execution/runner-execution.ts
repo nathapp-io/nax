@@ -49,6 +49,8 @@ export interface RunnerExecutionOptions {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — passed to agent.run() to register child processes. */
   pidRegistry?: PidRegistry;
+  /** Shutdown abort signal (Issue 5). Threaded into pipeline ctx for agent.run cancellation. */
+  abortSignal?: AbortSignal;
   /** Interaction chain for cost/pre-merge triggers during sequential execution. */
   interactionChain?: InteractionChain | null;
   /** Run-level SessionManager shared across story iterations. */
@@ -163,6 +165,7 @@ export async function runExecutionPhase(
       parallelCount: options.parallel,
       agentGetFn: options.agentGetFn,
       pidRegistry: options.pidRegistry,
+      abortSignal: options.abortSignal,
       interactionChain: options.interactionChain,
       agentManager: options.agentManager,
       batchPlan,

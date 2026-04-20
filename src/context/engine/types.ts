@@ -29,14 +29,18 @@ export interface AdapterFailure {
   category: "availability" | "quality";
   /**
    * Machine-readable outcome code.
-   * availability: fail-quota | fail-service-down | fail-auth | fail-rate-limit
+   * availability: fail-quota | fail-service-down | fail-auth | fail-rate-limit | fail-aborted
    * quality:      fail-timeout | fail-adapter-error | fail-quality | fail-unknown
+   *
+   * `fail-aborted` — the run was cancelled via AgentRunOptions.abortSignal
+   * (shutdown in progress). Not retriable; fallback chains should not fire.
    */
   outcome:
     | "fail-quota"
     | "fail-service-down"
     | "fail-auth"
     | "fail-rate-limit"
+    | "fail-aborted"
     | "fail-timeout"
     | "fail-adapter-error"
     | "fail-quality"

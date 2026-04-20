@@ -136,6 +136,7 @@ export async function runTddSession(
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
   sessionBinding?: TddSessionBinding,
+  abortSignal?: AbortSignal,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
@@ -237,6 +238,7 @@ export async function runTddSession(
         })
       : undefined,
     interactionBridge,
+    abortSignal,
   });
 
   // #541: bind ACP protocolIds to the pre-created session descriptor so the

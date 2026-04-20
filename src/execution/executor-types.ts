@@ -44,6 +44,11 @@ export interface SequentialExecutionContext {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — register child PIDs so they can be killed on SIGTERM. */
   pidRegistry?: PidRegistry;
+  /**
+   * Shutdown abort signal (Issue 5 fix). Fires on first fatal signal; threaded
+   * into PipelineContext.abortSignal → AgentRunOptions.abortSignal.
+   */
+  abortSignal?: AbortSignal;
   /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
   parallelCount?: number;
 }

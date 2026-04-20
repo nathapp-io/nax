@@ -113,6 +113,9 @@ export class AgentManager implements IAgentManager {
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, bundle: ContextBundle | undefined): boolean {
     if (!failure) return false;
+    // Aborted runs (shutdown in progress) must not trigger fallback —
+    // swapping to another agent would spawn fresh work during teardown.
+    if (failure.outcome === "fail-aborted") return false;
     const fallback = this._config.agent?.fallback;
     if (!fallback?.enabled) return false;
     if (!bundle) return false;
@@ -194,8 +197,16 @@ export class AgentManager implements IAgentManager {
       const bundleForSwapCheck = updatedBundle ?? request.bundle;
 
       if (!this.shouldSwap(result.adapterFailure, hopsSoFar, bundleForSwapCheck)) {
-        // Preserve legacy rate-limit backoff when no swap candidates are available
+        // Preserve legacy rate-limit backoff when no swap candidates are available.
+        // #585 Path B: race the sleep against the shutdown signal — an abort during
+        // backoff settles within milliseconds instead of the full exponential wait.
         if (result.adapterFailure?.outcome === "fail-rate-limit" && rateLimitRetry < MAX_RATE_LIMIT_RETRIES) {
+          if (request.signal?.aborted) {
+            logger?.info("agent-manager", "Rate-limited backoff aborted — shutdown in progress", {
+              storyId: request.runOptions.storyId,
+            });
+            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+          }
           rateLimitRetry += 1;
           const backoffMs = 2 ** rateLimitRetry * 1000;
           logger?.info("agent-manager", "Rate-limited with no swap candidate — backing off", {
@@ -203,7 +214,10 @@ export class AgentManager implements IAgentManager {
             attempt: rateLimitRetry,
             backoffMs,
           });
-          await _agentManagerDeps.sleep(backoffMs);
+          await _agentManagerDeps.sleep(backoffMs, request.signal);
+          if (request.signal?.aborted) {
+            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+          }
           continue;
         }
         if (hopsSoFar > 0) {

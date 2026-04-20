@@ -46,6 +46,12 @@ export interface AgentRunRequest {
   bundle?: ContextBundle;
   sessionId?: string;
   /**
+   * Shutdown / cancellation signal (#585 Path B). When aborted, runWithFallback
+   * races the rate-limit backoff sleep against it and returns `fail-aborted`
+   * without issuing further hops. Fires on SIGTERM / SIGINT / user abort.
+   */
+  signal?: AbortSignal;
+  /**
    * Per-hop executor. When provided, replaces the internal adapter.run() call for every hop
    * (primary AND fallback). Called with:
    *   - agentName: which agent to use for this hop

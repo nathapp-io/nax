@@ -209,6 +209,7 @@ export async function executeUnified(
                 featureDir: ctx.featureDir,
                 agentGetFn: ctx.agentGetFn,
                 pidRegistry: ctx.pidRegistry,
+                abortSignal: ctx.abortSignal,
               },
               eventEmitter: ctx.eventEmitter,
               agentGetFn: ctx.agentGetFn,

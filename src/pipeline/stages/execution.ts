@@ -170,6 +170,7 @@ export const executionStage: PipelineStage = {
       projectDir: ctx.projectDir,
       maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
       pidRegistry: ctx.pidRegistry,
+      abortSignal: ctx.abortSignal,
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
       sessionRole: "implementer",
@@ -185,6 +186,7 @@ export const executionStage: PipelineStage = {
       ? ctx.agentManager.runWithFallback({
           runOptions: baseRunOptions,
           bundle: ctx.contextBundle,
+          signal: ctx.abortSignal,
           executeHop: async (agentName, bundle, failure) => {
             const hopAgent = (ctx.agentGetFn ?? _executionDeps.getAgent)(agentName);
             if (!hopAgent) {

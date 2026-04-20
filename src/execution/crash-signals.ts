@@ -1,5 +1,19 @@
 /**
  * Crash detection — Signal and exception handlers
+ *
+ * Idempotency contract (fix for v0.63.0-canary.8 Issue 5):
+ *   The first fatal signal/exception wins. Subsequent signals log once and
+ *   no-op until the process exits. Without this, a cascading SIGINT → SIGTERM
+ *   → SIGHUP sequence (common when Ctrl+C is hit in a terminal that then
+ *   hangs the child) would run the full shutdown path once per signal,
+ *   writing duplicate `run.complete` events, killing PIDs repeatedly, and
+ *   racing against in-flight ACP retry loops that spawn new processes mid
+ *   shutdown.
+ *
+ * AbortController contract:
+ *   On first signal the handler aborts `ctx.abortController` (if present) so
+ *   long-running awaits in onShutdown/agent.run can bail instead of spawning
+ *   new work during teardown.
  */
 
 import { getSafeLogger } from "../logger";
@@ -15,8 +29,18 @@ export interface SignalHandlerContext extends RunCompleteContext {
   pidRegistry?: PidRegistry;
   featureDir?: string;
   emitError?: (reason: string) => void;
-  /** Called during graceful shutdown (signal/exception) before process.exit — use to close ACP sessions etc. */
-  onShutdown?: () => Promise<void>;
+  /**
+   * Shared abort controller. The signal handler calls `.abort()` on the first
+   * fatal signal; consumers (onShutdown, in-flight agent.run) can observe
+   * `.signal.aborted` to stop issuing new work. Caller owns creation.
+   */
+  abortController?: AbortController;
+  /**
+   * Called during graceful shutdown (signal/exception) before process.exit —
+   * use to close ACP sessions, flush buffers, etc. The abort signal is passed
+   * through so long-running awaits can short-circuit.
+   */
+  onShutdown?: (abortSignal?: AbortSignal) => Promise<void>;
 }
 
 /**
@@ -32,21 +56,41 @@ function getSignalNumber(signal: NodeJS.Signals): number {
 }
 
 /**
- * Create signal handler
+ * Create signal handler.
+ *
+ * Returns a per-install handler that is idempotent: once a shutdown path has
+ * started, subsequent signals log and no-op.
  */
-function createSignalHandler(ctx: SignalHandlerContext): (signal: NodeJS.Signals) => Promise<void> {
+function createSignalHandler(
+  ctx: SignalHandlerContext,
+  state: { shuttingDown: boolean },
+): (signal: NodeJS.Signals) => Promise<void> {
   return async (signal: NodeJS.Signals) => {
+    const logger = getSafeLogger();
+
+    if (state.shuttingDown) {
+      logger?.warn("crash-recovery", `${signal} ignored — shutdown already in progress`, { signal });
+      return;
+    }
+    state.shuttingDown = true;
+
     const hardDeadline = setTimeout(() => {
       process.exit(128 + getSignalNumber(signal));
     }, 10_000);
     if (hardDeadline.unref) hardDeadline.unref();
 
-    const logger = getSafeLogger();
     logger?.error("crash-recovery", `Received ${signal}, shutting down...`, { signal });
+
+    // Abort in-flight awaits so onShutdown / agent.run can bail fast.
+    ctx.abortController?.abort();
+
+    // Freeze the PID registry so retry paths cannot register new processes
+    // during teardown.
+    ctx.pidRegistry?.freeze?.();
 
     // Close ACP sessions gracefully first (spawns are tracked by pidRegistry)
     if (ctx.onShutdown) {
-      await ctx.onShutdown().catch(() => {});
+      await ctx.onShutdown(ctx.abortController?.signal).catch(() => {});
     }
 
     // Kill any remaining processes (including hung session-close spawns)
@@ -66,23 +110,37 @@ function createSignalHandler(ctx: SignalHandlerContext): (signal: NodeJS.Signals
 }
 
 /**
- * Create uncaught exception handler
+ * Create uncaught exception handler.
+ *
+ * Shares the idempotency flag with signal handlers so an uncaughtException
+ * that follows (or precedes) a signal does not re-run the shutdown path.
  */
-function createUncaughtExceptionHandler(ctx: SignalHandlerContext): (error: Error) => Promise<void> {
+function createUncaughtExceptionHandler(
+  ctx: SignalHandlerContext,
+  state: { shuttingDown: boolean },
+): (error: Error) => Promise<void> {
   return async (error: Error) => {
     process.stderr.write(`\n[nax crash] Uncaught exception: ${error.message}\n${error.stack ?? ""}\n`);
     const logger = getSafeLogger();
+
+    if (state.shuttingDown) {
+      logger?.warn("crash-recovery", "Uncaught exception during shutdown — ignored", { error: error.message });
+      return;
+    }
+    state.shuttingDown = true;
+
     logger?.error("crash-recovery", "Uncaught exception", {
       error: error.message,
       stack: error.stack,
     });
 
-    // Close ACP sessions gracefully first (spawns are tracked by pidRegistry)
+    ctx.abortController?.abort();
+    ctx.pidRegistry?.freeze?.();
+
     if (ctx.onShutdown) {
-      await ctx.onShutdown().catch(() => {});
+      await ctx.onShutdown(ctx.abortController?.signal).catch(() => {});
     }
 
-    // Kill any remaining processes (including hung session-close spawns)
     if (ctx.pidRegistry) {
       await ctx.pidRegistry.killAll();
     }
@@ -102,24 +160,37 @@ function createUncaughtExceptionHandler(ctx: SignalHandlerContext): (error: Erro
 }
 
 /**
- * Create unhandled promise rejection handler
+ * Create unhandled promise rejection handler.
+ *
+ * Shares the idempotency flag with signal handlers.
  */
-function createUnhandledRejectionHandler(ctx: SignalHandlerContext): (reason: unknown) => Promise<void> {
+function createUnhandledRejectionHandler(
+  ctx: SignalHandlerContext,
+  state: { shuttingDown: boolean },
+): (reason: unknown) => Promise<void> {
   return async (reason: unknown) => {
     const error = reason instanceof Error ? reason : new Error(String(reason));
     process.stderr.write(`\n[nax crash] Unhandled rejection: ${error.message}\n${error.stack ?? ""}\n`);
     const logger = getSafeLogger();
+
+    if (state.shuttingDown) {
+      logger?.warn("crash-recovery", "Unhandled rejection during shutdown — ignored", { error: error.message });
+      return;
+    }
+    state.shuttingDown = true;
+
     logger?.error("crash-recovery", "Unhandled promise rejection", {
       error: error.message,
       stack: error.stack,
     });
 
-    // Close ACP sessions gracefully first (spawns are tracked by pidRegistry)
+    ctx.abortController?.abort();
+    ctx.pidRegistry?.freeze?.();
+
     if (ctx.onShutdown) {
-      await ctx.onShutdown().catch(() => {});
+      await ctx.onShutdown(ctx.abortController?.signal).catch(() => {});
     }
 
-    // Kill any remaining processes (including hung session-close spawns)
     if (ctx.pidRegistry) {
       await ctx.pidRegistry.killAll();
     }
@@ -139,14 +210,20 @@ function createUnhandledRejectionHandler(ctx: SignalHandlerContext): (reason: un
 }
 
 /**
- * Install signal and exception handlers, return cleanup function
+ * Install signal and exception handlers, return cleanup function.
+ *
+ * All fatal handlers share a single `shuttingDown` flag: the first one to
+ * fire runs the full teardown path, subsequent ones log and no-op. This
+ * prevents duplicate `run.complete` events and race-registered PIDs when a
+ * cascade of signals (SIGINT → SIGTERM → SIGHUP) arrives during shutdown.
  */
 export function installSignalHandlers(ctx: SignalHandlerContext): () => void {
   const logger = getSafeLogger();
+  const state = { shuttingDown: false };
 
-  const signalHandler = createSignalHandler(ctx);
-  const uncaughtExceptionHandler = createUncaughtExceptionHandler(ctx);
-  const unhandledRejectionHandler = createUnhandledRejectionHandler(ctx);
+  const signalHandler = createSignalHandler(ctx, state);
+  const uncaughtExceptionHandler = createUncaughtExceptionHandler(ctx, state);
+  const unhandledRejectionHandler = createUnhandledRejectionHandler(ctx, state);
 
   const sigtermHandler = () => signalHandler("SIGTERM");
   const sigintHandler = () => signalHandler("SIGINT");

@@ -109,6 +109,12 @@ export interface PipelineContext {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — passed through to agent.run() for child process registration. */
   pidRegistry?: PidRegistry;
+  /**
+   * Shutdown abort signal (Issue 5 fix).
+   * Fires on first fatal signal. Threaded into AgentRunOptions.abortSignal so
+   * in-flight adapter retry loops can stop spawning new work during teardown.
+   */
+  abortSignal?: AbortSignal;
   /** Interaction chain (optional, for human-in-the-loop triggers) */
   interaction?: InteractionChain;
   /** Constitution result (set by constitutionStage) */

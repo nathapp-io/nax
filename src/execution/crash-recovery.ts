@@ -45,8 +45,17 @@ export interface CrashRecoveryContext {
   getTotalStories?: () => number;
   getStoriesCompleted?: () => number;
   emitError?: (reason: string) => void;
-  /** Called during graceful shutdown before process.exit — use to close ACP sessions etc. */
-  onShutdown?: () => Promise<void>;
+  /**
+   * Shared abort controller (Issue 5). Signal handler calls `.abort()` on the
+   * first fatal signal so in-flight agent.run and onShutdown awaits can bail.
+   */
+  abortController?: AbortController;
+  /**
+   * Called during graceful shutdown before process.exit — use to close ACP
+   * sessions etc. Receives the abort signal so long-running awaits can short
+   * circuit.
+   */
+  onShutdown?: (abortSignal?: AbortSignal) => Promise<void>;
 }
 
 // Stores the active cleanup function so a second installCrashHandlers() call
