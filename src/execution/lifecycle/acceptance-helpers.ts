@@ -180,7 +180,9 @@ export async function regenerateAcceptanceTest(
         acceptanceContext.story.workdir && acceptanceContext.projectDir
           ? path.join(acceptanceContext.projectDir, acceptanceContext.story.workdir)
           : undefined;
-      const ignoreMatchers = await resolveNaxIgnorePatterns(repoRoot, packageDir);
+      const ignoreMatchers =
+        acceptanceContext.naxIgnoreIndex?.getMatchers(packageDir) ??
+        (await resolveNaxIgnorePatterns(repoRoot, packageDir));
       const changedFiles = filterNaxInternalPaths(changedFilesRaw, ignoreMatchers);
 
       const MAX_BYTES = 50 * 1024;

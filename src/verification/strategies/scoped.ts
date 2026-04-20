@@ -74,6 +74,7 @@ export class ScopedStrategy implements IVerificationStrategy {
         ctx.storyGitRef,
         undefined,
         globsToTestRegex(smartCfg.testFilePatterns),
+        ctx.naxIgnoreIndex,
       );
       const threshold = ctx.config?.quality?.scopeTestThreshold ?? 10;
       const pass1Files = await _scopedDeps.mapSourceToTests(nonTestFiles, ctx.workdir);

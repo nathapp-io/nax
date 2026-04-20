@@ -13,7 +13,7 @@
 import { join } from "node:path";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { gitWithTimeout } from "../utils/git";
-import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
+import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /**
  * Bun API wrappers — defined before functions to avoid circular type inference.
@@ -282,6 +282,7 @@ export async function getChangedNonTestFiles(
   baseRef?: string,
   packagePrefix?: string,
   testFileRegex: RegExp[] = [],
+  naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<string[]> {
   try {
     // FEAT-010: Use per-attempt baseRef for precise diff; fall back to HEAD~1 if not provided
@@ -292,7 +293,8 @@ export async function getChangedNonTestFiles(
 
     const lines = stdout.trim().split("\n").filter(Boolean);
     const packageDir = packagePrefix ? join(workdir, packagePrefix) : undefined;
-    const ignoreMatchers = await resolveNaxIgnorePatterns(workdir, packageDir);
+    const ignoreMatchers =
+      naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(workdir, packageDir));
 
     const scopedRaw = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
     const scoped = filterNaxInternalPaths(scopedRaw, ignoreMatchers);
@@ -328,6 +330,7 @@ export async function getChangedTestFiles(
   baseRef?: string,
   packagePrefix?: string,
   testFileRegex: RegExp[] = [],
+  naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<string[]> {
   if (testFileRegex.length === 0) return [];
   try {
@@ -337,7 +340,8 @@ export async function getChangedTestFiles(
 
     const lines = stdout.trim().split("\n").filter(Boolean);
     const packageDir = packagePrefix ? join(repoRoot, packagePrefix) : undefined;
-    const ignoreMatchers = await resolveNaxIgnorePatterns(repoRoot, packageDir);
+    const ignoreMatchers =
+      naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(repoRoot, packageDir));
 
     // Scope to package directory — covers both co-located (src/) and separated (test/) layouts
     const scopedRaw = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;

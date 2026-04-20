@@ -9,6 +9,7 @@
 
 import type { NaxConfig } from "../config";
 import type { SmartTestRunnerConfig } from "../config/types";
+import type { NaxIgnoreIndex } from "../utils/path-filters";
 
 // ---------------------------------------------------------------------------
 // Strategy enum
@@ -33,6 +34,7 @@ export interface VerifyContext {
   acceptOnTimeout?: boolean;
   acceptanceTestPath?: string;
   config?: NaxConfig;
+  naxIgnoreIndex?: NaxIgnoreIndex;
 }
 
 // ---------------------------------------------------------------------------

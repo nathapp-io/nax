@@ -28,6 +28,7 @@ import type { UserStory } from "../prd";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
 import { ReviewPromptBuilder } from "../prompts/builders/review-builder";
 import { tryParseLLMJson } from "../utils/llm-json";
+import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
@@ -143,6 +144,7 @@ export async function runAdversarialReview(
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
   projectDir?: string,
+  naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -171,7 +173,9 @@ export async function runAdversarialReview(
   // Collect stat summary (used by both modes as a quick overview).
   // In ref mode: stat + ref passed to reviewer; reviewer self-serves the full diff via git tools.
   // In embedded mode: also collect full diff (no excludePatterns — adversarial sees test files).
-  const stat = await collectDiffStat(workdir, effectiveRef);
+  const repoRoot = projectDir ?? workdir;
+  const packageDir = workdir !== repoRoot ? workdir : undefined;
+  const stat = await collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
 
   if (!stat) {
     return {
@@ -189,7 +193,10 @@ export async function runAdversarialReview(
 
   if (diffMode === "embedded") {
     // Adversarial embedded mode: excludes .nax/ metadata but sees test files (unlike semantic).
-    diff = await collectDiff(workdir, effectiveRef, adversarialConfig.excludePatterns ?? []);
+    diff = await collectDiff(workdir, effectiveRef, adversarialConfig.excludePatterns ?? [], {
+      naxIgnoreIndex,
+      packageDir,
+    });
     if (!diff) {
       return {
         check: "adversarial",
@@ -204,7 +211,7 @@ export async function runAdversarialReview(
       (typeof naxConfig?.execution?.smartTestRunner === "object"
         ? naxConfig.execution.smartTestRunner?.testFilePatterns
         : undefined) ?? undefined;
-    testInventory = await computeTestInventory(workdir, effectiveRef, testFilePatterns);
+    testInventory = await computeTestInventory(workdir, effectiveRef, testFilePatterns, { naxIgnoreIndex, packageDir });
   }
 
   // Resolve agent

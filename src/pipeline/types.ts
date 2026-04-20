@@ -92,6 +92,8 @@ export interface PipelineContext {
    * `projectDir` — never re-join `story.workdir` onto this value.
    */
   workdir: string;
+  /** Run-scoped pre-resolved .naxignore matcher index (repo-root + package-level). */
+  naxIgnoreIndex?: import("../utils/path-filters").NaxIgnoreIndex;
   /** Dependency-preparation context for worktree execution, if one was created. */
   worktreeDependencyContext?: import("../worktree/types").WorktreeDependencyContext;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */

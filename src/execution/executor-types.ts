@@ -14,6 +14,7 @@ import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
 import type { ISessionManager } from "../session";
+import type { NaxIgnoreIndex } from "../utils/path-filters";
 import type { StoryBatch } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { PidRegistry } from "./pid-registry";
@@ -51,6 +52,8 @@ export interface SequentialExecutionContext {
   abortSignal?: AbortSignal;
   /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
   parallelCount?: number;
+  /** Run-scoped pre-resolved .naxignore index (refreshed when package set changes). */
+  naxIgnoreIndex?: NaxIgnoreIndex;
 }
 
 export interface SequentialExecutionResult {

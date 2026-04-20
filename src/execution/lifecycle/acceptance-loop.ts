@@ -21,6 +21,7 @@ import type { PipelineEventEmitter } from "../../pipeline/events";
 import type { AgentGetFn, PipelineContext } from "../../pipeline/types";
 import type { PluginRegistry } from "../../plugins";
 import type { PRD } from "../../prd/types";
+import type { NaxIgnoreIndex } from "../../utils/path-filters";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
 import { applyFix, resolveAcceptanceDiagnosis } from "./acceptance-fix";
@@ -57,6 +58,8 @@ export interface AcceptanceLoopContext {
   statusWriter: StatusWriter;
   /** Protocol-aware agent resolver — passed from registry at run start */
   agentGetFn?: AgentGetFn;
+  /** Pre-resolved .naxignore matcher cache shared across run stages */
+  naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
   acceptanceTestPaths?: Array<{ testPath: string; packageDir: string }>;
 }
@@ -132,6 +135,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       },
       projectDir: ctx.workdir,
       workdir: ctx.workdir,
+      naxIgnoreIndex: ctx.naxIgnoreIndex,
       featureDir: ctx.featureDir,
       hooks: ctx.hooks,
       plugins: ctx.pluginRegistry,

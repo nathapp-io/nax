@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   _pathFilterDeps,
+  buildNaxIgnoreIndex,
   filterNaxInternalPaths,
   isNaxInternalPath,
   resolveNaxIgnorePatterns,
@@ -139,6 +140,33 @@ describe("path-filters (#542)", () => {
       const matchers = await resolveNaxIgnorePatterns("/repo", "/repo/packages/web");
       expect(matchers).toHaveLength(1);
       expect(matchers[0]?.test("locales/en.json")).toBe(true);
+    });
+  });
+
+  describe("buildNaxIgnoreIndex", () => {
+    test("pre-resolves repo-root and package matchers", async () => {
+      const files = new Map<string, string>([
+        ["/repo/.naxignore", "*.generated.ts\n"],
+        ["/repo/packages/web/.naxignore", "dist/\n"],
+      ]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const index = await buildNaxIgnoreIndex("/repo", ["/repo/packages/web"]);
+      expect(index.getMatchers()).toHaveLength(1);
+      expect(index.getMatchers("/repo/packages/web")).toHaveLength(2);
+      expect(index.filter(["src/foo.generated.ts", "src/main.ts"], "/repo/packages/web")).toEqual(["src/main.ts"]);
+      expect(index.filter(["dist/app.js", "src/main.ts"], "/repo/packages/web")).toEqual(["src/main.ts"]);
+    });
+
+    test("returns root matchers for unknown package dir", async () => {
+      const files = new Map<string, string>([["/repo/.naxignore", "*.generated.ts\n"]]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const index = await buildNaxIgnoreIndex("/repo", []);
+      expect(index.filter(["src/foo.generated.ts", "src/main.ts"], "/repo/packages/unknown")).toEqual(["src/main.ts"]);
+      expect(index.toPathspecExcludes()).toEqual([":!*.generated.ts"]);
     });
   });
 });

@@ -166,6 +166,7 @@ export async function runIteration(
     routing,
     projectDir: ctx.workdir,
     workdir: resolvedWorkdir,
+    naxIgnoreIndex: ctx.naxIgnoreIndex,
     worktreeDependencyContext: dependencyContext,
     prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,

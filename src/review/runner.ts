@@ -11,6 +11,7 @@ import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { runQualityCommand } from "../quality";
 import { autoCommitIfDirty } from "../utils/git";
+import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { runAdversarialReview as _runAdversarialReviewImpl } from "./adversarial";
 import { resolveLanguageCommand } from "./language-commands";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
@@ -224,6 +225,7 @@ export async function runReview(
   },
   projectDir?: string,
   env?: Record<string, string | undefined>,
+  naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -309,6 +311,7 @@ export async function runReview(
         featureContextMarkdown,
         contextBundles?.semantic,
         projectDir,
+        naxIgnoreIndex,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
@@ -351,6 +354,7 @@ export async function runReview(
         featureContextMarkdown,
         contextBundles?.adversarial,
         projectDir,
+        naxIgnoreIndex,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

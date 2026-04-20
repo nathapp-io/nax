@@ -39,6 +39,17 @@ export interface NaxIgnoreMatcher {
   readonly test: (repoRelativePath: string) => boolean;
 }
 
+export interface NaxIgnoreIndex {
+  /** Absolute repo-root path used to build this index. */
+  readonly repoRoot: string;
+  /** Return pre-resolved matchers for repo root or a known package directory. */
+  getMatchers(packageDir?: string): readonly NaxIgnoreMatcher[];
+  /** Filter changed paths using built-ins + pre-resolved matchers. */
+  filter(paths: readonly string[], packageDir?: string): string[];
+  /** Convert pre-resolved matchers into git pathspec exclusion args. */
+  toPathspecExcludes(packageDir?: string): string[];
+}
+
 export const _pathFilterDeps = {
   fileExists: async (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: async (path: string): Promise<string> => Bun.file(path).text(),
@@ -127,6 +138,10 @@ async function readIgnorePatterns(filePath: string): Promise<string[]> {
   return parseIgnoreFile(raw);
 }
 
+function normalizeAbsolutePath(path: string): string {
+  return path.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
 /**
  * Resolve `.naxignore` patterns for session-history changed-file filtering.
  *
@@ -151,6 +166,45 @@ export async function resolveNaxIgnorePatterns(repoRoot: string, packageDir?: st
     ...rootPatterns.map((p) => compileMatcher("root", p, packagePrefix)),
     ...packagePatterns.map((p) => compileMatcher("package", p, packagePrefix)),
   ];
+}
+
+/**
+ * Build a pre-resolved `.naxignore` index for a run.
+ *
+ * Single-package repos: resolve once for `repoRoot`.
+ * Monorepos: resolve once for `repoRoot` and each provided package dir.
+ */
+export async function buildNaxIgnoreIndex(
+  repoRoot: string,
+  packageDirs: readonly string[] = [],
+): Promise<NaxIgnoreIndex> {
+  const repoRootKey = normalizeAbsolutePath(repoRoot);
+  const uniquePackageDirs = [...new Set(packageDirs.map(normalizeAbsolutePath).filter((p) => p !== repoRootKey))];
+
+  const entries = new Map<string, readonly NaxIgnoreMatcher[]>();
+  entries.set(repoRootKey, await resolveNaxIgnorePatterns(repoRootKey));
+  for (const packageDir of uniquePackageDirs) {
+    entries.set(packageDir, await resolveNaxIgnorePatterns(repoRootKey, packageDir));
+  }
+
+  const getMatchers = (packageDir?: string): readonly NaxIgnoreMatcher[] => {
+    if (!packageDir) return entries.get(repoRootKey) ?? [];
+    const key = normalizeAbsolutePath(packageDir);
+    return entries.get(key) ?? entries.get(repoRootKey) ?? [];
+  };
+
+  return {
+    repoRoot: repoRootKey,
+    getMatchers,
+    filter: (paths: readonly string[], packageDir?: string): string[] =>
+      filterNaxInternalPaths(paths, getMatchers(packageDir)),
+    toPathspecExcludes: (packageDir?: string): string[] => {
+      const matchers = getMatchers(packageDir);
+      const excludes = new Set<string>();
+      for (const matcher of matchers ?? []) excludes.add(`:!${matcher.pattern}`);
+      return [...excludes];
+    },
+  };
 }
 
 /**
