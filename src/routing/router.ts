@@ -6,8 +6,7 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
-import { resolveDefaultAgent } from "../agents";
-import { createAgentRegistry } from "../agents/registry";
+import { AgentManager, resolveDefaultAgent } from "../agents";
 import type { AgentAdapter } from "../agents/types";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import { resolveConfiguredModel } from "../config";
@@ -270,7 +269,7 @@ export function routeTask(
  * No-ops if routing.strategy is not "llm" or mode is "per-story" or stories is empty.
  */
 export const _tryLlmBatchRouteDeps = {
-  getAgent: (name: string, config: NaxConfig) => createAgentRegistry(config).getAgent(name),
+  getAgent: (name: string, config: NaxConfig) => new AgentManager(config).getAgent(name),
 };
 
 export async function tryLlmBatchRoute(

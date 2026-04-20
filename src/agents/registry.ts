@@ -28,11 +28,6 @@ export function getAllAgentNames(): string[] {
   return KNOWN_AGENT_NAMES;
 }
 
-/** Get a specific agent by name — returns undefined (use createAgentRegistry for production) */
-export function getAgent(_name: string): AgentAdapter | undefined {
-  return undefined;
-}
-
 /** Get all installed agents on this machine */
 export async function getInstalledAgents(): Promise<AgentAdapter[]> {
   return [];

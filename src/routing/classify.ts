@@ -2,7 +2,7 @@
  * Pure classification functions — no agent registry or heavy deps.
  *
  * Extracted from router.ts so test files can import classifyComplexity /
- * determineTestStrategy without pulling in createAgentRegistry → AcpAgentAdapter,
+ * determineTestStrategy without pulling in AgentManager → AcpAgentAdapter,
  * which registers background handles and prevents Bun from exiting after tests.
  */
 

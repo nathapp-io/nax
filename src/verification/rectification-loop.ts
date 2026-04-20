@@ -7,10 +7,9 @@
  * Used by: src/pipeline/stages/rectify.ts, src/execution/lifecycle/run-regression.ts
  */
 
-import { getAgent as _getAgent, resolveDefaultAgent } from "../agents";
+import { AgentManager, resolveDefaultAgent } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
-import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
@@ -126,8 +125,8 @@ async function _defaultRunDebate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _rectificationDeps = {
-  getAgent: (name: string, config?: NaxConfig) =>
-    (config ? createAgentRegistry(config).getAgent(name) : _getAgent(name)) as AgentAdapter | undefined,
+  getAgent: (name: string, config?: NaxConfig): AgentAdapter | undefined =>
+    config ? new AgentManager(config).getAgent(name) : undefined,
   runVerification: _fullSuite as typeof _fullSuite,
   escalateTier: _escalateTier,
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,

@@ -78,8 +78,9 @@ describe("AgentManager — Phase 1 pass-through", () => {
     expect(manager.nextCandidate("claude", 0)).toBeNull();
   });
 
-  test("runWithFallback() with no registry returns failure result and empty fallbacks", async () => {
-    const manager = new AgentManager(DEFAULT_CONFIG);
+  test("runWithFallback() with stub registry returning undefined returns failure result and empty fallbacks", async () => {
+    const stubRegistry = { getAgent: () => undefined };
+    const manager = new AgentManager(DEFAULT_CONFIG, stubRegistry as never);
     const outcome = await manager.runWithFallback({
       runOptions: {
         prompt: "test",

@@ -45,7 +45,7 @@ export interface RunnerExecutionOptions {
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   headless: boolean;
   parallel?: number;
-  /** Protocol-aware agent resolver — created once in runner.ts from createAgentRegistry(config) */
+  /** Protocol-aware agent resolver — bound from agentManager.getAgent in runner.ts */
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — passed to agent.run() to register child processes. */
   pidRegistry?: PidRegistry;

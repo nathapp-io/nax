@@ -11,7 +11,7 @@
  */
 
 // RE-ARCH: rewrite
-import { getAgent } from "../../agents";
+import type { AgentAdapter } from "../../agents/types";
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { createReviewerSession } from "../../review/dialogue";
@@ -33,7 +33,7 @@ export const reviewStage: PipelineStage = {
     // MW-010: workdir is already resolved to the package directory at context creation
 
     // Build agent resolver for dialogue session creation
-    const agentResolver = ctx.agentGetFn ?? getAgent;
+    const agentResolver = ctx.agentGetFn ?? ((_name: string): AgentAdapter | undefined => undefined);
     const agentName = ctx.agentManager?.getDefault() ?? "claude";
 
     // AC3: When dialogue is enabled (non-debate) and a session already exists (retry loop), use reReview()

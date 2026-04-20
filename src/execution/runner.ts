@@ -14,7 +14,6 @@
  */
 
 import { AgentManager } from "../agents";
-import { createAgentRegistry } from "../agents/registry";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
@@ -114,10 +113,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
   const allStoryMetrics: any[] = [];
 
-  // Create protocol-aware agent registry (ACP wiring — ACP-003/registry-wiring)
-  const registry = createAgentRegistry(config);
-  const agentGetFn = registry.getAgent.bind(registry);
-  const agentManager = new AgentManager(config, registry);
+  const agentManager = new AgentManager(config);
+  const agentGetFn = agentManager.getAgent.bind(agentManager);
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
   // biome-ignore lint/suspicious/noExplicitAny: PRD type initialized during setup

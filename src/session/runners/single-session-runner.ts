@@ -11,7 +11,7 @@
  */
 
 import type { AgentAdapter } from "../../agents";
-import { getAgent, wrapAdapterAsManager } from "../../agents";
+import { wrapAdapterAsManager } from "../../agents";
 import type { AgentRunRequest, IAgentManager } from "../../agents/manager-types";
 import type { AgentResult, AgentRunOptions } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
@@ -64,7 +64,7 @@ export const _singleSessionRunnerDeps = {
     storyId?: string,
   ): ContextBundle => new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
   writeRebuildManifest,
-  getAgent,
+  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   createContextToolRuntime,
 };
 

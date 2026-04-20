@@ -32,7 +32,7 @@ export interface RunnerSetupOptions {
   getIterations: () => number;
   getStoriesCompleted: () => number;
   getTotalStories: () => number;
-  /** Protocol-aware agent resolver — created from createAgentRegistry(config) in runner.ts */
+  /** Protocol-aware agent resolver — bound from agentManager.getAgent in runner.ts */
   agentGetFn?: AgentGetFn;
   /** Per-run AgentManager (ADR-012). When provided, validateCredentials() is called during setup. */
   agentManager?: import("../agents").IAgentManager;

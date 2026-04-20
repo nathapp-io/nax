@@ -12,7 +12,8 @@
 import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "../../acceptance/content-loader";
 import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
 import { findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions } from "../../acceptance/test-path";
-import { getAgent, resolveDefaultAgent } from "../../agents";
+import { resolveDefaultAgent } from "../../agents";
+import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
@@ -81,7 +82,7 @@ export interface AcceptanceLoopResult {
 // buildResult — extracted to acceptance-helpers.ts (re-exported above)
 
 export const _acceptanceLoopDeps = {
-  getAgent,
+  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   loadSemanticVerdicts,
 };
 

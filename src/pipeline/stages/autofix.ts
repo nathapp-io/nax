@@ -19,8 +19,8 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
+import { AgentManager } from "../../agents";
 import { computeAcpHandle } from "../../agents/acp/adapter";
-import { createAgentRegistry } from "../../agents/registry";
 import { resolveModelForAgent } from "../../config";
 import type { NaxConfig } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
@@ -701,7 +701,7 @@ async function runAgentRectification(
  */
 export const _autofixDeps = {
   /** Protocol-aware agent factory. Override in tests to inject a mock agent. */
-  getAgent: (name: string, config: NaxConfig) => createAgentRegistry(config).getAgent(name),
+  getAgent: (name: string, config: NaxConfig) => new AgentManager(config).getAgent(name),
   runQualityCommand,
   recheckReview,
   captureGitRef,
@@ -716,6 +716,6 @@ export const _autofixDeps = {
     ctx: PipelineContext,
     testWriterChecks: ReviewCheckResult[],
     story: UserStory,
-    agentGetFn: (name: string) => ReturnType<ReturnType<typeof createAgentRegistry>["getAgent"]>,
+    agentGetFn: (name: string) => import("../../agents/types").AgentAdapter | undefined,
   ): Promise<number> => runTestWriterRectification(ctx, testWriterChecks, story, agentGetFn),
 };

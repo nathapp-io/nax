@@ -173,8 +173,8 @@ describe("IAgentManager.getAgent()", () => {
     expect(mgr.getAgent("nonexistent")).toBeUndefined();
   });
 
-  test("returns undefined when no registry is set", () => {
+  test("lazily creates registry and returns adapter when no explicit registry is provided (Phase 4)", () => {
     const mgr = new AgentManager(makeConfig());
-    expect(mgr.getAgent("claude")).toBeUndefined();
+    expect(mgr.getAgent("claude")).not.toBeUndefined();
   });
 });
