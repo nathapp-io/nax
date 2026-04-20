@@ -1,9 +1,10 @@
 # SPEC: Agent Manager — Ownership & Integration Design
 
-> **Status:** Draft. Companion to [ADR-012](../adr/ADR-012-agent-manager-ownership.md). Details how `AgentManager` takes ownership of agent lifecycle, fallback policy, and config resolution, and how it integrates with the existing `AgentAdapter` interface and `SessionManager`.
+> **Status:** Shipped (Phases 1–6 merged on main, April 2026). Historical design doc for `AgentManager` ownership, fallback policy, and config resolution. All six phases have landed; outstanding review findings are tracked in [`docs/reviews/ADR-012-implementation-review.md`](../reviews/ADR-012-implementation-review.md). For the current canonical behaviour, read `src/agents/manager.ts`, `src/config/schemas.ts`, and [ADR-012](../adr/ADR-012-agent-manager-ownership.md).
 >
 > **Tracking:** #552 · **ADR:** PR #551
 > **Related issues:** #523 (prompt-audit → SessionManager, non-blocking) · #529 (AgentRunOptions cleanup, blocks Phase 4) · #518 (credential pre-validation, folded into Phase 2) · #519 (fallback aggregates, folded into Phase 5)
+> **Shipped via:** #562 (P1) · #564 (P2) · #568 (P3) · #572 (P4) · #573 (P5) · #576 (P6) · #579 (P6 legacy-key guard) · #580 (P5 cost aggregates)
 
 ---
 

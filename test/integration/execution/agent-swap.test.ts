@@ -150,7 +150,6 @@ function makeCtx(config: NaxConfig, bundle: ContextBundle): PipelineContext {
     getInstalledAgents: async () => [],
     checkAgentHealth: async () => [],
     protocol: "acp",
-    resetStoryState: () => {},
   };
   ctx.agentManager = new AgentManager(config, lazyRegistry);
   return ctx;

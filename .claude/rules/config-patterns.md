@@ -85,9 +85,35 @@ rawConfig = deepMergeConfig(rawConfig, cliOverrides);
 const result = NaxConfigSchema.safeParse(rawConfig);
 ```
 
+## Agent Config Shape (ADR-012)
+
+The canonical agent-selection shape lives under `config.agent`:
+
+```typescript
+{
+  "agent": {
+    "protocol": "acp",
+    "default": "claude",           // primary agent — resolveDefaultAgent() reads this
+    "fallback": {
+      "enabled": true,
+      "map": { "codex": ["claude"], "claude": ["codex"] },
+      "maxHopsPerStory": 2,
+      "onQualityFailure": false,
+      "rebuildContext": true
+    }
+  }
+}
+```
+
+- `agent.default` — string name of the primary agent. Accessed via `resolveDefaultAgent(config)` from `src/agents`.
+- `agent.fallback.map` — per-agent chain. `{ primary: [next, ...] }`.
+- Old `autoMode.defaultAgent` and `autoMode.fallbackOrder` were **removed in ADR-012 Phase 6**. Loading a config with those keys throws `NaxError CONFIG_LEGACY_AGENT_KEYS` — silently stripping would mask the migration (see `rejectLegacyAgentKeys` in `src/config/loader.ts`).
+
+See `docs/adr/ADR-012-agent-manager-ownership.md` for the full migration.
+
 ## Compatibility Shim Pattern
 
-For backward compatibility with deprecated config keys, use a migration shim:
+For benign renames of deprecated config keys (no semantic change, no observable user impact), use a migration shim:
 
 ```typescript
 function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<string, unknown> {
@@ -101,6 +127,28 @@ function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<strin
   }
 
   return migrated;
+}
+```
+
+For **behaviour-changing removals** (e.g. fields whose semantic would silently drop if ignored), reject the key at parse time instead of stripping it. Zod's default `.strip()` mode would hide the migration — use a pre-parse guard that throws a `NaxError` with per-key migration hints:
+
+```typescript
+// src/config/loader.ts — ADR-012 Phase 6 legacy key guard
+function rejectLegacyAgentKeys(conf: Record<string, unknown>): void {
+  const legacyKeys: string[] = [];
+  const hints: string[] = [];
+  const autoMode = conf.autoMode as Record<string, unknown> | undefined;
+  if (autoMode && "defaultAgent" in autoMode) {
+    legacyKeys.push("autoMode.defaultAgent");
+    hints.push("- Move `autoMode.defaultAgent` → `agent.default`");
+  }
+  // ... additional keys
+  if (legacyKeys.length === 0) return;
+  throw new NaxError(
+    [`Invalid configuration — legacy keys: ${legacyKeys.join(", ")}.`, ...hints].join("\n"),
+    "CONFIG_LEGACY_AGENT_KEYS",
+    { stage: "config", legacyKeys },
+  );
 }
 ```
 

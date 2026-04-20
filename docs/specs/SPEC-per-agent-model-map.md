@@ -1,5 +1,7 @@
 # SPEC: Per-Agent Model Map
 
+> **Partially superseded by [ADR-012](../adr/ADR-012-agent-manager-ownership.md).** The fallback-state design described below (`AcpAgentAdapter._unavailableAgents`, `AllAgentsUnavailableError`, `fallbackOrder`) was **re-owned by `AgentManager`** in ADR-012 Phase 4. Config also migrated from `autoMode.fallbackOrder` / `autoMode.defaultAgent` to `agent.fallback.map` / `agent.default` in Phase 6. References to those removed APIs below reflect the spec's original design, not current code. The **per-agent model map concept itself** (nested `models[agent][tier]`) remains live and is unchanged by ADR-012.
+
 ## Summary
 
 Restructure the `models` config from a flat tier→model map to a per-agent model map, making it the SSOT for resolving any `(agent, tier) → model` pair. Activate the existing dead-code `fallbackOrder` config as the rate-limit agent fallback chain. Add optional `routing.agent` field for manual per-story agent override.

@@ -1090,12 +1090,6 @@ export class AcpAgentAdapter implements AgentAdapter {
     return { stories };
   }
 
-  /**
-   * No-op: per-story availability state is now owned by AgentManager (ADR-012 Phase 4).
-   * Kept for interface compatibility; callers in AgentRegistry.resetStoryState() are harmless.
-   */
-  clearUnavailableAgents(): void {}
-
   async closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void> {
     const cmdStr = `acpx ${this.name}`;
     const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, undefined);

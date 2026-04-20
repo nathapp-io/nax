@@ -225,8 +225,8 @@ Recommended: delete `resetStoryState` + `clearUnavailableAgents` (one PR, ~30 li
 | Finding | PR | Status |
 |:---|:---|:---|
 | #1 Phase 6 silent-strip regression | #579 | ✅ Fixed — `rejectLegacyAgentKeys()` guard in `src/config/loader.ts` |
-| #2 `costUsd` dropped on `AgentFallbackHop` | PR-2 (this change) | ✅ Fixed — field added to `AgentFallbackHop`; preserved in `src/pipeline/stages/execution.ts` |
-| #3 `RunMetrics.fallback` aggregates never surfaced | PR-2 (this change) | ✅ Fixed — `deriveRunFallbackAggregates` in `src/metrics/aggregator.ts`; surfaced on `run:completed` event and saved `RunMetrics` |
-| #4 Doc-reality gap (`conventions.md` / `config-patterns.md`) | PR-3 (pending) | Open |
-| Dead-code cleanup (`clearUnavailableAgents` / `resetStoryState` / `onBeforeStory` hook) | PR-3 (pending) | Open |
+| #2 `costUsd` dropped on `AgentFallbackHop` | #580 | ✅ Fixed — field added to `AgentFallbackHop`; preserved in `src/pipeline/stages/execution.ts` |
+| #3 `RunMetrics.fallback` aggregates never surfaced | #580 | ✅ Fixed — `deriveRunFallbackAggregates` in `src/metrics/aggregator.ts`; surfaced on `run:completed` event and saved `RunMetrics` |
+| #4 Doc-reality gap (`conventions.md` / `config-patterns.md`) | PR-3 (this change) | ✅ Fixed — new §5 in `conventions.md`; new "Agent Config Shape (ADR-012)" in `config-patterns.md`; `CLAUDE.md` / `.nax/context.md` LLM-fallback rule updated; `SPEC-agent-manager-integration.md` marked shipped; `SPEC-per-agent-model-map.md` marked partially superseded |
+| Dead-code cleanup (`clearUnavailableAgents` / `resetStoryState` / `onBeforeStory` hook) | PR-3 (this change) | ✅ Fixed — plumbing deleted across `src/agents/acp/adapter.ts`, `src/agents/registry.ts`, `src/execution/runner.ts`, `src/execution/runner-execution.ts`, `src/execution/executor-types.ts`, `src/execution/unified-executor.ts` (-37 lines) |
 
