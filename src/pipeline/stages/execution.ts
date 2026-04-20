@@ -9,14 +9,11 @@
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
-import { ContextOrchestrator, createContextToolRuntime } from "../../context/engine";
-import type { AdapterFailure, ContextBundle } from "../../context/engine";
-import { writeRebuildManifest } from "../../context/engine/manifest-store";
 import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
-import { RectifierPromptBuilder } from "../../prompts";
+import { SingleSessionRunner } from "../../session/runners/single-session-runner";
 import { runThreeSessionTddFromCtx } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -140,18 +137,6 @@ export const executionStage: PipelineStage = {
     // Determine whether to keep session open for review or rectification
     const keepOpen = !!(ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true);
 
-    // G1: Advance state machine to RUNNING so resume() / listActive() see accurate state.
-    // Guarded — ctx.sessionId may not have a manager entry when v2 context is disabled.
-    if (ctx.sessionManager && ctx.sessionId) {
-      const pre = ctx.sessionManager.get(ctx.sessionId);
-      if (pre?.state === "CREATED") {
-        ctx.sessionManager.transition(ctx.sessionId, "RUNNING");
-      }
-    }
-
-    // G3: Resolve descriptor for Phase 1+ session tracking.
-    const sessionDescriptor = ctx.sessionManager && ctx.sessionId ? ctx.sessionManager.get(ctx.sessionId) : undefined;
-
     const baseRunOptions: import("../../agents/types").AgentRunOptions = {
       prompt: ctx.prompt,
       workdir: ctx.workdir,
@@ -182,123 +167,37 @@ export const executionStage: PipelineStage = {
       }),
     };
 
-    const { result, fallbacks, finalBundle, finalPrompt } = await (ctx.agentManager
-      ? ctx.agentManager.runWithFallback({
-          runOptions: baseRunOptions,
-          bundle: ctx.contextBundle,
-          signal: ctx.abortSignal,
-          executeHop: async (agentName, bundle, failure) => {
-            const hopAgent = (ctx.agentGetFn ?? _executionDeps.getAgent)(agentName);
-            if (!hopAgent) {
-              return {
-                result: {
-                  success: false,
-                  exitCode: 1,
-                  output: `Agent "${agentName}" not found`,
-                  rateLimited: false,
-                  durationMs: 0,
-                  estimatedCost: 0,
-                },
-                bundle,
-                prompt: ctx.prompt,
-              };
-            }
+    // Delegate to SingleSessionRunner. It owns:
+    //   - SessionManager.runInSession bookkeeping (CREATED → RUNNING → COMPLETED/FAILED)
+    //   - per-hop AgentManager.runWithFallback when fallback is enabled
+    //   - bundle rebuild + swap-handoff prompt rewrite on agent swap
+    //   - protocolIds bindHandle at both hop and final boundaries
+    // sessionManager/sessionId are optional — runner falls back to a direct
+    // adapter call when absent (test paths that skip the session stage).
+    const runner = new SingleSessionRunner();
+    const outcome = await runner.run({
+      sessionId: ctx.sessionId,
+      sessionManager: ctx.sessionManager,
+      agentManager: ctx.agentManager,
+      agent,
+      defaultAgent,
+      runOptions: baseRunOptions,
+      bundle: ctx.contextBundle,
+      config: ctx.config,
+      effectiveTier,
+      story: ctx.story,
+      featureName: ctx.prd.feature,
+      projectDir: ctx.projectDir,
+      workdir: ctx.workdir,
+      contextToolRunCounter: ctx.contextToolRunCounter,
+      agentGetFn: ctx.agentGetFn ?? _executionDeps.getAgent,
+    });
 
-            let workingBundle = bundle;
-            // ctx.prompt is guaranteed non-empty: the guard `if (!ctx.prompt) return fail`
-            // fires before this callback is ever constructed (single-session path).
-            let prompt: string = ctx.prompt ?? "";
-
-            if (failure && bundle) {
-              workingBundle = _executionDeps.rebuildForAgent(bundle, agentName, failure, ctx.story.id);
-              if (ctx.projectDir && ctx.prd.feature && workingBundle.manifest.rebuildInfo) {
-                try {
-                  await _executionDeps.writeRebuildManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, {
-                    requestId: workingBundle.manifest.requestId,
-                    stage: "execution",
-                    priorAgentId: workingBundle.manifest.rebuildInfo.priorAgentId,
-                    newAgentId: workingBundle.manifest.rebuildInfo.newAgentId,
-                    failureCategory: workingBundle.manifest.rebuildInfo.failureCategory,
-                    failureOutcome: workingBundle.manifest.rebuildInfo.failureOutcome,
-                    priorChunkIds: workingBundle.manifest.rebuildInfo.priorChunkIds,
-                    newChunkIds: workingBundle.manifest.rebuildInfo.newChunkIds,
-                    chunkIdMap: workingBundle.manifest.rebuildInfo.chunkIdMap,
-                    createdAt: new Date().toISOString(),
-                  });
-                } catch (err) {
-                  logger.warn("execution", "Failed to write rebuild manifest", {
-                    storyId: ctx.story.id,
-                    error: String(err),
-                  });
-                }
-              }
-              prompt = RectifierPromptBuilder.swapHandoff(ctx.prompt ?? "", workingBundle.pushMarkdown);
-            }
-
-            const session = failure
-              ? ctx.sessionManager && ctx.sessionId
-                ? ctx.sessionManager.handoff?.(ctx.sessionId, agentName, failure.outcome)
-                : undefined
-              : sessionDescriptor;
-
-            const hopResult = await hopAgent.run({
-              ...baseRunOptions,
-              prompt,
-              modelDef: resolveModelForAgent(ctx.rootConfig.models, agentName, effectiveTier, defaultAgent),
-              contextPullTools: workingBundle?.pullTools,
-              contextToolRuntime: workingBundle
-                ? createContextToolRuntime({
-                    bundle: workingBundle,
-                    story: ctx.story,
-                    config: ctx.config,
-                    repoRoot: ctx.workdir,
-                    runCounter: ctx.contextToolRunCounter,
-                  })
-                : undefined,
-              ...(session && { session }),
-            });
-
-            ctx.agentResult = hopResult;
-
-            if (ctx.sessionManager && ctx.sessionId && hopResult.protocolIds) {
-              const descriptor = ctx.sessionManager.get(ctx.sessionId);
-              if (descriptor) {
-                ctx.sessionManager.bindHandle(
-                  ctx.sessionId,
-                  hopAgent.deriveSessionName(descriptor),
-                  hopResult.protocolIds,
-                );
-              }
-            }
-
-            return { result: hopResult, bundle: workingBundle, prompt };
-          },
-        })
-      : (async () => {
-          const contextToolRuntime = ctx.contextBundle
-            ? createContextToolRuntime({
-                bundle: ctx.contextBundle,
-                story: ctx.story,
-                config: ctx.config,
-                repoRoot: ctx.workdir,
-                runCounter: ctx.contextToolRunCounter,
-              })
-            : undefined;
-          const r = await agent.run({
-            ...baseRunOptions,
-            contextPullTools: ctx.contextBundle?.pullTools,
-            contextToolRuntime,
-            ...(sessionDescriptor && { session: sessionDescriptor }),
-          });
-          ctx.agentResult = r;
-          if (ctx.sessionManager && ctx.sessionId && r.protocolIds) {
-            const descriptor = ctx.sessionManager.get(ctx.sessionId);
-            if (descriptor) {
-              ctx.sessionManager.bindHandle(ctx.sessionId, agent.deriveSessionName(descriptor), r.protocolIds);
-            }
-          }
-          return { result: r, fallbacks: [], finalBundle: ctx.contextBundle, finalPrompt: ctx.prompt };
-        })());
+    ctx.agentResult = outcome.primaryResult;
+    const result = outcome.primaryResult;
+    const fallbacks = outcome.fallbacks;
+    const finalBundle = outcome.finalBundle;
+    const finalPrompt = outcome.finalPrompt;
 
     ctx.agentSwapCount = fallbacks.length;
     if (fallbacks.length > 0) {
@@ -384,6 +283,9 @@ export const executionStage: PipelineStage = {
 
 /**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ *
+ * Bundle-rebuild / swap-handoff helpers moved into SingleSessionRunner
+ * (`src/session/runners/single-session-runner.ts` → `_singleSessionRunnerDeps`).
  */
 export const _executionDeps = {
   getAgent,
@@ -392,8 +294,5 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
-  rebuildForAgent: (prior: ContextBundle, newAgentId: string, failure: AdapterFailure, storyId?: string) =>
-    new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
-  writeRebuildManifest,
   failAndClose,
 };

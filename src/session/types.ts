@@ -170,6 +170,11 @@ export interface TransitionOptions {
   completedStage?: string;
 }
 
+/** Per-session agent runner — see SessionManager.runInSession for contract. */
+export type SessionAgentRunner = (
+  options: import("../agents/types").AgentRunOptions,
+) => Promise<import("../agents/types").AgentResult>;
+
 /** Interface the SessionManager implements */
 export interface ISessionManager {
   /** Create a new session descriptor */
@@ -201,6 +206,27 @@ export interface ISessionManager {
    * Used by rectification loops to resume the implementer session across attempts.
    */
   resume(storyId: string, role: SessionRole): SessionDescriptor | null;
+  /**
+   * Run an agent within a tracked session — the per-session lifecycle primitive.
+   *
+   * Owns: CREATED→RUNNING transition before the runner, handle/protocolIds
+   * binding from the result, and RUNNING→COMPLETED/FAILED transition after.
+   * Callers don't need to touch transition/bindHandle for sessions that go
+   * through this path.
+   *
+   * Every ISessionRunner implementation MUST use this for each session it
+   * touches — that is how cross-cutting concerns (state transitions, token
+   * pass-through, audit correlation) stay in one place instead of being
+   * re-implemented per call site.
+   *
+   * Throws NaxError SESSION_NOT_FOUND if id is unknown. Propagates runner
+   * errors verbatim AFTER transitioning the session to FAILED.
+   */
+  runInSession(
+    id: string,
+    runner: SessionAgentRunner,
+    options: import("../agents/types").AgentRunOptions,
+  ): Promise<import("../agents/types").AgentResult>;
   /**
    * Force-close all non-terminal sessions for a story (Phase 3).
    * Transitions each matching session to COMPLETED regardless of current state.
