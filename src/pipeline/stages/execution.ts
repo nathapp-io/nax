@@ -307,6 +307,7 @@ export const executionStage: PipelineStage = {
         outcome: f.outcome,
         category: f.category,
         hop: f.hop,
+        costUsd: f.costUsd,
       }));
     }
 

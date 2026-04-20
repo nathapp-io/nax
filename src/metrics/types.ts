@@ -83,6 +83,13 @@ export interface AgentFallbackHop {
   category: string;
   /** 1-indexed hop counter within this story's pipeline run */
   hop: number;
+  /**
+   * Cost incurred on the hop that FAILED (the attempt on `priorAgent` that triggered
+   * the swap to `newAgent`). Sourced from the failing agent's `AgentResult.estimatedCost`.
+   * Zero when the adapter did not report a cost. Summed across hops into
+   * `RunMetrics.fallback.totalWastedCostUsd` (ADR-012 / review #2).
+   */
+  costUsd: number;
 }
 
 /**
@@ -187,6 +194,35 @@ export interface StoryMetrics {
 }
 
 /**
+ * Run-level fallback aggregates (ADR-012 / review #3).
+ *
+ * Derived from `StoryMetrics.fallback.hops` via `deriveRunFallbackAggregates`.
+ * Absent on `RunMetrics` when no swaps occurred in the run.
+ */
+export interface RunFallbackAggregate {
+  /** Total number of hops across all stories in this run. */
+  totalHops: number;
+  /**
+   * Hop count per `priorAgent->newAgent` transition. Key format is `${prior}->${new}`
+   * (e.g. "codex->claude"). Useful for spotting adapter-specific instability.
+   */
+  perPair: Record<string, number>;
+  /**
+   * Story IDs where `AgentManager.runWithFallback` emitted `onSwapExhausted`
+   * (i.e. ran out of candidates). Detected by the last hop's `outcome` being
+   * an availability failure on a story that ultimately did not succeed.
+   * Empty array when nothing exhausted.
+   */
+  exhaustedStories: string[];
+  /**
+   * Sum of `AgentFallbackHop.costUsd` across every hop in the run — the cost
+   * the user paid on failed attempts that led to a swap. Never includes the
+   * final (successful or last-attempted) hop's cost; that lives on `StoryMetrics.cost`.
+   */
+  totalWastedCostUsd: number;
+}
+
+/**
  * Per-run execution metrics
  */
 export interface RunMetrics {
@@ -212,6 +248,11 @@ export interface RunMetrics {
   stories: StoryMetrics[];
   /** Total token usage for the run */
   totalTokens?: TokenUsage;
+  /**
+   * Run-level agent-swap aggregates (ADR-012).
+   * Absent when no swaps occurred in this run.
+   */
+  fallback?: RunFallbackAggregate;
 }
 
 /**

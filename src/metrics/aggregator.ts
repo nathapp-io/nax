@@ -4,7 +4,7 @@
  * Calculates aggregate metrics across all runs.
  */
 
-import type { AggregateMetrics, RunMetrics, StoryMetrics } from "./types";
+import type { AggregateMetrics, RunFallbackAggregate, RunMetrics, StoryMetrics } from "./types";
 
 /**
  * Calculate aggregate metrics across all runs.
@@ -188,4 +188,54 @@ export function getLastRun(runs: RunMetrics[]): RunMetrics | null {
 
   // Runs are appended chronologically, so last element is most recent
   return runs[runs.length - 1];
+}
+
+/**
+ * Derive run-level fallback aggregates from per-story metrics.
+ *
+ * Pure function — inspects `story.fallback?.hops` on every story and returns:
+ *   - totalHops: sum of hops
+ *   - perPair:  hops grouped by `${priorAgent}->${newAgent}`
+ *   - exhaustedStories: stories where the final hop was an availability failure
+ *                       and the story itself did not succeed (proxy for
+ *                       `onSwapExhausted` emission from AgentManager)
+ *   - totalWastedCostUsd: Σ `hop.costUsd` across every hop
+ *
+ * Returns `undefined` when no story has any fallback hops. Callers attach the
+ * result to `RunMetrics.fallback` conditionally.
+ *
+ * @see docs/adr/ADR-012-agent-manager-ownership.md
+ * @see docs/reviews/ADR-012-implementation-review.md — review findings #2 and #3
+ */
+export function deriveRunFallbackAggregates(stories: StoryMetrics[]): RunFallbackAggregate | undefined {
+  if (stories.length === 0) return undefined;
+
+  let totalHops = 0;
+  const perPair: Record<string, number> = {};
+  const exhaustedStories: string[] = [];
+  let totalWastedCostUsd = 0;
+
+  for (const story of stories) {
+    const hops = story.fallback?.hops;
+    if (!hops || hops.length === 0) continue;
+
+    totalHops += hops.length;
+
+    for (const h of hops) {
+      const key = `${h.priorAgent}->${h.newAgent}`;
+      perPair[key] = (perPair[key] ?? 0) + 1;
+      totalWastedCostUsd += h.costUsd ?? 0;
+    }
+
+    // Exhausted = failed story whose last hop was an availability failure.
+    // Mirrors AgentManager's onSwapExhausted emission condition.
+    const lastHop = hops[hops.length - 1];
+    if (!story.success && lastHop && lastHop.category === "availability") {
+      exhaustedStories.push(story.storyId);
+    }
+  }
+
+  if (totalHops === 0) return undefined;
+
+  return { totalHops, perPair, exhaustedStories, totalWastedCostUsd };
 }
