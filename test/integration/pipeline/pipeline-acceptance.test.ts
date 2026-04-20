@@ -12,21 +12,20 @@ import { initLogger, resetLogger } from "../../../src/logger";
 import { acceptanceStage } from "../../../src/pipeline/stages/acceptance";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD } from "../../../src/prd/types";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
-const testDir = `/tmp/nax-acceptance-test-${Date.now()}`;
-const featureDir = path.join(testDir, ".nax/features/test-feature");
+let testDir: string;
+let featureDir: string;
 
 beforeEach(async () => {
-  // Initialize logger for tests
   initLogger({ level: "error", useChalk: false });
-  // Create test directory structure
+  testDir = makeTempDir("nax-acceptance-test-");
+  featureDir = path.join(testDir, ".nax/features/test-feature");
   await fs.mkdir(featureDir, { recursive: true });
 });
 
 afterEach(async () => {
-  // Clean up test directory
-  await fs.rm(testDir, { recursive: true, force: true });
-  // Reset logger
+  cleanupTempDir(testDir);
   resetLogger();
 });
 
