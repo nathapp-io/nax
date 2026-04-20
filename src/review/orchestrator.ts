@@ -8,6 +8,7 @@
  *   const result = await reviewOrchestrator.review(config, workdir, executionConfig, plugins);
  */
 
+import { join } from "node:path";
 import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
@@ -18,6 +19,7 @@ import { getSafeLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import { errorMessage } from "../utils/errors";
+import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 import { runAdversarialReview } from "./adversarial";
 import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
@@ -134,6 +136,7 @@ export class ReviewOrchestrator {
     contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle },
     projectDir?: string,
     env?: Record<string, string | undefined>,
+    naxIgnoreIndex?: NaxIgnoreIndex,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -196,6 +199,7 @@ export class ReviewOrchestrator {
         contextBundles,
         projectDir,
         env,
+        naxIgnoreIndex,
       );
     } else {
       // Always split: mechanical checks first, then LLM checks independently.
@@ -227,6 +231,7 @@ export class ReviewOrchestrator {
         contextBundles,
         projectDir,
         env,
+        naxIgnoreIndex,
       );
 
       // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
@@ -280,6 +285,7 @@ export class ReviewOrchestrator {
             featureContextMarkdown,
             contextBundles?.semantic,
             projectDir,
+            naxIgnoreIndex,
           ),
           _orchestratorDeps.runAdversarialReview(
             workdir,
@@ -294,6 +300,7 @@ export class ReviewOrchestrator {
             featureContextMarkdown,
             contextBundles?.adversarial,
             projectDir,
+            naxIgnoreIndex,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -319,6 +326,7 @@ export class ReviewOrchestrator {
           contextBundles,
           undefined,
           env,
+          naxIgnoreIndex,
         );
         llmCheckResults = llmResult.checks;
       }
@@ -398,9 +406,14 @@ export class ReviewOrchestrator {
         // Use the story's start ref if available to capture auto-committed changes
         const baseRef = storyGitRef ?? executionConfig?.storyGitRef;
         const changedFiles = await getChangedFiles(workdir, baseRef);
+        const repoRoot = projectDir ?? workdir;
+        const packageDir = scopePrefix ? join(repoRoot, scopePrefix) : undefined;
+        const ignoreMatchers =
+          naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(repoRoot, packageDir));
+        const visibleChangedFiles = filterNaxInternalPaths(changedFiles, ignoreMatchers);
         const scopedFiles = scopePrefix
-          ? changedFiles.filter((f) => f === scopePrefix || f.startsWith(`${scopePrefix}/`))
-          : changedFiles;
+          ? visibleChangedFiles.filter((f) => f === scopePrefix || f.startsWith(`${scopePrefix}/`))
+          : visibleChangedFiles;
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 
         for (const reviewer of reviewers) {
@@ -512,6 +525,7 @@ export class ReviewOrchestrator {
       contextBundles,
       ctx.projectDir,
       ctx.worktreeDependencyContext?.env,
+      ctx.naxIgnoreIndex,
     );
   }
 }

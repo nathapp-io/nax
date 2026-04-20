@@ -15,6 +15,7 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { countStories, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
+import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
 import type { DeferredReviewResult } from "./deferred-review";
@@ -59,6 +60,23 @@ export async function executeUnified(
   let deferredReview: DeferredReviewResult | undefined;
 
   const runStartRef = await captureRunStartRef(ctx.workdir);
+  let cachedNaxIgnoreKey: string | undefined;
+  const getRunNaxIgnoreIndex = async (currentPrd: PRD) => {
+    const packageDirs = [
+      ...new Set(
+        currentPrd.userStories
+          .map((s) => s.workdir)
+          .filter((w): w is string => typeof w === "string" && w.length > 0)
+          .map((w) => `${ctx.workdir}/${w}`),
+      ),
+    ].sort();
+    const cacheKey = packageDirs.join("|");
+    if (ctx.naxIgnoreIndex && cachedNaxIgnoreKey === cacheKey) return ctx.naxIgnoreIndex;
+    const nextIndex = await buildNaxIgnoreIndex(ctx.workdir, packageDirs);
+    cachedNaxIgnoreKey = cacheKey;
+    ctx.naxIgnoreIndex = nextIndex;
+    return nextIndex;
+  };
 
   pipelineEventBus.clear();
   // Wire subscribers — unsubscribe fns are NOT called here because run:completed
@@ -99,7 +117,14 @@ export async function executeUnified(
   try {
     if (isComplete(prd)) {
       logger?.info("execution", "All stories already complete — skipping pre-run pipeline");
-      deferredReview = await runDeferredReview(ctx.workdir, ctx.config.review, ctx.pluginRegistry, runStartRef);
+      const naxIgnoreIndex = await getRunNaxIgnoreIndex(prd);
+      deferredReview = await runDeferredReview(
+        ctx.workdir,
+        ctx.config.review,
+        ctx.pluginRegistry,
+        runStartRef,
+        naxIgnoreIndex,
+      );
       return buildResult("completed");
     }
 
@@ -107,12 +132,14 @@ export async function executeUnified(
     let preRunCtx: PipelineContext | undefined;
     if (ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
+      const naxIgnoreIndex = await getRunNaxIgnoreIndex(prd);
       preRunCtx = {
         config: ctx.config,
         rootConfig: ctx.config,
         prd,
         projectDir: ctx.workdir,
         workdir: ctx.workdir,
+        naxIgnoreIndex,
         featureDir: ctx.featureDir,
         story: prd.userStories[0],
         stories: prd.userStories,
@@ -131,6 +158,7 @@ export async function executeUnified(
         prd = await loadPRD(ctx.prdPath);
         prdDirty = false;
       }
+      const naxIgnoreIndex = await getRunNaxIgnoreIndex(prd);
       const storyCounts = countStories(prd);
       logger?.debug("execution", "Loop iteration", {
         iteration: iterations,
@@ -151,7 +179,13 @@ export async function executeUnified(
           if (!shouldProceed) return buildResult("pre-merge-aborted");
         }
         logger?.debug("execution", "Running deferred review");
-        deferredReview = await runDeferredReview(ctx.workdir, ctx.config.review, ctx.pluginRegistry, runStartRef);
+        deferredReview = await runDeferredReview(
+          ctx.workdir,
+          ctx.config.review,
+          ctx.pluginRegistry,
+          runStartRef,
+          naxIgnoreIndex,
+        );
         logger?.debug("execution", "Deferred review done — returning completed");
         return buildResult("completed");
       }
@@ -205,6 +239,7 @@ export async function executeUnified(
                 rootConfig: ctx.config,
                 prd,
                 projectDir: ctx.workdir,
+                naxIgnoreIndex,
                 hooks: ctx.hooks,
                 featureDir: ctx.featureDir,
                 agentGetFn: ctx.agentGetFn,

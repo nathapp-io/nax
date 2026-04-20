@@ -24,6 +24,7 @@ import type { UserStory } from "../prd";
 import { ReviewPromptBuilder } from "../prompts";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
+import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
@@ -144,6 +145,7 @@ export async function runSemanticReview(
   featureContextMarkdown?: string,
   contextBundle?: import("../context/engine").ContextBundle,
   projectDir?: string,
+  naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -179,7 +181,9 @@ export async function runSemanticReview(
   // Collect stat summary (used by both modes).
   // In embedded mode: also collect full diff, truncate if needed.
   // In ref mode: pass stat + ref to reviewer; reviewer self-serves the full diff via tools.
-  const stat = await collectDiffStat(workdir, effectiveRef);
+  const repoRoot = projectDir ?? workdir;
+  const packageDir = workdir !== repoRoot ? workdir : undefined;
+  const stat = await collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
 
   // ADR-009: resolve effective exclude patterns from config (falls back to DEFAULT_TEST_FILE_PATTERNS
   // when semanticConfig.excludePatterns is undefined — no behaviour change for default config).
@@ -188,7 +192,7 @@ export async function runSemanticReview(
 
   let diff: string | undefined;
   if (diffMode === "embedded") {
-    const rawDiff = await collectDiff(workdir, effectiveRef, excludePatterns);
+    const rawDiff = await collectDiff(workdir, effectiveRef, excludePatterns, { naxIgnoreIndex, packageDir });
     diff = truncateDiff(rawDiff, rawDiff.length > DIFF_CAP_BYTES ? stat : undefined);
     if (!diff) {
       return {

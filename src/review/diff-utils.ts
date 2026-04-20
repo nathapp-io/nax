@@ -9,12 +9,26 @@ import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { isTestFile } from "../test-runners";
 import { getMergeBase, isGitRefValid } from "../utils/git";
+import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Maximum diff size in bytes before truncation. 50KB keeps prompts within LLM context. */
 export const DIFF_CAP_BYTES = 51_200;
 
 /** nax metadata paths — always excluded from diffs (never production code). */
 export const ALWAYS_EXCLUDED = [":!.nax/", ":!.nax-pids"];
+
+interface DiffIgnoreOptions {
+  naxIgnoreIndex?: NaxIgnoreIndex;
+  packageDir?: string;
+}
+
+async function resolveNaxIgnorePathspecExcludes(workdir: string, options?: DiffIgnoreOptions): Promise<string[]> {
+  if (options?.naxIgnoreIndex) return options.naxIgnoreIndex.toPathspecExcludes(options.packageDir);
+  const matchers = await resolveNaxIgnorePatterns(workdir, options?.packageDir);
+  const pathspec = new Set<string>();
+  for (const matcher of matchers) pathspec.add(`:!${matcher.pattern}`);
+  return [...pathspec];
+}
 
 /** Injectable dependencies for diff-utils — avoids mock.module() in tests. */
 export const _diffUtilsDeps = {
@@ -33,8 +47,14 @@ export interface TestInventory {
  * excludePatterns: pathspec exclusions (e.g. test files for semantic). Pass [] for adversarial (sees all).
  * Always excludes .nax/ and .nax-pids regardless of caller config.
  */
-export async function collectDiff(workdir: string, storyGitRef: string, excludePatterns: string[]): Promise<string> {
-  const merged = [...new Set([...excludePatterns, ...ALWAYS_EXCLUDED])];
+export async function collectDiff(
+  workdir: string,
+  storyGitRef: string,
+  excludePatterns: string[],
+  options?: DiffIgnoreOptions,
+): Promise<string> {
+  const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
+  const merged = [...new Set([...excludePatterns, ...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   const cmd = ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged];
   const proc = _diffUtilsDeps.spawn({
     cmd,
@@ -57,9 +77,15 @@ export async function collectDiff(workdir: string, storyGitRef: string, excludeP
  * Used as a preamble when the full diff is truncated so the reviewer
  * always knows which files changed even if content is cut off.
  */
-export async function collectDiffStat(workdir: string, storyGitRef: string): Promise<string> {
+export async function collectDiffStat(
+  workdir: string,
+  storyGitRef: string,
+  options?: DiffIgnoreOptions,
+): Promise<string> {
+  const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
+  const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   const proc = _diffUtilsDeps.spawn({
-    cmd: ["git", "diff", "--stat", `${storyGitRef}..HEAD`],
+    cmd: ["git", "diff", "--stat", `${storyGitRef}..HEAD`, "--", ".", ...merged],
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",
@@ -170,6 +196,7 @@ export async function computeTestInventory(
   workdir: string,
   storyGitRef: string,
   testFilePatterns?: readonly string[],
+  options?: DiffIgnoreOptions,
 ): Promise<TestInventory> {
   const proc = _diffUtilsDeps.spawn({
     cmd: ["git", "diff", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`],
@@ -189,9 +216,13 @@ export async function computeTestInventory(
   }
 
   const addedFiles = stdout.trim().split("\n").filter(Boolean);
+  const ignoreMatchers =
+    options?.naxIgnoreIndex?.getMatchers(options.packageDir) ??
+    (await resolveNaxIgnorePatterns(workdir, options?.packageDir));
+  const visibleAddedFiles = filterNaxInternalPaths(addedFiles, ignoreMatchers);
 
-  const addedTestFiles = addedFiles.filter((f) => isTestFile(f, testFilePatterns));
-  const addedSourceFiles = addedFiles.filter((f) => !isTestFile(f, testFilePatterns));
+  const addedTestFiles = visibleAddedFiles.filter((f) => isTestFile(f, testFilePatterns));
+  const addedSourceFiles = visibleAddedFiles.filter((f) => !isTestFile(f, testFilePatterns));
 
   // For each added source file, check whether a matching test file was also added.
   // Match by basename: src/foo/bar.ts → looks for bar.test.ts, bar.spec.ts in addedFiles.

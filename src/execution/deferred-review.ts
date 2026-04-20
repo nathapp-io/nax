@@ -8,6 +8,7 @@
 import { spawn } from "bun";
 import type { PluginRegistry } from "../plugins";
 import type { ReviewConfig } from "../review/types";
+import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Injectable deps for testing */
 export const _deferredReviewDeps = { spawn };
@@ -62,6 +63,7 @@ export async function runDeferredReview(
   reviewConfig: ReviewConfig,
   plugins: PluginRegistry,
   runStartRef: string,
+  naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<DeferredReviewResult | undefined> {
   if (!reviewConfig || reviewConfig.pluginMode !== "deferred") {
     return undefined;
@@ -72,7 +74,9 @@ export async function runDeferredReview(
     return undefined;
   }
 
-  const changedFiles = await getChangedFilesForDeferred(workdir, runStartRef);
+  const changedFilesRaw = await getChangedFilesForDeferred(workdir, runStartRef);
+  const ignoreMatchers = naxIgnoreIndex?.getMatchers() ?? (await resolveNaxIgnorePatterns(workdir));
+  const changedFiles = filterNaxInternalPaths(changedFilesRaw, ignoreMatchers);
 
   const reviewerResults: DeferredReviewResult["reviewerResults"] = [];
   let anyFailed = false;

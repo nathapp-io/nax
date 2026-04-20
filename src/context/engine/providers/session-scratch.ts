@@ -18,7 +18,7 @@
 import { createHash } from "node:crypto";
 import type { ScratchEntry } from "../../../session/scratch-writer";
 import { scratchFilePath } from "../../../session/scratch-writer";
-import { filterNaxInternalPaths } from "../../../utils/path-filters";
+import { type NaxIgnoreMatcher, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../../../utils/path-filters";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -71,7 +71,11 @@ function parseJsonl(raw: string): ScratchEntry[] {
  * fields (outputTail) are passed through neutralizeForAgent() to strip
  * agent-specific tool-name references (AC-42).
  */
-function renderEntry(entry: ScratchEntry, targetAgentId?: string): string {
+function renderEntry(
+  entry: ScratchEntry,
+  targetAgentId?: string,
+  ignoreMatchers: readonly NaxIgnoreMatcher[] = [],
+): string {
   switch (entry.kind) {
     case "verify-result": {
       const status = entry.success ? "PASS" : `FAIL (${entry.failCount} failures)`;
@@ -86,7 +90,7 @@ function renderEntry(entry: ScratchEntry, targetAgentId?: string): string {
       return `**Rectify** attempt ${entry.attempt} at ${entry.timestamp}: ${entry.succeeded ? "succeeded" : "failed"}`;
     case "tdd-session": {
       // #542: drop .nax/ bookkeeping noise so the prompt only surfaces real code changes.
-      const userChanged = filterNaxInternalPaths(entry.filesChanged);
+      const userChanged = filterNaxInternalPaths(entry.filesChanged, ignoreMatchers);
       const changed = userChanged.length > 0 ? ` — changed: ${userChanged.join(", ")}` : "";
       const lines = [
         `**TDD ${entry.role}** at ${entry.timestamp}: ${entry.success ? "succeeded" : "failed"}${changed}`,
@@ -106,7 +110,11 @@ function renderEntry(entry: ScratchEntry, targetAgentId?: string): string {
  * Read a scratch dir and produce a RawChunk for its most recent entries.
  * Returns null when the dir has no scratch file or the file is empty.
  */
-async function readScratchDir(scratchDir: string, targetAgentId?: string): Promise<RawChunk | null> {
+async function readScratchDir(
+  scratchDir: string,
+  targetAgentId?: string,
+  ignoreMatchers: readonly NaxIgnoreMatcher[] = [],
+): Promise<RawChunk | null> {
   const filePath = scratchFilePath(scratchDir);
   if (!(await _sessionScratchDeps.fileExists(filePath))) return null;
 
@@ -116,7 +124,7 @@ async function readScratchDir(scratchDir: string, targetAgentId?: string): Promi
 
   // Take most recent N entries (tail of the JSONL)
   const entries = allEntries.slice(-MAX_ENTRIES_PER_DIR);
-  const content = entries.map((e) => renderEntry(e, targetAgentId)).join("\n\n");
+  const content = entries.map((e) => renderEntry(e, targetAgentId, ignoreMatchers)).join("\n\n");
 
   // Truncate content to the token ceiling so the reported token count
   // matches the actual content length. Without truncation the packing stage
@@ -156,9 +164,10 @@ export class SessionScratchProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
+    const ignoreMatchers = await resolveNaxIgnorePatterns(request.repoRoot, request.packageDir);
     const chunks: RawChunk[] = [];
     for (const dir of dirs) {
-      const chunk = await readScratchDir(dir, request.agentId);
+      const chunk = await readScratchDir(dir, request.agentId, ignoreMatchers);
       if (chunk) chunks.push(chunk);
     }
 
