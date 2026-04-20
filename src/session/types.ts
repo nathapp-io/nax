@@ -175,6 +175,13 @@ export type SessionAgentRunner = (
   options: import("../agents/types").AgentRunOptions,
 ) => Promise<import("../agents/types").AgentResult>;
 
+/**
+ * Options for SessionManager.runInSession (ADR-013 Phase 1).
+ * Reserved for Phase 2 retry limits and abort signal overrides. Currently unused.
+ */
+// biome-ignore lint/complexity/noBannedTypes: reserved empty interface for Phase 2 extensions
+export type SessionRunOptions = {};
+
 /** Interface the SessionManager implements */
 export interface ISessionManager {
   /** Create a new session descriptor */
@@ -208,8 +215,9 @@ export interface ISessionManager {
   resume(storyId: string, role: SessionRole): SessionDescriptor | null;
   /**
    * Run an agent within a tracked session — the per-session lifecycle primitive.
+   * (ADR-013 Phase 1: signature changed from SessionAgentRunner to IAgentManager.)
    *
-   * Owns: CREATED→RUNNING transition before the runner, handle/protocolIds
+   * Owns: CREATED→RUNNING transition before agentManager.run(), handle/protocolIds
    * binding from the result, and RUNNING→COMPLETED/FAILED transition after.
    * Callers don't need to touch transition/bindHandle for sessions that go
    * through this path.
@@ -224,8 +232,9 @@ export interface ISessionManager {
    */
   runInSession(
     id: string,
-    runner: SessionAgentRunner,
-    options: import("../agents/types").AgentRunOptions,
+    agentManager: import("../agents/manager-types").IAgentManager,
+    request: import("../agents/manager-types").AgentRunRequest,
+    options?: SessionRunOptions,
   ): Promise<import("../agents/types").AgentResult>;
   /**
    * Force-close all non-terminal sessions for a story (Phase 3).

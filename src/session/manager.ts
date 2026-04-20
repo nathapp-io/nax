@@ -14,15 +14,16 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentResult, AgentRunOptions } from "../agents/types";
+import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
+import type { AgentResult } from "../agents/types";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type {
   CreateSessionOptions,
   ISessionManager,
   ProtocolIds,
-  SessionAgentRunner,
   SessionDescriptor,
+  SessionRunOptions,
   SessionState,
   TransitionOptions,
 } from "./types";
@@ -332,7 +333,17 @@ export class SessionManager implements ISessionManager {
    *   3. RUNNING → COMPLETED on success, RUNNING → FAILED on failure. If the
    *      runner threw, we transition to FAILED and re-throw.
    */
-  async runInSession(id: string, runner: SessionAgentRunner, options: AgentRunOptions): Promise<AgentResult> {
+  /**
+   * ADR-013 Phase 1: accepts IAgentManager + AgentRunRequest instead of the
+   * raw SessionAgentRunner function. Calls agentManager.run(injectedRequest)
+   * after injecting the onSessionEstablished callback for eager handle binding.
+   */
+  async runInSession(
+    id: string,
+    agentManager: IAgentManager,
+    request: AgentRunRequest,
+    _options?: SessionRunOptions,
+  ): Promise<AgentResult> {
     const pre = this._sessions.get(id);
     if (!pre) {
       throw new NaxError(`Session "${id}" not found in registry`, "SESSION_NOT_FOUND", {
@@ -350,44 +361,41 @@ export class SessionManager implements ISessionManager {
     // session-established and result-returned, the descriptor already
     // carries the correlation needed to resume. The caller's own callback
     // (if any) is chained afterwards so both fire.
-    const callerCallback = options.onSessionEstablished;
-    const injectedOptions: AgentRunOptions = {
-      ...options,
-      onSessionEstablished: (protocolIds, sessionName) => {
-        try {
-          this.bindHandle(id, sessionName, protocolIds);
-        } catch (err) {
-          getLogger().warn("session", "bindHandle via onSessionEstablished failed", {
-            sessionId: id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-        callerCallback?.(protocolIds, sessionName);
+    const callerCallback = request.runOptions.onSessionEstablished;
+    const injectedRequest: AgentRunRequest = {
+      ...request,
+      runOptions: {
+        ...request.runOptions,
+        onSessionEstablished: (protocolIds, sessionName) => {
+          try {
+            this.bindHandle(id, sessionName, protocolIds);
+          } catch (err) {
+            getLogger().warn("session", "bindHandle via onSessionEstablished failed", {
+              sessionId: id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          callerCallback?.(protocolIds, sessionName);
+        },
       },
     };
 
     let result: AgentResult;
     try {
-      result = await runner(injectedOptions);
+      result = await agentManager.run(injectedRequest);
     } catch (err) {
-      // Runner threw — mark session failed, then propagate.
       if (this._sessions.get(id)?.state === "RUNNING") {
         this.transition(id, "FAILED");
       }
       throw err;
     }
 
-    // Bind protocolIds eagerly when the runner reported them. The handle is
-    // the caller-known session name (stored on the descriptor by whoever
-    // created it), or the runner's own derived name if it updated the
-    // descriptor itself. We use the current descriptor's handle as the fallback.
     if (result.protocolIds) {
       const current = this._sessions.get(id);
       const handle = current?.handle;
       if (handle) {
         this.bindHandle(id, handle, result.protocolIds);
       } else {
-        // No handle yet — persist the ids only.
         const updated: SessionDescriptor = {
           ...(current as SessionDescriptor),
           protocolIds: result.protocolIds,

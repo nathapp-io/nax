@@ -25,4 +25,4 @@ export type {
   AgentManagerEventName,
   AgentRunRequest,
 } from "./manager-types";
-export { resolveDefaultAgent } from "./utils";
+export { resolveDefaultAgent, wrapAdapterAsManager } from "./utils";

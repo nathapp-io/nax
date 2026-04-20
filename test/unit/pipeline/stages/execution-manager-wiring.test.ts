@@ -71,6 +71,12 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
         return { result, fallbacks: [], finalBundle: b, finalPrompt: prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
+      run: async (request) => {
+        const outcome = await manager.runWithFallback(request);
+        return { ...outcome.result, agentFallbacks: outcome.fallbacks };
+      },
+      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+      getAgent: () => undefined,
     };
 
     const successAdapter: AgentAdapter = {
