@@ -127,13 +127,6 @@ export const _acpAdapterDeps = {
   sleep,
 
   /**
-   * Whether to retry when a session error (stopReason=error) is detected.
-   * Default: true (production retry safety net).
-   * Tests override to false to prevent mock callIndex drift from retries.
-   */
-  shouldRetrySessionError: true,
-
-  /**
    * Create an ACP client for the given command string.
    * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
@@ -450,10 +443,6 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
     const startTime = Date.now();
-    const config = options.config;
-    const SESSION_ERROR_MAX_RETRIES = config?.execution?.sessionErrorMaxRetries ?? 1;
-    const SESSION_ERROR_RETRYABLE_MAX_RETRIES = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
-    let sessionErrorRetries = 0;
 
     getSafeLogger()?.debug("acp-adapter", `Starting run for ${this.name}`, {
       model: options.modelDef.model,
@@ -463,138 +452,81 @@ export class AcpAgentAdapter implements AgentAdapter {
       sessionRole: options.sessionRole,
     });
 
-    while (true) {
-      // Fix for v0.63.0-canary.8 Issue 5: honour the shutdown abort signal
-      // BEFORE issuing any new work. Without this, hitting Ctrl+C while the
-      // adapter is in its session-error retry path would spawn a fresh acpx
-      // session during shutdown, register a new PID, and race with teardown.
-      if (options.abortSignal?.aborted) {
-        getSafeLogger()?.warn("acp-adapter", `Run aborted for ${this.name} (shutdown in progress)`, {
-          storyId: options.storyId,
-          featureName: options.featureName,
+    // Honour the shutdown abort signal before issuing any new work.
+    // Without this, hitting Ctrl+C could spawn a fresh acpx session during
+    // shutdown and race with teardown.
+    if (options.abortSignal?.aborted) {
+      getSafeLogger()?.warn("acp-adapter", `Run aborted for ${this.name} (shutdown in progress)`, {
+        storyId: options.storyId,
+        featureName: options.featureName,
+      });
+      return {
+        success: false,
+        exitCode: 130,
+        output: "Run aborted — shutdown in progress",
+        rateLimited: false,
+        durationMs: Date.now() - startTime,
+        estimatedCost: 0,
+        adapterFailure: {
+          category: "availability",
+          outcome: "fail-aborted",
+          retriable: false,
+          message: "Run aborted — shutdown in progress",
+        },
+      };
+    }
+
+    try {
+      const result = await this._runWithClient(options, startTime, this.name);
+
+      if (!result.success) {
+        getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, {
+          exitCode: result.exitCode,
+          ...(result.output ? { output: result.output.slice(0, 500) } : {}),
         });
-        return {
-          success: false,
-          exitCode: 130,
-          output: "Run aborted — shutdown in progress",
-          rateLimited: false,
-          durationMs: Date.now() - startTime,
-          estimatedCost: 0,
-          adapterFailure: {
-            category: "availability",
-            outcome: "fail-aborted",
-            retriable: false,
-            message: "Run aborted — shutdown in progress",
-          },
-        };
-      }
-      try {
-        const result = await this._runWithClient(options, startTime, this.name);
 
-        if (!result.success) {
-          getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, {
-            exitCode: result.exitCode,
-            ...(result.output ? { output: result.output.slice(0, 500) } : {}),
-          });
-
-          // Session error retry: use a fresh session. Retryable errors (e.g. queue owner
-          // disconnect) get more attempts than non-retryable ones (stale/locked session).
-          // Default (test mode): disabled — retries would advance mock callIndex and break tests.
-          const maxSessionRetries = result.sessionErrorRetryable
-            ? SESSION_ERROR_RETRYABLE_MAX_RETRIES
-            : SESSION_ERROR_MAX_RETRIES;
-          if (
-            result.sessionError &&
-            _acpAdapterDeps.shouldRetrySessionError &&
-            sessionErrorRetries < maxSessionRetries &&
-            !options.abortSignal?.aborted
-          ) {
-            sessionErrorRetries += 1;
-            getSafeLogger()?.warn("acp-adapter", "Session error — retrying with fresh session", {
-              storyId: options.storyId,
-              featureName: options.featureName,
-              retryable: result.sessionErrorRetryable,
-              attempt: sessionErrorRetries,
-              maxAttempts: maxSessionRetries,
-            });
-            continue;
-          }
-
-          const parsed = _fallbackDeps.parseAgentError(result.output ?? "");
-          if (parsed.type === "auth") {
-            return {
-              success: false,
-              exitCode: result.exitCode ?? 1,
-              output: result.output ?? "",
-              rateLimited: false,
-              durationMs: Date.now() - startTime,
-              estimatedCost: result.estimatedCost ?? 0,
-              adapterFailure: {
-                category: "availability",
-                outcome: "fail-auth",
-                retriable: false,
-                message: (result.output ?? "").slice(0, 500),
-              },
-            };
-          }
-          if (parsed.type === "rate-limit") {
-            return {
-              success: false,
-              exitCode: result.exitCode ?? 1,
-              output: result.output ?? "",
-              rateLimited: true,
-              durationMs: Date.now() - startTime,
-              estimatedCost: result.estimatedCost ?? 0,
-              adapterFailure: {
-                category: "availability",
-                outcome: "fail-rate-limit",
-                retriable: true,
-                message: (result.output ?? "").slice(0, 500),
-                ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
-              },
-            };
-          }
-        }
-
-        return { ...result, sessionRetries: sessionErrorRetries };
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        const parsed = _fallbackDeps.parseAgentError(error.message);
-
+        const parsed = _fallbackDeps.parseAgentError(result.output ?? "");
         if (parsed.type === "auth") {
           return {
             success: false,
-            exitCode: 1,
-            output: error.message,
+            exitCode: result.exitCode ?? 1,
+            output: result.output ?? "",
             rateLimited: false,
             durationMs: Date.now() - startTime,
-            estimatedCost: 0,
+            estimatedCost: result.estimatedCost ?? 0,
             adapterFailure: {
               category: "availability",
               outcome: "fail-auth",
               retriable: false,
-              message: error.message.slice(0, 500),
+              message: (result.output ?? "").slice(0, 500),
             },
           };
         }
         if (parsed.type === "rate-limit") {
           return {
             success: false,
-            exitCode: 1,
-            output: error.message,
+            exitCode: result.exitCode ?? 1,
+            output: result.output ?? "",
             rateLimited: true,
             durationMs: Date.now() - startTime,
-            estimatedCost: 0,
+            estimatedCost: result.estimatedCost ?? 0,
             adapterFailure: {
               category: "availability",
               outcome: "fail-rate-limit",
               retriable: true,
-              message: error.message.slice(0, 500),
+              message: (result.output ?? "").slice(0, 500),
               ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
             },
           };
         }
-        // Unknown error — return as failure result
+      }
+
+      return result;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      const parsed = _fallbackDeps.parseAgentError(error.message);
+
+      if (parsed.type === "auth") {
         return {
           success: false,
           exitCode: 1,
@@ -603,13 +535,45 @@ export class AcpAgentAdapter implements AgentAdapter {
           durationMs: Date.now() - startTime,
           estimatedCost: 0,
           adapterFailure: {
-            category: "quality",
-            outcome: "fail-unknown",
+            category: "availability",
+            outcome: "fail-auth",
             retriable: false,
             message: error.message.slice(0, 500),
           },
         };
       }
+      if (parsed.type === "rate-limit") {
+        return {
+          success: false,
+          exitCode: 1,
+          output: error.message,
+          rateLimited: true,
+          durationMs: Date.now() - startTime,
+          estimatedCost: 0,
+          adapterFailure: {
+            category: "availability",
+            outcome: "fail-rate-limit",
+            retriable: true,
+            message: error.message.slice(0, 500),
+            ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
+          },
+        };
+      }
+      // Unknown error — return as failure result
+      return {
+        success: false,
+        exitCode: 1,
+        output: error.message,
+        rateLimited: false,
+        durationMs: Date.now() - startTime,
+        estimatedCost: 0,
+        adapterFailure: {
+          category: "quality",
+          outcome: "fail-unknown",
+          retriable: false,
+          message: error.message.slice(0, 500),
+        },
+      };
     }
   }
 

@@ -3,8 +3,10 @@
  *
  * Covers:
  * - protocolIds (recordId + sessionId) surfaced on AgentResult
- * - sessionRetries counter on AgentResult
  * - deriveSessionName() produces correct ACP session handle from SessionDescriptor
+ *
+ * Note: sessionRetries removed in ADR-013 Phase 2 — retry loop moved to
+ * SessionManager.runInSession; adapter now executes once per call.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -28,7 +30,7 @@ const BASE_OPTIONS: AgentRunOptions = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 1 plumbing — protocolIds + sessionRetries on AgentResult
+// Phase 1 plumbing — protocolIds on AgentResult
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AcpAgentAdapter — Phase 1: protocolIds surfaced on AgentResult", () => {
@@ -67,13 +69,7 @@ describe("AcpAgentAdapter — Phase 1: protocolIds surfaced on AgentResult", () 
     expect(result.protocolIds?.recordId).toBeNull();
   });
 
-  test("sessionRetries is 0 on a successful run with no retries", async () => {
-    const session = makeSession();
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    const result = await adapter.run(BASE_OPTIONS);
-    expect(result.sessionRetries).toBe(0);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

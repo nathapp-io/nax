@@ -109,7 +109,6 @@ withDepsRestore(_executorDeps, ["spawn"]);
 
 beforeEach(() => {
   _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
-  _acpAdapterDeps.shouldRetrySessionError = false;
 });
 
 afterEach(() => {

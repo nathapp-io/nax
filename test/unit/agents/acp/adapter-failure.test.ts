@@ -23,12 +23,11 @@ import { makeClient, makeRunOptions, makeSession } from "./adapter.test";
 describe("AcpAgentAdapter — adapterFailure taxonomy", () => {
   let adapter: AcpAgentAdapter;
 
-  withDepsRestore(_acpAdapterDeps, ["createClient", "sleep", "shouldRetrySessionError"]);
+  withDepsRestore(_acpAdapterDeps, ["createClient", "sleep"]);
 
   beforeEach(() => {
     adapter = new AcpAgentAdapter("claude");
     _acpAdapterDeps.sleep = async () => {};
-    _acpAdapterDeps.shouldRetrySessionError = false;
   });
 
   afterEach(() => {
