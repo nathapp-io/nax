@@ -13,7 +13,7 @@ import { fireHook } from "../../hooks/runner";
 import type { HooksConfig } from "../../hooks/types";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
-import { saveRunMetrics } from "../../metrics";
+import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
 import { pipelineEventBus } from "../../pipeline/event-bus";
 import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, isComplete, isStalled } from "../../prd";
@@ -210,6 +210,11 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   // Compute final story counts before emitting completion event (RL-002)
   const finalCounts = countStories(prd);
 
+  // ADR-012 PR-2: aggregate agent-swap cost/hop data for run-level visibility.
+  // Undefined when no hops occurred — conditionally spread into both the event
+  // and the saved metrics so consumers see the field only when meaningful.
+  const fallbackAggregate = deriveRunFallbackAggregates(allStoryMetrics);
+
   // Emit run:completed after regression gate with real story counts (RL-002)
   pipelineEventBus.emit({
     type: "run:completed",
@@ -220,6 +225,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     pausedStories: finalCounts.paused,
     durationMs,
     totalCost,
+    ...(fallbackAggregate && { fallback: fallbackAggregate }),
   });
   // Drain async subscriber Promises (reporter.onRunEnd file writes, etc.) before
   // proceeding. Without this, run:completed handlers may not finish before caller returns.
@@ -237,6 +243,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     storiesFailed: finalCounts.failed,
     totalDurationMs: durationMs,
     stories: allStoryMetrics,
+    ...(fallbackAggregate && { fallback: fallbackAggregate }),
   };
 
   try {

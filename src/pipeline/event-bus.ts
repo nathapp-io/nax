@@ -118,6 +118,12 @@ export interface RunCompletedEvent {
   pausedStories: number;
   durationMs: number;
   totalCost?: number;
+  /**
+   * Run-level agent-swap aggregates (ADR-012).
+   * Absent when no swaps occurred in this run. Subscribers (reporters,
+   * events writer, TUI) should treat it as an optional enrichment.
+   */
+  fallback?: import("../metrics/types").RunFallbackAggregate;
 }
 
 export interface HumanReviewRequestedEvent {
