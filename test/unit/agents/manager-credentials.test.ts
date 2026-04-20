@@ -39,7 +39,6 @@ describe("AgentManager.validateCredentials (#518)", () => {
       getInstalledAgents: async () => [],
       checkAgentHealth: async () => [],
       protocol: "acp" as const,
-      resetStoryState: () => {},
     };
     const warn = mock(() => {});
     const manager = new AgentManager(config, registry, { logger: { warn } });
@@ -57,7 +56,6 @@ describe("AgentManager.validateCredentials (#518)", () => {
       getInstalledAgents: async () => [],
       checkAgentHealth: async () => [],
       protocol: "acp" as const,
-      resetStoryState: () => {},
     };
     const manager = new AgentManager(config, registry);
     await expect(manager.validateCredentials()).rejects.toThrow(/credentials/i);
@@ -72,7 +70,6 @@ describe("AgentManager.validateCredentials (#518)", () => {
       getInstalledAgents: async () => [],
       checkAgentHealth: async () => [],
       protocol: "acp" as const,
-      resetStoryState: () => {},
     };
     const manager = new AgentManager(config, registry);
     await expect(manager.validateCredentials()).resolves.toBeUndefined();

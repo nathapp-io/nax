@@ -53,12 +53,6 @@ export interface AgentRegistry {
   checkAgentHealth(): Promise<Array<{ name: string; displayName: string; installed: boolean }>>;
   /** Active protocol (always 'acp') */
   protocol: "acp";
-  /**
-   * Reset per-story state on all cached ACP adapters.
-   * Call at each story boundary so transient auth failures in one story
-   * do not permanently exclude agents for subsequent stories in the same run.
-   */
-  resetStoryState(): void;
 }
 
 /**
@@ -118,11 +112,5 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
     );
   }
 
-  function resetStoryState(): void {
-    for (const adapter of acpCache.values()) {
-      adapter.clearUnavailableAgents();
-    }
-  }
-
-  return { getAgent, getInstalledAgents, checkAgentHealth, protocol: "acp", resetStoryState };
+  return { getAgent, getInstalledAgents, checkAgentHealth, protocol: "acp" };
 }
