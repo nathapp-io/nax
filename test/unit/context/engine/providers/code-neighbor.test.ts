@@ -5,15 +5,15 @@
  * No real files are read.
  */
 
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
 import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { CodeNeighborProviderOptions } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
 import type { ResolvedTestPatterns } from "../../../../../src/test-runners/resolver";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../../../src/test-runners/conventions";
+import { cleanupTempDir, makeTempDir } from "../../../../helpers/temp";
 
 /**
  * Build a ResolvedTestPatterns value from test-file globs.
@@ -555,7 +555,7 @@ describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
   let origGetLogger: typeof _codeNeighborDeps.getLogger;
 
   beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
     const srcDir = join(tmpDir, "src");
     mkdirSync(srcDir, { recursive: true });
     // Create 201 files to exceed the 200-file cap
@@ -565,7 +565,7 @@ describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
   });
 
   afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   beforeEach(() => {

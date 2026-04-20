@@ -397,18 +397,15 @@ describe("StructuredFailure Timestamps", () => {
       timestamp: new Date().toISOString(),
     };
 
-    // Small delay to ensure different timestamp
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
     const failure2: StructuredFailure = {
       attempt: 2,
       modelTier: "balanced",
       stage: "verify",
       summary: "Second failure",
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(Date.parse(failure1.timestamp) + 1).toISOString(),
     };
 
-    // While millisecond precision should make them different, we just verify they're valid
+    expect(failure1.timestamp).not.toBe(failure2.timestamp);
     expect(failure1.timestamp).toBeDefined();
     expect(failure2.timestamp).toBeDefined();
   });

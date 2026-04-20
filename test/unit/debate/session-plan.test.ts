@@ -3,6 +3,20 @@ import type { NaxConfig } from "../../../src/config";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { DebateStageConfig } from "../../../src/debate/types";
 
+async function waitForStartedPlans(
+  startedOrder: number[],
+  expectedCount: number,
+): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (startedOrder.length >= expectedCount) {
+      return;
+    }
+    await Promise.resolve();
+  }
+
+  throw new Error(`Expected ${expectedCount} started plans, got ${startedOrder.length}`);
+}
+
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
     enabled: true,
@@ -486,8 +500,7 @@ describe("DebateSession.runPlan()", () => {
       outputDir: "/tmp/out",
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    // Verify parallel execution (both started)
+    await waitForStartedPlans(startedOrder, 2);
     expect(startedOrder).toEqual([0, 1]);
 
     resolvers[0]?.();

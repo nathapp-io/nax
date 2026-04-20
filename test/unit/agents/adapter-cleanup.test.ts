@@ -1,8 +1,11 @@
-import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
-const adapterSrc = readFileSync(join(import.meta.dir, "../../../src/agents/acp/adapter.ts"), "utf-8");
+let adapterSrc: string;
+
+beforeAll(async () => {
+  adapterSrc = await Bun.file(join(import.meta.dir, "../../../src/agents/acp/adapter.ts")).text();
+});
 
 describe("AcpAgentAdapter cleanup (Phase 4 invariants)", () => {
   test("_unavailableAgents private field is removed", () => {

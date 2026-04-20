@@ -61,8 +61,8 @@ describe("cancellableDelay", () => {
     await delayed;
     // Aborting after the delay has already resolved should not throw.
     controller.abort(new Error("too late"));
-    // Give event loop a tick to surface any unhandled rejection.
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Give the event loop a turn to surface any unhandled rejection.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(true).toBe(true);
   });
 

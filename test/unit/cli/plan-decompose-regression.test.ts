@@ -301,18 +301,27 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC-4: meta-test — plan-decompose.test.ts must not assert { subStories } envelope
+// AC-4: meta-test — split plan-decompose tests must not assert { subStories } envelope
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("plan-decompose.test.ts — no deprecated subStories envelope assertions", () => {
-  test("AC-4: plan-decompose.test.ts does not contain { subStories } envelope in adapter mocks", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "plan-decompose.test.ts"),
-    ).text();
+describe("plan-decompose split tests — no deprecated subStories envelope assertions", () => {
+  test("AC-4: split plan-decompose tests do not contain { subStories } envelope in adapter mocks", async () => {
+    const sources = await Promise.all([
+      Bun.file(join(import.meta.dir, "plan-decompose-ac-repair.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-adapter.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-mapper.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-cli-wiring.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-guards.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-writeback.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-ac13-14.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-debate.test.ts")).text(),
+    ]);
 
     // The deprecated complete() path used JSON.stringify({ subStories }). After US-002,
     // adapter.decompose() returns DecomposedStory[] directly — no wrapper object.
-    expect(source).not.toContain("subStories");
+    for (const source of sources) {
+      expect(source).not.toContain("JSON.stringify({ subStories");
+    }
   });
 });
 

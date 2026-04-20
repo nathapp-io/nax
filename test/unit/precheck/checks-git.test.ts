@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkWorkingTreeClean } from "../../../src/precheck/checks-git";
@@ -22,7 +22,7 @@ import { makeTempDir } from "../../helpers/temp";
  * Create a git repo with the nax directory structure pre-committed.
  * This ensures that individual file paths (not just ".nax/") appear in git status.
  */
-function makeGitRepoWithNax(): string {
+async function makeGitRepoWithNax(): Promise<string> {
   const dir = makeTempDir("nax-git-test-");
 
   const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
@@ -32,21 +32,21 @@ function makeGitRepoWithNax(): string {
   git(["config", "user.name", "Test"]);
 
   // Create a baseline committed file
-  writeFileSync(join(dir, "README.md"), "# test\n");
+  await Bun.write(join(dir, "README.md"), "# test\n");
 
   // Pre-commit the nax directory structure so individual files show in git status
   mkdirSync(join(dir, ".nax", "features", "feat-001", "runs"), { recursive: true });
-  writeFileSync(join(dir, "nax.lock"), "");
-  writeFileSync(join(dir, ".nax", "metrics.json"), "{}");
-  writeFileSync(join(dir, ".nax", "features", "feat-001", "status.json"), "{}");
-  writeFileSync(join(dir, ".nax", "features", "feat-001", "prd.json"), "{}");
-  writeFileSync(join(dir, ".nax", "features", "feat-001", "progress.txt"), "");
-  writeFileSync(join(dir, ".nax", "features", "feat-001", "acp-sessions.json"), "{}");
-  writeFileSync(join(dir, ".nax", "features", "feat-001", "acceptance-refined.json"), "[]");
-  writeFileSync(join(dir, ".nax-pids"), "");
+  await Bun.write(join(dir, "nax.lock"), "");
+  await Bun.write(join(dir, ".nax", "metrics.json"), "{}");
+  await Bun.write(join(dir, ".nax", "features", "feat-001", "status.json"), "{}");
+  await Bun.write(join(dir, ".nax", "features", "feat-001", "prd.json"), "{}");
+  await Bun.write(join(dir, ".nax", "features", "feat-001", "progress.txt"), "");
+  await Bun.write(join(dir, ".nax", "features", "feat-001", "acp-sessions.json"), "{}");
+  await Bun.write(join(dir, ".nax", "features", "feat-001", "acceptance-refined.json"), "[]");
+  await Bun.write(join(dir, ".nax-pids"), "");
   mkdirSync(join(dir, ".nax-wt"), { recursive: true });
-  writeFileSync(join(dir, ".nax-wt", "placeholder"), "");
-  writeFileSync(join(dir, ".nax-verifier-verdict.json"), "{}");
+  await Bun.write(join(dir, ".nax-wt", "placeholder"), "");
+  await Bun.write(join(dir, ".nax-verifier-verdict.json"), "{}");
 
   git(["add", "."]);
   git(["commit", "-m", "init"]);
@@ -57,7 +57,7 @@ function makeGitRepoWithNax(): string {
 /**
  * Create a minimal git repo with only README committed.
  */
-function makeGitRepo(): string {
+async function makeGitRepo(): Promise<string> {
   const dir = makeTempDir("nax-git-test-");
 
   const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
@@ -65,7 +65,7 @@ function makeGitRepo(): string {
   git(["init"]);
   git(["config", "user.email", "test@test.com"]);
   git(["config", "user.name", "Test"]);
-  writeFileSync(join(dir, "README.md"), "# test\n");
+  await Bun.write(join(dir, "README.md"), "# test\n");
   git(["add", "README.md"]);
   git(["commit", "-m", "init"]);
 
@@ -79,7 +79,7 @@ function makeGitRepo(): string {
 // BUG-074
 describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tree check", () => {
   test("passes when working tree is clean", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
@@ -90,9 +90,9 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("passes when only nax.lock is dirty (new untracked file)", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
-      writeFileSync(join(dir, "nax.lock"), "locked\n");
+      await Bun.write(join(dir, "nax.lock"), "locked\n");
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
     } finally {
@@ -101,10 +101,10 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("passes when only nax/metrics.json is dirty (modified tracked file)", async () => {
-    const dir = makeGitRepoWithNax();
+    const dir = await makeGitRepoWithNax();
     try {
       // Modify the tracked file to make it dirty
-      writeFileSync(join(dir, ".nax", "metrics.json"), '{"updated": true}');
+      await Bun.write(join(dir, ".nax", "metrics.json"), '{"updated": true}');
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
     } finally {
@@ -113,12 +113,12 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("passes when only nax feature runtime files are dirty (modified tracked files)", async () => {
-    const dir = makeGitRepoWithNax();
+    const dir = await makeGitRepoWithNax();
     try {
-      writeFileSync(join(dir, ".nax", "features", "feat-001", "status.json"), '{"status":"running"}');
-      writeFileSync(join(dir, ".nax", "features", "feat-001", "progress.txt"), "50%");
-      writeFileSync(join(dir, ".nax", "features", "feat-001", "acp-sessions.json"), '{"session":"abc"}');
-      writeFileSync(join(dir, ".nax", "features", "feat-001", "acceptance-refined.json"), '[{"ac":"1"}]');
+      await Bun.write(join(dir, ".nax", "features", "feat-001", "status.json"), '{"status":"running"}');
+      await Bun.write(join(dir, ".nax", "features", "feat-001", "progress.txt"), "50%");
+      await Bun.write(join(dir, ".nax", "features", "feat-001", "acp-sessions.json"), '{"session":"abc"}');
+      await Bun.write(join(dir, ".nax", "features", "feat-001", "acceptance-refined.json"), '[{"ac":"1"}]');
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
     } finally {
@@ -127,9 +127,9 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("fails when a non-nax file is dirty", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
-      writeFileSync(join(dir, "src.ts"), "export const x = 1;\n");
+      await Bun.write(join(dir, "src.ts"), "export const x = 1;\n");
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(false);
     } finally {
@@ -138,10 +138,10 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("fails when both nax and non-nax files are dirty", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
-      writeFileSync(join(dir, "nax.lock"), "locked\n");
-      writeFileSync(join(dir, "dirty.ts"), "export const x = 1;\n");
+      await Bun.write(join(dir, "nax.lock"), "locked\n");
+      await Bun.write(join(dir, "dirty.ts"), "export const x = 1;\n");
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(false);
     } finally {
@@ -150,9 +150,9 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("message includes dirty non-nax filename when not passed", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
-      writeFileSync(join(dir, "dirty.ts"), "export const x = 1;\n");
+      await Bun.write(join(dir, "dirty.ts"), "export const x = 1;\n");
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(false);
       expect(result.message).toContain("dirty.ts");
@@ -162,9 +162,9 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("message does NOT include nax.lock when only nax runtime files are dirty", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
-      writeFileSync(join(dir, "nax.lock"), "locked\n");
+      await Bun.write(join(dir, "nax.lock"), "locked\n");
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
       expect(result.message).not.toContain("nax.lock");
@@ -174,10 +174,10 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("message lists multiple dirty non-nax files", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
-      writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
-      writeFileSync(join(dir, "b.ts"), "export const b = 2;\n");
+      await Bun.write(join(dir, "a.ts"), "export const a = 1;\n");
+      await Bun.write(join(dir, "b.ts"), "export const b = 2;\n");
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(false);
       expect(result.message).toContain("a.ts");
@@ -189,9 +189,9 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
 
   // US-003 (ACC-002): .nax-acceptance* files are nax runtime files
   test("US-003: passes when only .nax-acceptance.test.ts is dirty (root level)", async () => {
-    const dir = makeGitRepo();
+    const dir = await makeGitRepo();
     try {
-      writeFileSync(join(dir, ".nax-acceptance.test.ts"), 'test("AC-1", () => {});\n');
+      await Bun.write(join(dir, ".nax-acceptance.test.ts"), 'test("AC-1", () => {});\n');
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
     } finally {
@@ -208,11 +208,11 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
       git(["config", "user.name", "Test"]);
       // Commit a file inside apps/api/ so the directory is tracked
       mkdirSync(join(dir, "apps", "api"), { recursive: true });
-      writeFileSync(join(dir, "apps", "api", "index.ts"), "export {};\n");
+      await Bun.write(join(dir, "apps", "api", "index.ts"), "export {};\n");
       git(["add", "."]);
       git(["commit", "-m", "init"]);
       // Now add the nax acceptance file as untracked in a tracked directory
-      writeFileSync(join(dir, "apps", "api", ".nax-acceptance.test.ts"), 'test("AC-1", () => {});\n');
+      await Bun.write(join(dir, "apps", "api", ".nax-acceptance.test.ts"), 'test("AC-1", () => {});\n');
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
     } finally {

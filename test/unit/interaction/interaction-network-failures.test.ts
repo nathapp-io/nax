@@ -10,6 +10,12 @@ import type { InteractionRequest } from "../../../src/interaction";
 import { TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
 import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/interaction/plugins/webhook";
 
+function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(value), delayMs);
+  });
+}
+
 // Disable real backoff sleeps — tests verify behavior, not wall-clock timing
 const origWebhookSleep = _webhookPluginDeps.sleep;
 _webhookPluginDeps.sleep = async (_ms: number) => {};
@@ -259,7 +265,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     const settled = await Promise.race([
       receivePromise.then(() => "resolved" as const),
-      Bun.sleep(150).then(() => "hung" as const),
+      timeoutResult("hung" as const),
     ]);
 
     expect(settled).toBe("resolved");
@@ -316,7 +322,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     const firstSettled = await Promise.race([
       firstReceive,
-      Bun.sleep(150).then(() => null),
+      timeoutResult(null),
     ]);
 
     expect(firstSettled).not.toBeNull();
@@ -327,7 +333,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     const secondSettled = await Promise.race([
       secondReceive.then(() => "resolved" as const),
-      Bun.sleep(150).then(() => "hung" as const),
+      timeoutResult("hung" as const),
     ]);
     expect(secondSettled).toBe("resolved");
 

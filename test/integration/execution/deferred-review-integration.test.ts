@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
@@ -154,8 +154,8 @@ afterEach(() => {
   }
 });
 
-function writeCompletedPRD() {
-  writeFileSync(prdPath, JSON.stringify(makeCompletedPRD(), null, 2));
+async function writeCompletedPRD() {
+  await Bun.write(prdPath, JSON.stringify(makeCompletedPRD(), null, 2));
 }
 
 function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecutionContext {
@@ -182,7 +182,7 @@ function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecuti
 
 describe("Deferred plugin review — integration (DR-003)", () => {
   test("plugin reviewers run exactly once after all stories complete when pluginMode is deferred", async () => {
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
     const config = makeConfig("deferred");
@@ -198,7 +198,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   test("plugin reviewers are NOT called during per-story review when pluginMode is deferred", async () => {
     // With a pre-completed PRD, the story loop exits immediately
     // The reviewer should only be called during the deferred phase, not the per-story phase
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
     const config = makeConfig("deferred");
@@ -211,7 +211,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   });
 
   test("reviewer failure in deferred mode does NOT fail the overall run", async () => {
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const failingReviewer = makeReviewer("semgrep", false);
     const registry = makeRegistry([failingReviewer]);
     const config = makeConfig("deferred");
@@ -227,7 +227,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   });
 
   test("deferred review result is available in SequentialExecutionResult for reporters", async () => {
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
     const config = makeConfig("deferred");
@@ -242,7 +242,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   });
 
   test("deferred review uses run-start ref as baseRef for full diff range", async () => {
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
     const config = makeConfig("deferred");
@@ -260,7 +260,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   });
 
   test("deferred review is silently skipped when no plugin reviewers are registered", async () => {
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const registry = makeRegistry([]); // no reviewers
     const config = makeConfig("deferred");
     const ctx = makeCtx(registry, config);
@@ -274,7 +274,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   });
 
   test("pluginMode per-story does NOT trigger deferred review", async () => {
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
     const config = makeConfig("per-story");
@@ -287,7 +287,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   });
 
   test("run-start git ref is captured before stories execute", async () => {
-    writeCompletedPRD();
+    await writeCompletedPRD();
     const captureOrder: string[] = [];
 
     // Track spawn calls to verify rev-parse happens before diff

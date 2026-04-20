@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { loadConfig } from "../../../src/config/loader";
@@ -146,7 +146,7 @@ describe("execution.smartTestRunner config flag", () => {
 
   test("loadConfig defaults smartTestRunner to enabled object when not in project config", async () => {
     const configPath = join(tempDir, ".nax", "config.json");
-    writeFileSync(configPath, JSON.stringify({ routing: { strategy: "keyword" } }, null, 2));
+    await Bun.write(configPath, JSON.stringify({ routing: { strategy: "keyword" } }, null, 2));
 
     const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
@@ -157,7 +157,7 @@ describe("execution.smartTestRunner config flag", () => {
 
   test("loadConfig coerces smartTestRunner: false to disabled config object", async () => {
     const configPath = join(tempDir, ".nax", "config.json");
-    writeFileSync(configPath, JSON.stringify({ execution: { smartTestRunner: false } }, null, 2));
+    await Bun.write(configPath, JSON.stringify({ execution: { smartTestRunner: false } }, null, 2));
 
     const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
@@ -169,7 +169,7 @@ describe("execution.smartTestRunner config flag", () => {
   test("loadConfig normalizes to enabled object when field is absent (backward compat)", async () => {
     const configPath = join(tempDir, ".nax", "config.json");
     // Config without smartTestRunner field at all
-    writeFileSync(configPath, JSON.stringify({}, null, 2));
+    await Bun.write(configPath, JSON.stringify({}, null, 2));
 
     const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({

@@ -7,11 +7,10 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { contextStage, _contextStageDeps } from "../../../../src/pipeline/stages/context";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ContextBundle, ContextRequest } from "../../../../src/context/engine";
+import { cleanupTempDir, makeTempDir } from "../../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)
@@ -25,7 +24,7 @@ let origUuid: typeof _contextStageDeps.uuid;
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), "nax-ctx-digest-test-"));
+  tmpDir = makeTempDir("nax-ctx-digest-test-");
   origCreateOrchestrator = _contextStageDeps.createOrchestrator;
   origReadDigest = _contextStageDeps.readDigest;
   origWriteDigest = _contextStageDeps.writeDigest;
@@ -37,7 +36,7 @@ afterEach(() => {
   _contextStageDeps.readDigest = origReadDigest;
   _contextStageDeps.writeDigest = origWriteDigest;
   _contextStageDeps.uuid = origUuid;
-  rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTempDir(tmpDir);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -7,8 +7,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AcceptanceLoopContext,
@@ -20,6 +18,7 @@ import {
 } from "../../../../src/execution/lifecycle/acceptance-loop";
 import type { AgentGetFn, PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD } from "../../../../src/prd";
+import { cleanupTempDir, makeTempDir } from "../../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -224,14 +223,18 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-acceptance-loop-test-"));
+    tmpDir = makeTempDir("nax-acceptance-loop-test-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tmpDir);
   });
 
   test("returns array of content from testPaths entries when they exist on disk", async () => {
     const testA = join(tmpDir, "a.test.ts");
     const testB = join(tmpDir, "b.test.ts");
-    writeFileSync(testA, "// content A");
-    writeFileSync(testB, "// content B");
+    await Bun.write(testA, "// content A");
+    await Bun.write(testB, "// content B");
 
     const result = await loadAcceptanceTestContent(tmpDir, [
       { testPath: testA, packageDir: tmpDir },
@@ -248,7 +251,7 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
   test("returns array with configured test path when testPaths is omitted", async () => {
     const configuredPath = ".nax-acceptance.test.ts";
     const resolvedPath = join(tmpDir, configuredPath);
-    writeFileSync(resolvedPath, "// configured content");
+    await Bun.write(resolvedPath, "// configured content");
 
     const result = await loadAcceptanceTestContent(tmpDir, undefined, configuredPath);
 
@@ -265,12 +268,12 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
   test("returns array from testPaths parameter (takes priority over legacy path)", async () => {
     const pkgTestPath = join(tmpDir, "pkg/acceptance.test.ts");
     const legacyPath = join(tmpDir, "acceptance.test.ts");
-    writeFileSync(legacyPath, "// legacy");
+    await Bun.write(legacyPath, "// legacy");
     // pkg test file does not need to exist — we're verifying testPaths controls the lookup
     // Use tmpDir itself as a stand-in package dir
     const pkgDir = tmpDir;
     const pkgTest = join(tmpDir, "pkg.test.ts");
-    writeFileSync(pkgTest, "// pkg content");
+    await Bun.write(pkgTest, "// pkg content");
 
     const result = await loadAcceptanceTestContent(tmpDir, [
       { testPath: pkgTest, packageDir: pkgDir },
@@ -340,7 +343,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
   let origAcceptanceSetupExecute: typeof _regenerateDeps.acceptanceSetupExecute;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-regen-test-"));
+    tmpDir = makeTempDir("nax-regen-test-");
     origSpawnGitDiff = _regenerateDeps.spawnGitDiff;
     origReadFile = _regenerateDeps.readFile;
     origAcceptanceSetupExecute = _regenerateDeps.acceptanceSetupExecute;
@@ -352,11 +355,12 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = origSpawnGitDiff;
     (_regenerateDeps as { readFile: unknown }).readFile = origReadFile;
     (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = origAcceptanceSetupExecute;
+    cleanupTempDir(tmpDir);
   });
 
   test("calls spawnGitDiff with workdir and storyGitRef when storyGitRef is present", async () => {
     const testPath = join(tmpDir, ".nax-acceptance.test.ts");
-    writeFileSync(testPath, "test content");
+    await Bun.write(testPath, "test content");
 
     const spawnMock = mock(async (_workdir: string, _ref: string) => "src/add.ts\nsrc/utils.ts");
     (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = spawnMock;
@@ -380,7 +384,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
   test("does NOT call spawnGitDiff when storyGitRef is undefined", async () => {
     const testPath = join(tmpDir, ".nax-acceptance.test.ts");
-    writeFileSync(testPath, "test content");
+    await Bun.write(testPath, "test content");
 
     const spawnMock = mock(async () => "");
     (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = spawnMock;
@@ -397,7 +401,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
   test("reads each changed file returned by git diff", async () => {
     const testPath = join(tmpDir, ".nax-acceptance.test.ts");
-    writeFileSync(testPath, "test content");
+    await Bun.write(testPath, "test content");
 
     const changedFiles = ["src/add.ts", "src/utils.ts"];
     (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => changedFiles.join("\n"));
@@ -419,7 +423,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
   test("caps total content at 50KB when reading changed files", async () => {
     const testPath = join(tmpDir, ".nax-acceptance.test.ts");
-    writeFileSync(testPath, "test content");
+    await Bun.write(testPath, "test content");
 
     // Return many files from git diff
     const manyFiles = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`).join("\n");
@@ -454,7 +458,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
   test("passes implementationContext to acceptanceSetupStage when git diff returns files", async () => {
     const testPath = join(tmpDir, ".nax-acceptance.test.ts");
-    writeFileSync(testPath, "test content");
+    await Bun.write(testPath, "test content");
 
     (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => "src/add.ts");
     (_regenerateDeps as { readFile: unknown }).readFile = mock(async () => "export function add() {}");
