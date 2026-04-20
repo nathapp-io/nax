@@ -54,4 +54,73 @@ describe("parseAgentError", () => {
     expect(parseAgentError("").type).toBe("unknown");
     expect(parseAgentError("something went wrong").type).toBe("unknown");
   });
+
+  // #592: acpx wraps vendor errors in a human-readable prefix. The embedded
+  // JSON envelope must still classify cleanly so AgentManager.shouldSwap fires.
+  describe("#592 — embedded Anthropic error envelope", () => {
+    test("detects auth from embedded Anthropic authentication_error envelope", () => {
+      const stderr =
+        'Internal error: Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"login fail: Please carry the API secret key in the \'Authorization\' field of the request header"},"request_id":"0634d680c8f2e70e15e50e20bebaf407"}';
+      const result = parseAgentError(stderr);
+      expect(result.type).toBe("auth");
+    });
+
+    test("detects rate-limit from embedded Anthropic rate_limit_error envelope", () => {
+      const stderr =
+        'Internal error: Too many requests. API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"Rate limited"}}';
+      const result = parseAgentError(stderr);
+      expect(result.type).toBe("rate-limit");
+    });
+
+    test("detects rate-limit with retryAfterSeconds from inner envelope", () => {
+      const stderr =
+        'throttled {"type":"error","error":{"type":"rate_limit_error","retryAfterSeconds":42}}';
+      const result = parseAgentError(stderr);
+      expect(result.type).toBe("rate-limit");
+      expect(result.retryAfterSeconds).toBe(42);
+    });
+
+    test("detects auth from permission_error variant", () => {
+      const stderr = 'boom {"type":"error","error":{"type":"permission_error"}}';
+      expect(parseAgentError(stderr).type).toBe("auth");
+    });
+
+    test("detects auth from invalid_api_key_error variant", () => {
+      const stderr = 'boom {"type":"error","error":{"type":"invalid_api_key_error"}}';
+      expect(parseAgentError(stderr).type).toBe("auth");
+    });
+
+    test("detects rate-limit from overloaded_error variant", () => {
+      const stderr = 'boom {"type":"error","error":{"type":"overloaded_error"}}';
+      expect(parseAgentError(stderr).type).toBe("rate-limit");
+    });
+
+    test("root JSON Anthropic envelope also classifies (not just embedded)", () => {
+      const root = '{"type":"error","error":{"type":"authentication_error"}}';
+      expect(parseAgentError(root).type).toBe("auth");
+    });
+
+    test("unrelated inner error type leaves classification unknown", () => {
+      const stderr = 'boom {"type":"error","error":{"type":"invalid_request_error"}}';
+      // Not one of the known auth/rate-limit variants.
+      expect(parseAgentError(stderr).type).toBe("unknown");
+    });
+
+    test("nested JSON with braces inside a string literal is parsed correctly", () => {
+      const stderr =
+        'prefix {"type":"error","error":{"type":"authentication_error","message":"please set `{authHeader}` properly"}} suffix';
+      expect(parseAgentError(stderr).type).toBe("auth");
+    });
+
+    test("does not misclassify when embedded JSON is unrelated", () => {
+      const stderr = 'log: {"user":"alice","event":"login"}';
+      expect(parseAgentError(stderr).type).toBe("unknown");
+    });
+
+    test("still returns unknown when no embedded JSON exists", () => {
+      // Free-text-only — no structured signal anywhere. Must stay unknown
+      // (no free-text phrase inference).
+      expect(parseAgentError("Internal error: Failed to authenticate. API Error: 401").type).toBe("unknown");
+    });
+  });
 });
