@@ -277,7 +277,7 @@ AgentManager exposes `runWithFallback(request)` in this ADR. A parallel `complet
 - [x] `applyAgentConfigMigration()` deleted from `src/config/loader.ts`.
 - [x] `defaultAgent`, `fallbackOrder` removed from `AutoModeConfigSchema`.
 - [x] `ContextV2FallbackConfigSchema` removed.
-- [x] Loading a pre-migration config → Zod validation error with clear "migrate to `agent.*` per ADR-012" message.
+- [x] Loading a pre-migration config → `NaxError CONFIG_LEGACY_AGENT_KEYS` with per-key migration hints (pre-parse guard `rejectLegacyAgentKeys` in `src/config/loader.ts`, #579). Zod `.strip()` alone would silently drop the keys — the guard runs before `safeParse`.
 - [ ] 3 canary releases have passed between Phase 2 and this phase. (N/A — internal project, no canary release process)
 - [x] CHANGELOG breaking-change note added.
 - [x] `docs/architecture/conventions.md` and `.claude/rules/config-patterns.md` updated.

@@ -295,3 +295,37 @@ const TIMEOUT_MS = 60_000;
 // ❌ Hard to read
 const MAX_CONTEXT_TOKENS = 1000000;
 ```
+
+---
+
+## 5. Agent Resolution (ADR-012)
+
+### Rules
+
+Agent-selection state is owned by `AgentManager` (`src/agents/manager.ts`), constructed once per run in `src/execution/runner.ts`. All default-agent reads go through one of two canonical accessors — never reach into `config.autoMode` (removed in ADR-012 Phase 6):
+
+| Caller context | Accessor | Source |
+|:---|:---|:---|
+| Pipeline stages (have `ctx: PipelineContext`) | `ctx.agentManager?.getDefault() ?? "claude"` | `src/agents/manager.ts` |
+| Standalone modules (only have `NaxConfig`) | `resolveDefaultAgent(config)` | `src/agents/utils.ts` |
+
+```typescript
+// ✅ Pipeline stage — uses the run-scoped manager
+const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
+const agent = (ctx.agentGetFn ?? _deps.getAgent)(defaultAgent);
+
+// ✅ Standalone module — derives from config
+import { resolveDefaultAgent } from "../agents";
+const defaultAgent = resolveDefaultAgent(config);
+
+// ❌ Removed — autoMode.defaultAgent no longer exists
+const defaultAgent = config.autoMode.defaultAgent;  // TS error + CONFIG_LEGACY_AGENT_KEYS at load
+```
+
+### Per-story reset
+
+`AgentManager.reset()` runs once per story at `src/execution/iteration-runner.ts:196`, before each pipeline run. It is the SSOT for clearing per-story availability state — there is no separate adapter-level or registry-level reset hook.
+
+### Config shape
+
+The canonical `config.agent` shape — `default`, `protocol`, `fallback.map`, etc. — is documented in `.claude/rules/config-patterns.md` § Agent Config Shape (ADR-012).
