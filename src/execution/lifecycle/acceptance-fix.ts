@@ -14,7 +14,7 @@ import { type DiagnoseOptions, diagnoseAcceptanceFailure } from "../../acceptanc
 import { executeSourceFix, executeTestFix } from "../../acceptance/fix-executor";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import type { DiagnosisResult, SemanticVerdict } from "../../acceptance/types";
-import { getAgent, resolveDefaultAgent } from "../../agents";
+import { resolveDefaultAgent } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
 import { resolveConfiguredModel } from "../../config";
 import { getSafeLogger } from "../../logger";
@@ -120,7 +120,7 @@ export interface ApplyFixResult {
 
 /** Injectable dependencies for applyFix — allows tests to mock executors. */
 export const _applyFixDeps = {
-  getAgent,
+  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   executeSourceFix,
   executeTestFix,
 };

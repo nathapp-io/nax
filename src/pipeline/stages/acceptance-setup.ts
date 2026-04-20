@@ -24,7 +24,7 @@ import path from "node:path";
 import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import { groupStoriesByPackage } from "../../acceptance/test-path";
 import type { RefinedCriterion } from "../../acceptance/types";
-import { getAgent } from "../../agents/registry";
+import type { AgentAdapter } from "../../agents/types";
 import { type ModelDef, type ResolvedConfiguredModel, resolveConfiguredModel } from "../../config";
 import { getSafeLogger } from "../../logger";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "../../utils/git";
@@ -68,7 +68,7 @@ export function computeACFingerprint(criteria: string[]): string {
  * @internal
  */
 export const _acceptanceSetupDeps = {
-  getAgent,
+  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   fileExists: async (_path: string): Promise<boolean> => {
     const f = Bun.file(_path);
     return f.exists();

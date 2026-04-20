@@ -9,7 +9,8 @@
  */
 
 import { join } from "node:path";
-import { getAgent, resolveDefaultAgent } from "../../agents";
+import { resolveDefaultAgent } from "../../agents";
+import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
 import { getSafeLogger } from "../../logger";
@@ -26,7 +27,7 @@ import { hasCommitsForStory } from "../../utils/git";
  * hasCommitsForStory and runReview without mock.module().
  */
 export const _reconcileDeps = {
-  getAgent,
+  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   hasCommitsForStory: (workdir: string, storyId: string) => hasCommitsForStory(workdir, storyId),
   runReview: (reviewConfig: ReviewConfig, workdir: string, executionConfig: NaxConfig["execution"]) =>
     runReview(reviewConfig, workdir, executionConfig),

@@ -4,9 +4,8 @@
  * Lists available agents with their binary paths, versions, and health status.
  */
 
-import { resolveDefaultAgent } from "../agents";
+import { KNOWN_AGENT_NAMES, resolveDefaultAgent } from "../agents";
 import { AcpAgentAdapter } from "../agents/acp/adapter";
-import { KNOWN_AGENT_NAMES } from "../agents/registry";
 import { getAgentVersion } from "../agents/shared/version-detection";
 import type { NaxConfig } from "../config/schema";
 

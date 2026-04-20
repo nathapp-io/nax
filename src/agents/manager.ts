@@ -20,6 +20,7 @@ import type {
   AgentRunRequest,
   IAgentManager,
 } from "./manager-types";
+import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
 import type { AgentResult, CompleteOptions, CompleteResult } from "./types";
 
@@ -40,7 +41,7 @@ export const _agentManagerDeps = {
 
 export class AgentManager implements IAgentManager {
   private readonly _config: NaxConfig;
-  private readonly _registry: AgentRegistry | undefined;
+  private _registry: AgentRegistry | undefined;
   private readonly _unavailable = new Map<string, AdapterFailure>();
   private readonly _prunedFallback = new Set<string>();
   private readonly _emitter = new EventEmitter();
@@ -87,7 +88,7 @@ export class AgentManager implements IAgentManager {
       for (const to of tos) candidates.add(to);
     }
     for (const name of candidates) {
-      const adapter = this._registry?.getAgent(name);
+      const adapter = this._resolveRegistry().getAgent(name);
       if (!adapter || typeof adapter.hasCredentials !== "function") continue;
       const ok = await adapter.hasCredentials();
       if (ok) continue;
@@ -156,7 +157,7 @@ export class AgentManager implements IAgentManager {
         updatedBundle = hopOut.bundle ?? currentBundle;
         finalPrompt = hopOut.prompt ?? finalPrompt;
       } else {
-        const adapter = this._registry?.getAgent(currentAgent);
+        const adapter = this._resolveRegistry().getAgent(currentAgent);
         if (!adapter) {
           logger?.warn("agent-manager", "No adapter available", {
             storyId: request.runOptions.storyId,
@@ -281,7 +282,7 @@ export class AgentManager implements IAgentManager {
     let hopsSoFar = 0;
 
     while (true) {
-      const adapter = this._registry?.getAgent(currentAgent);
+      const adapter = this._resolveRegistry().getAgent(currentAgent);
       if (!adapter) {
         return {
           result: { output: "", costUsd: 0, source: "fallback" },
@@ -358,7 +359,12 @@ export class AgentManager implements IAgentManager {
   }
 
   getAgent(name: string): import("./types").AgentAdapter | undefined {
-    return this._registry?.getAgent(name);
+    return this._resolveRegistry().getAgent(name);
+  }
+
+  private _resolveRegistry(): AgentRegistry {
+    this._registry ??= createAgentRegistry(this._config);
+    return this._registry;
   }
 
   /** @internal — test helper */

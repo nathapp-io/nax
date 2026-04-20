@@ -6,7 +6,7 @@
  * findings by file scope and route test-file findings to a test-writer session.
  */
 
-import type { createAgentRegistry } from "../../agents/registry";
+import type { AgentAdapter } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
@@ -60,7 +60,7 @@ export async function runTestWriterRectification(
   ctx: PipelineContext,
   testWriterChecks: ReviewCheckResult[],
   story: UserStory,
-  agentGetFn: (name: string) => ReturnType<ReturnType<typeof createAgentRegistry>["getAgent"]>,
+  agentGetFn: (name: string) => AgentAdapter | undefined,
   keepOpen = true,
 ): Promise<number> {
   const logger = getLogger();

@@ -79,11 +79,11 @@ Format: `nax-<hash8>-<feature>-<storyId>-<sessionRole>`
 | `"reviewer-semantic"` | `run()` | Semantic review session — initial call `keepOpen: true` (retry needs history); `agent.closeSession()` called on all exit paths (ADR-008: session closes by end of `runReview`) |
 | `"reviewer-adversarial"` | `run()` | Adversarial review session — initial call `keepOpen: true` (retry needs history); `agent.closeSession()` called on all exit paths (ADR-008: session closes by end of `runReview`) |
 
-## Rule 3: Agent Resolution — CRITICAL
+## Rule 3: Agent Resolution — CRITICAL (compiler-enforced since ADR-013 Phase 4)
 
-**Never use bare `getAgent()` when `config` (NaxConfig) is available.**
+**Never import from `src/agents/registry.ts` outside `src/agents/manager.ts`.**
 
-Bare `getAgent()` from `src/agents/registry.ts` always returns CLI adapters from `ALL_AGENTS[]`. It ignores `config.agent.protocol` entirely. When protocol is `"acp"`, this silently spawns a CLI session instead of an ACP session.
+`AgentRegistry` and `createAgentRegistry` are internal to `AgentManager` since Phase 4. The compiler prevents bypassing this boundary: `getAgent` and `createAgentRegistry` are not exported from `src/agents/index.ts`.
 
 ### Correct Patterns
 
@@ -96,16 +96,20 @@ const agent = (ctx.agentGetFn ?? _deps.getAgent)(defaultAgent);
 
 **In standalone modules** (outside pipeline, have `config: NaxConfig`):
 ```typescript
-import { createAgentRegistry } from "../agents/registry";
-const agent = createAgentRegistry(config).getAgent(agentName);
+import { AgentManager } from "../agents";
+const agent = new AgentManager(config).getAgent(agentName);
 ```
 
-### Forbidden Pattern
+### Forbidden Patterns
 
 ```typescript
-// ❌ WRONG — ignores config.agent.protocol, always returns CLI adapter
+// ❌ WRONG — bypasses AgentManager ownership (compiler error since Phase 4)
+import { createAgentRegistry } from "../agents/registry";
+const agent = createAgentRegistry(config).getAgent(agentName);
+
+// ❌ WRONG — stub that always returns undefined (removed from barrel in Phase 4)
 import { getAgent } from "../agents/registry";
-const agent = getAgent(agentName);  // even when config is in scope
+const agent = getAgent(agentName);
 ```
 
-The `_deps.getAgent` fallback in `?? _deps.getAgent` is acceptable ONLY as a test injection point. In production, `agentGetFn` is always set by `runner.ts`.
+The `_deps.getAgent` fallback in `ctx.agentGetFn ?? _deps.getAgent` defaults to `() => undefined` — it is a test injection point only. In production, `agentGetFn` is always set by `runner.ts`.

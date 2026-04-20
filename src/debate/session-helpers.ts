@@ -1,6 +1,5 @@
-import { resolveDefaultAgent } from "../agents";
+import { AgentManager, resolveDefaultAgent } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
-import { createAgentRegistry, getAgent } from "../agents/registry";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
 import type { ModelTier, NaxConfig, ResolvedConfiguredModel } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
@@ -78,14 +77,8 @@ export interface DebateSessionOptions {
 
 /** Injectable deps for testability */
 export const _debateSessionDeps = {
-  /**
-   * Resolve an agent adapter by name.
-   * When config is provided, uses createAgentRegistry(config) so that ACP agents
-   * are returned as AcpAgentAdapter (respecting agent.protocol).
-   * Falls back to bare getAgent() when config is absent (backward compat / tests).
-   */
   getAgent: (name: string, config?: NaxConfig): AgentAdapter | undefined =>
-    config ? createAgentRegistry(config).getAgent(name) : getAgent(name),
+    config ? new AgentManager(config).getAgent(name) : undefined,
   getSafeLogger: getSafeLogger as () => ReturnType<typeof getSafeLogger>,
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
 };

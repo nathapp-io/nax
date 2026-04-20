@@ -1,6 +1,6 @@
 export type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, CompleteOptions } from "./types";
 export { CompleteError } from "./types";
-export { getAllAgentNames, getAgent, getInstalledAgents, checkAgentHealth } from "./registry";
+export { getAllAgentNames, getInstalledAgents, checkAgentHealth, KNOWN_AGENT_NAMES } from "./registry";
 export type { ModelCostRates, TokenUsage, CostEstimate, TokenUsageWithConfidence, SessionTokenUsage } from "./cost";
 export {
   COST_RATES,

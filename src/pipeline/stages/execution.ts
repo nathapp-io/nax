@@ -6,7 +6,8 @@
  * On availability failure, delegates swap policy to AgentManager.runWithFallback().
  */
 
-import { getAgent, validateAgentForTier } from "../../agents";
+import { validateAgentForTier } from "../../agents";
+import type { AgentAdapter } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { failAndClose } from "../../execution/session-manager-runtime";
@@ -310,7 +311,7 @@ export const executionStage: PipelineStage = {
  * (`src/session/runners/single-session-runner.ts` → `_singleSessionRunnerDeps`).
  */
 export const _executionDeps = {
-  getAgent,
+  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   validateAgentForTier,
   detectMergeConflict,
   checkMergeConflict,

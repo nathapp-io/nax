@@ -6,8 +6,8 @@
  */
 
 import { join } from "node:path";
+import { AgentManager } from "../agents";
 import { resolveDefaultAgent } from "../agents";
-import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import { resolveConfiguredModel } from "../config";
 import { getLogger } from "../logger";
@@ -85,7 +85,7 @@ export const _generatorPRDDeps = {
         config.acceptance?.model ?? "fast",
         resolveDefaultAgent(config),
       );
-      const adapter = createAgentRegistry(config).getAgent(resolvedModel.agent);
+      const adapter = new AgentManager(config).getAgent(resolvedModel.agent);
       if (!adapter) throw new Error(`Agent "${resolvedModel.agent}" not found`);
 
       return adapter.complete(...args);
