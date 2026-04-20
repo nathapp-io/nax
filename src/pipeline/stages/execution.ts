@@ -186,6 +186,7 @@ export const executionStage: PipelineStage = {
       ? ctx.agentManager.runWithFallback({
           runOptions: baseRunOptions,
           bundle: ctx.contextBundle,
+          signal: ctx.abortSignal,
           executeHop: async (agentName, bundle, failure) => {
             const hopAgent = (ctx.agentGetFn ?? _executionDeps.getAgent)(agentName);
             if (!hopAgent) {
