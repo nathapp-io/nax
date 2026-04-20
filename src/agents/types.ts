@@ -155,6 +155,29 @@ export interface AgentRunOptions {
    * Optional for backward compat — adapters that ignore it stay functional.
    */
   abortSignal?: AbortSignal;
+  /**
+   * Fires once the agent has established its physical session and the
+   * adapter has captured its protocol identifiers — before any prompt has
+   * been sent (#591).
+   *
+   * Rationale: historically `protocolIds` were only reported back via the
+   * final `AgentResult`. If the run was interrupted (SIGINT, crash,
+   * first-turn failure) before return, the descriptor froze with
+   * `NULL_PROTOCOL_IDS` and became un-resumable. This callback lets
+   * `SessionManager.runInSession` bind the handle eagerly so the on-disk
+   * descriptor captures `recordId`/`sessionId` as soon as they exist.
+   *
+   * Fired at most once per `run()` invocation. Adapters that do not know
+   * their protocol ids ahead of the prompt can omit the call; the
+   * `AgentResult.protocolIds` path still works as a fallback.
+   *
+   * Synchronous — the callback must not block the run loop. Implementations
+   * that need async work should fire-and-forget.
+   */
+  onSessionEstablished?: (
+    protocolIds: { recordId: string | null; sessionId: string | null },
+    sessionName: string,
+  ) => void;
 }
 
 /**

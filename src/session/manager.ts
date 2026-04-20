@@ -345,9 +345,30 @@ export class SessionManager implements ISessionManager {
       this.transition(id, "RUNNING");
     }
 
+    // #591: inject onSessionEstablished so the adapter can bind protocolIds
+    // eagerly — before any prompt runs. If the run is interrupted between
+    // session-established and result-returned, the descriptor already
+    // carries the correlation needed to resume. The caller's own callback
+    // (if any) is chained afterwards so both fire.
+    const callerCallback = options.onSessionEstablished;
+    const injectedOptions: AgentRunOptions = {
+      ...options,
+      onSessionEstablished: (protocolIds, sessionName) => {
+        try {
+          this.bindHandle(id, sessionName, protocolIds);
+        } catch (err) {
+          getLogger().warn("session", "bindHandle via onSessionEstablished failed", {
+            sessionId: id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        callerCallback?.(protocolIds, sessionName);
+      },
+    };
+
     let result: AgentResult;
     try {
-      result = await runner(options);
+      result = await runner(injectedOptions);
     } catch (err) {
       // Runner threw — mark session failed, then propagate.
       if (this._sessions.get(id)?.state === "RUNNING") {
