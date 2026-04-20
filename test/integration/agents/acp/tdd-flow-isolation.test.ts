@@ -170,7 +170,6 @@ function mockGitSpawn(diffFileSequences: string[][] = []) {
 
 beforeEach(() => {
   _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
-  _acpAdapterDeps.shouldRetrySessionError = false;
 });
 
 afterEach(() => {

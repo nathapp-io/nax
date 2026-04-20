@@ -371,6 +371,7 @@ export class SessionManager implements ISessionManager {
             this.bindHandle(id, sessionName, protocolIds);
           } catch (err) {
             getLogger().warn("session", "bindHandle via onSessionEstablished failed", {
+              storyId: this._sessions.get(id)?.storyId,
               sessionId: id,
               error: err instanceof Error ? err.message : String(err),
             });
@@ -380,14 +381,40 @@ export class SessionManager implements ISessionManager {
       },
     };
 
+    const config = request.runOptions.config;
+    const maxRetriable = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
+    const maxNonRetriable = config?.execution?.sessionErrorMaxRetries ?? 1;
+    let sessionRetries = 0;
+
     let result: AgentResult;
-    try {
-      result = await agentManager.run(injectedRequest);
-    } catch (err) {
-      if (this._sessions.get(id)?.state === "RUNNING") {
-        this.transition(id, "FAILED");
+    // Session-transport retry loop: retries only on fail-adapter-error.
+    // Auth/rate-limit failures surface immediately so AgentManager's fallback
+    // and backoff logic fires without a SessionManager-level retry doubling up.
+    while (true) {
+      try {
+        result = await agentManager.run(injectedRequest);
+      } catch (err) {
+        if (this._sessions.get(id)?.state === "RUNNING") {
+          this.transition(id, "FAILED");
+        }
+        throw err;
       }
-      throw err;
+
+      if (result.adapterFailure?.outcome === "fail-adapter-error") {
+        const max = result.adapterFailure.retriable ? maxRetriable : maxNonRetriable;
+        if (sessionRetries < max && !request.signal?.aborted) {
+          sessionRetries++;
+          getLogger().warn("session", "Session transport error — retrying with fresh session", {
+            sessionId: id,
+            storyId: this._sessions.get(id)?.storyId,
+            retriable: result.adapterFailure.retriable,
+            attempt: sessionRetries,
+            maxAttempts: max,
+          });
+          continue;
+        }
+      }
+      break;
     }
 
     if (result.protocolIds) {
@@ -403,6 +430,17 @@ export class SessionManager implements ISessionManager {
         };
         this._sessions.set(id, updated);
         this._persistDescriptor(updated);
+      }
+    }
+
+    // Gap A: reconcile descriptor.agent after an agent swap in AgentManager.
+    // agentFallbacks.at(-1).newAgent is the final agent used; handoff() updates
+    // the descriptor so crash recovery and metrics see the correct agent name.
+    const finalAgent = result.agentFallbacks?.at(-1)?.newAgent;
+    if (finalAgent) {
+      const current = this._sessions.get(id);
+      if (current && finalAgent !== current.agent) {
+        this.handoff(id, finalAgent, "post-run-reconcile");
       }
     }
 

@@ -61,11 +61,6 @@ export interface AgentResult {
     sessionId: string | null;
   };
   /**
-   * Number of session-level retries (broken connection, QUEUE_DISCONNECTED).
-   * Populated by the adapter; 0 when the first attempt succeeded.
-   */
-  sessionRetries?: number;
-  /**
    * Structured failure classification (Phase 2 plumbing — additive, callers may ignore).
    * Populated on all non-success return paths. Undefined on success.
    *
