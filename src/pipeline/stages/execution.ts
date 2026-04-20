@@ -14,7 +14,7 @@ import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { SingleSessionRunner } from "../../session/runners/single-session-runner";
-import { runThreeSessionTddFromCtx } from "../../tdd";
+import { ThreeSessionRunner } from "../../tdd/three-session-runner";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { isAmbiguousOutput, routeTddFailure } from "./execution-helpers";
@@ -51,33 +51,54 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      const tddResult = await runThreeSessionTddFromCtx(ctx, { agent, dryRun: false, lite: isLiteMode });
+      // Phase 2 refactor: dispatch through ThreeSessionRunner. Per-role
+      // SessionManager.runInSession inside runTddSession now handles state
+      // transitions (#589) and tokenUsage propagation (#590) automatically.
+      const tddRunner = new ThreeSessionRunner();
+      const outcome = await tddRunner.run({
+        pipelineContext: ctx,
+        agent,
+        dryRun: false,
+        lite: isLiteMode,
+        // Base fields — ThreeSessionRunner reads pipelineContext for everything else.
+        sessionId: ctx.sessionId,
+        sessionManager: ctx.sessionManager,
+        defaultAgent,
+        runOptions: {
+          prompt: ctx.prompt ?? "",
+          workdir: ctx.workdir,
+          modelTier: ctx.routing.modelTier,
+          modelDef: resolveModelForAgent(
+            ctx.rootConfig.models,
+            ctx.routing.agent ?? defaultAgent,
+            ctx.routing.modelTier,
+            defaultAgent,
+          ),
+          timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+          dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
+          pipelineStage: "run",
+          config: ctx.config,
+        },
+      });
 
-      ctx.agentResult = {
-        success: tddResult.success,
-        estimatedCost: tddResult.totalCost,
-        rateLimited: false,
-        output: "",
-        exitCode: tddResult.success ? 0 : 1,
-        durationMs: 0, // TDD result doesn't track total duration
-      };
+      ctx.agentResult = outcome.primaryResult;
 
       // Propagate full-suite gate result so verify stage can skip redundant run (BUG-054)
-      if (tddResult.fullSuiteGatePassed) {
+      if (outcome.fullSuiteGatePassed) {
         ctx.fullSuiteGatePassed = true;
       }
 
-      if (!tddResult.success) {
+      if (!outcome.success) {
         // Store failure category in context for runner to use at max-attempts decision
-        ctx.tddFailureCategory = tddResult.failureCategory;
+        ctx.tddFailureCategory = outcome.failureCategory;
 
         // Log and notify when human review is needed
-        if (tddResult.needsHumanReview) {
+        if (outcome.needsHumanReview) {
           logger.warn("execution", "Human review needed", {
             storyId: ctx.story.id,
-            reason: tddResult.reviewReason,
-            lite: tddResult.lite,
-            failureCategory: tddResult.failureCategory,
+            reason: outcome.reviewReason,
+            lite: outcome.lite,
+            failureCategory: outcome.failureCategory,
           });
           // Send notification via interaction chain (Telegram in headless mode)
           if (ctx.interaction) {
@@ -89,7 +110,7 @@ export const executionStage: PipelineStage = {
                 storyId: ctx.story.id,
                 stage: "execution",
                 summary: `⚠️ Human review needed: ${ctx.story.id}`,
-                detail: `Story: ${ctx.story.title}\nReason: ${tddResult.reviewReason ?? "No reason provided"}\nCategory: ${tddResult.failureCategory ?? "unknown"}`,
+                detail: `Story: ${ctx.story.title}\nReason: ${outcome.reviewReason ?? "No reason provided"}\nCategory: ${outcome.failureCategory ?? "unknown"}`,
                 fallback: "continue",
                 createdAt: Date.now(),
               });
@@ -104,11 +125,11 @@ export const executionStage: PipelineStage = {
           // Pause for human review instead of auto-escalating (#3 bench-04 finding)
           return {
             action: "pause",
-            reason: tddResult.reviewReason || `Human review needed: ${tddResult.failureCategory ?? "unknown"}`,
+            reason: outcome.reviewReason || `Human review needed: ${outcome.failureCategory ?? "unknown"}`,
           };
         }
 
-        return routeTddFailure(tddResult.failureCategory, isLiteMode, ctx, tddResult.reviewReason);
+        return routeTddFailure(outcome.failureCategory, isLiteMode, ctx, outcome.reviewReason);
       }
 
       return { action: "continue" };

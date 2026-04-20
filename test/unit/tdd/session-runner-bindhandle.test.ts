@@ -83,8 +83,24 @@ function makeSessionManager() {
     },
   );
   const get = mock((id: string) => (id === "sess-test" ? descriptor : undefined));
+  const transition = mock((_id: string, to: string) => {
+    descriptor.state = to as SessionDescriptor["state"];
+    return descriptor;
+  });
+  // Phase 2: stub runInSession that delegates to the runner and applies bindHandle
+  // the same way the real implementation does. Required so runTddSession's
+  // sessionBinding path works against the test mock.
+  const runInSession = mock(async (id: string, runner: (opts: unknown) => Promise<AgentResult>, opts: unknown) => {
+    transition(id, "RUNNING");
+    const result = await runner(opts);
+    if (result.protocolIds && descriptor.handle) {
+      bindHandle(id, descriptor.handle, result.protocolIds);
+    }
+    transition(id, result.success ? "COMPLETED" : "FAILED");
+    return result;
+  });
   return {
-    manager: { get, bindHandle } as unknown as ISessionManager,
+    manager: { get, bindHandle, transition, runInSession } as unknown as ISessionManager,
     bindHandle,
     descriptor,
   };

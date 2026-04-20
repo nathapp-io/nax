@@ -76,6 +76,34 @@ export interface ThreeSessionTddOptions {
 }
 
 /**
+ * Sum TokenUsage values across TDD session results (#590).
+ * Returns undefined when no session reported usage — mirrors the adapter
+ * contract so `metrics.tracker` can emit a tokens block only when real data exists.
+ */
+function sumTddTokenUsage(sessions: TddSessionResult[]): import("../agents/cost").TokenUsage | undefined {
+  const usages = sessions.map((s) => s.tokenUsage).filter((u): u is import("../agents/cost").TokenUsage => !!u);
+  if (usages.length === 0) return undefined;
+  const total = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+  };
+  for (const u of usages) {
+    total.inputTokens += u.inputTokens ?? 0;
+    total.outputTokens += u.outputTokens ?? 0;
+    total.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
+    total.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
+  }
+  return {
+    inputTokens: total.inputTokens,
+    outputTokens: total.outputTokens,
+    ...(total.cache_read_input_tokens > 0 && { cache_read_input_tokens: total.cache_read_input_tokens }),
+    ...(total.cache_creation_input_tokens > 0 && { cache_creation_input_tokens: total.cache_creation_input_tokens }),
+  };
+}
+
+/**
  * Run the full three-session TDD pipeline for a user story.
  */
 export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promise<ThreeSessionTddResult> {
@@ -459,6 +487,10 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   }
 
   const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0) + fullSuiteGateCost;
+  const totalDurationMs = sessions.reduce((sum, s) => sum + s.durationMs, 0);
+  // #590: sum tokenUsage across all sessions so metrics.tracker emits a tokens block
+  // for TDD runs the same way single-session runs do.
+  const totalTokenUsage = sumTddTokenUsage(sessions);
 
   logger.info("tdd", allSuccessful ? "[OK] Three-session TDD complete" : "[WARN] Three-session TDD needs review", {
     storyId: story.id,
@@ -494,6 +526,8 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     ...(finalFailureCategory !== undefined ? { failureCategory: finalFailureCategory } : {}),
     verdict,
     totalCost,
+    totalDurationMs,
+    ...(totalTokenUsage && { totalTokenUsage }),
     lite,
     fullSuiteGatePassed,
   };

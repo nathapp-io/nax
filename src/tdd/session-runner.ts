@@ -207,8 +207,7 @@ export async function runTddSession(
   // The session sweep (or the last rectification attempt) handles final cleanup.
   const keepOpen = role === "implementer" && (config.execution.rectification?.enabled ?? false);
 
-  // Run the agent
-  const result = await agent.run({
+  const agentRunOptions = {
     prompt,
     workdir,
     modelTier,
@@ -220,7 +219,7 @@ export async function runTddSession(
     ),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     dangerouslySkipPermissions: resolvePermissions(config, "run").skipPermissions,
-    pipelineStage: "run",
+    pipelineStage: "run" as const,
     config,
     projectDir,
     maxInteractionTurns: config.agent?.maxInteractionTurns,
@@ -239,14 +238,27 @@ export async function runTddSession(
       : undefined,
     interactionBridge,
     abortSignal,
-  });
+  };
 
-  // #541: bind ACP protocolIds to the pre-created session descriptor so the
-  // audit trail can correlate storyId → sess-<uuid> → recordId for TDD roles.
-  // Mirrors the pattern used in src/pipeline/stages/execution.ts:208.
+  // Run the agent. When a sessionBinding is provided, route through
+  // SessionManager.runInSession so state transitions (CREATED → RUNNING →
+  // COMPLETED/FAILED) and bindHandle happen automatically (#541, #589).
+  // Absent binding path stays compatible with tests that skip SessionManager.
+  const result = sessionBinding
+    ? await sessionBinding.sessionManager.runInSession(
+        sessionBinding.sessionId,
+        (opts) => agent.run(opts),
+        agentRunOptions,
+      )
+    : await agent.run(agentRunOptions);
+
+  // When binding is present, runInSession already persisted protocolIds
+  // using the descriptor's handle. If the descriptor had no handle (race on
+  // first use), re-bind now with the agent's derived session name so later
+  // resume logic can find the ACP record.
   if (sessionBinding && result.protocolIds) {
     const descriptor = sessionBinding.sessionManager.get(sessionBinding.sessionId);
-    if (descriptor) {
+    if (descriptor && !descriptor.handle) {
       sessionBinding.sessionManager.bindHandle(
         sessionBinding.sessionId,
         agent.deriveSessionName(descriptor),
@@ -340,6 +352,7 @@ export async function runTddSession(
     filesChanged,
     durationMs,
     estimatedCost: result.estimatedCost,
+    tokenUsage: result.tokenUsage,
     outputTail: result.output.slice(-500),
   };
 }

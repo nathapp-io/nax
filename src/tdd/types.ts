@@ -41,6 +41,12 @@ export interface TddSessionResult {
   isolation?: IsolationCheck;
   /** Cost of this session (USD) */
   estimatedCost: number;
+  /**
+   * Token usage for this session (fixes #590).
+   * Undefined when the adapter did not report usage (e.g. pre-first-turn
+   * failure, or a mock adapter in tests).
+   */
+  tokenUsage?: import("../agents/cost").TokenUsage;
   /** Files changed by this session (from git diff) */
   filesChanged: string[];
   /** Duration of this session in milliseconds */
@@ -73,6 +79,10 @@ export interface ThreeSessionTddResult {
   reviewReason?: string;
   /** Total cost of all sessions (USD) */
   totalCost: number;
+  /** Total token usage summed across all sessions (fixes #590). Undefined when no session reported usage. */
+  totalTokenUsage?: import("../agents/cost").TokenUsage;
+  /** Total wall-clock duration of all sessions in milliseconds (sum of session durationMs). */
+  totalDurationMs?: number;
   /** Whether lite mode was used (skips test-writer/implementer isolation) */
   lite: boolean;
   /** Category of failure (if success is false) */
