@@ -158,6 +158,7 @@ export const executionStage: PipelineStage = {
     // Determine whether to keep session open for review or rectification
     const keepOpen = !!(ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true);
 
+    const pidRegistry = ctx.pidRegistry;
     const baseRunOptions: import("../../agents/types").AgentRunOptions = {
       prompt: ctx.prompt,
       workdir: ctx.workdir,
@@ -175,7 +176,7 @@ export const executionStage: PipelineStage = {
       config: ctx.config,
       projectDir: ctx.projectDir,
       maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-      pidRegistry: ctx.pidRegistry,
+      onPidSpawned: pidRegistry ? (pid: number) => pidRegistry.register(pid) : undefined,
       abortSignal: ctx.abortSignal,
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,

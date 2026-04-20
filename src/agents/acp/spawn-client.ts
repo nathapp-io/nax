@@ -12,7 +12,6 @@
  *   acpx <agent> cancel                             → session.cancelActivePrompt()
  */
 
-import type { PidRegistry } from "../../execution/pid-registry";
 import { getSafeLogger } from "../../logger";
 import { typedSpawn } from "../../utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
@@ -88,7 +87,7 @@ async function readAndParseLines(stream: ReadableStream<Uint8Array>, state: Acpx
  * An ACP session backed by acpx CLI spawn.
  * Each prompt() call spawns: acpx --cwd ... <agent> prompt -s <name> --file -
  */
-class SpawnAcpSession implements AcpSession {
+export class SpawnAcpSession implements AcpSession {
   private readonly agentName: string;
   private readonly sessionName: string;
   private readonly cwd: string;
@@ -96,7 +95,7 @@ class SpawnAcpSession implements AcpSession {
   private readonly timeoutSeconds: number;
   private readonly permissionMode: string;
   private readonly env: Record<string, string | undefined>;
-  private readonly pidRegistry?: PidRegistry;
+  private readonly onPidSpawned?: (pid: number) => void;
   private activeProc: { pid: number; kill(signal?: number): void } | null = null;
   /** Volatile Claude Code session ID (acpxSessionId) — updated on reconnect. */
   readonly id?: string;
@@ -111,7 +110,7 @@ class SpawnAcpSession implements AcpSession {
     timeoutSeconds: number;
     permissionMode: string;
     env: Record<string, string | undefined>;
-    pidRegistry?: PidRegistry;
+    onPidSpawned?: (pid: number) => void;
     id?: string;
     recordId?: string;
   }) {
@@ -122,7 +121,7 @@ class SpawnAcpSession implements AcpSession {
     this.timeoutSeconds = opts.timeoutSeconds;
     this.permissionMode = opts.permissionMode;
     this.env = opts.env;
-    this.pidRegistry = opts.pidRegistry;
+    this.onPidSpawned = opts.onPidSpawned;
     this.id = opts.id;
     this.recordId = opts.recordId;
   }
@@ -164,7 +163,7 @@ class SpawnAcpSession implements AcpSession {
 
     this.activeProc = proc;
     const processPid = proc.pid;
-    await this.pidRegistry?.register(processPid);
+    this.onPidSpawned?.(processPid);
 
     try {
       try {
@@ -246,31 +245,23 @@ class SpawnAcpSession implements AcpSession {
       }
     } finally {
       this.activeProc = null;
-      await this.pidRegistry?.unregister(processPid);
     }
   }
 
   /**
-   * Spawn an acpx command with PID tracking (register before await, unregister in finally).
-   * Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
+   * Spawn an acpx command. Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
    */
   private async trackedSpawn(
     cmd: string[],
     opts?: Parameters<typeof _spawnClientDeps.spawn>[1],
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...opts });
-    const pid = proc.pid;
-    await this.pidRegistry?.register(pid);
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        proc.exited,
-        new Response(proc.stdout).text().catch(() => ""),
-        new Response(proc.stderr).text().catch(() => ""),
-      ]);
-      return { exitCode, stdout, stderr };
-    } finally {
-      await this.pidRegistry?.unregister(pid);
-    }
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text().catch(() => ""),
+      new Response(proc.stderr).text().catch(() => ""),
+    ]);
+    return { exitCode, stdout, stderr };
   }
 
   async close(options?: { forceTerminate?: boolean }): Promise<void> {
@@ -378,9 +369,9 @@ export class SpawnAcpClient implements AcpClient {
   private readonly cwd: string;
   private readonly timeoutSeconds: number;
   private readonly env: Record<string, string | undefined>;
-  private readonly pidRegistry?: PidRegistry;
+  private readonly onPidSpawned?: (pid: number) => void;
 
-  constructor(cmdStr: string, cwd?: string, timeoutSeconds?: number, pidRegistry?: PidRegistry) {
+  constructor(cmdStr: string, cwd?: string, timeoutSeconds?: number, onPidSpawned?: (pid: number) => void) {
     // Parse: "acpx --model <model> <agentName>"
     const parts = cmdStr.split(/\s+/);
     const modelIdx = parts.indexOf("--model");
@@ -393,7 +384,7 @@ export class SpawnAcpClient implements AcpClient {
     this.cwd = cwd || process.cwd();
     this.timeoutSeconds = timeoutSeconds || 1800;
     this.env = buildAllowedEnv();
-    this.pidRegistry = pidRegistry;
+    this.onPidSpawned = onPidSpawned;
   }
 
   async start(): Promise<void> {
@@ -401,23 +392,16 @@ export class SpawnAcpClient implements AcpClient {
   }
 
   /**
-   * Spawn an acpx command with PID tracking (register before await, unregister in finally).
-   * Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
+   * Spawn an acpx command. Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
    */
   private async trackedSpawn(cmd: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-    const pid = proc.pid;
-    await this.pidRegistry?.register(pid);
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        proc.exited,
-        new Response(proc.stdout).text().catch(() => ""),
-        new Response(proc.stderr).text().catch(() => ""),
-      ]);
-      return { exitCode, stdout, stderr };
-    } finally {
-      await this.pidRegistry?.unregister(pid);
-    }
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text().catch(() => ""),
+      new Response(proc.stderr).text().catch(() => ""),
+    ]);
+    return { exitCode, stdout, stderr };
   }
 
   async createSession(opts: {
@@ -457,7 +441,7 @@ export class SpawnAcpClient implements AcpClient {
       timeoutSeconds: this.timeoutSeconds,
       permissionMode: opts.permissionMode,
       env: this.env,
-      pidRegistry: this.pidRegistry,
+      onPidSpawned: this.onPidSpawned,
       id: sessionId,
       recordId,
     });
@@ -482,7 +466,7 @@ export class SpawnAcpClient implements AcpClient {
       timeoutSeconds: this.timeoutSeconds,
       permissionMode,
       env: this.env,
-      pidRegistry: this.pidRegistry,
+      onPidSpawned: this.onPidSpawned,
       id: sessionId,
       recordId,
     });
@@ -518,7 +502,7 @@ export function createSpawnAcpClient(
   cmdStr: string,
   cwd?: string,
   timeoutSeconds?: number,
-  pidRegistry?: PidRegistry,
+  onPidSpawned?: (pid: number) => void,
 ): AcpClient {
-  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, pidRegistry);
+  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned);
 }

@@ -100,8 +100,8 @@ export interface AgentRunOptions {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   };
-  /** PID registry for cleanup on crash/SIGTERM */
-  pidRegistry?: import("../execution/pid-registry").PidRegistry;
+  /** Callback fired immediately after spawning the agent process — caller registers the PID. */
+  onPidSpawned?: (pid: number) => void;
   /**
    * Explicit ACP session handle override. When set, the adapter uses this
    * name instead of auto-deriving from featureName/storyId/sessionRole.
