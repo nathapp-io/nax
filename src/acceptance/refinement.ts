@@ -5,8 +5,9 @@
  * testable assertions using an LLM call via adapter.complete().
  */
 
-import type { AgentAdapter } from "../agents";
-import { AgentManager, resolveDefaultAgent } from "../agents";
+import { AgentManager } from "../agents";
+import type { IAgentManager } from "../agents";
+import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
 import { getLogger } from "../logger";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -21,24 +22,7 @@ import type { RefineResult, RefinedCriterion, RefinementContext } from "./types"
  * @internal
  */
 export const _refineDeps = {
-  adapter: {
-    complete: async (...args: Parameters<AgentAdapter["complete"]>) => {
-      const options = args[1];
-      const config = options?.config;
-      if (!config) throw new Error("Refinement adapter requires config");
-
-      const resolvedModel = resolveConfiguredModel(
-        config.models,
-        resolveDefaultAgent(config),
-        config.acceptance?.model ?? "fast",
-        resolveDefaultAgent(config),
-      );
-      const adapter = new AgentManager(config).getAgent(resolvedModel.agent);
-      if (!adapter) throw new Error(`Agent "${resolvedModel.agent}" not found`);
-
-      return adapter.complete(...args);
-    },
-  } satisfies Pick<AgentAdapter, "complete">,
+  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
 };
 
 /**
@@ -101,11 +85,12 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
   } = context;
   const logger = getLogger();
 
+  const defaultAgent = (context.agentManager ?? _refineDeps.createManager(config)).getDefault();
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    resolveDefaultAgent(config),
+    defaultAgent,
     config.acceptance?.model ?? "fast",
-    resolveDefaultAgent(config),
+    defaultAgent,
   );
   const prompt = new AcceptancePromptBuilder().buildRefinementPrompt(criteria, codebaseContext, {
     testStrategy,
@@ -130,7 +115,7 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
     } as const;
     const completeResult = context.agentManager
       ? (await context.agentManager.completeWithFallback(prompt, completeOpts)).result
-      : await _refineDeps.adapter.complete(prompt, completeOpts);
+      : await _refineDeps.createManager(config).complete(prompt, completeOpts);
     const costUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
     response = typeof completeResult === "string" ? completeResult : completeResult.output;
 

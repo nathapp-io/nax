@@ -5,7 +5,17 @@
 
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
-import type { AgentAdapter, AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
+import type {
+  AgentAdapter,
+  AgentResult,
+  AgentRunOptions,
+  CompleteOptions,
+  CompleteResult,
+  DecomposeOptions,
+  DecomposeResult,
+  PlanOptions,
+  PlanResult,
+} from "./types";
 
 export interface AgentFallbackRecord {
   storyId?: string;
@@ -145,4 +155,37 @@ export interface IAgentManager {
    * (e.g. deriveSessionName, closeSession) without bypassing AgentManager.
    */
   getAgent(name: string): AgentAdapter | undefined;
+
+  // ─── ADR-013 Phase 5: pinned-agent + plan/decompose surface ─────────────────
+
+  /**
+   * Run against a specific agent (not getDefault()), still honoring the fallback
+   * chain rooted at agentName. Used by debate debaters and other callers that
+   * need a non-default agent without bypassing AgentManager.
+   */
+  runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult>;
+
+  /**
+   * One-shot completion pinned to a specific agent. Used by debate resolvers
+   * that intentionally call a specific judge/synthesis model.
+   */
+  completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult>;
+
+  /**
+   * Plan mode — feature spec generation via default agent with fallback.
+   * Routes through the fallback chain; availability failures swap agents.
+   */
+  plan(options: PlanOptions): Promise<PlanResult>;
+
+  /** Plan mode pinned to a specific agent (debate plan debaters). */
+  planAs(agentName: string, options: PlanOptions): Promise<PlanResult>;
+
+  /**
+   * Decompose mode — story splitting via default agent with fallback.
+   * Routes through the fallback chain; availability failures swap agents.
+   */
+  decompose(options: DecomposeOptions): Promise<DecomposeResult>;
+
+  /** Decompose mode pinned to a specific agent. */
+  decomposeAs(agentName: string, options: DecomposeOptions): Promise<DecomposeResult>;
 }

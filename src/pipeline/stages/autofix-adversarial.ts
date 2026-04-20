@@ -6,7 +6,7 @@
  * findings by file scope and route test-file findings to a test-writer session.
  */
 
-import type { AgentAdapter } from "../../agents/types";
+import type { IAgentManager } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
@@ -60,37 +60,34 @@ export async function runTestWriterRectification(
   ctx: PipelineContext,
   testWriterChecks: ReviewCheckResult[],
   story: UserStory,
-  agentGetFn: (name: string) => AgentAdapter | undefined,
+  agentManager: IAgentManager,
   keepOpen = true,
 ): Promise<number> {
   const logger = getLogger();
-  const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
-  const twAgent = agentGetFn(defaultAgent);
-  if (!twAgent) {
-    logger.warn("autofix", "Agent not found — skipping test-writer rectification", { storyId: ctx.story.id });
-    return 0;
-  }
   const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story);
   // Use the TDD test-writer tier from config — consistent with how the TDD orchestrator
   // selects the tier for the test-writer session (tdd.orchestrator.ts:150).
+  const defaultAgent = agentManager.getDefault();
   const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
   const modelDef = resolveModelForAgent(ctx.rootConfig.models, defaultAgent, modelTier, defaultAgent);
   try {
-    const twResult = await twAgent.run({
-      prompt: twPrompt,
-      workdir: ctx.workdir,
-      modelTier,
-      modelDef,
-      timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
-      pipelineStage: "rectification",
-      config: ctx.config,
-      projectDir: ctx.projectDir,
-      maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-      featureName: ctx.prd.feature,
-      storyId: ctx.story.id,
-      sessionRole: "test-writer",
-      keepOpen,
+    const twResult = await agentManager.run({
+      runOptions: {
+        prompt: twPrompt,
+        workdir: ctx.workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+        dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
+        pipelineStage: "rectification",
+        config: ctx.config,
+        projectDir: ctx.projectDir,
+        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+        featureName: ctx.prd.feature,
+        storyId: ctx.story.id,
+        sessionRole: "test-writer",
+        keepOpen,
+      },
     });
     return twResult.estimatedCost ?? 0;
   } catch {

@@ -14,10 +14,40 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
+import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import { NaxError } from "../../../src/errors";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+
+function makeMockDecomposeManager(
+  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ decompose: async () => ({ stories: [] }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: decomposeFn
+      ? async (name: string, opts: any) => decomposeFn(name, opts)
+      : async () => ({ stories: [] }),
+  } as any;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -116,7 +146,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origGetAgent = _planDeps.getAgent;
+const origCreateManager = _planDeps.createManager;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateSession = _planDeps.createDebateSession;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -156,7 +186,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateSession = origCreateDebateSession;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -176,19 +206,14 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async (_opts: DecomposeOptions) => {
-            callCount++;
-            if (callCount === 1) {
-              // First call: oversized (6 ACs, max is 5)
-              return { stories: [makeOversizedSubStory("US-001-A", 6), makeValidSubStory("US-001-B")] };
-            }
-            // Second call: valid
-            return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
-          }),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => {
+        callCount++;
+        if (callCount === 1) {
+          return { stories: [makeOversizedSubStory("US-001-A", 6), makeValidSubStory("US-001-B")] };
+        }
+        return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
+      }),
     );
 
     await expect(
@@ -208,14 +233,11 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async (_opts: DecomposeOptions) => {
-            callCount++;
-            return { stories: [makeOversizedSubStory("US-001-A", 8)] };
-          }),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => {
+        callCount++;
+        return { stories: [makeOversizedSubStory("US-001-A", 8)] };
+      }),
     );
 
     const config = makeConfig(); // maxReplanAttempts: 3
@@ -231,14 +253,11 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async (_opts: DecomposeOptions) => {
-            callCount++;
-            return { stories: [makeOversizedSubStory("US-001-A", 8)] };
-          }),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => {
+        callCount++;
+        return { stories: [makeOversizedSubStory("US-001-A", 8)] };
+      }),
     );
 
     const config = makeConfig({
@@ -269,17 +288,14 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const prd = makePrd();
     setupBaseDeps(prd);
 
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async (_opts: DecomposeOptions) => ({
-            stories: [
-              makeOversizedSubStory("US-001-A", 8),
-              makeOversizedSubStory("US-001-B", 7),
-              makeValidSubStory("US-001-C"),
-            ],
-          })),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => ({
+        stories: [
+          makeOversizedSubStory("US-001-A", 8),
+          makeOversizedSubStory("US-001-B", 7),
+          makeValidSubStory("US-001-C"),
+        ],
+      })),
     );
 
     let caught: NaxError | undefined;
@@ -303,13 +319,10 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const prd = makePrd();
     setupBaseDeps(prd);
 
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async (_opts: DecomposeOptions) => ({
-            stories: [makeOversizedSubStory("US-001-A", 9)],
-          })),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => ({
+        stories: [makeOversizedSubStory("US-001-A", 9)],
+      })),
     );
 
     let caught: NaxError | undefined;
@@ -334,18 +347,15 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const capturedContexts: string[] = [];
     let callCount = 0;
 
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async (opts: DecomposeOptions) => {
-            capturedContexts.push(opts.codebaseContext);
-            callCount++;
-            if (callCount === 1) {
-              return { stories: [makeOversizedSubStory("US-001-A", 6)] };
-            }
-            return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
-          }),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, opts: DecomposeOptions) => {
+        capturedContexts.push(opts.codebaseContext);
+        callCount++;
+        if (callCount === 1) {
+          return { stories: [makeOversizedSubStory("US-001-A", 6)] };
+        }
+        return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
+      }),
     );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });

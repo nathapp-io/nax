@@ -12,8 +12,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { DebateStageConfig, DebateResult, Debater } from "../../../src/debate/types";
-import type { AgentAdapter, CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import type { DebateStageConfig, DebateResult } from "../../../src/debate/types";
+import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
@@ -33,34 +34,36 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-function makeMockAdapter(name: string): AgentAdapter {
+function makeMockManager(): IAgentManager {
   return {
-    name,
-    displayName: name,
-    binary: name,
-    capabilities: {
-      supportedTiers: ["fast"] as const,
-      maxContextTokens: 100_000,
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
-    },
-    isInstalled: async () => true,
-    run: async () => ({
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      durationMs: 0,
-      estimatedCost: 0,
+    getAgent: (_name: string) => ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async (_req: AgentRunRequest) => ({
+      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] },
+      fallbacks: [],
     }),
-    buildCommand: () => [],
-    plan: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    complete: async (_p: string, _o?: CompleteOptions): Promise<CompleteResult> => ({
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: async (_name: string, _prompt: string, _opts?: CompleteOptions): Promise<CompleteResult> => ({
       output: `{"passed": true}`,
       costUsd: 0,
       source: "fallback",
     }),
-  };
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
 function makeMockResult(): DebateResult {
@@ -81,13 +84,13 @@ function makeMockResult(): DebateResult {
 let loggedWarnings: Array<{ stage: string; message: string }> = [];
 let loggedInfos: Array<{ stage: string; message: string }> = [];
 let mockGetSafeLogger: ReturnType<typeof mock>;
-let origGetAgent: typeof _debateSessionDeps.getAgent;
+let origCreateManager: typeof _debateSessionDeps.createManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
   loggedWarnings = [];
   loggedInfos = [];
-  origGetAgent = _debateSessionDeps.getAgent;
+  origCreateManager = _debateSessionDeps.createManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 
   mockGetSafeLogger = mock(() => ({
@@ -101,13 +104,13 @@ beforeEach(() => {
     error: () => {},
   }));
 
-  // Mock agent resolution so debaters resolve quickly
-  _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
+  // Mock manager so debaters resolve quickly
+  _debateSessionDeps.createManager = mock((_config) => makeMockManager());
   _debateSessionDeps.getSafeLogger = mockGetSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.getAgent = origGetAgent;
+  _debateSessionDeps.createManager = origCreateManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
   loggedWarnings = [];
   loggedInfos = [];
@@ -180,7 +183,7 @@ describe("DebateSession.run() mode routing — AC3: mode undefined defaults to p
 
 describe("DebateSession.run() mode routing — AC4: hybrid + stateful", () => {
   test("with mode 'hybrid' and sessionMode 'stateful', calls runHybrid", async () => {
-    _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
+    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
 
     const session = new DebateSession({
       storyId: "test-story",

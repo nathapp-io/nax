@@ -10,9 +10,8 @@
 
 import { join } from "node:path";
 import { spawn } from "bun";
-import type { AgentAdapter } from "../agents/types";
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
-import type { ModelTier } from "../config/schema-types";
 import { assembleForStage } from "../context/engine";
 import type { ContextBundle } from "../context/engine";
 import { getSafeLogger } from "../logger";
@@ -126,7 +125,7 @@ export class ReviewOrchestrator {
     qualityCommands?: NaxConfig["quality"]["commands"],
     storyId?: string,
     story?: SemanticStory,
-    modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
+    agentManager?: IAgentManager,
     naxConfig?: NaxConfig,
     retrySkipChecks?: Set<string>,
     featureName?: string,
@@ -189,7 +188,7 @@ export class ReviewOrchestrator {
         storyId,
         storyGitRef,
         story,
-        modelResolver,
+        agentManager,
         naxConfig,
         retrySkipChecks,
         featureName,
@@ -221,7 +220,7 @@ export class ReviewOrchestrator {
         storyId,
         storyGitRef,
         story,
-        modelResolver,
+        agentManager,
         naxConfig,
         retrySkipChecks,
         featureName,
@@ -276,7 +275,7 @@ export class ReviewOrchestrator {
             storyGitRef,
             semanticStory,
             semanticCfg,
-            modelResolver ?? (() => null),
+            agentManager,
             naxConfig,
             featureName,
             resolverSession,
@@ -292,7 +291,7 @@ export class ReviewOrchestrator {
             storyGitRef,
             semanticStory,
             adversarialCfg,
-            modelResolver ?? (() => null),
+            agentManager,
             naxConfig,
             featureName,
             priorFailures,
@@ -316,7 +315,7 @@ export class ReviewOrchestrator {
           storyId,
           storyGitRef,
           story,
-          modelResolver,
+          agentManager,
           naxConfig,
           retrySkipChecks,
           featureName,
@@ -477,11 +476,7 @@ export class ReviewOrchestrator {
     const retrySkipChecks = ctx.retrySkipChecks;
     ctx.retrySkipChecks = undefined;
 
-    const agentResolver = ctx.agentGetFn ?? undefined;
-    const agentName = ctx.agentManager?.getDefault() ?? "claude";
-    const modelResolver = agentName
-      ? (_tier: string) => (agentResolver ? (agentResolver(agentName) ?? null) : null)
-      : undefined;
+    const agentManager = ctx.agentManager;
 
     // When debate+dialogue are both enabled, pass the existing ReviewerSession as the resolver
     // session so runSemanticReview() can thread it through to the DebateSession.
@@ -515,7 +510,7 @@ export class ReviewOrchestrator {
         description: ctx.story.description,
         acceptanceCriteria: ctx.story.acceptanceCriteria,
       },
-      modelResolver,
+      agentManager,
       ctx.config,
       retrySkipChecks,
       ctx.prd.feature,

@@ -50,13 +50,13 @@ export interface DebateStageConfig {
   /** Session mode for debater agents */
   sessionMode: SessionMode;
   /** Debate execution mode */
-  mode: DebateMode;
+  mode?: DebateMode;
   /** Number of debate rounds */
   rounds: number;
   /** Optional debaters array — defaults to resolveDefaultAgent(config) for each entry when absent (min 2 entries) */
   debaters?: Debater[];
   /** Timeout for debate session in seconds (default: 600) */
-  timeoutSeconds: number;
+  timeoutSeconds?: number;
   /** When true, auto-assign personas to debaters that have no explicit persona. Default: false. */
   autoPersona?: boolean;
 }

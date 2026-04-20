@@ -8,6 +8,7 @@
  * - Update final status
  */
 
+import type { IAgentManager } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { fireHook } from "../../hooks/runner";
 import type { HooksConfig } from "../../hooks/types";
@@ -15,7 +16,6 @@ import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
 import { pipelineEventBus } from "../../pipeline/event-bus";
-import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { ISessionManager } from "../../session";
@@ -52,8 +52,8 @@ export interface RunCompletionOptions {
   isSequential?: boolean;
   /** Skip deferred regression gate — set when regression phase already passed on a prior run. */
   skipRegression?: boolean;
-  /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
-  agentGetFn?: AgentGetFn;
+  /** AgentManager — routes agent calls through IAgentManager for fallback support. */
+  agentManager?: IAgentManager;
   /**
    * Absolute path to the project root (where .nax/ lives).
    * Defaults to workdir when absent (non-monorepo).
@@ -146,7 +146,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         config,
         prd,
         workdir,
-        agentGetFn: options.agentGetFn,
+        agentManager: options.agentManager,
       });
 
       const lastRunAt = new Date().toISOString();
@@ -204,7 +204,8 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   const runCompletedAt = new Date().toISOString();
 
   if (options.sessionManager) {
-    await _runCompletionDeps.closeAllRunSessions(options.sessionManager, options.agentGetFn);
+    const agentGetFn = options.agentManager ? (name: string) => options.agentManager?.getAgent(name) : undefined;
+    await _runCompletionDeps.closeAllRunSessions(options.sessionManager, agentGetFn);
   }
 
   // Compute final story counts before emitting completion event (RL-002)

@@ -239,9 +239,6 @@ export const acceptanceSetupStage: PipelineStage = {
       } catch {
         resolvedAcceptanceModel = undefined;
       }
-      const agentName = resolvedAcceptanceModel?.agent ?? defaultAgent;
-      const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(agentName);
-
       // Refine criteria per-story (preserves storyId association for per-group filtering)
       let allRefinedCriteria: RefinedCriterion[];
 
@@ -261,6 +258,7 @@ export const acceptanceSetupStage: PipelineStage = {
               config: ctx.config,
               testStrategy: ctx.config.acceptance.testStrategy,
               testFramework: ctx.config.acceptance.testFramework,
+              agentManager: ctx.agentManager,
             })
             .then((refined) => {
               results[i] = refined;
@@ -319,7 +317,7 @@ export const acceptanceSetupStage: PipelineStage = {
           config: ctx.config,
           testStrategy: ctx.config.acceptance.testStrategy,
           testFramework: ctx.config.acceptance.testFramework,
-          adapter: agent ?? undefined,
+          agentManager: ctx.agentManager ?? undefined,
           ...("implementationContext" in ctx && ctx.implementationContext
             ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
             : {}),

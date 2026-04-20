@@ -65,3 +65,4 @@ prompt.txt
 tmp/.ci-test-output.txt
 logs/
 .worktrees
+.vscode/

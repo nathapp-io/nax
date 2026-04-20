@@ -6,7 +6,7 @@
  * Supports batch mode for efficiency.
  */
 
-import type { AgentAdapter } from "../../agents";
+import type { IAgentManager } from "../../agents";
 import { resolveDefaultAgent } from "../../agents";
 import type { ConfiguredModel, NaxConfig } from "../../config";
 import { resolveConfiguredModel } from "../../config";
@@ -126,14 +126,14 @@ export interface PipedProc {
  */
 export const _llmStrategyDeps = {
   spawn: typedSpawn,
-  adapter: undefined as AgentAdapter | undefined,
+  agentManager: undefined as IAgentManager | undefined,
 };
 
 /**
  * Call LLM via adapter.complete() with timeout.
  */
 async function callLlmOnce(
-  adapter: AgentAdapter,
+  agentManager: IAgentManager,
   modelSelection: ConfiguredModel,
   prompt: string,
   config: NaxConfig,
@@ -141,7 +141,7 @@ async function callLlmOnce(
 ): Promise<string> {
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    adapter.name,
+    agentManager.getDefault(),
     modelSelection,
     resolveDefaultAgent(config),
   );
@@ -154,7 +154,7 @@ async function callLlmOnce(
   });
   timeoutPromise.catch(() => {});
 
-  const outputPromise = adapter.complete(prompt, { model: resolvedModel.modelDef.model, config });
+  const outputPromise = agentManager.complete(prompt, { model: resolvedModel.modelDef.model, config });
 
   try {
     const result = await Promise.race([outputPromise, timeoutPromise]);
@@ -171,7 +171,7 @@ async function callLlmOnce(
  * Call LLM via adapter.complete() with timeout and retry (BUG-033).
  */
 async function callLlm(
-  adapter: AgentAdapter,
+  agentManager: IAgentManager,
   modelSelection: ConfiguredModel,
   prompt: string,
   config: NaxConfig,
@@ -185,7 +185,7 @@ async function callLlm(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callLlmOnce(adapter, modelSelection, prompt, config, timeoutMs);
+      return await callLlmOnce(agentManager, modelSelection, prompt, config, timeoutMs);
     } catch (err) {
       lastError = err as Error;
       if (attempt < maxRetries) {
@@ -216,16 +216,16 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
     throw new Error("LLM routing config not found");
   }
 
-  const adapter = context.adapter ?? _llmStrategyDeps.adapter;
-  if (!adapter) {
-    throw new Error("No agent adapter available for batch routing (AA-003)");
+  const agentManager = context.agentManager ?? _llmStrategyDeps.agentManager;
+  if (!agentManager) {
+    throw new Error("No agent manager available for batch routing (AA-003)");
   }
 
   const modelSelection = llmConfig.model ?? "fast";
   const prompt = await buildBatchRoutingPromptAsync(stories);
 
   try {
-    const output = await callLlm(adapter, modelSelection, prompt, config);
+    const output = await callLlm(agentManager, modelSelection, prompt, config);
     const decisions = parseBatchResponse(output, stories, config);
 
     if (llmConfig.cacheDecisions) {
@@ -254,7 +254,7 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
 export async function classifyWithLlm(
   story: UserStory,
   config: NaxConfig,
-  adapter?: AgentAdapter,
+  agentManager?: IAgentManager,
 ): Promise<RoutingDecision | null> {
   const llmConfig = config.routing.llm;
   if (!llmConfig) return null;
@@ -292,9 +292,9 @@ export async function classifyWithLlm(
   }
 
   // Call the LLM
-  const effectiveAdapter = adapter ?? _llmStrategyDeps.adapter;
-  if (!effectiveAdapter) {
-    throw new Error("No agent adapter available for LLM routing (AA-003)");
+  const effectiveManager = agentManager ?? _llmStrategyDeps.agentManager;
+  if (!effectiveManager) {
+    throw new Error("No agent manager available for LLM routing (AA-003)");
   }
 
   const modelSelection = llmConfig.model ?? "fast";
@@ -302,7 +302,7 @@ export async function classifyWithLlm(
 
   let decision: RoutingDecision;
   try {
-    const output = await callLlm(effectiveAdapter, modelSelection, prompt, config);
+    const output = await callLlm(effectiveManager, modelSelection, prompt, config);
     decision = parseRoutingResponse(output, story, config);
   } catch (err) {
     if (llmConfig.fallbackToKeywords) {

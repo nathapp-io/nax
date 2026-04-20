@@ -6,8 +6,7 @@
  */
 
 import { z } from "zod";
-import { resolveDefaultAgent } from "../../agents";
-import type { AgentAdapter } from "../../agents/types";
+import type { IAgentManager } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
 import { OneShotPromptBuilder, type SchemaDescriptor } from "../../prompts";
@@ -72,12 +71,12 @@ interface DecisionResponse {
 
 /**
  * Module-level deps for testability (_deps pattern).
- * Override adapter in tests to mock adapter.complete() without spawning the claude CLI.
+ * Override agentManager in tests to mock complete() without spawning the claude CLI.
  *
  * For backward compatibility, also supports _autoPluginDeps.callLlm (deprecated).
  */
 export const _autoPluginDeps = {
-  adapter: null as AgentAdapter | null,
+  agentManager: null as IAgentManager | null,
   callLlm: null as ((request: InteractionRequest) => Promise<DecisionResponse>) | null,
 };
 
@@ -165,10 +164,10 @@ export class AutoInteractionPlugin implements InteractionPlugin {
   private async callLlm(request: InteractionRequest): Promise<DecisionResponse> {
     const prompt = await this.buildPrompt(request);
 
-    // Get adapter from dependency injection or throw
-    const adapter = _autoPluginDeps.adapter;
-    if (!adapter) {
-      throw new Error("Auto plugin requires adapter to be injected via _autoPluginDeps.adapter");
+    // Get agentManager from dependency injection or throw
+    const agentManager = _autoPluginDeps.agentManager;
+    if (!agentManager) {
+      throw new Error("Auto plugin requires agentManager to be injected via _autoPluginDeps.agentManager");
     }
 
     const naxConfig = this.config.naxConfig ?? DEFAULT_CONFIG;
@@ -176,19 +175,15 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     let resolvedModel: string | undefined;
     try {
       const modelTier = this.config.model ?? "fast";
-      resolvedModel = resolveModelForAgent(
-        naxConfig.models,
-        resolveDefaultAgent(naxConfig),
-        modelTier,
-        resolveDefaultAgent(naxConfig),
-      ).model;
+      const defaultAgent = agentManager.getDefault();
+      resolvedModel = resolveModelForAgent(naxConfig.models, defaultAgent, modelTier, defaultAgent).model;
     } catch {
       // Model resolution failed (e.g. no naxConfig provided) — proceed without a model
     }
 
     const timeoutMs = (naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000;
 
-    const result = await adapter.complete(prompt, {
+    const result = await agentManager.complete(prompt, {
       ...(resolvedModel !== undefined && { model: resolvedModel }),
       jsonMode: true,
       config: naxConfig,

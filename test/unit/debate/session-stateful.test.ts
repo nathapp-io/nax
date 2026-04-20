@@ -1,42 +1,55 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentAdapter, AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 
-function makeMockAdapter(
-  name: string,
+function makeMockManager(
   options: {
-    runFn?: (opts: AgentRunOptions) => Promise<ReturnType<AgentAdapter["run"]> extends Promise<infer R> ? R : never>;
-    completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
+    runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: any[] }>;
+    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
+    unavailableAgents?: Set<string>;
   } = {},
-): AgentAdapter {
+): IAgentManager {
+  const unavailable = options.unavailableAgents ?? new Set<string>();
   return {
-    name,
-    displayName: name,
-    binary: name,
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"],
-      maxContextTokens: 100_000,
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
-    },
-    isInstalled: async () => true,
-    run:
-      options.runFn ??
-      (async () => ({
-        success: true,
-        exitCode: 0,
-        output: `output from ${name}`,
-        rateLimited: false,
-        durationMs: 1,
-        estimatedCost: 0.01,
-      })),
-    buildCommand: () => [],
-    buildAllowedEnv: () => ({}),
+    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async (_req: AgentRunRequest) => ({
+      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] },
+      fallbacks: [],
+    }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: options.completeFn
+      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: options.runFn
+      ? async (agentName: string, request: AgentRunRequest) => options.runFn!(agentName, request.runOptions)
+      : async (_name: string, request: AgentRunRequest) => ({
+          success: true,
+          exitCode: 0,
+          output: `output from ${_name}`,
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0.01,
+          agentFallbacks: [],
+        }),
     plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
     decompose: async () => ({ stories: [] }),
-    complete: options.completeFn ?? (async () => ({ output: "", costUsd: 0, source: "fallback" })),
-  };
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
@@ -53,14 +66,14 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-let origGetAgent: typeof _debateSessionDeps.getAgent;
+let origCreateManager: typeof _debateSessionDeps.createManager;
 
 beforeEach(() => {
-  origGetAgent = _debateSessionDeps.getAgent;
+  origCreateManager = _debateSessionDeps.createManager;
 });
 
 afterEach(() => {
-  _debateSessionDeps.getAgent = origGetAgent;
+  _debateSessionDeps.createManager = origCreateManager;
   mock.restore();
 });
 
@@ -68,17 +81,18 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("proposal round calls adapter.run for each debater with stable sessionRole", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
             success: true,
             exitCode: 0,
-            output: `proposal-${name}`,
+            output: `proposal-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.1,
+            agentFallbacks: [],
           };
         },
       }),
@@ -109,17 +123,18 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("uses explicit non-tier debater model override for modelDef", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
             success: true,
             exitCode: 0,
-            output: `proposal-${name}`,
+            output: `proposal-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.1,
+            agentFallbacks: [],
           };
         },
       }),
@@ -147,17 +162,18 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("rounds > 1 keeps proposal session open and reuses same role in critique", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
             success: true,
             exitCode: 0,
-            output: opts.prompt.includes("Critique") ? `critique-${name}` : `proposal-${name}`,
+            output: opts.prompt.includes("Critique") ? `critique-${agentName}` : `proposal-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.1,
+            agentFallbacks: [],
           };
         },
       }),
@@ -186,9 +202,9 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("falls back to single-agent passed when only one proposal run succeeds", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           runCalls.push(opts);
           if (opts.prompt === "Close this debate session.") {
             return {
@@ -198,9 +214,10 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
               rateLimited: false,
               durationMs: 1,
               estimatedCost: 0.05,
+              agentFallbacks: [],
             };
           }
-          if (name === "opencode") {
+          if (agentName === "opencode") {
             return {
               success: false,
               exitCode: 1,
@@ -208,15 +225,17 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
               rateLimited: false,
               durationMs: 1,
               estimatedCost: 0,
+              agentFallbacks: [],
             };
           }
           return {
             success: true,
             exitCode: 0,
-            output: `proposal-${name}`,
+            output: `proposal-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.1,
+            agentFallbacks: [],
           };
         },
       }),
@@ -243,17 +262,18 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
   test("synthesis resolver receives sessionName built from ctx.workdir and ctx.featureName", async () => {
     const completeCalls: { opts?: CompleteOptions }[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (_opts) => ({
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (_agentName, _opts) => ({
           success: true,
           exitCode: 0,
           output: '{"passed": true}',
           rateLimited: false,
           durationMs: 1,
           estimatedCost: 0.05,
+          agentFallbacks: [],
         }),
-        completeFn: async (_prompt: string, opts?: CompleteOptions) => {
+        completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
           completeCalls.push({ opts });
           return { output: "synthesis resolved", costUsd: 0.01, source: "exact" as const };
         },
@@ -288,17 +308,18 @@ describe("DebateSession.run() — one-shot mode unchanged", () => {
     let runCount = 0;
     let completeCount = 0;
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (_opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (_agentName, _opts) => {
           runCount += 1;
           return {
             success: true,
             exitCode: 0,
-            output: `run-${name}`,
+            output: `run-${_agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.1,
+            agentFallbacks: [],
           };
         },
         completeFn: async () => {

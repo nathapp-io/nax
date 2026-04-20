@@ -14,9 +14,7 @@ import { type DiagnoseOptions, diagnoseAcceptanceFailure } from "../../acceptanc
 import { executeSourceFix, executeTestFix } from "../../acceptance/fix-executor";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import type { DiagnosisResult, SemanticVerdict } from "../../acceptance/types";
-import { resolveDefaultAgent } from "../../agents";
-import type { AgentAdapter } from "../../agents/types";
-import { resolveConfiguredModel } from "../../config";
+import type { IAgentManager } from "../../agents";
 import { getSafeLogger } from "../../logger";
 import { isTestLevelFailure } from "./acceptance-helpers";
 import type { AcceptanceLoopContext } from "./acceptance-loop";
@@ -24,8 +22,7 @@ import type { AcceptanceLoopContext } from "./acceptance-loop";
 // ─── resolveAcceptanceDiagnosis ─────────────────────────────────────────────
 
 export interface ResolveAcceptanceDiagnosisOptions {
-  agent: AgentAdapter;
-  getAgent?: (name: string) => AgentAdapter | undefined;
+  agentManager: IAgentManager;
   failures: { failedACs: string[]; testOutput: string };
   totalACs: number;
   strategy: "diagnose-first" | "implement-only";
@@ -46,7 +43,7 @@ export interface ResolveAcceptanceDiagnosisOptions {
  */
 export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosisOptions): Promise<DiagnosisResult> {
   const logger = getSafeLogger();
-  const { agent, failures, totalACs, strategy, semanticVerdicts, diagnosisOpts, previousFailure } = opts;
+  const { agentManager, failures, totalACs, strategy, semanticVerdicts, diagnosisOpts, previousFailure } = opts;
   const storyId = diagnosisOpts.storyId;
 
   // Fast path 1: implement-only strategy bypasses diagnosis
@@ -91,14 +88,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
   }
 
   // Slow path: full LLM diagnosis with previousFailure context
-  const diagnosisAgentName = resolveConfiguredModel(
-    diagnosisOpts.config.models,
-    resolveDefaultAgent(diagnosisOpts.config),
-    diagnosisOpts.config.acceptance.fix.diagnoseModel,
-    resolveDefaultAgent(diagnosisOpts.config),
-  ).agent;
-  const diagnosisAgent = opts.getAgent?.(diagnosisAgentName) ?? agent;
-  return await diagnoseAcceptanceFailure(diagnosisAgent, {
+  return await diagnoseAcceptanceFailure(agentManager, {
     ...diagnosisOpts,
     semanticVerdicts,
     previousFailure,
@@ -120,7 +110,6 @@ export interface ApplyFixResult {
 
 /** Injectable dependencies for applyFix — allows tests to mock executors. */
 export const _applyFixDeps = {
-  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   executeSourceFix,
   executeTestFix,
 };
@@ -141,15 +130,9 @@ export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
   const { ctx, failures, diagnosis, previousFailure } = opts;
   const storyId = ctx.prd.userStories[0]?.id ?? "unknown";
 
-  const fixAgentName = resolveConfiguredModel(
-    ctx.config.models,
-    resolveDefaultAgent(ctx.config),
-    ctx.config.acceptance.fix.fixModel,
-    resolveDefaultAgent(ctx.config),
-  ).agent;
-  const agent = (ctx.agentGetFn ?? _applyFixDeps.getAgent)(fixAgentName);
-  if (!agent) {
-    logger?.error("acceptance.applyFix", "Agent not found", { storyId, agentName: fixAgentName });
+  const agentManager = ctx.agentManager;
+  if (!agentManager) {
+    logger?.error("acceptance.applyFix", "AgentManager not found", { storyId });
     return { cost: 0 };
   }
 
@@ -182,7 +165,7 @@ export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
 
   if (diagnosis.verdict === "source_bug" || diagnosis.verdict === "both") {
     logger?.info("acceptance.applyFix", "Applying source fix", { storyId, verdict: diagnosis.verdict });
-    const sourceResult = await _applyFixDeps.executeSourceFix(agent, {
+    const sourceResult = await _applyFixDeps.executeSourceFix(agentManager, {
       testOutput: failures.testOutput,
       testFileContent,
       diagnosis,
@@ -202,7 +185,7 @@ export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
 
   if (diagnosis.verdict === "test_bug" || diagnosis.verdict === "both") {
     logger?.info("acceptance.applyFix", "Applying test fix", { storyId, verdict: diagnosis.verdict });
-    const testResult = await _applyFixDeps.executeTestFix(agent, {
+    const testResult = await _applyFixDeps.executeTestFix(agentManager, {
       testOutput: failures.testOutput,
       testFileContent,
       failedACs: failures.failedACs,

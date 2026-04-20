@@ -258,7 +258,7 @@ export async function runTddSession(
         runOptions: agentRunOptions,
         signal: agentRunOptions.abortSignal,
       })
-    : await agent.run(agentRunOptions);
+    : await effectiveManager.run({ runOptions: agentRunOptions });
 
   // When binding is present, runInSession already persisted protocolIds
   // using the descriptor's handle. If the descriptor had no handle (race on

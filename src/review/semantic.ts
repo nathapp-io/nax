@@ -7,13 +7,11 @@
  * is handled by lint/typecheck, not semantic review.
  */
 
-import { resolveDefaultAgent } from "../agents";
+import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
-import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
-import type { ModelTier } from "../config/schema-types";
 import { filterContextByRole } from "../context";
 import { createContextToolRuntime } from "../context/engine";
 import { DebateSession } from "../debate";
@@ -31,9 +29,6 @@ import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./t
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
 export type { SemanticStory };
-
-/** Function that resolves an AgentAdapter for a given model tier */
-export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined;
 
 /** Injectable dependencies for semantic.ts — allows tests to mock without mock.module() */
 export const _semanticDeps = {
@@ -136,7 +131,7 @@ export async function runSemanticReview(
   storyGitRef: string | undefined,
   story: SemanticStory,
   semanticConfig: SemanticReviewConfig,
-  modelResolver: ModelResolver,
+  agentManager: IAgentManager | undefined,
   naxConfig?: NaxConfig,
   featureName?: string,
   resolverSession?: import("./dialogue").ReviewerSession,
@@ -218,9 +213,7 @@ export async function runSemanticReview(
     }
   }
 
-  // Resolve agent
-  const agent = modelResolver(semanticConfig.modelTier);
-  if (!agent) {
+  if (!agentManager) {
     logger?.warn("semantic", "No agent available for semantic review — skipping", {
       storyId: story.id,
       modelTier: semanticConfig.modelTier,
@@ -425,7 +418,8 @@ export async function runSemanticReview(
     escalations: [],
     attempts: 0,
   };
-  const defaultAgent = naxConfig ? resolveDefaultAgent(naxConfig) : "claude";
+  const defaultAgent = agentManager.getDefault();
+  const adapter = agentManager.getAgent(defaultAgent);
   let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
   try {
     if (naxConfig?.models) {
@@ -463,7 +457,7 @@ export async function runSemanticReview(
     // keepOpen: true — session stays alive so the JSON retry prompt has
     // full conversation history. Closed explicitly below on the happy path, or
     // by the retry call (keepOpen: false) when a retry is needed.
-    const runResult = await agent.run({ prompt, ...runOpts, keepOpen: true });
+    const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
     logger?.debug("semantic", "LLM call complete", {
@@ -473,7 +467,7 @@ export async function runSemanticReview(
     });
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-    void agent.closePhysicalSession(reviewerSessionName, workdir);
+    void adapter?.closePhysicalSession(reviewerSessionName, workdir);
     return {
       check: "semantic",
       success: true,
@@ -494,10 +488,8 @@ export async function runSemanticReview(
       responseLen: rawResponse.length,
     });
     try {
-      const retryResult = await agent.run({
-        prompt: ReviewPromptBuilder.jsonRetry(),
-        ...runOpts,
-        keepOpen: false,
+      const retryResult = await agentManager.run({
+        runOptions: { prompt: ReviewPromptBuilder.jsonRetry(), ...runOpts, keepOpen: false },
       });
       rawResponse = retryResult.output;
       llmCost += retryResult.estimatedCost ?? 0;
@@ -515,7 +507,7 @@ export async function runSemanticReview(
   // Close the session — covers both the happy path (no retry) and the retry-exhausted
   // path (retry threw or returned unparseable JSON, so keepOpen: false on the
   // retry call may not have closed it). Best-effort: already-closed sessions no-op.
-  void agent.closePhysicalSession(reviewerSessionName, workdir);
+  void adapter?.closePhysicalSession(reviewerSessionName, workdir);
 
   // Parse response — fail-closed when LLM clearly intended to fail,
   // fail-open only when response is truly unparseable with no signal.

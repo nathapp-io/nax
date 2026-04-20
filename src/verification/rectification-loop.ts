@@ -7,17 +7,17 @@
  * Used by: src/pipeline/stages/rectify.ts, src/execution/lifecycle/run-regression.ts
  */
 
-import { AgentManager, resolveDefaultAgent } from "../agents";
+import { AgentManager } from "../agents";
+import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
-import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { getSafeLogger } from "../logger";
-import type { AgentGetFn, PipelineContext } from "../pipeline/types";
+import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
@@ -37,8 +37,8 @@ export interface RectificationLoopOptions {
   testOutput: string;
   promptPrefix?: string;
   featureName?: string;
-  /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
-  agentGetFn?: AgentGetFn;
+  /** AgentManager — routes all agent calls through IAgentManager. Falls back to createManager when absent. */
+  agentManager?: IAgentManager;
   /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
   projectDir?: string;
   /**
@@ -72,12 +72,12 @@ async function _defaultRunDebate(
 ): Promise<{ output: string | null; totalCostUsd: number }> {
   const logger = getSafeLogger();
   const debaters: Debater[] = stageConfig.debaters ?? [];
-  const resolved: Array<{ debater: Debater; adapter: AgentAdapter }> = [];
+  const manager = _rectificationDeps.createManager(config);
+  const resolved: Array<{ debater: Debater; agentName: string }> = [];
 
   for (const debater of debaters) {
-    const adapter = _rectificationDeps.getAgent(debater.agent, config);
-    if (adapter) {
-      resolved.push({ debater, adapter });
+    if (manager.getAgent(debater.agent)) {
+      resolved.push({ debater, agentName: debater.agent });
     }
   }
 
@@ -88,9 +88,9 @@ async function _defaultRunDebate(
   const timeoutMs = (config.execution?.sessionTimeoutSeconds ?? 600) * 1000;
   const startMs = Date.now();
   const proposalSettled = await Promise.allSettled(
-    resolved.map(({ debater, adapter }) =>
-      adapter
-        .complete(prompt, {
+    resolved.map(({ debater, agentName }) =>
+      manager
+        .completeAs(agentName, prompt, {
           model: debater.model,
           config,
           storyId,
@@ -125,8 +125,7 @@ async function _defaultRunDebate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _rectificationDeps = {
-  getAgent: (name: string, config?: NaxConfig): AgentAdapter | undefined =>
-    config ? new AgentManager(config).getAgent(name) : undefined,
+  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
   runVerification: _fullSuite as typeof _fullSuite,
   escalateTier: _escalateTier,
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,
@@ -145,7 +144,6 @@ export async function runRectificationLoop(
     testOutput,
     promptPrefix,
     featureName,
-    agentGetFn,
     projectDir,
     testScopedTemplate,
     sessionManager,
@@ -235,41 +233,38 @@ export async function runRectificationLoop(
       return rectificationPrompt;
     },
     runAttempt: async (attempt, rectificationPrompt) => {
-      const agent = agentGetFn
-        ? agentGetFn(resolveDefaultAgent(config))
-        : _rectificationDeps.getAgent(resolveDefaultAgent(config), config);
-      if (!agent) {
-        logger?.error("rectification", "Agent not found, cannot retry");
-        throw new Error("RECTIFICATION_AGENT_NOT_FOUND");
-      }
+      const agentManager = opts.agentManager ?? _rectificationDeps.createManager(config);
+      const defaultAgent = agentManager.getDefault();
 
       const complexity = story.routing?.complexity ?? "medium";
       const modelTier =
         config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
       const modelDef = resolveModelForAgent(
         config.models,
-        story.routing?.agent ?? resolveDefaultAgent(config),
+        story.routing?.agent ?? defaultAgent,
         modelTier,
-        resolveDefaultAgent(config),
+        defaultAgent,
       );
 
       const isLastAttempt = attempt >= rectificationConfig.maxRetries;
 
-      const agentResult = await agent.run({
-        prompt: rectificationPrompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds: config.execution.sessionTimeoutSeconds,
-        dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
-        pipelineStage: "rectification",
-        config,
-        projectDir,
-        maxInteractionTurns: config.agent?.maxInteractionTurns,
-        featureName,
-        storyId: story.id,
-        sessionRole: "implementer",
-        keepOpen: !isLastAttempt,
+      const agentResult = await agentManager.run({
+        runOptions: {
+          prompt: rectificationPrompt,
+          workdir,
+          modelTier,
+          modelDef,
+          timeoutSeconds: config.execution.sessionTimeoutSeconds,
+          dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+          pipelineStage: "rectification",
+          config,
+          projectDir,
+          maxInteractionTurns: config.agent?.maxInteractionTurns,
+          featureName,
+          storyId: story.id,
+          sessionRole: "implementer",
+          keepOpen: !isLastAttempt,
+        },
       });
 
       costAccum += agentResult.estimatedCost ?? 0;
@@ -400,9 +395,10 @@ export async function runRectificationLoop(
         return false;
       }
 
-      const agentName = escalatedAgent ?? story.routing?.agent ?? resolveDefaultAgent(config);
-      const agent = agentGetFn ? agentGetFn(agentName) : _rectificationDeps.getAgent(agentName, config);
-      if (!agent) {
+      const escalationManager = opts.agentManager ?? _rectificationDeps.createManager(config);
+      const agentName = escalatedAgent ?? story.routing?.agent ?? escalationManager.getDefault();
+
+      if (!escalationManager.getAgent(agentName)) {
         return false;
       }
 
@@ -410,7 +406,7 @@ export async function runRectificationLoop(
         config.models,
         agentName,
         escalatedTier,
-        resolveDefaultAgent(config),
+        escalationManager.getDefault(),
       );
       let escalationPrompt = RectifierPromptBuilder.escalated(
         testSummary.failures,
@@ -426,20 +422,22 @@ export async function runRectificationLoop(
         escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
       }
 
-      const escalationRunResult = await agent.run({
-        prompt: escalationPrompt,
-        workdir,
-        modelTier: escalatedTier,
-        modelDef: escalatedModelDef,
-        timeoutSeconds: config.execution.sessionTimeoutSeconds,
-        dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
-        pipelineStage: "rectification",
-        config,
-        projectDir,
-        maxInteractionTurns: config.agent?.maxInteractionTurns,
-        featureName,
-        storyId: story.id,
-        sessionRole: "implementer",
+      const escalationRunResult = await escalationManager.runAs(agentName, {
+        runOptions: {
+          prompt: escalationPrompt,
+          workdir,
+          modelTier: escalatedTier,
+          modelDef: escalatedModelDef,
+          timeoutSeconds: config.execution.sessionTimeoutSeconds,
+          dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+          pipelineStage: "rectification",
+          config,
+          projectDir,
+          maxInteractionTurns: config.agent?.maxInteractionTurns,
+          featureName,
+          storyId: story.id,
+          sessionRole: "implementer",
+        },
       });
 
       costAccum += escalationRunResult.estimatedCost ?? 0;
@@ -503,7 +501,7 @@ export function runRectificationLoopFromCtx(
     testOutput: opts.testOutput,
     promptPrefix: opts.promptPrefix,
     featureName: ctx.prd.feature,
-    agentGetFn: ctx.agentGetFn,
+    agentManager: ctx.agentManager,
     projectDir: ctx.projectDir,
     testScopedTemplate: opts.testScopedTemplate,
     sessionManager: ctx.sessionManager,

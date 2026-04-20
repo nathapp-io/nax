@@ -6,10 +6,9 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
-import { AgentManager, resolveDefaultAgent } from "../agents";
-import type { AgentAdapter } from "../agents/types";
+import { AgentManager } from "../agents";
+import type { IAgentManager } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
-import { resolveConfiguredModel } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
@@ -27,8 +26,8 @@ export interface RoutingContext {
   config: NaxConfig;
   /** Optional codebase context summary */
   codebaseContext?: string;
-  /** Optional agent adapter for LLM-based routing */
-  adapter?: AgentAdapter;
+  /** Optional agent manager for LLM-based routing */
+  agentManager?: IAgentManager;
 }
 
 /**
@@ -144,7 +143,7 @@ export async function resolveRouting(
   story: UserStory,
   config: NaxConfig,
   plugins?: PluginRegistry,
-  adapter?: AgentAdapter,
+  agentManager?: IAgentManager,
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
 
@@ -166,7 +165,7 @@ export async function resolveRouting(
   if (plugins) {
     for (const pluginRouter of plugins.getRouters()) {
       try {
-        const decision = await pluginRouter.route(story, { config, adapter });
+        const decision = await pluginRouter.route(story, { config, agentManager });
         if (decision !== null) return decision;
       } catch (err) {
         logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
@@ -177,11 +176,11 @@ export async function resolveRouting(
     }
   }
 
-  // 2. LLM fallback (if configured and adapter available)
-  if (config.routing.strategy === "llm" && adapter) {
+  // 2. LLM fallback (if configured and agentManager available)
+  if (config.routing.strategy === "llm" && agentManager) {
     try {
       const { classifyWithLlm } = await import("./strategies/llm");
-      const decision = await classifyWithLlm(story, config, adapter);
+      const decision = await classifyWithLlm(story, config, agentManager);
       if (decision !== null) return decision;
     } catch (err) {
       logger?.warn("routing", "LLM routing failed, falling back to keyword", {
@@ -208,7 +207,7 @@ export async function routeStory(
   _workdir: string,
   plugins?: PluginRegistry,
 ): Promise<RoutingDecision> {
-  return resolveRouting(story, context.config, plugins, context.adapter);
+  return resolveRouting(story, context.config, plugins, context.agentManager);
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +268,7 @@ export function routeTask(
  * No-ops if routing.strategy is not "llm" or mode is "per-story" or stories is empty.
  */
 export const _tryLlmBatchRouteDeps = {
-  getAgent: (name: string, config: NaxConfig) => new AgentManager(config).getAgent(name),
+  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
 };
 
 export async function tryLlmBatchRoute(
@@ -284,15 +283,8 @@ export async function tryLlmBatchRoute(
   // PRD wins: skip stories that already have routing set (from plan or previous run)
   const needsRouting = stories.filter((s) => !(s.routing?.complexity && s.routing?.testStrategy));
   if (needsRouting.length === 0) return;
-  const preferredAgent = config.execution?.agent ?? "claude";
-  const routingAgent = resolveConfiguredModel(
-    config.models,
-    preferredAgent,
-    config.routing.llm?.model ?? "fast",
-    resolveDefaultAgent(config),
-  ).agent;
-  const resolvedAdapter = _deps.getAgent(routingAgent, config);
-  if (!resolvedAdapter) return;
+
+  const agentManager = _deps.createManager(config);
 
   const logger = getSafeLogger();
   try {
@@ -302,7 +294,7 @@ export async function tryLlmBatchRoute(
       mode,
     });
     const { routeBatch } = await import("./strategies/llm");
-    await routeBatch(needsRouting, { config, adapter: resolvedAdapter });
+    await routeBatch(needsRouting, { config, agentManager });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {

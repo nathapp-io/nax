@@ -5,8 +5,7 @@
  * Runs a full agent session with sessionRole 'source-fix'.
  */
 
-import { resolveDefaultAgent } from "../agents";
-import type { AgentAdapter, AgentRunOptions } from "../agents/types";
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -29,20 +28,20 @@ export interface ExecuteSourceFixResult {
 }
 
 export async function executeSourceFix(
-  agent: AgentAdapter,
+  agentManager: IAgentManager,
   options: ExecuteSourceFixOptions,
 ): Promise<ExecuteSourceFixResult> {
-  if (!agent) {
-    throw new Error("[fix-executor] agent is required");
+  if (!agentManager) {
+    throw new Error("[fix-executor] agentManager is required");
   }
 
   const { config, workdir, featureName, storyId } = options;
 
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    resolveDefaultAgent(config),
+    agentManager.getDefault(),
     config.acceptance.fix.fixModel,
-    resolveDefaultAgent(config),
+    agentManager.getDefault(),
   );
 
   const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
@@ -54,20 +53,20 @@ export async function executeSourceFix(
 
   const timeoutSeconds = config.execution?.sessionTimeoutSeconds ?? 3600;
 
-  const runOptions: AgentRunOptions = {
-    prompt,
-    workdir,
-    modelTier: resolvedModel.modelTier ?? "balanced",
-    modelDef: resolvedModel.modelDef,
-    timeoutSeconds,
-    sessionRole: "source-fix",
-    featureName,
-    storyId,
-    config,
-    pipelineStage: "acceptance",
-  };
-
-  const result = await agent.run(runOptions);
+  const result = await agentManager.run({
+    runOptions: {
+      prompt,
+      workdir,
+      modelTier: resolvedModel.modelTier ?? "balanced",
+      modelDef: resolvedModel.modelDef,
+      timeoutSeconds,
+      sessionRole: "source-fix",
+      featureName,
+      storyId,
+      config,
+      pipelineStage: "acceptance",
+    },
+  });
 
   return {
     success: result.success,
@@ -97,20 +96,20 @@ export interface ExecuteTestFixResult {
 }
 
 export async function executeTestFix(
-  agent: AgentAdapter,
+  agentManager: IAgentManager,
   options: ExecuteTestFixOptions,
 ): Promise<ExecuteTestFixResult> {
-  if (!agent) {
-    throw new Error("[fix-executor] agent is required");
+  if (!agentManager) {
+    throw new Error("[fix-executor] agentManager is required");
   }
 
   const { config, workdir, featureName, storyId } = options;
 
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    resolveDefaultAgent(config),
+    agentManager.getDefault(),
     config.acceptance.fix.fixModel,
-    resolveDefaultAgent(config),
+    agentManager.getDefault(),
   );
 
   const prompt = new AcceptancePromptBuilder().buildTestFixPrompt({
@@ -124,20 +123,20 @@ export async function executeTestFix(
 
   const timeoutSeconds = config.execution?.sessionTimeoutSeconds ?? 3600;
 
-  const runOptions: AgentRunOptions = {
-    prompt,
-    workdir,
-    modelTier: resolvedModel.modelTier ?? "balanced",
-    modelDef: resolvedModel.modelDef,
-    timeoutSeconds,
-    sessionRole: "test-fix",
-    featureName,
-    storyId,
-    config,
-    pipelineStage: "acceptance",
-  };
-
-  const result = await agent.run(runOptions);
+  const result = await agentManager.run({
+    runOptions: {
+      prompt,
+      workdir,
+      modelTier: resolvedModel.modelTier ?? "balanced",
+      modelDef: resolvedModel.modelDef,
+      timeoutSeconds,
+      sessionRole: "test-fix",
+      featureName,
+      storyId,
+      config,
+      pipelineStage: "acceptance",
+    },
+  });
 
   return {
     success: result.success,

@@ -11,45 +11,42 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps, resolveDebaterModel } from "../../../src/debate/session";
 import type { DebateStageConfig, Debater } from "../../../src/debate/types";
 import type { NaxConfig } from "../../../src/config";
-import type { AgentAdapter, CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents";
+import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
-function makeMockAdapter(
-  name: string,
+function makeMockManager(
   options: {
-    completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-    isInstalledFn?: () => Promise<boolean>;
+    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
+    unavailableAgents?: Set<string>;
   } = {},
-): AgentAdapter {
+): IAgentManager {
+  const unavailable = options.unavailableAgents ?? new Set<string>();
   return {
-    name,
-    displayName: name,
-    binary: name,
-    capabilities: {
-      supportedTiers: ["fast"] as const,
-      maxContextTokens: 100_000,
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
-    },
-    isInstalled: options.isInstalledFn ?? (async () => true),
-    run: async () => ({
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      durationMs: 0,
-      estimatedCost: 0,
-    }),
-    buildCommand: () => [],
+    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "default output", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async (_, _o) => ({ output: "default output", costUsd: 0, source: "fallback" }),
+    completeAs: options.completeFn
+      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
+      : async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
     plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
     decompose: async () => ({ stories: [] }),
-    complete: options.completeFn ??
-      (async (_p, _o) => ({
-        output: `output from ${name}`,
-        costUsd: 0,
-        source: "fallback",
-      })),
-  };
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
@@ -69,16 +66,16 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origGetAgent: typeof _debateSessionDeps.getAgent;
+let origCreateManager: typeof _debateSessionDeps.createManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origGetAgent = _debateSessionDeps.getAgent;
+  origCreateManager = _debateSessionDeps.createManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.getAgent = origGetAgent;
+  _debateSessionDeps.createManager = origCreateManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
 });
 
@@ -97,7 +94,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
+    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -129,7 +126,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
+    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -160,7 +157,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
+    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -191,10 +188,9 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.getAgent = mock((name: string) => {
-      if (name === "missing") return undefined;
-      return makeMockAdapter(name);
-    });
+    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+      unavailableAgents: new Set(["missing"]),
+    }));
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -212,17 +208,15 @@ describe("DebateSession.run() — JSONL log events", () => {
     expect(fallbackWarning?.data.storyId).toBe("US-LOG");
   });
 
-  test("uses resolveDebaterModel to pass resolved model to complete()", async () => {
+  test("uses resolveDebaterModel to pass resolved model to completeAs()", async () => {
     const completeCalls: Array<{ agent: string; model: string | undefined }> = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        completeFn: async (_prompt, opts) => {
-          completeCalls.push({ agent: name, model: opts?.model });
-          return `output from ${name}`;
-        },
-      }),
-    );
+    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+      completeFn: async (agentName, _prompt, opts) => {
+        completeCalls.push({ agent: agentName, model: opts?.model });
+        return { output: `output from ${agentName}`, costUsd: 0, source: "fallback" };
+      },
+    }));
 
     const config = {
       models: { claude: { fast: "claude-haiku-4-5" } },

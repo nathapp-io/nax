@@ -5,7 +5,6 @@
  */
 
 import type { IAgentManager } from "../agents/manager-types";
-import type { AgentAdapter } from "../agents/types";
 import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
 /**
@@ -114,9 +113,7 @@ export interface GenerateFromPRDOptions {
   testStrategy?: AcceptanceTestStrategy;
   /** Test framework for component/snapshot strategies (e.g. 'ink-testing-library', 'react') */
   testFramework?: string;
-  /** Agent adapter to use for test generation — overrides _generatorPRDDeps.adapter */
-  adapter?: AgentAdapter;
-  /** AgentManager for completeWithFallback — when provided, replaces direct adapter.complete() */
+  /** AgentManager for completeWithFallback — when provided, replaces direct createManager().complete() */
   agentManager?: IAgentManager;
   /** Target language for test generation (e.g. 'go', 'python', 'rust') — defaults to TypeScript */
   language?: string;

@@ -12,10 +12,10 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { AgentManager, resolveDefaultAgent } from "../agents";
+import type { IAgentManager } from "../agents";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
 import { buildDecomposePromptAsync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
-import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
@@ -59,8 +59,7 @@ export const _planDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   scanCodebase: (workdir: string): Promise<CodebaseScan> => scanCodebase(workdir),
-  getAgent: (name: string, cfg?: NaxConfig): AgentAdapter | undefined =>
-    cfg ? new AgentManager(cfg).getAgent(name) : undefined,
+  createManager: (cfg: NaxConfig): IAgentManager => new AgentManager(cfg),
   readPackageJson: (workdir: string): Promise<Record<string, unknown> | null> =>
     Bun.file(join(workdir, "package.json"))
       .json()
@@ -245,8 +244,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
-    const adapter = _planDeps.getAgent(agentName, config);
-    if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
+    const agentManager = _planDeps.createManager(config);
+    if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
 
     logger?.info("plan", "Starting ACP auto planning session", {
       agent: agentName,
@@ -259,7 +258,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     let planError: Error | null = null;
     try {
       try {
-        await adapter.plan({
+        await agentManager.planAs(agentName, {
           prompt,
           workdir,
           interactive: false,
@@ -315,8 +314,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const prompt = `${interactiveTaskCtx}\n\n${interactiveOutputFmt}`;
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
-    const adapter = _planDeps.getAgent(agentName, config);
-    if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
+    const agentManager = _planDeps.createManager(config);
+    if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     // Use configured interaction plugin (telegram/webhook/auto) if available;
     // fall back to hardcoded stdin bridge when no interaction config is set.
     const headless = !process.stdin.isTTY;
@@ -342,7 +341,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     let planError: Error | null = null;
     try {
       try {
-        await adapter.plan({
+        await agentManager.planAs(agentName, {
           prompt,
           workdir,
           interactive: true,
@@ -603,8 +602,9 @@ export async function planDecomposeCommand(
   const defaultAgentName = resolveDefaultAgent(config);
   const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
   const agentName = resolvedPlanModel.agent;
-  const adapter = _planDeps.getAgent(agentName, config);
-  if (!adapter) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
+  const agentManager = _planDeps.createManager(config);
+  const adapterForCapCheck = agentManager.getAgent(agentName);
+  if (!adapterForCapCheck) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
 
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
@@ -612,7 +612,7 @@ export async function planDecomposeCommand(
 
   const decomposeModelDef: import("../config").ModelDef | undefined = resolvedPlanModel.modelDef;
 
-  if (typeof (adapter as { decompose?: unknown }).decompose !== "function") {
+  if (typeof (adapterForCapCheck as { decompose?: unknown }).decompose !== "function") {
     throw new NaxError(
       `Agent "${agentName}" does not support decompose() required by plan --decompose`,
       "DECOMPOSE_NOT_SUPPORTED",
@@ -656,7 +656,7 @@ export async function planDecomposeCommand(
 
     if (!decompStories) {
       const effectiveContext = repairHint ? `${codebaseContext}\n\n${repairHint}` : codebaseContext;
-      const result = await adapter.decompose({
+      const result = await agentManager.decomposeAs(agentName, {
         specContent: "",
         codebaseContext: effectiveContext,
         workdir,

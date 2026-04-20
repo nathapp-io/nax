@@ -22,7 +22,15 @@ import type {
 } from "./manager-types";
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
-import type { AgentResult, CompleteOptions, CompleteResult } from "./types";
+import type {
+  AgentResult,
+  CompleteOptions,
+  CompleteResult,
+  DecomposeOptions,
+  DecomposeResult,
+  PlanOptions,
+  PlanResult,
+} from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -135,10 +143,10 @@ export class AgentManager implements IAgentManager {
     return candidates[0] ?? null;
   }
 
-  async runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome> {
+  async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
     const logger = getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
-    const primaryAgent = this.getDefault();
+    const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
     let hopsSoFar = 0;
     const MAX_RATE_LIMIT_RETRIES = 3;
@@ -274,10 +282,14 @@ export class AgentManager implements IAgentManager {
     }
   }
 
-  async completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome> {
+  async completeWithFallback(
+    prompt: string,
+    options: CompleteOptions,
+    primaryAgentOverride?: string,
+  ): Promise<AgentCompleteOutcome> {
     const logger = getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
-    const primaryAgent = this.getDefault();
+    const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
     let hopsSoFar = 0;
 
@@ -360,6 +372,36 @@ export class AgentManager implements IAgentManager {
 
   getAgent(name: string): import("./types").AgentAdapter | undefined {
     return this._resolveRegistry().getAgent(name);
+  }
+
+  async runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult> {
+    const outcome = await this.runWithFallback(request, agentName);
+    return { ...outcome.result, agentFallbacks: outcome.fallbacks };
+  }
+
+  async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
+    const outcome = await this.completeWithFallback(prompt, options, agentName);
+    return outcome.result;
+  }
+
+  async plan(options: PlanOptions): Promise<PlanResult> {
+    return this.planAs(this.getDefault(), options);
+  }
+
+  async planAs(agentName: string, options: PlanOptions): Promise<PlanResult> {
+    const adapter = this._resolveRegistry().getAgent(agentName);
+    if (!adapter) return { specContent: `Agent "${agentName}" not found` };
+    return adapter.plan(options);
+  }
+
+  async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
+    return this.decomposeAs(this.getDefault(), options);
+  }
+
+  async decomposeAs(agentName: string, options: DecomposeOptions): Promise<DecomposeResult> {
+    const adapter = this._resolveRegistry().getAgent(agentName);
+    if (!adapter) return { stories: [] };
+    return adapter.decompose(options);
   }
 
   private _resolveRegistry(): AgentRegistry {

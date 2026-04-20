@@ -8,7 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _debateSessionDeps, resolveOutcome } from "../../../src/debate/session-helpers";
-import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents";
+import type { CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import type { NaxConfig } from "../../../src/config";
 
@@ -29,45 +30,51 @@ function makeStageConfig(
   } as DebateStageConfig;
 }
 
-function makeCaptureAdapter(captured: { opts?: CompleteOptions }[]): AgentAdapter {
+function makeCaptureManager(captured: { opts?: CompleteOptions }[]): IAgentManager {
   return {
-    name: "mock",
-    displayName: "mock",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"] as const,
-      maxContextTokens: 100_000,
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
-    },
-    isInstalled: async () => true,
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0 }),
-    buildCommand: () => [],
-    plan: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    complete: async (_prompt: string, opts?: CompleteOptions) => {
+    getAgent: (_name: string) => ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "resolved", costUsd: 0.01, source: "exact" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "resolved", costUsd: 0.01, source: "exact" }),
+    completeAs: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
       captured.push({ opts });
       return { output: "resolved", costUsd: 0.01, source: "exact" as const };
     },
-  };
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
 // ─── Synthesis resolver ───────────────────────────────────────────────────────
 
 describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
     mock.restore();
   });
 
   test("passes modelTier='powerful' when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "powerful"), NO_CONFIG, "US-352", 30_000);
 
@@ -77,7 +84,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", (
 
   test("passes modelTier='fast' when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis"), NO_CONFIG, "US-352", 30_000);
 
@@ -87,7 +94,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", (
 
   test("passes modelTier='balanced' when resolver.model is 'sonnet' (alias)", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "sonnet"), NO_CONFIG, "US-352", 30_000);
 
@@ -99,20 +106,20 @@ describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", (
 // ─── Judge / custom resolver ──────────────────────────────────────────────────
 
 describe("resolveOutcome() custom/judge — resolver.model → modelTier (#352)", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
     mock.restore();
   });
 
   test("passes modelTier='powerful' when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     await resolveOutcome(["proposal-a"], [], makeStageConfig("custom", "powerful"), NO_CONFIG, "US-352", 30_000);
 
@@ -122,7 +129,7 @@ describe("resolveOutcome() custom/judge — resolver.model → modelTier (#352)"
 
   test("passes modelTier='fast' when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     await resolveOutcome(["proposal-a"], [], makeStageConfig("custom"), NO_CONFIG, "US-352", 30_000);
 
