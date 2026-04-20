@@ -271,7 +271,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
           maxInteractionTurns: config?.agent?.maxInteractionTurns,
           featureName: options.feature,
-          pidRegistry,
+          onPidSpawned: (pid: number) => pidRegistry.register(pid),
           sessionRole: "plan",
         });
       } catch (err) {
@@ -355,7 +355,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           dangerouslySkipPermissions: resolvedPerm.skipPermissions,
           maxInteractionTurns: config?.agent?.maxInteractionTurns,
           featureName: options.feature,
-          pidRegistry,
+          onPidSpawned: (pid: number) => pidRegistry.register(pid),
           sessionRole: "plan",
         });
       } catch (err) {
