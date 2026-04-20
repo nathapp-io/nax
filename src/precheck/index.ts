@@ -260,7 +260,7 @@ export async function runPrecheck(
   let tier1Blocked = false;
   for (const checkFn of tier1Checks) {
     for (const check of normalizeChecks(await checkFn())) {
-      if (format === "human") printCheckResult(check);
+      if (!silent && format === "human") printCheckResult(check);
       if (check.passed) {
         passed.push(check);
       } else {
@@ -284,7 +284,7 @@ export async function runPrecheck(
 
     for (const checkFn of tier2Checks) {
       for (const check of normalizeChecks(await checkFn())) {
-        if (format === "human") printCheckResult(check);
+        if (!silent && format === "human") printCheckResult(check);
         if (check.passed) {
           passed.push(check);
         } else {
@@ -296,7 +296,7 @@ export async function runPrecheck(
     // Story size gate (v0.16.0) — separate from standard checks, returns metadata
     const sizeGateResult = await _precheckDeps.checkStorySizeGate(config, prd);
 
-    if (format === "human") {
+    if (!silent && format === "human") {
       printCheckResult(sizeGateResult.check);
     }
 

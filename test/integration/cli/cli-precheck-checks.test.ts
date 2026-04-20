@@ -341,7 +341,7 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
     };
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "human" });
+      await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
 
       const hasCheckmark = outputs.some((line) => line.includes("✓"));
       const hasCross = outputs.some((line) => line.includes("✗"));
@@ -367,7 +367,7 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
     };
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "human" });
+      await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
 
       const summaryLine = outputs.find((line) => line.includes("Checks:") && line.includes("total"));
       expect(summaryLine).toBeDefined();
@@ -390,7 +390,7 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
     const config = createMockConfig(testDir);
     const prd = createMockPRD();
 
-    const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human" });
+    const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
 
     expect(exitCode).toBe(0);
   });
@@ -399,7 +399,7 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
     const config = createMockConfig(testDir);
     const prd = createMockPRD();
 
-    const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human" });
+    const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
 
     expect(exitCode).toBe(1);
   });
