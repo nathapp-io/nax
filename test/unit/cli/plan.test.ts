@@ -309,7 +309,6 @@ describe("planCommand", () => {
       tmpDir,
       {
         agent: { protocol: "acp" },
-        autoMode: { defaultAgent: "claude" },
       } as any,
       {
         from: "/spec.md",
@@ -336,7 +335,7 @@ describe("planCommand", () => {
         tmpDir,
         {
           agent: { protocol: "acp" },
-          autoMode: { defaultAgent: "claude" },
+          agent: { protocol: "acp" },
         } as any,
         {
           from: "/spec.md",

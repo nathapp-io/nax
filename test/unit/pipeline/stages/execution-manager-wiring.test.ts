@@ -35,7 +35,7 @@ async function makeBundle(): Promise<ContextBundle> {
 function makeCtx(config: NaxConfig, bundle: ContextBundle, manager: IAgentManager): PipelineContext {
   return {
     config,
-    rootConfig: { ...DEFAULT_CONFIG, autoMode: { defaultAgent: "claude" }, models: config.models } as NaxConfig,
+    rootConfig: { ...DEFAULT_CONFIG, agent: { default: "claude" }, models: config.models } as NaxConfig,
     prd: { project: "p", feature: "f", branchName: "b", createdAt: "", updatedAt: "", userStories: [] },
     story: { id: "US-1", title: "T", description: "", acceptanceCriteria: [], tags: [], dependencies: [], status: "in-progress", passes: false, escalations: [], attempts: 1 },
     stories: [],
@@ -52,7 +52,7 @@ function makeCtx(config: NaxConfig, bundle: ContextBundle, manager: IAgentManage
 describe("execution stage — uses agentManager.runWithFallback", () => {
   test("calls agentManager.runWithFallback (not direct adapter.run) when agentManager present", async () => {
     const bundle = await makeBundle();
-    const config = { ...DEFAULT_CONFIG, autoMode: { defaultAgent: "claude" } } as NaxConfig;
+    const config = { ...DEFAULT_CONFIG, agent: { default: "claude" } } as NaxConfig;
 
     let runWithFallbackCalled = false;
     const manager: IAgentManager = {

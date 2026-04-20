@@ -180,7 +180,7 @@ describe("runAcceptanceLoop threads agentGetFn through the pipeline context", ()
     const ctx: AcceptanceLoopContext = {
       config: {
         acceptance: { maxRetries: 1 },
-        autoMode: { defaultAgent: "claude" },
+        agent: { default: "claude" },
         models: {},
         analyze: { model: "default" },
       } as never,
@@ -313,8 +313,8 @@ describe("AcceptanceLoopContext — acceptanceTestPaths field", () => {
 
 function makeMinimalPipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    config: { acceptance: { maxRetries: 1 }, autoMode: { defaultAgent: "claude" } } as never,
-    rootConfig: { acceptance: { maxRetries: 1 }, autoMode: { defaultAgent: "claude" } } as never,
+    config: { acceptance: { maxRetries: 1 }, agent: { default: "claude" } } as never,
+    rootConfig: { acceptance: { maxRetries: 1 }, agent: { default: "claude" } } as never,
     prd: { project: "p", feature: "f", branchName: "b", createdAt: "", updatedAt: "", userStories: [] },
     story: {
       id: "US-001",

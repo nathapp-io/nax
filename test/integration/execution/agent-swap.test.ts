@@ -106,13 +106,9 @@ function makePRD(): PRD {
 function makeConfig(swapEnabled: boolean): NaxConfig {
   return {
     ...DEFAULT_CONFIG,
-    autoMode: { defaultAgent: "claude" },
-    models: {
-      claude: { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" },
-      codex: { fast: "codex-fast", balanced: "codex-balanced", powerful: "codex-powerful" },
-    },
     agent: {
       ...(DEFAULT_CONFIG.agent ?? {}),
+      default: "claude",
       fallback: {
         enabled: swapEnabled,
         onQualityFailure: false,
@@ -137,7 +133,7 @@ function makeCtx(config: NaxConfig, bundle: ContextBundle): PipelineContext {
       agent: "claude",
       reasoning: "",
     },
-    rootConfig: { ...DEFAULT_CONFIG, autoMode: { defaultAgent: "claude" }, models: config.models } as unknown as NaxConfig,
+    rootConfig: { ...DEFAULT_CONFIG, agent: { default: "claude" }, models: config.models } as unknown as NaxConfig,
     workdir: "/tmp/test",
     projectDir: "/tmp/test",
     prompt: "Do something useful",

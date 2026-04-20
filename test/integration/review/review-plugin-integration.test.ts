@@ -32,7 +32,7 @@ function createMockContext(workdir: string, plugins?: PluginRegistry): PipelineC
       },
     } as any,
     rootConfig: {
-      autoMode: { defaultAgent: "nax-agent-claude", fallbackOrder: [] },
+      agent: { default: "nax-agent-claude", fallback: { enabled: true, map: {} } },
     } as any,
     prd: {} as any,
     story: { id: "US-003" } as any,

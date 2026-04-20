@@ -64,7 +64,7 @@ function makePRD(): PRD {
 
 function makeConfig(): NaxConfig {
   return {
-    autoMode: { defaultAgent: "test-agent" },
+    agent: { default: "test-agent" },
     models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
     execution: {
       sessionTimeoutSeconds: 60,

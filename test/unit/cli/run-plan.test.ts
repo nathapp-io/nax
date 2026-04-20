@@ -52,7 +52,7 @@ Test problem statement
     await Bun.write(
       join(naxDir, "config.json"),
       JSON.stringify({
-        autoMode: { defaultAgent: "claude" },
+        agent: { default: "claude" },
         execution: { maxIterations: 20, sessionTimeoutSeconds: 600 },
       }),
     );

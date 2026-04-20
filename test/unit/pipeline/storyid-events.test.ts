@@ -87,7 +87,7 @@ function makeCtx(
           powerful: "claude-opus-4-20250514",
         },
       },
-      autoMode: { defaultAgent: "claude" },
+      agent: { default: "claude" },
       tdd: { rollbackOnFailure: false },
       routing: { strategy: "complexity", llm: { mode: "per-story" } },
     } as unknown as NaxConfig,
