@@ -73,7 +73,7 @@ function makeBundle(): ContextBundle {
 }
 
 function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager {
-  return {
+  const mgr: IAgentManager = {
     getDefault: () => "claude",
     isUnavailable: () => false,
     markUnavailable: () => {},
@@ -84,15 +84,9 @@ function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager
     shouldSwap: () => false,
     nextCandidate: () => null,
     runWithFallback: async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
-      // Simulate executing hop with the executeHop callback if provided
       if (req.executeHop) {
         const { result, bundle, prompt } = await req.executeHop("claude", req.bundle, undefined);
-        return {
-          result,
-          fallbacks: outcome.fallbacks ?? [],
-          finalBundle: bundle,
-          finalPrompt: prompt,
-        };
+        return { result, fallbacks: outcome.fallbacks ?? [], finalBundle: bundle, finalPrompt: prompt };
       }
       return {
         result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
@@ -103,7 +97,14 @@ function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager
       };
     },
     completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
+    run: async (req) => {
+      const o = await mgr.runWithFallback(req);
+      return { ...o.result, agentFallbacks: o.fallbacks };
+    },
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    getAgent: () => undefined,
   };
+  return mgr;
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
@@ -318,45 +319,26 @@ describe("execution stage — AC-41 fallback observability", () => {
     _singleSessionRunnerDeps.rebuildForAgent = () => rebuildBundle;
 
     // Manager delegates to executeHop for a swap hop (failure is set)
-    const manager: IAgentManager = {
-      getDefault: () => "claude",
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} },
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
-        // Simulate: primary fails, then executeHop is called with a failure
-        if (req.executeHop) {
-          const failure = { category: "availability" as const, outcome: "fail-quota" as const, message: "quota", retriable: false };
-          const { result, bundle, prompt } = await req.executeHop("codex", req.bundle, failure);
-          return {
-            result,
-            fallbacks: [
-              {
-                storyId: "US-001",
-                priorAgent: "claude",
-                newAgent: "codex",
-                outcome: "fail-quota",
-                category: "availability",
-                hop: 1,
-                timestamp: new Date().toISOString(),
-                costUsd: 0,
-              },
-            ],
-            finalBundle: bundle,
-            finalPrompt: prompt,
-          };
-        }
-        return {
-          result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
-          fallbacks: [],
-        };
+    const swapFallbacks = [
+      {
+        storyId: "US-001",
+        priorAgent: "claude",
+        newAgent: "codex",
+        outcome: "fail-quota" as const,
+        category: "availability" as const,
+        hop: 1,
+        timestamp: new Date().toISOString(),
+        costUsd: 0,
       },
-      completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
+    ];
+    const manager = makeAgentManager({ fallbacks: swapFallbacks });
+    manager.runWithFallback = async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
+      if (req.executeHop) {
+        const failure = { category: "availability" as const, outcome: "fail-quota" as const, message: "quota", retriable: false };
+        const { result, bundle, prompt } = await req.executeHop("codex", req.bundle, failure);
+        return { result, fallbacks: swapFallbacks, finalBundle: bundle, finalPrompt: prompt };
+      }
+      return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }, fallbacks: [] };
     };
 
     _executionDeps.getAgent = (agentId: string) =>
