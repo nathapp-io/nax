@@ -218,3 +218,15 @@ Recommended: delete `resetStoryState` + `clearUnavailableAgents` (one PR, ~30 li
 12. If follow-up #577 / #578 exist for aggregates or credential-pre-flight surfacing, link them from the ADR's "Phase 5 follow-ups" section so the doc-vs-code drift is at least traceable.
 13. Recover the codemod artefact (Phase 3 AC) or remove the AC from the ADR. Either is fine; the discrepancy is what matters.
 
+---
+
+## Resolution log
+
+| Finding | PR | Status |
+|:---|:---|:---|
+| #1 Phase 6 silent-strip regression | #579 | ✅ Fixed — `rejectLegacyAgentKeys()` guard in `src/config/loader.ts` |
+| #2 `costUsd` dropped on `AgentFallbackHop` | PR-2 (this change) | ✅ Fixed — field added to `AgentFallbackHop`; preserved in `src/pipeline/stages/execution.ts` |
+| #3 `RunMetrics.fallback` aggregates never surfaced | PR-2 (this change) | ✅ Fixed — `deriveRunFallbackAggregates` in `src/metrics/aggregator.ts`; surfaced on `run:completed` event and saved `RunMetrics` |
+| #4 Doc-reality gap (`conventions.md` / `config-patterns.md`) | PR-3 (pending) | Open |
+| Dead-code cleanup (`clearUnavailableAgents` / `resetStoryState` / `onBeforeStory` hook) | PR-3 (pending) | Open |
+
