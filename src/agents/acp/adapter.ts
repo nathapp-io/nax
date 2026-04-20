@@ -648,6 +648,21 @@ export class AcpAgentAdapter implements AgentAdapter {
       sessionId: (session as { id?: string }).id ?? null,
     };
 
+    // #591: fire the established-callback NOW (before any prompt) so the
+    // SessionManager can persist protocolIds eagerly. If the run is
+    // interrupted before return, the on-disk descriptor still carries the
+    // correlation needed to resume.
+    if (options.onSessionEstablished) {
+      try {
+        options.onSessionEstablished(protocolIds, sessionName);
+      } catch (err) {
+        getSafeLogger()?.warn("acp-adapter", "onSessionEstablished callback threw — continuing", {
+          sessionName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     let lastResponse: AcpSessionResponse | null = null;
     let timedOut = false;
     // Tracks whether the run completed successfully — used by finally to decide
