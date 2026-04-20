@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { withProcessTimeout } from "../../../src/execution/timeout-handler";
 import { waitForCondition } from "../../helpers/timeout";
 
+const SHORT_DELAY_MS = 25;
+const TIMEOUT_MS = 75;
+const GRACE_MS = 50;
+const HARD_DEADLINE_BUFFER_MS = 50;
+const CUSTOM_GRACE_MS = 120;
+
 describe("withProcessTimeout", () => {
   let mockProc: {
     pid: number;
@@ -32,7 +38,7 @@ describe("withProcessTimeout", () => {
   });
 
   test("returns exit code when process exits normally before timeout", async () => {
-    setTimeout(() => resolveExit(0), 10);
+    setTimeout(() => resolveExit(0), SHORT_DELAY_MS);
     const finalResult = await withProcessTimeout(mockProc, 1000);
 
     expect(finalResult.timedOut).toBe(false);
@@ -45,10 +51,10 @@ describe("withProcessTimeout", () => {
       onTimeoutResolve = resolve;
     });
 
-    const timeoutMs = 20;
+    const timeoutMs = TIMEOUT_MS;
     // Don't resolve the exit promise - simulate a hanging process
     const result = withProcessTimeout(mockProc, timeoutMs, {
-      graceMs: 10,
+      graceMs: GRACE_MS,
       onTimeout: onTimeoutResolve,
     });
 
@@ -61,10 +67,10 @@ describe("withProcessTimeout", () => {
 
   test("calls onTimeout callback when timeout occurs", async () => {
     const onTimeoutMock = mock(() => {});
-    const timeoutMs = 20;
+    const timeoutMs = TIMEOUT_MS;
 
     const result = withProcessTimeout(mockProc, timeoutMs, {
-      graceMs: 10,
+      graceMs: GRACE_MS,
       onTimeout: onTimeoutMock,
     });
 
@@ -80,10 +86,10 @@ describe("withProcessTimeout", () => {
     const killFn = mock((proc: { pid: number }, signal: NodeJS.Signals) => {
       killCalls.push({ pid: proc.pid, signal });
     });
-    const timeoutMs = 20;
+    const timeoutMs = TIMEOUT_MS;
 
     const result = withProcessTimeout(mockProc, timeoutMs, {
-      graceMs: 10,
+      graceMs: GRACE_MS,
       killFn,
     });
 
@@ -100,8 +106,8 @@ describe("withProcessTimeout", () => {
     const killFn = mock((proc: { pid: number }, signal: NodeJS.Signals) => {
       killCalls.push({ pid: proc.pid, signal });
     });
-    const customGraceMs = 30;
-    const timeoutMs = 20;
+    const customGraceMs = CUSTOM_GRACE_MS;
+    const timeoutMs = TIMEOUT_MS;
 
     const result = withProcessTimeout(mockProc, timeoutMs, {
       graceMs: customGraceMs,
@@ -118,11 +124,11 @@ describe("withProcessTimeout", () => {
   });
 
   test("returns -1 when hard deadline is exceeded", async () => {
-    const timeoutMs = 10;
+    const timeoutMs = TIMEOUT_MS;
     // Simulate a process that never exits
     const finalResult = await withProcessTimeout(mockProc, timeoutMs, {
-      graceMs: 10,
-      hardDeadlineBufferMs: 10,
+      graceMs: GRACE_MS,
+      hardDeadlineBufferMs: HARD_DEADLINE_BUFFER_MS,
     });
 
     expect(finalResult.exitCode).toBe(-1);
@@ -130,10 +136,10 @@ describe("withProcessTimeout", () => {
   });
 
   test("cleans up timers even if process.kill throws", async () => {
-    const timeoutMs = 10;
+    const timeoutMs = TIMEOUT_MS;
     const result = withProcessTimeout(mockProc, timeoutMs, {
-      graceMs: 10,
-      hardDeadlineBufferMs: 10,
+      graceMs: GRACE_MS,
+      hardDeadlineBufferMs: HARD_DEADLINE_BUFFER_MS,
       killFn: mock(() => {
         throw new Error("Kill failed");
       }),

@@ -6,6 +6,7 @@ import {
 } from "../../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
+import { waitForCondition } from "../../../helpers/timeout";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -365,15 +366,6 @@ describe("acceptance-setup: refinement concurrency", () => {
   test("preserves story order regardless of completion order", async () => {
     stubDeps();
     const resolvers = new Map<string, () => void>();
-    const waitForResolvers = async (expectedCount: number): Promise<void> => {
-      for (let attempt = 0; attempt < 50; attempt++) {
-        if (resolvers.size >= expectedCount) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-      throw new Error(`Expected ${expectedCount} refinement tasks, got ${resolvers.size}`);
-    };
     _acceptanceSetupDeps.refine = async (criteria, opts) => {
       await new Promise<void>((resolve) => {
         resolvers.set(opts.storyId, resolve);
@@ -388,7 +380,7 @@ describe("acceptance-setup: refinement concurrency", () => {
     };
 
     const runPromise = acceptanceSetupStage.execute(makeMultiStoryCtx(3, 3));
-    await waitForResolvers(3);
+    await waitForCondition(() => resolvers.size >= 3, 2_000, 5);
     resolvers.get("US-003")?.();
     resolvers.get("US-002")?.();
     resolvers.get("US-001")?.();

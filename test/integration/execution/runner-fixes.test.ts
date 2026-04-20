@@ -10,6 +10,7 @@ import { mkdir, rename, rm } from "node:fs/promises";
 import { groupStoriesIntoBatches } from "../../../src/execution/runner";
 import type { PRD, UserStory } from "../../../src/prd";
 import { PRD_MAX_FILE_SIZE, loadPRD } from "../../../src/prd";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // Helper to create test stories
 function createStory(
@@ -42,7 +43,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `/tmp/nax-race-test-${Date.now()}`;
+    tmpDir = makeTempDir("nax-race-test-");
     await mkdir(tmpDir, { recursive: true });
   });
 
@@ -72,7 +73,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     expect(newContent).toBe("SKIP US-001\n");
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("processing file is deleted after reading", async () => {
@@ -95,7 +96,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     expect(await Bun.file(processingPath).exists()).toBe(false);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("concurrent writes during processing don't lose commands", async () => {
@@ -127,7 +128,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     expect(newLines).toEqual(["SKIP US-002", "SKIP US-003"]);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 });
 
@@ -136,7 +137,7 @@ describe("File locking: lock file prevents concurrent execution and is released 
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `/tmp/nax-lock-test-${Date.now()}`;
+    tmpDir = makeTempDir("nax-lock-test-");
     await mkdir(tmpDir, { recursive: true });
   });
 
@@ -161,7 +162,7 @@ describe("File locking: lock file prevents concurrent execution and is released 
     expect(parsed.timestamp).toBeGreaterThan(0);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("stale lock is removed after 1 hour", async () => {
@@ -182,7 +183,7 @@ describe("File locking: lock file prevents concurrent execution and is released 
     expect(lockAge).toBeGreaterThan(ONE_HOUR);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("lock is released after execution", async () => {
@@ -205,7 +206,7 @@ describe("File locking: lock file prevents concurrent execution and is released 
     expect(await Bun.file(lockPath).exists()).toBe(false);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 });
 
