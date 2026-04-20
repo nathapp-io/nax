@@ -71,6 +71,8 @@ export interface ThreeSessionTddOptions {
   interactionChain?: InteractionChain | null;
   /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
   projectDir?: string;
+  /** Shutdown abort signal (Issue 5) — forwarded to each agent.run call */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -96,6 +98,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     _recursionDepth = 0,
     interactionChain,
     projectDir,
+    abortSignal,
   } = options;
   const logger = getLogger();
 
@@ -204,6 +207,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       featureContextMarkdown,
       testWriterBundle,
       getTddSessionBinding?.("test-writer"),
+      abortSignal,
     );
     sessions.push(session1);
     await recordTddSessionOutcome?.(session1);
@@ -325,6 +329,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     featureContextMarkdown,
     implementerBundle,
     getTddSessionBinding?.("implementer"),
+    abortSignal,
   );
   sessions.push(session2);
   await recordTddSessionOutcome?.(session2);
@@ -380,6 +385,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     featureContextMarkdown,
     verifierBundle,
     getTddSessionBinding?.("verifier"),
+    abortSignal,
   );
   sessions.push(session3);
   await recordTddSessionOutcome?.(session3);
@@ -662,5 +668,6 @@ export async function runThreeSessionTddFromCtx(
     lite: opts.lite ?? false,
     interactionChain: ctx.interaction,
     projectDir: ctx.projectDir,
+    abortSignal: ctx.abortSignal,
   });
 }

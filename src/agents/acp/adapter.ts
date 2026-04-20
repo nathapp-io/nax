@@ -464,6 +464,30 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     while (true) {
+      // Fix for v0.63.0-canary.8 Issue 5: honour the shutdown abort signal
+      // BEFORE issuing any new work. Without this, hitting Ctrl+C while the
+      // adapter is in its session-error retry path would spawn a fresh acpx
+      // session during shutdown, register a new PID, and race with teardown.
+      if (options.abortSignal?.aborted) {
+        getSafeLogger()?.warn("acp-adapter", `Run aborted for ${this.name} (shutdown in progress)`, {
+          storyId: options.storyId,
+          featureName: options.featureName,
+        });
+        return {
+          success: false,
+          exitCode: 130,
+          output: "Run aborted — shutdown in progress",
+          rateLimited: false,
+          durationMs: Date.now() - startTime,
+          estimatedCost: 0,
+          adapterFailure: {
+            category: "availability",
+            outcome: "fail-aborted",
+            retriable: false,
+            message: "Run aborted — shutdown in progress",
+          },
+        };
+      }
       try {
         const result = await this._runWithClient(options, startTime, this.name);
 
@@ -482,7 +506,8 @@ export class AcpAgentAdapter implements AgentAdapter {
           if (
             result.sessionError &&
             _acpAdapterDeps.shouldRetrySessionError &&
-            sessionErrorRetries < maxSessionRetries
+            sessionErrorRetries < maxSessionRetries &&
+            !options.abortSignal?.aborted
           ) {
             sessionErrorRetries += 1;
             getSafeLogger()?.warn("acp-adapter", "Session error — retrying with fresh session", {

@@ -113,6 +113,13 @@ export interface RunSetupResult {
     failed: number;
   };
   interactionChain: InteractionChain | null;
+  /**
+   * Shutdown controller (fix for v0.63.0-canary.8 Issue 5).
+   * Aborted by the crash/signal handler on first fatal signal. Threaded into
+   * AgentRunOptions.abortSignal so in-flight adapter retry loops can bail
+   * instead of spawning new work during teardown.
+   */
+  shutdownController: AbortController;
 }
 
 /**
@@ -160,6 +167,11 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   const pidRegistry = new PidRegistry(workdir);
   const sessionManager = new SessionManager();
 
+  // Shutdown controller — fires on first fatal signal. Threaded into
+  // AgentRunOptions.abortSignal so the ACP adapter's retry loop stops
+  // spawning fresh acpx processes during teardown (Issue 5).
+  const shutdownController = new AbortController();
+
   // Cleanup stale PIDs from previous crashed runs
   await pidRegistry.cleanupStale();
 
@@ -170,6 +182,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     getIterations,
     jsonlFilePath: logFilePath,
     pidRegistry,
+    abortController: shutdownController,
     // BUG-017: Pass context for run.complete event on SIGTERM
     runId: options.runId,
     feature: options.feature,
@@ -333,6 +346,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       prd,
       storyCounts: counts,
       interactionChain,
+      shutdownController,
     };
   } catch (error) {
     // Release lock before re-throwing so the directory isn't permanently locked

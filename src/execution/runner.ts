@@ -149,8 +149,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
     getTotalStories: () => (prd ? countStories(prd).total : 0),
   });
 
-  const { statusWriter, pidRegistry, sessionManager, cleanupCrashHandlers, pluginRegistry, interactionChain } =
-    setupResult;
+  const {
+    statusWriter,
+    pidRegistry,
+    sessionManager,
+    cleanupCrashHandlers,
+    pluginRegistry,
+    interactionChain,
+    shutdownController,
+  } = setupResult;
   prd = setupResult.prd;
 
   try {
@@ -177,6 +184,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         parallel,
         agentGetFn,
         pidRegistry,
+        abortSignal: shutdownController.signal,
         interactionChain,
         sessionManager,
         agentManager,

@@ -113,6 +113,9 @@ export class AgentManager implements IAgentManager {
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, bundle: ContextBundle | undefined): boolean {
     if (!failure) return false;
+    // Aborted runs (shutdown in progress) must not trigger fallback —
+    // swapping to another agent would spawn fresh work during teardown.
+    if (failure.outcome === "fail-aborted") return false;
     const fallback = this._config.agent?.fallback;
     if (!fallback?.enabled) return false;
     if (!bundle) return false;

@@ -170,6 +170,7 @@ export const executionStage: PipelineStage = {
       projectDir: ctx.projectDir,
       maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
       pidRegistry: ctx.pidRegistry,
+      abortSignal: ctx.abortSignal,
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
       sessionRole: "implementer",

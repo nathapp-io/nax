@@ -47,6 +47,7 @@ export class PidRegistry {
   private readonly pidsFilePath: string;
   private readonly pids: Set<number> = new Set();
   private readonly platform: NodeJS.Platform;
+  private frozen = false;
 
   /**
    * Create a new PID registry for the given workdir.
@@ -61,14 +62,41 @@ export class PidRegistry {
   }
 
   /**
+   * Mark the registry frozen. After freeze, `register()` is a no-op that logs
+   * a warning, and `killAll()` still works on already-registered PIDs. Called
+   * by signal handlers at shutdown so in-flight retry paths cannot register
+   * newly-spawned processes that would then outlive the process.
+   *
+   * Idempotent.
+   */
+  freeze(): void {
+    if (this.frozen) return;
+    this.frozen = true;
+    getSafeLogger()?.debug("pid-registry", "Registry frozen — new registrations blocked");
+  }
+
+  /** Whether the registry currently rejects new registrations. */
+  isFrozen(): boolean {
+    return this.frozen;
+  }
+
+  /**
    * Register a spawned process PID.
    *
    * Adds the PID to the in-memory set and writes to .nax-pids file.
+   *
+   * When the registry is frozen (see `freeze()`), the PID is NOT recorded and
+   * a warning is logged. Callers spawning during shutdown should not register
+   * their children; let the OS reap them once the process exits.
    *
    * @param pid - Process ID to register
    */
   async register(pid: number): Promise<void> {
     const logger = getSafeLogger();
+    if (this.frozen) {
+      logger?.warn("pid-registry", `Registration blocked (registry frozen) PID ${pid}`, { pid });
+      return;
+    }
     this.pids.add(pid);
 
     const entry: PidEntry = {

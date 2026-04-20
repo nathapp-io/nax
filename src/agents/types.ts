@@ -145,6 +145,16 @@ export interface AgentRunOptions {
    * Phase 5.5: replaces sessionHandle, featureName, storyId, sessionRole, keepOpen.
    */
   session?: SessionDescriptor;
+  /**
+   * Shutdown signal (fix for v0.63.0-canary.8 Issue 5).
+   * When aborted, the adapter's retry loop must stop issuing new work:
+   *   - no new session prompts
+   *   - no new `closeAcpSession` spawns for "broken session retry"
+   *   - return a clean failure result so the caller can unwind.
+   * Owned by the crash-recovery signal handler; fires on SIGINT/SIGTERM/SIGHUP.
+   * Optional for backward compat — adapters that ignore it stay functional.
+   */
+  abortSignal?: AbortSignal;
 }
 
 /**

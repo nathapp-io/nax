@@ -176,6 +176,7 @@ export async function runIteration(
     interaction: ctx.interactionChain ?? undefined,
     agentGetFn: ctx.agentGetFn,
     pidRegistry: ctx.pidRegistry,
+    abortSignal: ctx.abortSignal,
     sessionManager: ctx.sessionManager,
     agentManager: ctx.agentManager,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
