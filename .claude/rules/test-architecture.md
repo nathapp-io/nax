@@ -39,8 +39,10 @@ src/verification/smart-runner.ts → test/unit/verification/smart-runner.test.ts
 
 ## Temp Files & Fixtures
 
-- Use `mkdtempSync(join(tmpdir(), "nax-test-"))` for temporary directories.
-- Clean up in `afterAll()` — never leave files in `test/tmp/`.
+- Follow `docs/guides/testing-rules.md` for temp-directory behavior.
+- Use `makeTempDir()` + `cleanupTempDir()` from `test/helpers/temp.ts` for `beforeEach`/`afterEach` lifecycle management.
+- Use `withTempDir()` from `test/helpers/temp.ts` for single-test inline setup with auto-cleanup.
+- Do not call `mkdtempSync(join(tmpdir(), "nax-test-"))` directly from test files.
 - Integration tests needing git: always `git init` + `git add .` + `git commit` in the temp fixture before testing.
 
 ## Process/Spawn Mocking Architecture

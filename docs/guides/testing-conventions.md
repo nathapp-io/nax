@@ -94,16 +94,18 @@ When a test file has multiple logical concerns, split it into separate files:
 
 ```
 Before:
-test/unit/router.test.ts (850 lines)
+test/unit/routing/router.test.ts (850 lines)
   - describe("route matching") { ... 400 lines ... }
   - describe("route building") { ... 300 lines ... }
   - describe("error handling") { ... 150 lines ... }
 
 After:
-test/unit/routing/match.test.ts (400 lines)
-test/unit/routing/build.test.ts (300 lines)
-test/unit/routing/errors.test.ts (150 lines)
+test/unit/routing/router-match.test.ts (400 lines)
+test/unit/routing/router-build.test.ts (300 lines)
+test/unit/routing/router-errors.test.ts (150 lines)
 ```
+
+Keep split files in the same mirrored directory as the source file, and preserve the source filename as the module prefix.
 
 ### 3. Extract Helper Logic
 
@@ -162,6 +164,7 @@ bun run check:test-sizes | grep "✗\|⚠"
 
 ## See Also
 
-- `.claude/rules/02-test-architecture.md` — Test directory structure and file placement
-- `.claude/rules/03-test-writing.md` — Test writing patterns and best practices
-- `docs/ARCHITECTURE.md` — General code size and design conventions
+- `.claude/rules/test-architecture.md` — Test directory structure and file placement
+- `.claude/rules/test-writing.md` — Quick lookup for injectable test dependencies
+- `docs/guides/testing-rules.md` — Test writing source of truth
+- `docs/architecture/ARCHITECTURE.md` — General code size and design conventions

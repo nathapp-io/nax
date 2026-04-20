@@ -5,7 +5,9 @@ paths:
 
 # Test Writing Rules
 
-> Quick lookup table for test mocking. For the full 70+ module `_deps` reference, see `docs/architecture/conventions.md` §2.
+`docs/guides/testing-rules.md` is the source of truth for test-writing behavior in this repo.
+
+This file is a quick lookup table for injectable test dependencies only. For the full 70+ module `_deps` reference, see `docs/architecture/conventions.md` §2.
 
 ## Injectable `_deps` Available in nax Source
 

@@ -181,7 +181,7 @@ Never send real signals in tests — mock `process.on()` instead.
 ## 6. Test Structure
 
 - **One `describe()` per source function or class** being tested
-- **Test files ≤ 400 lines** — split by `describe()` block when needed
+- **Target test files ≤ 400 lines** — split by `describe()` block when practical
 - **Use `test/helpers/`** for shared mock factories and fixtures — no copy-paste setup
 - **Use `test.each()`** for parametric tests (multiple inputs, same logic)
 - **Descriptive names** — `"returns null when config is missing"` not `"test 3"`
@@ -215,7 +215,7 @@ execSync('git config user.email "test@test.com"', { cwd: tmpDir });
 
 ## 9. Temporary Directory Pattern
 
-All tests that need a temporary directory **must** use the standardized helper from `test/helpers/temp.ts`. Never create temp directories manually or use `import.meta.dir`-relative paths.
+All tests that need a temporary directory **must** use the standardized helper from `test/helpers/temp.ts`. Never create temp directories manually in test files or use `import.meta.dir`-relative paths.
 
 ### Use `makeTempDir()` + `cleanupTempDir()` (sync, for `beforeEach`/`afterEach`)
 
@@ -248,7 +248,7 @@ test("writes output file", async () => {
 });
 ```
 
-### Why not `os.tmpdir()` directly?
+### Why not `os.tmpdir()` directly in test files?
 
 - Direct `mkdtempSync(join(tmpdir(), "nax-test-"))` in every test scatters temp dirs and makes cleanup easy to forget
 - `import.meta.dir`-relative `.tmp/` paths break on machines where the repo parent is not writable (EACCES)
