@@ -10,6 +10,7 @@ import type { NaxConfig } from "../config";
 import type { AdapterFailure, ContextBundle } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
+import { cancellableDelay } from "../utils/bun-deps";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -27,9 +28,14 @@ type LoggerLike = {
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
 };
 
-/** Injectable deps for testability (sleep). */
+/** Injectable deps for testability. */
 export const _agentManagerDeps = {
-  sleep: (ms: number) => Bun.sleep(ms),
+  /**
+   * Cancellable backoff delay. Delegates to the canonical helper in
+   * `src/utils/bun-deps.ts` — see there for the rationale and the
+   * coding-standards §6 reference. Exposed on `_deps` so tests can mock it.
+   */
+  sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
 };
 
 export class AgentManager implements IAgentManager {

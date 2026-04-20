@@ -76,17 +76,33 @@ const stdout = await new Response(proc.stdout).text(); // hangs!
 
 ### Stream Cancellation
 
+**Use `cancellableDelay(ms, signal?)` from `src/utils/bun-deps.ts`** — don't roll the `setTimeout + AbortController` pattern inline.
+
 ```typescript
-// ✅ Bun.sleep() is uncancellable — use setTimeout for cancellable delays
+import { cancellableDelay } from "../utils/bun-deps";
+
+// ✅ Canonical cancellable delay — drop-in for Bun.sleep with optional abort
 const controller = new AbortController();
+await cancellableDelay(5000, controller.signal); // rejects on abort
+
+// ✅ Without a signal, behaves identically to Bun.sleep(ms)
+await cancellableDelay(5000);
+
+// ❌ Cannot cancel Bun.sleep()
+await Bun.sleep(5000); // blocks for full 5s even if no longer needed
+
+// ❌ Don't re-roll the pattern at every call site
 const delay = new Promise<void>((resolve) => {
   const timer = setTimeout(resolve, ms);
   controller.signal.addEventListener("abort", () => clearTimeout(timer));
 });
-
-// ❌ Cannot cancel Bun.sleep()
-await Bun.sleep(5000); // blocks for full 5s even if no longer needed
 ```
+
+Reach for `cancellableDelay` at any site that:
+- Runs inside a retry/backoff loop and should respect aborts (rate-limit backoff, reconnect loops).
+- Has access to an `AbortSignal` today, or is likely to receive one via future plumbing.
+
+Use plain `Bun.sleep()` (or `_deps.sleep` in tests) only for short uninterruptible pauses where cancellation is neither possible nor meaningful — intra-tick yields, brief polling delays with no caller signal.
 
 ### Promise.race Safety
 
