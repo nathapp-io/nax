@@ -1,7 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import {
   appendScratchEntry,
   digestFilePath,
@@ -11,6 +9,7 @@ import {
   _scratchWriterDeps,
 } from "../../../src/session/scratch-writer";
 import type { ScratchEntry } from "../../../src/session/scratch-writer";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -19,11 +18,11 @@ import type { ScratchEntry } from "../../../src/session/scratch-writer";
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), "nax-scratch-test-"));
+  tmpDir = makeTempDir("nax-scratch-test-");
 });
 
 afterEach(() => {
-  rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTempDir(tmpDir);
 });
 
 const VERIFY_ENTRY: ScratchEntry = {

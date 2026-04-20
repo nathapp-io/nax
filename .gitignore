@@ -49,6 +49,7 @@ nax.lock
 .nax/features/*/plan/
 .nax/prompt-audit/
 test/tmp/
+test/integration/tmp/
 TEST_SUMMARY_*.md
 .nax-pids
 .nax/metrics.json

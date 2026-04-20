@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -88,7 +88,7 @@ describe("StatusWriter construction", () => {
     const sw = new StatusWriter(path, makeConfig(Number.POSITIVE_INFINITY), makeCtx());
     sw.setPrd(makePrd());
     await sw.update(0, 0);
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.cost.limit).toBeNull();
     await rm(dir, { recursive: true, force: true });
   });
@@ -106,7 +106,7 @@ describe("StatusWriter setters", () => {
     sw.setPrd(makePrd());
     sw.setRunStatus("completed");
     await sw.update(0, 0);
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.run.status).toBe("completed");
     await rm(dir, { recursive: true, force: true });
   });
@@ -140,7 +140,7 @@ describe("StatusWriter setters", () => {
       phase: "routing",
     });
     await sw.update(0, 0);
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.current?.storyId).toBe("US-001");
     expect(content.current?.phase).toBe("routing");
     await rm(dir, { recursive: true, force: true });
@@ -162,7 +162,7 @@ describe("StatusWriter setters", () => {
     });
     sw.setCurrentStory(null);
     await sw.update(0, 0);
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.current).toBeNull();
     await rm(dir, { recursive: true, force: true });
   });
@@ -243,7 +243,7 @@ describe("StatusWriter.update success path", () => {
     await sw.update(1.5, 3);
 
     expect(existsSync(path)).toBe(true);
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.version).toBe(1);
     expect(content.cost.spent).toBe(1.5);
     expect(content.iterations).toBe(3);
@@ -256,7 +256,7 @@ describe("StatusWriter.update success path", () => {
     sw.setPrd(makePrd());
     await sw.update(0, 0, { runStatus: "completed" });
 
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.run.status).toBe("completed");
   });
 
@@ -270,7 +270,7 @@ describe("StatusWriter.update success path", () => {
     sw.setRunStatus("completed");
     await sw.update(2.0, 5);
 
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.run.status).toBe("completed");
     expect(content.cost.spent).toBe(2.0);
     expect(content.iterations).toBe(5);
@@ -291,7 +291,7 @@ describe("StatusWriter.update success path", () => {
     sw.setPrd(makePrd());
     await sw.update(0, 0);
 
-    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.run.pid).toBe(testPid);
   });
 });
@@ -367,7 +367,7 @@ describe("StatusWriter.writeFeatureStatus", () => {
     await sw.writeFeatureStatus(featureDir, 2.5, 5);
 
     expect(existsSync(statusPath)).toBe(true);
-    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile;
     expect(content.version).toBe(1);
     expect(content.run.status).toBe("completed");
     expect(content.cost.spent).toBe(2.5);
@@ -382,7 +382,7 @@ describe("StatusWriter.writeFeatureStatus", () => {
     sw.setRunStatus("completed");
     await sw.writeFeatureStatus(featureDir, 1.0, 1);
 
-    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile;
     expect(content.run.status).toBe("completed");
     expect(content.progress.total).toBe(3);
   });
@@ -395,7 +395,7 @@ describe("StatusWriter.writeFeatureStatus", () => {
     sw.setRunStatus("failed");
     await sw.writeFeatureStatus(featureDir, 0.5, 2);
 
-    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile;
     expect(content.run.status).toBe("failed");
   });
 
@@ -411,7 +411,7 @@ describe("StatusWriter.writeFeatureStatus", () => {
       crashSignal: "SIGTERM",
     });
 
-    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    const content = JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile;
     expect(content.run.status).toBe("crashed");
     expect(content.run.crashedAt).toBe(crashTime);
     expect(content.run.crashSignal).toBe("SIGTERM");
@@ -436,8 +436,8 @@ describe("StatusWriter.writeFeatureStatus", () => {
     await sw.update(2.0, 4);
     await sw.writeFeatureStatus(featureDir, 2.0, 4);
 
-    const projectContent = JSON.parse(readFileSync(projectStatusPath, "utf8")) as NaxStatusFile;
-    const featureContent = JSON.parse(readFileSync(featureStatusPath, "utf8")) as NaxStatusFile;
+    const projectContent = JSON.parse(await Bun.file(projectStatusPath).text()) as NaxStatusFile;
+    const featureContent = JSON.parse(await Bun.file(featureStatusPath).text()) as NaxStatusFile;
 
     // Verify both have same schema version and structure
     expect(projectContent.version).toBe(featureContent.version);

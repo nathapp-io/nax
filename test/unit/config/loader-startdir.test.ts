@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../../../src/config/loader";
@@ -25,10 +25,10 @@ describe("loadConfig — startDir auto-detection", () => {
   let tempDir: string;
   let originalGlobalDir: string | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = makeTempDir("nax-loader-startdir-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
-    writeFileSync(join(tempDir, ".nax", "config.json"), PROJECT_CONFIG);
+    await Bun.write(join(tempDir, ".nax", "config.json"), PROJECT_CONFIG);
     originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
     process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
   });

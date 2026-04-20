@@ -85,7 +85,7 @@ describe("PipelineEventBus", () => {
     let resolved = false;
 
     bus.on("story:completed", async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve();
       resolved = true;
     });
 

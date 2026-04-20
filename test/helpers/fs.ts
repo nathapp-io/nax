@@ -7,9 +7,15 @@
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 
+function waitForNextPoll(pollIntervalMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, pollIntervalMs);
+  });
+}
+
 /**
  * Polls for a file to exist up to timeoutMs.
- * Used instead of Bun.sleep() for timing-sensitive file operations in tests.
+ * Used instead of fixed Bun.sleep() calls for timing-sensitive file operations in tests.
  *
  * @param path - File path to wait for
  * @param timeoutMs - Maximum wait time in milliseconds (default: 500)
@@ -31,8 +37,7 @@ export async function waitForFile(
       // File doesn't exist yet, continue polling
     }
 
-    // Wait before next poll
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    await waitForNextPoll(pollIntervalMs);
   }
 
   throw new Error(`waitForFile: ${path} not created within ${timeoutMs}ms`);

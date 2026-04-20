@@ -8,9 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { LoadedHooksConfig } from "../../../src/hooks";
@@ -24,6 +22,7 @@ import {
   type RunParallelBatchResult,
 } from "../../../src/execution/parallel-batch";
 import type { ParallelBatchResult } from "../../../src/execution/parallel-worker";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -107,12 +106,13 @@ let tmpDir: string;
 let origDeps: typeof _parallelBatchDeps;
 
 beforeEach(() => {
-  tmpDir = mkdtempSync(path.join(tmpdir(), "nax-pb-"));
+  tmpDir = makeTempDir("nax-pb-");
   origDeps = { ..._parallelBatchDeps };
 });
 
 afterEach(() => {
   Object.assign(_parallelBatchDeps, origDeps);
+  cleanupTempDir(tmpDir);
   mock.restore();
 });
 
@@ -653,27 +653,24 @@ describe("AC-8: merge-conflict-rectify exports identical to parallel-executor-re
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-9: import sites updated to merge-conflict-rectify", () => {
-  test("parallel-batch.ts does not import from parallel-executor-rectify", async () => {
+  test("parallel-batch.ts imports from merge-conflict-rectify and not the old module name", async () => {
     const source = await Bun.file(
-      path.join(import.meta.dir, "../../../src/execution/parallel-batch.ts"),
+      join(import.meta.dir, "../../../src/execution/parallel-batch.ts"),
     ).text();
-    expect(source).not.toContain("parallel-executor-rectify");
+    expect(source).toContain('import("./merge-conflict-rectify")');
   });
 
-  test("parallel-executor-rectification-pass.ts has no remaining imports from parallel-executor-rectify (once deleted)", async () => {
-    // This test validates AC-10 is a prerequisite: the pass file should be deleted
-    // so there are no remaining imports from parallel-executor-rectify in src/
-    const passFileExists = await Bun.file(
-      path.join(import.meta.dir, "../../../src/execution/parallel-executor-rectification-pass.ts"),
-    ).exists();
-    if (passFileExists) {
-      // If it still exists, verify it doesn't import from parallel-executor-rectify
-      const source = await Bun.file(
-        path.join(import.meta.dir, "../../../src/execution/parallel-executor-rectification-pass.ts"),
-      ).text();
-      expect(source).not.toContain("parallel-executor-rectify");
+  test("no src/execution file imports from parallel-executor-rectify", async () => {
+    const executionDir = join(import.meta.dir, "../../../src/execution");
+    const files = new Bun.Glob("**/*.ts").scanSync({ cwd: executionDir });
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = await Bun.file(join(executionDir, file)).text();
+      if (source.includes("parallel-executor-rectify")) {
+        offenders.push(file);
+      }
     }
-    // Once deleted, trivially passes
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -684,25 +681,21 @@ describe("AC-9: import sites updated to merge-conflict-rectify", () => {
 describe("AC-10: parallel-executor-rectification-pass.ts is deleted", () => {
   test("src/execution/parallel-executor-rectification-pass.ts does not exist", async () => {
     const exists = await Bun.file(
-      path.join(import.meta.dir, "../../../src/execution/parallel-executor-rectification-pass.ts"),
+      join(import.meta.dir, "../../../src/execution/parallel-executor-rectification-pass.ts"),
     ).exists();
     expect(exists).toBe(false);
   });
 
   test("no file in src/execution imports from parallel-executor-rectification-pass", async () => {
-    // Enumerate likely importers and verify none import from the deleted file
-    const filesToCheck = [
-      "../../../src/execution/parallel-executor.ts",
-      "../../../src/execution/parallel-batch.ts",
-      "../../../src/execution/parallel-coordinator.ts",
-    ];
-    for (const relPath of filesToCheck) {
-      const absPath = path.join(import.meta.dir, relPath);
-      const exists = await Bun.file(absPath).exists();
-      if (exists) {
-        const source = await Bun.file(absPath).text();
-        expect(source).not.toContain("parallel-executor-rectification-pass");
+    const executionDir = join(import.meta.dir, "../../../src/execution");
+    const files = new Bun.Glob("**/*.ts").scanSync({ cwd: executionDir });
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = await Bun.file(join(executionDir, file)).text();
+      if (source.includes("parallel-executor-rectification-pass")) {
+        offenders.push(file);
       }
     }
+    expect(offenders).toEqual([]);
   });
 });

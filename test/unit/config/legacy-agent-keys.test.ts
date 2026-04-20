@@ -8,28 +8,38 @@
 // keys and the run continues with agent.default="claude" — re-introducing
 // the exact silent-no-op failure mode the ADR was designed to prevent.
 
-import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "../../../src/errors";
 import { _clearRootConfigCache, loadConfig } from "../../../src/config/loader";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
-function writeProjectConfig(contents: object): string {
-  const root = mkdtempSync(join(tmpdir(), "nax-legacy-cfg-"));
+const tempDirs: string[] = [];
+
+async function writeProjectConfig(contents: object): Promise<string> {
+  const root = makeTempDir("nax-legacy-cfg-");
+  tempDirs.push(root);
   const naxDir = join(root, ".nax");
-  require("node:fs").mkdirSync(naxDir, { recursive: true });
-  writeFileSync(join(naxDir, "config.json"), JSON.stringify(contents, null, 2));
+  await mkdir(naxDir, { recursive: true });
+  await Bun.write(join(naxDir, "config.json"), JSON.stringify(contents, null, 2));
   return root;
 }
 
 describe("ADR-012 Phase 6 — legacy config key guard", () => {
   beforeEach(() => {
     _clearRootConfigCache();
+    tempDirs.splice(0, tempDirs.length);
+  });
+
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) {
+      cleanupTempDir(dir);
+    }
   });
 
   test("rejects autoMode.defaultAgent with migration pointer", async () => {
-    const root = writeProjectConfig({
+    const root = await writeProjectConfig({
       autoMode: { defaultAgent: "codex" },
     });
     try {
@@ -46,7 +56,7 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
   });
 
   test("rejects autoMode.fallbackOrder with migration pointer", async () => {
-    const root = writeProjectConfig({
+    const root = await writeProjectConfig({
       autoMode: { fallbackOrder: ["claude", "codex"] },
     });
     try {
@@ -63,7 +73,7 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
   });
 
   test("rejects context.v2.fallback with migration pointer", async () => {
-    const root = writeProjectConfig({
+    const root = await writeProjectConfig({
       context: { v2: { fallback: { enabled: true } } },
     });
     try {
@@ -80,7 +90,7 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
   });
 
   test("reports all legacy keys at once", async () => {
-    const root = writeProjectConfig({
+    const root = await writeProjectConfig({
       autoMode: { defaultAgent: "codex", fallbackOrder: ["codex"] },
       context: { v2: { fallback: { enabled: true } } },
     });
@@ -103,7 +113,7 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
   });
 
   test("accepts canonical config — agent.default + agent.fallback.map", async () => {
-    const root = writeProjectConfig({
+    const root = await writeProjectConfig({
       agent: {
         default: "claude",
         fallback: { enabled: true, map: { claude: ["codex"] } },
@@ -116,7 +126,7 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
   });
 
   test("accepts config with no agent section (uses defaults)", async () => {
-    const root = writeProjectConfig({});
+    const root = await writeProjectConfig({});
     const config = await loadConfig(root);
     expect(config.agent?.default).toBe("claude");
     expect(config.agent?.fallback?.enabled).toBe(false);

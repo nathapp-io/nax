@@ -8,14 +8,14 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { _precheckDeps, runPrecheck } from "../../../src/precheck";
 import type { StorySizeGateResult } from "../../../src/precheck/story-size-gate";
 import { _checkCliDeps } from "../../../src/precheck/checks-cli";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Temp repo setup — provides a clean git repo where tier 1 env checks pass
@@ -24,7 +24,7 @@ import { _checkCliDeps } from "../../../src/precheck/checks-cli";
 let tempDir: string;
 
 beforeAll(async () => {
-  tempDir = mkdtempSync(join(tmpdir(), "nax-routing-test-"));
+  tempDir = makeTempDir("nax-routing-test-");
 
   // Create a clean git repo with an initial commit
   const git = (args: string[]) =>
@@ -45,11 +45,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  try {
-    rmSync(tempDir, { recursive: true });
-  } catch {
-    // ignore cleanup errors
-  }
+  cleanupTempDir(tempDir);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

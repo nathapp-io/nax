@@ -4,7 +4,6 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
-import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PidRegistry } from "../../../src/execution/pid-registry";
@@ -33,7 +32,7 @@ describe("PidRegistry - Concurrent Operations", () => {
 
     // Read the file and verify all PIDs are present
     const pidsFile = join(tempDir, ".nax-pids");
-    const content = readFileSync(pidsFile, "utf-8");
+    const content = await Bun.file(pidsFile).text();
     const lines = content.split("\n").filter((line) => line.trim());
 
     expect(lines.length).toBe(pidCount);
@@ -62,7 +61,7 @@ describe("PidRegistry - Concurrent Operations", () => {
 
     // Verify all PIDs are present
     const pidsFile = join(tempDir, ".nax-pids");
-    const content = readFileSync(pidsFile, "utf-8");
+    const content = await Bun.file(pidsFile).text();
     const lines = content.split("\n").filter((line) => line.trim());
 
     expect(lines.length).toBe(20);
@@ -86,7 +85,7 @@ describe("PidRegistry - Concurrent Operations", () => {
 
     // Verify only that PID is gone
     const pidsFile = join(tempDir, ".nax-pids");
-    const content = readFileSync(pidsFile, "utf-8");
+    const content = await Bun.file(pidsFile).text();
     const lines = content.split("\n").filter((line) => line.trim());
     const pids = lines.map((line) => JSON.parse(line).pid);
 
