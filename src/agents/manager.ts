@@ -10,6 +10,7 @@ import type { NaxConfig } from "../config";
 import type { AdapterFailure, ContextBundle } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
+import { cancellableDelay } from "../utils/bun-deps";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -27,38 +28,13 @@ type LoggerLike = {
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
 };
 
-/**
- * Cancellable delay — matches the canonical pattern from
- * docs/architecture/coding-standards.md §6 (Stream Cancellation).
- *
- * Uses `setTimeout` (rather than `Bun.sleep`) so the timer can be cleared via
- * `AbortController` when a caller supplies a signal. Without a signal, behaves
- * identically to `Bun.sleep(ms)`. The rate-limit backoff in `runWithFallback`
- * uses this so that future AbortSignal plumbing (issue #585) can interrupt an
- * in-flight backoff without modifying this helper. This is a documented
- * exception to `.claude/rules/forbidden-patterns.md` — setTimeout is permitted
- * when the timer handle is cancelled mid-flight via `clearTimeout`.
- */
-function cancellableDelay(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason ?? new Error("delay aborted"));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal?.reason ?? new Error("delay aborted"));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 /** Injectable deps for testability. */
 export const _agentManagerDeps = {
+  /**
+   * Cancellable backoff delay. Delegates to the canonical helper in
+   * `src/utils/bun-deps.ts` — see there for the rationale and the
+   * coding-standards §6 reference. Exposed on `_deps` so tests can mock it.
+   */
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
 };
 

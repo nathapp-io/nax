@@ -1,31 +1,22 @@
 /**
- * ADR-012 follow-up: verify the rate-limit backoff delay helper is cancellable.
+ * ADR-012 follow-up: verify `_agentManagerDeps.sleep` delegates to the
+ * cancellable helper in src/utils/bun-deps.ts rather than plain Bun.sleep.
  *
- * `AgentManager._agentManagerDeps.sleep` is the cancellable replacement for
- * the original `Bun.sleep(ms)`. Without a signal it behaves identically; with
- * an `AbortSignal` it resolves immediately on abort. This test pins the new
- * contract so the canonical pattern from docs/architecture/coding-standards.md
- * §6 cannot silently regress back to uncancellable `Bun.sleep`.
+ * This is a narrow wiring test — comprehensive coverage of the helper itself
+ * lives in test/unit/utils/bun-deps.test.ts. The role of this test is to
+ * prevent a silent regression back to uncancellable `Bun.sleep(ms)` at the
+ * manager layer (which would violate docs/architecture/coding-standards.md §6).
  *
- * Full abort-signal plumbing through `runWithFallback` is tracked in issue #585.
+ * Full AbortSignal plumbing through `runWithFallback` is tracked in #585.
  */
 
 import { describe, expect, test } from "bun:test";
 import { _agentManagerDeps } from "../../../src/agents/manager";
 
-describe("AgentManager cancellable backoff helper", () => {
-  test("without a signal — resolves after the requested delay", async () => {
-    const start = performance.now();
-    await _agentManagerDeps.sleep(50);
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeGreaterThanOrEqual(45);
-    expect(elapsed).toBeLessThan(200);
-  });
-
-  test("with a signal — aborting mid-flight rejects quickly", async () => {
+describe("AgentManager — rate-limit backoff wiring", () => {
+  test("_deps.sleep accepts an AbortSignal and aborts mid-flight", async () => {
     const controller = new AbortController();
-    // Schedule an abort well before the sleep would otherwise resolve.
-    setTimeout(() => controller.abort(new Error("cancelled mid-backoff")), 10);
+    setTimeout(() => controller.abort(new Error("aborted")), 10);
 
     const start = performance.now();
     let error: unknown;
@@ -37,26 +28,14 @@ describe("AgentManager cancellable backoff helper", () => {
     const elapsed = performance.now() - start;
 
     expect(error).toBeDefined();
-    expect((error as Error).message).toBe("cancelled mid-backoff");
-    // Would be ~5000ms without cancellation — assert it settled before 1s.
+    expect((error as Error).message).toBe("aborted");
     expect(elapsed).toBeLessThan(1_000);
   });
 
-  test("already-aborted signal — rejects synchronously, no delay", async () => {
-    const controller = new AbortController();
-    controller.abort(new Error("aborted before sleep"));
-
+  test("_deps.sleep resolves normally when no signal is passed", async () => {
     const start = performance.now();
-    let error: unknown;
-    try {
-      await _agentManagerDeps.sleep(5_000, controller.signal);
-    } catch (err) {
-      error = err;
-    }
+    await _agentManagerDeps.sleep(30);
     const elapsed = performance.now() - start;
-
-    expect(error).toBeDefined();
-    expect((error as Error).message).toBe("aborted before sleep");
-    expect(elapsed).toBeLessThan(100);
+    expect(elapsed).toBeGreaterThanOrEqual(25);
   });
 });
