@@ -14,12 +14,14 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { AgentResult, AgentRunOptions } from "../agents/types";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type {
   CreateSessionOptions,
   ISessionManager,
   ProtocolIds,
+  SessionAgentRunner,
   SessionDescriptor,
   SessionState,
   TransitionOptions,
@@ -316,6 +318,71 @@ export class SessionManager implements ISessionManager {
     return Array.from(this._sessions.values())
       .filter((s) => !terminal.includes(s.state))
       .map((s) => ({ ...s }));
+  }
+
+  /**
+   * Per-session lifecycle primitive — see ISessionManager for full contract.
+   *
+   * Bookkeeping order:
+   *   1. CREATED → RUNNING (only if currently CREATED; RESUMING is left alone
+   *      so rectification loops that re-enter an already-RUNNING session don't
+   *      throw SESSION_INVALID_TRANSITION).
+   *   2. Call the runner. Result.protocolIds (if present) is bound via
+   *      bindHandle so the disk descriptor captures the audit correlation.
+   *   3. RUNNING → COMPLETED on success, RUNNING → FAILED on failure. If the
+   *      runner threw, we transition to FAILED and re-throw.
+   */
+  async runInSession(id: string, runner: SessionAgentRunner, options: AgentRunOptions): Promise<AgentResult> {
+    const pre = this._sessions.get(id);
+    if (!pre) {
+      throw new NaxError(`Session "${id}" not found in registry`, "SESSION_NOT_FOUND", {
+        stage: "session",
+        sessionId: id,
+      });
+    }
+
+    if (pre.state === "CREATED") {
+      this.transition(id, "RUNNING");
+    }
+
+    let result: AgentResult;
+    try {
+      result = await runner(options);
+    } catch (err) {
+      // Runner threw — mark session failed, then propagate.
+      if (this._sessions.get(id)?.state === "RUNNING") {
+        this.transition(id, "FAILED");
+      }
+      throw err;
+    }
+
+    // Bind protocolIds eagerly when the runner reported them. The handle is
+    // the caller-known session name (stored on the descriptor by whoever
+    // created it), or the runner's own derived name if it updated the
+    // descriptor itself. We use the current descriptor's handle as the fallback.
+    if (result.protocolIds) {
+      const current = this._sessions.get(id);
+      const handle = current?.handle;
+      if (handle) {
+        this.bindHandle(id, handle, result.protocolIds);
+      } else {
+        // No handle yet — persist the ids only.
+        const updated: SessionDescriptor = {
+          ...(current as SessionDescriptor),
+          protocolIds: result.protocolIds,
+          lastActivityAt: _sessionManagerDeps.now(),
+        };
+        this._sessions.set(id, updated);
+        this._persistDescriptor(updated);
+      }
+    }
+
+    const current = this._sessions.get(id);
+    if (current?.state === "RUNNING") {
+      this.transition(id, result.success ? "COMPLETED" : "FAILED");
+    }
+
+    return result;
   }
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {

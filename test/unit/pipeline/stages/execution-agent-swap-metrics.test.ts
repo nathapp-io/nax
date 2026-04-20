@@ -12,6 +12,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/execution";
+import { _singleSessionRunnerDeps } from "../../../../src/session/runners/single-session-runner";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
@@ -131,13 +132,13 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 const origGetAgent = _executionDeps.getAgent;
 const origValidate = _executionDeps.validateAgentForTier;
 const origDetect = _executionDeps.detectMergeConflict;
-const origWriteRebuildManifest = _executionDeps.writeRebuildManifest;
+const origWriteRebuildManifest = _singleSessionRunnerDeps.writeRebuildManifest;
 
 afterEach(() => {
   _executionDeps.getAgent = origGetAgent;
   _executionDeps.validateAgentForTier = origValidate;
   _executionDeps.detectMergeConflict = origDetect;
-  _executionDeps.writeRebuildManifest = origWriteRebuildManifest;
+  _singleSessionRunnerDeps.writeRebuildManifest = origWriteRebuildManifest;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -292,7 +293,7 @@ describe("execution stage — AC-41 fallback observability", () => {
     _executionDeps.detectMergeConflict = () => false;
 
     const writes: Array<Record<string, unknown>> = [];
-    _executionDeps.writeRebuildManifest = async (_projectDir, _featureId, _storyId, entry) => {
+    _singleSessionRunnerDeps.writeRebuildManifest = async (_projectDir, _featureId, _storyId, entry) => {
       writes.push(entry as unknown as Record<string, unknown>);
     };
 
@@ -314,7 +315,7 @@ describe("execution stage — AC-41 fallback observability", () => {
     } as ContextBundle;
 
     // Override rebuildForAgent to return the bundle with rebuildInfo
-    _executionDeps.rebuildForAgent = () => rebuildBundle;
+    _singleSessionRunnerDeps.rebuildForAgent = () => rebuildBundle;
 
     // Manager delegates to executeHop for a swap hop (failure is set)
     const manager: IAgentManager = {
