@@ -48,6 +48,7 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
   const precheckResult = await runPrecheck(ctx.config, ctx.prd, {
     workdir: ctx.workdir,
     format: "human",
+    silent: true,
   });
 
   // Log precheck results to JSONL
