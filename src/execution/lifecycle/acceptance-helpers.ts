@@ -10,6 +10,7 @@ import path from "node:path";
 import { getSafeLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
 import type { PRD } from "../../prd/types";
+import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../../utils/path-filters";
 import type { AcceptanceLoopResult } from "./acceptance-loop";
 
 // ─── Stub detection ─────────────────────────────────────────────────────────
@@ -170,10 +171,17 @@ export async function regenerateAcceptanceTest(
   if (storyGitRef) {
     try {
       const diffOutput = await _regenerateDeps.spawnGitDiff(workdir, storyGitRef);
-      const changedFiles = diffOutput
+      const changedFilesRaw = diffOutput
         .split("\n")
         .map((f) => f.trim())
         .filter((f) => f.length > 0);
+      const repoRoot = acceptanceContext.projectDir ?? workdir;
+      const packageDir =
+        acceptanceContext.story.workdir && acceptanceContext.projectDir
+          ? path.join(acceptanceContext.projectDir, acceptanceContext.story.workdir)
+          : undefined;
+      const ignoreMatchers = await resolveNaxIgnorePatterns(repoRoot, packageDir);
+      const changedFiles = filterNaxInternalPaths(changedFilesRaw, ignoreMatchers);
 
       const MAX_BYTES = 50 * 1024;
       let totalBytes = 0;

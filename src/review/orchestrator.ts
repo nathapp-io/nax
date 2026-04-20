@@ -8,6 +8,7 @@
  *   const result = await reviewOrchestrator.review(config, workdir, executionConfig, plugins);
  */
 
+import { join } from "node:path";
 import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
@@ -18,6 +19,7 @@ import { getSafeLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import { errorMessage } from "../utils/errors";
+import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 import { runAdversarialReview } from "./adversarial";
 import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
@@ -398,9 +400,13 @@ export class ReviewOrchestrator {
         // Use the story's start ref if available to capture auto-committed changes
         const baseRef = storyGitRef ?? executionConfig?.storyGitRef;
         const changedFiles = await getChangedFiles(workdir, baseRef);
+        const repoRoot = projectDir ?? workdir;
+        const packageDir = scopePrefix ? join(repoRoot, scopePrefix) : undefined;
+        const ignoreMatchers = await resolveNaxIgnorePatterns(repoRoot, packageDir);
+        const visibleChangedFiles = filterNaxInternalPaths(changedFiles, ignoreMatchers);
         const scopedFiles = scopePrefix
-          ? changedFiles.filter((f) => f === scopePrefix || f.startsWith(`${scopePrefix}/`))
-          : changedFiles;
+          ? visibleChangedFiles.filter((f) => f === scopePrefix || f.startsWith(`${scopePrefix}/`))
+          : visibleChangedFiles;
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 
         for (const reviewer of reviewers) {

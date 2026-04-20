@@ -1,7 +1,25 @@
-import { describe, expect, test } from "bun:test";
-import { filterNaxInternalPaths, isNaxInternalPath } from "../../../src/utils/path-filters";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  _pathFilterDeps,
+  filterNaxInternalPaths,
+  isNaxInternalPath,
+  resolveNaxIgnorePatterns,
+} from "../../../src/utils/path-filters";
 
 describe("path-filters (#542)", () => {
+  let origFileExists: typeof _pathFilterDeps.fileExists;
+  let origReadFile: typeof _pathFilterDeps.readFile;
+
+  beforeEach(() => {
+    origFileExists = _pathFilterDeps.fileExists;
+    origReadFile = _pathFilterDeps.readFile;
+  });
+
+  afterEach(() => {
+    _pathFilterDeps.fileExists = origFileExists;
+    _pathFilterDeps.readFile = origReadFile;
+  });
+
   describe("isNaxInternalPath", () => {
     test.each([
       [".nax/cache/test-patterns.json", true],
@@ -64,6 +82,63 @@ describe("path-filters (#542)", () => {
       const snapshot = [...input];
       filterNaxInternalPaths(input);
       expect(input).toEqual(snapshot);
+    });
+
+    test("drops files matching resolved .naxignore patterns", async () => {
+      const files = new Map<string, string>([
+        ["/repo/.naxignore", "*.generated.ts\ncoverage/\n"],
+      ]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo");
+      const input = ["src/app.ts", "src/types.generated.ts", "coverage/lcov.info"];
+      expect(filterNaxInternalPaths(input, matchers)).toEqual(["src/app.ts"]);
+    });
+  });
+
+  describe("resolveNaxIgnorePatterns (#550)", () => {
+    test("loads root patterns and ignores comments/blank lines", async () => {
+      const files = new Map<string, string>([
+        ["/repo/.naxignore", "# comment\n\n*.generated.ts\nlocales/en.json\n"],
+      ]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo");
+      expect(matchers).toHaveLength(2);
+      expect(matchers.every((m) => m.source === "root")).toBe(true);
+      expect(matchers.some((m) => m.test("src/foo.generated.ts"))).toBe(true);
+      expect(matchers.some((m) => m.test("locales/en.json"))).toBe(true);
+    });
+
+    test("merges root then package patterns for monorepo package", async () => {
+      const files = new Map<string, string>([
+        ["/repo/.naxignore", "*.generated.ts\n"],
+        ["/repo/packages/web/.naxignore", "dist/\nassets/tmp/**\n"],
+      ]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo", "/repo/packages/web");
+      expect(matchers).toHaveLength(3);
+      expect(matchers[0]?.source).toBe("root");
+      expect(matchers[1]?.source).toBe("package");
+      expect(matchers[2]?.source).toBe("package");
+      expect(matchers.some((m) => m.test("src/foo.generated.ts"))).toBe(true);
+      expect(matchers.some((m) => m.test("dist/index.js"))).toBe(true);
+    });
+
+    test("allows root patterns with package prefixes to match package-relative paths", async () => {
+      const files = new Map<string, string>([
+        ["/repo/.naxignore", "packages/web/locales/en.json\n"],
+      ]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo", "/repo/packages/web");
+      expect(matchers).toHaveLength(1);
+      expect(matchers[0]?.test("locales/en.json")).toBe(true);
     });
   });
 });

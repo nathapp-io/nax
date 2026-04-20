@@ -13,6 +13,7 @@
 import { join } from "node:path";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { gitWithTimeout } from "../utils/git";
+import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /**
  * Bun API wrappers — defined before functions to avoid circular type inference.
@@ -290,8 +291,11 @@ export async function getChangedNonTestFiles(
     if (exitCode !== 0) return [];
 
     const lines = stdout.trim().split("\n").filter(Boolean);
+    const packageDir = packagePrefix ? join(workdir, packagePrefix) : undefined;
+    const ignoreMatchers = await resolveNaxIgnorePatterns(workdir, packageDir);
 
-    const scoped = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
+    const scopedRaw = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
+    const scoped = filterNaxInternalPaths(scopedRaw, ignoreMatchers);
     if (testFileRegex.length === 0) return scoped;
     return scoped.filter((f) => !testFileRegex.some((re) => re.test(f)));
   } catch {
@@ -332,9 +336,12 @@ export async function getChangedTestFiles(
     if (exitCode !== 0) return [];
 
     const lines = stdout.trim().split("\n").filter(Boolean);
+    const packageDir = packagePrefix ? join(repoRoot, packagePrefix) : undefined;
+    const ignoreMatchers = await resolveNaxIgnorePatterns(repoRoot, packageDir);
 
     // Scope to package directory — covers both co-located (src/) and separated (test/) layouts
-    const scoped = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
+    const scopedRaw = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
+    const scoped = filterNaxInternalPaths(scopedRaw, ignoreMatchers);
     return scoped.filter((f) => testFileRegex.some((re) => re.test(f))).map((f) => join(repoRoot, f));
   } catch {
     return [];

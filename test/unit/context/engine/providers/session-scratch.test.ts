@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { SessionScratchProvider, _sessionScratchDeps } from "../../../../../src/context/engine/providers/session-scratch";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
+import { _pathFilterDeps } from "../../../../../src/utils/path-filters";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -56,15 +57,21 @@ const TDD_ENTRY = JSON.stringify({
 
 let origFileExists: typeof _sessionScratchDeps.fileExists;
 let origReadFile: typeof _sessionScratchDeps.readFile;
+let origPathFilterFileExists: typeof _pathFilterDeps.fileExists;
+let origPathFilterReadFile: typeof _pathFilterDeps.readFile;
 
 beforeEach(() => {
   origFileExists = _sessionScratchDeps.fileExists;
   origReadFile = _sessionScratchDeps.readFile;
+  origPathFilterFileExists = _pathFilterDeps.fileExists;
+  origPathFilterReadFile = _pathFilterDeps.readFile;
 });
 
 afterEach(() => {
   _sessionScratchDeps.fileExists = origFileExists;
   _sessionScratchDeps.readFile = origReadFile;
+  _pathFilterDeps.fileExists = origPathFilterFileExists;
+  _pathFilterDeps.readFile = origPathFilterReadFile;
 });
 
 function mockScratchFile(content: string) {
@@ -76,11 +83,20 @@ function mockNoFile() {
   _sessionScratchDeps.fileExists = async () => false;
 }
 
+function mockNoIgnoreFile() {
+  _pathFilterDeps.fileExists = async () => false;
+  _pathFilterDeps.readFile = async () => "";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionScratchProvider", () => {
+  beforeEach(() => {
+    mockNoIgnoreFile();
+  });
+
   test("id and kind are correct", () => {
     const provider = new SessionScratchProvider();
     expect(provider.id).toBe("session-scratch");
@@ -149,6 +165,32 @@ describe("SessionScratchProvider", () => {
     expect(result.chunks[0].content).toContain("TDD implementer");
     expect(result.chunks[0].content).toContain("src/index.ts");
     expect(result.chunks[0].content).toContain("edge-case handling");
+  });
+
+  test("applies .naxignore filters to TDD changed-file listing", async () => {
+    const ignoreFiles = new Map<string, string>([
+      ["/repo/.naxignore", "*.generated.ts\ncoverage/\n"],
+    ]);
+    _pathFilterDeps.fileExists = async (path) => ignoreFiles.has(path);
+    _pathFilterDeps.readFile = async (path) => ignoreFiles.get(path) ?? "";
+    const entry = JSON.stringify({
+      kind: "tdd-session",
+      timestamp: "2026-01-01T00:02:00.000Z",
+      storyId: "US-001",
+      stage: "tdd-implementer",
+      role: "implementer",
+      success: true,
+      filesChanged: ["src/index.ts", "src/types.generated.ts", "coverage/lcov.info"],
+      outputTail: "updated files",
+    });
+    mockScratchFile(`${entry}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("src/index.ts");
+    expect(result.chunks[0].content).not.toContain("src/types.generated.ts");
+    expect(result.chunks[0].content).not.toContain("coverage/lcov.info");
   });
 
   test("skips malformed JSONL lines without throwing", async () => {
