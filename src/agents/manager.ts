@@ -27,9 +27,39 @@ type LoggerLike = {
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
 };
 
-/** Injectable deps for testability (sleep). */
+/**
+ * Cancellable delay — matches the canonical pattern from
+ * docs/architecture/coding-standards.md §6 (Stream Cancellation).
+ *
+ * Uses `setTimeout` (rather than `Bun.sleep`) so the timer can be cleared via
+ * `AbortController` when a caller supplies a signal. Without a signal, behaves
+ * identically to `Bun.sleep(ms)`. The rate-limit backoff in `runWithFallback`
+ * uses this so that future AbortSignal plumbing (issue #585) can interrupt an
+ * in-flight backoff without modifying this helper. This is a documented
+ * exception to `.claude/rules/forbidden-patterns.md` — setTimeout is permitted
+ * when the timer handle is cancelled mid-flight via `clearTimeout`.
+ */
+function cancellableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error("delay aborted"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new Error("delay aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Injectable deps for testability. */
 export const _agentManagerDeps = {
-  sleep: (ms: number) => Bun.sleep(ms),
+  sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
 };
 
 export class AgentManager implements IAgentManager {
