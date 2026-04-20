@@ -55,7 +55,9 @@ describe("Phase 6 invariants — migration shim removal", () => {
     );
     const out = await new Response(proc.stdout).text();
     await proc.exited;
-    const offenders = out.trim().split("\n").filter((l) => l.length > 0);
+    // src/config/ is allowed to mention the string in the legacy-key rejection
+    // guard's error message (ADR-012 Phase 6).
+    const offenders = out.trim().split("\n").filter((l) => l.length > 0 && !l.includes("src/config/"));
     expect(offenders).toEqual([]);
   });
 
@@ -73,5 +75,13 @@ describe("Phase 6 invariants — migration shim removal", () => {
     const code = await readSrc("src/config/validate.ts");
     expect(code).not.toContain("autoMode.defaultAgent");
     expect(code).not.toContain("autoMode.fallbackOrder");
+  });
+
+  test("loader.ts rejects legacy keys (not just strips) — see legacy-agent-keys.test.ts for behaviour", async () => {
+    // Structural check: loader must actively reject legacy keys, not rely on Zod's default
+    // .strip() mode (which would silently drop them — the T16.3 failure mode ADR-012 prevents).
+    const code = await readSrc("src/config/loader.ts");
+    expect(code).toContain("rejectLegacyAgentKeys");
+    expect(code).toContain("CONFIG_LEGACY_AGENT_KEYS");
   });
 });
