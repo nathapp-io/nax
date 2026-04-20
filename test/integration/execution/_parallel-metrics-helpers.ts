@@ -52,7 +52,7 @@ export function makeCtx(overrides: { parallelCount?: number; costLimit?: number;
         iterationDelayMs: 0,
         rectification: { maxRetries: 2 },
       },
-      autoMode: { defaultAgent: "claude-code" },
+      agent: { default: "claude-code" },
       interaction: {},
     },
     hooks: {},

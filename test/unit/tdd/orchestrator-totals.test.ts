@@ -34,7 +34,7 @@ function makeConfig(): NaxConfig {
         powerful: { model: "powerful" },
       },
     },
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
     execution: { rectification: { enabled: false }, sessionTimeoutSeconds: 300 },
     quality: { commands: { test: "bun test" } },
     tdd: { testWriterAllowedPaths: [], rollbackOnFailure: false },

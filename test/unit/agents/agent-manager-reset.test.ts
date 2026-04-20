@@ -6,7 +6,7 @@ describe("AgentManager.reset — called between stories", () => {
   test("unavailable state from one story does not bleed into the next", () => {
     const config = {
       ...DEFAULT_CONFIG,
-      autoMode: { defaultAgent: "claude" },
+      agent: { default: "claude" },
     } as never;
     const manager = new AgentManager(config);
 

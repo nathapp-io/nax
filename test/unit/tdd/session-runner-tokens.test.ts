@@ -32,7 +32,7 @@ function makeConfig(): NaxConfig {
         powerful: { model: "powerful-model" },
       },
     },
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
     execution: { rectification: { enabled: false }, sessionTimeoutSeconds: 300, dangerouslySkipPermissions: true },
     quality: { commands: { test: "bun test" } },
     tdd: { testWriterAllowedPaths: [] },

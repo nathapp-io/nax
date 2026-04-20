@@ -149,7 +149,7 @@ function makeDebateStageConfig(enabled: boolean) {
 
 function makeConfigWithDebate(debateDecomposeEnabled: boolean): NaxConfig {
   return {
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
     precheck: {
       storySizeGate: {
         enabled: true,

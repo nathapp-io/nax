@@ -83,7 +83,7 @@ function makeDecomposeResult(): DecomposeResult {
 
 function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return {
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
     precheck: {
       storySizeGate: {
         enabled: true,

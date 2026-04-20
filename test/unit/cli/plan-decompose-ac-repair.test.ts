@@ -95,7 +95,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
         maxReplanAttempts: 3,
       },
     },
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
     ...overrides,
   } as NaxConfig;
 }

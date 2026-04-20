@@ -61,7 +61,7 @@ function makePRD(): PRD {
 
 function makeConfig(): NaxConfig {
   return {
-    autoMode: { defaultAgent: "test-agent" },
+    agent: { default: "test-agent" },
     models: {
       "test-agent": {
         fast: "claude-haiku-4-5",

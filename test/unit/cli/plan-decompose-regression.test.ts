@@ -77,7 +77,7 @@ function makePrd(story: UserStory = makeTargetStory()): PRD {
 
 function makeConfig(): NaxConfig {
   return {
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
   } as NaxConfig;
 }
 

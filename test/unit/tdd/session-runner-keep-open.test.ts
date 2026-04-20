@@ -34,7 +34,7 @@ function makeConfig(rectificationEnabled: boolean): NaxConfig {
         powerful: { model: "powerful-model" },
       },
     },
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
     execution: {
       rectification: rectificationEnabled
         ? { enabled: true, maxRetries: 2, fullSuiteTimeoutSeconds: 60, maxFailureSummaryChars: 1000 }

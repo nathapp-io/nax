@@ -36,11 +36,10 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
 
 function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return {
-    autoMode: { defaultAgent: "claude" },
+    agent: { default: "claude" },
     execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
     models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
     quality: { requireTests: false, commands: { test: "bun test" } },
-    agent: {},
     review: { enabled: false },
     ...overrides,
   } as unknown as NaxConfig;

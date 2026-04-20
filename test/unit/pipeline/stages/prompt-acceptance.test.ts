@@ -46,7 +46,7 @@ function makePRD(): PRD {
 
 function makeConfig(): NaxConfig {
   return {
-    autoMode: { defaultAgent: "test-agent" },
+    agent: { default: "test-agent" },
     models: {},
     execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxRetries: 3 } },
   } as unknown as NaxConfig;
