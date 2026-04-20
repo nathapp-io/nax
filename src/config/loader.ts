@@ -6,6 +6,7 @@
 
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
 import { mergePackageConfig } from "./merge";
@@ -59,6 +60,54 @@ function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<strin
     return { ...conf, routing: { ...routing, strategy: "keyword" } };
   }
   return conf;
+}
+
+/**
+ * @internal ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
+ *
+ * Zod's default `.strip()` mode silently drops unknown keys, so pre-migration
+ * configs containing `autoMode.defaultAgent`, `autoMode.fallbackOrder`, or
+ * `context.v2.fallback` would otherwise run with the wrong default agent and
+ * no fallback chain — the exact "T16.3 silent no-op" failure mode ADR-012 was
+ * designed to prevent. Throw a NaxError that tells the user what to change.
+ *
+ * Called on the merged raw config at a single point (after defaults + global +
+ * project + profile + CLI merge) so one check catches keys from any source.
+ */
+function rejectLegacyAgentKeys(conf: Record<string, unknown>): void {
+  const legacyKeys: string[] = [];
+  const migrationHints: string[] = [];
+
+  const autoMode = conf.autoMode as Record<string, unknown> | undefined;
+  if (autoMode && typeof autoMode === "object") {
+    if ("defaultAgent" in autoMode) {
+      legacyKeys.push("autoMode.defaultAgent");
+      migrationHints.push("- Move `autoMode.defaultAgent` → `agent.default`");
+    }
+    if ("fallbackOrder" in autoMode) {
+      legacyKeys.push("autoMode.fallbackOrder");
+      migrationHints.push(
+        "- Move `autoMode.fallbackOrder: [primary, ...]` → `agent.fallback.map: { <primary>: [<rest>] }` and `agent.fallback.enabled: true`",
+      );
+    }
+  }
+
+  const context = conf.context as Record<string, unknown> | undefined;
+  const contextV2 = context?.v2 as Record<string, unknown> | undefined;
+  if (contextV2 && typeof contextV2 === "object" && "fallback" in contextV2) {
+    legacyKeys.push("context.v2.fallback");
+    migrationHints.push("- Move `context.v2.fallback` → `agent.fallback` (see ADR-012 Phase 6)");
+  }
+
+  if (legacyKeys.length === 0) return;
+
+  const message = [
+    `Invalid configuration — legacy agent keys detected: ${legacyKeys.join(", ")}.`,
+    "These were removed in ADR-012 Phase 6. Migrate to the canonical `agent.*` shape:",
+    ...migrationHints,
+    "See docs/adr/ADR-012-agent-manager-ownership.md for the full migration guide.",
+  ].join("\n");
+  throw new NaxError(message, "CONFIG_LEGACY_AGENT_KEYS", { stage: "config", legacyKeys });
 }
 
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
@@ -180,6 +229,10 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>) as unknown as NaxConfig;
   }
 
+  // ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
+  // Must run BEFORE Zod safeParse, otherwise .strip() silently drops the keys.
+  rejectLegacyAgentKeys(rawConfig);
+
   const result = NaxConfigSchema.safeParse(rawConfig);
   if (!result.success) {
     const errors = result.error.issues.map((err) => {
@@ -267,8 +320,13 @@ export async function loadConfigForWorkdir(
   if (packageProfile && packageProfile !== "default") {
     const packageRoot = join(repoRoot, packageDir);
     const profileData = await loadProfile(packageProfile, packageRoot);
-    const rawMerged = deepMergeConfig(merged as unknown as Record<string, unknown>, profileData);
+    const rawMerged = deepMergeConfig<Record<string, unknown>>(
+      merged as unknown as Record<string, unknown>,
+      profileData,
+    );
     rawMerged.profile = packageProfile;
+    // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
+    rejectLegacyAgentKeys(rawMerged);
     const result = NaxConfigSchema.safeParse(rawMerged);
     if (result.success) {
       merged = result.data as NaxConfig;

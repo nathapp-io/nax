@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- `autoMode.defaultAgent` and `autoMode.fallbackOrder` config fields removed. Use `agent.default` and `agent.fallback.map` instead (ADR-012 Phase 6). Loading a legacy config now fails Zod validation.
+- `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` config fields removed. Use `agent.default` and `agent.fallback.map` instead (ADR-012 Phase 6). Loading a config containing any of these keys throws `NaxError CONFIG_LEGACY_AGENT_KEYS` with a per-key migration pointer.
 
 ## [0.51.2] — 2026-03-22
 
