@@ -222,7 +222,13 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       const ctx = makeContext({ smartTestRunner: true });
       await verifyStage.execute(ctx);
 
-      expect(mockGetChangedNonTestFiles).toHaveBeenCalledWith("/test/workdir", undefined, undefined, expect.any(Array));
+      expect(mockGetChangedNonTestFiles).toHaveBeenCalledWith(
+        "/test/workdir",
+        undefined,
+        undefined,
+        expect.any(Array),
+        undefined,
+      );
     });
 
     test("calls mapSourceToTests with changed files, workdir, and undefined packagePrefix for single-package story", async () => {
