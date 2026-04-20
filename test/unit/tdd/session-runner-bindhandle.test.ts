@@ -4,6 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentRunRequest, IAgentManager } from "../../../src/agents/manager-types";
 import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
@@ -87,12 +88,11 @@ function makeSessionManager() {
     descriptor.state = to as SessionDescriptor["state"];
     return descriptor;
   });
-  // Phase 2: stub runInSession that delegates to the runner and applies bindHandle
-  // the same way the real implementation does. Required so runTddSession's
-  // sessionBinding path works against the test mock.
-  const runInSession = mock(async (id: string, runner: (opts: unknown) => Promise<AgentResult>, opts: unknown) => {
+  // Stub runInSession that delegates to agentManager.run() and applies bindHandle
+  // the same way the real implementation does (ADR-013 Phase 1 signature).
+  const runInSession = mock(async (id: string, agentMgr: IAgentManager, request: AgentRunRequest) => {
     transition(id, "RUNNING");
-    const result = await runner(opts);
+    const result = await agentMgr.run(request);
     if (result.protocolIds && descriptor.handle) {
       bindHandle(id, descriptor.handle, result.protocolIds);
     }

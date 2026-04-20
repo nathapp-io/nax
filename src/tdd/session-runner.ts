@@ -5,7 +5,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
-import { resolveDefaultAgent } from "../agents";
+import { resolveDefaultAgent, wrapAdapterAsManager } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -111,10 +111,14 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
 /**
  * Binding used to tie a TDD session's ACP protocolIds back to a pre-created
  * session descriptor so the audit trail includes recordId/sessionId (#541).
+ * ADR-013 Phase 1: agentManager added so runTddSession can go through
+ * IAgentManager.run() → runWithFallback instead of adapter.run() directly.
  */
 export interface TddSessionBinding {
   sessionManager: ISessionManager;
   sessionId: string;
+  /** When provided, routes the session through IAgentManager.run() for fallback support. */
+  agentManager?: import("../agents/manager-types").IAgentManager;
 }
 
 /** Run a single TDD session */
@@ -243,13 +247,17 @@ export async function runTddSession(
   // Run the agent. When a sessionBinding is provided, route through
   // SessionManager.runInSession so state transitions (CREATED → RUNNING →
   // COMPLETED/FAILED) and bindHandle happen automatically (#541, #589).
+  // ADR-013 Phase 1: runInSession now takes IAgentManager. Use the binding's
+  // agentManager when present; otherwise wrap adapter for a no-fallback path.
   // Absent binding path stays compatible with tests that skip SessionManager.
+  const effectiveManager: import("../agents/manager-types").IAgentManager =
+    sessionBinding?.agentManager ?? wrapAdapterAsManager(agent);
+
   const result = sessionBinding
-    ? await sessionBinding.sessionManager.runInSession(
-        sessionBinding.sessionId,
-        (opts) => agent.run(opts),
-        agentRunOptions,
-      )
+    ? await sessionBinding.sessionManager.runInSession(sessionBinding.sessionId, effectiveManager, {
+        runOptions: agentRunOptions,
+        signal: agentRunOptions.abortSignal,
+      })
     : await agent.run(agentRunOptions);
 
   // When binding is present, runInSession already persisted protocolIds

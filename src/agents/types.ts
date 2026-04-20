@@ -74,6 +74,12 @@ export interface AgentResult {
    * See: docs/specs/SPEC-session-manager-integration.md Gap 2.
    */
   adapterFailure?: AdapterFailure;
+  /**
+   * Agent swap records when AgentManager executed a cross-agent fallback
+   * (ADR-013 Phase 1). Populated by IAgentManager.run(); empty array on success
+   * with no swaps. Undefined when the result does not go through AgentManager.
+   */
+  agentFallbacks?: import("./manager-types").AgentFallbackRecord[];
 }
 
 /**

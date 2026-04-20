@@ -5,7 +5,7 @@
 
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
-import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
+import type { AgentAdapter, AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
 
 export interface AgentFallbackRecord {
   storyId?: string;
@@ -120,4 +120,29 @@ export interface IAgentManager {
    * Swaps on availability failures when agent.fallback.enabled.
    */
   completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome>;
+
+  // ─── ADR-013 Phase 1: uniform call surface ───────────────────────────────
+
+  /**
+   * Long-running session call with automatic agent-swap fallback.
+   * Delegates to runWithFallback and surfaces AgentFallbackRecord[] via
+   * result.agentFallbacks. This is the method SessionManager.runInSession
+   * and ISessionRunner implementations call — never adapter.run() directly.
+   */
+  run(request: AgentRunRequest): Promise<AgentResult>;
+
+  /**
+   * One-shot LLM call with cross-agent fallback.
+   * Delegates to completeWithFallback. Callers that need the full fallback
+   * record list should use completeWithFallback directly.
+   */
+  complete(prompt: string, options: CompleteOptions): Promise<CompleteResult>;
+
+  /**
+   * Resolve a specific adapter by name.
+   * Returns undefined when no registry is set or the name is not registered.
+   * Internal use by subsystems that need to call adapter-level operations
+   * (e.g. deriveSessionName, closeSession) without bypassing AgentManager.
+   */
+  getAgent(name: string): AgentAdapter | undefined;
 }

@@ -344,6 +344,23 @@ export class AgentManager implements IAgentManager {
     }
   }
 
+  async run(request: AgentRunRequest): Promise<import("./types").AgentResult> {
+    const outcome = await this.runWithFallback(request);
+    return { ...outcome.result, agentFallbacks: outcome.fallbacks };
+  }
+
+  async complete(
+    prompt: string,
+    options: import("./types").CompleteOptions,
+  ): Promise<import("./types").CompleteResult> {
+    const outcome = await this.completeWithFallback(prompt, options);
+    return outcome.result;
+  }
+
+  getAgent(name: string): import("./types").AgentAdapter | undefined {
+    return this._registry?.getAgent(name);
+  }
+
   /** @internal — test helper */
   _emit(
     event: AgentManagerEventName,
