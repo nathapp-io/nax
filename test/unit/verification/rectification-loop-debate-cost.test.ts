@@ -9,22 +9,28 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { AgentRunOptions } from "../../../src/agents/types";
+import { makeMockAgentManager } from "../../helpers";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import {
   FAILING_TEST_OUTPUT,
-  makeAgent,
   makeConfig,
   makeStory,
 } from "./_rectification-debate-helpers";
 
+const SUCCESS_VERIFICATION = {
+  success: true,
+  status: "SUCCESS" as const,
+  output: "1 pass",
+  countsTowardEscalation: false,
+};
+
 describe("runRectificationLoop — debate cost included in story total", () => {
-  const origGetAgent = _rectificationDeps.getAgent;
+  const origCreateManager = _rectificationDeps.createManager;
   const origRunVerification = _rectificationDeps.runVerification;
   const origRunDebate = _rectificationDeps.runDebate;
 
   afterEach(() => {
-    _rectificationDeps.getAgent = origGetAgent;
+    _rectificationDeps.createManager = origCreateManager;
     _rectificationDeps.runVerification = origRunVerification;
     _rectificationDeps.runDebate = origRunDebate;
     mock.restore();
@@ -36,25 +42,14 @@ describe("runRectificationLoop — debate cost included in story total", () => {
   });
 
   test("debate cost is accumulated into story.routing.estimatedCost when totalCostUsd > 0", async () => {
-    const mockAgent = makeAgent({
-      run: mock(async (_opts: AgentRunOptions) => ({
-        success: true,
-        exitCode: 0,
-        output: "done",
-        rateLimited: false,
-        durationMs: 10,
-        estimatedCost: 0,
-      })),
-    });
-
-    _rectificationDeps.getAgent = mock(() => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter);
-    _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass" }));
+    _rectificationDeps.createManager = mock(() => makeMockAgentManager());
+    _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause: incorrect state mutation.",
       totalCostUsd: 0.05,
     }));
 
-    const story = makeStory({ routing: { modelTier: "balanced", estimatedCost: 0.10 } });
+    const story = makeStory({ routing: { modelTier: "balanced", estimatedCost: 0.10 } as never });
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -69,25 +64,14 @@ describe("runRectificationLoop — debate cost included in story total", () => {
   });
 
   test("story.routing.estimatedCost is not modified when debate returns totalCostUsd === 0", async () => {
-    const mockAgent = makeAgent({
-      run: mock(async (_opts: AgentRunOptions) => ({
-        success: true,
-        exitCode: 0,
-        output: "done",
-        rateLimited: false,
-        durationMs: 10,
-        estimatedCost: 0,
-      })),
-    });
-
-    _rectificationDeps.getAgent = mock(() => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter);
-    _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass" }));
+    _rectificationDeps.createManager = mock(() => makeMockAgentManager());
+    _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause analysis output.",
       totalCostUsd: 0,
     }));
 
-    const story = makeStory({ routing: { modelTier: "balanced", estimatedCost: 0.10 } });
+    const story = makeStory({ routing: { modelTier: "balanced", estimatedCost: 0.10 } as never });
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -102,19 +86,8 @@ describe("runRectificationLoop — debate cost included in story total", () => {
   });
 
   test("debate cost is tracked and loop completes without error when debate succeeds", async () => {
-    const mockAgent = makeAgent({
-      run: mock(async (_opts: AgentRunOptions) => ({
-        success: true,
-        exitCode: 0,
-        output: "done",
-        rateLimited: false,
-        durationMs: 10,
-        estimatedCost: 0.01,
-      })),
-    });
-
-    _rectificationDeps.getAgent = mock(() => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter);
-    _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass" }));
+    _rectificationDeps.createManager = mock(() => makeMockAgentManager());
+    _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause: incorrect state mutation.",
       totalCostUsd: 0.03,

@@ -6,7 +6,7 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
-import { AgentManager } from "../agents";
+import { createAgentManager } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import { getSafeLogger } from "../logger";
@@ -268,7 +268,7 @@ export function routeTask(
  * No-ops if routing.strategy is not "llm" or mode is "per-story" or stories is empty.
  */
 export const _tryLlmBatchRouteDeps = {
-  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
+  createManager: createAgentManager,
 };
 
 export async function tryLlmBatchRoute(

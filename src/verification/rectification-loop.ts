@@ -7,7 +7,7 @@
  * Used by: src/pipeline/stages/rectify.ts, src/execution/lifecycle/run-regression.ts
  */
 
-import { AgentManager } from "../agents";
+import { createAgentManager } from "../agents";
 import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
@@ -69,10 +69,11 @@ async function _defaultRunDebate(
   stageConfig: DebateStageConfig,
   prompt: string,
   config: NaxConfig,
+  agentManager: IAgentManager,
 ): Promise<{ output: string | null; totalCostUsd: number }> {
   const logger = getSafeLogger();
   const debaters: Debater[] = stageConfig.debaters ?? [];
-  const manager = _rectificationDeps.createManager(config);
+  const manager = agentManager;
   const resolved: Array<{ debater: Debater; agentName: string }> = [];
 
   for (const debater of debaters) {
@@ -125,7 +126,7 @@ async function _defaultRunDebate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _rectificationDeps = {
-  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
+  createManager: createAgentManager,
   runVerification: _fullSuite as typeof _fullSuite,
   escalateTier: _escalateTier,
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,
@@ -150,6 +151,7 @@ export async function runRectificationLoop(
     sessionId,
   } = opts;
   const logger = getSafeLogger();
+  const agentManager = opts.agentManager ?? _rectificationDeps.createManager(config);
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseTestOutput(testOutput);
   const label = promptPrefix ? "regression rectification" : "rectification";
@@ -189,7 +191,13 @@ export async function runRectificationLoop(
         const failureSummary = formatFailureSummary(testSummary.failures);
         const diagnosisPrompt = `Analyze the following test failures and identify the root cause:\n\n${failureSummary}`;
         try {
-          const debateResult = await _rectificationDeps.runDebate(story.id, debateStageConfig, diagnosisPrompt, config);
+          const debateResult = await _rectificationDeps.runDebate(
+            story.id,
+            debateStageConfig,
+            diagnosisPrompt,
+            config,
+            agentManager,
+          );
           if (debateResult.totalCostUsd > 0 && story.routing) {
             story.routing.estimatedCost = (story.routing.estimatedCost ?? 0) + debateResult.totalCostUsd;
           }
@@ -233,7 +241,6 @@ export async function runRectificationLoop(
       return rectificationPrompt;
     },
     runAttempt: async (attempt, rectificationPrompt) => {
-      const agentManager = opts.agentManager ?? _rectificationDeps.createManager(config);
       const defaultAgent = agentManager.getDefault();
 
       const complexity = story.routing?.complexity ?? "medium";
@@ -395,7 +402,7 @@ export async function runRectificationLoop(
         return false;
       }
 
-      const escalationManager = opts.agentManager ?? _rectificationDeps.createManager(config);
+      const escalationManager = agentManager;
       const agentName = escalatedAgent ?? story.routing?.agent ?? escalationManager.getDefault();
 
       if (!escalationManager.getAgent(agentName)) {

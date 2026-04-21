@@ -330,7 +330,7 @@ describe("runRectificationLoop — session context params", () => {
     expect(capturedConfig).toBe(config);
   });
 
-  test("passes config into fallback _rectificationDeps.getAgent during escalation", async () => {
+  test("passes config into _rectificationDeps.createManager during escalation", async () => {
     const config = makeConfig({
       models: {
         claude: {
@@ -428,9 +428,8 @@ describe("runRectificationLoop — session context params", () => {
 
     expect(result.succeeded).toBe(false);
     expect(verifyCallCount).toBeGreaterThanOrEqual(1);
-    expect(capturedConfigs.length).toBeGreaterThanOrEqual(2);
+    expect(capturedConfigs.length).toBeGreaterThanOrEqual(1);
     expect(capturedConfigs[0]).toBe(config);
-    expect(capturedConfigs[1]).toBe(config);
   });
 
   test("storyId is always passed from story.id regardless of featureName", async () => {

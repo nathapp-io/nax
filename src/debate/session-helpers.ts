@@ -1,4 +1,4 @@
-import { AgentManager, resolveDefaultAgent } from "../agents";
+import { createAgentManager, resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
@@ -70,6 +70,8 @@ export interface DebateSessionOptions {
   workdir?: string;
   featureName?: string;
   timeoutSeconds?: number;
+  /** AgentManager threaded from the pipeline stage — ensures unavailability state survives across debate calls. */
+  agentManager?: IAgentManager;
   /** Optional ReviewerSession for debate+dialogue mode (US-001/US-002) */
   reviewerSession?: import("../review/dialogue").ReviewerSession;
   /** Outer resolver context (without labeledProposals) — sub-modules complete it */
@@ -78,7 +80,7 @@ export interface DebateSessionOptions {
 
 /** Injectable deps for testability */
 export const _debateSessionDeps = {
-  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
+  createManager: createAgentManager,
   getSafeLogger: getSafeLogger as () => ReturnType<typeof getSafeLogger>,
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
 };
@@ -192,6 +194,7 @@ export async function resolveOutcome(
   resolverContext?: ResolverContext,
   promptSuffix?: string,
   debaters?: Debater[],
+  agentManager?: IAgentManager,
 ): Promise<ResolveOutcome> {
   const resolverConfig = stageConfig.resolver;
   const logger = _debateSessionDeps.getSafeLogger();
@@ -292,7 +295,7 @@ export async function resolveOutcome(
 
   if (resolverConfig.type === "synthesis") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
-    const manager = _debateSessionDeps.createManager(config ?? DEFAULT_CONFIG);
+    const manager = agentManager ?? _debateSessionDeps.createManager(config ?? DEFAULT_CONFIG);
     if (manager.getAgent(agentName) !== undefined) {
       const configModels = config?.models ?? DEFAULT_CONFIG.models;
       const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
@@ -339,7 +342,7 @@ export async function resolveOutcome(
 
   if (resolverConfig.type === "custom") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
-    const manager = _debateSessionDeps.createManager(config ?? DEFAULT_CONFIG);
+    const manager = agentManager ?? _debateSessionDeps.createManager(config ?? DEFAULT_CONFIG);
     const configModels = config?.models ?? DEFAULT_CONFIG.models;
     const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
     const judgeSessionName =

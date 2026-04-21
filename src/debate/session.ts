@@ -5,6 +5,7 @@
  * Delegates one-shot, stateful, and plan execution to focused sub-modules.
  */
 
+import type { IAgentManager } from "../agents";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { _debateSessionDeps } from "./session-helpers";
@@ -28,6 +29,7 @@ export class DebateSession {
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
+  private readonly agentManager: IAgentManager | undefined;
   private readonly reviewerSession: import("./session-helpers").DebateSessionOptions["reviewerSession"];
   private readonly resolverContextInput: import("./session-helpers").DebateSessionOptions["resolverContextInput"];
   private get timeoutMs(): number {
@@ -42,6 +44,7 @@ export class DebateSession {
     this.workdir = opts.workdir ?? process.cwd();
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+    this.agentManager = opts.agentManager;
     this.reviewerSession = opts.reviewerSession;
     this.resolverContextInput = opts.resolverContextInput;
   }
@@ -62,6 +65,7 @@ export class DebateSession {
             workdir: this.workdir,
             featureName: this.featureName,
             timeoutSeconds: this.timeoutSeconds,
+            agentManager: this.agentManager,
             reviewerSession: this.reviewerSession,
             resolverContextInput: this.resolverContextInput,
           },
@@ -85,6 +89,7 @@ export class DebateSession {
           timeoutMs: this.timeoutMs,
           workdir: this.workdir,
           featureName: this.featureName,
+          agentManager: this.agentManager,
           reviewerSession: this.reviewerSession,
           resolverContextInput: this.resolverContextInput,
         },
@@ -103,6 +108,7 @@ export class DebateSession {
           workdir: this.workdir,
           featureName: this.featureName,
           timeoutSeconds: this.timeoutSeconds,
+          agentManager: this.agentManager,
           reviewerSession: this.reviewerSession,
           resolverContextInput: this.resolverContextInput,
         },
@@ -119,6 +125,7 @@ export class DebateSession {
         timeoutMs: this.timeoutMs,
         workdir: this.workdir,
         featureName: this.featureName,
+        agentManager: this.agentManager,
         reviewerSession: this.reviewerSession,
         resolverContextInput: this.resolverContextInput,
       },
@@ -157,6 +164,7 @@ export class DebateSession {
         stage: this.stage,
         stageConfig: this.stageConfig,
         config: this.config,
+        agentManager: this.agentManager,
       },
       taskContext,
       outputFormat,
