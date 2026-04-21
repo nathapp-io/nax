@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
 import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import { makeMockAgentManager } from "../../helpers";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -18,34 +18,10 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 
 function makeMockManager(
   completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (_req: AgentRunRequest) => ({
-      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] },
-      fallbacks: [],
-    }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: completeFn
-      ? async (name, prompt, opts) => completeFn(name, prompt, opts)
-      : async () => ({ output: '{"passed":true}', costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
+) {
+  return makeMockAgentManager({
+    completeFn: completeFn ?? (async () => ({ output: '{"passed":true}', costUsd: 0, source: "fallback" as const })),
+  });
 }
 
 describe("DebateSession.runOneShot() session roles", () => {

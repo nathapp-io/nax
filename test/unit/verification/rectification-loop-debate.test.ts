@@ -15,6 +15,7 @@ import {
   makeConfig,
   makeStory,
 } from "./_rectification-debate-helpers";
+import { makeMockAgentManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // debate integration — debate.stages.rectification.enabled = false (default)
@@ -33,30 +34,24 @@ describe("runRectificationLoop — debate disabled (default)", () => {
   test("does not call DebateSession when debate.stages.rectification.enabled is false", async () => {
     const capturedPrompts: string[] = [];
 
-    const mockManager = {
-      getDefault: () => "claude",
-      getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-      run: mock(async (req: any) => {
+    const runFn = mock(async (agentName: string, opts: any) => {
+      if (opts?.prompt) {
+        capturedPrompts.push(opts.prompt);
+      }
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+    });
+    const mockManager = makeMockAgentManager({
+      runFn,
+      runAs: mock(async (agentName: string, req: any) => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+    });
 
     _rectificationDeps.createManager = mock(() => mockManager as any);
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
@@ -77,30 +72,24 @@ describe("runRectificationLoop — debate disabled (default)", () => {
   test("prompt does not contain Root Cause Analysis section when debate is disabled", async () => {
     const capturedPrompts: string[] = [];
 
-    const mockManager = {
-      getDefault: () => "claude",
-      getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-      run: mock(async (req: any) => {
+    const runFn = mock(async (agentName: string, opts: any) => {
+      if (opts?.prompt) {
+        capturedPrompts.push(opts.prompt);
+      }
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+    });
+    const mockManager = makeMockAgentManager({
+      runFn,
+      runAs: mock(async (agentName: string, req: any) => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+    });
 
     _rectificationDeps.createManager = mock(() => mockManager as any);
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
@@ -138,33 +127,27 @@ describe("runRectificationLoop — debate enabled", () => {
     const capturedPrompts: string[] = [];
     let completeCalls = 0;
 
-    const mockManager = {
-      getDefault: () => "claude",
-      getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-      run: mock(async (req: any) => {
+    const runFn = mock(async (agentName: string, opts: any) => {
+      if (opts?.prompt) {
+        capturedPrompts.push(opts.prompt);
+      }
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+    });
+    const mockManager = makeMockAgentManager({
+      runFn,
+      runAs: mock(async (agentName: string, req: any) => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      completeAs: mock(async () => {
+      completeFn: mock(async () => {
         completeCalls++;
-        return { result: { output: "The root cause is a missing null check.", estimatedCost: 0 }, fallbacks: [] };
+        return { output: "The root cause is a missing null check.", costUsd: 0, source: "primary" as const };
       }),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+    });
 
     _rectificationDeps.createManager = mock(() => mockManager as any);
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
@@ -185,30 +168,24 @@ describe("runRectificationLoop — debate enabled", () => {
     const capturedPrompts: string[] = [];
     const diagnosisOutput = "The root cause is a missing null check in the handler.";
 
-    const mockManager = {
-      getDefault: () => "claude",
-      getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-      run: mock(async (req: any) => {
+    const runFn = mock(async (agentName: string, opts: any) => {
+      if (opts?.prompt) {
+        capturedPrompts.push(opts.prompt);
+      }
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+    });
+    const mockManager = makeMockAgentManager({
+      runFn,
+      runAs: mock(async (agentName: string, req: any) => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      completeAs: mock(async () => ({ result: { output: diagnosisOutput, estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeFn: mock(async () => ({ output: diagnosisOutput, costUsd: 0, source: "primary" as const })),
+      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+    });
 
     _rectificationDeps.createManager = mock(() => mockManager as any);
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
@@ -230,30 +207,19 @@ describe("runRectificationLoop — debate enabled", () => {
     const capturedPrompts: string[] = [];
     const diagnosisOutput = "Root cause: missing validation.";
 
-    const mockManager = {
-      getDefault: () => "claude",
-      getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-      run: mock(async (req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
+    const mockManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: (name: string) => (name === "claude" ? {} as any : null),
+      runFn: async (_agentName: string, opts: any) => {
+        if (opts?.prompt) {
+          capturedPrompts.push(opts.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      completeAs: mock(async () => ({ result: { output: diagnosisOutput, estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      },
+      completeAsFn: async () => ({ result: { output: diagnosisOutput, estimatedCost: 0 }, fallbacks: [] }),
+      planAsFn: async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] }),
+      decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
+    });
 
     _rectificationDeps.createManager = mock(() => mockManager as any);
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
@@ -292,32 +258,21 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
   test("proceeds without diagnosis section when debate fails (all debaters error)", async () => {
     const capturedPrompts: string[] = [];
 
-    const mockManager = {
-      getDefault: () => "claude",
-      getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-      run: mock(async (req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
+    const mockManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: (name: string) => (name === "claude" ? {} as any : null),
+      runFn: async (_agentName: string, opts: any) => {
+        if (opts?.prompt) {
+          capturedPrompts.push(opts.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      completeAs: mock(async () => {
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      },
+      completeAsFn: async () => {
         throw new Error("Debate agent failed");
-      }),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      },
+      planAsFn: async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] }),
+      decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
+    });
 
     _rectificationDeps.createManager = mock(() => mockManager as any);
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
@@ -336,38 +291,24 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
   });
 
   test("rectification still runs and returns result even when debate fails", async () => {
-    const mockManager = {
-      getDefault: () => "claude",
-      getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-      run: mock(async (_req: any) => ({
+    const mockManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: (name: string) => (name === "claude" ? {} as any : null),
+      runFn: async () => ({
         success: true,
         exitCode: 0,
         output: "done",
         rateLimited: false,
         durationMs: 10,
         estimatedCost: 0,
-        fallbacks: [],
-      })),
-      runAs: mock(async (_agentName: string, _req: any) => ({
-        success: true,
-        exitCode: 0,
-        output: "done",
-        rateLimited: false,
-        durationMs: 10,
-        estimatedCost: 0,
-        fallbacks: [],
-      })),
-      completeAs: mock(async () => {
-        throw new Error("All debaters failed");
+        agentFallbacks: [] as unknown[],
       }),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeAsFn: async () => {
+        throw new Error("All debaters failed");
+      },
+      planAsFn: async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] }),
+      decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
+    });
 
     _rectificationDeps.createManager = mock(() => mockManager as any);
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));

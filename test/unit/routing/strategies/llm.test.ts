@@ -11,6 +11,7 @@ import type { AgentAdapter, CompleteOptions } from "../../../../src/agents/types
 import type { NaxConfig } from "../../../../src/config";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../../src/logger";
+import { makeAgentAdapter } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,7 +39,7 @@ function makeConfig(overrides: Partial<NaxConfig["routing"]["llm"]> = {}): NaxCo
 
 /** Creates a mock adapter that never resolves (simulates a hanging LLM call for timeout testing). */
 function makeHangingAdapter() {
-  return {
+  return makeAgentAdapter({
     name: "hanging-mock",
     displayName: "Hanging Mock",
     binary: "hanging-mock",
@@ -52,8 +53,45 @@ function makeHangingAdapter() {
     buildCommand: mock(() => []),
     plan: mock(() => Promise.reject(new Error("plan() should not be called"))),
     decompose: mock(() => Promise.reject(new Error("decompose() should not be called"))),
-    complete: mock((_prompt: string, _options?: CompleteOptions) => new Promise<string>(() => {})), // never resolves
-  } as AgentAdapter;
+    complete: mock((_prompt: string, _options?: CompleteOptions) => new Promise<string>(() => {})),
+  });
+}
+
+function makeAgentManagerWithMocks({
+  getDefaultAgent = "claude",
+  getAgent,
+  completeFn,
+}: {
+  getDefaultAgent?: string;
+  getAgent?: (_name: string) => AgentAdapter;
+  completeFn?: () => Promise<string>;
+}) {
+  const defaultAgent = getDefaultAgent;
+  return {
+    getDefault: () => defaultAgent,
+    getAgent: getAgent ?? (() => ({} as AgentAdapter)),
+    complete: completeFn
+      ? mock(async (_prompt: string, _opts?: any) => {
+          const result = await completeFn();
+          return { output: result, costUsd: 0, source: "primary" as const };
+        })
+      : mock(async () => ({ output: "", costUsd: 0, source: "primary" as const })),
+    completeAs: completeFn
+      ? mock(async (_name: string, _prompt: string, _opts?: any) => {
+          const result = await completeFn();
+          return { output: result, costUsd: 0, source: "primary" as const };
+        })
+      : mock(async (_name: string, _prompt: string, _opts?: any) => ({ output: "", costUsd: 0, source: "primary" as const })),
+    run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+    planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+    decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    on: () => {},
+  } as any;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,25 +117,11 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
-    const mockAgentManager = {
-      getDefault: () => "test-agent",
+    const mockAgentManager = makeAgentManagerWithMocks({
+      getDefaultAgent: "test-agent",
       getAgent: (_name: string) => mockAdapter,
-      complete: mock(async (_prompt: string, _options?: any) =>
-        new Promise<string>(() => {}) // never resolves
-      ),
-      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
-        new Promise<string>(() => {}) // never resolves
-      ),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeFn: () => new Promise(() => {}),
+    });
 
     const story = {
       id: "TEST-001",
@@ -137,25 +161,11 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
-    const mockAgentManager = {
-      getDefault: () => "test-agent",
+    const mockAgentManager = makeAgentManagerWithMocks({
+      getDefaultAgent: "test-agent",
       getAgent: (_name: string) => mockAdapter,
-      complete: mock(async (_prompt: string, _options?: any) =>
-        new Promise<string>(() => {}) // never resolves
-      ),
-      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
-        new Promise<string>(() => {}) // never resolves
-      ),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeFn: () => new Promise(() => {}),
+    });
 
     const story = {
       id: "BUG040",
@@ -184,7 +194,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
   test("adapter.complete() resolves on success path (no timeout)", async () => {
     const config = makeConfig({ timeoutMs: 5000 });
 
-    const successAdapter = {
+    const successAdapter = makeAgentAdapter({
       name: "success-mock",
       displayName: "Success Mock",
       binary: "success-mock",
@@ -208,41 +218,20 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
           }),
         ),
       ),
-    } as AgentAdapter;
+    });
 
-    const mockAgentManager = {
-      getDefault: () => "test-agent",
+    const SUCCESS_RESPONSE = JSON.stringify({
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "tdd-simple",
+      reasoning: "Simple test story",
+    });
+
+    const mockAgentManager = makeAgentManagerWithMocks({
+      getDefaultAgent: "test-agent",
       getAgent: (_name: string) => successAdapter,
-      complete: mock(async (_prompt: string, _options?: any) =>
-        Promise.resolve(
-          JSON.stringify({
-            complexity: "simple",
-            modelTier: "fast",
-            testStrategy: "tdd-simple",
-            reasoning: "Simple test story",
-          }),
-        ),
-      ),
-      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
-        Promise.resolve(
-          JSON.stringify({
-            complexity: "simple",
-            modelTier: "fast",
-            testStrategy: "tdd-simple",
-            reasoning: "Simple test story",
-          }),
-        ),
-      ),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeFn: () => Promise.resolve(SUCCESS_RESPONSE),
+    });
 
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
@@ -273,25 +262,11 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 50, retries: 0 });
 
-    const mockAgentManager = {
-      getDefault: () => "test-agent",
+    const mockAgentManager = makeAgentManagerWithMocks({
+      getDefaultAgent: "test-agent",
       getAgent: (_name: string) => mockAdapter,
-      complete: mock(async (_prompt: string, _options?: any) =>
-        new Promise<string>(() => {}) // never resolves
-      ),
-      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
-        new Promise<string>(() => {}) // never resolves
-      ),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    };
+      completeFn: () => new Promise(() => {}),
+    });
 
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();

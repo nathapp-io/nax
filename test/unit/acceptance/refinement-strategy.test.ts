@@ -18,15 +18,14 @@ import {
   refineAcceptanceCriteria,
 } from "../../../src/acceptance/refinement";
 import { AcceptancePromptBuilder } from "../../../src/prompts";
-import type { IAgentManager } from "../../../src/agents";
+import type { RefinementContext } from "../../../src/acceptance/types";
+import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 const buildRefinementPrompt = (
   criteria: string[],
   ctx: string,
   opts?: Parameters<AcceptancePromptBuilder["buildRefinementPrompt"]>[2],
 ) => new AcceptancePromptBuilder().buildRefinementPrompt(criteria, ctx, opts);
-import type { RefinementContext } from "../../../src/acceptance/types";
-import type { NaxConfig } from "../../../src/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -39,159 +38,9 @@ const SAMPLE_CRITERIA = [
 ];
 const CODEBASE_CONTEXT = "File tree:\nsrc/\n  acceptance/\n    refinement.ts\n";
 
-function makeConfig(): NaxConfig {
-  return {
-    version: 1,
-    models: {
-      claude: {
-        fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-        balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
-        powerful: { provider: "anthropic", model: "claude-opus-4-5" },
-      },
-    },
-    autoMode: {
-      enabled: true,
-      defaultAgent: "claude",
-      fallbackOrder: ["claude"],
-      complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      escalation: {
-        enabled: false,
-        tierOrder: [{ tier: "fast", attempts: 3 }],
-      },
-    },
-    analyze: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 5000,
-    },
-    routing: {
-      strategy: "keyword",
-      adaptive: { minSamples: 10, costThreshold: 0.8, fallbackStrategy: "keyword" },
-      llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
-    },
-    execution: {
-      maxIterations: 5,
-      iterationDelayMs: 0,
-      costLimit: 10,
-      sessionTimeoutSeconds: 60,
-      verificationTimeoutSeconds: 60,
-      maxStoriesPerFeature: 100,
-      rectification: {
-        enabled: false,
-        maxRetries: 1,
-        fullSuiteTimeoutSeconds: 60,
-        maxFailureSummaryChars: 1000,
-        abortOnIncreasingFailures: false,
-      },
-      regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true, maxRectificationAttempts: 1 },
-      contextProviderTokenBudget: 1000,
-      smartTestRunner: false,
-    },
-    quality: {
-      requireTypecheck: false,
-      requireLint: false,
-      requireTests: false,
-      commands: {},
-      forceExit: false,
-      detectOpenHandles: false,
-      detectOpenHandlesRetries: 0,
-      gracePeriodMs: 0,
-      dangerouslySkipPermissions: true,
-      drainTimeoutMs: 0,
-      shell: "/bin/sh",
-      stripEnvVars: [],
-    },
-    tdd: {
-      maxRetries: 1,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: true,
-      strategy: "off",
-      sessionTiers: { testWriter: "fast", verifier: "fast" },
-      testWriterAllowedPaths: [],
-      rollbackOnFailure: false,
-      greenfieldDetection: false,
-    },
-    constitution: { enabled: false, path: "constitution.md", maxTokens: 0 },
-    review: { enabled: false, checks: [], commands: {} },
-    plan: { model: "balanced", outputPath: "spec.md" },
-    acceptance: {
-      enabled: true,
-      maxRetries: 1,
-      generateTests: false,
-      testPath: "acceptance.test.ts",
-      model: "fast",
-      refinement: true,
-      redGate: false,
-    },
-    context: {
-      fileInjection: "disabled",
-      testCoverage: {
-        enabled: false,
-        detail: "names-and-counts",
-        maxTokens: 0,
-        testPattern: "**/*.test.ts",
-        scopeToStory: false,
-      },
-      autoDetect: { enabled: false, maxFiles: 0, traceImports: false },
-    },
-    interaction: {
-      plugin: "cli",
-      config: {},
-      defaults: { timeout: 1000, fallback: "escalate" },
-      triggers: {},
-    },
-    precheck: {
-      storySizeGate: { enabled: false, maxAcCount: 10, maxDescriptionLength: 5000, maxBulletPoints: 20 },
-    },
-    prompts: {},
-    decompose: {
-      trigger: "disabled",
-      maxAcceptanceCriteria: 6,
-      maxSubstories: 5,
-      maxSubstoryComplexity: "medium",
-      maxRetries: 1,
-      model: "balanced",
-    },
-  };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers for saving/restoring _refineDeps.createManager
 // ─────────────────────────────────────────────────────────────────────────────
-
-function makeMockRefineManager(
-  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: completeFn
-      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
-      : async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: completeFn
-      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: completeFn
-      ? async (name: string, opts: any) => completeFn("", opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
 
 let savedCreateManager: typeof _refineDeps.createManager;
 
@@ -212,7 +61,7 @@ describe("RefinementContext — optional testStrategy and testFramework fields",
     const ctx: RefinementContext = {
       storyId: STORY_ID,
       codebaseContext: CODEBASE_CONTEXT,
-      config: makeConfig(),
+      config: makeNaxConfig(),
     };
     expect(ctx.testStrategy).toBeUndefined();
     expect(ctx.testFramework).toBeUndefined();
@@ -222,7 +71,7 @@ describe("RefinementContext — optional testStrategy and testFramework fields",
     const ctx: RefinementContext = {
       storyId: STORY_ID,
       codebaseContext: CODEBASE_CONTEXT,
-      config: makeConfig(),
+      config: makeNaxConfig(),
       testStrategy: "component",
     };
     expect(ctx.testStrategy).toBe("component");
@@ -232,7 +81,7 @@ describe("RefinementContext — optional testStrategy and testFramework fields",
     const ctx: RefinementContext = {
       storyId: STORY_ID,
       codebaseContext: CODEBASE_CONTEXT,
-      config: makeConfig(),
+      config: makeNaxConfig(),
       testStrategy: "cli",
     };
     expect(ctx.testStrategy).toBe("cli");
@@ -242,7 +91,7 @@ describe("RefinementContext — optional testStrategy and testFramework fields",
     const ctx: RefinementContext = {
       storyId: STORY_ID,
       codebaseContext: CODEBASE_CONTEXT,
-      config: makeConfig(),
+      config: makeNaxConfig(),
       testStrategy: "e2e",
     };
     expect(ctx.testStrategy).toBe("e2e");
@@ -252,7 +101,7 @@ describe("RefinementContext — optional testStrategy and testFramework fields",
     const ctx: RefinementContext = {
       storyId: STORY_ID,
       codebaseContext: CODEBASE_CONTEXT,
-      config: makeConfig(),
+      config: makeNaxConfig(),
       testStrategy: "component",
       testFramework: "ink-testing-library",
     };
@@ -421,24 +270,26 @@ describe("buildRefinementPrompt — no testStrategy (backward compatibility)", (
 describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () => {
   test("propagates 'component' testStrategy into the prompt passed to adapter.complete()", async () => {
     saveCreateManager();
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let capturedPrompt = "";
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return {
-          output: JSON.stringify(
-            SAMPLE_CRITERIA.map((c) => ({
-              original: c,
-              refined: `Verify rendered: ${c}`,
-              testable: true,
-              storyId: STORY_ID,
-            })),
-          ),
-          costUsd: 0,
-          source: "mock" as const,
-        };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return {
+            output: JSON.stringify(
+              SAMPLE_CRITERIA.map((c) => ({
+                original: c,
+                refined: `Verify rendered: ${c}`,
+                testable: true,
+                storyId: STORY_ID,
+              })),
+            ),
+            costUsd: 0,
+            source: "mock" as const,
+          };
+        },
       }),
     );
 
@@ -461,24 +312,26 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
 
   test("propagates 'cli' testStrategy into the prompt passed to adapter.complete()", async () => {
     saveCreateManager();
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let capturedPrompt = "";
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return {
-          output: JSON.stringify(
-            SAMPLE_CRITERIA.map((c) => ({
-              original: c,
-              refined: `Verify stdout: ${c}`,
-              testable: true,
-              storyId: STORY_ID,
-            })),
-          ),
-          costUsd: 0,
-          source: "mock" as const,
-        };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return {
+            output: JSON.stringify(
+              SAMPLE_CRITERIA.map((c) => ({
+                original: c,
+                refined: `Verify stdout: ${c}`,
+                testable: true,
+                storyId: STORY_ID,
+              })),
+            ),
+            costUsd: 0,
+            source: "mock" as const,
+          };
+        },
       }),
     );
 
@@ -500,24 +353,26 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
 
   test("propagates testFramework into the prompt passed to adapter.complete()", async () => {
     saveCreateManager();
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let capturedPrompt = "";
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return {
-          output: JSON.stringify(
-            SAMPLE_CRITERIA.map((c) => ({
-              original: c,
-              refined: `Verify: ${c}`,
-              testable: true,
-              storyId: STORY_ID,
-            })),
-          ),
-          costUsd: 0,
-          source: "mock" as const,
-        };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return {
+            output: JSON.stringify(
+              SAMPLE_CRITERIA.map((c) => ({
+                original: c,
+                refined: `Verify: ${c}`,
+                testable: true,
+                storyId: STORY_ID,
+              })),
+            ),
+            costUsd: 0,
+            source: "mock" as const,
+          };
+        },
       }),
     );
 
@@ -535,25 +390,27 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
 
   test("prompt does not include strategy instructions when testStrategy is unset", async () => {
     saveCreateManager();
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let capturedPromptNoStrategy = "";
     let capturedPromptWithStrategy = "";
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt: string) => {
-        capturedPromptNoStrategy = prompt;
-        return {
-          output: JSON.stringify(
-            SAMPLE_CRITERIA.map((c) => ({
-              original: c,
-              refined: `Verify: ${c}`,
-              testable: true,
-              storyId: STORY_ID,
-            })),
-          ),
-          costUsd: 0,
-          source: "mock" as const,
-        };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPromptNoStrategy = prompt;
+          return {
+            output: JSON.stringify(
+              SAMPLE_CRITERIA.map((c) => ({
+                original: c,
+                refined: `Verify: ${c}`,
+                testable: true,
+                storyId: STORY_ID,
+              })),
+            ),
+            costUsd: 0,
+            source: "mock" as const,
+          };
+        },
       }),
     );
 
@@ -564,20 +421,22 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
     });
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt: string) => {
-        capturedPromptWithStrategy = prompt;
-        return {
-          output: JSON.stringify(
-            SAMPLE_CRITERIA.map((c) => ({
-              original: c,
-              refined: `Verify rendered: ${c}`,
-              testable: true,
-              storyId: STORY_ID,
-            })),
-          ),
-          costUsd: 0,
-          source: "mock" as const,
-        };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPromptWithStrategy = prompt;
+          return {
+            output: JSON.stringify(
+              SAMPLE_CRITERIA.map((c) => ({
+                original: c,
+                refined: `Verify rendered: ${c}`,
+                testable: true,
+                storyId: STORY_ID,
+              })),
+            ),
+            costUsd: 0,
+            source: "mock" as const,
+          };
+        },
       }),
     );
 

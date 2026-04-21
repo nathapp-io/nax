@@ -9,11 +9,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import { executeSourceFix } from "../../../src/acceptance/fix-executor";
 import type { DiagnosisResult } from "../../../src/acceptance/types";
-import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
 import type { AgentRunOptions } from "../../../src/agents";
 import { wrapAdapterAsManager } from "../../../src/agents/utils";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { NaxConfig } from "../../../src/config/schema";
+import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,43 +19,14 @@ import type { NaxConfig } from "../../../src/config/schema";
 
 let capturedPromptStore = "";
 
-function makeMockAgent(result?: Partial<AgentResult>): AgentAdapter {
-  const defaultResult: AgentResult = {
-    success: true,
-    exitCode: 0,
-    output: "",
-    rateLimited: false,
-    durationMs: 500,
-    estimatedCost: 0.01,
-  };
-  const mockRun = mock(async (opts: { prompt: string; workdir: string }) => {
-    capturedPromptStore = opts.prompt;
-    return { ...defaultResult, ...result };
-  });
-  return {
+function makeAgentWithPromptCapture(result?: Partial<{ output: string }>): ReturnType<typeof makeAgentAdapter> {
+  return makeAgentAdapter({
     name: "claude",
-    displayName: "Mock",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"],
-      maxContextTokens: 200000,
-      features: new Set(),
-    },
-    isInstalled: mock(async () => true),
-    run: mockRun,
-    buildCommand: mock(() => ["mock"]),
-    plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
-    decompose: mock(async () => ({ stories: [], output: "" })),
-    complete: mock(async () => ({ output: "{}", costUsd: 0, source: "exact" as const })),
-  } as unknown as AgentAdapter;
-}
-
-function makeConfig(): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
-    agent: { protocol: "acp" },
-  } as NaxConfig;
+    run: mock(async (opts: { prompt: string; workdir: string }) => {
+      capturedPromptStore = opts.prompt;
+      return { success: true, exitCode: 0, output: result?.output ?? "", rateLimited: false, durationMs: 500, estimatedCost: 0.01 };
+    }),
+  });
 }
 
 function makeDiagnosis(): DiagnosisResult {
@@ -76,13 +45,13 @@ const ACCEPTANCE_TEST_PATH = "/tmp/test/.nax/features/feat/.nax-acceptance.test.
 
 describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenced TypeScript block", () => {
   test("prompt contains testFileContent in a fenced typescript block when non-empty", async () => {
-    const agent = wrapAdapterAsManager(makeMockAgent());
+    const agent = wrapAdapterAsManager(makeAgentWithPromptCapture());
     const testContent = `import { test, expect } from "bun:test";\ntest("AC-1: foo", () => { expect(foo()).toBe(1); });`;
     await executeSourceFix(agent, {
       testOutput: "FAIL: AC-1",
       testFileContent: testContent,
       diagnosis: makeDiagnosis(),
-      config: makeConfig(),
+      config: makeNaxConfig(),
       workdir: "/tmp/test",
       featureName: "feat",
       storyId: "US-001",
@@ -95,13 +64,13 @@ describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenc
   });
 
   test("prompt includes fenced block that contains the exact test file content", async () => {
-    const agent = wrapAdapterAsManager(makeMockAgent());
+    const agent = wrapAdapterAsManager(makeAgentWithPromptCapture());
     const testContent = `describe("suite", () => { test("AC-1: bar", () => { expect(bar()).toBe(2); }); });`;
     await executeSourceFix(agent, {
       testOutput: "FAIL",
       testFileContent: testContent,
       diagnosis: makeDiagnosis(),
-      config: makeConfig(),
+      config: makeNaxConfig(),
       workdir: "/tmp/test",
       featureName: "feat",
       storyId: "US-001",
@@ -114,12 +83,12 @@ describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenc
   });
 
   test("prompt still includes the acceptance test path alongside the fenced content", async () => {
-    const agent = wrapAdapterAsManager(makeMockAgent());
+    const agent = wrapAdapterAsManager(makeAgentWithPromptCapture());
     await executeSourceFix(agent, {
       testOutput: "FAIL",
       testFileContent: "import { test } from 'bun:test'; test('AC-1: x', () => {});",
       diagnosis: makeDiagnosis(),
-      config: makeConfig(),
+      config: makeNaxConfig(),
       workdir: "/tmp/test",
       featureName: "feat",
       storyId: "US-001",
@@ -137,12 +106,12 @@ describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenc
 
 describe("AC-8 (US-002): when testFileContent is empty/undefined, only path is included (current behavior)", () => {
   test("prompt contains only acceptance test path when testFileContent is empty string", async () => {
-    const agent = wrapAdapterAsManager(makeMockAgent());
+    const agent = wrapAdapterAsManager(makeAgentWithPromptCapture());
     await executeSourceFix(agent, {
       testOutput: "FAIL: AC-1",
       testFileContent: "",
       diagnosis: makeDiagnosis(),
-      config: makeConfig(),
+      config: makeNaxConfig(),
       workdir: "/tmp/test",
       featureName: "feat",
       storyId: "US-001",
@@ -154,12 +123,12 @@ describe("AC-8 (US-002): when testFileContent is empty/undefined, only path is i
   });
 
   test("prompt contains only acceptance test path when testFileContent is undefined", async () => {
-    const agent = wrapAdapterAsManager(makeMockAgent());
+    const agent = wrapAdapterAsManager(makeAgentWithPromptCapture());
     await executeSourceFix(agent, {
       testOutput: "FAIL: AC-1",
       testFileContent: undefined,
       diagnosis: makeDiagnosis(),
-      config: makeConfig(),
+      config: makeNaxConfig(),
       workdir: "/tmp/test",
       featureName: "feat",
       storyId: "US-001",
@@ -171,12 +140,12 @@ describe("AC-8 (US-002): when testFileContent is empty/undefined, only path is i
   });
 
   test("omitting testFileContent is accepted (field is optional)", async () => {
-    const agent = wrapAdapterAsManager(makeMockAgent());
+    const agent = wrapAdapterAsManager(makeAgentWithPromptCapture());
     // Should not throw when testFileContent is absent
     const result = await executeSourceFix(agent, {
       testOutput: "FAIL",
       diagnosis: makeDiagnosis(),
-      config: makeConfig(),
+      config: makeNaxConfig(),
       workdir: "/tmp/test",
       featureName: "feat",
       storyId: "US-001",

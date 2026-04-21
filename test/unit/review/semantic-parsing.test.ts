@@ -13,8 +13,8 @@ import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents/manager-types";
+import type { AgentResult } from "../../../src/agents/types";
+import { makeAgentAdapter, makeMockAgentManager } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers (mirrors semantic.test.ts patterns)
@@ -36,47 +36,48 @@ const CONFIG: SemanticReviewConfig = {
   timeoutMs: 60_000,
 };
 
-function makeAgentManager(response: string, cost = 0): IAgentManager {
-  const adapter: AgentAdapter = {
-    name: "claude",
-    displayName: "Mock Agent",
-    binary: "mock",
-    capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as any,
-    isInstalled: mock(async () => true),
-    run: mock(async (_opts: any) => ({ output: response, estimatedCost: cost, success: true, exitCode: 0, rateLimited: false, durationMs: 100 } as AgentResult)),
-    buildCommand: mock(() => []),
-    plan: mock(async () => { throw new Error("not used"); }),
-    decompose: mock(async () => { throw new Error("not used"); }),
-    complete: mock(async () => ({ output: response, costUsd: cost, source: "mock" as const })),
-    closeSession: mock(async () => {}),
-    closePhysicalSession: mock(async () => {}),
-  } as unknown as AgentAdapter;
-
-  return {
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: mock(async (request: any) => {
-      const result = await adapter.run(request.runOptions);
-      return { result, fallbacks: [], bundle: request.bundle };
+function makeAgentManager(response: string, cost = 0) {
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runFn: async (_agent, opts) => ({
+      success: true,
+      exitCode: 0,
+      output: response,
+      rateLimited: false,
+      durationMs: 100,
+      estimatedCost: cost,
+      agentFallbacks: [],
     }),
-    completeWithFallback: mock(async () => ({ result: { output: response, costUsd: cost, source: "mock" as const }, fallbacks: [] })),
-    run: mock(async (request: any) => adapter.run(request.runOptions) as Promise<AgentResult>),
-    complete: mock(async () => ({ output: response, costUsd: cost, source: "mock" as const })),
-    completeAs: mock(async () => ({ output: response, costUsd: cost, source: "mock" as const })),
-    runAs: mock(async () => ({ output: response, estimatedCost: cost, success: true, exitCode: 0, rateLimited: false, durationMs: 100 } as AgentResult)),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-    getAgent: () => adapter,
-  } as unknown as IAgentManager;
+    completeFn: async () => ({ output: response, costUsd: cost, source: "mock" }),
+    runWithFallbackFn: async (request) => {
+      const result = {
+        success: true,
+        exitCode: 0,
+        output: response,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCost: cost,
+        agentFallbacks: [] as unknown[],
+      };
+      return { result, fallbacks: [], bundle: request.bundle };
+    },
+    completeWithFallbackFn: async () => ({ result: { output: response, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    runAsFn: async () => ({
+      success: true,
+      exitCode: 0,
+      output: response,
+      rateLimited: false,
+      durationMs: 100,
+      estimatedCost: cost,
+      agentFallbacks: [] as unknown[],
+    }),
+    completeAsFn: async () => ({ output: response, costUsd: cost, source: "mock" }),
+    planFn: async () => { throw new Error("not used"); },
+    planAsFn: async () => { throw new Error("not used"); },
+    decomposeFn: async () => { throw new Error("not used"); },
+    decomposeAsFn: async () => { throw new Error("not used"); },
+    getAgentFn: () => makeAgentAdapter(),
+  });
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {

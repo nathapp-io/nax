@@ -12,6 +12,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { DiagnosisResult } from "../../../../src/acceptance/types";
 import type { AgentAdapter, AgentResult } from "../../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
+import { makeAgentAdapter } from "../../../helpers";
 import type { AcceptanceFixConfig, NaxConfig } from "../../../../src/config/schema";
 import type { PipelineEventEmitter } from "../../../../src/pipeline/events";
 import type { AgentGetFn } from "../../../../src/pipeline/types";
@@ -36,7 +37,7 @@ function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
   const mockDecompose = mock(async () => ({ stories: [], output: "" }));
   const mockIsInstalled = mock(async () => true);
   const mockBuildCommand = mock(() => ["mock", "cmd"]);
-  return {
+  return makeAgentAdapter({
     name: "mock",
     displayName: "Mock Agent",
     binary: "mock",
@@ -51,7 +52,7 @@ function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
     plan: mockPlan,
     decompose: mockDecompose,
     complete: mockComplete,
-  } as unknown as AgentAdapter;
+  });
 }
 
 function makeFixConfig(strategy: "diagnose-first" | "implement-only" = "diagnose-first"): AcceptanceFixConfig {

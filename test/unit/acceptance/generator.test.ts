@@ -15,8 +15,8 @@ import {
   generateFromPRD,
 } from "../../../src/acceptance/generator";
 import type { GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acceptance/types";
-import type { IAgentManager } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { makeMockAgentManager, makeNaxConfig } from "../../../test/helpers";
 
 // ---------------------------------------------------------------------------
 // acceptanceTestFilename — US-001 AC-5
@@ -134,39 +134,6 @@ import { test, expect } from "bun:test";
 describe("feat", () => { test("AC-1: works", () => { expect(1).toBe(1); }); });
 \`\`\``;
 
-function makeMockGeneratorManager(
-  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: completeFn
-      ? async (prompt: string, opts: any) => { return { result: await completeFn(prompt, opts), fallbacks: [] }; }
-      : async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: completeFn
-      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: completeFn
-      ? async (name: string, opts: any) => completeFn("", opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
-
 function makeBaseOptions(overrides: Partial<GenerateFromPRDOptions> = {}): GenerateFromPRDOptions {
   return {
     featureName: "test-feature",
@@ -175,7 +142,7 @@ function makeBaseOptions(overrides: Partial<GenerateFromPRDOptions> = {}): Gener
     codebaseContext: "src/: index.ts",
     modelTier: "balanced",
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
-    config: DEFAULT_CONFIG,
+    config: makeNaxConfig(),
     ...overrides,
   };
 }
@@ -194,9 +161,11 @@ describe("generateFromPRD() prompt — implementationContext (US-002 AC-2 / AC-3
     origCreateManager = _generatorPRDDeps.createManager;
     origWriteFile = _generatorPRDDeps.writeFile;
     (_generatorPRDDeps as { createManager: unknown }).createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string, opts: any) => {
-        capturedPrompt = prompt;
-        return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string, _opts: any) => {
+          capturedPrompt = prompt;
+          return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
+        },
       }),
     );
     (_generatorPRDDeps as { writeFile: unknown }).writeFile = mock(async () => {});
@@ -265,9 +234,11 @@ describe("generateFromPRD() prompt — previousFailure (US-002 AC-4 / AC-5)", ()
     origCreateManager = _generatorPRDDeps.createManager;
     origWriteFile = _generatorPRDDeps.writeFile;
     (_generatorPRDDeps as { createManager: unknown }).createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string, opts: any) => {
-        capturedPrompt = prompt;
-        return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string, _opts: any) => {
+          capturedPrompt = prompt;
+          return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
+        },
       }),
     );
     (_generatorPRDDeps as { writeFile: unknown }).writeFile = mock(async () => {});

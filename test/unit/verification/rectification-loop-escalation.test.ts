@@ -19,6 +19,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import { getSafeLogger, initLogger, resetLogger } from "../../../src/logger";
+import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -98,38 +99,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return baseConfig;
 }
 
-function makeMockAgentManager(runSuccess = false) {
-  return {
-    getDefault: () => "claude",
-    getAgent: (name: string) => (name === "claude" ? ({} as any) : null),
-    run: async (_req: any) => ({
-      success: runSuccess,
-      exitCode: runSuccess ? 0 : 1,
-      output: runSuccess ? "ok" : "failed",
-      rateLimited: false,
-      durationMs: 10,
-      estimatedCost: 0,
-      fallbacks: [],
-    }),
-    runAs: async (_agentName: string, _req: any) => ({
-      success: runSuccess,
-      exitCode: runSuccess ? 0 : 1,
-      output: runSuccess ? "ok" : "failed",
-      rateLimited: false,
-      durationMs: 10,
-      estimatedCost: 0,
-      fallbacks: [],
-    }),
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    on: () => {},
-    completeAs: async () => ({ result: { output: "test", estimatedCost: 0 }, fallbacks: [] }),
-    planAs: async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] }),
-    decomposeAs: async () => ({ result: { stories: [] }, fallbacks: [] }),
-  };
-}
+
 
 function makeVerificationResult(success: boolean, output: string) {
   return {
@@ -195,7 +165,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   test("fires escalation when escalateOnExhaustion=true, enabled=true, loop exhausted with failures", async () => {
     const runCalls: Array<{ type: "run" | "runAs"; opts: AgentRunOptions }> = [];
 
-    const mockAgentManager = makeMockAgentManager(false);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: false,
+    exitCode: 1,
+    output: "failed",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
     const origRun = mockAgentManager.run.bind(mockAgentManager);
     const origRunAs = mockAgentManager.runAs.bind(mockAgentManager);
 
@@ -232,7 +213,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   test("escalated agent.run receives modelTier: 'powerful' when current tier is 'balanced'", async () => {
     const runCalls: Array<{ type: "run" | "runAs"; opts: AgentRunOptions }> = [];
 
-    const mockAgentManager = makeMockAgentManager(false);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: false,
+    exitCode: 1,
+    output: "failed",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
     const origRun = mockAgentManager.run.bind(mockAgentManager);
     const origRunAs = mockAgentManager.runAs.bind(mockAgentManager);
 
@@ -272,7 +264,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   test("no escalation and returns false when current tier is last in tierOrder", async () => {
     const runCalls: Array<{ type: "run" | "runAs"; opts: AgentRunOptions }> = [];
 
-    const mockAgentManager = makeMockAgentManager(false);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: false,
+    exitCode: 1,
+    output: "failed",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
     const origRun = mockAgentManager.run.bind(mockAgentManager);
 
     mockAgentManager.run = mock(async (req: any) => {
@@ -305,7 +308,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   test("returns true and logs info with both tier names when escalated verification succeeds", async () => {
     const runCalls: Array<{ type: "run" | "runAs"; opts: AgentRunOptions }> = [];
 
-    const mockAgentManager = makeMockAgentManager(true);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: true,
+    exitCode: 0,
+    output: "ok",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
     const origRun = mockAgentManager.run.bind(mockAgentManager);
     const origRunAs = mockAgentManager.runAs.bind(mockAgentManager);
 
@@ -352,7 +366,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   });
 
   test("returns false and logs warn with 'escalated rectification also failed' when escalated verification fails", async () => {
-    const mockAgentManager = makeMockAgentManager(true);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: true,
+    exitCode: 0,
+    output: "ok",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
 
     _rectificationDeps.createManager = mock(() => mockAgentManager as any);
 
@@ -381,7 +406,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   test("no escalation when escalateOnExhaustion=false, returns false", async () => {
     const runCalls: Array<{ type: "run" | "runAs"; opts: AgentRunOptions }> = [];
 
-    const mockAgentManager = makeMockAgentManager(false);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: false,
+    exitCode: 1,
+    output: "failed",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
     const origRun = mockAgentManager.run.bind(mockAgentManager);
 
     mockAgentManager.run = mock(async (req: any) => {
@@ -424,7 +460,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   test("no escalation when abortOnIncreasingFailures exits early (attempt < maxRetries)", async () => {
     const runCalls: Array<{ type: "run" | "runAs"; opts: AgentRunOptions }> = [];
 
-    const mockAgentManager = makeMockAgentManager(false);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: false,
+    exitCode: 1,
+    output: "failed",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
     const origRun = mockAgentManager.run.bind(mockAgentManager);
 
     mockAgentManager.run = mock(async (req: any) => {
@@ -478,7 +525,18 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   test("total agent.run invocations equals maxRetries + 1 when escalation fires", async () => {
     const runCalls: Array<{ type: "run" | "runAs"; opts: AgentRunOptions }> = [];
 
-    const mockAgentManager = makeMockAgentManager(false);
+    const mockAgentManager = makeMockAgentManager({
+  getDefaultAgent: "claude",
+  runFn: async (_agentName: string, _opts: AgentRunOptions) => ({
+    success: false,
+    exitCode: 1,
+    output: "failed",
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0,
+    agentFallbacks: [],
+  }),
+});
     const origRun = mockAgentManager.run.bind(mockAgentManager);
     const origRunAs = mockAgentManager.runAs.bind(mockAgentManager);
 

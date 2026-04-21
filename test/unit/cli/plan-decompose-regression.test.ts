@@ -13,39 +13,19 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import { parseDecomposeOutput } from "../../../src/agents/shared/decompose";
 import { mapDecomposedStoriesToUserStories } from "../../../src/prd/decompose-mapper";
-import type { IAgentManager } from "../../../src/agents";
-import type { NaxConfig } from "../../../src/config";
 import type { DecomposedStory } from "../../../src/agents/shared/types-extended";
-import type { PRD, UserStory } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({ decompose: async () => ({ stories: [] }) } as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: decomposeFn
+) {
+  return makeMockAgentManager({
+    decomposeAsFn: decomposeFn
       ? async (name: string, opts: any) => decomposeFn(name, opts)
-      : async () => ({ stories: [] }),
-  } as any;
+      : undefined,
+    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,20 +75,11 @@ function makeTargetStory(): UserStory {
 }
 
 function makePrd(story: UserStory = makeTargetStory()): PRD {
-  return {
-    project: "test-project",
-    feature: FEATURE,
-    branchName: "feat/test-feature",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    userStories: [story],
-  };
+  return makePRD({ feature: FEATURE, branchName: "feat/test-feature", userStories: [story] });
 }
 
 function makeConfig(): NaxConfig {
-  return {
-    agent: { default: "claude" },
-  } as NaxConfig;
+  return makeNaxConfig({ agent: { default: "claude" } });
 }
 
 function makeFakeScan() {

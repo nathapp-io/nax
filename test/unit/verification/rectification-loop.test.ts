@@ -9,11 +9,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentRunOptions } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents/manager-types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import { getSafeLogger, initLogger, resetLogger } from "../../../src/logger";
+import { makeMockAgentManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -107,26 +107,23 @@ describe("runRectificationLoop — session context params", () => {
   test("passes featureName, storyId, and sessionRole='implementer' to agent.run()", async () => {
     const capturedRunOptions: Array<{ type: "run" | "runAs"; opts: any }> = [];
 
-    const mockAgentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => ({} as any),
-      run: mock(async (req: any) => {
-        capturedRunOptions.push({ type: "run", opts: req.runOptions });
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
+    const runFn = mock(async (agentName: string, opts: any) => {
+      capturedRunOptions.push({ type: "run", opts: { ...opts, agent: agentName } });
+      return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+    });
+    const runWithFallbackFn = mock(async (req: any) => ({ result: await runFn(req.runOptions.agent, req.runOptions), fallbacks: [] }));
+
+    const mockAgentManager = makeMockAgentManager({
+      runFn,
+      runWithFallbackFn,
+      runAs: mock(async (agentName: string, req: any) => {
+        capturedRunOptions.push({ type: "runAs", opts: { ...req.runOptions, agent: agentName } });
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        capturedRunOptions.push({ type: "runAs", opts: req.runOptions });
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
-      }),
-      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    } as unknown as IAgentManager;
+      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+    });
 
     _rectificationDeps.createManager = mock((_config: NaxConfig) => mockAgentManager);
 
@@ -169,31 +166,13 @@ describe("runRectificationLoop — session context params", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    const mockAgentManager = {
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-      run: mock(async (req: any) => {
-        capturedOptions.push(req.runOptions);
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+    const mockAgentManager = makeMockAgentManager({
+      getAgentFn: (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+      runFn: mock(async (_agentName: string, opts: AgentRunOptions) => {
+        capturedOptions.push(opts);
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager;
+    });
 
     _rectificationDeps.createManager = mock((_config: NaxConfig) => mockAgentManager);
 
@@ -221,28 +200,12 @@ describe("runRectificationLoop — session context params", () => {
   });
 
   test("returns false when agent not found", async () => {
-    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => undefined),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager));
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        getAgentFn: () => undefined,
+        runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      }),
+    );
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
@@ -286,28 +249,10 @@ describe("runRectificationLoop — session context params", () => {
 
     _rectificationDeps.createManager = mock((cfg: NaxConfig) => {
       capturedConfig = cfg;
-      return {
-        getDefault: () => "claude",
-        getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-        run: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-        complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-        isUnavailable: () => false,
-        markUnavailable: () => {},
-        reset: () => {},
-        validateCredentials: async () => {},
-        events: { on: () => {} } as any,
-        resolveFallbackChain: () => [],
-        shouldSwap: () => false,
-        nextCandidate: () => null,
-        runWithFallback: mock(async (req: any) => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-        completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-        completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-        runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-        plan: async () => ({ specContent: "" }),
-        planAs: async () => ({ specContent: "" }),
-        decompose: async () => ({ stories: [] }),
-        decomposeAs: async () => ({ stories: [] }),
-      } as unknown as IAgentManager;
+      return makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      });
     });
 
     _rectificationDeps.runVerification = mock(async () => ({
@@ -381,28 +326,10 @@ describe("runRectificationLoop — session context params", () => {
 
     _rectificationDeps.createManager = mock((cfg: NaxConfig) => {
       if (cfg) capturedConfigs.push(cfg);
-      return {
-        getDefault: () => "claude",
-        getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-        run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-        complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-        isUnavailable: () => false,
-        markUnavailable: () => {},
-        reset: () => {},
-        validateCredentials: async () => {},
-        events: { on: () => {} } as any,
-        resolveFallbackChain: () => [],
-        shouldSwap: () => false,
-        nextCandidate: () => null,
-        runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-        completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-        completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-        runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-        plan: async () => ({ specContent: "" }),
-        planAs: async () => ({ specContent: "" }),
-        decompose: async () => ({ stories: [] }),
-        decomposeAs: async () => ({ stories: [] }),
-      } as unknown as IAgentManager;
+      return makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      });
     });
 
     _rectificationDeps.escalateTier = mock(() => ({ tier: "balanced", agent: "claude" }));
@@ -447,34 +374,19 @@ describe("runRectificationLoop — session context params", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-      run: mock(async (req: any) => {
-        capturedOptions.push(req.runOptions);
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn: mock(async (agentName: string, opts: AgentRunOptions) => {
+          capturedOptions.push(opts);
+          return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        }),
+        runAs: mock(async (_name: string, req: any) => {
+          capturedOptions.push(req.runOptions);
+          return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        }),
       }),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async (_name: string, req: any) => {
-        capturedOptions.push(req.runOptions);
-        return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 };
-      }),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager));
+    );
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
@@ -546,28 +458,13 @@ describe("runRectificationLoop — logging failing test names", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager));
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+        runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      }),
+    );
 
     const retryOutput = `
 test/example.test.ts:
@@ -600,7 +497,6 @@ Error: Expected true to be false
       testOutput: "✗ test [1ms]\n(fail) test [1ms]\nerror: failed\n1 passed, 1 failed [1ms]",
     });
 
-    // Verify warn was called with "still failing after attempt" message
     const failingLog = capturedWarns.find((w) =>
       String(w.message).includes("still failing after attempt"),
     );
@@ -624,28 +520,13 @@ Error: Expected true to be false
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager));
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+        runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      }),
+    );
 
     // Create test output with 15 failures
     let retryOutput = "test/example.test.ts:\n";
@@ -708,28 +589,13 @@ Error: Test failed
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager));
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+        runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      }),
+    );
 
     // Retry output with failures but no structured (fail) blocks
     // Parser will count ✗ marks but won't parse detailed failure info
@@ -780,28 +646,13 @@ test/example.test.ts:
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager));
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+        runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      }),
+    );
 
     const retryOutput = `
 test/example.test.ts:
@@ -852,31 +703,17 @@ Error: Test failed
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
-      getDefault: () => "claude",
-      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
-      run: mock(async () => {
-        agentRunCount += 1;
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+    const runFn = mock(async () => {
+      agentRunCount += 1;
+      return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+    });
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+        runFn,
+        runAs: runFn,
       }),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager));
+    );
 
     let verificationCalls = 0;
     _rectificationDeps.runVerification = mock(async () => {

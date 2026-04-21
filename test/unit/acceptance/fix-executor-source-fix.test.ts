@@ -13,51 +13,12 @@ import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents";
 import { wrapAdapterAsManager } from "../../../src/agents/utils";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { NaxConfig } from "../../../src/config/schema";
+import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
 import { resolveModelForAgent } from "../../../src/config/schema-types";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
-  const defaultResult: AgentResult = {
-    success: true,
-    exitCode: 0,
-    output: "console.log('fix applied');",
-    rateLimited: false,
-    durationMs: 1000,
-    estimatedCost: 0.05,
-  };
-  const mockRun = mock(async () => ({ ...defaultResult, ...result }));
-  const mockComplete = mock(async () => ({ output: "{}", costUsd: 0.01, source: "exact" as const }));
-  const mockPlan = mock(async () => ({ stories: [], output: "", specContent: "" }));
-  const mockDecompose = mock(async () => ({ stories: [], output: "" }));
-  const mockIsInstalled = mock(async () => true);
-  const mockBuildCommand = mock(() => ["mock", "cmd"]);
-  return {
-    name: "claude",
-    displayName: "Mock Agent",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"],
-      maxContextTokens: 200000,
-      features: new Set(["tdd", "review", "refactor"]),
-    },
-    isInstalled: mockIsInstalled,
-    run: mockRun,
-    buildCommand: mockBuildCommand,
-    plan: mockPlan,
-    decompose: mockDecompose,
-    complete: mockComplete,
-  } as unknown as AgentAdapter;
-}
-
-function getRunMockCalls(agent: IAgentManager): Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> {
-  const adapter = wrappedAdapterMap.get(agent as any) as AgentAdapter;
-  return (adapter.run as unknown as { mock: { calls: Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> } }).mock.calls;
-}
 
 const wrappedAdapterMap = new WeakMap<IAgentManager, AgentAdapter>();
 
@@ -67,27 +28,24 @@ function toManager(agent: AgentAdapter): IAgentManager {
   return mgr;
 }
 
-function makeMinimalConfig(overrides: Partial<NaxConfig["acceptance"]> = {}): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    models: {
-      claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
-    },
-    autoMode: { ...DEFAULT_CONFIG.autoMode },
-    routing: { ...DEFAULT_CONFIG.routing },
-    execution: { ...DEFAULT_CONFIG.execution },
-    quality: { ...DEFAULT_CONFIG.quality },
-    tdd: { ...DEFAULT_CONFIG.tdd },
-    constitution: { ...DEFAULT_CONFIG.constitution },
-    review: { ...DEFAULT_CONFIG.review },
-    plan: { ...DEFAULT_CONFIG.plan },
-    acceptance: {
-      ...DEFAULT_CONFIG.acceptance,
-      ...overrides,
-    },
-    context: { ...DEFAULT_CONFIG.context },
-    agent: { protocol: "acp" },
-  } as NaxConfig;
+function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
+  return makeAgentAdapter({
+    name: "claude",
+    run: mock(async () => ({
+      success: true,
+      exitCode: 0,
+      output: "console.log('fix applied');",
+      rateLimited: false,
+      durationMs: 1000,
+      estimatedCost: 0.05,
+      ...result,
+    })),
+  });
+}
+
+function getRunMockCalls(agent: IAgentManager): Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> {
+  const adapter = wrappedAdapterMap.get(agent as any) as AgentAdapter;
+  return (adapter.run as unknown as { mock: { calls: Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> } }).mock.calls;
 }
 
 function makeDiagnosis(
@@ -108,7 +66,7 @@ function makeDiagnosis(
 describe("AC-1: executeSourceFix receives agent adapter via parameter", () => {
   test("never calls bare getAgent() — uses passed adapter", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL: expected 3 but got 4",
       testFileContent: "test content",
@@ -123,7 +81,7 @@ describe("AC-1: executeSourceFix receives agent adapter via parameter", () => {
   });
 
   test("throws when agent is undefined", () => {
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     expect(
       () => executeSourceFix(undefined as unknown as IAgentManager, {
         testOutput: "FAIL",
@@ -140,7 +98,7 @@ describe("AC-1: executeSourceFix receives agent adapter via parameter", () => {
 
   test("accepts valid AgentAdapter instance", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const result = await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -162,7 +120,7 @@ describe("AC-1: executeSourceFix receives agent adapter via parameter", () => {
 describe("AC-2: executeSourceFix calls agent.run() with sessionRole 'source-fix'", () => {
   test("calls agent.run() not agent.complete()", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -179,7 +137,7 @@ describe("AC-2: executeSourceFix calls agent.run() with sessionRole 'source-fix'
 
   test("passes sessionRole 'source-fix' to agent.run()", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -196,7 +154,7 @@ describe("AC-2: executeSourceFix calls agent.run() with sessionRole 'source-fix'
 
   test("agent.complete() is not called during executeSourceFix", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -225,7 +183,7 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix p
 
   test("executeSourceFix passes featureName, storyId, and sessionRole='source-fix' to adapter", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -244,7 +202,7 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix p
 
   test("session includes storyId when provided (via featureName+storyId+sessionRole combo)", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -262,7 +220,7 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix p
 
   test("session name is visible in acpx list when protocol is ACP (adapter derives handle from featureName+storyId+sessionRole)", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     expect(config.agent?.protocol).toBe("acp");
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
@@ -288,7 +246,7 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-source-fix p
 describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", () => {
   test("uses config.acceptance.fix.fixModel tier (balanced by default)", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     expect(config.acceptance.fix.fixModel).toBe("balanced");
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
@@ -312,7 +270,7 @@ describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", ()
 
   test("passes resolved model metadata to adapter rather than a raw unresolved tier string", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -331,12 +289,14 @@ describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", ()
 
   test("uses custom fixModel when specified in config", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig({
-      fix: {
-        diagnoseModel: "fast",
-        fixModel: "powerful",
-        strategy: "diagnose-first",
-        maxRetries: 2,
+    const config = makeNaxConfig({
+      acceptance: {
+        fix: {
+          diagnoseModel: "fast",
+          fixModel: "powerful",
+          strategy: "diagnose-first",
+          maxRetries: 2,
+        },
       },
     });
     expect(config.acceptance.fix.fixModel).toBe("powerful");
@@ -368,7 +328,7 @@ describe("AC-4: executeSourceFix resolves fixModel via resolveModelForAgent", ()
 describe("AC-5: executeSourceFix prompt contains failing test output and diagnosis reasoning", () => {
   test("prompt string contains 'failing test' or test output", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const testOutput = "FAIL: expected 3 but got 4";
     await executeSourceFix(toManager(mockAgent), {
       testOutput,
@@ -386,7 +346,7 @@ describe("AC-5: executeSourceFix prompt contains failing test output and diagnos
 
   test("prompt string contains diagnosis reasoning", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const reasoning = "null pointer in add() function at line 42";
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
@@ -404,7 +364,7 @@ describe("AC-5: executeSourceFix prompt contains failing test output and diagnos
 
   test("prompt string contains acceptance test file path", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const testPath = "/tmp/test/acceptance.test.ts";
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
@@ -422,7 +382,7 @@ describe("AC-5: executeSourceFix prompt contains failing test output and diagnos
 
   test("prompt contains instruction to fix source and NOT modify test file", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -445,7 +405,7 @@ describe("AC-5: executeSourceFix prompt contains failing test output and diagnos
 describe("AC-6: executeSourceFix does not use pipeline", () => {
   test("executeSourceFix completes without calling pipeline", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const result = await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -462,7 +422,7 @@ describe("AC-6: executeSourceFix does not use pipeline", () => {
 
   test("executeSourceFix does not use agent.complete() for the main fix session", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -484,7 +444,7 @@ describe("AC-6: executeSourceFix does not use pipeline", () => {
 describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", () => {
   test("return type has success and cost fields", async () => {
     const mockAgent = makeMockAgentAdapter({ estimatedCost: 0.07 });
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const result = await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -501,7 +461,7 @@ describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", ()
 
   test("cost value comes from result.estimatedCost", async () => {
     const mockAgent = makeMockAgentAdapter({ estimatedCost: 0.12 });
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const result = await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -517,7 +477,7 @@ describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", ()
 
   test("success is true when agent.run() succeeds", async () => {
     const mockAgent = makeMockAgentAdapter({ success: true, estimatedCost: 0.05 });
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const result = await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -533,7 +493,7 @@ describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", ()
 
   test("success is false when agent.run() fails", async () => {
     const mockAgent = makeMockAgentAdapter({ success: false, estimatedCost: 0.05 });
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const result = await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -555,7 +515,7 @@ describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", ()
 describe("AC-8: When config.agent.protocol is ACP, session appears in acpx list", () => {
   test("session name follows nax-<hash>-<feature>-<storyId>-source-fix pattern for ACP", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     config.agent = { protocol: "acp" };
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
@@ -577,7 +537,7 @@ describe("AC-8: When config.agent.protocol is ACP, session appears in acpx list"
 
   test("ACP protocol ensures session appears in acpx list (adapter derives handle from featureName+storyId+sessionRole)", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     config.agent = { protocol: "acp" };
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
@@ -604,7 +564,7 @@ describe("AC-8: When config.agent.protocol is ACP, session appears in acpx list"
 describe("Edge cases — executeSourceFix", () => {
   test("works without optional featureName", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -619,7 +579,7 @@ describe("Edge cases — executeSourceFix", () => {
 
   test("works without optional storyId", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -634,7 +594,7 @@ describe("Edge cases — executeSourceFix", () => {
 
   test("handles verdict=test_bug gracefully", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -650,7 +610,7 @@ describe("Edge cases — executeSourceFix", () => {
 
   test("handles verdict=both gracefully", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     await executeSourceFix(toManager(mockAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -666,7 +626,7 @@ describe("Edge cases — executeSourceFix", () => {
 
   test("handles low confidence diagnosis", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig();
+    const config = makeNaxConfig();
     const diagnosis: DiagnosisResult = {
       verdict: "source_bug",
       reasoning: "unclear issue",

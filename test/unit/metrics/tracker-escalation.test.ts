@@ -21,7 +21,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import {
   _tierEscalationDeps,
   handleTierEscalation,
@@ -30,6 +29,7 @@ import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
+import { makeNaxConfig } from "../../helpers";
 
 const WORKDIR = `/tmp/nax-escalation-test-${randomUUID()}`;
 const PRD_PATH = `/tmp/prd-${randomUUID()}.json`;
@@ -67,28 +67,22 @@ function makePRD(stories: UserStory[]): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    autoMode: {
-      ...DEFAULT_CONFIG.autoMode,
-      escalation: {
-        enabled: true,
-        tierOrder: [
-          { tier: "fast", attempts: 1 },
-          { tier: "balanced", attempts: 3 },
-          { tier: "powerful", attempts: 2 },
-        ],
-        escalateEntireBatch: false,
-      },
-    },
-  } as NaxConfig;
-}
-
 /** Build a minimal PipelineContext. Cast lets overrides include future fix fields. */
 function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): PipelineContext {
   return {
-    config: makeConfig(),
+    config: makeNaxConfig({
+      autoMode: {
+        escalation: {
+          enabled: true,
+          tierOrder: [
+            { tier: "fast", attempts: 1 },
+            { tier: "balanced", attempts: 3 },
+            { tier: "powerful", attempts: 2 },
+          ],
+          escalateEntireBatch: false,
+        },
+      },
+    }),
     prd: makePRD([story]),
     story,
     stories: [story],
@@ -428,7 +422,19 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
             reviewFindings: undefined,
           },
         },
-        config: makeConfig(),
+        config: makeNaxConfig({
+          autoMode: {
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", attempts: 1 },
+                { tier: "balanced", attempts: 3 },
+                { tier: "powerful", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
+            },
+          },
+        }),
         prd: makePRD([baseStory]),
         prdPath: PRD_PATH,
         featureDir: undefined,

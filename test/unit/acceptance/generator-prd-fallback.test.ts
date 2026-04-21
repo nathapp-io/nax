@@ -19,6 +19,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
 import { withDepsRestore } from "../../helpers/deps";
 import { makeTempDir } from "../../helpers/temp";
+import { makeMockAgentManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -216,34 +217,21 @@ ${tests}
 function makeMockGeneratorManager(
   completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
 ): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: completeFn
-      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
-      : async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: completeFn
-      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: completeFn
-      ? async (name: string, opts: any) => completeFn("", opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    completeFn: completeFn
+      ? async (_agentName: string, prompt: string, opts: any) => completeFn(prompt, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    runFn: async () => ({
+      success: true,
+      exitCode: 0,
+      output: "",
+      rateLimited: false,
+      durationMs: 0,
+      estimatedCost: 0,
+      agentFallbacks: [] as unknown[],
+    }),
+  });
 }
 
 withDepsRestore(_generatorPRDDeps, ["createManager", "writeFile", "backupFile"]);
@@ -447,33 +435,12 @@ describe("backward compatibility — generateAcceptanceTests", () => {
 - AC-2: System should return 200 on success
 `;
 
-    const mockAdapter = {
-      getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "mock" as const }) } as any),
-      getDefault: () => "claude",
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [] as any[],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-      completeWithFallback: async () => ({ result: { output: `import { describe, test, expect } from "bun:test";
+const mockAdapter = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      completeFn: async () => ({
+        output: `import { describe, test, expect } from "bun:test";
 
-describe("test-feature - Acceptance Tests", () {
-  test("AC-1: System should handle empty input", async () => {
-    expect(true).toBe(true);
-  });
-  test("AC-2: System should return 200 on success", async () => {
-    expect(true).toBe(true);
-  });
-});
-`, costUsd: 0, source: "mock" as const }, fallbacks: [] }),
-      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-      complete: async () => `import { describe, test, expect } from "bun:test";
-
-describe("test-feature - Acceptance Tests", () {
+describe("test-feature - Acceptance Tests", () => {
   test("AC-1: System should handle empty input", async () => {
     expect(true).toBe(true);
   });
@@ -482,13 +449,19 @@ describe("test-feature - Acceptance Tests", () {
   });
 });
 `,
-      completeAs: async () => ({ output: "", costUsd: 0, source: "mock" as const }),
-      runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager;
+        costUsd: 0,
+        source: "mock" as const,
+      }),
+      runFn: async () => ({
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+        agentFallbacks: [] as unknown[],
+      }),
+    });
 
     const result = await generateAcceptanceTests(mockAdapter, {
       specContent,
@@ -512,28 +485,23 @@ describe("test-feature - Acceptance Tests", () {
 - AC-3: Third criterion
 `;
 
-    const mockAdapter2 = {
-      getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "mock" as const }) } as any),
-      getDefault: () => "claude",
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      events: { on: () => {} } as any,
-      resolveFallbackChain: () => [] as any[],
-      shouldSwap: () => false,
-      nextCandidate: () => null,
-      runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-      completeWithFallback: async () => ({ result: { output: `import { describe, test, expect } from "bun:test"; describe("f", () => {});`, costUsd: 0, source: "mock" as const }, fallbacks: [] }),
-      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-      complete: async () => `import { describe, test, expect } from "bun:test"; describe("f", () => {});`,
-      completeAs: async () => ({ output: "", costUsd: 0, source: "mock" as const }),
-      runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-      plan: async () => ({ specContent: "" }),
-      planAs: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      decomposeAs: async () => ({ stories: [] }),
-    } as unknown as IAgentManager;
+    const mockAdapter2 = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      completeFn: async () => ({
+        output: `import { describe, test, expect } from "bun:test"; describe("f", () => {});`,
+        costUsd: 0,
+        source: "mock" as const,
+      }),
+      runFn: async () => ({
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+        agentFallbacks: [] as unknown[],
+      }),
+    });
 
     const result = await generateAcceptanceTests(mockAdapter2, {
       specContent,
