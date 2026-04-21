@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps } from "../../../src/utils/git";
 import { withDepsRestore } from "../../helpers/deps";
 import {
+  _gitUtilDeps,
   buildSmartTestCommand,
   getChangedNonTestFiles,
   getChangedTestFiles,
@@ -233,6 +234,13 @@ describe("importGrepFallback", () => {
 
 describe("getChangedNonTestFiles", () => {
   withDepsRestore(_gitDeps, ["spawn"]);
+  withDepsRestore(_gitUtilDeps, ["getGitRoot"]);
+
+  // Default: git root lookup returns null — no extra prefix stripping.
+  beforeEach(() => {
+    _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
+  });
+
   afterEach(() => {
     mock.restore();
   });
@@ -376,6 +384,54 @@ describe("getChangedNonTestFiles", () => {
     expect(result).toContain("packages/lib/src/util.test.ts");
     expect(result).toContain("packages/lib/pkg/util.go");
   });
+
+  // Issue #565 — git root ≠ project root
+  test("filters correctly when project root is nested inside git root", async () => {
+    // Scenario: nax-dogfood is the git root, fixtures/monorepo-tiny is the project root.
+    // git diff returns paths relative to the git root, so they include the extra prefix.
+    const gitOutput = [
+      "fixtures/monorepo-tiny/packages/lib/src/util.ts",
+      "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
+      "other-package/src/index.ts",
+    ].join("\n");
+
+    _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedNonTestFiles(
+      "/big-repo/fixtures/monorepo-tiny",
+      undefined,
+      "packages/lib",
+      [/\.test\.ts$/],
+      undefined,
+      "/big-repo/fixtures/monorepo-tiny", // repoRoot
+    );
+
+    expect(result).toEqual(["packages/lib/src/util.ts"]);
+  });
+
+  test("behavior unchanged when project root equals git root", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.ts",
+      "packages/lib/src/util.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    // default stub already returns workdir as git root — no override needed
+
+    const result = await getChangedNonTestFiles(
+      "/fake/repo",
+      undefined,
+      "packages/lib",
+      [/\.test\.ts$/],
+      undefined,
+      "/fake/repo", // repoRoot equals git root — no offset
+    );
+
+    expect(result).toEqual(["packages/lib/src/util.ts"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -384,6 +440,13 @@ describe("getChangedNonTestFiles", () => {
 
 describe("getChangedTestFiles", () => {
   withDepsRestore(_gitDeps, ["spawn"]);
+  withDepsRestore(_gitUtilDeps, ["getGitRoot"]);
+
+  // Default: git root lookup returns null — no extra prefix stripping.
+  beforeEach(() => {
+    _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
+  });
+
   afterEach(() => {
     mock.restore();
   });
@@ -508,5 +571,51 @@ describe("getChangedTestFiles", () => {
     );
 
     expect(result).toEqual(["/repo/packages/backend/pkg/auth/auth_test.go"]);
+  });
+
+  // Issue #565 — git root ≠ project root
+  test("filters correctly when project root is nested inside git root", async () => {
+    // git diff returns paths relative to the true git root (big-repo),
+    // but packagePrefix is relative to the project root (fixtures/monorepo-tiny).
+    const gitOutput = [
+      "fixtures/monorepo-tiny/packages/lib/src/util.ts",
+      "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
+      "other/src/index.test.ts",
+    ].join("\n");
+
+    _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedTestFiles(
+      "/big-repo/fixtures/monorepo-tiny",
+      "/big-repo/fixtures/monorepo-tiny",
+      undefined,
+      "packages/lib",
+      [/\.test\.ts$/],
+    );
+
+    expect(result).toEqual(["/big-repo/fixtures/monorepo-tiny/packages/lib/src/util.test.ts"]);
+  });
+
+  test("behavior unchanged when project root equals git root", async () => {
+    const gitOutput = [
+      "packages/lib/src/util.ts",
+      "packages/lib/src/util.test.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    // default stub already returns workdir as git root — no override needed
+
+    const result = await getChangedTestFiles(
+      "/fake/repo",
+      "/fake/repo",
+      undefined,
+      "packages/lib",
+      [/\.test\.ts$/],
+    );
+
+    expect(result).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
   });
 });

@@ -141,6 +141,7 @@ export const verifyStage: PipelineStage = {
           ctx.story.workdir,
           [...resolvedPatterns.regex],
           ctx.naxIgnoreIndex,
+          ctx.projectDir,
         );
 
         // Pass 1: path convention mapping — pass packagePrefix and testFilePatterns for language-agnostic suffix derivation.
