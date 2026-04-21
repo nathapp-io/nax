@@ -27,34 +27,31 @@ const strict = process.argv.includes("--strict");
  * These are skipped entirely — no false positives from residual pattern strings.
  */
 const SKIP_FILES = new Set([
-  // Pattern D (AgentManager) - previously migrated
+  // Pattern D (AgentManager) - PERMANENT: no inline getDefault pattern
   "test/unit/pipeline/stages/execution-workdir.test.ts",
   "test/unit/pipeline/stages/execution-agent-routing.test.ts",
   "test/unit/pipeline/stages/execution-tdd-simple.test.ts",
   "test/unit/pipeline/stages/execution-session-role.test.ts",
   "test/unit/pipeline/stages/execution-ambiguity.test.ts",
-  "test/unit/pipeline/stages/execution-manager-wiring.test.ts",
   "test/unit/pipeline/stages/execution-merge-conflict.test.ts",
-  "test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts",
   "test/unit/storyid-events.test.ts",
   "test/unit/agents/manager-iface-run.test.ts",
   "test/unit/agents/manager-credentials.test.ts",
-  "test/unit/debate/resolvers.test.ts",
   "test/unit/debate/session-events.test.ts",
   "test/unit/debate/session-helpers-resolver-model.test.ts",
   "test/unit/debate/session-helpers.test.ts",
-  "test/unit/debate/session-hybrid-rebuttal.test.ts",
-  "test/unit/debate/session-one-shot-roles.test.ts",
   "test/unit/debate/session-plan.test.ts",
   "test/unit/pipeline/stages/review-debate-dialogue.test.ts",
   "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts",
+  // Pattern D (AgentManager) - PERMANENT: .mock.calls on bun mock instance
   "test/unit/pipeline/stages/autofix-budget-prompts.test.ts",
   "test/unit/pipeline/stages/autofix-noop.test.ts",
   "test/unit/pipeline/stages/autofix-adversarial.test.ts",
   "test/unit/pipeline/stages/autofix-dialogue.test.ts",
-  "test/unit/pipeline/stages/autofix-routing.test.ts",
   "test/unit/pipeline/stages/autofix-session-wiring.test.ts",
-  "test/unit/pipeline/stages/review-dialogue.test.ts",
+  "test/unit/pipeline/stages/execution-manager-wiring.test.ts",
+  "test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts",
+  "test/unit/interaction/auto-plugin-adapter.test.ts",
   "test/unit/acceptance/component-strategy-integration.test.ts",
   "test/unit/acceptance/generator-prd-result.test.ts",
   "test/unit/acceptance/fix-executor-test-fix.test.ts",
@@ -65,8 +62,6 @@ const SKIP_FILES = new Set([
   "test/integration/plugins/validator.test.ts",
   "test/integration/execution/agent-swap.test.ts",
   "test/integration/execution/status-file-integration.test.ts",
-  // Pattern D (AgentManager) - complex with completeWithFallback and custom getAgent
-  "test/unit/interaction/auto-plugin-adapter.test.ts",
   // Pattern B (makeStory) - local factory functions
   "test/unit/metrics/tracker-context-metrics.test.ts",
   "test/unit/metrics/tracker-escalation.test.ts",
@@ -230,6 +225,8 @@ const SKIP_FILES = new Set([
   "test/integration/execution/agent-swap.test.ts",
   "test/integration/execution/deferred-review-integration.test.ts",
   "test/integration/prompts/pb-004-migration.test.ts",
+  // Pattern A (makeConfig) — local factory for ContextPluginProviderConfig (not NaxConfig)
+  "test/unit/context/engine/providers/plugin-cache.test.ts",
 ]);
 
 /**
