@@ -37,6 +37,12 @@ export interface SequentialExecutionContext {
   sessionManager?: ISessionManager;
   /** Per-run AgentManager (ADR-012). Set by runner.ts after registry creation. */
   agentManager?: import("../agents").IAgentManager;
+  /**
+   * Per-run plugin-provider cache (Finding 5 / issue #473).
+   * Threaded from runner.ts into IterationRunner so the same instances are
+   * reused across all assemble() calls for every story in this run.
+   */
+  pluginProviderCache?: import("../context/engine").PluginProviderCache;
   runId: string;
   startTime: number;
   batchPlan: StoryBatch[];

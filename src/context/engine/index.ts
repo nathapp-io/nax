@@ -25,6 +25,7 @@ export {
   _pluginLoaderDeps,
 } from "./providers/plugin-loader";
 export type { InitialisableProvider } from "./providers/plugin-loader";
+export { PluginProviderCache, _pluginCacheDeps } from "./providers/plugin-cache";
 export {
   loadCanonicalRules,
   lintForNeutrality,

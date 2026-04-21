@@ -180,6 +180,7 @@ export async function runIteration(
     abortSignal: ctx.abortSignal,
     sessionManager: ctx.sessionManager,
     agentManager: ctx.agentManager,
+    pluginProviderCache: ctx.pluginProviderCache,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
   };
 

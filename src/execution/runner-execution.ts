@@ -57,6 +57,8 @@ export interface RunnerExecutionOptions {
   sessionManager?: ISessionManager;
   /** Per-run AgentManager (ADR-012). Threaded into SequentialExecutionContext. */
   agentManager?: import("../agents").IAgentManager;
+  /** Per-run plugin-provider cache (Finding 5 / issue #473). */
+  pluginProviderCache?: import("../context/engine").PluginProviderCache;
 }
 
 /**
@@ -168,6 +170,7 @@ export async function runExecutionPhase(
       abortSignal: options.abortSignal,
       interactionChain: options.interactionChain,
       agentManager: options.agentManager,
+      pluginProviderCache: options.pluginProviderCache,
       batchPlan,
     },
     prd,

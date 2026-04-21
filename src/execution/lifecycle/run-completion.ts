@@ -62,6 +62,8 @@ export interface RunCompletionOptions {
   projectDir?: string;
   /** Optional run-level session manager for final active-session teardown. */
   sessionManager?: ISessionManager;
+  /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed after session teardown. */
+  pluginProviderCache?: import("../../context/engine").PluginProviderCache;
 }
 
 export interface RunCompletionResult {
@@ -206,6 +208,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   if (options.sessionManager) {
     const agentGetFn = options.agentManager ? (name: string) => options.agentManager?.getAgent(name) : undefined;
     await _runCompletionDeps.closeAllRunSessions(options.sessionManager, agentGetFn);
+  }
+
+  if (options.pluginProviderCache) {
+    await options.pluginProviderCache.disposeAll();
   }
 
   // Compute final story counts before emitting completion event (RL-002)

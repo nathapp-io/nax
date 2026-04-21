@@ -15,6 +15,7 @@
 
 import { createAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
+import { PluginProviderCache } from "../context/engine";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
@@ -115,6 +116,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   const agentManager = createAgentManager(config);
   const agentGetFn = agentManager.getAgent.bind(agentManager);
+  const pluginProviderCache = new PluginProviderCache();
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
   // biome-ignore lint/suspicious/noExplicitAny: PRD type initialized during setup
@@ -185,6 +187,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         interactionChain,
         sessionManager,
         agentManager,
+        pluginProviderCache,
       },
       prd,
       pluginRegistry,
@@ -237,6 +240,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       agentGetFn,
       sessionManager,
       agentManager,
+      pluginProviderCache,
     });
 
     const { durationMs, acceptancePassed } = completionResult;

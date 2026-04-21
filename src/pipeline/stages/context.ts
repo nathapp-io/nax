@@ -155,9 +155,15 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // Non-fatal: failures are logged inside loadPluginProviders and skipped.
   // Defensive fallback: test fixtures may bypass Zod and omit `pluginProviders`.
   // In production configs this is always present (required by schema, defaults to []).
+  // When ctx.pluginProviderCache is present (full runner path), reuse cached instances
+  // across assemble() calls instead of re-importing on every stage invocation.
   const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
   const pluginProviders: IContextProvider[] =
-    pluginConfigs.length > 0 ? await _contextStageDeps.loadPlugins(pluginConfigs, ctx.projectDir ?? ctx.workdir) : [];
+    pluginConfigs.length > 0
+      ? ctx.pluginProviderCache
+        ? await ctx.pluginProviderCache.loadOrGet(pluginConfigs, ctx.projectDir ?? ctx.workdir)
+        : await _contextStageDeps.loadPlugins(pluginConfigs, ctx.projectDir ?? ctx.workdir)
+      : [];
 
   try {
     const orchestrator = _contextStageDeps.createOrchestrator(ctx.story, ctx.config, storyScratchDirs, pluginProviders);
