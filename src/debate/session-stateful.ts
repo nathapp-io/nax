@@ -34,6 +34,7 @@ interface StatefulCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
+  readonly agentManager?: IAgentManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
 }
@@ -121,7 +122,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   const rawDebaters = config.debaters ?? [];
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
-  const agentManager = _debateSessionDeps.createManager(ctx.config);
+  const agentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
 
   // Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];
@@ -315,6 +316,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     fullResolverContext,
     /* promptSuffix */ undefined,
     successfulProposals.map((s) => s.debater),
+    agentManager,
   );
   totalCostUsd += outcome.resolverCostUsd;
 

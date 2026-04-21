@@ -37,6 +37,12 @@ export function makeMockAgentManager(overrides: Partial<IAgentManager> = {}): IA
     run: async () => ({ ...DEFAULT_RESULT, agentFallbacks: [] }),
     complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
     getAgent: (_name: string): AgentAdapter | undefined => undefined,
+    runAs: async (_name: string, _req: unknown) => ({ ...DEFAULT_RESULT, agentFallbacks: [] }),
+    completeAs: async (_name: string, _prompt: string, _opts: unknown) => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async (_name: string, _opts: unknown) => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async (_name: string, _opts: unknown) => ({ stories: [] }),
     events: { on: () => {} },
     ...overrides,
   } as IAgentManager;
