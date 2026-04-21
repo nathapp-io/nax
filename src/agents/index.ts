@@ -27,3 +27,5 @@ export type {
 } from "./manager-types";
 export { resolveDefaultAgent, wrapAdapterAsManager } from "./utils";
 export { createAgentManager } from "./factory";
+export { writePromptAudit, buildAuditFilename, findNaxProjectRoot, _promptAuditDeps } from "./audit";
+export type { PromptAuditEntry } from "./audit";

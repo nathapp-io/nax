@@ -235,6 +235,11 @@ export interface CompleteOptions {
   /** Session role for disambiguation when the same story has multiple concurrent sessions */
   sessionRole?: string;
   /**
+   * Absolute path to repo root where `.nax/` lives. When provided, prompt audit skips
+   * the parent-directory walk and writes directly to `<projectDir>/.nax/prompt-audit/`.
+   */
+  projectDir?: string;
+  /**
    * Model tier hint for adapters that resolve model from config (e.g. ACP adapter).
    * When set alongside `config`, the adapter resolves the model from `config.models[modelTier]`
    * instead of using the default. Has no effect when `model` is explicitly set.

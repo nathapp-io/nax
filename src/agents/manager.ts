@@ -11,6 +11,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { cancellableDelay } from "../utils/bun-deps";
+import { writePromptAudit } from "./audit";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -181,6 +182,24 @@ export class AgentManager implements IAgentManager {
           };
           return { result: noAdapterResult, fallbacks, finalBundle: currentBundle, finalPrompt };
         }
+        const _runAudit = request.runOptions.config?.agent?.promptAudit;
+        if (_runAudit?.enabled) {
+          const opts = request.runOptions;
+          const label =
+            [currentAgent, opts.featureName, opts.storyId, opts.sessionRole].filter(Boolean).join("-") || currentAgent;
+          void writePromptAudit({
+            prompt: opts.prompt,
+            agentName: currentAgent,
+            sessionName: label,
+            workdir: opts.workdir,
+            projectDir: opts.projectDir,
+            auditDir: _runAudit.dir,
+            storyId: opts.storyId,
+            featureName: opts.featureName,
+            pipelineStage: opts.pipelineStage ?? "run",
+            callType: "run",
+          });
+        }
         try {
           result = await adapter.run(request.runOptions);
         } catch (err) {
@@ -302,6 +321,24 @@ export class AgentManager implements IAgentManager {
         };
       }
 
+      const _completeAudit = options.config?.agent?.promptAudit;
+      if (_completeAudit?.enabled) {
+        const label =
+          [currentAgent, options.featureName, options.storyId, options.sessionRole].filter(Boolean).join("-") ||
+          currentAgent;
+        void writePromptAudit({
+          prompt,
+          agentName: currentAgent,
+          sessionName: label,
+          workdir: options.workdir ?? "",
+          projectDir: options.projectDir,
+          auditDir: _completeAudit.dir,
+          storyId: options.storyId,
+          featureName: options.featureName,
+          pipelineStage: options.pipelineStage ?? "complete",
+          callType: "complete",
+        });
+      }
       let result: CompleteResult;
       try {
         result = await adapter.complete(prompt, options);

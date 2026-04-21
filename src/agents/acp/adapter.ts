@@ -18,7 +18,6 @@ import { sleep, which } from "../../utils/bun-deps";
 import { parseDecomposeOutput } from "../shared/decompose";
 import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
-import { writePromptAudit } from "./prompt-audit";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type { AdapterFailure } from "../../context/engine";
@@ -598,7 +597,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     // 3. Ensure session (resume existing or create new)
-    const { session, resumed: sessionResumed } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
+    const { session } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
 
     // Capture protocol IDs immediately after session is established (Phase 1 plumbing).
     // session.recordId is stable across reconnects; session.id is volatile.
@@ -645,26 +644,6 @@ export class AcpAgentAdapter implements AgentAdapter {
       while (turnCount < MAX_TURNS) {
         turnCount++;
         getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
-
-        // Audit: fire-and-forget prompt write — never blocks or throws
-        const _runAuditConfig = options.config;
-        if (_runAuditConfig?.agent?.promptAudit?.enabled) {
-          void writePromptAudit({
-            prompt: currentPrompt,
-            sessionName,
-            recordId: session.recordId,
-            sessionId: session.id,
-            workdir: options.workdir,
-            projectDir: options.projectDir,
-            auditDir: _runAuditConfig.agent.promptAudit.dir,
-            storyId: options.storyId,
-            featureName: options.featureName,
-            pipelineStage: options.pipelineStage ?? "run",
-            callType: "run",
-            turn: turnCount,
-            resumed: sessionResumed,
-          });
-        }
 
         const turnResult = await runSessionPrompt(session, currentPrompt, options.timeoutSeconds * 1000);
 
@@ -846,7 +825,6 @@ export class AcpAgentAdapter implements AgentAdapter {
     const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = resolvePermissions(_options?.config, "complete").mode;
     const workdir = _options?.workdir;
-    const config = _options?.config;
 
     // Resolve model for a given agent name
     const resolveModel = async (agentName: string): Promise<string> => {
@@ -883,24 +861,6 @@ export class AcpAgentAdapter implements AgentAdapter {
           _options?.sessionName ??
           computeAcpHandle(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
-
-        // Audit: fire-and-forget prompt write — never blocks or throws
-        const _completeAuditConfig = config ?? this.naxConfig;
-        if (_completeAuditConfig?.agent?.promptAudit?.enabled) {
-          void writePromptAudit({
-            prompt,
-            sessionName: completeSessionName,
-            recordId: session.recordId,
-            sessionId: session.id,
-            workdir: workdir ?? process.cwd(),
-            auditDir: _completeAuditConfig.agent.promptAudit.dir,
-            storyId: _options?.storyId,
-            featureName: _options?.featureName,
-            pipelineStage: _options?.pipelineStage ?? "complete",
-            callType: "complete",
-            resumed: false,
-          });
-        }
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<never>((_, reject) => {
