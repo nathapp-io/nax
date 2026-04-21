@@ -108,7 +108,7 @@ export function resolveConfiguredModel(
   };
 }
 
-/** Resolve the correct ModelEntry for a given agent and tier */
+/** Resolve the correct ModelEntry for a given agent and tier, with defaultAgent fallback */
 export function resolveModelForAgent(
   models: ModelsConfig,
   agent: string,
@@ -120,20 +120,18 @@ export function resolveModelForAgent(
     return resolveModel(agentEntry);
   }
 
+  const defaultEntry = models[defaultAgent]?.[tier];
+  if (defaultEntry !== undefined) {
+    return resolveModel(defaultEntry);
+  }
+
   // Import inline to avoid circular deps — NaxError is in src/errors.ts
   const { NaxError } = require("../errors") as { NaxError: typeof import("../errors").NaxError };
-
-  // Do NOT fall back to the primary agent's model map when resolving a different
-  // agent — that would silently run the fallback adapter on an incompatible model
-  // (e.g. Codex running on claude-sonnet after an auth failure). Throw instead so
-  // the misconfiguration is caught immediately with an actionable message.
-  const hint = agent !== defaultAgent ? ` Add a models.${agent}.${tier} entry to your config.` : "";
-  throw new NaxError(`No model entry found for agent "${agent}" at tier "${tier}".${hint}`, "MODEL_NOT_FOUND", {
-    stage: "config",
-    agent,
-    tier,
-    defaultAgent,
-  });
+  throw new NaxError(
+    `No model entry found for agent "${agent}" or default agent "${defaultAgent}" at tier "${tier}"`,
+    "MODEL_NOT_FOUND",
+    { stage: "config", agent, tier, defaultAgent },
+  );
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
