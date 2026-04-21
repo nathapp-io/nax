@@ -13,6 +13,7 @@ import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+import { makeMockAgentManager as _makeMockAgentManager } from "../../../helpers";
 
 function makeReviewResult(success: boolean) {
   return { success, checks: [], summary: "" } as any;
@@ -31,21 +32,7 @@ function makeFailedReviewResult(checks: Partial<ReviewCheckResult>[]) {
 }
 
 function makeMockAgentManager() {
-  return {
-    getDefault: () => "claude",
-    getAgent: (_name: string) => ({} as any),
-    run: async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] }),
-    runAs: async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] }),
-    completeAs: async () => ({ output: "", costUsd: 0 }),
-    complete: async () => ({ output: "", costUsd: 0 }),
-    planAs: async () => ({ specContent: "", estimatedCost: 0 }),
-    decomposeAs: async () => ({ stories: [] }),
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    on: () => {},
-  } as any;
+  return _makeMockAgentManager();
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
@@ -108,21 +95,7 @@ describe("#409 scope-aware adversarial routing", () => {
     };
     _autofixDeps.recheckReview = async () => false;
 
-    const mockAgentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => ({} as any),
-      run: async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] }),
-      runAs: async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] }),
-      completeAs: async () => ({ output: "", costUsd: 0 }),
-      complete: async () => ({ output: "", costUsd: 0 }),
-      planAs: async () => ({ specContent: "", estimatedCost: 0 }),
-      decomposeAs: async () => ({ stories: [] }),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    } as any;
+    const mockAgentManager = _makeMockAgentManager();
 
     const adversarialCheck = makeAdversarialCheck([
       { file: "test/unit/foo.test.ts" },
