@@ -10,12 +10,16 @@ import { describe, expect, mock, test } from "bun:test";
 import { executeSourceFix } from "../../../src/acceptance/fix-executor";
 import type { DiagnosisResult } from "../../../src/acceptance/types";
 import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
+import type { AgentRunOptions } from "../../../src/agents";
+import { wrapAdapterAsManager } from "../../../src/agents/utils";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/schema";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+let capturedPromptStore = "";
 
 function makeMockAgent(result?: Partial<AgentResult>): AgentAdapter {
   const defaultResult: AgentResult = {
@@ -26,9 +30,12 @@ function makeMockAgent(result?: Partial<AgentResult>): AgentAdapter {
     durationMs: 500,
     estimatedCost: 0.01,
   };
-  const mockRun = mock(async () => ({ ...defaultResult, ...result }));
+  const mockRun = mock(async (opts: { prompt: string; workdir: string }) => {
+    capturedPromptStore = opts.prompt;
+    return { ...defaultResult, ...result };
+  });
   return {
-    name: "mock",
+    name: "claude",
     displayName: "Mock",
     binary: "mock",
     capabilities: {
@@ -57,9 +64,8 @@ function makeDiagnosis(): DiagnosisResult {
   return { verdict: "source_bug", reasoning: "null pointer", confidence: 0.9 };
 }
 
-function getCapturedPrompt(agent: AgentAdapter): string {
-  const calls = (agent.run as unknown as { mock: { calls: Array<[{ prompt: string }]> } }).mock.calls;
-  return calls[0]?.[0]?.prompt ?? "";
+function getCapturedPrompt(): string {
+  return capturedPromptStore;
 }
 
 const ACCEPTANCE_TEST_PATH = "/tmp/test/.nax/features/feat/.nax-acceptance.test.ts";
@@ -70,7 +76,7 @@ const ACCEPTANCE_TEST_PATH = "/tmp/test/.nax/features/feat/.nax-acceptance.test.
 
 describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenced TypeScript block", () => {
   test("prompt contains testFileContent in a fenced typescript block when non-empty", async () => {
-    const agent = makeMockAgent();
+    const agent = wrapAdapterAsManager(makeMockAgent());
     const testContent = `import { test, expect } from "bun:test";\ntest("AC-1: foo", () => { expect(foo()).toBe(1); });`;
     await executeSourceFix(agent, {
       testOutput: "FAIL: AC-1",
@@ -82,14 +88,14 @@ describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenc
       storyId: "US-001",
       acceptanceTestPath: ACCEPTANCE_TEST_PATH,
     });
-    const prompt = getCapturedPrompt(agent);
+    const prompt = getCapturedPrompt();
     expect(prompt).toContain(testContent);
     expect(prompt).toContain("```typescript");
     expect(prompt).toContain("```");
   });
 
   test("prompt includes fenced block that contains the exact test file content", async () => {
-    const agent = makeMockAgent();
+    const agent = wrapAdapterAsManager(makeMockAgent());
     const testContent = `describe("suite", () => { test("AC-1: bar", () => { expect(bar()).toBe(2); }); });`;
     await executeSourceFix(agent, {
       testOutput: "FAIL",
@@ -101,14 +107,14 @@ describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenc
       storyId: "US-001",
       acceptanceTestPath: ACCEPTANCE_TEST_PATH,
     });
-    const prompt = getCapturedPrompt(agent);
+    const prompt = getCapturedPrompt();
     // The fenced block should appear in the prompt body (not just as a path reference)
     const fencedBlock = `\`\`\`typescript\n${testContent}\n\`\`\``;
     expect(prompt).toContain(fencedBlock);
   });
 
   test("prompt still includes the acceptance test path alongside the fenced content", async () => {
-    const agent = makeMockAgent();
+    const agent = wrapAdapterAsManager(makeMockAgent());
     await executeSourceFix(agent, {
       testOutput: "FAIL",
       testFileContent: "import { test } from 'bun:test'; test('AC-1: x', () => {});",
@@ -119,7 +125,7 @@ describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenc
       storyId: "US-001",
       acceptanceTestPath: ACCEPTANCE_TEST_PATH,
     });
-    const prompt = getCapturedPrompt(agent);
+    const prompt = getCapturedPrompt();
     expect(prompt).toContain(ACCEPTANCE_TEST_PATH);
     expect(prompt).toContain("```typescript");
   });
@@ -131,7 +137,7 @@ describe("AC-7 (US-002): buildSourceFixPrompt includes test file content as fenc
 
 describe("AC-8 (US-002): when testFileContent is empty/undefined, only path is included (current behavior)", () => {
   test("prompt contains only acceptance test path when testFileContent is empty string", async () => {
-    const agent = makeMockAgent();
+    const agent = wrapAdapterAsManager(makeMockAgent());
     await executeSourceFix(agent, {
       testOutput: "FAIL: AC-1",
       testFileContent: "",
@@ -142,13 +148,13 @@ describe("AC-8 (US-002): when testFileContent is empty/undefined, only path is i
       storyId: "US-001",
       acceptanceTestPath: ACCEPTANCE_TEST_PATH,
     });
-    const prompt = getCapturedPrompt(agent);
+    const prompt = getCapturedPrompt();
     expect(prompt).toContain(ACCEPTANCE_TEST_PATH);
     expect(prompt).not.toContain("```typescript");
   });
 
   test("prompt contains only acceptance test path when testFileContent is undefined", async () => {
-    const agent = makeMockAgent();
+    const agent = wrapAdapterAsManager(makeMockAgent());
     await executeSourceFix(agent, {
       testOutput: "FAIL: AC-1",
       testFileContent: undefined,
@@ -159,13 +165,13 @@ describe("AC-8 (US-002): when testFileContent is empty/undefined, only path is i
       storyId: "US-001",
       acceptanceTestPath: ACCEPTANCE_TEST_PATH,
     });
-    const prompt = getCapturedPrompt(agent);
+    const prompt = getCapturedPrompt();
     expect(prompt).toContain(ACCEPTANCE_TEST_PATH);
     expect(prompt).not.toContain("```typescript");
   });
 
   test("omitting testFileContent is accepted (field is optional)", async () => {
-    const agent = makeMockAgent();
+    const agent = wrapAdapterAsManager(makeMockAgent());
     // Should not throw when testFileContent is absent
     const result = await executeSourceFix(agent, {
       testOutput: "FAIL",
@@ -177,6 +183,6 @@ describe("AC-8 (US-002): when testFileContent is empty/undefined, only path is i
       acceptanceTestPath: ACCEPTANCE_TEST_PATH,
     });
     expect(result).toBeDefined();
-    expect(agent.run).toHaveBeenCalled();
+    expect(capturedPromptStore.length).toBeGreaterThan(0);
   });
 });

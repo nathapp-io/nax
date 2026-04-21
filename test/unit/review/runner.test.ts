@@ -520,7 +520,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       undefined,
       expect.any(Object),
       { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded", resetRefOnRerun: false },
-      expect.any(Function),
+      undefined, // agentManager (was formerly ModelResolver factory)
       undefined,
       undefined,
       undefined,

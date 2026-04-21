@@ -2,7 +2,7 @@
  * Tests for diagnoseAcceptanceFailure() in src/acceptance/fix-diagnosis.ts
  *
  * Covers acceptance criteria:
- * 1. Receives agent adapter via parameter (never calls bare getAgent())
+ * 1. Receives agent manager via parameter (never calls bare getAgent())
  * 2. Calls agent.run() with sessionRole 'diagnose'
  * 3. Session name follows pattern via computeAcpHandle()
  * 4. Resolves diagnoseModel via resolveModelForAgent()
@@ -19,6 +19,8 @@ import { diagnoseAcceptanceFailure } from "../../../src/acceptance/fix-diagnosis
 import type { DiagnosisResult } from "../../../src/acceptance/types";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents";
+import { wrapAdapterAsManager } from "../../../src/agents/utils";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/schema";
 import { resolveModelForAgent } from "../../../src/config/schema-types";
@@ -27,7 +29,15 @@ import { resolveModelForAgent } from "../../../src/config/schema-types";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
+const wrappedAdapterMap = new WeakMap<IAgentManager, AgentAdapter>();
+
+function toManagerTracked(agent: AgentAdapter): IAgentManager {
+  const mgr = wrapAdapterAsManager(agent);
+  wrappedAdapterMap.set(mgr, agent);
+  return mgr;
+}
+
+function makeMockAgentManager(result?: Partial<AgentResult>): IAgentManager {
   const defaultResult: AgentResult = {
     success: true,
     exitCode: 0,
@@ -42,8 +52,8 @@ function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
   const mockDecompose = mock(async () => ({ stories: [], output: "" }));
   const mockIsInstalled = mock(async () => true);
   const mockBuildCommand = mock(() => ["mock", "cmd"]);
-  return {
-    name: "mock",
+  const adapter = {
+    name: "claude",
     displayName: "Mock Agent",
     binary: "mock",
     capabilities: {
@@ -58,10 +68,12 @@ function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
     decompose: mockDecompose,
     complete: mockComplete,
   } as unknown as AgentAdapter;
+  return toManagerTracked(adapter);
 }
 
-function getRunMockCalls(agent: AgentAdapter): Array<Parameters<AgentAdapter["run"]>> {
-  return (agent.run as unknown as { mock: { calls: Array<Parameters<AgentAdapter["run"]>> } }).mock.calls;
+function getRunMockCalls(agent: IAgentManager): Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> {
+  const adapter = wrappedAdapterMap.get(agent as any) as AgentAdapter;
+  return (adapter.run as unknown as { mock: { calls: Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> } }).mock.calls;
 }
 
 function makeMinimalConfig(overrides: Partial<NaxConfig["acceptance"]> = {}): NaxConfig {
@@ -76,7 +88,6 @@ function makeMinimalConfig(overrides: Partial<NaxConfig["acceptance"]> = {}): Na
     quality: { ...DEFAULT_CONFIG.quality },
     tdd: { ...DEFAULT_CONFIG.tdd },
     constitution: { ...DEFAULT_CONFIG.constitution },
-    analyze: { ...DEFAULT_CONFIG.analyze },
     review: { ...DEFAULT_CONFIG.review },
     plan: { ...DEFAULT_CONFIG.plan },
     acceptance: {
@@ -89,12 +100,12 @@ function makeMinimalConfig(overrides: Partial<NaxConfig["acceptance"]> = {}): Na
 }
 
 // ---------------------------------------------------------------------------
-// AC-1: diagnoseAcceptanceFailure() receives agent adapter via parameter
+// AC-1: diagnoseAcceptanceFailure() receives agent manager via parameter
 // ---------------------------------------------------------------------------
 
 describe("AC-1: diagnoseAcceptanceFailure receives agent adapter via parameter", () => {
   test("never calls bare getAgent() — uses passed adapter", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
       testOutput: "FAIL",
@@ -104,13 +115,14 @@ describe("AC-1: diagnoseAcceptanceFailure receives agent adapter via parameter",
       featureName: "test-feature",
       storyId: "US-001",
     });
-    expect(mockAgent.run).toHaveBeenCalled();
+    const adapter = wrappedAdapterMap.get(mockAgent);
+    expect(adapter?.run).toHaveBeenCalled();
   });
 
   test("throws when agent is undefined", async () => {
     const config = makeMinimalConfig();
     await expect(
-      diagnoseAcceptanceFailure(undefined as unknown as AgentAdapter, {
+      diagnoseAcceptanceFailure(undefined as unknown as IAgentManager, {
         testOutput: "FAIL",
         testFileContent: "test content",
         config,
@@ -128,7 +140,7 @@ describe("AC-1: diagnoseAcceptanceFailure receives agent adapter via parameter",
 
 describe("AC-2: diagnoseAcceptanceFailure calls agent.run() with sessionRole diagnose", () => {
   test("calls agent.run() not agent.complete()", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
       testOutput: "FAIL",
@@ -138,12 +150,13 @@ describe("AC-2: diagnoseAcceptanceFailure calls agent.run() with sessionRole dia
       featureName: "test-feature",
       storyId: "US-001",
     });
-    expect(mockAgent.run).toHaveBeenCalled();
-    expect(mockAgent.complete).not.toHaveBeenCalled();
+    const adapter = wrappedAdapterMap.get(mockAgent);
+    expect(adapter?.run).toHaveBeenCalled();
+    expect(adapter?.complete).not.toHaveBeenCalled();
   });
 
   test("passes sessionRole 'diagnose' to agent.run()", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
       testOutput: "FAIL",
@@ -171,7 +184,7 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pat
   });
 
   test("diagnoseAcceptanceFailure passes featureName, storyId, and sessionRole='diagnose' to adapter", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
       testOutput: "FAIL",
@@ -189,7 +202,7 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pat
   });
 
   test("session name is visible in acpx list when protocol is ACP (adapter derives handle)", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     expect(config.agent?.protocol).toBe("acp");
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -214,7 +227,7 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pat
 
 describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveModelForAgent", () => {
   test("uses config.acceptance.fix.diagnoseModel tier", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     expect(config.acceptance.fix.diagnoseModel).toBe("fast");
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -236,7 +249,7 @@ describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveMode
   });
 
   test("passes resolved model metadata to adapter rather than a raw unresolved tier string", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
       testOutput: "FAIL",
@@ -259,7 +272,7 @@ describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveMode
 
 describe("AC-5: diagnoseAcceptanceFailure auto-detects source files from imports", () => {
   test("parses import statements from test file content", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     const testContent = `
 import { add } from "./src/math.ts";
@@ -274,11 +287,12 @@ test("AC-1", () => { expect(add(1,2)).toBe(3); });
       featureName: "test-feature",
       storyId: "US-001",
     });
-    expect(mockAgent.run).toHaveBeenCalled();
+    const adapter = wrappedAdapterMap.get(mockAgent);
+    expect(adapter?.run).toHaveBeenCalled();
   });
 
   test("limits to 5 files maximum", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     const testContent = `
 import { a } from "./src/file1.ts";
@@ -302,7 +316,7 @@ test("AC-1", () => { expect(a()).toBe(1); });
   });
 
   test("limits each file to 500 lines maximum", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     const testContent = `
 import { bigFunc } from "./src/big-file.ts";
@@ -316,7 +330,8 @@ test("AC-1", () => { expect(bigFunc()).toBeDefined(); });
       featureName: "test-feature",
       storyId: "US-001",
     });
-    expect(mockAgent.run).toHaveBeenCalled();
+    const adapter = wrappedAdapterMap.get(mockAgent);
+    expect(adapter?.run).toHaveBeenCalled();
   });
 });
 
@@ -332,7 +347,7 @@ describe("AC-6: diagnoseAcceptanceFailure returns parsed DiagnosisResult", () =>
       confidence: 0.95,
       sourceIssues: ["NullPointerException on line 42"],
     };
-    const mockAgent = makeMockAgentAdapter({
+    const mockAgent = makeMockAgentManager({
       output: JSON.stringify(diagnosisResult),
     });
     const config = makeMinimalConfig();
@@ -356,7 +371,7 @@ describe("AC-6: diagnoseAcceptanceFailure returns parsed DiagnosisResult", () =>
       confidence: 0.88,
       testIssues: ["Assertion expects 3 but actual is 4"],
     };
-    const mockAgent = makeMockAgentAdapter({
+    const mockAgent = makeMockAgentManager({
       output: JSON.stringify(diagnosisResult),
     });
     const config = makeMinimalConfig();
@@ -379,7 +394,7 @@ describe("AC-6: diagnoseAcceptanceFailure returns parsed DiagnosisResult", () =>
       testIssues: ["Test mocks database incorrectly"],
       sourceIssues: ["Off-by-one error in loop"],
     };
-    const mockAgent = makeMockAgentAdapter({
+    const mockAgent = makeMockAgentManager({
       output: JSON.stringify(diagnosisResult),
     });
     const config = makeMinimalConfig();
@@ -401,7 +416,7 @@ describe("AC-6: diagnoseAcceptanceFailure returns parsed DiagnosisResult", () =>
 
 describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", () => {
   test("returns fallback when agent output is invalid JSON", async () => {
-    const mockAgent = makeMockAgentAdapter({
+    const mockAgent = makeMockAgentManager({
       output: "This is not JSON output",
     });
     const config = makeMinimalConfig();
@@ -419,7 +434,7 @@ describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", ()
   });
 
   test("returns fallback when agent output is empty", async () => {
-    const mockAgent = makeMockAgentAdapter({
+    const mockAgent = makeMockAgentManager({
       output: "",
     });
     const config = makeMinimalConfig();
@@ -437,7 +452,7 @@ describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", ()
   });
 
   test("returns fallback when agent output is partial JSON", async () => {
-    const mockAgent = makeMockAgentAdapter({
+    const mockAgent = makeMockAgentManager({
       output: '{"verdict": "source_bug", ',
     });
     const config = makeMinimalConfig();
@@ -461,7 +476,7 @@ describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", ()
 describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
   test("returns fallback DiagnosisResult when adapter.run() throws", async () => {
     const errorAgent = {
-      name: "error-agent",
+      name: "claude",
       displayName: "Error Agent",
       binary: "error",
       capabilities: {
@@ -479,7 +494,7 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
       complete: mock(async () => ({ output: "", costUsd: 0, source: "exact" as const })),
     } as unknown as AgentAdapter;
     const config = makeMinimalConfig();
-    const result = await diagnoseAcceptanceFailure(errorAgent, {
+    const result = await diagnoseAcceptanceFailure(toManagerTracked(errorAgent), {
       testOutput: "FAIL",
       testFileContent: "test content",
       config,
@@ -494,7 +509,7 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
 
   test("does not throw when adapter.run() throws", async () => {
     const errorAgent = {
-      name: "error-agent",
+      name: "claude",
       displayName: "Error Agent",
       binary: "error",
       capabilities: {
@@ -513,7 +528,7 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
     } as unknown as AgentAdapter;
     const config = makeMinimalConfig();
     await expect(
-      diagnoseAcceptanceFailure(errorAgent, {
+      diagnoseAcceptanceFailure(toManagerTracked(errorAgent), {
         testOutput: "FAIL",
         testFileContent: "test content",
         config,
@@ -531,7 +546,7 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
 
 describe("AC-9: Test output truncated to 2000 characters", () => {
   test("truncates test output to 2000 chars in prompt", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     const longOutput = "FAIL".repeat(1000);
     expect(longOutput.length).toBeGreaterThan(2000);
@@ -554,7 +569,7 @@ describe("AC-9: Test output truncated to 2000 characters", () => {
 
 describe("AC-10: ACP session visible in acpx list with correct session name", () => {
   test("session name follows nax-<hash>-<feature>-<storyId>-diagnose pattern for ACP", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig({});
     config.agent = { protocol: "acp" };
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -575,7 +590,7 @@ describe("AC-10: ACP session visible in acpx list with correct session name", ()
   });
 
   test("ACP protocol ensures session appears in acpx list (adapter derives handle)", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     config.agent = { protocol: "acp" };
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -670,7 +685,7 @@ describe("DiagnosisResult interface validation", () => {
 
 describe("Edge cases", () => {
   test("works without optional featureName", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
       testOutput: "FAIL",
@@ -679,11 +694,12 @@ describe("Edge cases", () => {
       workdir: "/tmp/test",
       storyId: "US-001",
     });
-    expect(mockAgent.run).toHaveBeenCalled();
+    const adapter = wrappedAdapterMap.get(mockAgent);
+    expect(adapter?.run).toHaveBeenCalled();
   });
 
   test("works without optional storyId", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
       testOutput: "FAIL",
@@ -692,11 +708,12 @@ describe("Edge cases", () => {
       workdir: "/tmp/test",
       featureName: "test-feature",
     });
-    expect(mockAgent.run).toHaveBeenCalled();
+    const adapter = wrappedAdapterMap.get(mockAgent);
+    expect(adapter?.run).toHaveBeenCalled();
   });
 
   test("handles missing source files gracefully", async () => {
-    const mockAgent = makeMockAgentAdapter();
+    const mockAgent = makeMockAgentManager();
     const config = makeMinimalConfig();
     const testContent = `
 import { nonexistent } from "./src/nonexistent.ts";
@@ -710,6 +727,7 @@ test("AC-1", () => { expect(nonexistent()).toBe(1); });
       featureName: "test-feature",
       storyId: "US-001",
     });
-    expect(mockAgent.run).toHaveBeenCalled();
+    const adapter = wrappedAdapterMap.get(mockAgent);
+    expect(adapter?.run).toHaveBeenCalled();
   });
 });

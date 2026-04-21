@@ -54,8 +54,7 @@ function makeConfig(maxRetries = 2): NaxConfig {
 function makeAgent(runResults: Partial<AgentResult>[] = []) {
   let callIndex = 0;
   const calls: AgentRunOptions[] = [];
-  const run = mock(async (opts: AgentRunOptions): Promise<AgentResult> => {
-    calls.push({ ...opts });
+  const run = async (_opts: AgentRunOptions): Promise<AgentResult> => {
     const result = runResults[callIndex] ?? { success: true };
     callIndex++;
     return {
@@ -67,7 +66,7 @@ function makeAgent(runResults: Partial<AgentResult>[] = []) {
       estimatedCost: 0.01,
       ...result,
     };
-  });
+  };
   return { run, calls, isInstalled: mock(async () => true), complete: mock(async () => ""), buildCommand: mock(() => []) };
 }
 
@@ -129,7 +128,30 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 2 (final check)
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", true, {
+    const agentManager = {
+      getDefault: () => "claude",
+      getAgent: (_name: string) => agent as any,
+      run: mock(async (req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      runAs: mock(async (_agentName: string, req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    } as any;
+
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
@@ -157,7 +179,30 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 3 (final)
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", true, {
+    const agentManager = {
+      getDefault: () => "claude",
+      getAgent: (_name: string) => agent as any,
+      run: mock(async (req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      runAs: mock(async (_agentName: string, req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    } as any;
+
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
@@ -184,7 +229,30 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agent as any, "balanced", true, {
+    const agentManager = {
+      getDefault: () => "claude",
+      getAgent: (_name: string) => agent as any,
+      run: mock(async (req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      runAs: mock(async (_agentName: string, req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    } as any;
+
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
@@ -207,7 +275,30 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
     ];
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir-2", agent as any, "balanced", true, {
+    const agentManager = {
+      getDefault: () => "claude",
+      getAgent: (_name: string) => agent as any,
+      run: mock(async (req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      runAs: mock(async (_agentName: string, req: any) => {
+        agent.calls.push(req.runOptions);
+        const result = await agent.run(req.runOptions);
+        return result;
+      }),
+      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    } as any;
+
+    await runFullSuiteGate(story, config, "/tmp/fake-workdir-2", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},

@@ -1,7 +1,7 @@
 /**
- * AutoInteractionPlugin — adapter.complete() integration tests (AA-004)
+ * AutoInteractionPlugin — IAgentManager.complete() integration tests (AA-004)
  *
- * Tests that auto.ts uses adapter.complete() via _deps.adapter instead of
+ * Tests that auto.ts uses agentManager.complete() via _deps.agentManager instead of
  * spawning the claude CLI directly. All acceptance criteria from AA-004.
  *
  * These tests are RED until auto.ts is refactored.
@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _autoPluginDeps as _deps, AutoInteractionPlugin } from "../../../src/interaction/plugins/auto";
-import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 import type { InteractionRequest } from "../../../src/interaction/types";
 
 // ---------------------------------------------------------------------------
@@ -29,33 +29,44 @@ function makeRequest(id: string, overrides: Partial<InteractionRequest> = {}): I
   };
 }
 
-/** Build a minimal mock AgentAdapter where complete() is a spy */
-function makeAdapter(completeImpl?: (prompt: string, options?: CompleteOptions) => Promise<string>): AgentAdapter {
+/**
+ * Build a minimal mock IAgentManager where complete() is a spy.
+ * complete() returns CompleteResult { output: string, costUsd: number, source: string }
+ */
+function makeAgentManager(
+  completeImpl?: (prompt: string, options?: any) => Promise<{ output: string; costUsd: number; source: string }>,
+): { mgr: IAgentManager; completeMock: ReturnType<typeof mock> } {
+  const completeMock = mock(
+    completeImpl ??
+      (async () => ({ output: JSON.stringify({ action: "approve", confidence: 0.9, reasoning: "ok" }), costUsd: 0, source: "mock" as const })),
+  );
   return {
-    name: "claude",
-    displayName: "Claude",
-    binary: "claude",
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"],
-      maxContextTokens: 200000,
-      features: new Set(["tdd", "review", "refactor", "batch"]),
-    },
-    isInstalled: mock(async () => true),
-    run: mock(async () => {
-      throw new Error("run() not used in adapter tests");
-    }),
-    buildCommand: mock(() => []),
-    plan: mock(async () => {
-      throw new Error("plan() not used in adapter tests");
-    }),
-    decompose: mock(async () => {
-      throw new Error("decompose() not used in adapter tests");
-    }),
-    complete: mock(completeImpl ?? (async () => JSON.stringify({ action: "approve", confidence: 0.9, reasoning: "ok" }))),
-  } as unknown as AgentAdapter;
+    mgr: {
+      getDefault: () => "claude",
+      complete: completeMock,
+      completeAs: completeMock,
+      completeWithFallback: async (prompt: string, opts?: any) => ({ result: await completeMock(prompt, opts), fallbacks: [] }),
+      run: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] })),
+      runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+      getAgent: () => ({ run: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 })) } as any),
+      events: { on: () => {} },
+    } as unknown as IAgentManager,
+    completeMock,
+  };
 }
 
-/** Valid JSON response a real adapter.complete() would return */
+/** Valid JSON response a real agentManager.complete() output would contain */
 function approveJson(confidence = 0.9): string {
   return JSON.stringify({ action: "approve", confidence, reasoning: "safe to proceed" });
 }
@@ -69,15 +80,14 @@ function chooseJson(value: string, confidence = 0.92): string {
 }
 
 // ---------------------------------------------------------------------------
-// Save/restore _deps.adapter across tests
+// Save/restore _deps.agentManager across tests
 // ---------------------------------------------------------------------------
 
-// After refactoring, _deps should have an `adapter` field (not `callLlm`)
-const originalAdapter = (_deps as Record<string, unknown>).adapter ?? null;
+const originalAgentManager = (_deps as Record<string, unknown>).agentManager ?? null;
 
 afterEach(() => {
   mock.restore();
-  (_deps as Record<string, unknown>).adapter = originalAdapter;
+  (_deps as Record<string, unknown>).agentManager = originalAgentManager;
 });
 
 // ---------------------------------------------------------------------------
@@ -85,18 +95,17 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("auto.ts does not spawn claude CLI directly", () => {
-  test("decide() does not call Bun.spawn when adapter is injected", async () => {
+  test("decide() does not call Bun.spawn when agentManager is injected", async () => {
     const spawnSpy = mock(() => {
-      throw new Error("Bun.spawn must not be called — use adapter.complete() instead");
+      throw new Error("Bun.spawn must not be called — use agentManager.complete() instead");
     });
 
     const plugin = new AutoInteractionPlugin();
     await plugin.init({ confidenceThreshold: 0.7 });
 
-    const adapter = makeAdapter(async () => approveJson());
-    (_deps as Record<string, unknown>).adapter = adapter;
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
-    // Temporarily replace Bun.spawn to verify it's not called
     const originalSpawn = Bun.spawn;
     (Bun as Record<string, unknown>).spawn = spawnSpy;
 
@@ -111,10 +120,10 @@ describe("auto.ts does not spawn claude CLI directly", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-2: Uses adapter.complete() for generating auto-responses
+// AC-2: Uses agentManager.complete() for generating auto-responses
 // ---------------------------------------------------------------------------
 
-describe("adapter.complete() is called with correct arguments", () => {
+describe("agentManager.complete() is called with correct arguments", () => {
   let plugin: AutoInteractionPlugin;
 
   beforeEach(async () => {
@@ -122,48 +131,48 @@ describe("adapter.complete() is called with correct arguments", () => {
     await plugin.init({ confidenceThreshold: 0.7 });
   });
 
-  test("adapter.complete() is called exactly once per decide() invocation", async () => {
-    const adapter = makeAdapter(async () => approveJson());
-    (_deps as Record<string, unknown>).adapter = adapter;
+  test("agentManager.complete() is called exactly once per decide() invocation", async () => {
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     await plugin.decide(makeRequest("req-once"));
 
-    expect(adapter.complete).toHaveBeenCalledTimes(1);
+    expect(completeMock).toHaveBeenCalledTimes(1);
   });
 
-  test("adapter.complete() receives a non-empty prompt string", async () => {
-    const adapter = makeAdapter(async () => approveJson());
-    (_deps as Record<string, unknown>).adapter = adapter;
+  test("agentManager.complete() receives a non-empty prompt string", async () => {
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     await plugin.decide(makeRequest("req-prompt", { summary: "Is this safe?" }));
 
-    const [prompt] = (adapter.complete as ReturnType<typeof mock>).mock.calls[0] as [string, CompleteOptions?];
+    const [prompt] = completeMock.mock.calls[0] as [string, any];
     expect(typeof prompt).toBe("string");
     expect(prompt.length).toBeGreaterThan(0);
   });
 
-  test("adapter.complete() prompt contains the request summary", async () => {
-    const adapter = makeAdapter(async () => approveJson());
-    (_deps as Record<string, unknown>).adapter = adapter;
+  test("agentManager.complete() prompt contains the request summary", async () => {
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const summary = "Should we merge this story?";
     await plugin.decide(makeRequest("req-summary", { summary }));
 
-    const [prompt] = (adapter.complete as ReturnType<typeof mock>).mock.calls[0] as [string, CompleteOptions?];
+    const [prompt] = completeMock.mock.calls[0] as [string, any];
     expect(prompt).toContain(summary);
   });
 
-  test("adapter.complete() receives jsonMode: true option", async () => {
-    const adapter = makeAdapter(async () => approveJson());
-    (_deps as Record<string, unknown>).adapter = adapter;
+  test("agentManager.complete() receives jsonMode: true option", async () => {
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     await plugin.decide(makeRequest("req-json-mode"));
 
-    const [, options] = (adapter.complete as ReturnType<typeof mock>).mock.calls[0] as [string, CompleteOptions?];
+    const [, options] = completeMock.mock.calls[0] as [string, any];
     expect(options?.jsonMode).toBe(true);
   });
 
-  test("adapter.complete() receives model option when naxConfig provides one", async () => {
+  test("agentManager.complete() receives model option when naxConfig provides one", async () => {
     const pluginWithModel = new AutoInteractionPlugin();
     await pluginWithModel.init({
       model: "fast",
@@ -173,43 +182,43 @@ describe("adapter.complete() is called with correct arguments", () => {
             fast: { model: "claude-haiku-4-5", provider: "anthropic" },
           },
         },
-        autoMode: { defaultAgent: "claude" },
-      },
+        agent: { default: "claude" },
+      } as any,
     });
 
-    const adapter = makeAdapter(async () => approveJson());
-    (_deps as Record<string, unknown>).adapter = adapter;
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     await pluginWithModel.decide(makeRequest("req-model"));
 
-    const [, options] = (adapter.complete as ReturnType<typeof mock>).mock.calls[0] as [string, CompleteOptions?];
+    const [, options] = completeMock.mock.calls[0] as [string, any];
     expect(options?.model).toBe("claude-haiku-4-5");
   });
 });
 
 // ---------------------------------------------------------------------------
-// AC-3: Adapter resolved via dependency injection
+// AC-3: AgentManager resolved via dependency injection
 // ---------------------------------------------------------------------------
 
-describe("adapter dependency injection via _deps.adapter", () => {
-  test("_deps.adapter property exists on the exported _deps object", () => {
-    expect("adapter" in _deps).toBe(true);
+describe("agentManager dependency injection via _deps.agentManager", () => {
+  test("_deps.agentManager property exists on the exported _deps object", () => {
+    expect("agentManager" in _deps).toBe(true);
   });
 
-  test("_deps.adapter defaults to null (not set at module load)", () => {
-    expect((_deps as Record<string, unknown>).adapter).toBeNull();
+  test("_deps.agentManager defaults to null (not set at module load)", () => {
+    expect((_deps as Record<string, unknown>).agentManager).toBeNull();
   });
 
-  test("setting _deps.adapter causes adapter.complete() to be invoked instead of CLI", async () => {
+  test("setting _deps.agentManager causes agentManager.complete() to be invoked instead of CLI", async () => {
     const plugin = new AutoInteractionPlugin();
     await plugin.init({ confidenceThreshold: 0.5 });
 
     let completeCalled = false;
-    const adapter = makeAdapter(async () => {
+    const { mgr } = makeAgentManager(async () => {
       completeCalled = true;
-      return approveJson(0.9);
+      return { output: approveJson(0.9), costUsd: 0, source: "mock" };
     });
-    (_deps as Record<string, unknown>).adapter = adapter;
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     await plugin.decide(makeRequest("req-di-check"));
 
@@ -229,8 +238,9 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
     await plugin.init({ confidenceThreshold: 0.7 });
   });
 
-  test("adapter returns approve JSON → response.action is approve", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => approveJson(0.9));
+  test("agentManager returns approve JSON → response.action is approve", async () => {
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.9), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-approve"));
 
@@ -240,16 +250,18 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
     expect(response?.requestId).toBe("req-approve");
   });
 
-  test("adapter returns reject JSON → response.action is reject", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => rejectJson(0.85));
+  test("agentManager returns reject JSON → response.action is reject", async () => {
+    const { mgr } = makeAgentManager(async () => ({ output: rejectJson(0.85), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-reject"));
 
     expect(response?.action).toBe("reject");
   });
 
-  test("adapter returns choose JSON with value → value is propagated", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => chooseJson("option-b"));
+  test("agentManager returns choose JSON with value → value is propagated", async () => {
+    const { mgr } = makeAgentManager(async () => ({ output: chooseJson("option-b"), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(
       makeRequest("req-choose", {
@@ -266,7 +278,8 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
   });
 
   test("confidence below threshold → returns undefined (escalates)", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => approveJson(0.5));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.5), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-low-conf"));
 
@@ -277,7 +290,8 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
     const pluginAtThreshold = new AutoInteractionPlugin();
     await pluginAtThreshold.init({ confidenceThreshold: 0.8 });
 
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => approveJson(0.8));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.8), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await pluginAtThreshold.decide(makeRequest("req-at-threshold"));
 
@@ -285,12 +299,13 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
     expect(response?.action).toBe("approve");
   });
 
-  test("security-review trigger → returns undefined without calling adapter", async () => {
+  test("security-review trigger → returns undefined without calling agentManager", async () => {
     let completeCalled = false;
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => {
+    const { mgr } = makeAgentManager(async () => {
       completeCalled = true;
-      return approveJson();
+      return { output: approveJson(), costUsd: 0, source: "mock" };
     });
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const request = makeRequest("req-sec", {
       metadata: { trigger: "security-review", safety: "red" },
@@ -302,28 +317,31 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
     expect(completeCalled).toBe(false);
   });
 
-  test("adapter.complete() throws → returns undefined (escalates to human)", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => {
+  test("agentManager.complete() throws → returns undefined (escalates to human)", async () => {
+    const { mgr } = makeAgentManager(async () => {
       throw new Error("LLM unavailable");
     });
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-error"));
 
     expect(response).toBeUndefined();
   });
 
-  test("adapter.complete() returns malformed JSON → returns undefined (escalates)", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => "not valid json {{{");
+  test("agentManager.complete() returns malformed JSON → returns undefined (escalates)", async () => {
+    const { mgr } = makeAgentManager(async () => ({ output: "not valid json {{{", costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-bad-json"));
 
     expect(response).toBeUndefined();
   });
 
-  test("adapter.complete() returns JSON with missing fields → returns undefined", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () =>
-      JSON.stringify({ action: "approve" }), // missing confidence and reasoning
+  test("agentManager.complete() returns JSON with missing fields → returns undefined", async () => {
+    const { mgr } = makeAgentManager(async () =>
+      ({ output: JSON.stringify({ action: "approve" }), costUsd: 0, source: "mock" }), // missing confidence and reasoning
     );
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-incomplete"));
 
@@ -332,7 +350,8 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
 
   test("respondedAt is set to a recent timestamp", async () => {
     const before = Date.now();
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => approveJson());
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-timestamp"));
 
@@ -343,11 +362,11 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-5: Unit tests mock adapter.complete() (verified by test structure above)
+// AC-5: Unit tests mock agentManager.complete() (verified by test structure above)
 // — Additional edge case: markdown-wrapped JSON is stripped before parsing
 // ---------------------------------------------------------------------------
 
-describe("adapter.complete() response parsing handles markdown-wrapped JSON", () => {
+describe("agentManager.complete() response parsing handles markdown-wrapped JSON", () => {
   let plugin: AutoInteractionPlugin;
 
   beforeEach(async () => {
@@ -357,7 +376,8 @@ describe("adapter.complete() response parsing handles markdown-wrapped JSON", ()
 
   test("markdown-wrapped JSON is unwrapped and parsed correctly", async () => {
     const wrappedJson = "```json\n" + approveJson(0.95) + "\n```";
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => wrappedJson);
+    const { mgr } = makeAgentManager(async () => ({ output: wrappedJson, costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-markdown"));
 
@@ -365,7 +385,8 @@ describe("adapter.complete() response parsing handles markdown-wrapped JSON", ()
   });
 
   test("plain JSON without markdown fences is parsed correctly", async () => {
-    (_deps as Record<string, unknown>).adapter = makeAdapter(async () => approveJson(0.88));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.88), costUsd: 0, source: "mock" }));
+    (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-plain-json"));
 

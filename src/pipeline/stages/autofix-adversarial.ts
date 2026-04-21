@@ -68,6 +68,10 @@ export async function runTestWriterRectification(
   // Use the TDD test-writer tier from config — consistent with how the TDD orchestrator
   // selects the tier for the test-writer session (tdd.orchestrator.ts:150).
   const defaultAgent = agentManager.getDefault();
+  if (!defaultAgent) {
+    logger.warn("autofix", "Test-writer rectification skipped — no default agent", { storyId: ctx.story.id });
+    return 0;
+  }
   const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
   const modelDef = resolveModelForAgent(ctx.rootConfig.models, defaultAgent, modelTier, defaultAgent);
   try {

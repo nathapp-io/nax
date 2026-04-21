@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
@@ -35,24 +36,80 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
 };
 
-function makeMockAgent(response: string): AgentAdapter {
-  return {
+function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
+  const adapter: AgentAdapter = {
     name: "mock",
     displayName: "Mock Agent",
     binary: "mock",
-    capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
+    capabilities: {
+      supportedTiers: [],
+      supportedTestStrategies: [],
+      features: {},
+    } as unknown as AgentAdapter["capabilities"],
     isInstalled: mock(async () => true),
-    run: mock(async () => ({ output: response, estimatedCost: 0 })),
+    run: mock(async (_opts) => ({
+      success: true,
+      exitCode: 0,
+      output: llmResponse,
+      rateLimited: false,
+      durationMs: 100,
+      estimatedCost: cost,
+    })),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
-    complete: mock(async (_prompt: string) => response),
+    complete: mock(async (_prompt: string) => llmResponse),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
+
+  const manager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => adapter,
+    isUnavailable: (_agent: string) => false,
+    markUnavailable: (_agent: string, _reason: unknown) => {},
+    reset: () => {},
+    validateCredentials: mock(async () => {}),
+    events: { on: () => {}, off: () => {} },
+    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+    nextCandidate: (_current: string, _hops: number) => null,
+    runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCost: cost }, fallbacks: [] })),
+    completeWithFallback: mock(async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] })),
+    run: mock(async (request: { runOptions: unknown }) => {
+      void request;
+      return {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCost: cost,
+      } as AgentResult;
+    }),
+    complete: mock(async (_prompt: string) => ({ output: llmResponse, costUsd: cost, source: "mock" })),
+    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: llmResponse, costUsd: cost, source: "mock" })),
+    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
+      void request;
+      return {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCost: cost,
+      } as AgentResult;
+    }),
+    plan: mock(async () => { throw new Error("not used"); }),
+    planAs: mock(async () => { throw new Error("not used"); }),
+    decompose: mock(async () => { throw new Error("not used"); }),
+    decomposeAs: mock(async () => { throw new Error("not used"); }),
+  } as unknown as IAgentManager;
+
+  return manager;
 }
 
-function makeRunMockAgent(output: string, success = true): AgentAdapter {
+function makeRunAgentManager(output: string, success = true): IAgentManager {
   const agentResult: AgentResult = {
     success,
     exitCode: success ? 0 : 1,
@@ -61,7 +118,8 @@ function makeRunMockAgent(output: string, success = true): AgentAdapter {
     durationMs: 100,
     estimatedCost: 0,
   };
-  return {
+
+  const adapter: AgentAdapter = {
     name: "mock",
     displayName: "Mock Run Agent",
     binary: "mock",
@@ -79,6 +137,44 @@ function makeRunMockAgent(output: string, success = true): AgentAdapter {
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
+
+  // run() delegates to runWithFallback which calls adapter.run()
+  const runWithFallback = mock(async () => ({ result: agentResult, fallbacks: [] }));
+  const run = mock(async (request: { runOptions: unknown }) => {
+    void request;
+    // In production, run() calls adapter.run() via runWithFallback
+    // For test assertions, we track that run() was called
+    // The adapter.run() is also called via runWithFallback delegation
+    return agentResult;
+  });
+
+  const manager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => adapter,
+    isUnavailable: (_agent: string) => false,
+    markUnavailable: (_agent: string, _reason: unknown) => {},
+    reset: () => {},
+    validateCredentials: mock(async () => {}),
+    events: { on: () => {}, off: () => {} },
+    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+    nextCandidate: (_current: string, _hops: number) => null,
+    runWithFallback,
+    completeWithFallback: mock(async () => ({ result: { output, costUsd: 0, source: "mock" }, fallbacks: [] })),
+    run,
+    complete: mock(async (_prompt: string) => { throw new Error("complete() must NOT be called in non-debate path (US-003)"); }),
+    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output, costUsd: 0, source: "mock" })),
+    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
+      void request;
+      return agentResult;
+    }),
+    plan: mock(async () => { throw new Error("not used"); }),
+    planAs: mock(async () => { throw new Error("not used"); }),
+    decompose: mock(async () => { throw new Error("not used"); }),
+    decomposeAs: mock(async () => { throw new Error("not used"); }),
+  } as unknown as IAgentManager;
+
+  return manager;
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
@@ -139,9 +235,9 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     _diffUtilsDeps.spawn = spawnMock;
     _diffUtilsDeps.isGitRefValid = mock(async () => true);
     _diffUtilsDeps.getMergeBase = mock(async () => "merge-base-sha");
-    const agent = makeMockAgent(PASSING_LLM_RESPONSE);
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
 
-    await runSemanticReview("/tmp/wd", "valid-sha", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    await runSemanticReview("/tmp/wd", "valid-sha", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
 
     expect(spawnMock).toHaveBeenCalled();
     const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
@@ -155,9 +251,9 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     _diffUtilsDeps.spawn = spawnMock;
     _diffUtilsDeps.isGitRefValid = mock(async () => false);
     _diffUtilsDeps.getMergeBase = mock(async () => "abc-merge-base");
-    const agent = makeMockAgent(PASSING_LLM_RESPONSE);
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
 
-    await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
 
     expect(spawnMock).toHaveBeenCalled();
     const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
@@ -170,9 +266,9 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     _diffUtilsDeps.spawn = spawnMock;
     _diffUtilsDeps.isGitRefValid = mock(async () => false);
     _diffUtilsDeps.getMergeBase = mock(async () => "fallback-merge-base-sha");
-    const agent = makeMockAgent(PASSING_LLM_RESPONSE);
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
 
-    await runSemanticReview("/tmp/wd", "stale-sha-after-rebase", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    await runSemanticReview("/tmp/wd", "stale-sha-after-rebase", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
 
     expect(spawnMock).toHaveBeenCalled();
     const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
@@ -186,7 +282,7 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     _diffUtilsDeps.isGitRefValid = mock(async () => false);
     _diffUtilsDeps.getMergeBase = mock(async () => undefined);
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
+    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, undefined);
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("skipped: no git ref");
@@ -197,7 +293,7 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     _diffUtilsDeps.isGitRefValid = mock(async () => false);
     _diffUtilsDeps.getMergeBase = mock(async () => undefined);
 
-    const result = await runSemanticReview("/tmp/wd", "bad-sha", STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
+    const result = await runSemanticReview("/tmp/wd", "bad-sha", STORY, DEFAULT_SEMANTIC_CONFIG, undefined);
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("skipped: no git ref");
@@ -229,126 +325,131 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
   });
 
   test("calls agent.run() for the non-debate path", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
-    expect(agent.run).toHaveBeenCalled();
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    expect(agentManager.run).toHaveBeenCalled();
   });
 
   test("does NOT call agent.complete() for the non-debate path", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
-    expect(agent.complete).not.toHaveBeenCalled();
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    expect(agentManager.complete).not.toHaveBeenCalled();
   });
 
   test("agent.run() receives sessionRole='reviewer-semantic' and featureName for own session (#414)", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
     const workdir = "/my/project";
     const featureName = "my-feature";
 
-    await runSemanticReview(workdir, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, featureName);
+    await runSemanticReview(workdir, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, featureName);
 
-    expect(agent.run).toHaveBeenCalled();
-    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.sessionRole).toBe("reviewer-semantic");
-    expect(runOpts.featureName).toBe(featureName);
+    expect(agentManager.run).toHaveBeenCalled();
+    const runOpts = (agentManager.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    const runOptions = runOpts.runOptions as Record<string, unknown>;
+    expect(runOptions.sessionRole).toBe("reviewer-semantic");
+    expect(runOptions.featureName).toBe(featureName);
     const expectedSession = computeAcpHandle(workdir, featureName, STORY.id, "reviewer-semantic");
     expect(expectedSession).toMatch(/^nax-[a-f0-9]+-my-feature-.+-reviewer-semantic$/);
   });
 
   test("agent.run() initial call uses keepOpen: true (session kept open for JSON retry)", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
-    expect(agent.run).toHaveBeenCalled();
-    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.keepOpen).toBe(true);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    expect(agentManager.run).toHaveBeenCalled();
+    const runOpts = (agentManager.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    const runOptions = runOpts.runOptions as Record<string, unknown>;
+    expect(runOptions.keepOpen).toBe(true);
   });
 
   test("session handle encodes workdir hash in session name (via computeAcpHandle)", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
     const workdirA = "/project/alpha";
     const workdirB = "/project/beta";
     const sessionA = computeAcpHandle(workdirA, "feat", STORY.id, "reviewer-semantic");
     const sessionB = computeAcpHandle(workdirB, "feat", STORY.id, "reviewer-semantic");
 
-    await runSemanticReview(workdirA, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "feat");
-    const runOptsA = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    await runSemanticReview(workdirA, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, "feat");
+    const runOptsA = (agentManager.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    const runOptionsA = runOptsA.runOptions as Record<string, unknown>;
 
     expect(sessionA).not.toBe(sessionB);
-    expect(runOptsA.featureName).toBe("feat");
-    expect(runOptsA.storyId).toBe(STORY.id);
+    expect(runOptionsA.featureName).toBe("feat");
+    expect(runOptionsA.storyId).toBe(STORY.id);
   });
 
   test("session handle encodes featureName in session name (via computeAcpHandle)", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
     const featureName = "semantic-continuity";
     const expectedSession = computeAcpHandle("/tmp/wd", featureName, STORY.id, "reviewer-semantic");
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, featureName);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, featureName);
 
-    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.featureName).toBe(featureName);
+    const runOpts = (agentManager.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    const runOptions = runOpts.runOptions as Record<string, unknown>;
+    expect(runOptions.featureName).toBe(featureName);
     expect(expectedSession).toContain("semantic-continuity");
   });
 
   test("session handle encodes storyId in session name (via computeAcpHandle)", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
     const storyWithDifferentId: SemanticStory = { ...STORY, id: "US-999" };
     const expectedSession = computeAcpHandle("/tmp/wd", "feat", "US-999", "reviewer-semantic");
 
-    await runSemanticReview("/tmp/wd", "abc123", storyWithDifferentId, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "feat");
+    await runSemanticReview("/tmp/wd", "abc123", storyWithDifferentId, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, "feat");
 
-    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
-    expect(runOpts.storyId).toBe("US-999");
+    const runOpts = (agentManager.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    const runOptions = runOpts.runOptions as Record<string, unknown>;
+    expect(runOptions.storyId).toBe("US-999");
     expect(expectedSession).toContain("us-999");
   });
 
   test("extracts rawResponse from AgentRunResult.output field — passed=true", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(result.success).toBe(true);
     expect(result.output).toContain("Semantic review passed");
   });
 
   test("extracts rawResponse from AgentRunResult.output field — passed=false with findings", async () => {
-    const agent = makeRunMockAgent(FAILING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(FAILING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Function is a stub");
   });
 
   test("ReviewCheckResult has check='semantic' field after run() path", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(result.check).toBe("semantic");
   });
 
   test("ReviewCheckResult has exitCode=0 when run() returns passed=true", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(result.exitCode).toBe(0);
   });
 
   test("ReviewCheckResult has exitCode=1 when run() returns passed=false", async () => {
-    const agent = makeRunMockAgent(FAILING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(FAILING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(result.exitCode).toBe(1);
   });
 
   test("ReviewCheckResult has command='' field", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(result.command).toBe("");
   });
 
   test("ReviewCheckResult has durationMs field as number", async () => {
-    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(typeof result.durationMs).toBe("number");
   });
 
   test("ReviewCheckResult includes findings when run() output has failing findings", async () => {
-    const agent = makeRunMockAgent(FAILING_LLM_RESPONSE);
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+    const agentManager = makeRunAgentManager(FAILING_LLM_RESPONSE);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
     expect(result.findings).toBeDefined();
     expect(Array.isArray(result.findings)).toBe(true);
     expect((result.findings?.length ?? 0)).toBeGreaterThan(0);

@@ -11,11 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { AgentResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
+import type { AgentAdapter } from "../../../src/agents/types";
 import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
-import type { AgentAdapter } from "../../../src/agents/types";
 import * as loggerModule from "../../../src/logger";
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,44 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
   } as unknown as AgentAdapter;
 }
 
+/**
+ * Build an IAgentManager wrapping a multi-call agent adapter.
+ * Tests assert on agentManager.getAgent("claude").run.mock.calls directly
+ * since adversarial.ts calls agentManager.run() which delegates to adapter.run().
+ */
+function makeMultiCallAgentManager(responses: string[], costPerCall = 0.5): IAgentManager {
+  const adapter = makeMultiCallAgent(responses, costPerCall);
+
+  const manager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => adapter,
+    isUnavailable: (_agent: string) => false,
+    markUnavailable: (_agent: string, _reason: unknown) => {},
+    reset: () => {},
+    validateCredentials: mock(async () => {}),
+    events: { on: () => {}, off: () => {} },
+    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+    nextCandidate: (_current: string, _hops: number) => null,
+    runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: responses[0] ?? responses[responses.length - 1], rateLimited: false, durationMs: 100, estimatedCost: costPerCall }, fallbacks: [] })),
+    completeWithFallback: mock(async () => ({ result: { output: responses[0] ?? responses[responses.length - 1], costUsd: costPerCall, source: "mock" }, fallbacks: [] })),
+    run: mock(async (request: { runOptions: unknown }) => {
+      return adapter.run(request.runOptions as Parameters<typeof adapter.run>[0]);
+    }),
+    complete: mock(async () => ({ output: responses[0] ?? responses[responses.length - 1], costUsd: costPerCall, source: "mock" })),
+    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: responses[0] ?? responses[responses.length - 1], costUsd: costPerCall, source: "mock" })),
+    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
+      return adapter.run(request.runOptions as Parameters<typeof adapter.run>[0]);
+    }),
+    plan: mock(async () => { throw new Error("not used"); }),
+    planAs: mock(async () => { throw new Error("not used"); }),
+    decompose: mock(async () => { throw new Error("not used"); }),
+    decomposeAs: mock(async () => { throw new Error("not used"); }),
+  } as unknown as IAgentManager;
+
+  return manager;
+}
+
 // ---------------------------------------------------------------------------
 // Logger mock helpers
 // ---------------------------------------------------------------------------
@@ -136,14 +176,12 @@ function makeLogger(): MockLogger {
 let origSpawn: typeof _diffUtilsDeps.spawn;
 let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
 let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
-let origReadAcpSession: typeof _adversarialDeps.readAcpSession;
 let origWriteReviewAudit: typeof _adversarialDeps.writeReviewAudit;
 
 function saveAllDeps() {
   origSpawn = _diffUtilsDeps.spawn;
   origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
   origGetMergeBase = _diffUtilsDeps.getMergeBase;
-  origReadAcpSession = _adversarialDeps.readAcpSession;
   origWriteReviewAudit = _adversarialDeps.writeReviewAudit;
 }
 
@@ -151,7 +189,6 @@ function restoreAllDeps() {
   _diffUtilsDeps.spawn = origSpawn;
   _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
   _diffUtilsDeps.getMergeBase = origGetMergeBase;
-  _adversarialDeps.readAcpSession = origReadAcpSession;
   _adversarialDeps.writeReviewAudit = origWriteReviewAudit;
 }
 
@@ -159,7 +196,6 @@ function setupHappyPathDeps(statContent = STAT_OUTPUT) {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   _diffUtilsDeps.spawn = makeSpawnMock(statContent);
-  _adversarialDeps.readAcpSession = mock(async () => null);
   _adversarialDeps.writeReviewAudit = mock(async () => {});
 }
 
@@ -176,14 +212,14 @@ describe("runAdversarialReview — JSON retry succeeds", () => {
   afterEach(restoreAllDeps);
 
   test("uses valid JSON from retry when initial response is unparseable", async () => {
-    const agent = makeMultiCallAgent(["this is not json at all", PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.success).toBe(true);
@@ -191,64 +227,64 @@ describe("runAdversarialReview — JSON retry succeeds", () => {
   });
 
   test("agent.run called twice when initial response is unparseable", async () => {
-    const agent = makeMultiCallAgent(["this is not json at all", PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
-    expect((agent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
+    expect((agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
   });
 
   test("retry call uses keepOpen: false to close the session", async () => {
-    const agent = makeMultiCallAgent(["this is not json at all", PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
-    const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
+    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
     expect((calls[1][0] as Record<string, unknown>).keepOpen).toBe(false);
   });
 
   test("initial call uses keepOpen: true so retry has conversation history (session closes by end of runReview, ADR-008)", async () => {
-    const agent = makeMultiCallAgent([PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
-    const calls = (agent.run as ReturnType<typeof mock>).mock.calls;
+    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
     expect((calls[0][0] as Record<string, unknown>).keepOpen).toBe(true);
   });
 
   test("agent.closePhysicalSession called once to close the session after runReview completes", async () => {
-    const agent = makeMultiCallAgent([PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
-    expect((agent.closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((agentManager.getAgent("claude").closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("agent.closePhysicalSession called even when retry was needed (retry-exhausted path)", async () => {
-    const agent = makeMultiCallAgent(["this is not json at all", PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
-    expect((agent.closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((agentManager.getAgent("claude").closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("agent.run called once when initial response is valid JSON", async () => {
-    const agent = makeMultiCallAgent([PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
-    expect((agent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("cost accumulated from both initial and retry calls", async () => {
-    const agent = makeMultiCallAgent(["not json", PASSING_RESPONSE], 0.5);
+    const agentManager = makeMultiCallAgentManager(["not json", PASSING_RESPONSE], 0.5);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.cost).toBeCloseTo(1.0);
@@ -269,31 +305,55 @@ describe("runAdversarialReview — JSON retry failure paths", () => {
 
   test("falls through to fail-open when retry call throws", async () => {
     let callIndex = 0;
-    const agent = {
+    const runMock = mock(async () => {
+      callIndex++;
+      if (callIndex === 1) return { output: "not json at all", estimatedCost: 0 };
+      throw new Error("retry connection failure");
+    });
+    const closeSessionMock = mock(async () => {});
+    const adapter: AgentAdapter = {
       name: "mock",
       displayName: "Mock Agent",
       binary: "mock",
       capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
       isInstalled: mock(async () => true),
-      run: mock(async () => {
-        callIndex++;
-        if (callIndex === 1) return { output: "not json at all", estimatedCost: 0 };
-        throw new Error("retry connection failure");
-      }),
-      closeSession: mock(async () => {}),
-      closePhysicalSession: mock(async () => {}),
+      run: runMock,
+      closeSession: closeSessionMock,
+      closePhysicalSession: closeSessionMock,
       buildCommand: mock(() => []),
       plan: mock(async () => { throw new Error("not used"); }),
       decompose: mock(async () => { throw new Error("not used"); }),
       complete: mock(async (_prompt: string) => ""),
     } as unknown as AgentAdapter;
+    const agentManager: IAgentManager = {
+      getDefault: () => "claude",
+      getAgent: (_name: string) => adapter,
+      isUnavailable: (_agent: string) => false,
+      markUnavailable: (_agent: string, _reason: unknown) => {},
+      reset: () => {},
+      validateCredentials: mock(async () => {}),
+      events: { on: () => {}, off: () => {} },
+      resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+      shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+      nextCandidate: (_current: string, _hops: number) => null,
+      runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "not json at all", rateLimited: false, durationMs: 100, estimatedCost: 0 }, fallbacks: [] })),
+      completeWithFallback: mock(async () => ({ result: { output: "not json at all", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      run: runMock,
+      complete: mock(async () => ({ output: "not json at all", costUsd: 0, source: "mock" })),
+      completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: "not json at all", costUsd: 0, source: "mock" })),
+      runAs: mock(async (_agent: string, request: { runOptions: unknown }) => runMock(request.runOptions as never)),
+      plan: mock(async () => { throw new Error("not used"); }),
+      planAs: mock(async () => { throw new Error("not used"); }),
+      decompose: mock(async () => { throw new Error("not used"); }),
+      decomposeAs: mock(async () => { throw new Error("not used"); }),
+    } as unknown as IAgentManager;
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.success).toBe(true);
@@ -302,14 +362,14 @@ describe("runAdversarialReview — JSON retry failure paths", () => {
 
   test("fails closed when retry also returns truncated JSON with passed:false", async () => {
     const truncated = '{ "passed": false, "findings": [{ "severity": "error"';
-    const agent = makeMultiCallAgent(["not json", truncated]);
+    const agentManager = makeMultiCallAgentManager(["not json", truncated]);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.success).toBe(false);
@@ -339,9 +399,9 @@ describe("runAdversarialReview — retry logging", () => {
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
     const badOutput = "this is not json at all";
-    const agent = makeMultiCallAgent([badOutput, PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager([badOutput, PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
     const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
     expect(parseFailLog).toBeDefined();
@@ -354,9 +414,9 @@ describe("runAdversarialReview — retry logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const agent = makeMultiCallAgent(["not json", PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager(["not json", PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
     const successLog = logger.infoCalls.find((c) => c.message.includes("JSON retry succeeded"));
     expect(successLog).toBeDefined();
@@ -368,9 +428,9 @@ describe("runAdversarialReview — retry logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const agent = makeMultiCallAgent([PASSING_RESPONSE]);
+    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
     const retryLog = logger.infoCalls.find((c) => c.message.includes("retry"));
     expect(retryLog).toBeUndefined();
@@ -381,9 +441,9 @@ describe("runAdversarialReview — retry logging", () => {
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
     const badOutput = "still not json after retry";
-    const agent = makeMultiCallAgent(["not json", badOutput]);
+    const agentManager = makeMultiCallAgentManager(["not json", badOutput]);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
     const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(exhaustLog).toBeDefined();
@@ -399,26 +459,50 @@ describe("runAdversarialReview — retry logging", () => {
 
     // retryAttempted is set before the try block, so retries:1 even when the call throws
     let callIndex = 0;
-    const agent = {
+    const runMock = mock(async () => {
+      callIndex++;
+      if (callIndex === 1) return { output: "not json", estimatedCost: 0 };
+      throw new Error("retry network failure");
+    });
+    const closeSessionMock = mock(async () => {});
+    const adapter: AgentAdapter = {
       name: "mock",
       displayName: "Mock",
       binary: "mock",
       capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
       isInstalled: mock(async () => true),
-      run: mock(async () => {
-        callIndex++;
-        if (callIndex === 1) return { output: "not json", estimatedCost: 0 };
-        throw new Error("retry network failure");
-      }),
-      closeSession: mock(async () => {}),
-      closePhysicalSession: mock(async () => {}),
+      run: runMock,
+      closeSession: closeSessionMock,
+      closePhysicalSession: closeSessionMock,
       buildCommand: mock(() => []),
       plan: mock(async () => { throw new Error("not used"); }),
       decompose: mock(async () => { throw new Error("not used"); }),
       complete: mock(async () => ""),
     } as unknown as AgentAdapter;
+    const agentManager: IAgentManager = {
+      getDefault: () => "claude",
+      getAgent: (_name: string) => adapter,
+      isUnavailable: (_agent: string) => false,
+      markUnavailable: (_agent: string, _reason: unknown) => {},
+      reset: () => {},
+      validateCredentials: mock(async () => {}),
+      events: { on: () => {}, off: () => {} },
+      resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+      shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+      nextCandidate: (_current: string, _hops: number) => null,
+      runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "not json", rateLimited: false, durationMs: 100, estimatedCost: 0 }, fallbacks: [] })),
+      completeWithFallback: mock(async () => ({ result: { output: "not json", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      run: runMock,
+      complete: mock(async () => ({ output: "not json", costUsd: 0, source: "mock" })),
+      completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: "not json", costUsd: 0, source: "mock" })),
+      runAs: mock(async (_agent: string, request: { runOptions: unknown }) => runMock(request.runOptions as never)),
+      plan: mock(async () => { throw new Error("not used"); }),
+      planAs: mock(async () => { throw new Error("not used"); }),
+      decompose: mock(async () => { throw new Error("not used"); }),
+      decomposeAs: mock(async () => { throw new Error("not used"); }),
+    } as unknown as IAgentManager;
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
     const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(exhaustLog).toBeDefined();

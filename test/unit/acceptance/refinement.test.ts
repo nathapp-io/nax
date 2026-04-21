@@ -7,7 +7,7 @@
  * - parseRefinementResponse handles valid JSON response correctly
  * - parseRefinementResponse falls back to original text on malformed JSON
  * - Criteria marked testable:false are preserved but flagged
- * - Module uses adapter.complete() for LLM calls, not direct Bun.spawn
+ * - Module uses createManager + agentManager.complete() for LLM calls, not direct Bun.spawn
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -28,6 +28,7 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import type { RefinedCriterion } from "../../../src/acceptance/types";
 import type { CompleteResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -53,7 +54,7 @@ function makeConfig(acceptanceOverride?: Partial<NaxConfig["acceptance"]>): NaxC
         powerful: { provider: "anthropic", model: "claude-opus-4-5" },
       },
     },
-    autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+    agent: { default: "claude" },
     acceptance: { ...DEFAULT_CONFIG.acceptance, model: "fast", ...acceptanceOverride },
   };
 }
@@ -69,8 +70,42 @@ function makeLLMResponse(criteria: string[], storyId: string, testable = true): 
   return { output: JSON.stringify(items), costUsd: 0, source: "fallback" };
 }
 
+/** Make a mock IAgentManager that captures prompt and returns a configurable result */
+function makeMockRefineManager(
+  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ complete: async () => ({ output: "{}", costUsd: 0, source: "fallback" }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: completeFn
+      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
+      : async () => ({ result: { output: "{}", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: completeFn
+      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
+      : async () => ({ output: "{}", costUsd: 0, source: "fallback" }),
+    completeAs: completeFn
+      ? async (name: string, opts: any) => completeFn("", opts)
+      : async () => ({ output: "{}", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-withDepsRestore(_refineDeps, ["adapter"]);
+withDepsRestore(_refineDeps, ["createManager"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -81,8 +116,8 @@ describe("_refineDeps", () => {
     expect(_refineDeps).toBeDefined();
   });
 
-  test("has adapter with a complete() method", () => {
-    expect(typeof _refineDeps.adapter.complete).toBe("function");
+  test("has createManager function", () => {
+    expect(typeof _refineDeps.createManager).toBe("function");
   });
 });
 
@@ -242,15 +277,17 @@ describe("parseRefinementResponse", () => {
   });
 });
 
-describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
-  test("calls adapter.complete() exactly once per call", async () => {
+describe("refineAcceptanceCriteria — createManager integration", () => {
+  test("calls agentManager.complete() exactly once per call", async () => {
     const config = makeConfig();
     let callCount = 0;
 
-    _refineDeps.adapter.complete = mock(async () => {
-      callCount++;
-      return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () => {
+        callCount++;
+        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -265,10 +302,12 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     const config = makeConfig({ model: "balanced" });
     let receivedModel: string | undefined;
 
-    _refineDeps.adapter.complete = mock(async (_prompt, options) => {
-      receivedModel = options?.model;
-      return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (_prompt, options) => {
+        receivedModel = options?.model;
+        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -279,19 +318,20 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     expect(receivedModel).toBe("claude-sonnet-4-5");
   });
 
-  test("does NOT call Bun.spawn directly — uses adapter.complete()", async () => {
+  test("does NOT call Bun.spawn directly — uses agentManager.complete()", async () => {
     const config = makeConfig();
     const spawnCalls: unknown[] = [];
     const originalSpawn = Bun.spawn;
 
-    // Temporarily monitor Bun.spawn to detect direct usage
     (Bun as { spawn: unknown }).spawn = (...args: unknown[]) => {
       spawnCalls.push(args);
       return originalSpawn(...(args as Parameters<typeof originalSpawn>));
     };
 
-    _refineDeps.adapter.complete = mock(async () =>
-      makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () =>
+        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+      ),
     );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -308,8 +348,10 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   test("returns RefinedCriterion[] with original field matching input", async () => {
     const config = makeConfig();
 
-    _refineDeps.adapter.complete = mock(async () =>
-      makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () =>
+        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+      ),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -328,8 +370,10 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   test("returns RefinedCriterion[] with refined field from LLM response", async () => {
     const config = makeConfig();
 
-    _refineDeps.adapter.complete = mock(async () =>
-      makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () =>
+        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+      ),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -344,14 +388,16 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     }
   });
 
-  test("passes a plain string prompt to adapter.complete() (not SDK format)", async () => {
+  test("passes a plain string prompt to agentManager.complete() (not SDK format)", async () => {
     const config = makeConfig();
     let capturedPrompt: unknown;
 
-    _refineDeps.adapter.complete = mock(async (prompt) => {
-      capturedPrompt = prompt;
-      return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt) => {
+        capturedPrompt = prompt;
+        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -362,14 +408,16 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     expect(typeof capturedPrompt).toBe("string");
   });
 
-  test("prompt passed to adapter.complete() contains all criteria", async () => {
+  test("prompt passed to agentManager.complete() contains all criteria", async () => {
     const config = makeConfig();
     let capturedPrompt = "";
 
-    _refineDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -382,14 +430,16 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     }
   });
 
-  test("prompt passed to adapter.complete() contains codebase context", async () => {
+  test("prompt passed to agentManager.complete() contains codebase context", async () => {
     const config = makeConfig();
     let capturedPrompt = "";
 
-    _refineDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -403,8 +453,10 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   test("preserves criteria with testable:false in the result", async () => {
     const config = makeConfig();
 
-    _refineDeps.adapter.complete = mock(async () =>
-      makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false),
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () =>
+        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false),
+      ),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -423,8 +475,10 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     const config = makeConfig();
     const customStoryId = "STORY-XYZ";
 
-    _refineDeps.adapter.complete = mock(async () =>
-      makeLLMResponse(SAMPLE_CRITERIA, customStoryId),
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () =>
+        makeLLMResponse(SAMPLE_CRITERIA, customStoryId),
+      ),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -438,13 +492,13 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     }
   });
 
-  test("handles empty criteria list without calling adapter.complete()", async () => {
+  test("handles empty criteria list without calling agentManager.complete()", async () => {
     const config = makeConfig();
-    let adapterCalled = false;
+    let managerCreated = false;
 
-    _refineDeps.adapter.complete = mock(async () => {
-      adapterCalled = true;
-      return { output: "[]", costUsd: 0, source: "fallback" } satisfies CompleteResult;
+    _refineDeps.createManager = mock(() => {
+      managerCreated = true;
+      return makeMockRefineManager(async () => ({ output: "[]", costUsd: 0, source: "fallback" } satisfies CompleteResult));
     });
 
     const result = await refineAcceptanceCriteria([], {
@@ -454,13 +508,15 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     });
 
     expect(result.criteria).toHaveLength(0);
-    expect(adapterCalled).toBe(false);
+    expect(managerCreated).toBe(false);
   });
 
-  test("falls back to original text when adapter.complete() returns malformed JSON", async () => {
+  test("falls back to original text when agentManager.complete() returns malformed JSON", async () => {
     const config = makeConfig();
 
-    _refineDeps.adapter.complete = mock(async () => ({ output: "not valid json at all {{{", costUsd: 0, source: "fallback" } satisfies CompleteResult));
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () => ({ output: "not valid json at all {{{", costUsd: 0, source: "fallback" } satisfies CompleteResult)),
+    );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -475,12 +531,14 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     }
   });
 
-  test("falls back gracefully when adapter.complete() throws", async () => {
+  test("falls back gracefully when agentManager.complete() throws", async () => {
     const config = makeConfig();
 
-    _refineDeps.adapter.complete = mock(async () => {
-      throw new Error("adapter network error");
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async () => {
+        throw new Error("adapter network error");
+      }),
+    );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -488,7 +546,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       config,
     });
 
-    // Should return fallback results, not throw
     expect(Array.isArray(result.criteria)).toBe(true);
     expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
     for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {

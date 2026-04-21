@@ -11,11 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
+import type { AgentAdapter } from "../../../src/agents/types";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import type { AgentAdapter } from "../../../src/agents/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,21 +39,77 @@ const CFG: SemanticReviewConfig = {
   timeoutMs: 60_000,
 };
 
-function makeMockAgent(response: string): AgentAdapter {
-  return {
+function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
+  const adapter: AgentAdapter = {
     name: "mock",
     displayName: "Mock",
     binary: "mock",
-    capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
+    capabilities: {
+      supportedTiers: [],
+      supportedTestStrategies: [],
+      features: {},
+    } as unknown as AgentAdapter["capabilities"],
     isInstalled: mock(async () => true),
-    run: mock(async () => ({ output: response, estimatedCost: 0 })),
+    run: mock(async (_opts) => ({
+      success: true,
+      exitCode: 0,
+      output: llmResponse,
+      rateLimited: false,
+      durationMs: 100,
+      estimatedCost: cost,
+    })),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
-    complete: mock(async (_prompt: string) => response),
+    complete: mock(async () => llmResponse),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
+
+  const manager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => adapter,
+    isUnavailable: (_agent: string) => false,
+    markUnavailable: (_agent: string, _reason: unknown) => {},
+    reset: () => {},
+    validateCredentials: mock(async () => {}),
+    events: { on: () => {}, off: () => {} },
+    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+    nextCandidate: (_current: string, _hops: number) => null,
+    runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCost: cost }, fallbacks: [] })),
+    completeWithFallback: mock(async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] })),
+    run: mock(async (request: { runOptions: unknown }) => {
+      void request;
+      return {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCost: cost,
+      } as AgentResult;
+    }),
+    complete: mock(async () => ({ output: llmResponse, costUsd: cost, source: "mock" })),
+    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: llmResponse, costUsd: cost, source: "mock" })),
+    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
+      void request;
+      return {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCost: cost,
+      } as AgentResult;
+    }),
+    plan: mock(async () => { throw new Error("not used"); }),
+    planAs: mock(async () => { throw new Error("not used"); }),
+    decompose: mock(async () => { throw new Error("not used"); }),
+    decomposeAs: mock(async () => { throw new Error("not used"); }),
+  } as unknown as IAgentManager;
+
+  return manager;
 }
 
 function makeSpawnMock(stdout = "diff output", exitCode = 0) {
@@ -95,9 +153,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 10, issue: "Stub left in code", suggestion: "Remove stub" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     expect(result.findings).toBeDefined();
     expect(result.findings!.length).toBe(1);
@@ -111,9 +169,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 5, issue: "Missing wiring in runner", suggestion: "Fix it" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     expect(result.findings![0].message).toBe("Missing wiring in runner");
   });
@@ -127,9 +185,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/b.ts", line: 2, issue: "Another issue", suggestion: "Fix" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     for (const finding of result.findings!) {
       expect(finding.source).toBe("semantic-review");
@@ -144,9 +202,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "info", file: "src/x.ts", line: 3, issue: "Info issue", suggestion: "Fix" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     // info is advisory by default — check advisoryFindings
     expect(result.advisoryFindings![0].ruleId).toBe("semantic");
@@ -160,9 +218,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/review/runner.ts", line: 42, issue: "Issue", suggestion: "Fix" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     expect(result.findings![0].file).toBe("src/review/runner.ts");
   });
@@ -175,9 +233,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 99, issue: "Issue", suggestion: "Fix" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     expect(result.findings![0].line).toBe(99);
   });
@@ -190,9 +248,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 1, issue: "Issue", suggestion: "Fix" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     expect(result.findings![0].severity).toBe("error");
   });
@@ -205,9 +263,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "warn", file: "src/foo.ts", line: 1, issue: "Warn issue", suggestion: "Fix" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     // warn → warning, placed in advisoryFindings at default "error" threshold
     expect(result.advisoryFindings![0].severity).toBe("warning");
@@ -221,9 +279,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "info", file: "src/foo.ts", line: 1, issue: "Info issue", suggestion: "Fix" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     // info is advisory at default "error" threshold
     expect(result.advisoryFindings![0].severity).toBe("info");
@@ -239,9 +297,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "info", file: "src/c.ts", line: 5, issue: "Issue C", suggestion: "Fix C" },
       ],
     });
-    const agent = makeMockAgent(llmResponse);
+    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     // Only error blocks by default
     expect(result.findings!.length).toBe(1);
@@ -254,18 +312,18 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
   test("result.findings is empty or absent when LLM returns passed=true", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
-    const agent = makeMockAgent(JSON.stringify({ passed: true, findings: [] }));
+    const agentManager = makeAgentManager(JSON.stringify({ passed: true, findings: [] }));
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });
 
   test("result.findings is empty or absent on fail-open (invalid JSON)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
-    const agent = makeMockAgent("not valid json {{");
+    const agentManager = makeAgentManager("not valid json {{");
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, () => agent);
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
 
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });
@@ -273,7 +331,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   test("result.findings is empty or absent when storyGitRef is missing (skipped)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, CFG, () => null);
+    const result = await runSemanticReview("/tmp/wd", undefined, STORY, CFG, undefined);
 
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });

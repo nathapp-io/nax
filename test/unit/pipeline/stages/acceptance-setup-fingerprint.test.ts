@@ -78,20 +78,15 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// US-004: agentGetFn from ctx is used over _acceptanceSetupDeps.getAgent
+// US-004: agentManager.getDefault() is used when ctx.agentManager is set
 // ---------------------------------------------------------------------------
 
-describe("US-004: agentGetFn from ctx overrides _acceptanceSetupDeps.getAgent", () => {
-  test("ctx.agentGetFn is called when set, not _acceptanceSetupDeps.getAgent", async () => {
-    let ctxAgentGetFnCalled = false;
-    let depsGetAgentCalled = false;
+describe("US-004: agentManager.getDefault() is called when ctx.agentManager is set", () => {
+  test("ctx.agentManager.getDefault() is used for model resolution", async () => {
+    let getDefaultCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.getAgent = (_name: string) => {
-      depsGetAgentCalled = true;
-      return undefined;
-    };
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -102,17 +97,22 @@ describe("US-004: agentGetFn from ctx overrides _acceptanceSetupDeps.getAgent", 
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
-    const ctx = makeCtx({
-      agentGetFn: (_name: string) => {
-        ctxAgentGetFnCalled = true;
-        return undefined;
+    const mockAgentManager = {
+      getDefault: () => {
+        getDefaultCalled = true;
+        return "claude";
       },
-    } as any);
+      run: mock(async () => ({ output: "", costUsd: 0 })),
+      complete: mock(async () => ({ output: "", costUsd: 0 })),
+    } as any;
+
+    const ctx = makeCtx({
+      agentManager: mockAgentManager,
+    });
 
     await acceptanceSetupStage.execute(ctx);
 
-    expect(ctxAgentGetFnCalled).toBe(true);
-    expect(depsGetAgentCalled).toBe(false);
+    expect(getDefaultCalled).toBe(true);
   });
 });
 

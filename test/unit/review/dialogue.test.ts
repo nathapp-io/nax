@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { ReviewDialogueConfigSchema } from "../../../src/config/schemas";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { NaxConfigSchema } from "../../../src/config/schemas";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 import { createReviewerSession } from "../../../src/review/dialogue";
 import type { DialogueMessage, ReviewDialogueResult, ReviewerSession } from "../../../src/review/dialogue";
 import type { ReviewConfig } from "../../../src/review/types";
@@ -78,8 +79,8 @@ const FAILING_RUN_RESPONSE = JSON.stringify({
 
 type RunFn = (opts: AgentRunOptions) => Promise<AgentResult>;
 
-function makeMockAgent(runFn?: RunFn): AgentAdapter {
-  return {
+function makeAgentManager(runFn?: RunFn): IAgentManager {
+  const adapter: AgentAdapter = {
     name: "mock",
     displayName: "Mock Agent",
     binary: "mock",
@@ -103,7 +104,43 @@ function makeMockAgent(runFn?: RunFn): AgentAdapter {
     plan: mock(async () => ({ specContent: "" })),
     decompose: mock(async () => ({ stories: [] })),
     complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
+    closeSession: mock(async () => {}),
+    closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
+
+  const manager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => adapter,
+    isUnavailable: (_agent: string) => false,
+    markUnavailable: (_agent: string, _reason: unknown) => {},
+    reset: () => {},
+    validateCredentials: mock(async () => {}),
+    events: { on: () => {}, off: () => {} },
+    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+    nextCandidate: (_current: string, _hops: number) => null,
+    runWithFallback: mock(async (request: { runOptions: AgentRunOptions }) => {
+      const result = await adapter.run(request.runOptions);
+      return { result, fallbacks: [] };
+    }),
+    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+    run: mock(async (request: { runOptions: AgentRunOptions }) => {
+      const result = await adapter.run(request.runOptions);
+      return result;
+    }),
+    complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+    completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+    runAs: mock(async (_agent: string, request: { runOptions: AgentRunOptions }) => {
+      const result = await adapter.run(request.runOptions);
+      return result;
+    }),
+    plan: mock(async () => ({ specContent: "" })),
+    planAs: mock(async () => ({ specContent: "" })),
+    decompose: mock(async () => ({ stories: [] })),
+    decomposeAs: mock(async () => ({ stories: [] })),
+  } as unknown as IAgentManager;
+
+  return manager;
 }
 
 function makeConfig() {
@@ -290,32 +327,32 @@ describe("ReviewConfig — dialogue field type compatibility", () => {
 
 describe("createReviewerSession — initial state", () => {
   test("returns a ReviewerSession object", () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-001", "/work", "my-feature", makeConfig());
     expect(session).toBeDefined();
   });
 
   test("session.active is true after creation", () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-001", "/work", "my-feature", makeConfig());
     expect(session.active).toBe(true);
   });
 
   test("session.history is empty after creation", () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-001", "/work", "my-feature", makeConfig());
     expect(session.history.length).toBe(0);
   });
 
   test("session exposes review() method", () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-001", "/work", "my-feature", makeConfig());
     expect(typeof session.review).toBe("function");
   });
 
   test("session exposes destroy() method", () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-001", "/work", "my-feature", makeConfig());
     expect(typeof session.destroy).toBe("function");
   });
 });
@@ -341,7 +378,7 @@ describe("ReviewerSession.review() — agent.run() call parameters", () => {
         estimatedCost: 0.001,
       };
     };
-    session = createReviewerSession(makeMockAgent(runFn), "US-001", "/work", "my-feature", makeConfig());
+    session = createReviewerSession(makeAgentManager(runFn), "US-001", "/work", "my-feature", makeConfig());
   });
 
   afterEach(async () => {
@@ -358,8 +395,8 @@ describe("ReviewerSession.review() — agent.run() call parameters", () => {
       durationMs: 10,
       estimatedCost: 0.001,
     }));
-    const agent = makeMockAgent(runMock as RunFn);
-    const s = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager(runMock as RunFn);
+    const s = createReviewerSession(agentManager, "US-001", "/work", "my-feature", makeConfig());
     await s.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect((runMock as ReturnType<typeof mock>).mock.calls.length).toBe(1);
     await s.destroy();
@@ -402,7 +439,7 @@ describe("ReviewerSession.review() — agent.run() call parameters", () => {
 
 describe("ReviewerSession.review() — result parsing", () => {
   test("returns ReviewDialogueResult with checkResult.success === true for passing response", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(result.checkResult.success).toBe(true);
@@ -410,7 +447,7 @@ describe("ReviewerSession.review() — result parsing", () => {
   });
 
   test("returns ReviewDialogueResult with checkResult.findings as array for passing response", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(Array.isArray(result.checkResult.findings)).toBe(true);
@@ -419,7 +456,7 @@ describe("ReviewerSession.review() — result parsing", () => {
   });
 
   test("returns ReviewDialogueResult with findingReasoning as Map for passing response", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(result.findingReasoning instanceof Map).toBe(true);
@@ -435,7 +472,7 @@ describe("ReviewerSession.review() — result parsing", () => {
       durationMs: 10,
       estimatedCost: 0.001,
     });
-    const session = createReviewerSession(makeMockAgent(runFn), "US-001", "/work", "my-feature", makeConfig());
+    const session = createReviewerSession(makeAgentManager(runFn), "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(result.checkResult.success).toBe(false);
     await session.destroy();
@@ -450,7 +487,7 @@ describe("ReviewerSession.review() — result parsing", () => {
       durationMs: 10,
       estimatedCost: 0.001,
     });
-    const session = createReviewerSession(makeMockAgent(runFn), "US-001", "/work", "my-feature", makeConfig());
+    const session = createReviewerSession(makeAgentManager(runFn), "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(result.checkResult.findings.length).toBe(1);
     expect(result.checkResult.findings[0]?.ruleId).toBe("missing-ac-coverage");
@@ -466,7 +503,7 @@ describe("ReviewerSession.review() — result parsing", () => {
       durationMs: 10,
       estimatedCost: 0.001,
     });
-    const session = createReviewerSession(makeMockAgent(runFn), "US-001", "/work", "my-feature", makeConfig());
+    const session = createReviewerSession(makeAgentManager(runFn), "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(result.findingReasoning.has("missing-ac-coverage")).toBe(true);
     expect(result.findingReasoning.get("missing-ac-coverage")).toContain("acceptance criteria");
@@ -482,7 +519,7 @@ describe("ReviewerSession.review() — result parsing", () => {
       durationMs: 10,
       estimatedCost: 0.001,
     });
-    const session = createReviewerSession(makeMockAgent(runFn), "US-001", "/work", "my-feature", makeConfig());
+    const session = createReviewerSession(makeAgentManager(runFn), "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(result.findingReasoning.size).toBe(1);
     await session.destroy();
@@ -495,7 +532,7 @@ describe("ReviewerSession.review() — result parsing", () => {
 
 describe("ReviewerSession.review() — history entries", () => {
   test("appends exactly two entries to history per review() call", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(session.history.length).toBe(2);
@@ -503,7 +540,7 @@ describe("ReviewerSession.review() — history entries", () => {
   });
 
   test("first history entry has role 'implementer'", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(session.history[0]?.role).toBe("implementer");
@@ -511,7 +548,7 @@ describe("ReviewerSession.review() — history entries", () => {
   });
 
   test("second history entry has role 'reviewer'", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(session.history[1]?.role).toBe("reviewer");
@@ -519,7 +556,7 @@ describe("ReviewerSession.review() — history entries", () => {
   });
 
   test("implementer history entry content contains the diff", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(session.history[0]?.content).toContain(SAMPLE_DIFF);
@@ -527,7 +564,7 @@ describe("ReviewerSession.review() — history entries", () => {
   });
 
   test("reviewer history entry content contains the agent response", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(session.history[1]?.content).toBeTruthy();
@@ -535,7 +572,7 @@ describe("ReviewerSession.review() — history entries", () => {
   });
 
   test("second review() call appends two more entries (total 4)", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
@@ -544,7 +581,7 @@ describe("ReviewerSession.review() — history entries", () => {
   });
 
   test("history entries are DialogueMessage shaped (role + content)", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     for (const msg of session.history) {
@@ -561,14 +598,14 @@ describe("ReviewerSession.review() — history entries", () => {
 
 describe("ReviewerSession.destroy() — deactivation and guard", () => {
   test("destroy() sets session.active to false", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.destroy();
     expect(session.active).toBe(false);
   });
 
   test("destroy() clears history to empty array", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(session.history.length).toBe(2);
@@ -577,14 +614,14 @@ describe("ReviewerSession.destroy() — deactivation and guard", () => {
   });
 
   test("review() after destroy() throws NaxError", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.destroy();
     await expect(session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG)).rejects.toBeInstanceOf(NaxError);
   });
 
   test("review() after destroy() throws NaxError with code REVIEWER_SESSION_DESTROYED", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.destroy();
     let caught: unknown;
@@ -598,7 +635,7 @@ describe("ReviewerSession.destroy() — deactivation and guard", () => {
   });
 
   test("destroy() is idempotent — calling twice does not throw", async () => {
-    const agent = makeMockAgent();
+    const agent = makeAgentManager();
     const session = createReviewerSession(agent, "US-001", "/work", "my-feature", makeConfig());
     await session.destroy();
     await expect(session.destroy()).resolves.toBeUndefined();

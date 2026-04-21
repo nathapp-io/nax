@@ -59,32 +59,47 @@ function makeFailedCheck(check: ReviewCheckResult["check"] = "semantic"): Review
   };
 }
 
-function makeMockAgent(capturedPrompts: string[]) {
+/**
+ * Creates a mock IAgentManager that captures run() calls.
+ * AgentManager.run() extracts request.runOptions and passes them to adapter.run(),
+ * so the mock extracts runOptions and forwards them to the inner mock.
+ */
+function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
   return {
-    name: "mock",
-    run: mock(async ({ prompt }: { prompt: string }) => {
-      capturedPrompts.push(prompt);
-      return { output: "ok", estimatedCost: 0 };
+    getDefault: () => "claude",
+    run: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return await mockRun(request.runOptions);
     }),
-    isInstalled: mock(async () => true),
-    buildCommand: mock(() => []),
-    plan: mock(async () => { throw new Error("not used"); }),
-    decompose: mock(async () => { throw new Error("not used"); }),
-    complete: mock(async () => ""),
-  } as unknown as ReturnType<typeof _autofixDeps.getAgent>;
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+    completeAs: mock(async () => ({ output: "", costUsd: 0 })),
+    complete: mock(async () => ({ output: "", costUsd: 0 })),
+    planAs: mock(async () => ({ specContent: "" })),
+    decomposeAs: mock(async () => ({ stories: [] })),
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} },
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return { result: await mockRun(request.runOptions), fallbacks: [] };
+    }),
+    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
+    getAgent: () => undefined,
+  } as any;
 }
 
 // ---------------------------------------------------------------------------
 // Saved deps
 // ---------------------------------------------------------------------------
 
-let origGetAgent: typeof _autofixDeps.getAgent;
 let origRecheckReview: typeof _autofixDeps.recheckReview;
 let origCaptureGitRef: typeof _autofixDeps.captureGitRef;
 let origRunTestWriterRectification: typeof _autofixDeps.runTestWriterRectification;
 
 beforeEach(() => {
-  origGetAgent = _autofixDeps.getAgent;
   origRecheckReview = _autofixDeps.recheckReview;
   origCaptureGitRef = _autofixDeps.captureGitRef;
   origRunTestWriterRectification = _autofixDeps.runTestWriterRectification;
@@ -93,7 +108,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  _autofixDeps.getAgent = origGetAgent;
   _autofixDeps.recheckReview = origRecheckReview;
   _autofixDeps.captureGitRef = origCaptureGitRef;
   _autofixDeps.runTestWriterRectification = origRunTestWriterRectification;
@@ -106,8 +120,11 @@ afterEach(() => {
 describe("runAgentRectification — no-op short-circuit", () => {
   test("no-op turn is not counted as a consumed attempt", async () => {
     const capturedPrompts: string[] = [];
-    const agent = makeMockAgent(capturedPrompts);
-    _autofixDeps.getAgent = mock(() => agent);
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      capturedPrompts.push(opts.prompt as string);
+      return { success: true, estimatedCost: 0, output: "ok" };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
 
     // First call returns same ref (no-op); subsequent calls return different ref (change).
     let captureCallCount = 0;
@@ -129,6 +146,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: { success: false, checks: [makeFailedCheck("semantic")] } as unknown as PipelineContext["reviewResult"],
     });
 
@@ -141,8 +159,11 @@ describe("runAgentRectification — no-op short-circuit", () => {
 
   test("no-op reprompt prompt contains UNRESOLVED instruction", async () => {
     const capturedPrompts: string[] = [];
-    const agent = makeMockAgent(capturedPrompts);
-    _autofixDeps.getAgent = mock(() => agent);
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      capturedPrompts.push(opts.prompt as string);
+      return { success: true, estimatedCost: 0, output: "ok" };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
 
     // Two consecutive same refs → no-op on first call, then change.
     let captureCallCount = 0;
@@ -155,6 +176,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     _autofixDeps.recheckReview = mock(async () => false);
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: { success: false, checks: [makeFailedCheck("adversarial")] } as unknown as PipelineContext["reviewResult"],
     });
 
@@ -165,8 +187,11 @@ describe("runAgentRectification — no-op short-circuit", () => {
 
   test("second consecutive no-op is counted as a consumed attempt", async () => {
     const capturedPrompts: string[] = [];
-    const agent = makeMockAgent(capturedPrompts);
-    _autofixDeps.getAgent = mock(() => agent);
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      capturedPrompts.push(opts.prompt as string);
+      return { success: true, estimatedCost: 0, output: "ok" };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
 
     // All calls return same ref (all no-ops) — agent never makes changes.
     _autofixDeps.captureGitRef = mock(async () => "always-same-ref");
@@ -175,6 +200,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     _autofixDeps.recheckReview = mock(async () => false);
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: { success: false, checks: [makeFailedCheck("semantic")] } as unknown as PipelineContext["reviewResult"],
       config: {
         ...DEFAULT_CONFIG,
@@ -200,8 +226,11 @@ describe("runAgentRectification — no-op short-circuit", () => {
 
   test("no-op count resets after agent makes a change", async () => {
     const capturedPrompts: string[] = [];
-    const agent = makeMockAgent(capturedPrompts);
-    _autofixDeps.getAgent = mock(() => agent);
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      capturedPrompts.push(opts.prompt as string);
+      return { success: true, estimatedCost: 0, output: "ok" };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
 
     // Attempt 1: no-op → reprompt. Attempt 1 reprompt: makes change. Attempt 2: passes.
     let captureCallCount = 0;
@@ -219,6 +248,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: { success: false, checks: [makeFailedCheck("semantic")] } as unknown as PipelineContext["reviewResult"],
     });
 
@@ -234,8 +264,8 @@ describe("runAgentRectification — no-op short-circuit", () => {
 
 describe("runAgentRectification — attemptsRemaining in logs", () => {
   test("loop exhaustion reports attemptsUsed and globalBudgetUsed", async () => {
-    const agent = makeMockAgent([]);
-    _autofixDeps.getAgent = mock(() => agent);
+    const mockRun = mock(async () => ({ success: false, estimatedCost: 0, output: "", exitCode: 1, rateLimited: false }));
+    const agentManager = makeMockAgentManager(mockRun);
 
     // Always different ref so no-op short-circuit doesn't fire.
     let counter = 0;
@@ -243,6 +273,7 @@ describe("runAgentRectification — attemptsRemaining in logs", () => {
     _autofixDeps.recheckReview = mock(async () => false);
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: {
         success: false,
         checks: [makeFailedCheck("lint")],

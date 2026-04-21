@@ -16,14 +16,49 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
+import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import type { DebateResult } from "../../../src/debate/types";
 import type { PRD } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fixtures
+// Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+function makeMockPlanManager(
+  planFn?: (agentName: string, opts: any) => Promise<{ specContent: string }>,
+  completeFn?: (agentName: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ plan: async () => ({ specContent: "" }), complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: completeFn
+      ? async (opts: any) => completeFn("claude", opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: completeFn
+      ? async (name: string, opts: any) => completeFn(name, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: planFn
+      ? async (name: string, opts: any) => planFn(name, opts)
+      : async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
+}
 
 const SAMPLE_SPEC = `# Feature: Debate Integration Test\n## Goal\nTest that debate is wired into plan.\n`;
 
@@ -170,7 +205,7 @@ const DEBATE_FAILED_RESULT: DebateResult = {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origGetAgent = _planDeps.getAgent;
+const origCreateManager = _planDeps.createManager;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
@@ -184,22 +219,13 @@ const origInitInteractionChain = _planDeps.initInteractionChain;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Adapter that simulates complete() for CLI/auto mode */
-function makeFakeCompleteAdapter(prd: PRD = SAMPLE_PRD) {
-  return { complete: mock(async () => JSON.stringify(prd)) };
-}
-
-/** Adapter that simulates plan() for interactive/ACP mode (writes nothing — we mock readFile) */
-function makeFakePlanAdapter() {
-  return {
-    plan: mock(async () => ({ specContent: "" })),
-    complete: mock(async () => JSON.stringify(SAMPLE_PRD)),
-  };
-}
-
 /** Set up mocks for a successful interactive plan (adapter.plan() path) */
-function setupInteractivePlanMocks(adapter: ReturnType<typeof makeFakePlanAdapter>) {
-  _planDeps.getAgent = mock(() => adapter as never);
+function setupInteractivePlanMocks(
+  planFn: (name: string, opts: any) => Promise<{ specContent: string }>,
+) {
+  _planDeps.createManager = mock(() =>
+    makeMockPlanManager(planFn, undefined),
+  );
   _planDeps.existsSync = mock((p: string) => p.includes(".nax"));
   _planDeps.readFile = mock(async () => JSON.stringify(SAMPLE_PRD));
 }
@@ -230,7 +256,12 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.existsSync = mock(() => false);
     _planDeps.initInteractionChain = mock(async () => null);
-    _planDeps.getAgent = mock(() => makeFakeCompleteAdapter() as never);
+    _planDeps.createManager = mock(() =>
+      makeMockPlanManager(
+        undefined,
+        async (_name: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "claude" }),
+      ),
+    );
     _planDeps.createDebateSession = origCreateDebateSession;
   });
 
@@ -239,7 +270,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;
@@ -306,7 +337,12 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC1: adapter.complete() is NOT called when debate is enabled and succeeds", async () => {
     const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
-    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockPlanManager(
+        undefined,
+        async (_name: string, _opts: any) => { adapterComplete(); return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "claude" }; },
+      ),
+    );
 
     _planDeps.createDebateSession = mock(() => ({
       runPlan: mock(async () => DEBATE_PASSED_RESULT),
@@ -339,7 +375,9 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC2: adapter.plan() called exactly once when debate.enabled=false", async () => {
     const adapterPlan = mock(async () => {});
-    _planDeps.getAgent = mock(() => ({ plan: adapterPlan }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockPlanManager(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; }),
+    );
     _planDeps.existsSync = mock(() => true);
     _planDeps.readFile = mock(async (p: string) =>
       p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
@@ -360,7 +398,9 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC2: adapter.plan() called exactly once when debate config is absent", async () => {
     const adapterPlan = mock(async () => {});
-    _planDeps.getAgent = mock(() => ({ plan: adapterPlan }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockPlanManager(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; }),
+    );
     _planDeps.existsSync = mock(() => true);
     _planDeps.readFile = mock(async (p: string) =>
       p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
@@ -381,7 +421,9 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC2: adapter.plan() called when debate.stages.plan.enabled=false", async () => {
     const adapterPlan = mock(async () => {});
-    _planDeps.getAgent = mock(() => ({ plan: adapterPlan }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockPlanManager(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; }),
+    );
     _planDeps.existsSync = mock(() => true);
     _planDeps.readFile = mock(async (p: string) =>
       p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
@@ -405,8 +447,8 @@ describe("planCommand — debate integration (US-004)", () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   test("AC6: falls back to interactive plan path when DebateSession returns outcome=failed", async () => {
-    const adapter = makeFakePlanAdapter();
-    setupInteractivePlanMocks(adapter);
+    const adapterPlan = mock(async () => {});
+    setupInteractivePlanMocks(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; });
 
     _planDeps.createDebateSession = mock(() => ({
       runPlan: mock(async () => DEBATE_FAILED_RESULT),
@@ -417,12 +459,12 @@ describe("planCommand — debate integration (US-004)", () => {
       feature: "debate-plan",
     });
 
-    expect(adapter.plan).toHaveBeenCalledTimes(1);
+    expect(adapterPlan).toHaveBeenCalledTimes(1);
   });
 
   test("AC6: planCommand succeeds (does not throw) when debate fails and fallback is used", async () => {
-    const adapter = makeFakePlanAdapter();
-    setupInteractivePlanMocks(adapter);
+    const adapterPlan = mock(async () => {});
+    setupInteractivePlanMocks(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; });
 
     _planDeps.createDebateSession = mock(() => ({
       runPlan: mock(async () => DEBATE_FAILED_RESULT),

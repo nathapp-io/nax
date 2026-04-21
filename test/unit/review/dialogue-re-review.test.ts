@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { NaxConfigSchema } from "../../../src/config/schemas";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 import { createReviewerSession } from "../../../src/review/dialogue";
 import type { DialogueMessage, ReviewDialogueResult, ReviewerSession } from "../../../src/review/dialogue";
 import type { AgentAdapter, AgentRunOptions, AgentResult } from "../../../src/agents/types";
@@ -98,8 +99,8 @@ const CLARIFY_RESPONSE = "AC-1 requires that reReview() calls agent.run() with k
 
 type RunFn = (opts: AgentRunOptions) => Promise<AgentResult>;
 
-function makeMockAgent(runFn?: RunFn): AgentAdapter {
-  return {
+function makeAgentManager(runFn?: RunFn): IAgentManager {
+  const adapter: AgentAdapter = {
     name: "mock",
     displayName: "Mock Agent",
     binary: "mock",
@@ -123,7 +124,43 @@ function makeMockAgent(runFn?: RunFn): AgentAdapter {
     plan: mock(async () => ({ specContent: "" })),
     decompose: mock(async () => ({ stories: [] })),
     complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
+    closeSession: mock(async () => {}),
+    closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
+
+  const manager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => adapter,
+    isUnavailable: (_agent: string) => false,
+    markUnavailable: (_agent: string, _reason: unknown) => {},
+    reset: () => {},
+    validateCredentials: mock(async () => {}),
+    events: { on: () => {}, off: () => {} },
+    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+    nextCandidate: (_current: string, _hops: number) => null,
+    runWithFallback: mock(async (request: { runOptions: AgentRunOptions }) => {
+      const result = await adapter.run(request.runOptions);
+      return { result, fallbacks: [] };
+    }),
+    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+    run: mock(async (request: { runOptions: AgentRunOptions }) => {
+      const result = await adapter.run(request.runOptions);
+      return result;
+    }),
+    complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+    completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+    runAs: mock(async (_agent: string, request: { runOptions: AgentRunOptions }) => {
+      const result = await adapter.run(request.runOptions);
+      return result;
+    }),
+    plan: mock(async () => ({ specContent: "" })),
+    planAs: mock(async () => ({ specContent: "" })),
+    decompose: mock(async () => ({ stories: [] })),
+    decomposeAs: mock(async () => ({ stories: [] })),
+  } as unknown as IAgentManager;
+
+  return manager;
 }
 
 function makeConfig() {
@@ -148,8 +185,8 @@ async function makeSessionWithReview(runSequence: string[]): Promise<ReviewerSes
       estimatedCost: 0.001,
     };
   };
-  const agent = makeMockAgent(runFn);
-  const session = createReviewerSession(agent, "US-002", "/work", "my-feature", makeConfig());
+  const agentManager = makeAgentManager(runFn);
+  const session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", makeConfig());
   await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
   return session;
 }
@@ -179,8 +216,8 @@ describe("ReviewerSession.reReview() — agent.run() call parameters", () => {
         estimatedCost: 0.001,
       };
     };
-    const agent = makeMockAgent(runFn);
-    session = createReviewerSession(agent, "US-002", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager(runFn);
+    session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", makeConfig());
     // perform initial review so checkResult is populated
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     // reset captured opts so we only capture reReview's call
@@ -361,8 +398,8 @@ describe("ReviewerSession.reReview() — session compaction", () => {
       durationMs: 10,
       estimatedCost: 0.001,
     });
-    const agent = makeMockAgent(runFn);
-    const session = createReviewerSession(agent, "US-002", "/work", "my-feature", config);
+    const agentManager = makeAgentManager(runFn);
+    const session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", config);
 
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
@@ -389,8 +426,8 @@ describe("ReviewerSession.reReview() — session compaction", () => {
       durationMs: 10,
       estimatedCost: 0.001,
     });
-    const agent = makeMockAgent(runFn);
-    const session = createReviewerSession(agent, "US-002", "/work", "my-feature", config);
+    const agentManager = makeAgentManager(runFn);
+    const session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", config);
 
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
@@ -427,8 +464,8 @@ describe("ReviewerSession.clarify() — agent.run() call and return value", () =
         estimatedCost: 0.001,
       };
     };
-    const agent = makeMockAgent(runFn);
-    session = createReviewerSession(agent, "US-002", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager(runFn);
+    session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     capturedOpts = undefined;
   });
@@ -597,14 +634,14 @@ describe("ReviewerSession.getVerdict() — SemanticVerdict fields", () => {
 
 describe("ReviewerSession.getVerdict() — NO_REVIEW_RESULT guard", () => {
   test("throws NaxError when called before any review()", () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-002", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", makeConfig());
     expect(() => session.getVerdict()).toThrow(NaxError);
   });
 
   test("throws NaxError with code 'NO_REVIEW_RESULT' when called before any review()", () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-002", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", makeConfig());
     let caught: unknown;
     try {
       session.getVerdict();
@@ -616,8 +653,8 @@ describe("ReviewerSession.getVerdict() — NO_REVIEW_RESULT guard", () => {
   });
 
   test("does not throw after a successful review()", async () => {
-    const agent = makeMockAgent();
-    const session = createReviewerSession(agent, "US-002", "/work", "my-feature", makeConfig());
+    const agentManager = makeAgentManager();
+    const session = createReviewerSession(agentManager, "US-002", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(() => session.getVerdict()).not.toThrow();
     await session.destroy();

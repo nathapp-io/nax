@@ -113,3 +113,32 @@ const agent = getAgent(agentName);
 ```
 
 The `_deps.getAgent` fallback in `ctx.agentGetFn ?? _deps.getAgent` defaults to `() => undefined` — it is a test injection point only. In production, `agentGetFn` is always set by `runner.ts`.
+
+## Phase 5 Constraint (ADR-013)
+
+**No direct `adapter.run/complete/plan/decompose` calls outside `src/agents/manager.ts` and `src/agents/utils.ts`.**
+
+These two files are the **adapter wiring layer**: they translate `IAgentManager` method calls into direct adapter calls. All other source files must go through `IAgentManager`:
+
+| File | Role |
+|:------|:------|
+| `src/agents/manager.ts` | `IAgentManager` implementation — delegates to adapter |
+| `src/agents/utils.ts` | `wrapAdapterAsManager()` — wraps a bare adapter as `IAgentManager` for session bootstrap |
+
+**Allowed call patterns (always through IAgentManager):**
+```typescript
+agentManager.runAs(name, request)
+agentManager.completeAs(name, prompt, opts?)
+agentManager.planAs(name, opts)
+agentManager.decomposeAs(name, opts)
+```
+
+**Forbidden call patterns (direct adapter calls):**
+```typescript
+adapter.run(...)    // ❌ outside agents/utils.ts or agents/manager.ts
+adapter.complete(...)
+adapter.plan(...)
+adapter.decompose(...)
+```
+
+Enforced by: `test/integration/cli/adapter-boundary.test.ts`

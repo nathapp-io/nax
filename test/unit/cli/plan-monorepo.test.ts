@@ -12,8 +12,42 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
+import type { IAgentManager } from "../../../src/agents";
 import type { PRD } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeMockPlanManager(
+  planFn?: (agentName: string, opts: any) => Promise<{ specContent: string }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ plan: async () => ({ specContent: "" }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: planFn
+      ? async (name: string, opts: any) => planFn(name, opts)
+      : async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -53,7 +87,7 @@ const SAMPLE_PRD: PRD = {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origGetAgent = _planDeps.getAgent;
+const origCreateManager = _planDeps.createManager;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
@@ -91,11 +125,12 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.existsSync = mock(() => true);
-    _planDeps.getAgent = mock((_name: string) => ({
-      plan: mock(async ({ prompt }: { prompt: string }) => {
-        capturedPrompts.push(prompt);
+    _planDeps.createManager = mock(() =>
+      makeMockPlanManager(async (_name: string, opts: any) => {
+        capturedPrompts.push(opts.prompt);
+        return { specContent: "" };
       }),
-    })) as never;
+    );
   });
 
   afterEach(async () => {
@@ -103,7 +138,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
     _planDeps.spawnSync = origSpawnSync;
@@ -253,13 +288,11 @@ describe("planCommand — per-package tech stack in prompt", () => {
       if (path.endsWith("prd.json")) return JSON.stringify(minimalPrd);
       return "# Spec\nDo something.\n";
     });
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          plan: mock(async ({ prompt: p }: { prompt: string }) => {
-            capturedPrompts.push(p);
-          }),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockPlanManager(async (_name: string, opts: any) => {
+        capturedPrompts.push(opts.prompt);
+        return { specContent: "" };
+      }),
     );
   });
 
@@ -268,7 +301,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;

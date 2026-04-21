@@ -200,6 +200,17 @@ describe("splitAdversarialFindingsByScope", () => {
 // runTestWriterRectification
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Creates a mock IAgentManager that forwards run() to a mock agent.
+ * Mirrors how AgentManager.run() extracts runOptions and passes them to adapter.run().
+ */
+function makeMockAgentManager(mockRun: ReturnType<typeof mock>): ReturnType<typeof mock> {
+  const mockManager = mock(async (request: { runOptions: Record<string, unknown> }) => {
+    return await mockRun(request.runOptions);
+  });
+  return mockManager;
+}
+
 describe("runTestWriterRectification", () => {
   afterEach(() => {
     mock.restore();
@@ -215,10 +226,10 @@ describe("runTestWriterRectification", () => {
   test("returns cost from agent on success", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
     const mockRun = mock(async () => ({ estimatedCost: 0.05, success: true, output: "done", exitCode: 0, rateLimited: false }));
-    const agentGetFn = mock(() => ({ run: mockRun }));
+    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
 
-    const cost = await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(cost).toBe(0.05);
     expect(mockRun).toHaveBeenCalledTimes(1);
@@ -226,10 +237,12 @@ describe("runTestWriterRectification", () => {
 
   test("returns 0 when agent is not found (agentGetFn returns null)", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const agentGetFn = mock(() => null);
+    const agentManager = { getDefault: () => null, run: makeMockAgentManager(mock(async () => ({ estimatedCost: 0 }))) } as any;
     const ctx = makeCtx();
 
-    const cost = await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    // Suppress resolveModelForAgent error for this test — getDefault returns null
+    // and the function should return 0 without calling run
+    const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(cost).toBe(0);
   });
@@ -237,10 +250,10 @@ describe("runTestWriterRectification", () => {
   test("returns 0 and does not rethrow when agent.run throws", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
     const mockRun = mock(async () => { throw new Error("agent session error"); });
-    const agentGetFn = mock(() => ({ run: mockRun }));
+    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
 
-    const cost = await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(cost).toBe(0);
     expect(mockRun).toHaveBeenCalledTimes(1);
@@ -253,7 +266,7 @@ describe("runTestWriterRectification", () => {
       capturedModelTier = opts.modelTier;
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
-    const agentGetFn = mock(() => ({ run: mockRun }));
+    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx({
       rootConfig: {
         ...DEFAULT_CONFIG,
@@ -261,7 +274,7 @@ describe("runTestWriterRectification", () => {
       } as any,
     });
 
-    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(capturedModelTier).toBe("fast");
   });
@@ -273,12 +286,12 @@ describe("runTestWriterRectification", () => {
       capturedModelTier = opts.modelTier;
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
-    const agentGetFn = mock(() => ({ run: mockRun }));
+    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx({
       rootConfig: { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, sessionTiers: undefined } } as any,
     });
 
-    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(capturedModelTier).toBe("balanced");
   });
@@ -294,10 +307,10 @@ describe("runTestWriterRectification", () => {
       capturedKeepSessionOpen = opts.keepOpen;
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
-    const agentGetFn = mock(() => ({ run: mockRun }));
+    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
 
-    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(capturedKeepSessionOpen).toBe(true);
   });
@@ -309,10 +322,10 @@ describe("runTestWriterRectification", () => {
       capturedKeepSessionOpen = opts.keepOpen;
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
-    const agentGetFn = mock(() => ({ run: mockRun }));
+    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
 
-    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any, false);
+    await runTestWriterRectification(ctx, testChecks, story, agentManager, false);
 
     expect(capturedKeepSessionOpen).toBe(false);
   });
@@ -324,11 +337,11 @@ describe("runTestWriterRectification", () => {
       capturedSessionRoles.push(opts.sessionRole);
       return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
-    const agentGetFn = mock(() => ({ run: mockRun }));
+    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
 
-    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
-    await runTestWriterRectification(ctx, testChecks, story, agentGetFn as any);
+    await runTestWriterRectification(ctx, testChecks, story, agentManager);
+    await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(capturedSessionRoles).toHaveLength(2);
     expect(capturedSessionRoles[0]).toBe(capturedSessionRoles[1]);

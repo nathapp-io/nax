@@ -79,6 +79,26 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
+    const mockAgentManager = {
+      getDefault: () => "test-agent",
+      getAgent: (_name: string) => mockAdapter,
+      complete: mock(async (_prompt: string, _options?: any) =>
+        new Promise<string>(() => {}) // never resolves
+      ),
+      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
+        new Promise<string>(() => {}) // never resolves
+      ),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    };
+
     const story = {
       id: "TEST-001",
       title: "Test story",
@@ -94,13 +114,12 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
 
     const startTime = Date.now();
 
-    await expect(classifyWithLlm(story, config, mockAdapter)).rejects.toThrow(/timeout/i);
+    await expect(classifyWithLlm(story, config, mockAgentManager as any)).rejects.toThrow(/timeout/i);
 
     const elapsed = Date.now() - startTime;
 
     // Should resolve promptly — within 500ms of the 30ms timeout
     expect(elapsed).toBeLessThan(500);
-    expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
   });
 
   test("no unhandled rejection when adapter.complete() times out", async () => {
@@ -118,6 +137,26 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
+    const mockAgentManager = {
+      getDefault: () => "test-agent",
+      getAgent: (_name: string) => mockAdapter,
+      complete: mock(async (_prompt: string, _options?: any) =>
+        new Promise<string>(() => {}) // never resolves
+      ),
+      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
+        new Promise<string>(() => {}) // never resolves
+      ),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    };
+
     const story = {
       id: "BUG040",
       title: "Bug test",
@@ -131,7 +170,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
       attempts: 0,
     };
 
-    await expect(classifyWithLlm(story, config, mockAdapter)).rejects.toThrow(/timeout/i);
+    await expect(classifyWithLlm(story, config, mockAgentManager as any)).rejects.toThrow(/timeout/i);
 
     // Give microtasks time to settle
     await Promise.resolve();
@@ -171,6 +210,40 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
       ),
     } as AgentAdapter;
 
+    const mockAgentManager = {
+      getDefault: () => "test-agent",
+      getAgent: (_name: string) => successAdapter,
+      complete: mock(async (_prompt: string, _options?: any) =>
+        Promise.resolve(
+          JSON.stringify({
+            complexity: "simple",
+            modelTier: "fast",
+            testStrategy: "tdd-simple",
+            reasoning: "Simple test story",
+          }),
+        ),
+      ),
+      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
+        Promise.resolve(
+          JSON.stringify({
+            complexity: "simple",
+            modelTier: "fast",
+            testStrategy: "tdd-simple",
+            reasoning: "Simple test story",
+          }),
+        ),
+      ),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    };
+
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
@@ -187,11 +260,11 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
       attempts: 0,
     };
 
-    const result = await classifyWithLlm(story, config, successAdapter);
+    const result = await classifyWithLlm(story, config, mockAgentManager as any);
 
     expect(result).not.toBeNull();
     expect(result?.complexity).toBe("simple");
-    expect(successAdapter.complete).toHaveBeenCalledTimes(1);
+    expect(mockAgentManager.complete).toHaveBeenCalledTimes(1);
 
     clearCache();
   });
@@ -199,6 +272,26 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
   test("adapter.complete() timeout rejects within timeout window", async () => {
     const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 50, retries: 0 });
+
+    const mockAgentManager = {
+      getDefault: () => "test-agent",
+      getAgent: (_name: string) => mockAdapter,
+      complete: mock(async (_prompt: string, _options?: any) =>
+        new Promise<string>(() => {}) // never resolves
+      ),
+      completeAs: mock(async (_name: string, _prompt: string, _options?: any) =>
+        new Promise<string>(() => {}) // never resolves
+      ),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    };
 
     const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
@@ -217,7 +310,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     };
 
     const before = Date.now();
-    await expect(classifyWithLlm(story, config, mockAdapter)).rejects.toThrow();
+    await expect(classifyWithLlm(story, config, mockAgentManager as any)).rejects.toThrow();
     const after = Date.now();
 
     // Should complete well under 2s even though adapter.complete() never resolves

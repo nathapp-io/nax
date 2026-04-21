@@ -13,10 +13,40 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import { parseDecomposeOutput } from "../../../src/agents/shared/decompose";
 import { mapDecomposedStoriesToUserStories } from "../../../src/prd/decompose-mapper";
+import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import type { DecomposedStory } from "../../../src/agents/shared/types-extended";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+
+function makeMockDecomposeManager(
+  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ decompose: async () => ({ stories: [] }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: decomposeFn
+      ? async (name: string, opts: any) => decomposeFn(name, opts)
+      : async () => ({ stories: [] }),
+  } as any;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -97,7 +127,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origGetAgent = _planDeps.getAgent;
+const origCreateManager = _planDeps.createManager;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateSession = _planDeps.createDebateSession;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -148,7 +178,7 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateSession = origCreateDebateSession;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -165,9 +195,11 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
 
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.getAgent = mock(() => ({
-      decompose: async () => ({ stories: parseDecomposeOutput(fencedJson) }),
-    }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async () => ({
+        stories: parseDecomposeOutput(fencedJson),
+      })),
+    );
 
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
@@ -180,9 +212,11 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
 
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.getAgent = mock(() => ({
-      decompose: async () => ({ stories: parseDecomposeOutput(fencedJson) }),
-    }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async () => ({
+        stories: parseDecomposeOutput(fencedJson),
+      })),
+    );
 
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
@@ -195,9 +229,11 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
 
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.getAgent = mock(() => ({
-      decompose: async () => ({ stories: parseDecomposeOutput(fencedJson) }),
-    }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async () => ({
+        stories: parseDecomposeOutput(fencedJson),
+      })),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -227,7 +263,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateSession = origCreateDebateSession;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -242,9 +278,9 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A"), makeDecomposedStory("US-001-B")];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.getAgent = mock(() => ({
-      decompose: async () => ({ stories: decomposed }),
-    }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async () => ({ stories: decomposed })),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -258,9 +294,9 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { title: "Unique title from LLM" })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.getAgent = mock(() => ({
-      decompose: async () => ({ stories: decomposed }),
-    }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async () => ({ stories: decomposed })),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -273,9 +309,9 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { contextFiles: ["src/bar.ts", "src/baz.ts"] })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.getAgent = mock(() => ({
-      decompose: async () => ({ stories: decomposed }),
-    }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async () => ({ stories: decomposed })),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -288,9 +324,9 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { complexity: "complex" })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.getAgent = mock(() => ({
-      decompose: async () => ({ stories: decomposed }),
-    }) as never);
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async () => ({ stories: decomposed })),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 

@@ -18,6 +18,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { createReviewerSession } from "../../../src/review/dialogue";
 import type { DebateResolverContext } from "../../../src/debate/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 import type { AgentAdapter, AgentRunOptions, AgentResult } from "../../../src/agents/types";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
@@ -91,6 +92,40 @@ function makeAdapter(runFn: RunFn): AgentAdapter {
   } as unknown as AgentAdapter;
 }
 
+/** Wrap an adapter in an IAgentManager for createReviewerSession */
+function makeAgentManager(runFn: RunFn): IAgentManager {
+  const adapter = makeAdapter(runFn);
+
+  const manager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => adapter,
+    isUnavailable: (_agent: string) => false,
+    markUnavailable: (_agent: string, _reason: unknown) => {},
+    reset: () => {},
+    validateCredentials: mock(async () => {}),
+    events: { on: () => {}, off: () => {} },
+    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
+    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
+    nextCandidate: (_current: string, _hops: number) => null,
+    runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 100, estimatedCost: 0 }, fallbacks: [] })),
+    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+    run: mock(async (request: { runOptions: unknown }) => {
+      return adapter.run(request.runOptions as AgentRunOptions);
+    }),
+    complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: "", costUsd: 0, source: "mock" })),
+    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
+      return adapter.run(request.runOptions as AgentRunOptions);
+    }),
+    plan: mock(async () => { throw new Error("not used"); }),
+    planAs: mock(async () => { throw new Error("not used"); }),
+    decompose: mock(async () => { throw new Error("not used"); }),
+    decomposeAs: mock(async () => { throw new Error("not used"); }),
+  } as unknown as IAgentManager;
+
+  return manager;
+}
+
 const MOCK_CONFIG = {
   autoMode: { defaultAgent: "claude" },
   models: { claude: { fast: { model: "claude-haiku-4-5-20251001" }, balanced: { model: "claude-sonnet-4-6" }, powerful: { model: "claude-opus-4-6" } } },
@@ -105,7 +140,7 @@ const MOCK_CONFIG = {
 describe("ReviewerSession.resolveDebate()", () => {
   test("calls agent.run() with keepOpen: true and sessionRole: reviewer", async () => {
     const runFn = makeRunFn(PASSING_RESPONSE);
-    const session = createReviewerSession(makeAdapter(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
 
@@ -117,7 +152,7 @@ describe("ReviewerSession.resolveDebate()", () => {
   });
 
   test("parses JSON response into ReviewDialogueResult (passing)", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     const result = await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
 
@@ -126,7 +161,7 @@ describe("ReviewerSession.resolveDebate()", () => {
   });
 
   test("parses JSON response into ReviewDialogueResult (failing with findings)", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(FAILING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(FAILING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     const result = await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
 
@@ -137,14 +172,14 @@ describe("ReviewerSession.resolveDebate()", () => {
   });
 
   test("captures LLM cost", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE, 0.005)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE, 0.005)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     const result = await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
     expect(result.cost).toBe(0.005);
   });
 
   test("appends exactly 2 history entries (implementer prompt + reviewer response)", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
 
@@ -154,7 +189,7 @@ describe("ReviewerSession.resolveDebate()", () => {
   });
 
   test("stores lastCheckResult so getVerdict() works", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
     // getVerdict() should not throw
@@ -164,7 +199,7 @@ describe("ReviewerSession.resolveDebate()", () => {
   });
 
   test("throws REVIEWER_SESSION_DESTROYED when session is inactive", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     await session.destroy();
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
@@ -179,7 +214,7 @@ describe("ReviewerSession.resolveDebate()", () => {
 describe("resolveDebate() prompt framing by resolver type", () => {
   test("synthesis: prompt contains 'synthes'", async () => {
     const runFn = makeRunFn(PASSING_RESPONSE);
-    const session = createReviewerSession(makeAdapter(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
 
@@ -189,7 +224,7 @@ describe("resolveDebate() prompt framing by resolver type", () => {
 
   test("custom: prompt contains 'judge'", async () => {
     const runFn = makeRunFn(PASSING_RESPONSE);
-    const session = createReviewerSession(makeAdapter(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "custom" };
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
 
@@ -199,7 +234,7 @@ describe("resolveDebate() prompt framing by resolver type", () => {
 
   test("majority-fail-closed: prompt contains vote tally", async () => {
     const runFn = makeRunFn(PASSING_RESPONSE);
-    const session = createReviewerSession(makeAdapter(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = {
       resolverType: "majority-fail-closed",
       majorityVote: { passed: false, passCount: 1, failCount: 1 },
@@ -213,7 +248,7 @@ describe("resolveDebate() prompt framing by resolver type", () => {
 
   test("majority-fail-open: prompt contains vote tally", async () => {
     const runFn = makeRunFn(PASSING_RESPONSE);
-    const session = createReviewerSession(makeAdapter(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(runFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = {
       resolverType: "majority-fail-open",
       majorityVote: { passed: true, passCount: 2, failCount: 0 },
@@ -231,7 +266,7 @@ describe("resolveDebate() prompt framing by resolver type", () => {
 
 describe("ReviewerSession.reReviewDebate()", () => {
   test("throws NO_REVIEW_RESULT when called before any resolveDebate()", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
     await expect(session.reReviewDebate(PROPOSALS, CRITIQUES, DIFF, ctx)).rejects.toBeInstanceOf(NaxError);
@@ -240,7 +275,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
   test("throws NO_REVIEW_RESULT when called after review() but not resolveDebate() (prevents wrong delta baseline)", async () => {
     // review() sets lastCheckResult/lastSemanticConfig but lastWasDebateResolve stays false —
     // reReviewDebate() must not accept non-debate findings as the delta baseline.
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     await session.review(DIFF, STORY, SEMANTIC_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
@@ -248,7 +283,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
   });
 
   test("throws REVIEWER_SESSION_DESTROYED when session is inactive", async () => {
-    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     await session.destroy();
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
@@ -263,7 +298,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
       return { output: callCount === 1 ? FAILING_RESPONSE : REREVIEW_RESPONSE, exitCode: 0, success: true, rateLimited: false, durationMs: 100, estimatedCost: 0.001 };
     });
 
-    const session = createReviewerSession(makeAdapter(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
     // First: resolveDebate with failing result
@@ -282,7 +317,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
       return { output: callCount === 1 ? FAILING_RESPONSE : REREVIEW_RESPONSE, exitCode: 0, success: true, rateLimited: false, durationMs: 100, estimatedCost: 0.001 };
     });
 
-    const session = createReviewerSession(makeAdapter(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
@@ -300,7 +335,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
       return { output: callCount === 1 ? FAILING_RESPONSE : REREVIEW_RESPONSE, exitCode: 0, success: true, rateLimited: false, durationMs: 100, estimatedCost: 0.001 };
     });
 
-    const session = createReviewerSession(makeAdapter(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
@@ -321,7 +356,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
       return { output: callCount === 1 ? FAILING_RESPONSE : REREVIEW_RESPONSE, exitCode: 0, success: true, rateLimited: false, durationMs: 100, estimatedCost: 0.001 };
     });
 
-    const session = createReviewerSession(makeAdapter(multiRunFn), "story-1", "/workdir", "feature", smallMaxConfig);
+    const session = createReviewerSession(makeAgentManager(multiRunFn), "story-1", "/workdir", "feature", smallMaxConfig);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
@@ -353,7 +388,7 @@ describe("clarify() after resolveDebate()", () => {
       };
     });
 
-    const session = createReviewerSession(makeAdapter(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    const session = createReviewerSession(makeAgentManager(multiRunFn), "story-1", "/workdir", "feature", MOCK_CONFIG);
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
     await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, SEMANTIC_CONFIG, ctx);
