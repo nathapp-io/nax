@@ -371,16 +371,12 @@ describe("runHybrid() — adapter resolution via shared helper (AC6)", () => {
   test("manager.getAgent is called for each debater to resolve adapters", async () => {
     const agentCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => {
-      const mgr = makeMockAgentManager();
-      return {
-        ...mgr,
-        getAgent: (name: string) => {
-          agentCalls.push(name);
-          return {} as any;
-        },
-      };
-    });
+    _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+      getAgentFn: (name: string) => {
+        agentCalls.push(name);
+        return {} as any;
+      },
+    }));
 
     const session = new DebateSession({
       storyId: "US-004-A-dep-calls",

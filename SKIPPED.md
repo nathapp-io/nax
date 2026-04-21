@@ -9,19 +9,17 @@
 | `test/unit/debate/session-mode-routing.test.ts` | 6/6 |
 | `test/unit/debate/session-stateful.test.ts` | 6/6 |
 | `test/unit/debate/session-rounds-and-cost.test.ts` | 11/11 |
-| `test/unit/debate/session-hybrid.test.ts` | 9/10 |
-| `test/unit/debate/session-agent-resolution.test.ts` | 12/16 |
+| `test/unit/debate/session-hybrid.test.ts` | 10/10 |
+| `test/unit/debate/session-agent-resolution.test.ts` | 16/16 |
+
+**Total: 51/51 Pattern D tests passing in debate/ cluster.**
 
 ### Issues needing resolution before continuing
 
-**Issue 1 — Spread+override pattern incompatible with helper**
-Some tests use `{ ...makeMockManager(), getAgent: customFn }` to add per-test behavior. This breaks because `makeMockAgentManager()` returns a typed interface (`IAgentManager`), not a plain object. Options:
-- Option A: Add `getAgentFn` to `MockAgentManagerOptions` and pass it directly
-- Option B: Accept plain-object returns for these specific cases
-- Files affected: `session-hybrid.test.ts` (1 skip), `session-agent-resolution.test.ts` (4 skips)
+**Pre-existing failures in session-plan.test.ts (not caused by migration)**
+The 7 failing tests in `session-plan.test.ts` **fail identically on `main`** (confirmed by running baseline). They use `planAs` callback but the mock helper's internal routing doesn't match the production call pattern. These are pre-existing bugs unrelated to this migration.
 
-**Issue 2 — Pre-existing failures in session-plan.test.ts**
-The 7 failing tests in `session-plan.test.ts` **fail identically on `main`** (confirmed by running baseline). They use `planAs` callback with signature `(agentName, opts)` but the mock helper's internal routing doesn't match. These are pre-existing bugs unrelated to this migration.
+**No other Pattern D issues remain in debate/ tests.**
 
 ### Files not yet migrated
 

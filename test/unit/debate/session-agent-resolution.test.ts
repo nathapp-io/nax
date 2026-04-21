@@ -52,16 +52,12 @@ describe("DebateSession.run() — agent resolution", () => {
   test("resolves each debater via manager.getAgent(debater.agent)", async () => {
     const agentCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => {
-      const mgr = makeMockAgentManager();
-      return {
-        ...mgr,
-        getAgent: (name: string) => {
-          agentCalls.push(name);
-          return {} as any;
-        },
-      };
-    });
+    _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+      getAgentFn: (name: string) => {
+        agentCalls.push(name);
+        return {} as any;
+      },
+    }));
 
     const session = new DebateSession({
       storyId: "US-002",
