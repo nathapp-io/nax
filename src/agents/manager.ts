@@ -321,8 +321,9 @@ export class AgentManager implements IAgentManager {
 
       if (!result.adapterFailure) return { result, fallbacks };
 
-      // completeWithFallback has no context bundle — pass false so shouldSwap's !hasBundle guard fires only here.
-      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, false)) {
+      // completeWithFallback has no ContextBundle object, but swap is still allowed on
+      // availability failures — pass true so the hasBundle guard does not block swapping.
+      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, true)) {
         return { result, fallbacks };
       }
 
