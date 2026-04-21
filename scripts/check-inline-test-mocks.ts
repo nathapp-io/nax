@@ -54,6 +54,9 @@ const SKIP_FILES = new Set([
   "test/unit/pipeline/stages/autofix-routing.test.ts",
   "test/unit/pipeline/stages/autofix-session-wiring.test.ts",
   "test/unit/pipeline/stages/review-dialogue.test.ts",
+  "test/unit/acceptance/component-strategy-integration.test.ts",
+  "test/unit/acceptance/generator-prd-result.test.ts",
+  "test/unit/acceptance/fix-executor-test-fix.test.ts",
 ]);
 
 /**

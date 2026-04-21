@@ -25,10 +25,9 @@ const buildRefinementPrompt = (
   opts?: Parameters<AcceptancePromptBuilder["buildRefinementPrompt"]>[2],
 ) => new AcceptancePromptBuilder().buildRefinementPrompt(criteria, ctx, opts);
 import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
 import type { RefinedCriterion } from "../../../src/acceptance/types";
 import type { CompleteResult } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents";
+import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -44,21 +43,6 @@ const SAMPLE_CRITERIA = [
 
 const CODEBASE_CONTEXT = "File tree:\nsrc/\n  acceptance/\n    refinement.ts\n";
 
-function makeConfig(acceptanceOverride?: Partial<NaxConfig["acceptance"]>): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    models: {
-      claude: {
-        fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-        balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
-        powerful: { provider: "anthropic", model: "claude-opus-4-5" },
-      },
-    },
-    agent: { default: "claude" },
-    acceptance: { ...DEFAULT_CONFIG.acceptance, model: "fast", ...acceptanceOverride },
-  };
-}
-
 /** Build a valid LLM JSON response for the given criteria, wrapped as CompleteResult */
 function makeLLMResponse(criteria: string[], storyId: string, testable = true): CompleteResult {
   const items: RefinedCriterion[] = criteria.map((c) => ({
@@ -68,40 +52,6 @@ function makeLLMResponse(criteria: string[], storyId: string, testable = true): 
     storyId,
   }));
   return { output: JSON.stringify(items), costUsd: 0, source: "fallback" };
-}
-
-/** Make a mock IAgentManager that captures prompt and returns a configurable result */
-function makeMockRefineManager(
-  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({ complete: async () => ({ output: "{}", costUsd: 0, source: "fallback" }) } as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: completeFn
-      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
-      : async () => ({ result: { output: "{}", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: completeFn
-      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
-      : async () => ({ output: "{}", costUsd: 0, source: "fallback" }),
-    completeAs: completeFn
-      ? async (name: string, opts: any) => completeFn("", opts)
-      : async () => ({ output: "{}", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,13 +229,15 @@ describe("parseRefinementResponse", () => {
 
 describe("refineAcceptanceCriteria — createManager integration", () => {
   test("calls agentManager.complete() exactly once per call", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let callCount = 0;
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () => {
-        callCount++;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => {
+          callCount++;
+          return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+        },
       }),
     );
 
@@ -299,13 +251,15 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("uses config.acceptance.model tier to resolve adapter model", async () => {
-    const config = makeConfig({ model: "balanced" });
+    const config = makeNaxConfig({ models: { claude: { fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" }, balanced: { provider: "anthropic", model: "claude-sonnet-4-5" }, powerful: { provider: "anthropic", model: "claude-opus-4-5" } } }, agent: { default: "claude" as const }, acceptance: { model: "balanced" } });
     let receivedModel: string | undefined;
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (_prompt, options) => {
-        receivedModel = options?.model;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      makeMockAgentManager({
+        completeFn: async (_agent: string, _prompt: string, options: any) => {
+          receivedModel = options?.model;
+          return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+        },
       }),
     );
 
@@ -319,7 +273,7 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("does NOT call Bun.spawn directly — uses agentManager.complete()", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
     const spawnCalls: unknown[] = [];
     const originalSpawn = Bun.spawn;
 
@@ -329,9 +283,9 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
     };
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () =>
-        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
-      ),
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+      }),
     );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -346,12 +300,12 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("returns RefinedCriterion[] with original field matching input", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () =>
-        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
-      ),
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+      }),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -368,12 +322,12 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("returns RefinedCriterion[] with refined field from LLM response", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () =>
-        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
-      ),
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+      }),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -389,13 +343,15 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("passes a plain string prompt to agentManager.complete() (not SDK format)", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let capturedPrompt: unknown;
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt) => {
-        capturedPrompt = prompt;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+        },
       }),
     );
 
@@ -409,13 +365,15 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("prompt passed to agentManager.complete() contains all criteria", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let capturedPrompt = "";
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+        },
       }),
     );
 
@@ -431,13 +389,15 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("prompt passed to agentManager.complete() contains codebase context", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let capturedPrompt = "";
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+        },
       }),
     );
 
@@ -451,12 +411,12 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("preserves criteria with testable:false in the result", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () =>
-        makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false),
-      ),
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false),
+      }),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -472,13 +432,13 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("assigns storyId from context to all RefinedCriterion items", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
     const customStoryId = "STORY-XYZ";
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () =>
-        makeLLMResponse(SAMPLE_CRITERIA, customStoryId),
-      ),
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, customStoryId),
+      }),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -493,12 +453,14 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("handles empty criteria list without calling agentManager.complete()", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
     let managerCreated = false;
 
     _refineDeps.createManager = mock(() => {
       managerCreated = true;
-      return makeMockRefineManager(async () => ({ output: "[]", costUsd: 0, source: "fallback" } satisfies CompleteResult));
+      return makeMockAgentManager({
+        completeFn: async (_agent: string) => ({ output: "[]", costUsd: 0, source: "fallback" } satisfies CompleteResult),
+      });
     });
 
     const result = await refineAcceptanceCriteria([], {
@@ -512,10 +474,12 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("falls back to original text when agentManager.complete() returns malformed JSON", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () => ({ output: "not valid json at all {{{", costUsd: 0, source: "fallback" } satisfies CompleteResult)),
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => ({ output: "not valid json at all {{{", costUsd: 0, source: "fallback" } satisfies CompleteResult),
+      }),
     );
 
     const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
@@ -532,11 +496,13 @@ describe("refineAcceptanceCriteria — createManager integration", () => {
   });
 
   test("falls back gracefully when agentManager.complete() throws", async () => {
-    const config = makeConfig();
+    const config = makeNaxConfig();
 
     _refineDeps.createManager = mock(() =>
-      makeMockRefineManager(async () => {
-        throw new Error("adapter network error");
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => {
+          throw new Error("adapter network error");
+        },
       }),
     );
 

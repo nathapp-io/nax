@@ -25,125 +25,13 @@ import {
 } from "../../../src/acceptance/templates";
 import type { AcceptanceCriterion, GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acceptance/types";
 import type { IAgentManager } from "../../../src/agents";
-import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
+import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
-
-function makeConfig(): NaxConfig {
-  return {
-    version: 1,
-    models: {
-      fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
-      powerful: { provider: "anthropic", model: "claude-opus-4-5" },
-    },
-    autoMode: {
-      enabled: true,
-      defaultAgent: "claude",
-      fallbackOrder: ["claude"],
-      complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      escalation: { enabled: false, tierOrder: [{ tier: "fast", attempts: 3 }] },
-    },
-    analyze: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 5000,
-    },
-    routing: {
-      strategy: "keyword",
-      adaptive: { minSamples: 10, costThreshold: 0.8, fallbackStrategy: "keyword" },
-      llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
-    },
-    execution: {
-      maxIterations: 5,
-      iterationDelayMs: 0,
-      costLimit: 10,
-      sessionTimeoutSeconds: 60,
-      verificationTimeoutSeconds: 60,
-      maxStoriesPerFeature: 100,
-      rectification: {
-        enabled: false,
-        maxRetries: 1,
-        fullSuiteTimeoutSeconds: 60,
-        maxFailureSummaryChars: 1000,
-        abortOnIncreasingFailures: false,
-      },
-      regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true, maxRectificationAttempts: 1 },
-      contextProviderTokenBudget: 1000,
-      smartTestRunner: false,
-    },
-    quality: {
-      requireTypecheck: false,
-      requireLint: false,
-      requireTests: false,
-      commands: {},
-      forceExit: false,
-      detectOpenHandles: false,
-      detectOpenHandlesRetries: 0,
-      gracePeriodMs: 0,
-      dangerouslySkipPermissions: true,
-      drainTimeoutMs: 0,
-      shell: "/bin/sh",
-      stripEnvVars: [],
-    },
-    tdd: {
-      maxRetries: 1,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: true,
-      strategy: "off",
-      sessionTiers: { testWriter: "fast", verifier: "fast" },
-      testWriterAllowedPaths: [],
-      rollbackOnFailure: false,
-      greenfieldDetection: false,
-    },
-    constitution: { enabled: false, path: "constitution.md", maxTokens: 0 },
-    review: { enabled: false, checks: [], commands: {} },
-    plan: { model: "balanced", outputPath: "spec.md" },
-    acceptance: {
-      enabled: true,
-      maxRetries: 1,
-      generateTests: false,
-      testPath: "acceptance.test.ts",
-      model: "fast",
-      refinement: false,
-      redGate: false,
-    },
-    context: {
-      fileInjection: "disabled",
-      testCoverage: {
-        enabled: false,
-        detail: "names-and-counts",
-        maxTokens: 0,
-        testPattern: "**/*.test.ts",
-        scopeToStory: false,
-      },
-      autoDetect: { enabled: false, maxFiles: 0, traceImports: false },
-    },
-    interaction: {
-      plugin: "cli",
-      config: {},
-      defaults: { timeout: 1000, fallback: "escalate" },
-      triggers: {},
-    },
-    precheck: {
-      storySizeGate: { enabled: false, maxAcCount: 10, maxDescriptionLength: 5000, maxBulletPoints: 20 },
-    },
-    prompts: {},
-    decompose: {
-      trigger: "disabled",
-      maxAcceptanceCriteria: 6,
-      maxSubstories: 5,
-      maxSubstoryComplexity: "medium",
-      maxRetries: 1,
-      model: "balanced",
-    },
-  };
-}
 
 function makeStory(): UserStory {
   return {
@@ -182,46 +70,13 @@ function makeOptions(workdir: string, overrides?: Partial<GenerateFromPRDOptions
     codebaseContext: "src/\n  index.ts\n",
     modelTier: "fast",
     modelDef: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-    config: makeConfig(),
+    config: makeNaxConfig(),
     ...overrides,
   };
 }
 
 let savedCreateManager: typeof _generatorPRDDeps.createManager;
 let savedWriteFile: typeof _generatorPRDDeps.writeFile;
-
-function makeMockGeneratorManager(
-  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: completeFn
-      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
-      : async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: completeFn
-      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: completeFn
-      ? async (name: string, opts: any) => completeFn("", opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
 
 function saveDeps() {
   savedCreateManager = _generatorPRDDeps.createManager;
@@ -555,9 +410,11 @@ describe("generateFromPRD — defaults to unit behavior when testStrategy is omi
     let capturedPrompt = "";
 
     _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+        },
       }),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
@@ -576,11 +433,13 @@ describe("generateFromPRD — defaults to unit behavior when testStrategy is omi
     const options = makeOptions(tmpDir);
 
     _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({
-        output: `import { describe, test, expect } from "bun:test";\ndescribe("my-feature - Acceptance Tests", () => {\n  test("AC-1: Component renders correctly", async () => {\n    expect(true).toBe(true);\n  });\n});\n`,
-        costUsd: 0,
-        source: "mock" as const,
-      })),
+      makeMockAgentManager({
+        completeFn: async (_agent: string) => ({
+          output: `import { describe, test, expect } from "bun:test";\ndescribe("my-feature - Acceptance Tests", () => {\n  test("AC-1: Component renders correctly", async () => {\n    expect(true).toBe(true);\n  });\n});\n`,
+          costUsd: 0,
+          source: "mock" as const,
+        }),
+      }),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
@@ -616,9 +475,11 @@ describe("generateFromPRD — component strategy selection", () => {
     let capturedPrompt = "";
 
     _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+        },
       }),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
@@ -659,9 +520,11 @@ describe("generateFromPRD — cli strategy selection", () => {
     let capturedPrompt = "";
 
     _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+        },
       }),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
@@ -698,9 +561,11 @@ describe("generateFromPRD — e2e strategy selection", () => {
     let capturedPrompt = "";
 
     _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+        },
       }),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
@@ -737,9 +602,11 @@ describe("generateFromPRD — snapshot strategy selection", () => {
     let capturedPrompt = "";
 
     _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      makeMockAgentManager({
+        completeFn: async (_agent: string, prompt: string) => {
+          capturedPrompt = prompt;
+          return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
+        },
       }),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
