@@ -13,14 +13,12 @@ import { join } from "path";
 
 const SRC_DIR = join(process.cwd(), "src");
 
-// Files that are allowed to call adapter methods directly (the manager itself and its utilities)
-// These files ARE the adapter wiring layer — they translate IAgentManager method calls into
-// direct adapter calls. All other source files must go through IAgentManager.
+// Files that are allowed to call adapter methods directly — the adapter wiring layer.
+// These translate IAgentManager method calls into direct adapter calls. All other
+// source files must go through IAgentManager. Keep in sync with .claude/rules/adapter-wiring.md §"Phase 5 Constraint".
 const ALLOWED_FILES = new Set([
-  "agents/manager.ts",      // IAgentManager implementation
-  "agents/utils.ts",        // wrapAdapterAsManager() — wraps bare adapter as IAgentManager
-  "agents/acp/index.ts",    // ACP protocol adapter
-  "agents/cli/index.ts",   // CLI protocol adapter
+  "agents/manager.ts", // IAgentManager implementation
+  "agents/utils.ts",   // wrapAdapterAsManager() — wraps bare adapter as IAgentManager
 ]);
 
 // Patterns that indicate direct adapter method calls

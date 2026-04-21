@@ -1,10 +1,15 @@
 ---
 paths:
   - "src/agents/**/*.ts"
-  - "src/pipeline/stages/execution.ts"
+  - "src/pipeline/**/*.ts"
   - "src/execution/**/*.ts"
   - "src/tdd/**/*.ts"
   - "src/acceptance/**/*.ts"
+  - "src/review/**/*.ts"
+  - "src/debate/**/*.ts"
+  - "src/routing/**/*.ts"
+  - "src/cli/**/*.ts"
+  - "src/verification/**/*.ts"
 ---
 
 # Adapter Wiring — run() vs complete(), Session Naming, Agent Resolution
