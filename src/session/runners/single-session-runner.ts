@@ -23,7 +23,7 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
 import type { ISessionRunner, SessionRunnerContext, StoryRunOutcome } from "../session-runner";
-import type { SessionDescriptor } from "../types";
+import type { ISessionManager, SessionDescriptor } from "../types";
 
 /**
  * Additional per-story context that SingleSessionRunner needs beyond the
@@ -68,6 +68,133 @@ export const _singleSessionRunnerDeps = {
   createContextToolRuntime,
 };
 
+/** Parameters for the per-hop agent runner helper. */
+interface HopParams {
+  agentGetFn?: (name: string) => AgentAdapter | undefined;
+  primaryOptions: AgentRunOptions;
+  story: UserStory;
+  config: NaxConfig;
+  projectDir?: string;
+  featureName: string;
+  sessionManager?: ISessionManager;
+  sessionId?: string;
+  sessionDescriptor?: SessionDescriptor;
+  effectiveTier: Parameters<typeof resolveModelForAgent>[2];
+  defaultAgent: string;
+  workdir: string;
+  contextToolRunCounter?: RunCallCounter;
+}
+
+/** Return shape of executeHopFn — matches AgentRunRequest["executeHop"] return type. */
+type HopResult = { result: AgentResult; bundle: ContextBundle | undefined; prompt: string };
+
+/**
+ * Drives per-hop bundle rebuild + swap-handoff prompt rewrite.
+ * Called by the executeHop closure for every hop (primary + fallback).
+ * Pure helper — does not mutate outer state; callers update finalBundle/finalPrompt.
+ */
+async function executeHopFn(
+  params: HopParams,
+  agentName: string,
+  hopBundle: ContextBundle | undefined,
+  failure: AdapterFailure | undefined,
+): Promise<HopResult> {
+  const {
+    agentGetFn,
+    primaryOptions,
+    story,
+    config,
+    projectDir,
+    featureName,
+    sessionManager,
+    sessionId,
+    sessionDescriptor,
+    effectiveTier,
+    defaultAgent,
+    workdir,
+    contextToolRunCounter,
+  } = params;
+
+  const logger = getLogger();
+  const hopAgent = (agentGetFn ?? _singleSessionRunnerDeps.getAgent)(agentName) ?? undefined;
+  if (!hopAgent) {
+    return {
+      result: {
+        success: false,
+        exitCode: 1,
+        output: `Agent "${agentName}" not found`,
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+      } satisfies AgentResult,
+      bundle: hopBundle,
+      prompt: primaryOptions.prompt,
+    };
+  }
+
+  let workingBundle = hopBundle;
+  let prompt: string = primaryOptions.prompt;
+
+  if (failure && hopBundle) {
+    workingBundle = _singleSessionRunnerDeps.rebuildForAgent(hopBundle, agentName, failure, story.id);
+    if (projectDir && featureName && workingBundle.manifest.rebuildInfo) {
+      try {
+        await _singleSessionRunnerDeps.writeRebuildManifest(projectDir, featureName, story.id, {
+          requestId: workingBundle.manifest.requestId,
+          stage: "execution",
+          priorAgentId: workingBundle.manifest.rebuildInfo.priorAgentId,
+          newAgentId: workingBundle.manifest.rebuildInfo.newAgentId,
+          failureCategory: workingBundle.manifest.rebuildInfo.failureCategory,
+          failureOutcome: workingBundle.manifest.rebuildInfo.failureOutcome,
+          priorChunkIds: workingBundle.manifest.rebuildInfo.priorChunkIds,
+          newChunkIds: workingBundle.manifest.rebuildInfo.newChunkIds,
+          chunkIdMap: workingBundle.manifest.rebuildInfo.chunkIdMap,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        logger.warn("execution", "Failed to write rebuild manifest", {
+          storyId: story.id,
+          error: String(err),
+        });
+      }
+    }
+    prompt = RectifierPromptBuilder.swapHandoff(primaryOptions.prompt, workingBundle.pushMarkdown);
+  }
+
+  const session: SessionDescriptor | undefined =
+    failure && sessionManager && sessionId
+      ? sessionManager.handoff?.(sessionId, agentName, failure.outcome)
+      : sessionDescriptor;
+
+  const hopResult = await hopAgent.run({
+    ...primaryOptions,
+    prompt,
+    modelDef: resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent),
+    contextPullTools: workingBundle?.pullTools,
+    contextToolRuntime: workingBundle
+      ? _singleSessionRunnerDeps.createContextToolRuntime({
+          bundle: workingBundle,
+          story,
+          config,
+          repoRoot: workdir,
+          runCounter: contextToolRunCounter,
+        })
+      : undefined,
+    ...(session && { session }),
+  });
+
+  // Per-hop bindHandle so intermediate swaps update the descriptor before
+  // runInSession's final bind; resumes land on the right ACP record.
+  if (hopResult.protocolIds && sessionManager && sessionId) {
+    const desc = sessionManager.get(sessionId);
+    if (desc) {
+      sessionManager.bindHandle(sessionId, hopAgent.deriveSessionName(desc), hopResult.protocolIds);
+    }
+  }
+
+  return { result: hopResult, bundle: workingBundle, prompt };
+}
+
 export class SingleSessionRunner implements ISessionRunner {
   readonly name = "single-session";
 
@@ -90,7 +217,6 @@ export class SingleSessionRunner implements ISessionRunner {
       agentGetFn,
     } = context;
 
-    const logger = getLogger();
     const sessionDescriptor = sessionManager && sessionId ? (sessionManager.get(sessionId) ?? undefined) : undefined;
 
     const primaryOptions: AgentRunOptions = {
@@ -108,100 +234,36 @@ export class SingleSessionRunner implements ISessionRunner {
       ...(sessionDescriptor && { session: sessionDescriptor }),
     };
 
-    // finalBundle/finalPrompt track the last hop's bundle + prompt via side effects
-    // inside executeHop. IAgentManager.run() returns only AgentResult, so these
-    // values cannot be carried on the return value — they are captured by the
-    // executeHop closure instead and reflected on StoryRunOutcome after the run.
-    // Invariant: executeHop always updates both before returning, so these always
-    // match the last-executed hop. If no hop ran (no agentManager / no swap),
-    // they retain the primary-agent values.
+    // finalBundle/finalPrompt track the last hop's bundle + prompt via side effects.
+    // IAgentManager.run() returns only AgentResult, so these are captured here and
+    // updated after each executeHopFn call. Retained as primary-agent values if no
+    // hop ran (no agentManager / no swap).
     let finalBundle: ContextBundle | undefined = bundle;
     let finalPrompt: string | undefined = runOptions.prompt;
 
-    // executeHop: drives per-hop bundle rebuild + swap-handoff prompt rewrite.
-    // Called by AgentManager.runWithFallback for every hop (primary + fallback).
+    const hopParams: HopParams = {
+      agentGetFn,
+      primaryOptions,
+      story,
+      config,
+      projectDir,
+      featureName,
+      sessionManager,
+      sessionId,
+      sessionDescriptor,
+      effectiveTier,
+      defaultAgent,
+      workdir,
+      contextToolRunCounter,
+    };
+
+    // executeHop: thin wrapper that delegates to executeHopFn and captures the
+    // last hop's bundle/prompt for StoryRunOutcome. Called by runWithFallback.
     const executeHop: AgentRunRequest["executeHop"] = async (agentName, hopBundle, failure) => {
-      const hopAgent = (agentGetFn ?? _singleSessionRunnerDeps.getAgent)(agentName) ?? undefined;
-      if (!hopAgent) {
-        return {
-          result: {
-            success: false,
-            exitCode: 1,
-            output: `Agent "${agentName}" not found`,
-            rateLimited: false,
-            durationMs: 0,
-            estimatedCost: 0,
-          } satisfies AgentResult,
-          bundle: hopBundle,
-          prompt: primaryOptions.prompt,
-        };
-      }
-
-      let workingBundle = hopBundle;
-      let prompt: string = primaryOptions.prompt;
-
-      if (failure && hopBundle) {
-        workingBundle = _singleSessionRunnerDeps.rebuildForAgent(hopBundle, agentName, failure, story.id);
-        if (projectDir && featureName && workingBundle.manifest.rebuildInfo) {
-          try {
-            await _singleSessionRunnerDeps.writeRebuildManifest(projectDir, featureName, story.id, {
-              requestId: workingBundle.manifest.requestId,
-              stage: "execution",
-              priorAgentId: workingBundle.manifest.rebuildInfo.priorAgentId,
-              newAgentId: workingBundle.manifest.rebuildInfo.newAgentId,
-              failureCategory: workingBundle.manifest.rebuildInfo.failureCategory,
-              failureOutcome: workingBundle.manifest.rebuildInfo.failureOutcome,
-              priorChunkIds: workingBundle.manifest.rebuildInfo.priorChunkIds,
-              newChunkIds: workingBundle.manifest.rebuildInfo.newChunkIds,
-              chunkIdMap: workingBundle.manifest.rebuildInfo.chunkIdMap,
-              createdAt: new Date().toISOString(),
-            });
-          } catch (err) {
-            logger.warn("execution", "Failed to write rebuild manifest", {
-              storyId: story.id,
-              error: String(err),
-            });
-          }
-        }
-        prompt = RectifierPromptBuilder.swapHandoff(primaryOptions.prompt, workingBundle.pushMarkdown);
-      }
-
-      const session: SessionDescriptor | undefined =
-        failure && sessionManager && sessionId
-          ? sessionManager.handoff?.(sessionId, agentName, failure.outcome)
-          : sessionDescriptor;
-
-      const hopResult = await hopAgent.run({
-        ...primaryOptions,
-        prompt,
-        modelDef: resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent),
-        contextPullTools: workingBundle?.pullTools,
-        contextToolRuntime: workingBundle
-          ? _singleSessionRunnerDeps.createContextToolRuntime({
-              bundle: workingBundle,
-              story,
-              config,
-              repoRoot: workdir,
-              runCounter: contextToolRunCounter,
-            })
-          : undefined,
-        ...(session && { session }),
-      });
-
-      // Per-hop bindHandle so intermediate swaps update the descriptor before
-      // runInSession's final bind; resumes land on the right ACP record.
-      if (hopResult.protocolIds && sessionManager && sessionId) {
-        const desc = sessionManager.get(sessionId);
-        if (desc) {
-          sessionManager.bindHandle(sessionId, hopAgent.deriveSessionName(desc), hopResult.protocolIds);
-        }
-      }
-
-      // Track final bundle/prompt via side effect — agentManager.run() only
-      // returns AgentResult so we capture these in the closure instead.
-      finalBundle = workingBundle ?? finalBundle;
-      finalPrompt = prompt;
-      return { result: hopResult, bundle: workingBundle, prompt };
+      const hop = await executeHopFn(hopParams, agentName, hopBundle, failure);
+      finalBundle = hop.bundle ?? finalBundle;
+      finalPrompt = hop.prompt;
+      return hop;
     };
 
     // ADR-013 Phase 1: agentManager is passed directly to runInSession.
