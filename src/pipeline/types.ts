@@ -144,6 +144,14 @@ export interface PipelineContext {
    */
   agentManager?: import("../agents").IAgentManager;
   /**
+   * Per-run plugin-provider cache (Finding 5 / issue #473).
+   * Constructed once in runner.ts and disposed at run completion.
+   * When present, context stage and stage-assembler call
+   * pluginProviderCache.loadOrGet() instead of loadPluginProviders() so
+   * providers are not re-imported and re-initialised on every assemble() call.
+   */
+  pluginProviderCache?: import("../context/engine").PluginProviderCache;
+  /**
    * nax session ID for the current story's main execution session.
    * Set by the execution stage after SessionManager.create().
    * Format: sess-<uuid>

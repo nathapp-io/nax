@@ -154,7 +154,15 @@ export async function assembleForStage(
   try {
     // Defensive check: test fixtures may bypass Zod and omit `pluginProviders`.
     const pluginConfigs = ctx.config.context.v2.pluginProviders ?? [];
-    const pluginProviders = pluginConfigs.length > 0 ? await loadPluginProviders(pluginConfigs, ctx.projectDir) : [];
+    // When ctx.pluginProviderCache is present (full runner path), reuse cached instances
+    // across assemble() calls. Fall back to a fresh load when the cache is absent
+    // (test fixtures and paths that don't wire the full runner).
+    const pluginProviders =
+      pluginConfigs.length > 0
+        ? ctx.pluginProviderCache
+          ? await ctx.pluginProviderCache.loadOrGet(pluginConfigs, ctx.projectDir)
+          : await loadPluginProviders(pluginConfigs, ctx.projectDir)
+        : [];
     const storyScratchDirs = await getStoryScratchDirs(ctx, options);
 
     const orchestrator = _stageAssemblerDeps.createOrchestrator(

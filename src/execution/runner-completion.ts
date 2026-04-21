@@ -56,6 +56,8 @@ export interface RunnerCompletionOptions {
   sessionManager?: ISessionManager;
   /** Per-run AgentManager (ADR-012). Reserved for future use in completion phase. */
   agentManager?: import("../agents").IAgentManager;
+  /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed in handleRunCompletion. */
+  pluginProviderCache?: import("../context/engine").PluginProviderCache;
 }
 
 /**
@@ -202,6 +204,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     agentManager: options.agentManager,
     skipRegression: regressionAlreadyPassed,
     sessionManager: options.sessionManager,
+    pluginProviderCache: options.pluginProviderCache,
   });
 
   const { durationMs, runCompletedAt, finalCounts } = completionResult;
