@@ -8,7 +8,7 @@
  */
 
 import { mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ContextManifest } from "./types";
 
 export const _manifestStoreDeps = {
@@ -53,6 +53,30 @@ export function rebuildManifestPath(projectDir: string, featureId: string, story
   return join(contextStoryDir(projectDir, featureId, storyId), "rebuild-manifest.json");
 }
 
+function toStoredPath(projectDir: string, pathValue: string): string {
+  return isAbsolute(pathValue) ? relative(projectDir, pathValue) : pathValue;
+}
+
+function toAbsolutePath(projectDir: string, pathValue: string): string {
+  return isAbsolute(pathValue) ? pathValue : resolve(projectDir, pathValue);
+}
+
+function toStoredManifest(projectDir: string, manifest: ContextManifest): ContextManifest {
+  return {
+    ...manifest,
+    ...(manifest.repoRoot !== undefined && { repoRoot: toStoredPath(projectDir, manifest.repoRoot) }),
+    ...(manifest.packageDir !== undefined && { packageDir: toStoredPath(projectDir, manifest.packageDir) }),
+  };
+}
+
+function hydrateManifestPaths(projectDir: string, manifest: ContextManifest): ContextManifest {
+  return {
+    ...manifest,
+    ...(manifest.repoRoot !== undefined && { repoRoot: toAbsolutePath(projectDir, manifest.repoRoot) }),
+    ...(manifest.packageDir !== undefined && { packageDir: toAbsolutePath(projectDir, manifest.packageDir) }),
+  };
+}
+
 export async function writeContextManifest(
   projectDir: string,
   featureId: string,
@@ -62,7 +86,7 @@ export async function writeContextManifest(
 ): Promise<void> {
   const filePath = contextManifestPath(projectDir, featureId, storyId, stage);
   await _manifestStoreDeps.mkdirp(dirname(filePath));
-  await _manifestStoreDeps.writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await _manifestStoreDeps.writeFile(filePath, `${JSON.stringify(toStoredManifest(projectDir, manifest), null, 2)}\n`);
 }
 
 export interface RebuildManifestEntry {
@@ -136,11 +160,12 @@ export async function loadContextManifests(
       if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
       try {
         const raw = await _manifestStoreDeps.readFile(fullPath);
+        const parsed = JSON.parse(raw) as ContextManifest;
         results.push({
           featureId: feature,
           stage: stageFromFileName(fileName),
           path: fullPath,
-          manifest: JSON.parse(raw) as ContextManifest,
+          manifest: hydrateManifestPaths(projectDir, parsed),
         });
       } catch {
         // Skip malformed files so inspect stays best-effort.
