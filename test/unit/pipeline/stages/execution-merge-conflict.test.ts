@@ -10,12 +10,12 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
 import { _executionDeps } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -44,8 +44,8 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   return chain;
 }
 
-function makeConfig(triggers: Record<string, unknown>): NaxConfig {
-  return {
+function makeConfig(triggers: Record<string, unknown>) {
+  return makeNaxConfig({
     agent: { default: "test-agent" },
     models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
     execution: {
@@ -60,22 +60,7 @@ function makeConfig(triggers: Record<string, unknown>): NaxConfig {
       defaults: { timeout: 30000, fallback: "abort" as const },
       triggers,
     },
-  } as unknown as NaxConfig;
-}
-
-function makeStory(): UserStory {
-  return {
-    id: "US-001",
-    title: "Test Story",
-    description: "Test",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-  };
+  });
 }
 
 function makePRD(): PRD {
@@ -90,7 +75,7 @@ function makePRD(): PRD {
 }
 
 function makeSuccessfulAgent() {
-  return {
+  return makeAgentAdapter({
     name: "test-agent",
     capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
     run: mock(async () => ({
@@ -102,10 +87,10 @@ function makeSuccessfulAgent() {
       durationMs: 100,
       estimatedCost: 0.01,
     })),
-  };
+  });
 }
 
-function makeCtx(config: NaxConfig, interaction?: InteractionChain): PipelineContext {
+function makeCtx(config: ReturnType<typeof makeNaxConfig>, interaction?: InteractionChain): PipelineContext {
   return {
     config,
     prd: makePRD(),
