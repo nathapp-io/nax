@@ -19,10 +19,11 @@ import { describe, expect, mock, test } from "bun:test";
 import { createReviewerSession } from "../../../src/review/dialogue";
 import type { DebateResolverContext } from "../../../src/debate/types";
 import type { IAgentManager } from "../../../src/agents/manager-types";
-import type { AgentAdapter, AgentRunOptions, AgentResult } from "../../../src/agents/types";
+import type { AgentRunOptions, AgentResult } from "../../../src/agents/types";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { NaxError } from "../../../src/errors";
+import { makeMockAgentManager } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -83,47 +84,15 @@ function makeRunFn(response: string, cost = 0.001): RunFn {
   }));
 }
 
-function makeAdapter(runFn: RunFn): AgentAdapter {
-  return {
-    run: runFn,
-    complete: mock(async () => ({ output: "", exitCode: 0 })),
-    plan: mock(async () => ({ specContent: "" })),
-    decompose: mock(async () => ({ stories: [] })),
-  } as unknown as AgentAdapter;
-}
-
-/** Wrap an adapter in an IAgentManager for createReviewerSession */
 function makeAgentManager(runFn: RunFn): IAgentManager {
-  const adapter = makeAdapter(runFn);
-
-  const manager = {
-    getDefault: () => "claude",
-    getAgent: (_name: string) => adapter,
-    isUnavailable: (_agent: string) => false,
-    markUnavailable: (_agent: string, _reason: unknown) => {},
-    reset: () => {},
-    validateCredentials: mock(async () => {}),
-    events: { on: () => {}, off: () => {} },
-    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-    nextCandidate: (_current: string, _hops: number) => null,
-    runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 100, estimatedCost: 0 }, fallbacks: [] })),
-    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-    run: mock(async (request: { runOptions: unknown }) => {
-      return adapter.run(request.runOptions as AgentRunOptions);
-    }),
-    complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: "", costUsd: 0, source: "mock" })),
-    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
-      return adapter.run(request.runOptions as AgentRunOptions);
-    }),
-    plan: mock(async () => { throw new Error("not used"); }),
-    planAs: mock(async () => { throw new Error("not used"); }),
-    decompose: mock(async () => { throw new Error("not used"); }),
-    decomposeAs: mock(async () => { throw new Error("not used"); }),
-  } as unknown as IAgentManager;
-
-  return manager;
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runFn: async (_agentName: string, opts: unknown) => {
+      const result = await runFn(opts as AgentRunOptions);
+      return { ...result, agentFallbacks: [] };
+    },
+    completeFn: async () => ({ output: "", costUsd: 0, source: "mock" as const }),
+  });
 }
 
 const MOCK_CONFIG = {

@@ -19,6 +19,7 @@ import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
 import * as loggerModule from "../../../src/logger";
+import { makeAgentAdapter, makeMockAgentManager } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -73,7 +74,7 @@ function makeSpawnMock(stdout: string, exitCode = 0) {
  */
 function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapter {
   let callIndex = 0;
-  return {
+  return makeAgentAdapter({
     name: "mock",
     displayName: "Mock Multi-Call Agent",
     binary: "mock",
@@ -94,7 +95,7 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
     complete: mock(async (_prompt: string) => responses[0]),
-  } as unknown as AgentAdapter;
+  });
 }
 
 /**
@@ -105,34 +106,14 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
 function makeMultiCallAgentManager(responses: string[], costPerCall = 0.5): IAgentManager {
   const adapter = makeMultiCallAgent(responses, costPerCall);
 
-  const manager = {
-    getDefault: () => "claude",
-    getAgent: (_name: string) => adapter,
-    isUnavailable: (_agent: string) => false,
-    markUnavailable: (_agent: string, _reason: unknown) => {},
-    reset: () => {},
-    validateCredentials: mock(async () => {}),
-    events: { on: () => {}, off: () => {} },
-    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-    nextCandidate: (_current: string, _hops: number) => null,
-    runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: responses[0] ?? responses[responses.length - 1], rateLimited: false, durationMs: 100, estimatedCost: costPerCall }, fallbacks: [] })),
-    completeWithFallback: mock(async () => ({ result: { output: responses[0] ?? responses[responses.length - 1], costUsd: costPerCall, source: "mock" }, fallbacks: [] })),
-    run: mock(async (request: { runOptions: unknown }) => {
-      return adapter.run(request.runOptions as Parameters<typeof adapter.run>[0]);
-    }),
-    complete: mock(async () => ({ output: responses[0] ?? responses[responses.length - 1], costUsd: costPerCall, source: "mock" })),
-    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: responses[0] ?? responses[responses.length - 1], costUsd: costPerCall, source: "mock" })),
-    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
-      return adapter.run(request.runOptions as Parameters<typeof adapter.run>[0]);
-    }),
-    plan: mock(async () => { throw new Error("not used"); }),
-    planAs: mock(async () => { throw new Error("not used"); }),
-    decompose: mock(async () => { throw new Error("not used"); }),
-    decomposeAs: mock(async () => { throw new Error("not used"); }),
-  } as unknown as IAgentManager;
-
-  return manager;
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    getAgentFn: () => adapter,
+    runFn: async (_agentName: string, opts: unknown) => {
+      const result = await adapter.run(opts as Parameters<typeof adapter.run>[0]);
+      return { ...result, agentFallbacks: [] };
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -310,43 +291,13 @@ describe("runAdversarialReview — JSON retry failure paths", () => {
       if (callIndex === 1) return { output: "not json at all", estimatedCost: 0 };
       throw new Error("retry connection failure");
     });
-    const closeSessionMock = mock(async () => {});
-    const adapter: AgentAdapter = {
-      name: "mock",
-      displayName: "Mock Agent",
-      binary: "mock",
-      capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
-      isInstalled: mock(async () => true),
-      run: runMock,
-      closeSession: closeSessionMock,
-      closePhysicalSession: closeSessionMock,
-      buildCommand: mock(() => []),
-      plan: mock(async () => { throw new Error("not used"); }),
-      decompose: mock(async () => { throw new Error("not used"); }),
-      complete: mock(async (_prompt: string) => ""),
-    } as unknown as AgentAdapter;
-    const agentManager: IAgentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => adapter,
-      isUnavailable: (_agent: string) => false,
-      markUnavailable: (_agent: string, _reason: unknown) => {},
-      reset: () => {},
-      validateCredentials: mock(async () => {}),
-      events: { on: () => {}, off: () => {} },
-      resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-      shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-      nextCandidate: (_current: string, _hops: number) => null,
-      runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "not json at all", rateLimited: false, durationMs: 100, estimatedCost: 0 }, fallbacks: [] })),
-      completeWithFallback: mock(async () => ({ result: { output: "not json at all", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      run: runMock,
-      complete: mock(async () => ({ output: "not json at all", costUsd: 0, source: "mock" })),
-      completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: "not json at all", costUsd: 0, source: "mock" })),
-      runAs: mock(async (_agent: string, request: { runOptions: unknown }) => runMock(request.runOptions as never)),
-      plan: mock(async () => { throw new Error("not used"); }),
-      planAs: mock(async () => { throw new Error("not used"); }),
-      decompose: mock(async () => { throw new Error("not used"); }),
-      decomposeAs: mock(async () => { throw new Error("not used"); }),
-    } as unknown as IAgentManager;
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runFn: async (_agentName: string, opts: unknown) => {
+        const result = await runMock(opts);
+        return { ...result, agentFallbacks: [] };
+      },
+    });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -457,50 +408,19 @@ describe("runAdversarialReview — retry logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    // retryAttempted is set before the try block, so retries:1 even when the call throws
     let callIndex = 0;
     const runMock = mock(async () => {
       callIndex++;
       if (callIndex === 1) return { output: "not json", estimatedCost: 0 };
       throw new Error("retry network failure");
     });
-    const closeSessionMock = mock(async () => {});
-    const adapter: AgentAdapter = {
-      name: "mock",
-      displayName: "Mock",
-      binary: "mock",
-      capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
-      isInstalled: mock(async () => true),
-      run: runMock,
-      closeSession: closeSessionMock,
-      closePhysicalSession: closeSessionMock,
-      buildCommand: mock(() => []),
-      plan: mock(async () => { throw new Error("not used"); }),
-      decompose: mock(async () => { throw new Error("not used"); }),
-      complete: mock(async () => ""),
-    } as unknown as AgentAdapter;
-    const agentManager: IAgentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => adapter,
-      isUnavailable: (_agent: string) => false,
-      markUnavailable: (_agent: string, _reason: unknown) => {},
-      reset: () => {},
-      validateCredentials: mock(async () => {}),
-      events: { on: () => {}, off: () => {} },
-      resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-      shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-      nextCandidate: (_current: string, _hops: number) => null,
-      runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "not json", rateLimited: false, durationMs: 100, estimatedCost: 0 }, fallbacks: [] })),
-      completeWithFallback: mock(async () => ({ result: { output: "not json", costUsd: 0, source: "mock" }, fallbacks: [] })),
-      run: runMock,
-      complete: mock(async () => ({ output: "not json", costUsd: 0, source: "mock" })),
-      completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: "not json", costUsd: 0, source: "mock" })),
-      runAs: mock(async (_agent: string, request: { runOptions: unknown }) => runMock(request.runOptions as never)),
-      plan: mock(async () => { throw new Error("not used"); }),
-      planAs: mock(async () => { throw new Error("not used"); }),
-      decompose: mock(async () => { throw new Error("not used"); }),
-      decomposeAs: mock(async () => { throw new Error("not used"); }),
-    } as unknown as IAgentManager;
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runFn: async (_agentName: string, opts: unknown) => {
+        const result = await runMock(opts);
+        return { ...result, agentFallbacks: [] };
+      },
+    });
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 

@@ -17,9 +17,10 @@ import type { AgentAdapter } from "../../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { NaxConfig } from "../../../../src/config/schema";
 import type { AcceptanceLoopContext } from "../../../../src/execution/lifecycle/acceptance-loop";
+import { makeAgentAdapter, makeMockAgentManager } from "../../../helpers";
 
 function makeMockAgentAdapter(): AgentAdapter {
-  return {
+  return makeAgentAdapter({
     name: "mock",
     displayName: "Mock",
     binary: "mock",
@@ -37,38 +38,22 @@ function makeMockAgentAdapter(): AgentAdapter {
     plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
     decompose: mock(async () => ({ stories: [], output: "" })),
     complete: mock(async () => ({ output: "{}", costUsd: 0.01, source: "exact" as const })),
-  } as unknown as AgentAdapter;
+  });
 }
 
 /**
  * Wraps a mock AgentAdapter as an IAgentManager.
  * IAgentManager.run() takes AgentRunRequest { runOptions } and forwards to adapter.run().
  */
-function makeMockAgentManager(agent: AgentAdapter): IAgentManager {
-  return {
-    getDefault: () => "claude",
-    run: mock(async (request: { runOptions: Record<string, unknown> }) => {
-      return await agent.run(request.runOptions as any);
-    }),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-    completeAs: mock(async () => ({ output: "", costUsd: 0 })),
-    complete: mock(async () => ({ output: "", costUsd: 0 })),
-    planAs: mock(async () => ({ specContent: "" })),
-    decomposeAs: mock(async () => ({ stories: [] })),
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} },
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: mock(async (request: { runOptions: Record<string, unknown> }) => {
-      return { result: await agent.run(request.runOptions as any), fallbacks: [] };
-    }),
-    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
-    getAgent: () => agent,
-  } as any;
+function makeAgentManagerWithAdapter(agent: AgentAdapter): IAgentManager {
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    getAgentFn: () => agent,
+    runFn: async (_agentName: string, opts: unknown) => {
+      const result = await agent.run(opts as any);
+      return { ...result, agentFallbacks: [] };
+    },
+  });
 }
 
 function makeConfig(): NaxConfig {
@@ -93,7 +78,7 @@ function makeDiagnosisOpts(): Omit<DiagnoseOptions, "previousFailure" | "semanti
 describe("resolveAcceptanceDiagnosis() — fast paths", () => {
   test("implement-only strategy → source_bug, no LLM call", async () => {
     const agent = makeMockAgentAdapter();
-    const agentManager = makeMockAgentManager(agent);
+    const agentManager = makeAgentManagerWithAdapter(agent);
     const result = await resolveAcceptanceDiagnosis({
       agentManager,
       failures: { failedACs: ["AC-1"], testOutput: "fail" },
@@ -109,7 +94,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("all semantic verdicts passed → test_bug, no LLM call", async () => {
     const agent = makeMockAgentAdapter();
-    const agentManager = makeMockAgentManager(agent);
+    const agentManager = makeAgentManagerWithAdapter(agent);
     const verdicts: SemanticVerdict[] = [
       { storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 5, findings: [] },
       { storyId: "US-002", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 3, findings: [] },
@@ -130,7 +115,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test(">80% ACs failed → test_bug, no LLM call", async () => {
     const agent = makeMockAgentAdapter();
-    const agentManager = makeMockAgentManager(agent);
+    const agentManager = makeAgentManagerWithAdapter(agent);
     const result = await resolveAcceptanceDiagnosis({
       agentManager,
       failures: { failedACs: ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9"], testOutput: "fail" },
@@ -147,7 +132,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("AC-ERROR sentinel → test_bug, no LLM call", async () => {
     const agent = makeMockAgentAdapter();
-    const agentManager = makeMockAgentManager(agent);
+    const agentManager = makeAgentManagerWithAdapter(agent);
     const result = await resolveAcceptanceDiagnosis({
       agentManager,
       failures: { failedACs: ["AC-ERROR"], testOutput: "test crashed" },
@@ -162,7 +147,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("normal failure (no fast path matches) → calls diagnoseAcceptanceFailure", async () => {
     const agent = makeMockAgentAdapter();
-    const agentManager = makeMockAgentManager(agent);
+    const agentManager = makeAgentManagerWithAdapter(agent);
     const result = await resolveAcceptanceDiagnosis({
       agentManager,
       failures: { failedACs: ["AC-1", "AC-2"], testOutput: "(fail) AC-1\n(fail) AC-2" },
@@ -179,7 +164,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("normal path passes previousFailure to diagnosis", async () => {
     const agent = makeMockAgentAdapter();
-    const agentManager = makeMockAgentManager(agent);
+    const agentManager = makeAgentManagerWithAdapter(agent);
     await resolveAcceptanceDiagnosis({
       agentManager,
       failures: { failedACs: ["AC-1"], testOutput: "fail" },
@@ -197,26 +182,20 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 // ─── applyFix() — single-attempt fix orchestration (US-003) ─────────────────
 
 function makeAcceptanceCtx(): AcceptanceLoopContext {
-  const mockAgentManager = {
-    getDefault: () => "claude",
-    run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-    completeAs: mock(async () => ({ output: "", costUsd: 0 })),
-    complete: mock(async () => ({ output: "", costUsd: 0 })),
-    planAs: mock(async () => ({ specContent: "" })),
-    decomposeAs: mock(async () => ({ stories: [] })),
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} },
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
-    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
-    getAgent: () => undefined,
-  } as any;
+  const mockAgentManager = makeMockAgentManager({
+    getDefaultAgent: "claude",
+    getAgentFn: () => undefined,
+    runFn: async () => ({
+      success: false,
+      exitCode: 1,
+      output: "",
+      rateLimited: false,
+      durationMs: 10,
+      estimatedCost: 0,
+      agentFallbacks: [] as unknown[],
+    }),
+    completeFn: async () => ({ output: "", costUsd: 0 }),
+  });
 
   return {
     config: makeConfig(),

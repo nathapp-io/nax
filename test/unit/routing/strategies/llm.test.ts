@@ -11,6 +11,7 @@ import type { AgentAdapter, CompleteOptions } from "../../../../src/agents/types
 import type { NaxConfig } from "../../../../src/config";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../../src/logger";
+import { makeAgentAdapter } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,7 +39,7 @@ function makeConfig(overrides: Partial<NaxConfig["routing"]["llm"]> = {}): NaxCo
 
 /** Creates a mock adapter that never resolves (simulates a hanging LLM call for timeout testing). */
 function makeHangingAdapter() {
-  return {
+  return makeAgentAdapter({
     name: "hanging-mock",
     displayName: "Hanging Mock",
     binary: "hanging-mock",
@@ -52,8 +53,8 @@ function makeHangingAdapter() {
     buildCommand: mock(() => []),
     plan: mock(() => Promise.reject(new Error("plan() should not be called"))),
     decompose: mock(() => Promise.reject(new Error("decompose() should not be called"))),
-    complete: mock((_prompt: string, _options?: CompleteOptions) => new Promise<string>(() => {})), // never resolves
-  } as AgentAdapter;
+    complete: mock((_prompt: string, _options?: CompleteOptions) => new Promise<string>(() => {})),
+  });
 }
 
 function makeAgentManagerWithMocks({
@@ -193,7 +194,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
   test("adapter.complete() resolves on success path (no timeout)", async () => {
     const config = makeConfig({ timeoutMs: 5000 });
 
-    const successAdapter = {
+    const successAdapter = makeAgentAdapter({
       name: "success-mock",
       displayName: "Success Mock",
       binary: "success-mock",
@@ -217,7 +218,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
           }),
         ),
       ),
-    } as AgentAdapter;
+    });
 
     const SUCCESS_RESPONSE = JSON.stringify({
       complexity: "simple",

@@ -13,6 +13,7 @@ import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
 import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents/manager-types";
+import { makeMockAgentManager } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -42,93 +43,19 @@ const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 // ---------------------------------------------------------------------------
 
 function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
-  const adapter: AgentAdapter = {
-    name: "mock",
-    displayName: "Mock Agent",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: [],
-      supportedTestStrategies: [],
-      features: {},
-    } as unknown as AgentAdapter["capabilities"],
-    isInstalled: mock(async () => true),
-    run: mock(async (_opts) => ({
-      success: true,
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runFn: async (_agentName: string, _opts: unknown) => ({
+      success: true as const,
       exitCode: 0,
       output: llmResponse,
       rateLimited: false,
       durationMs: 100,
       estimatedCost: cost,
-    })),
-    buildCommand: mock(() => []),
-    plan: mock(async () => {
-      throw new Error("not used");
+      agentFallbacks: [] as unknown[],
     }),
-    decompose: mock(async () => {
-      throw new Error("not used");
-    }),
-    complete: mock(async (_prompt: string) => llmResponse),
-    closeSession: mock(async () => {}),
-    closePhysicalSession: mock(async () => {}),
-  } as unknown as AgentAdapter;
-
-  const manager = {
-    getDefault: () => "claude",
-    getAgent: (_name: string) => adapter,
-    isUnavailable: (_agent: string) => false,
-    markUnavailable: (_agent: string, _reason: unknown) => {},
-    reset: () => {},
-    validateCredentials: mock(async () => {}),
-    events: {
-      on: () => {},
-      off: () => {},
-    },
-    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-    nextCandidate: (_current: string, _hops: number) => null,
-    runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCost: cost }, fallbacks: [] })),
-    completeWithFallback: mock(async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] })),
-    run: mock(async (request: { runOptions: unknown }) => {
-      const opts = request.runOptions as { prompt?: string };
-      void opts;
-      return {
-        success: true,
-        exitCode: 0,
-        output: llmResponse,
-        rateLimited: false,
-        durationMs: 100,
-        estimatedCost: cost,
-      } as AgentResult;
-    }),
-    complete: mock(async (_prompt: string) => ({ output: llmResponse, costUsd: cost, source: "mock" })),
-    completeAs: mock(async (_agent: string, _prompt: string, _opts?: unknown) => ({ output: llmResponse, costUsd: cost, source: "mock" })),
-    runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
-      const opts = request.runOptions as { prompt?: string };
-      void opts;
-      return {
-        success: true,
-        exitCode: 0,
-        output: llmResponse,
-        rateLimited: false,
-        durationMs: 100,
-        estimatedCost: cost,
-      } as AgentResult;
-    }),
-    plan: mock(async () => {
-      throw new Error("not used");
-    }),
-    planAs: mock(async () => {
-      throw new Error("not used");
-    }),
-    decompose: mock(async () => {
-      throw new Error("not used");
-    }),
-    decomposeAs: mock(async () => {
-      throw new Error("not used");
-    }),
-  } as unknown as IAgentManager;
-
-  return manager;
+    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+  });
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
@@ -616,76 +543,15 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=true when agent.run() throws", async () => {
-    const throwingAdapter: AgentAdapter = {
-      name: "mock",
-      displayName: "Mock Agent",
-      binary: "mock",
-      capabilities: {
-        supportedTiers: [],
-        supportedTestStrategies: [],
-        features: {},
-      } as unknown as AgentAdapter["capabilities"],
-      isInstalled: mock(async () => true),
-      run: mock(async () => {
+    const throwingManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runFn: async () => {
         throw new Error("LLM connection timeout");
-      }),
-      buildCommand: mock(() => []),
-      plan: mock(async () => {
-        throw new Error("not used");
-      }),
-      decompose: mock(async () => {
-        throw new Error("not used");
-      }),
-      complete: mock(async (_prompt: string) => {
+      },
+      completeFn: async () => {
         throw new Error("LLM connection timeout");
-      }),
-      closeSession: mock(async () => {}),
-      closePhysicalSession: mock(async () => {}),
-    } as unknown as AgentAdapter;
-
-    const throwingManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => throwingAdapter,
-      isUnavailable: (_agent: string) => false,
-      markUnavailable: (_agent: string, _reason: unknown) => {},
-      reset: () => {},
-      validateCredentials: mock(async () => {}),
-      events: { on: () => {}, off: () => {} },
-      resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-      shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-      nextCandidate: (_current: string, _hops: number) => null,
-      runWithFallback: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      completeWithFallback: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      run: mock(async (_request: { runOptions: unknown }) => {
-        throw new Error("LLM connection timeout");
-      }),
-      complete: mock(async (_prompt: string) => {
-        throw new Error("LLM connection timeout");
-      }),
-      completeAs: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
-        void request;
-        throw new Error("LLM connection timeout");
-      }),
-      plan: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      planAs: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      decompose: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      decomposeAs: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-    } as unknown as IAgentManager;
+      },
+    });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -699,76 +565,15 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
   });
 
   test("output contains 'skipped' when agent.run() throws", async () => {
-    const throwingAdapter: AgentAdapter = {
-      name: "mock",
-      displayName: "Mock Agent",
-      binary: "mock",
-      capabilities: {
-        supportedTiers: [],
-        supportedTestStrategies: [],
-        features: {},
-      } as unknown as AgentAdapter["capabilities"],
-      isInstalled: mock(async () => true),
-      run: mock(async () => {
+    const throwingManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runFn: async () => {
         throw new Error("LLM connection timeout");
-      }),
-      buildCommand: mock(() => []),
-      plan: mock(async () => {
-        throw new Error("not used");
-      }),
-      decompose: mock(async () => {
-        throw new Error("not used");
-      }),
-      complete: mock(async (_prompt: string) => {
+      },
+      completeFn: async () => {
         throw new Error("LLM connection timeout");
-      }),
-      closeSession: mock(async () => {}),
-      closePhysicalSession: mock(async () => {}),
-    } as unknown as AgentAdapter;
-
-    const throwingManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => throwingAdapter,
-      isUnavailable: (_agent: string) => false,
-      markUnavailable: (_agent: string, _reason: unknown) => {},
-      reset: () => {},
-      validateCredentials: mock(async () => {}),
-      events: { on: () => {}, off: () => {} },
-      resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-      shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-      nextCandidate: (_current: string, _hops: number) => null,
-      runWithFallback: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      completeWithFallback: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      run: mock(async (_request: { runOptions: unknown }) => {
-        throw new Error("LLM connection timeout");
-      }),
-      complete: mock(async (_prompt: string) => {
-        throw new Error("LLM connection timeout");
-      }),
-      completeAs: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      runAs: mock(async (_agent: string, request: { runOptions: unknown }) => {
-        void request;
-        throw new Error("LLM connection timeout");
-      }),
-      plan: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      planAs: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      decompose: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-      decomposeAs: mock(async () => {
-        throw new Error("LLM connection timeout");
-      }),
-    } as unknown as IAgentManager;
+      },
+    });
 
     const result = await runAdversarialReview(
       "/tmp/wd",

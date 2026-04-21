@@ -20,7 +20,7 @@ import type { DiagnosisResult } from "../../../src/acceptance/types";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { AgentAdapter } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents";
-import { makeMockAgentManager, makeNaxConfig } from "../../../test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig } from "../../../test/helpers";
 import { wrapAdapterAsManager } from "../../../src/agents/utils";
 import { resolveModelForAgent } from "../../../src/config/schema-types";
 
@@ -40,7 +40,7 @@ function makeMockAgent(overrides?: Partial<{ output: string }>): IAgentManager {
     estimatedCost: 0.05,
     agentFallbacks: [] as unknown[],
   }));
-  const adapter = {
+  const adapter = makeAgentAdapter({
     name: "claude" as const,
     displayName: "Mock Agent",
     binary: "mock",
@@ -55,7 +55,7 @@ function makeMockAgent(overrides?: Partial<{ output: string }>): IAgentManager {
     plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
     decompose: mock(async () => ({ stories: [], output: "" })),
     complete: mock(async () => ({ output: "{}", costUsd: 0.01, source: "exact" as const })),
-  } as AgentAdapter;
+  });
   const mgr = wrapAdapterAsManager(adapter);
   wrappedAdapterMap.set(mgr, adapter);
   return mgr;
@@ -436,7 +436,7 @@ describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", ()
 
 describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
   test("returns fallback DiagnosisResult when adapter.run() throws", async () => {
-    const errorAgent = {
+    const errorAgent = makeAgentAdapter({
       name: "claude",
       displayName: "Error Agent",
       binary: "error",
@@ -453,7 +453,7 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
       plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
       decompose: mock(async () => ({ stories: [], output: "" })),
       complete: mock(async () => ({ output: "", costUsd: 0, source: "exact" as const })),
-    } as unknown as AgentAdapter;
+    });
     const config = makeNaxConfig();
     const result = await diagnoseAcceptanceFailure(toManagerTracked(errorAgent), {
       testOutput: "FAIL",
@@ -469,7 +469,7 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
   });
 
   test("does not throw when adapter.run() throws", async () => {
-    const errorAgent = {
+    const errorAgent = makeAgentAdapter({
       name: "claude",
       displayName: "Error Agent",
       binary: "error",
@@ -486,7 +486,7 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
       plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
       decompose: mock(async () => ({ stories: [], output: "" })),
       complete: mock(async () => ({ output: "", costUsd: 0, source: "exact" as const })),
-    } as unknown as AgentAdapter;
+    });
     const config = makeNaxConfig();
     await expect(
       diagnoseAcceptanceFailure(toManagerTracked(errorAgent), {

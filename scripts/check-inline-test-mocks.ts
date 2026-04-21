@@ -57,6 +57,13 @@ const SKIP_FILES = new Set([
   "test/unit/acceptance/component-strategy-integration.test.ts",
   "test/unit/acceptance/generator-prd-result.test.ts",
   "test/unit/acceptance/fix-executor-test-fix.test.ts",
+  // Integration files with class-based or plugin-extension agent adapters
+  "test/integration/pipeline/reporter-lifecycle-basic.test.ts",
+  "test/integration/pipeline/reporter-lifecycle-resilience.test.ts",
+  "test/integration/plugins/plugins-registry.test.ts",
+  "test/integration/plugins/validator.test.ts",
+  "test/integration/execution/agent-swap.test.ts",
+  "test/integration/execution/status-file-integration.test.ts",
 ]);
 
 /**
@@ -67,12 +74,12 @@ const SKIP_FILES = new Set([
  *
  * This function checks whether the match at `matchIndex` in `text` is inside
  * an open helper call by looking backwards for `makeAgentAdapter(` or
- * `makeMockAgentManager(` within LOOKBACK_LINES lines, where the call's
- * opening paren has not been closed by the time we reach the match.
+ * `makeMockAgentManager(` within LOOKBACK_LINES lines, then computing the
+ * bracket nesting depth from the call to the match.
  *
- * A call is considered "open" at the match if the number of opening parens
- * on the line(s) between the call and the match is greater than the number
- * of closing parens on those same lines.
+ * A call is considered "open" at the match if the net nesting depth
+ * (opening - closing of brackets/braces/parens) from after the call to
+ * the match is positive.
  */
 const LOOKBACK_LINES = 15;
 
@@ -87,11 +94,12 @@ function isInsideHelperCall(text: string, matchIndex: number): boolean {
     if (callIdx === -1) continue;
 
     const afterCall = window.slice(callIdx + call.length);
-    const openParens = (afterCall.match(/\(/g) ?? []).length;
-    const closeParens = (afterCall.match(/\)/g) ?? []).length;
-    if (openParens > closeParens) {
-      return true;
+    let depth = 0;
+    for (const ch of afterCall) {
+      if (ch === "(" || ch === "{" || ch === "[") depth++;
+      else if (ch === ")" || ch === "}" || ch === "]") depth--;
     }
+    if (depth > 0) return true;
   }
   return false;
 }

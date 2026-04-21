@@ -10,6 +10,7 @@ import type { AgentAdapter, CompleteOptions } from "../../../../src/agents/types
 import type { NaxConfig } from "../../../../src/config";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../../src/logger";
+import { makeAgentAdapter } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,7 +69,7 @@ function makeStory(id = "TEST-001") {
 
 function makeMockAdapter(responseText: string): AgentAdapter & { complete: ReturnType<typeof mock> } {
   const completeMock = mock((_prompt: string, _options?: CompleteOptions) => Promise.resolve(responseText));
-  return {
+  return makeAgentAdapter({
     name: "mock",
     displayName: "Mock Adapter",
     binary: "mock",
@@ -83,7 +84,7 @@ function makeMockAdapter(responseText: string): AgentAdapter & { complete: Retur
     plan: mock(() => Promise.reject(new Error("plan() should not be called in routing tests"))),
     decompose: mock(() => Promise.reject(new Error("decompose() should not be called in routing tests"))),
     complete: completeMock,
-  };
+  });
 }
 
 function makeAgentManagerFromAdapter(adapter: AgentAdapter & { complete: ReturnType<typeof mock> }) {

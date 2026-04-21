@@ -20,10 +20,11 @@ import type { IAgentManager } from "../../../src/agents/manager-types";
 import { createReviewerSession } from "../../../src/review/dialogue";
 import type { DialogueMessage, ReviewDialogueResult, ReviewerSession } from "../../../src/review/dialogue";
 import type { ReviewConfig } from "../../../src/review/types";
-import type { AgentAdapter, AgentRunOptions, AgentResult } from "../../../src/agents/types";
+import type { AgentRunOptions, AgentResult } from "../../../src/agents/types";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/semantic";
 import { NaxError } from "../../../src/errors";
+import { makeMockAgentManager } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,67 +81,24 @@ const FAILING_RUN_RESPONSE = JSON.stringify({
 type RunFn = (opts: AgentRunOptions) => Promise<AgentResult>;
 
 function makeAgentManager(runFn?: RunFn): IAgentManager {
-  const adapter: AgentAdapter = {
-    name: "mock",
-    displayName: "Mock Agent",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"],
-      maxContextTokens: 100_000,
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
+  const defaultRunFn = mock(async () => ({
+    success: true,
+    exitCode: 0,
+    output: PASSING_RUN_RESPONSE,
+    rateLimited: false,
+    durationMs: 10,
+    estimatedCost: 0.001,
+  }));
+  const effectiveRunFn = runFn ?? defaultRunFn;
+
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runFn: async (_agentName: string, opts: unknown) => {
+      const result = await effectiveRunFn(opts as AgentRunOptions);
+      return { ...result, agentFallbacks: [] };
     },
-    isInstalled: mock(async () => true),
-    run:
-      runFn ??
-      mock(async () => ({
-        success: true,
-        exitCode: 0,
-        output: PASSING_RUN_RESPONSE,
-        rateLimited: false,
-        durationMs: 10,
-        estimatedCost: 0.001,
-      })),
-    buildCommand: mock(() => []),
-    plan: mock(async () => ({ specContent: "" })),
-    decompose: mock(async () => ({ stories: [] })),
-    complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
-    closeSession: mock(async () => {}),
-    closePhysicalSession: mock(async () => {}),
-  } as unknown as AgentAdapter;
-
-  const manager = {
-    getDefault: () => "claude",
-    getAgent: (_name: string) => adapter,
-    isUnavailable: (_agent: string) => false,
-    markUnavailable: (_agent: string, _reason: unknown) => {},
-    reset: () => {},
-    validateCredentials: mock(async () => {}),
-    events: { on: () => {}, off: () => {} },
-    resolveFallbackChain: (_agent: string, _failure: unknown) => [],
-    shouldSwap: (_failure: unknown, _hops: number, _bundle: unknown) => false,
-    nextCandidate: (_current: string, _hops: number) => null,
-    runWithFallback: mock(async (request: { runOptions: AgentRunOptions }) => {
-      const result = await adapter.run(request.runOptions);
-      return { result, fallbacks: [] };
-    }),
-    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
-    run: mock(async (request: { runOptions: AgentRunOptions }) => {
-      const result = await adapter.run(request.runOptions);
-      return result;
-    }),
-    complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-    completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
-    runAs: mock(async (_agent: string, request: { runOptions: AgentRunOptions }) => {
-      const result = await adapter.run(request.runOptions);
-      return result;
-    }),
-    plan: mock(async () => ({ specContent: "" })),
-    planAs: mock(async () => ({ specContent: "" })),
-    decompose: mock(async () => ({ stories: [] })),
-    decomposeAs: mock(async () => ({ stories: [] })),
-  } as unknown as IAgentManager;
-
-  return manager;
+    completeFn: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+  });
 }
 
 function makeConfig() {
