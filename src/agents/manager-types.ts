@@ -105,10 +105,11 @@ export interface IAgentManager {
 
   /**
    * Returns true when the manager should attempt a swap to a fallback agent.
-   * Requires fallback.enabled, a context bundle, and an availability failure
-   * (or quality failure when onQualityFailure is set), within the hop cap.
+   * Requires fallback.enabled, a truthy bundle (hasBundle=true), and an availability
+   * failure (or quality failure when onQualityFailure is set), within the hop cap.
+   * completeWithFallback passes false — it has no context bundle.
    */
-  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, bundle: ContextBundle | undefined): boolean;
+  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, hasBundle: boolean): boolean;
 
   /**
    * Returns the next candidate agent name for a given current agent and hop count,

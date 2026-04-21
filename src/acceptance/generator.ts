@@ -198,9 +198,13 @@ export async function generateFromPRD(
     featureName: options.featureName,
     sessionRole: "acceptance-gen",
   } as const;
+  if (!options.agentManager) {
+    logger.warn("acceptance", "No agentManager threaded — fresh manager created, unavailability state is lost");
+  }
+  const prdManager = options.agentManager ?? _generatorPRDDeps.createManager(options.config);
   const completeResult = options.agentManager
-    ? (await options.agentManager.completeWithFallback(prompt, prdCompleteOpts)).result
-    : await _generatorPRDDeps.createManager(options.config).complete(prompt, prdCompleteOpts);
+    ? (await prdManager.completeWithFallback(prompt, prdCompleteOpts)).result
+    : await prdManager.complete(prompt, prdCompleteOpts);
   const genCostUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
   const rawOutput = typeof completeResult === "string" ? completeResult : completeResult.output;
   let testCode = extractTestCode(rawOutput);

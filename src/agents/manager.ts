@@ -7,7 +7,7 @@
 
 import { EventEmitter } from "node:events";
 import type { NaxConfig } from "../config";
-import type { AdapterFailure, ContextBundle } from "../context/engine";
+import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { cancellableDelay } from "../utils/bun-deps";
@@ -120,14 +120,14 @@ export class AgentManager implements IAgentManager {
     return raw.filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
   }
 
-  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, bundle: ContextBundle | undefined): boolean {
+  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, hasBundle: boolean): boolean {
     if (!failure) return false;
     // Aborted runs (shutdown in progress) must not trigger fallback —
     // swapping to another agent would spawn fresh work during teardown.
     if (failure.outcome === "fail-aborted") return false;
     const fallback = this._config.agent?.fallback;
     if (!fallback?.enabled) return false;
-    if (!bundle) return false;
+    if (!hasBundle) return false;
     if (hopsSoFar >= (fallback.maxHopsPerStory ?? 2)) return false;
     if (failure.category === "availability") return true;
     return fallback.onQualityFailure ?? false;
@@ -205,7 +205,7 @@ export class AgentManager implements IAgentManager {
 
       const bundleForSwapCheck = updatedBundle ?? request.bundle;
 
-      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, bundleForSwapCheck)) {
+      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, !!bundleForSwapCheck)) {
         // Preserve legacy rate-limit backoff when no swap candidates are available.
         // #585 Path B: race the sleep against the shutdown signal — an abort during
         // backoff settles within milliseconds instead of the full exponential wait.
@@ -321,9 +321,9 @@ export class AgentManager implements IAgentManager {
 
       if (!result.adapterFailure) return { result, fallbacks };
 
-      // Pass a truthy sentinel bundle so shouldSwap's !bundle guard passes.
-      // completeWithFallback never rebuilds context (no bundle in complete flow).
-      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, {} as ContextBundle)) {
+      // completeWithFallback has no ContextBundle object, but swap is still allowed on
+      // availability failures — pass true so the hasBundle guard does not block swapping.
+      if (!this.shouldSwap(result.adapterFailure, hopsSoFar, true)) {
         return { result, fallbacks };
       }
 
