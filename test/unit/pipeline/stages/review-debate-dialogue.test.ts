@@ -15,6 +15,7 @@ import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeMockAgentManager } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals — restored in afterEach
@@ -121,26 +122,15 @@ function makePRD(): PRD {
 }
 
 function makeCtx(config: NaxConfig, overrides: Partial<PipelineContext> = {}): PipelineContext {
-  const mockAgentManager = {
-    getDefault: () => "claude",
+  const mockAgentManager = makeMockAgentManager({
     run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
     runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
     completeAs: mock(async () => ({ output: "", costUsd: 0 })),
     complete: mock(async () => ({ output: "", costUsd: 0 })),
     planAs: mock(async () => ({ specContent: "" })),
     decomposeAs: mock(async () => ({ stories: [] })),
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} },
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
-    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
     getAgent: () => undefined,
-  } as any;
+  });
 
   return {
     config,

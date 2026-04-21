@@ -6,6 +6,7 @@ import {
 } from "../../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
+import { makeMockAgentManager } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -97,14 +98,14 @@ describe("US-004: agentManager.getDefault() is called when ctx.agentManager is s
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
-    const mockAgentManager = {
-      getDefault: () => {
-        getDefaultCalled = true;
-        return "claude";
-      },
+    const mockAgentManager = makeMockAgentManager({
       run: mock(async () => ({ output: "", costUsd: 0 })),
       complete: mock(async () => ({ output: "", costUsd: 0 })),
-    } as any;
+    });
+    (mockAgentManager as any).getDefault = () => {
+      getDefaultCalled = true;
+      return "claude";
+    };
 
     const ctx = makeCtx({
       agentManager: mockAgentManager,

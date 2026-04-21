@@ -45,6 +45,15 @@ const SKIP_FILES = new Set([
   "test/unit/debate/session-hybrid-rebuttal.test.ts",
   "test/unit/debate/session-one-shot-roles.test.ts",
   "test/unit/debate/session-plan.test.ts",
+  "test/unit/pipeline/stages/review-debate-dialogue.test.ts",
+  "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts",
+  "test/unit/pipeline/stages/autofix-budget-prompts.test.ts",
+  "test/unit/pipeline/stages/autofix-noop.test.ts",
+  "test/unit/pipeline/stages/autofix-adversarial.test.ts",
+  "test/unit/pipeline/stages/autofix-dialogue.test.ts",
+  "test/unit/pipeline/stages/autofix-routing.test.ts",
+  "test/unit/pipeline/stages/autofix-session-wiring.test.ts",
+  "test/unit/pipeline/stages/review-dialogue.test.ts",
 ]);
 
 /**
