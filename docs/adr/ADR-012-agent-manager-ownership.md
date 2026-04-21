@@ -229,7 +229,7 @@ AgentManager exposes `runWithFallback(request)` in this ADR. A parallel `complet
 - [ ] `grep -rn "context.v2.fallback" src/` outside `src/config/` returns 0 hits.
 - [ ] Each sub-PR passes the full test suite independently.
 - [ ] No behaviour change — manager is still a pass-through to legacy code paths.
-- [ ] Codemod artefact preserved in `scripts/codemods/agent-manager-migration.ts` for auditability.
+- [x] ~~Codemod artefact preserved in `scripts/codemods/agent-manager-migration.ts` for auditability.~~ Dropped: the migration was a one-time 46-site bulk rename; the git diff in #568 is the sufficient audit record. No reuse value.
 
 ### Phase 4 — Adapter cleanup *(requires #529 merged first)*
 
