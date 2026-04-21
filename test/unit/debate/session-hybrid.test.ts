@@ -1,57 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { AgentRunRequest } from "../../../src/agents";
 import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function makeMockManager(
-  options: {
-    runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: any[] }>;
-    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-    unavailableAgents?: Set<string>;
-  } = {},
-): IAgentManager {
-  const unavailable = options.unavailableAgents ?? new Set<string>();
-  return {
-    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (_req: AgentRunRequest) => ({
-      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] },
-      fallbacks: [],
-    }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: options.completeFn
-      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: options.runFn
-      ? async (agentName: string, request: AgentRunRequest) => options.runFn!(agentName, request.runOptions)
-      : async (_name: string, _request: AgentRunRequest) => ({
-          success: true,
-          exitCode: 0,
-          output: `output from ${_name}`,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0.01,
-          agentFallbacks: [],
-        }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
+import { makeMockAgentManager } from "../../helpers";
 
 function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -93,7 +45,7 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -131,7 +83,7 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -180,7 +132,7 @@ describe("runHybrid() — keepOpen for proposal calls (AC3)", () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -222,7 +174,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
     const invoked: string[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName) => {
           invoked.push(agentName);
           return {
@@ -264,7 +216,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -302,7 +254,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
 describe("runHybrid() — single-agent fallback when fewer than 2 proposals succeed (AC4)", () => {
   test("returns outcome=passed with single debater when exactly 1 proposal succeeds", async () => {
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName) => {
           if (agentName === "opencode") {
             return {
@@ -348,7 +300,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
 
   test("returns outcome=failed when 0 proposals succeed and fallback retry also fails", async () => {
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async () => ({
           success: false,
           exitCode: 1,
@@ -382,7 +334,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
 describe("runHybrid() — successful proposal outputs collected (AC5)", () => {
   test("both proposal outputs appear in result.proposals when 2 proposals succeed", async () => {
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName) => ({
           success: true,
           exitCode: 0,
@@ -419,13 +371,16 @@ describe("runHybrid() — adapter resolution via shared helper (AC6)", () => {
   test("manager.getAgent is called for each debater to resolve adapters", async () => {
     const agentCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => ({
-      ...makeMockManager(),
-      getAgent: (name: string) => {
-        agentCalls.push(name);
-        return {} as any;
-      },
-    } as any));
+    _debateSessionDeps.createManager = mock((_config) => {
+      const mgr = makeMockAgentManager();
+      return {
+        ...mgr,
+        getAgent: (name: string) => {
+          agentCalls.push(name);
+          return {} as any;
+        },
+      };
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-dep-calls",
@@ -444,7 +399,7 @@ describe("runHybrid() — adapter resolution via shared helper (AC6)", () => {
 
   test("debater is skipped when manager.getAgent returns undefined — triggers single-agent fallback", async () => {
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         unavailableAgents: new Set(["opencode"]),
         runFn: async (agentName) => ({
           success: true,

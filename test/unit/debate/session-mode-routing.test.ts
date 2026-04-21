@@ -13,8 +13,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { DebateStageConfig, DebateResult } from "../../../src/debate/types";
-import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
-import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import { makeMockAgentManager } from "../../helpers";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
@@ -34,50 +33,9 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-function makeMockManager(): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (_req: AgentRunRequest) => ({
-      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] },
-      fallbacks: [],
-    }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: async (_name: string, _prompt: string, _opts?: CompleteOptions): Promise<CompleteResult> => ({
-      output: `{"passed": true}`,
-      costUsd: 0,
-      source: "fallback",
-    }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
-
-function makeMockResult(): DebateResult {
-  return {
-    storyId: "test-story",
-    stage: "review",
-    outcome: "passed",
-    rounds: 1,
-    debaters: ["claude", "opencode"],
-    resolverType: "majority-fail-closed",
-    proposals: [],
-    totalCostUsd: 0,
-  };
-}
+_debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+  completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+}));
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────────
 
@@ -105,7 +63,9 @@ beforeEach(() => {
   }));
 
   // Mock manager so debaters resolve quickly
-  _debateSessionDeps.createManager = mock((_config) => makeMockManager());
+  _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+    completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+  }));
   _debateSessionDeps.getSafeLogger = mockGetSafeLogger;
 });
 
@@ -183,7 +143,10 @@ describe("DebateSession.run() mode routing — AC3: mode undefined defaults to p
 
 describe("DebateSession.run() mode routing — AC4: hybrid + stateful", () => {
   test("with mode 'hybrid' and sessionMode 'stateful', calls runHybrid", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
+  // Mock manager so debaters resolve quickly
+  _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+    completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+  }));
 
     const session = new DebateSession({
       storyId: "test-story",

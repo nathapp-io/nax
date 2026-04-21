@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../src/config";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { AgentRunRequest } from "../../../src/agents";
 import type { AgentRunOptions, CompleteOptions, CompleteResult, PlanOptions, PlanResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import { makeMockAgentManager } from "../../helpers";
 
 async function waitForStartedPlans(
   startedOrder: number[],
@@ -102,7 +103,7 @@ describe("DebateSession.runPlan()", () => {
     const planCalls: Array<{ sessionRole?: string; storyId?: string }> = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async (_agentName, options) => {
           planCalls.push({ sessionRole: options.sessionRole, storyId: options.storyId });
           return { specContent: "ok" };
@@ -137,7 +138,7 @@ describe("DebateSession.runPlan()", () => {
     const storyIds: string[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async (_agentName, options) => {
           storyIds.push(options.storyId ?? "");
           return { specContent: "ok" };
@@ -167,7 +168,7 @@ describe("DebateSession.runPlan()", () => {
     const runCalls: Array<{ prompt: string; sessionRole?: string; keepOpen?: boolean }> = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async () => ({ specContent: "ok" }),
         runFn: async (_agentName, options) => {
           runCalls.push({
@@ -229,7 +230,7 @@ describe("DebateSession.runPlan()", () => {
     const runCalls: Array<{ prompt: string }> = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async () => ({ specContent: "ok" }),
         runFn: async (_agentName, options) => {
           runCalls.push({ prompt: options.prompt ?? "" });
@@ -278,7 +279,7 @@ describe("DebateSession.runPlan()", () => {
     })) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async () => ({ specContent: "ok" }),
       }),
     );
@@ -313,7 +314,7 @@ describe("DebateSession.runPlan()", () => {
     let capturedSynthesisPrompt = "";
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async () => ({ specContent: "ok" }),
         completeFn: async (_agentName, prompt) => {
           capturedSynthesisPrompt = prompt;
@@ -355,7 +356,7 @@ describe("DebateSession.runPlan()", () => {
     let capturedSynthesisPrompt = "";
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async () => ({ specContent: "ok" }),
         completeFn: async (_agentName, prompt) => {
           capturedSynthesisPrompt = prompt;
@@ -392,7 +393,7 @@ describe("DebateSession.runPlan()", () => {
     const resolvers: Array<() => void> = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         planFn: async (_agentName, options) => {
           const index = Number((options.sessionRole ?? "").replace("plan-", ""));
           startedOrder.push(index);

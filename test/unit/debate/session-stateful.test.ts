@@ -1,56 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { AgentRunRequest } from "../../../src/agents";
 import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-
-function makeMockManager(
-  options: {
-    runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: any[] }>;
-    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-    unavailableAgents?: Set<string>;
-  } = {},
-): IAgentManager {
-  const unavailable = options.unavailableAgents ?? new Set<string>();
-  return {
-    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (_req: AgentRunRequest) => ({
-      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] },
-      fallbacks: [],
-    }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: options.completeFn
-      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: options.runFn
-      ? async (agentName: string, request: AgentRunRequest) => options.runFn!(agentName, request.runOptions)
-      : async (_name: string, request: AgentRunRequest) => ({
-          success: true,
-          exitCode: 0,
-          output: `output from ${_name}`,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0.01,
-          agentFallbacks: [],
-        }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
+import { makeMockAgentManager } from "../../helpers";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -82,7 +36,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -124,7 +78,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -163,7 +117,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -203,7 +157,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     const runCalls: AgentRunOptions[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           if (opts.prompt === "Close this debate session.") {
@@ -263,7 +217,7 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
     const completeCalls: { opts?: CompleteOptions }[] = [];
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (_agentName, _opts) => ({
           success: true,
           exitCode: 0,
@@ -309,7 +263,7 @@ describe("DebateSession.run() — one-shot mode unchanged", () => {
     let completeCount = 0;
 
     _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+      makeMockAgentManager({
         runFn: async (_agentName, _opts) => {
           runCount += 1;
           return {
