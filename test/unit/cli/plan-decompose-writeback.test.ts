@@ -11,9 +11,39 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
+import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+
+function makeMockDecomposeManager(
+  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ decompose: async () => ({ stories: [] }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: decomposeFn
+      ? async (name: string, opts: any) => decomposeFn(name, opts)
+      : async () => ({ stories: [] }),
+  } as any;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -136,7 +166,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origGetAgent = _planDeps.getAgent;
+const origCreateManager = _planDeps.createManager;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateSession = _planDeps.createDebateSession;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -178,17 +208,12 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
 
-    const fakeAdapter = {
-      decompose: mock(async (options: DecomposeOptions) => {
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, options: DecomposeOptions) => {
         capturedCompleteArgs.push(await buildDecomposePromptAsync(options));
         return { stories: stories.map(toDecomposedStory) };
       }),
-      complete: mock(async (prompt: string) => {
-        capturedCompleteArgs.push(prompt);
-        return makeDecomposeResponse(stories);
-      }),
-    };
-    _planDeps.getAgent = mock(() => fakeAdapter as never);
+    );
   }
 
   beforeEach(async () => {
@@ -203,7 +228,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateSession = origCreateDebateSession;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -354,14 +379,11 @@ describe("planDecomposeCommand — PRD write-back", () => {
     }) as never);
 
     const adapterDecomposeCalls: unknown[] = [];
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async (opts: unknown) => {
-            adapterDecomposeCalls.push(opts);
-            return { stories: stories.map(toDecomposedStory) };
-          }),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, opts: unknown) => {
+        adapterDecomposeCalls.push(opts);
+        return { stories: stories.map(toDecomposedStory) };
+      }),
     );
 
     const debateConfig = {

@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _generatorPRDDeps, generateAcceptanceTests, generateFromPRD } from "../../../src/acceptance/generator";
 import type { GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acceptance/types";
-import type { AgentAdapter } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
 import { withDepsRestore } from "../../helpers/deps";
@@ -213,7 +213,40 @@ ${tests}
 // Helpers for saving/restoring _generatorPRDDeps
 // ─────────────────────────────────────────────────────────────────────────────
 
-withDepsRestore(_generatorPRDDeps, ["adapter", "writeFile", "backupFile"]);
+function makeMockGeneratorManager(
+  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: completeFn
+      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
+      : async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: completeFn
+      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: completeFn
+      ? async (name: string, opts: any) => completeFn("", opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
+}
+
+withDepsRestore(_generatorPRDDeps, ["createManager", "writeFile", "backupFile"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BUG-075: acceptance-refined.json written to featureDir not workdir
@@ -234,7 +267,9 @@ describe("generateFromPRD — acceptance-refined.json is written to featureDir n
     const options = makeOptions(workdir, featureDir);
     const writtenPaths: string[] = [];
 
-    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })),
+    );
     _generatorPRDDeps.writeFile = mock(async (path: string) => {
       writtenPaths.push(path);
     });
@@ -264,9 +299,8 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(
-      async () =>
-        "File written to `nax/features/refactor-standard/acceptance.test.ts`. Here's a summary of the 43 tests and their verification strategy:\n\n**US-001 — Planning (AC-1 to AC-5):** Validates the PRD JSON exists.",
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: "File written to `nax/features/refactor-standard/acceptance.test.ts`. Here's a summary of the 43 tests and their verification strategy:\n\n**US-001 — Planning (AC-1 to AC-5):** Validates the PRD JSON exists.", costUsd: 0, source: "mock" as const })),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
@@ -282,9 +316,8 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(
-      async () =>
-        "Here are the acceptance tests I would generate:\n\n1. Test that the system handles empty input\n2. Test that tokens expire correctly",
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: "Here are the acceptance tests I would generate:\n\n1. Test that the system handles empty input\n2. Test that tokens expire correctly", costUsd: 0, source: "mock" as const })),
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
@@ -301,7 +334,9 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
 
     const codeInFences =
       '```typescript\nimport { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});\n```';
-    _generatorPRDDeps.adapter.complete = mock(async () => codeInFences);
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: codeInFences, costUsd: 0, source: "mock" as const })),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -318,7 +353,9 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
 
     const rawCode =
       'import { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});';
-    _generatorPRDDeps.adapter.complete = mock(async () => rawCode);
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: rawCode, costUsd: 0, source: "mock" as const })),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -347,7 +384,9 @@ test("AC-1: preserves file", () => {
     mkdirSync(join(tmpDir, ".nax", "features", options.featureName), { recursive: true });
     await Bun.write(targetPath, llmWrittenTest);
 
-    _generatorPRDDeps.adapter.complete = mock(async () => "I wrote the file directly to disk.");
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: "I wrote the file directly to disk.", costUsd: 0, source: "mock" as const })),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
     _generatorPRDDeps.backupFile = mock(async (path: string, content: string) => {
       await Bun.write(path, content);
@@ -376,7 +415,9 @@ test("AC-1: keep even if backup fails", () => {
     mkdirSync(join(tmpDir, ".nax", "features", options.featureName), { recursive: true });
     await Bun.write(targetPath, llmWrittenTest);
 
-    _generatorPRDDeps.adapter.complete = mock(async () => "I wrote the file directly to disk.");
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: "I wrote the file directly to disk.", costUsd: 0, source: "mock" as const })),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
     _generatorPRDDeps.backupFile = mock(async () => {
       throw new Error("disk full");
@@ -406,21 +447,33 @@ describe("backward compatibility — generateAcceptanceTests", () => {
 - AC-2: System should return 200 on success
 `;
 
-    const mockAdapter: Partial<AgentAdapter> = {
-      binary: "echo",
-      name: "mock",
-      run: mock(async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
-      })),
-      complete: mock(
-        async () => `import { describe, test, expect } from "bun:test";
+    const mockAdapter = {
+      getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "mock" as const }) } as any),
+      getDefault: () => "claude",
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [] as any[],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+      completeWithFallback: async () => ({ result: { output: `import { describe, test, expect } from "bun:test";
 
-describe("test-feature - Acceptance Tests", () => {
+describe("test-feature - Acceptance Tests", () {
+  test("AC-1: System should handle empty input", async () => {
+    expect(true).toBe(true);
+  });
+  test("AC-2: System should return 200 on success", async () => {
+    expect(true).toBe(true);
+  });
+});
+`, costUsd: 0, source: "mock" as const }, fallbacks: [] }),
+      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+      complete: async () => `import { describe, test, expect } from "bun:test";
+
+describe("test-feature - Acceptance Tests", () {
   test("AC-1: System should handle empty input", async () => {
     expect(true).toBe(true);
   });
@@ -429,10 +482,15 @@ describe("test-feature - Acceptance Tests", () => {
   });
 });
 `,
-      ),
-    };
+      completeAs: async () => ({ output: "", costUsd: 0, source: "mock" as const }),
+      runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager;
 
-    const result = await generateAcceptanceTests(mockAdapter as AgentAdapter, {
+    const result = await generateAcceptanceTests(mockAdapter, {
       specContent,
       featureName: "test-feature",
       workdir: tmpdir(),
@@ -454,21 +512,30 @@ describe("test-feature - Acceptance Tests", () => {
 - AC-3: Third criterion
 `;
 
-    const mockAdapter: Partial<AgentAdapter> = {
-      binary: "echo",
-      name: "mock",
-      run: mock(async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
-      })),
-      complete: mock(async () => `import { describe, test, expect } from "bun:test"; describe("f", () => {});`),
-    };
+    const mockAdapter2 = {
+      getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "mock" as const }) } as any),
+      getDefault: () => "claude",
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [] as any[],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+      completeWithFallback: async () => ({ result: { output: `import { describe, test, expect } from "bun:test"; describe("f", () => {});`, costUsd: 0, source: "mock" as const }, fallbacks: [] }),
+      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+      complete: async () => `import { describe, test, expect } from "bun:test"; describe("f", () => {});`,
+      completeAs: async () => ({ output: "", costUsd: 0, source: "mock" as const }),
+      runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager;
 
-    const result = await generateAcceptanceTests(mockAdapter as AgentAdapter, {
+    const result = await generateAcceptanceTests(mockAdapter2, {
       specContent,
       featureName: "test-feature",
       workdir: tmpdir(),

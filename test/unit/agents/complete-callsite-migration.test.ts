@@ -6,7 +6,6 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import type { IAgentManager } from "../../../src/agents/manager-types";
-import type { AgentAdapter } from "../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 
 // ─── Shared mock helpers ───────────────────────────────────────────────────
@@ -15,12 +14,14 @@ const mockCompleteResult = { output: "ok", costUsd: 0.001, source: "exact" as co
 
 function makeAgentManager(): { mgr: IAgentManager; callCount: () => number } {
   let count = 0;
+  const completeWithFallbackFn = async () => {
+    count++;
+    return { result: mockCompleteResult, fallbacks: [] };
+  };
   const mgr = {
     getDefault: () => "claude",
-    completeWithFallback: mock(async () => {
-      count++;
-      return { result: mockCompleteResult, fallbacks: [] };
-    }),
+    completeWithFallback: completeWithFallbackFn,
+    complete: completeWithFallbackFn, // AgentManager.complete delegates here too
     isUnavailable: () => false,
     markUnavailable: () => {},
     reset: () => {},
@@ -28,36 +29,31 @@ function makeAgentManager(): { mgr: IAgentManager; callCount: () => number } {
     resolveFallbackChain: () => [],
     shouldSwap: () => false,
     nextCandidate: () => null,
-    runWithFallback: mock(async () => ({
-      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
-      fallbacks: [],
-    })),
+    completeAs: async () => mockCompleteResult,
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+    getAgent: () => ({ run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }) } as any),
     events: { on: () => {} },
   } as unknown as IAgentManager;
   return { mgr, callCount: () => count };
 }
 
-function makeAdapter(): { adapter: AgentAdapter; callCount: () => number } {
-  let count = 0;
-  const adapter = {
-    complete: mock(async () => {
-      count++;
-      return mockCompleteResult;
-    }),
-  } as unknown as AgentAdapter;
-  return { adapter, callCount: () => count };
-}
-
 // ─── refineAcceptanceCriteria ──────────────────────────────────────────────
 
 describe("refineAcceptanceCriteria uses completeWithFallback when agentManager provided (#567)", () => {
-  test("calls agentManager.completeWithFallback instead of adapter.complete", async () => {
+  test("calls agentManager.completeWithFallback instead of createManager().complete when agentManager is provided", async () => {
     const { refineAcceptanceCriteria, _refineDeps } = await import("../../../src/acceptance/refinement");
     const { mgr, callCount: mgrCallCount } = makeAgentManager();
-    const { adapter, callCount: adapterCallCount } = makeAdapter();
-
-    const originalAdapter = _refineDeps.adapter;
-    _refineDeps.adapter = adapter as typeof _refineDeps.adapter;
+    let createManagerCalled = false;
+    const savedCreateManager = _refineDeps.createManager;
+    _refineDeps.createManager = mock(() => {
+      createManagerCalled = true;
+      return savedCreateManager(DEFAULT_CONFIG);
+    });
 
     try {
       const ctx = {
@@ -70,18 +66,22 @@ describe("refineAcceptanceCriteria uses completeWithFallback when agentManager p
       };
       await refineAcceptanceCriteria(["AC-1: does something"], ctx);
       expect(mgrCallCount()).toBeGreaterThan(0);
-      expect(adapterCallCount()).toBe(0);
+      expect(createManagerCalled).toBe(false);
     } finally {
-      _refineDeps.adapter = originalAdapter;
+      _refineDeps.createManager = savedCreateManager;
     }
   });
 
-  test("falls back to adapter.complete when agentManager is absent", async () => {
+  test("falls back to createManager().complete when agentManager is absent", async () => {
     const { refineAcceptanceCriteria, _refineDeps } = await import("../../../src/acceptance/refinement");
-    const { adapter, callCount: adapterCallCount } = makeAdapter();
-
-    const originalAdapter = _refineDeps.adapter;
-    _refineDeps.adapter = adapter as typeof _refineDeps.adapter;
+    const { mgr, callCount: mgrCallCount } = makeAgentManager();
+    const savedCreateManager = _refineDeps.createManager;
+    // Use a plain function instead of mock() to ensure the inner function runs
+    let createManagerCalled = false;
+    _refineDeps.createManager = function createManagerReplacement(config: any) {
+      createManagerCalled = true;
+      return mgr;
+    };
 
     try {
       const ctx = {
@@ -93,9 +93,10 @@ describe("refineAcceptanceCriteria uses completeWithFallback when agentManager p
         // agentManager absent
       };
       await refineAcceptanceCriteria(["AC-1: does something"], ctx).catch(() => {});
-      expect(adapterCallCount()).toBeGreaterThan(0);
+      expect(createManagerCalled).toBe(true);
+      expect(mgrCallCount()).toBeGreaterThan(0);
     } finally {
-      _refineDeps.adapter = originalAdapter;
+      _refineDeps.createManager = savedCreateManager;
     }
   });
 });
@@ -103,13 +104,15 @@ describe("refineAcceptanceCriteria uses completeWithFallback when agentManager p
 // ─── generateFromPRD ──────────────────────────────────────────────────────
 
 describe("generateFromPRD uses completeWithFallback when agentManager provided (#567)", () => {
-  test("calls agentManager.completeWithFallback instead of adapter.complete", async () => {
+  test("calls agentManager.completeWithFallback instead of createManager().complete when agentManager is provided", async () => {
     const { generateFromPRD, _generatorPRDDeps } = await import("../../../src/acceptance/generator");
     const { mgr, callCount: mgrCallCount } = makeAgentManager();
-    const { adapter, callCount: adapterCallCount } = makeAdapter();
-
-    const originalAdapter = _generatorPRDDeps.adapter;
-    _generatorPRDDeps.adapter = adapter as typeof _generatorPRDDeps.adapter;
+    const savedCreateManager = _generatorPRDDeps.createManager;
+    let createManagerCalled = false;
+    _generatorPRDDeps.createManager = mock((config: any) => {
+      createManagerCalled = true;
+      return savedCreateManager(config);
+    });
 
     try {
       const options = {
@@ -125,9 +128,9 @@ describe("generateFromPRD uses completeWithFallback when agentManager provided (
       const dummyCriteria = [{ original: "AC-1", refined: "returns ok", testable: true, storyId: "us-001" }];
       await generateFromPRD([], dummyCriteria, options).catch(() => {});
       expect(mgrCallCount()).toBeGreaterThan(0);
-      expect(adapterCallCount()).toBe(0);
+      expect(createManagerCalled).toBe(false);
     } finally {
-      _generatorPRDDeps.adapter = originalAdapter;
+      _generatorPRDDeps.createManager = savedCreateManager;
     }
   });
 });

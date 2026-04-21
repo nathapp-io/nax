@@ -4,10 +4,9 @@
  * Runs configurable quality checks after story implementation
  */
 
-import type { AgentAdapter } from "../agents/types";
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import type { ExecutionConfig, QualityConfig } from "../config/schema";
-import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { runQualityCommand } from "../quality";
 import { autoCommitIfDirty } from "../utils/git";
@@ -212,7 +211,7 @@ export async function runReview(
   storyId?: string,
   storyGitRef?: string,
   story?: SemanticStory,
-  modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
+  agentManager?: IAgentManager,
   naxConfig?: NaxConfig,
   retrySkipChecks?: Set<string>,
   featureName?: string,
@@ -302,7 +301,7 @@ export async function runReview(
         storyGitRef,
         semanticStory,
         semanticCfg,
-        modelResolver ?? (() => null),
+        agentManager,
         naxConfig,
         featureName,
         resolverSession,
@@ -346,7 +345,7 @@ export async function runReview(
         storyGitRef,
         adversarialStory,
         adversarialCfg,
-        modelResolver ?? (() => null),
+        agentManager,
         naxConfig,
         featureName,
         priorFailures,

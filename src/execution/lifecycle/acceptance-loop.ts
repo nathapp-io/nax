@@ -12,8 +12,6 @@
 import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "../../acceptance/content-loader";
 import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
 import { findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions } from "../../acceptance/test-path";
-import { resolveDefaultAgent } from "../../agents";
-import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
@@ -59,6 +57,8 @@ export interface AcceptanceLoopContext {
   statusWriter: StatusWriter;
   /** Protocol-aware agent resolver — passed from registry at run start */
   agentGetFn?: AgentGetFn;
+  /** Per-run AgentManager — used for diagnosis and fix execution */
+  agentManager?: import("../../agents").IAgentManager;
   /** Pre-resolved .naxignore matcher cache shared across run stages */
   naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
@@ -82,7 +82,6 @@ export interface AcceptanceLoopResult {
 // buildResult — extracted to acceptance-helpers.ts (re-exported above)
 
 export const _acceptanceLoopDeps = {
-  getAgent: (_name: string): AgentAdapter | undefined => undefined,
   loadSemanticVerdicts,
 };
 
@@ -141,6 +140,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       hooks: ctx.hooks,
       plugins: ctx.pluginRegistry,
       agentGetFn: ctx.agentGetFn,
+      agentManager: ctx.agentManager,
       acceptanceTestPaths: ctx.acceptanceTestPaths,
     };
 
@@ -241,10 +241,9 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       .filter((s) => !s.id.startsWith("US-FIX-"))
       .flatMap((s) => s.acceptanceCriteria).length;
 
-    const agentName = resolveDefaultAgent(ctx.config);
-    const agent = (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName);
-    if (!agent) {
-      logger?.error("acceptance", "Agent not found for diagnosis", { storyId: firstStory?.id, agentName });
+    const agentManager = ctx.agentManager;
+    if (!agentManager) {
+      logger?.error("acceptance", "AgentManager not found for diagnosis", { storyId: firstStory?.id });
       return buildResult(
         false,
         prd,
@@ -265,8 +264,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
     const diagnosis = await resolveAcceptanceDiagnosis({
-      agent,
-      getAgent: (name: string) => (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(name),
+      agentManager,
       failures,
       totalACs,
       strategy,

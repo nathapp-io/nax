@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { _generatorPRDDeps, generateFromPRD } from "../../../src/acceptance/generator";
 import { buildCliTemplate, buildComponentTemplate } from "../../../src/acceptance/templates";
 import type { AcceptanceCriterion, GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acceptance/types";
+import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
@@ -189,16 +190,49 @@ function makeOptions(workdir: string, overrides?: Partial<GenerateFromPRDOptions
   };
 }
 
-let savedComplete: typeof _generatorPRDDeps.adapter.complete;
+let savedCreateManager: typeof _generatorPRDDeps.createManager;
 let savedWriteFile: typeof _generatorPRDDeps.writeFile;
 
+function makeMockGeneratorManager(
+  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: completeFn
+      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
+      : async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: completeFn
+      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: completeFn
+      ? async (name: string, opts: any) => completeFn("", opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
+}
+
 function saveDeps() {
-  savedComplete = _generatorPRDDeps.adapter.complete;
+  savedCreateManager = _generatorPRDDeps.createManager;
   savedWriteFile = _generatorPRDDeps.writeFile;
 }
 
 function restoreDeps() {
-  _generatorPRDDeps.adapter.complete = savedComplete;
+  _generatorPRDDeps.createManager = savedCreateManager;
   _generatorPRDDeps.writeFile = savedWriteFile;
 }
 
@@ -245,7 +279,7 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.adapter.complete = mock(async () => expectedCode);
+    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const })));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -273,7 +307,7 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.adapter.complete = mock(async () => expectedCode);
+    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const })));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -301,7 +335,7 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.adapter.complete = mock(async () => expectedCode);
+    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const })));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -322,10 +356,12 @@ describe("ink-counter - Acceptance Tests", () => {
     });
 
     let capturedPrompt = "";
-    _generatorPRDDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return `import { describe, test, expect } from "bun:test"; describe("test", () => {});`;
-    });
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return { output: `import { describe, test, expect } from "bun:test"; describe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      }),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -409,10 +445,12 @@ describe("CLI strategy generator — Bun.spawn usage unit test", () => {
     const options = makeOptions(tmpDir, { testStrategy: "cli" });
 
     let capturedPrompt = "";
-    _generatorPRDDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return `import { describe, test, expect } from "bun:test"; describe("test", () => {});`;
-    });
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return { output: `import { describe, test, expect } from "bun:test"; describe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      }),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -450,10 +488,12 @@ describe("default strategy — import-and-call pattern when testStrategy is unse
     const options = makeOptions(tmpDir); // no testStrategy
 
     let capturedPrompt = "";
-    _generatorPRDDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return `import { describe, test, expect } from "bun:test"; describe("test", () => {});`;
-    });
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return { output: `import { describe, test, expect } from "bun:test"; describe("test", () => {});`, costUsd: 0, source: "mock" as const };
+      }),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -482,7 +522,9 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.adapter.complete = mock(async () => unitCode);
+    _generatorPRDDeps.createManager = mock(() =>
+      makeMockGeneratorManager(async () => ({ output: unitCode, costUsd: 0, source: "mock" as const })),
+    );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);

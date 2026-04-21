@@ -19,10 +19,8 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
-import { AgentManager } from "../../agents";
 import { computeAcpHandle } from "../../agents/acp/adapter";
 import { resolveModelForAgent } from "../../config";
-import type { NaxConfig } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
@@ -336,7 +334,11 @@ async function runAgentRectification(
   const remainingBudget = maxTotal - consumed;
   const maxAttempts = Math.min(maxPerCycle, remainingBudget);
 
-  const agentGetFn = ctx.agentGetFn ?? ((name: string) => _autofixDeps.getAgent(name, ctx.rootConfig));
+  if (!ctx.agentManager) {
+    logger.error("autofix", "Agent manager unavailable — cannot run agent rectification", { storyId: ctx.story.id });
+    return { succeeded: false, cost: 0 };
+  }
+  const { agentManager } = ctx;
 
   // #409: Split adversarial findings by file scope.
   // Test-file findings cannot be fixed by the implementer (isolation constraint) —
@@ -380,7 +382,7 @@ async function runAgentRectification(
         storyId: ctx.story.id,
         findingCount: testWriterChecks.flatMap((c) => c.findings ?? []).length,
       });
-      autofixCostAccum += await _autofixDeps.runTestWriterRectification(ctx, testWriterChecks, ctx.story, agentGetFn);
+      autofixCostAccum += await _autofixDeps.runTestWriterRectification(ctx, testWriterChecks, ctx.story, agentManager);
     }
   }
 
@@ -480,15 +482,9 @@ async function runAgentRectification(
       // #411: Capture HEAD before agent runs so checkResult can detect file changes.
       refBeforeAttempt = await _autofixDeps.captureGitRef(ctx.workdir);
       ctx.autofixAttempt = consumed + attempt;
-      const agent = agentGetFn(ctx.agentManager?.getDefault() ?? "claude");
-      if (!agent) {
-        logger.error("autofix", "Agent not found — cannot run agent rectification", { storyId: ctx.story.id });
-        throw new Error("AUTOFIX_AGENT_NOT_FOUND");
-      }
-
       const modelTier =
         ctx.story.routing?.modelTier ?? ctx.rootConfig.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
-      const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
+      const defaultAgent = agentManager.getDefault();
       const modelDef = resolveModelForAgent(
         ctx.rootConfig.models,
         ctx.routing.agent ?? defaultAgent,
@@ -496,23 +492,25 @@ async function runAgentRectification(
         defaultAgent,
       );
       const isLastAttempt = attempt >= maxAttempts;
-      let result: Awaited<ReturnType<typeof agent.run>>;
+      let result: import("../../agents").AgentResult;
       try {
-        result = await agent.run({
-          prompt,
-          workdir: ctx.workdir,
-          modelTier,
-          modelDef,
-          timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-          dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
-          pipelineStage: "rectification",
-          config: ctx.config,
-          projectDir: ctx.projectDir,
-          maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-          featureName: ctx.prd.feature,
-          storyId: ctx.story.id,
-          sessionRole: "implementer",
-          keepOpen: !isLastAttempt,
+        result = await agentManager.run({
+          runOptions: {
+            prompt,
+            workdir: ctx.workdir,
+            modelTier,
+            modelDef,
+            timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+            dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
+            pipelineStage: "rectification",
+            config: ctx.config,
+            projectDir: ctx.projectDir,
+            maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+            featureName: ctx.prd.feature,
+            storyId: ctx.story.id,
+            sessionRole: "implementer",
+            keepOpen: !isLastAttempt,
+          },
         });
         sessionConfirmedOpen = true;
       } catch (err) {
@@ -700,8 +698,6 @@ async function runAgentRectification(
  * Injectable deps for testing.
  */
 export const _autofixDeps = {
-  /** Protocol-aware agent factory. Override in tests to inject a mock agent. */
-  getAgent: (name: string, config: NaxConfig) => new AgentManager(config).getAgent(name),
   runQualityCommand,
   recheckReview,
   captureGitRef,
@@ -716,6 +712,6 @@ export const _autofixDeps = {
     ctx: PipelineContext,
     testWriterChecks: ReviewCheckResult[],
     story: UserStory,
-    agentGetFn: (name: string) => import("../../agents/types").AgentAdapter | undefined,
-  ): Promise<number> => runTestWriterRectification(ctx, testWriterChecks, story, agentGetFn),
+    agentManager: import("../../agents").IAgentManager,
+  ): Promise<number> => runTestWriterRectification(ctx, testWriterChecks, story, agentManager),
 };

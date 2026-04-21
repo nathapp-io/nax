@@ -6,8 +6,7 @@
  * rectification retries if regressions are detected.
  */
 
-import type { AgentAdapter } from "../agents";
-import { resolveDefaultAgent } from "../agents";
+import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
@@ -43,7 +42,7 @@ export async function runFullSuiteGate(
   story: UserStory,
   config: NaxConfig,
   workdir: string,
-  agent: AgentAdapter,
+  agentManager: IAgentManager,
   implementerTier: ModelTier,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
@@ -85,7 +84,7 @@ export async function runFullSuiteGate(
         story,
         config,
         workdir,
-        agent,
+        agentManager,
         implementerTier,
         lite,
         logger,
@@ -137,7 +136,7 @@ async function runRectificationLoop(
   story: UserStory,
   config: NaxConfig,
   workdir: string,
-  agent: AgentAdapter,
+  agentManager: IAgentManager,
   implementerTier: ModelTier,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
@@ -212,26 +211,29 @@ async function runRectificationLoop(
       const isLastAttempt = attempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
 
-      const rectifyResult = await agent.run({
-        prompt: rectificationPrompt,
-        workdir,
-        modelTier: implementerTier,
-        modelDef: resolveModelForAgent(
-          config.models,
-          story.routing?.agent ?? resolveDefaultAgent(config),
-          implementerTier,
-          resolveDefaultAgent(config),
-        ),
-        timeoutSeconds: config.execution.sessionTimeoutSeconds,
-        dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
-        pipelineStage: "rectification",
-        config,
-        projectDir,
-        maxInteractionTurns: config.agent?.maxInteractionTurns,
-        featureName,
-        storyId: story.id,
-        sessionRole: "implementer",
-        keepOpen: !isLastAttempt,
+      const defaultAgent = agentManager.getDefault();
+      const rectifyResult = await agentManager.run({
+        runOptions: {
+          prompt: rectificationPrompt,
+          workdir,
+          modelTier: implementerTier,
+          modelDef: resolveModelForAgent(
+            config.models,
+            story.routing?.agent ?? defaultAgent,
+            implementerTier,
+            defaultAgent,
+          ),
+          timeoutSeconds: config.execution.sessionTimeoutSeconds,
+          dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+          pipelineStage: "rectification",
+          config,
+          projectDir,
+          maxInteractionTurns: config.agent?.maxInteractionTurns,
+          featureName,
+          storyId: story.id,
+          sessionRole: "implementer",
+          keepOpen: !isLastAttempt,
+        },
       });
 
       if (!rectifyResult.success && rectifyResult.pid) {

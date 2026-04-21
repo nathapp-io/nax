@@ -16,7 +16,8 @@ import { readdirSync } from "node:fs";
 import { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "../../../src/debate/session-helpers";
 import type { DebateSessionOptions } from "../../../src/debate/session-helpers";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents";
+import type { CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 
 // Barrel re-export checks (resolveDebaterModel is also not yet in barrel — both are RED)
@@ -78,8 +79,8 @@ describe("_debateSessionDeps export from session-helpers.ts (AC5)", () => {
     expect(typeof _debateSessionDeps).toBe("object");
   });
 
-  test("_debateSessionDeps.getAgent is a function", () => {
-    expect(typeof _debateSessionDeps.getAgent).toBe("function");
+  test("_debateSessionDeps.createManager is a function", () => {
+    expect(typeof _debateSessionDeps.createManager).toBe("function");
   });
 
   test("_debateSessionDeps.getSafeLogger is a function", () => {
@@ -93,7 +94,7 @@ describe("_debateSessionDeps export from session-helpers.ts (AC5)", () => {
   test("_debateSessionDeps is re-exported through the debate barrel index.ts", () => {
     expect(barrelDeps).toBeDefined();
     expect(typeof barrelDeps).toBe("object");
-    expect(typeof barrelDeps.getAgent).toBe("function");
+    expect(typeof barrelDeps.createManager).toBe("function");
   });
 });
 
@@ -196,37 +197,35 @@ function makeResolveStageConfig(
   } as DebateStageConfig;
 }
 
-function makeCaptureAdapter(
+function makeCaptureManager(
   captured: { opts?: CompleteOptions }[],
   output = "resolved",
-): AgentAdapter {
+): IAgentManager {
   return {
-    name: "mock",
-    displayName: "mock",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"] as const,
-      maxContextTokens: 100_000,
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
-    },
-    isInstalled: async () => true,
-    run: async () => ({
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      durationMs: 1,
-      estimatedCost: 0,
-    }),
-    buildCommand: () => [],
-    buildAllowedEnv: () => ({}),
-    plan: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    complete: async (_prompt: string, opts?: CompleteOptions) => {
+    getAgent: (_name: string) => ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output, costUsd: 0.01, source: "exact" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output, costUsd: 0.01, source: "exact" }),
+    completeAs: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
       captured.push({ opts });
       return { output, costUsd: 0.01, source: "exact" as const };
     },
-  };
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
 // ─── AC1: resolveOutcome() signature adds workdir? and featureName? ───────────
@@ -258,20 +257,20 @@ describe("resolveOutcome() — workdir and featureName parameters (US-004 AC1)",
 // ─── AC2: synthesisResolver receives sessionName=implementer when workdir set ─
 
 describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
     mock.restore();
   });
 
   test("passes sessionName=computeAcpHandle(workdir,featureName,storyId,'implementer') in completeOptions", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     const stageConfig = makeResolveStageConfig("synthesis");
     const workdir = "/tmp/workspace";
@@ -298,7 +297,7 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
 
   test("does not pass sessionName when workdir is undefined", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     const stageConfig = makeResolveStageConfig("synthesis");
 
@@ -321,20 +320,20 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
 // ─── AC3: judgeResolver receives sessionName=judge when workdir set ─────
 
 describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
     mock.restore();
   });
 
   test("custom resolver: passes sessionName=computeAcpHandle(...,'judge') in completeOptions", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     const stageConfig = makeResolveStageConfig("custom", "claude");
     const workdir = "/tmp/judge-workspace";
@@ -361,7 +360,7 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
 
   test("custom resolver: does not pass sessionName when workdir is undefined", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
+    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
 
     const stageConfig = makeResolveStageConfig("custom", "claude");
 
@@ -404,7 +403,7 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
       info: () => {},
       debug: () => {},
       error: () => {},
-    }) as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
+    }) as unknown as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
 
     const stageConfig = makeResolveStageConfig("majority-fail-closed");
 
@@ -434,7 +433,7 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
       info: () => {},
       debug: () => {},
       error: () => {},
-    }) as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
+    }) as unknown as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
 
     const stageConfig = makeResolveStageConfig("majority-fail-open");
 

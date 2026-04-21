@@ -5,6 +5,7 @@
  */
 
 import { join } from "node:path";
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import type { ModelDef } from "../config";
 import { DebatePromptBuilder } from "../prompts";
@@ -52,15 +53,16 @@ export async function runPlan(
   // Mutable: plan debater costs accumulated below; hybrid rebuttal loop adds cost via adapter.run().
   let totalCostUsd = 0;
 
-  // Resolve adapters — skip unavailable agents
+  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
+
+  // Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];
   for (const debater of debaters) {
-    const adapter = _debateSessionDeps.getAgent(debater.agent, ctx.config);
-    if (!adapter) {
+    if (!agentManager.getAgent(debater.agent)) {
       logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
       continue;
     }
-    resolved.push({ debater, adapter });
+    resolved.push({ debater, agentName: debater.agent });
   }
 
   logger?.info("debate", "debate:start", {
@@ -77,14 +79,14 @@ export async function runPlan(
     { debaters: resolved.map((r) => r.debater), sessionMode: ctx.stageConfig.sessionMode ?? "one-shot" },
   );
   const settled = await allSettledBounded(
-    resolved.map(({ debater: rd, adapter }, i) => async () => {
+    resolved.map(({ debater: rd, agentName }, i) => async () => {
       const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
       const debaterPrompt = `${proposalBuilder.buildProposalPrompt(i)}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
       const modelTier = modelTierFromDebater(rd);
       const modelDef: ModelDef = resolveModelDefForDebater(rd, modelTier, ctx.config);
 
-      const planResult = await adapter.plan({
+      const planResult = await agentManager.planAs(agentName, {
         prompt: debaterPrompt,
         workdir: opts.workdir,
         interactive: false,
@@ -100,7 +102,7 @@ export async function runPlan(
       });
 
       const output = await _debateSessionDeps.readFile(tempOutputPath);
-      return { debater: rd, adapter, output, cost: planResult.costUsd ?? 0 };
+      return { debater: rd, agentName, output, cost: planResult.costUsd ?? 0 };
     }),
     concurrencyLimit,
   );

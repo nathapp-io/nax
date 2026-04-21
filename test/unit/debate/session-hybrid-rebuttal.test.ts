@@ -8,7 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentAdapter, AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -25,39 +26,51 @@ function isClosePrompt(prompt: string): boolean {
   return prompt === CLOSE_SESSION_PROMPT;
 }
 
-function makeMockAdapter(
-  name: string,
+function makeMockManager(
   options: {
-    runFn?: (opts: AgentRunOptions) => Promise<ReturnType<AgentAdapter["run"]> extends Promise<infer R> ? R : never>;
-    completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
+    runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: any[] }>;
+    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
+    unavailableAgents?: Set<string>;
   } = {},
-): AgentAdapter {
+): IAgentManager {
+  const unavailable = options.unavailableAgents ?? new Set<string>();
   return {
-    name,
-    displayName: name,
-    binary: name,
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"],
-      maxContextTokens: 100_000,
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
-    },
-    isInstalled: async () => true,
-    run:
-      options.runFn ??
-      (async () => ({
-        success: true,
-        exitCode: 0,
-        output: `output from ${name}`,
-        rateLimited: false,
-        durationMs: 1,
-        estimatedCost: 0.01,
-      })),
-    buildCommand: () => [],
-    buildAllowedEnv: () => ({}),
+    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async (_req: AgentRunRequest) => ({
+      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] },
+      fallbacks: [],
+    }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0.01, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: options.completeFn
+      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: options.runFn
+      ? async (agentName: string, request: AgentRunRequest) => options.runFn!(agentName, request.runOptions)
+      : async (_name: string, _request: AgentRunRequest) => ({
+          success: true,
+          exitCode: 0,
+          output: `output from ${_name}`,
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0.01,
+          agentFallbacks: [],
+        }),
     plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
     decompose: async () => ({ stories: [] }),
-    complete: options.completeFn ?? (async () => ({ output: "", costUsd: 0, source: "fallback" })),
-  };
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
 function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
@@ -78,17 +91,17 @@ function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): Deba
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origGetAgent: typeof _debateSessionDeps.getAgent;
+let origCreateManager: typeof _debateSessionDeps.createManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origGetAgent = _debateSessionDeps.getAgent;
+  origCreateManager = _debateSessionDeps.createManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-  _debateSessionDeps.getSafeLogger = mock(() => undefined);
+  _debateSessionDeps.getSafeLogger = mock(() => null) as unknown as typeof _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.getAgent = origGetAgent;
+  _debateSessionDeps.createManager = origCreateManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
   mock.restore();
 });
@@ -99,19 +112,20 @@ describe("runHybrid() — sequential rebuttal call count with 2 debaters (AC1)",
   test("with 2 debaters and rounds=1, rebuttal runStatefulTurn is called exactly 2 times", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
           }
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}`,
+            output: `output-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -134,19 +148,20 @@ describe("runHybrid() — sequential rebuttal call count with 2 debaters (AC1)",
   test("with 2 debaters and rounds=1, rebuttal calls happen in sequential debater order (0 then 1)", async () => {
     const rebuttalRoles: string[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalRoles.push(opts.sessionRole ?? "");
           }
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}`,
+            output: `output-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -175,19 +190,20 @@ describe("runHybrid() — rebuttal call count with 3 debaters and 2 rounds (AC2)
   test("with 3 debaters and rounds=2, rebuttal runStatefulTurn is called exactly 6 times", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
           }
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}-${rebuttalCalls.length}`,
+            output: `output-${agentName}-${rebuttalCalls.length}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -221,19 +237,20 @@ describe("runHybrid() — rebuttal prompts include proposal outputs (AC3)", () =
   test("each rebuttal turn prompt contains all successful proposal outputs", async () => {
     const rebuttalPrompts: string[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalPrompts.push(opts.prompt ?? "");
           }
           return {
             success: true,
             exitCode: 0,
-            output: `proposal-output-${name}`,
+            output: `proposal-output-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -266,13 +283,13 @@ describe("runHybrid() — round 2 rebuttal prompts include round 1 outputs (AC4)
     const round1RebuttalOutputs: string[] = [];
     const round2Prompts: string[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isRebuttalPrompt(prompt)) {
             roundTracker++;
-            const output = `rebuttal-${name}-round-${roundTracker <= 2 ? 1 : 2}`;
+            const output = `rebuttal-${agentName}-round-${roundTracker <= 2 ? 1 : 2}`;
             if (roundTracker <= 2) {
               round1RebuttalOutputs.push(output);
             } else {
@@ -285,15 +302,17 @@ describe("runHybrid() — round 2 rebuttal prompts include round 1 outputs (AC4)
               rateLimited: false,
               durationMs: 1,
               estimatedCost: 0.01,
+              agentFallbacks: [],
             };
           }
           return {
             success: true,
             exitCode: 0,
-            output: `proposal-${name}`,
+            output: `proposal-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -332,27 +351,28 @@ describe("runHybrid() — failed rebuttal turn is skipped with warning (AC5)", (
       debug: () => {},
       error: () => {},
     };
-    _debateSessionDeps.getSafeLogger = mock(() => mockLogger as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
+    _debateSessionDeps.getSafeLogger = mock(() => mockLogger) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
     let rebuttalCallCount = 0;
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isRebuttalPrompt(prompt)) {
             rebuttalCallCount++;
-            if (name === "claude") {
+            if (agentName === "claude") {
               throw new Error("rebuttal failed for claude");
             }
           }
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}`,
+            output: `output-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -384,19 +404,20 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepOpen (A
   test("every rebuttal runStatefulTurn call uses the same sessionRole as the proposal round for that debater", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
           }
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}`,
+            output: `output-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -422,19 +443,20 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepOpen (A
   test("every rebuttal runStatefulTurn call has keepOpen: true", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
           }
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}`,
+            output: `output-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -464,19 +486,20 @@ describe("runHybrid() — closeStatefulSession called after normal rebuttal loop
   test("after the rebuttal loop completes normally, closeStatefulSession is called once per opened debater session", async () => {
     const closeCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           if (isClosePrompt(opts.prompt ?? "")) {
             closeCalls.push(opts);
           }
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}`,
+            output: `output-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -507,9 +530,9 @@ describe("runHybrid() — closeStatefulSession called when rebuttal turns fail (
   test("when all rebuttal turns fail, closeStatefulSession is still called for all opened sessions", async () => {
     const closeCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isClosePrompt(prompt)) {
             closeCalls.push(opts);
@@ -520,18 +543,20 @@ describe("runHybrid() — closeStatefulSession called when rebuttal turns fail (
               rateLimited: false,
               durationMs: 1,
               estimatedCost: 0,
+              agentFallbacks: [],
             };
           }
           if (isRebuttalPrompt(prompt)) {
-            throw new Error(`rebuttal failed for ${name}`);
+            throw new Error(`rebuttal failed for ${agentName}`);
           }
           return {
             success: true,
             exitCode: 0,
-            output: `proposal-${name}`,
+            output: `proposal-${agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: 0.01,
+            agentFallbacks: [],
           };
         },
       }),
@@ -561,21 +586,22 @@ describe("runHybrid() — rebuttal costs accumulated in totalCostUsd (AC9)", () 
     // Rebuttal cost: 2 × 0.05 = 0.10
     // Total expected: at least 0.30
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (_agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isClosePrompt(prompt)) {
-            return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0 };
+            return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] };
           }
           const cost = isRebuttalPrompt(prompt) ? 0.05 : 0.1;
           return {
             success: true,
             exitCode: 0,
-            output: `output-${name}`,
+            output: `output-${_agentName}`,
             rateLimited: false,
             durationMs: 1,
             estimatedCost: cost,
+            agentFallbacks: [],
           };
         },
       }),
@@ -601,15 +627,16 @@ describe("runHybrid() — rebuttal costs accumulated in totalCostUsd (AC9)", () 
 
 describe("runHybrid() — DebateResult.rebuttals populated and debug event emitted (AC10)", () => {
   test("DebateResult.rebuttals contains one entry per successful rebuttal with correct debaterIndex, round, and output", async () => {
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async (opts) => ({
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName, opts) => ({
           success: true,
           exitCode: 0,
-          output: isRebuttalPrompt(opts.prompt ?? "") ? `rebuttal-output-${name}` : `proposal-${name}`,
+          output: isRebuttalPrompt(opts.prompt ?? "") ? `rebuttal-output-${agentName}` : `proposal-${agentName}`,
           rateLimited: false,
           durationMs: 1,
           estimatedCost: 0.01,
+          agentFallbacks: [],
         }),
       }),
     );
@@ -648,17 +675,18 @@ describe("runHybrid() — DebateResult.rebuttals populated and debug event emitt
       debug: () => {},
       error: () => {},
     };
-    _debateSessionDeps.getSafeLogger = mock(() => mockLogger as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
+    _debateSessionDeps.getSafeLogger = mock(() => mockLogger) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
-    _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, {
-        runFn: async () => ({
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        runFn: async (agentName) => ({
           success: true,
           exitCode: 0,
-          output: `output-${name}`,
+          output: `output-${agentName}`,
           rateLimited: false,
           durationMs: 1,
           estimatedCost: 0.01,
+          agentFallbacks: [],
         }),
       }),
     );

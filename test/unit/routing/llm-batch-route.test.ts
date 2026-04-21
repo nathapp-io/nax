@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../src/config";
+import type { IAgentManager } from "../../../src/agents";
 import type { UserStory } from "../../../src/prd/types";
 import { tryLlmBatchRoute } from "../../../src/routing/router";
 
@@ -125,27 +126,24 @@ function makeStory(): UserStory {
 }
 
 describe("tryLlmBatchRoute", () => {
-  test("passes name and config into _deps.getAgent", async () => {
+  test("passes name and config into _deps.createManager", async () => {
     const config = makeConfig();
     const story = makeStory();
-    let capturedName = "";
     let capturedConfig: NaxConfig | undefined;
 
     const deps = {
-      getAgent: mock((name: string, cfg: NaxConfig) => {
-        capturedName = name;
+      createManager: mock((cfg: NaxConfig): IAgentManager => {
         capturedConfig = cfg;
-        return undefined;
+        return undefined as unknown as IAgentManager;
       }),
     };
 
     await tryLlmBatchRoute(config, [story], "routing", deps);
 
-    expect(capturedName).toBe("claude");
     expect(capturedConfig).toBe(config);
   });
 
-  test("does not call _deps.getAgent when no stories require routing", async () => {
+  test("does not call _deps.createManager when no stories require routing", async () => {
     const config = makeConfig();
     const story: UserStory = {
       ...makeStory(),
@@ -158,11 +156,11 @@ describe("tryLlmBatchRoute", () => {
     };
 
     const deps = {
-      getAgent: mock((_name: string, _cfg: NaxConfig) => undefined),
+      createManager: mock((_cfg: NaxConfig): IAgentManager => undefined as unknown as IAgentManager),
     };
 
     await tryLlmBatchRoute(config, [story], "routing", deps);
 
-    expect(deps.getAgent).toHaveBeenCalledTimes(0);
+    expect(deps.createManager).toHaveBeenCalledTimes(0);
   });
 });

@@ -6,8 +6,7 @@
  */
 
 import type { SemanticVerdict } from "../acceptance/types";
-import { resolveDefaultAgent } from "../agents";
-import type { AgentAdapter } from "../agents/types";
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { DebateResolverContext } from "../debate/types";
@@ -211,7 +210,7 @@ function parseReviewResponse(output: string): ReviewDialogueResult {
  * Create a new ReviewerSession.
  */
 export function createReviewerSession(
-  agent: AgentAdapter,
+  agentManager: IAgentManager,
   storyId: string,
   workdir: string,
   featureName: string,
@@ -245,7 +244,7 @@ export function createReviewerSession(
 
   function resolveRunParams(semanticConfig: SemanticReviewConfig) {
     const modelTier = semanticConfig.modelTier;
-    const defaultAgent = resolveDefaultAgent(_config);
+    const defaultAgent = agentManager.getDefault();
     const modelDef = resolveModelForAgent(_config.models, defaultAgent, modelTier, defaultAgent);
     const timeoutSeconds = semanticConfig.timeoutMs
       ? Math.ceil(semanticConfig.timeoutMs / 1000)
@@ -300,19 +299,21 @@ export function createReviewerSession(
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
       const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
-      const result = await agent.run({
-        prompt: effectivePrompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds,
-        sessionRole: "reviewer",
-        keepOpen: true,
-        pipelineStage: "review",
-        config: _config,
-        storyId,
-        featureName,
-        sessionHandle,
+      const result = await agentManager.run({
+        runOptions: {
+          prompt: effectivePrompt,
+          workdir,
+          modelTier,
+          modelDef,
+          timeoutSeconds,
+          sessionRole: "reviewer",
+          keepOpen: true,
+          pipelineStage: "review",
+          config: _config,
+          storyId,
+          featureName,
+          sessionHandle,
+        },
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -346,19 +347,21 @@ export function createReviewerSession(
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
       const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
-      const result = await agent.run({
-        prompt: effectivePrompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds,
-        sessionRole: "reviewer",
-        keepOpen: true,
-        pipelineStage: "review",
-        config: _config,
-        storyId,
-        featureName,
-        sessionHandle,
+      const result = await agentManager.run({
+        runOptions: {
+          prompt: effectivePrompt,
+          workdir,
+          modelTier,
+          modelDef,
+          timeoutSeconds,
+          sessionRole: "reviewer",
+          keepOpen: true,
+          pipelineStage: "review",
+          config: _config,
+          storyId,
+          featureName,
+          sessionHandle,
+        },
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -406,19 +409,21 @@ export function createReviewerSession(
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(effectiveSemanticConfig);
       const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(question);
 
-      const result = await agent.run({
-        prompt: effectivePrompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds,
-        sessionRole: "reviewer",
-        keepOpen: true,
-        pipelineStage: "review",
-        config: _config,
-        storyId,
-        featureName,
-        sessionHandle,
+      const result = await agentManager.run({
+        runOptions: {
+          prompt: effectivePrompt,
+          workdir,
+          modelTier,
+          modelDef,
+          timeoutSeconds,
+          sessionRole: "reviewer",
+          keepOpen: true,
+          pipelineStage: "review",
+          config: _config,
+          storyId,
+          featureName,
+          sessionHandle,
+        },
       });
 
       history.push({ role: "implementer", content: question });
@@ -446,19 +451,21 @@ export function createReviewerSession(
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
       const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
-      const result = await agent.run({
-        prompt: effectivePrompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds,
-        sessionRole: "reviewer",
-        keepOpen: true,
-        pipelineStage: "review",
-        config: _config,
-        storyId,
-        featureName,
-        sessionHandle,
+      const result = await agentManager.run({
+        runOptions: {
+          prompt: effectivePrompt,
+          workdir,
+          modelTier,
+          modelDef,
+          timeoutSeconds,
+          sessionRole: "reviewer",
+          keepOpen: true,
+          pipelineStage: "review",
+          config: _config,
+          storyId,
+          featureName,
+          sessionHandle,
+        },
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -504,19 +511,21 @@ export function createReviewerSession(
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
       const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
 
-      const result = await agent.run({
-        prompt: effectivePrompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds,
-        sessionRole: "reviewer",
-        keepOpen: true,
-        pipelineStage: "review",
-        config: _config,
-        storyId,
-        featureName,
-        sessionHandle,
+      const result = await agentManager.run({
+        runOptions: {
+          prompt: effectivePrompt,
+          workdir,
+          modelTier,
+          modelDef,
+          timeoutSeconds,
+          sessionRole: "reviewer",
+          keepOpen: true,
+          pipelineStage: "review",
+          config: _config,
+          storyId,
+          featureName,
+          sessionHandle,
+        },
       });
 
       history.push({ role: "implementer", content: prompt });

@@ -8,7 +8,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
-import { resolveDefaultAgent } from "../agents";
+import { resolveDefaultAgent, wrapAdapterAsManager } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
@@ -383,7 +383,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     story,
     config,
     workdir,
-    agent,
+    wrapAdapterAsManager(agent),
     implementerTier,
     lite,
     logger,

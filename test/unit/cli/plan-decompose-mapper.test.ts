@@ -12,11 +12,41 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
+import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/schema";
 import type { DecomposedStory } from "../../../src/agents/shared/types-extended";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
+
+function makeMockDecomposeManager(
+  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ decompose: async () => ({ stories: [] }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: decomposeFn
+      ? async (name: string, opts: any) => decomposeFn(name, opts)
+      : async () => ({ stories: [] }),
+  } as any;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -92,7 +122,7 @@ const origExistsSync = _planDeps.existsSync;
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origGetAgent = _planDeps.getAgent;
+const origCreateManager = _planDeps.createManager;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -127,11 +157,10 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.getAgent = mock(
-      () =>
-        ({
-          decompose: mock(async () => ({ stories: decomposedStories })),
-        }) as never,
+    _planDeps.createManager = mock(() =>
+      makeMockDecomposeManager(async (_name: string, _opts: any) => ({
+        stories: decomposedStories,
+      })),
     );
   }
 
@@ -147,7 +176,7 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;

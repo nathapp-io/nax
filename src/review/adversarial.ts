@@ -13,13 +13,11 @@
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
  */
 
-import { resolveDefaultAgent } from "../agents";
+import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
-import type { AgentAdapter } from "../agents/types";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
-import type { ModelTier } from "../config/schema-types";
 import { filterContextByRole } from "../context";
 import { createContextToolRuntime } from "../context/engine";
 import { getSafeLogger } from "../logger";
@@ -32,9 +30,6 @@ import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
-
-/** Function that resolves an AgentAdapter for a given model tier */
-export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined;
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
 export const _adversarialDeps = {
@@ -136,7 +131,7 @@ export async function runAdversarialReview(
   storyGitRef: string | undefined,
   story: SemanticStory,
   adversarialConfig: AdversarialReviewConfig,
-  modelResolver: ModelResolver,
+  agentManager: IAgentManager | undefined,
   naxConfig?: NaxConfig,
   featureName?: string,
   priorFailures?: Array<{ stage: string; modelTier: string }>,
@@ -214,9 +209,7 @@ export async function runAdversarialReview(
     testInventory = await computeTestInventory(workdir, effectiveRef, testFilePatterns, { naxIgnoreIndex, packageDir });
   }
 
-  // Resolve agent
-  const agent = modelResolver(adversarialConfig.modelTier);
-  if (!agent) {
+  if (!agentManager) {
     logger?.warn("adversarial", "No agent available for adversarial review — skipping", {
       storyId: story.id,
       modelTier: adversarialConfig.modelTier,
@@ -257,7 +250,7 @@ export async function runAdversarialReview(
   const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 
   // Resolve model definition
-  const defaultAgent = naxConfig ? resolveDefaultAgent(naxConfig) : "claude";
+  const defaultAgent = agentManager.getDefault();
   let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
   try {
     if (naxConfig?.models) {
@@ -308,6 +301,7 @@ export async function runAdversarialReview(
       : undefined,
   } as const;
 
+  const adapter = agentManager.getAgent(defaultAgent);
   let rawResponse: string;
   let llmCost = 0;
   let retryAttempted = false;
@@ -315,7 +309,7 @@ export async function runAdversarialReview(
     // keepOpen: true — session stays alive so the JSON retry prompt has
     // full conversation history. Closed explicitly below on the happy path, or
     // by the retry call (keepOpen: false) when a retry is needed.
-    const runResult = await agent.run({ prompt, ...runOpts, keepOpen: true });
+    const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
     rawResponse = runResult.output;
     llmCost = runResult.estimatedCost ?? 0;
     logger?.debug("adversarial", "LLM call complete", {
@@ -328,7 +322,7 @@ export async function runAdversarialReview(
       storyId: story.id,
       cause: String(err),
     });
-    void agent.closePhysicalSession(adversarialSessionName, workdir);
+    void adapter?.closePhysicalSession(adversarialSessionName, workdir);
     return {
       check: "adversarial",
       success: true,
@@ -349,10 +343,8 @@ export async function runAdversarialReview(
       responseLen: rawResponse.length,
     });
     try {
-      const retryResult = await agent.run({
-        prompt: ReviewPromptBuilder.jsonRetry(),
-        ...runOpts,
-        keepOpen: false,
+      const retryResult = await agentManager.run({
+        runOptions: { prompt: ReviewPromptBuilder.jsonRetry(), ...runOpts, keepOpen: false },
       });
       rawResponse = retryResult.output;
       llmCost += retryResult.estimatedCost ?? 0;
@@ -370,7 +362,7 @@ export async function runAdversarialReview(
   // Close the session — covers both the happy path (no retry) and the retry-exhausted
   // path (retry threw or returned unparseable JSON, so keepOpen: false on the
   // retry call may not have closed it). Best-effort: already-closed sessions no-op.
-  void agent.closePhysicalSession(adversarialSessionName, workdir);
+  void adapter?.closePhysicalSession(adversarialSessionName, workdir);
 
   // Parse response — fail-closed when LLM clearly intended to fail,
   // fail-open only when response is truly unparseable with no signal.

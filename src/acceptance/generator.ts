@@ -7,9 +7,8 @@
 
 import { join } from "node:path";
 import { AgentManager } from "../agents";
-import { resolveDefaultAgent } from "../agents";
-import type { AgentAdapter } from "../agents/types";
-import { resolveConfiguredModel } from "../config";
+import type { IAgentManager } from "../agents";
+import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
@@ -73,24 +72,7 @@ function skeletonImportLine(testFramework?: string): string {
  * @internal
  */
 export const _generatorPRDDeps = {
-  adapter: {
-    complete: async (...args: Parameters<AgentAdapter["complete"]>) => {
-      const options = args[1];
-      const config = options?.config;
-      if (!config) throw new Error("Acceptance generator adapter requires config");
-
-      const resolvedModel = resolveConfiguredModel(
-        config.models,
-        resolveDefaultAgent(config),
-        config.acceptance?.model ?? "fast",
-        resolveDefaultAgent(config),
-      );
-      const adapter = new AgentManager(config).getAgent(resolvedModel.agent);
-      if (!adapter) throw new Error(`Agent "${resolvedModel.agent}" not found`);
-
-      return adapter.complete(...args);
-    },
-  } satisfies Pick<AgentAdapter, "complete">,
+  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
   writeFile: async (path: string, content: string): Promise<void> => {
     await Bun.write(path, content);
   },
@@ -218,7 +200,7 @@ export async function generateFromPRD(
   } as const;
   const completeResult = options.agentManager
     ? (await options.agentManager.completeWithFallback(prompt, prdCompleteOpts)).result
-    : await (options.adapter ?? _generatorPRDDeps.adapter).complete(prompt, prdCompleteOpts);
+    : await _generatorPRDDeps.createManager(options.config).complete(prompt, prdCompleteOpts);
   const genCostUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
   const rawOutput = typeof completeResult === "string" ? completeResult : completeResult.output;
   let testCode = extractTestCode(rawOutput);
@@ -460,7 +442,7 @@ export function buildAcceptanceTestPrompt(
  * ```
  */
 export async function generateAcceptanceTests(
-  adapter: AgentAdapter,
+  agentManager: IAgentManager,
   options: GenerateAcceptanceTestsOptions,
 ): Promise<AcceptanceTestResult> {
   // Parse acceptance criteria from spec
@@ -489,7 +471,7 @@ export async function generateAcceptanceTests(
 
   try {
     // Call adapter to generate tests
-    const completeResult = await adapter.complete(prompt, {
+    const completeResult = await agentManager.complete(prompt, {
       model: options.modelDef.model,
       config: options.config,
       timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,

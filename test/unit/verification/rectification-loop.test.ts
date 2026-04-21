@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentRunOptions } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
@@ -82,7 +83,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
 describe("_rectificationDeps", () => {
   test("is exported from the module", () => {
     expect(_rectificationDeps).toBeDefined();
-    expect(typeof _rectificationDeps.getAgent).toBe("function");
+    expect(typeof _rectificationDeps.createManager).toBe("function");
     expect(typeof _rectificationDeps.runVerification).toBe("function");
   });
 });
@@ -92,40 +93,49 @@ describe("_rectificationDeps", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runRectificationLoop — session context params", () => {
-  const origGetAgent = _rectificationDeps.getAgent;
+  const origCreateManager = _rectificationDeps.createManager;
   const origRunVerification = _rectificationDeps.runVerification;
   const origEscalateTier = _rectificationDeps.escalateTier;
 
   afterEach(() => {
-    _rectificationDeps.getAgent = origGetAgent;
+    _rectificationDeps.createManager = origCreateManager;
     _rectificationDeps.runVerification = origRunVerification;
     _rectificationDeps.escalateTier = origEscalateTier;
     mock.restore();
   });
 
   test("passes featureName, storyId, and sessionRole='implementer' to agent.run()", async () => {
-    const capturedOptions: AgentRunOptions[] = [];
+    const capturedRunOptions: Array<{ type: "run" | "runAs"; opts: any }> = [];
 
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (opts: AgentRunOptions) => {
-        capturedOptions.push(opts);
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+    const mockAgentManager = {
+      getDefault: () => "claude",
+      getAgent: (_name: string) => ({} as any),
+      run: mock(async (req: any) => {
+        capturedRunOptions.push({ type: "run", opts: req.runOptions });
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
       }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
+      runAs: mock(async (_agentName: string, req: any) => {
+        capturedRunOptions.push({ type: "runAs", opts: req.runOptions });
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] };
+      }),
+      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    } as unknown as IAgentManager;
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => mockAgentManager);
 
     // Mock verification to return success so the loop exits after first attempt
     _rectificationDeps.runVerification = mock(async () => ({
       success: true,
       output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
     }));
 
     const result = await runRectificationLoop({
@@ -139,10 +149,10 @@ describe("runRectificationLoop — session context params", () => {
     });
 
     expect(result.succeeded).toBe(true);
-    expect(capturedOptions).toHaveLength(1);
-    expect(capturedOptions[0].featureName).toBe("my-feature");
-    expect(capturedOptions[0].storyId).toBe("TS-001");
-    expect(capturedOptions[0].sessionRole).toBe("implementer");
+    expect(capturedRunOptions).toHaveLength(1);
+    expect(capturedRunOptions[0].opts.featureName).toBe("my-feature");
+    expect(capturedRunOptions[0].opts.storyId).toBe("TS-001");
+    expect(capturedRunOptions[0].opts.sessionRole).toBe("implementer");
   });
 
   test("passes undefined featureName when not provided (backward compatibility)", async () => {
@@ -150,8 +160,7 @@ describe("runRectificationLoop — session context params", () => {
 
     const mockAgent = {
       name: "claude",
-      run: mock(async (opts: AgentRunOptions) => {
-        capturedOptions.push(opts);
+      run: mock(async (_opts: AgentRunOptions) => {
         return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
@@ -160,13 +169,39 @@ describe("runRectificationLoop — session context params", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    const mockAgentManager = {
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+      run: mock(async (req: any) => {
+        capturedOptions.push(req.runOptions);
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+      }),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager;
+
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => mockAgentManager);
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: true,
       output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
     }));
 
     await runRectificationLoop({
@@ -186,7 +221,35 @@ describe("runRectificationLoop — session context params", () => {
   });
 
   test("returns false when agent not found", async () => {
-    _rectificationDeps.getAgent = mock((_name: string) => undefined);
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => undefined),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager));
+
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: false,
+      status: "TEST_FAILURE" as const,
+      output: FAILING_TEST_OUTPUT,
+      countsTowardEscalation: true,
+    }));
 
     const result = await runRectificationLoop({
       config: makeConfig(),
@@ -201,7 +264,7 @@ describe("runRectificationLoop — session context params", () => {
     expect(result.succeeded).toBe(false);
   });
 
-  test("passes config into fallback _rectificationDeps.getAgent when agentGetFn is omitted", async () => {
+  test("passes config into fallback _rectificationDeps.createManager when agentGetFn is omitted", async () => {
     const config = makeConfig({
       agent: {
         protocol: "acp",
@@ -221,14 +284,37 @@ describe("runRectificationLoop — session context params", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock((_name: string, cfg?: NaxConfig) => {
+    _rectificationDeps.createManager = mock((cfg: NaxConfig) => {
       capturedConfig = cfg;
-      return mockAgent as unknown as import("../../../src/agents/types").AgentAdapter;
+      return {
+        getDefault: () => "claude",
+        getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+        run: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+        complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+        isUnavailable: () => false,
+        markUnavailable: () => {},
+        reset: () => {},
+        validateCredentials: async () => {},
+        events: { on: () => {} } as any,
+        resolveFallbackChain: () => [],
+        shouldSwap: () => false,
+        nextCandidate: () => null,
+        runWithFallback: mock(async (req: any) => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+        completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+        completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+        runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+        plan: async () => ({ specContent: "" }),
+        planAs: async () => ({ specContent: "" }),
+        decompose: async () => ({ stories: [] }),
+        decomposeAs: async () => ({ stories: [] }),
+      } as unknown as IAgentManager;
     });
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: true,
       output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
     }));
 
     const result = await runRectificationLoop({
@@ -293,9 +379,30 @@ describe("runRectificationLoop — session context params", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock((_name: string, cfg?: NaxConfig) => {
+    _rectificationDeps.createManager = mock((cfg: NaxConfig) => {
       if (cfg) capturedConfigs.push(cfg);
-      return mockAgent as unknown as import("../../../src/agents/types").AgentAdapter;
+      return {
+        getDefault: () => "claude",
+        getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+        run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+        complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+        isUnavailable: () => false,
+        markUnavailable: () => {},
+        reset: () => {},
+        validateCredentials: async () => {},
+        events: { on: () => {} } as any,
+        resolveFallbackChain: () => [],
+        shouldSwap: () => false,
+        nextCandidate: () => null,
+        runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+        completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+        completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+        runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+        plan: async () => ({ specContent: "" }),
+        planAs: async () => ({ specContent: "" }),
+        decompose: async () => ({ stories: [] }),
+        decomposeAs: async () => ({ stories: [] }),
+      } as unknown as IAgentManager;
     });
 
     _rectificationDeps.escalateTier = mock(() => ({ tier: "balanced", agent: "claude" }));
@@ -304,8 +411,9 @@ describe("runRectificationLoop — session context params", () => {
       verifyCallCount += 1;
       return {
         success: false,
-        status: "FAILED" as const,
+        status: "TEST_FAILURE" as const,
         output: "✗ still failing\n(fail) still failing",
+        countsTowardEscalation: true,
       };
     });
 
@@ -340,13 +448,40 @@ describe("runRectificationLoop — session context params", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+      run: mock(async (req: any) => {
+        capturedOptions.push(req.runOptions);
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+      }),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async (_name: string, req: any) => {
+        capturedOptions.push(req.runOptions);
+        return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+      }),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager));
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
+      status: "TEST_FAILURE" as const,
       output: "1 fail",
+      countsTowardEscalation: true,
     }));
 
     await runRectificationLoop({
@@ -371,7 +506,7 @@ describe("runRectificationLoop — session context params", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runRectificationLoop — logging failing test names", () => {
-  const origGetAgent = _rectificationDeps.getAgent;
+  const origCreateManager = _rectificationDeps.createManager;
   const origRunVerification = _rectificationDeps.runVerification;
 
   let capturedWarns: Array<{ stage: string; message: string; data: unknown }> = [];
@@ -394,7 +529,7 @@ describe("runRectificationLoop — logging failing test names", () => {
   });
 
   afterEach(() => {
-    _rectificationDeps.getAgent = origGetAgent;
+    _rectificationDeps.createManager = origCreateManager;
     _rectificationDeps.runVerification = origRunVerification;
     resetLogger();
     mock.restore();
@@ -412,9 +547,28 @@ describe("runRectificationLoop — logging failing test names", () => {
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager));
 
     const retryOutput = `
 test/example.test.ts:
@@ -434,6 +588,8 @@ Error: Expected true to be false
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
       output: retryOutput,
+      status: "TEST_FAILURE" as const,
+      countsTowardEscalation: true,
     }));
 
     await runRectificationLoop({
@@ -469,9 +625,28 @@ Error: Expected true to be false
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager));
 
     // Create test output with 15 failures
     let retryOutput = "test/example.test.ts:\n";
@@ -487,6 +662,8 @@ Error: Expected true to be false
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
       output: retryOutput,
+      status: "TEST_FAILURE" as const,
+      countsTowardEscalation: true,
     }));
 
     const initialOutput = `
@@ -532,9 +709,28 @@ Error: Test failed
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager));
 
     // Retry output with failures but no structured (fail) blocks
     // Parser will count ✗ marks but won't parse detailed failure info
@@ -550,6 +746,8 @@ test/example.test.ts:
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
       output: retryOutput,
+      status: "TEST_FAILURE" as const,
+      countsTowardEscalation: true,
     }));
 
     await runRectificationLoop({
@@ -583,9 +781,28 @@ test/example.test.ts:
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager));
 
     const retryOutput = `
 test/example.test.ts:
@@ -600,6 +817,8 @@ Error: Test failed
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
       output: retryOutput,
+      status: "TEST_FAILURE" as const,
+      countsTowardEscalation: true,
     }));
 
     await runRectificationLoop({
@@ -634,9 +853,31 @@ Error: Test failed
       buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
     };
 
-    _rectificationDeps.getAgent = mock(
-      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-    );
+    _rectificationDeps.createManager = mock((_config: NaxConfig) => ({
+      getDefault: () => "claude",
+      getAgent: mock((_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter),
+      run: mock(async () => {
+        agentRunCount += 1;
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+      }),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      events: { on: () => {} } as any,
+      resolveFallbackChain: () => [],
+      shouldSwap: () => false,
+      nextCandidate: () => null,
+      runWithFallback: mock(async (req: any) => ({ result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 }, fallbacks: [], bundle: req.bundle })),
+      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "mock" }, fallbacks: [] })),
+      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "mock" })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+      plan: async () => ({ specContent: "" }),
+      planAs: async () => ({ specContent: "" }),
+      decompose: async () => ({ stories: [] }),
+      decomposeAs: async () => ({ stories: [] }),
+    } as unknown as IAgentManager));
 
     let verificationCalls = 0;
     _rectificationDeps.runVerification = mock(async () => {
@@ -645,6 +886,7 @@ Error: Test failed
         success: false,
         status: "TEST_FAILURE" as const,
         output: "test/example.test.ts:\n✓ fixed test [1ms]\n1 passed, 0 failed [1ms]",
+        countsTowardEscalation: true,
       };
     });
 

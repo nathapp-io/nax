@@ -8,9 +8,9 @@
  * - Unmapped tests: warn and mark all passed stories for re-verification
  */
 
+import type { IAgentManager } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { getSafeLogger } from "../../logger";
-import type { AgentGetFn } from "../../pipeline/types";
 import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
 import { hasCommitsForStory } from "../../utils/git";
@@ -32,8 +32,8 @@ export interface DeferredRegressionOptions {
   config: NaxConfig;
   prd: PRD;
   workdir: string;
-  /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
-  agentGetFn?: AgentGetFn;
+  /** AgentManager — routes agent calls through IAgentManager for fallback support. */
+  agentManager?: IAgentManager;
 }
 
 export interface DeferredRegressionResult {
@@ -83,7 +83,7 @@ async function findResponsibleStory(
  */
 export async function runDeferredRegression(options: DeferredRegressionOptions): Promise<DeferredRegressionResult> {
   const logger = getSafeLogger();
-  const { config, prd, workdir, agentGetFn } = options;
+  const { config, prd, workdir, agentManager } = options;
 
   // Check if regression gate is deferred
   const regressionMode = config.execution.regressionGate?.mode ?? "deferred";
@@ -282,7 +282,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
         timeoutSeconds,
         testOutput: currentTestOutput,
         promptPrefix: `# DEFERRED REGRESSION: Full-Suite Failures\n\nYour story ${story.id} broke tests in the full suite. Fix these regressions.`,
-        agentGetFn,
+        agentManager,
         featureName: prd.feature,
       });
 

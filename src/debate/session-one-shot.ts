@@ -4,6 +4,7 @@
  * Extracted runOneShot() implementation for DebateSession.
  */
 
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
@@ -42,15 +43,16 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
-  // Step 1: Resolve adapters — skip unavailable agents
+  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
+
+  // Step 1: Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];
   for (const debater of debaters) {
-    const adapter = _debateSessionDeps.getAgent(debater.agent, ctx.config);
-    if (!adapter) {
+    if (!agentManager.getAgent(debater.agent)) {
       logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
       continue;
     }
-    resolved.push({ debater, adapter });
+    resolved.push({ debater, agentName: debater.agent });
   }
 
   logger?.info("debate", "debate:start", {
@@ -68,10 +70,11 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   );
   const proposalSettled = await allSettledBounded(
     resolved.map(
-      ({ debater, adapter }, i) =>
+      ({ debater, agentName }, i) =>
         () =>
           runComplete(
-            adapter,
+            agentManager,
+            agentName,
             proposalBuilder.buildProposalPrompt(i),
             {
               model: resolveDebaterModel(debater, ctx.config),
@@ -82,7 +85,7 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
               timeoutMs: ctx.timeoutMs,
             },
             modelTierFromDebater(debater),
-          ).then((result) => ({ debater, adapter, output: result.output, cost: result.costUsd })),
+          ).then((result) => ({ debater, agentName, output: result.output, cost: result.costUsd })),
     ),
     concurrencyLimit,
   );
@@ -134,9 +137,9 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
       };
     }
 
-    // All debaters failed — attempt fresh complete() on first resolved adapter (AC4)
+    // All debaters failed — attempt fresh complete() on first resolved agent (AC4)
     if (resolved.length > 0) {
-      const { adapter: fallbackAdapter, debater: fallbackDebater } = resolved[0];
+      const { agentName: fallbackAgentName, debater: fallbackDebater } = resolved[0];
       logger?.warn("debate", "debate:fallback", {
         storyId: ctx.storyId,
         stage: ctx.stage,
@@ -144,7 +147,8 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
       });
       try {
         const fallbackResult = await runComplete(
-          fallbackAdapter,
+          agentManager,
+          fallbackAgentName,
           prompt,
           {
             model: resolveDebaterModel(fallbackDebater, ctx.config),
@@ -190,10 +194,11 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
     );
     const critiqueSettled = await allSettledBounded(
       successful.map(
-        ({ debater, adapter }, i) =>
+        ({ debater, agentName }, i) =>
           () =>
             runComplete(
-              adapter,
+              agentManager,
+              agentName,
               critiqueBuilder.buildCritiquePrompt(i, proposals),
               {
                 model: resolveDebaterModel(debater, ctx.config),

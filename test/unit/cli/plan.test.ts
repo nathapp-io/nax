@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
+import type { IAgentManager } from "../../../src/agents";
 import { PlanPromptBuilder } from "../../../src/prompts";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { PRD } from "../../../src/prd/types";
@@ -61,7 +62,7 @@ const SAMPLE_PRD: PRD = {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origGetAgent = _planDeps.getAgent;
+const origCreateManager = _planDeps.createManager;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
@@ -72,6 +73,35 @@ function makeFakeAdapter(prdContent: object = SAMPLE_PRD) {
     plan: mock(async (_opts: { prompt?: string }) => {}),
     _prdContent: prdContent,
   };
+}
+
+function makeMockPlanManager(
+  planFn?: (agentName: string, opts: any) => Promise<void>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: planFn
+      ? async (agentName: string, opts: any) => { await planFn(agentName, opts); return { specContent: "" }; }
+      : async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
 function makeFakeScan() {
@@ -123,13 +153,11 @@ describe("planCommand", () => {
 
     _planDeps.mkdirp = mock(async (_path: string) => {});
 
-    _planDeps.getAgent = mock((_name: string) => {
+    _planDeps.createManager = mock((_cfg: any) => {
       capturedPlanArgs = [];
-      return {
-        plan: mock(async (opts: { prompt?: string }) => {
-          if (opts.prompt) capturedPlanArgs.push(opts.prompt);
-        }),
-      } as never;
+      return makeMockPlanManager(async (_name: string, opts: { prompt?: string }) => {
+        if (opts.prompt) capturedPlanArgs.push(opts.prompt);
+      });
     });
   });
 
@@ -138,7 +166,7 @@ describe("planCommand", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.getAgent = origGetAgent;
+    _planDeps.createManager = origCreateManager;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;
@@ -188,12 +216,11 @@ describe("planCommand", () => {
   test("uses explicit plan model selector to choose adapter", async () => {
     let receivedAgentName: string | undefined;
 
-    _planDeps.getAgent = mock((name: string) => {
-      receivedAgentName = name;
-      return {
-        plan: mock(async (_opts: { prompt?: string }) => {}),
-      } as never;
-    });
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockPlanManager(async (name: string) => {
+        receivedAgentName = name;
+      }),
+    );
 
     const config = {
       ...DEFAULT_CONFIG,
@@ -266,7 +293,9 @@ describe("planCommand", () => {
 
   test("AC-3: adapter.plan() is called in --auto mode", async () => {
     const fakeAdapter = makeFakeAdapter();
-    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
+    );
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -282,7 +311,9 @@ describe("planCommand", () => {
       plan: mock(async (_options: any) => ({ specContent: "" })),
       complete: mock(async (_prompt: string) => JSON.stringify(SAMPLE_PRD)),
     };
-    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
+    );
     // Simulate agent having written the PRD file to disk
     _planDeps.existsSync = mock((_path: string) => true);
     _planDeps.readFile = mock(async (_path: string) => JSON.stringify(SAMPLE_PRD));
@@ -301,7 +332,9 @@ describe("planCommand", () => {
         throw new Error("missing end_turn");
       }),
     };
-    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
+    );
     _planDeps.existsSync = mock((path: string) => path.endsWith("prd.json"));
     _planDeps.readFile = mock(async (path: string) => (path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC));
 
@@ -327,14 +360,15 @@ describe("planCommand", () => {
         throw new Error("missing end_turn");
       }),
     };
-    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
+    );
     _planDeps.existsSync = mock((_path: string) => false);
 
     await expect(
       planCommand(
         tmpDir,
         {
-          agent: { protocol: "acp" },
           agent: { protocol: "acp" },
         } as any,
         {

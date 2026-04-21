@@ -10,7 +10,7 @@
  * CLARIFY detection behavior is wired in the live code path.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _autofixDeps, autofixStage } from "../../../../src/pipeline/stages/autofix";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
@@ -88,6 +88,38 @@ function makeDialogueConfig(
   } as any;
 }
 
+/**
+ * Creates a mock IAgentManager that forwards run() to a mock agent.
+ * AgentManager.run() extracts request.runOptions and passes them to adapter.run(),
+ * so the mock extracts runOptions and forwards them to the inner mock.
+ */
+function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
+  return {
+    getDefault: () => "claude",
+    run: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return await mockRun(request.runOptions);
+    }),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+    completeAs: mock(async () => ({ output: "", costUsd: 0 })),
+    complete: mock(async () => ({ output: "", costUsd: 0 })),
+    planAs: mock(async () => ({ specContent: "" })),
+    decomposeAs: mock(async () => ({ stories: [] })),
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} },
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return { result: await mockRun(request.runOptions), fallbacks: [] };
+    }),
+    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
+    getAgent: () => undefined,
+  } as any;
+}
+
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     config: makeDialogueConfig(true),
@@ -115,64 +147,77 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Saved deps
+// ─────────────────────────────────────────────────────────────────────────────
+
+let origRecheckReview: typeof _autofixDeps.recheckReview;
+let origCaptureGitRef: typeof _autofixDeps.captureGitRef;
+
+beforeEach(() => {
+  origRecheckReview = _autofixDeps.recheckReview;
+  origCaptureGitRef = _autofixDeps.captureGitRef;
+});
+
+afterEach(() => {
+  _autofixDeps.recheckReview = origRecheckReview;
+  _autofixDeps.captureGitRef = origCaptureGitRef;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC5: CLARIFY relay to reviewerSession.clarify()
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("autofixStage — CLARIFY relay (AC5)", () => {
   test("calls ctx.reviewerSession.clarify() when agent output matches /^CLARIFY:\\s*(.+)$/ms", async () => {
-    const saved = { ..._autofixDeps };
     const mockSession = makeSession();
 
     let agentCallCount = 0;
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => {
-          agentCallCount++;
-          if (agentCallCount === 1) {
-            // First attempt: contains CLARIFY block
-            return {
-              output: "CLARIFY: What does AC1 mean exactly?\nWill fix once clarified.",
-              success: false,
-            };
-          }
-          // Subsequent: no CLARIFY
-          return { output: "Fixed the issue.", success: true };
-        }),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => {
+      agentCallCount++;
+      if (agentCallCount === 1) {
+        // First attempt: contains CLARIFY block
+        return {
+          output: "CLARIFY: What does AC1 mean exactly?\nWill fix once clarified.",
+          success: false,
+          estimatedCost: 0,
+        };
+      }
+      // Subsequent: no CLARIFY
+      return { output: "Fixed the issue.", success: true, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => agentCallCount >= 2);
+    _autofixDeps.captureGitRef = mock(async () => `ref-${agentCallCount}`);
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic", output: "AC not implemented" }]),
       reviewerSession: mockSession,
     });
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
-
     expect(mockSession.clarify).toHaveBeenCalledTimes(1);
     expect((mockSession.clarify as ReturnType<typeof mock>).mock.calls[0]?.[0]).toContain("What does AC1 mean exactly?");
   });
 
   test("extracts question correctly from multi-line CLARIFY block", async () => {
-    const saved = { ..._autofixDeps };
     const mockSession = makeSession();
 
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => ({
-          output: "Some intro text.\nCLARIFY: Should I modify auth.ts or service.ts?\nMore content.",
-          success: false,
-        })),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => ({
+      output: "Some intro text.\nCLARIFY: Should I modify auth.ts or service.ts?\nMore content.",
+      success: false,
+      estimatedCost: 0,
+    }));
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => false);
-    // Limit attempts to 1 to keep test fast
+    _autofixDeps.captureGitRef = mock(async () => "ref-always-same");
+
     const config = makeDialogueConfig(true);
     config.quality.autofix.maxAttempts = 1;
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
       config,
@@ -181,61 +226,52 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
-
     expect(mockSession.clarify).toHaveBeenCalled();
     const calledWith = (mockSession.clarify as ReturnType<typeof mock>).mock.calls[0]?.[0] as string;
     expect(calledWith).toContain("Should I modify auth.ts or service.ts?");
   });
 
   test("does not call clarify() when agent output has no CLARIFY block", async () => {
-    const saved = { ..._autofixDeps };
     const mockSession = makeSession();
 
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => ({
-          output: "I fixed the issue by updating the handler.",
-          success: true,
-        })),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => ({
+      output: "I fixed the issue by updating the handler.",
+      success: true,
+      estimatedCost: 0,
+    }));
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
+    _autofixDeps.captureGitRef = mock(async () => "ref-changed");
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
     });
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
-
     expect(mockSession.clarify).not.toHaveBeenCalled();
   });
 
   test("does not call clarify() when ctx.reviewerSession is undefined", async () => {
-    const saved = { ..._autofixDeps };
-
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => ({
-          output: "CLARIFY: What should I do?\nProceeding.",
-          success: true,
-        })),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => ({
+      output: "CLARIFY: What should I do?\nProceeding.",
+      success: true,
+      estimatedCost: 0,
+    }));
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
+    _autofixDeps.captureGitRef = mock(async () => "ref-changed");
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       // no reviewerSession
     });
 
     // Should not throw even without a session
     const result = await autofixStage.execute(ctx);
-
-    Object.assign(_autofixDeps, saved);
 
     expect(result.action).toBe("retry");
   });
@@ -247,7 +283,6 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
 
 describe("autofixStage — clarification cap (AC6)", () => {
   test("caps clarification calls at maxClarificationsPerAttempt per attempt", async () => {
-    const saved = { ..._autofixDeps };
     let clarifyCallCount = 0;
     const mockSession = makeSession({
       clarify: mock(async () => {
@@ -261,19 +296,19 @@ describe("autofixStage — clarification cap (AC6)", () => {
     config.quality.autofix.maxAttempts = 1;
 
     // Agent always returns CLARIFY — without a cap this would loop indefinitely
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => ({
-          // Multiple CLARIFY blocks — but only first maxClarifications should be processed
-          output:
-            "CLARIFY: Question 1?\nCLARIFY: Question 2?\nCLARIFY: Question 3?\nCLARIFY: Question 4?\nDone.",
-          success: false,
-        })),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => ({
+      // Multiple CLARIFY blocks — but only first maxClarifications should be processed
+      output:
+        "CLARIFY: Question 1?\nCLARIFY: Question 2?\nCLARIFY: Question 3?\nCLARIFY: Question 4?\nDone.",
+      success: false,
+      estimatedCost: 0,
+    }));
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => false);
+    _autofixDeps.captureGitRef = mock(async () => "ref-always-same");
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
       config,
@@ -282,29 +317,26 @@ describe("autofixStage — clarification cap (AC6)", () => {
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
-
     expect(clarifyCallCount).toBeLessThanOrEqual(maxClarifications);
   });
 
   test("excess clarification requests are silently skipped (no error thrown)", async () => {
-    const saved = { ..._autofixDeps };
     const mockSession = makeSession();
 
     const config = makeDialogueConfig(true, { maxClarificationsPerAttempt: 1 });
     config.quality.autofix.maxAttempts = 1;
 
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => ({
-          output: "CLARIFY: Q1?\nCLARIFY: Q2?\nCLARIFY: Q3?\nFixed.",
-          success: true,
-        })),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => ({
+      output: "CLARIFY: Q1?\nCLARIFY: Q2?\nCLARIFY: Q3?\nFixed.",
+      success: true,
+      estimatedCost: 0,
+    }));
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
+    _autofixDeps.captureGitRef = mock(async () => "ref-changed");
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
       config,
@@ -313,8 +345,6 @@ describe("autofixStage — clarification cap (AC6)", () => {
 
     // Must not throw
     await expect(autofixStage.execute(ctx)).resolves.toBeDefined();
-
-    Object.assign(_autofixDeps, saved);
   });
 });
 
@@ -324,24 +354,23 @@ describe("autofixStage — clarification cap (AC6)", () => {
 
 describe("autofixStage — clarify() error resilience (AC10)", () => {
   test("proceeds without clarification when ReviewerSession.clarify() throws", async () => {
-    const saved = { ..._autofixDeps };
     const mockSession = makeSession({
       clarify: mock(async () => {
         throw new Error("ACP clarify failed");
       }),
     });
 
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => ({
-          output: "CLARIFY: What is AC1?\nFixed the issue anyway.",
-          success: true,
-        })),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => ({
+      output: "CLARIFY: What is AC1?\nFixed the issue anyway.",
+      success: true,
+      estimatedCost: 0,
+    }));
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
+    _autofixDeps.captureGitRef = mock(async () => "ref-changed");
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
     });
@@ -349,14 +378,11 @@ describe("autofixStage — clarify() error resilience (AC10)", () => {
     // Must not throw even when clarify() throws
     const result = await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
-
     // Stage should still complete successfully (clarify failure is non-fatal)
     expect(result.action).toBe("retry");
   });
 
   test("autofixStage returns a valid result when clarify() throws on every call", async () => {
-    const saved = { ..._autofixDeps };
     const mockSession = makeSession({
       clarify: mock(async () => {
         throw new Error("Always fails");
@@ -364,24 +390,21 @@ describe("autofixStage — clarify() error resilience (AC10)", () => {
     });
 
     let agentCallCount = 0;
-    _autofixDeps.getAgent = () =>
-      ({
-        run: mock(async () => {
-          agentCallCount++;
-          return { output: "CLARIFY: Question?\nAttempting fix.", success: true };
-        }),
-      // biome-ignore lint/suspicious/noExplicitAny: agent mock
-      }) as any;
+    const mockRun = mock(async (_opts: Record<string, unknown>) => {
+      agentCallCount++;
+      return { output: "CLARIFY: Question?\nAttempting fix.", success: true, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => agentCallCount >= 1);
+    _autofixDeps.captureGitRef = mock(async () => "ref-changed");
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
     });
 
     const result = await autofixStage.execute(ctx);
-
-    Object.assign(_autofixDeps, saved);
 
     expect(result.action).toMatch(/^(retry|escalate)$/);
   });

@@ -11,9 +11,6 @@
  * - `continue`: Routing determined, proceed to next stage
  */
 
-import { resolveDefaultAgent } from "../../agents";
-import { resolveConfiguredModel } from "../../config";
-import { DEFAULT_CONFIG } from "../../config/defaults";
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
@@ -28,17 +25,6 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    const defaultRoutingAgent = ctx.config.execution?.agent ?? "claude";
-    const routingModelSelection = ctx.config.routing.llm?.model ?? "fast";
-    const configModels = ctx.config.models ?? DEFAULT_CONFIG.models;
-    const configDefaultAgent = ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.rootConfig ?? ctx.config);
-    const agentName =
-      ctx.config.routing.strategy === "llm"
-        ? resolveConfiguredModel(configModels, defaultRoutingAgent, routingModelSelection, configDefaultAgent).agent
-        : defaultRoutingAgent;
-    // Only use adapter when explicitly provided via agentGetFn — prevents real LLM calls in tests
-    const adapter = ctx.agentGetFn ? ctx.agentGetFn(agentName) : undefined;
-
     // Clear LLM routing cache at the start of each run (first story only) to prevent
     // cross-run cache pollution when story IDs repeat across features (e.g. "us-001").
     if (ctx.story.id === ctx.stories[0]?.id) {
@@ -46,7 +32,7 @@ export const routingStage: PipelineStage = {
     }
 
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
-    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, adapter);
+    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx.agentManager);
 
     // BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
     // (i.e., a higher tier than what routing freshly derives). This prevents stale tiers

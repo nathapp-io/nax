@@ -10,7 +10,8 @@ import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adve
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
-import type { AgentAdapter } from "../../../src/agents/types";
+import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -39,18 +40,18 @@ const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeAgent(llmResponse: string, cost = 0.001): AgentAdapter {
-  return {
-    name: "mock",
+function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
+  const adapter: AgentAdapter = {
+    name: "claude",
     displayName: "Mock Agent",
     binary: "mock",
     capabilities: {
       supportedTiers: [],
       supportedTestStrategies: [],
       features: {},
-    } as unknown as AgentAdapter["capabilities"],
+    } as any,
     isInstalled: mock(async () => true),
-    run: mock(async () => ({ output: llmResponse, estimatedCost: cost })),
+    run: mock(async (_opts: any) => ({ output: llmResponse, estimatedCost: cost, success: true, exitCode: 0, rateLimited: false, durationMs: 100 } as AgentResult)),
     buildCommand: mock(() => []),
     plan: mock(async () => {
       throw new Error("not used");
@@ -58,10 +59,38 @@ function makeAgent(llmResponse: string, cost = 0.001): AgentAdapter {
     decompose: mock(async () => {
       throw new Error("not used");
     }),
-    complete: mock(async (_prompt: string) => llmResponse),
+    complete: mock(async (_prompt: string) => ({ output: llmResponse, costUsd: cost, source: "mock" as const })),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
+
+  return {
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: mock(async (request: any) => {
+      const result = await adapter.run(request.runOptions);
+      return { result, fallbacks: [], bundle: request.bundle };
+    }),
+    completeWithFallback: mock(async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" as const }, fallbacks: [] })),
+    run: mock(async (request: any) => {
+      return adapter.run(request.runOptions) as Promise<AgentResult>;
+    }),
+    complete: mock(async (prompt: string) => ({ output: llmResponse, costUsd: cost, source: "mock" as const })),
+    completeAs: mock(async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const })),
+    runAs: mock(async () => ({ output: llmResponse, estimatedCost: cost, success: true, exitCode: 0, rateLimited: false, durationMs: 100 } as AgentResult)),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+    getAgent: () => adapter,
+  } as unknown as IAgentManager;
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
@@ -105,14 +134,12 @@ const CATEGORY_FINDING_RESPONSE = JSON.stringify({
 let origSpawn: typeof _diffUtilsDeps.spawn;
 let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
 let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
-let origReadAcpSession: typeof _adversarialDeps.readAcpSession;
 let origWriteReviewAudit: typeof _adversarialDeps.writeReviewAudit;
 
 function saveAllDeps() {
   origSpawn = _diffUtilsDeps.spawn;
   origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
   origGetMergeBase = _diffUtilsDeps.getMergeBase;
-  origReadAcpSession = _adversarialDeps.readAcpSession;
   origWriteReviewAudit = _adversarialDeps.writeReviewAudit;
 }
 
@@ -120,7 +147,6 @@ function restoreAllDeps() {
   _diffUtilsDeps.spawn = origSpawn;
   _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
   _diffUtilsDeps.getMergeBase = origGetMergeBase;
-  _adversarialDeps.readAcpSession = origReadAcpSession;
   _adversarialDeps.writeReviewAudit = origWriteReviewAudit;
 }
 
@@ -128,7 +154,6 @@ function setupHappyPathDeps(statContent = STAT_OUTPUT) {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
   _diffUtilsDeps.spawn = makeSpawnMock(statContent);
-  _adversarialDeps.readAcpSession = mock(async () => null);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,14 +169,14 @@ describe("runAdversarialReview — finding category and metadata", () => {
   afterEach(restoreAllDeps);
 
   test("finding has ruleId 'adversarial'", async () => {
-    const agent = makeAgent(CATEGORY_FINDING_RESPONSE);
+    const agentManager = makeAgentManager(CATEGORY_FINDING_RESPONSE);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.findings).toBeDefined();
@@ -159,28 +184,28 @@ describe("runAdversarialReview — finding category and metadata", () => {
   });
 
   test("finding has source 'adversarial-review'", async () => {
-    const agent = makeAgent(CATEGORY_FINDING_RESPONSE);
+    const agentManager = makeAgentManager(CATEGORY_FINDING_RESPONSE);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.findings![0].source).toBe("adversarial-review");
   });
 
   test("finding carries category field from LLM response", async () => {
-    const agent = makeAgent(CATEGORY_FINDING_RESPONSE);
+    const agentManager = makeAgentManager(CATEGORY_FINDING_RESPONSE);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.findings![0].category).toBe("test-gap");
@@ -200,7 +225,6 @@ describe("runAdversarialReview — embedded diffMode", () => {
     _diffUtilsDeps.getMergeBase = mock(async () => undefined);
     spawnMock = makeSpawnMock(STAT_OUTPUT);
     _diffUtilsDeps.spawn = spawnMock;
-    _adversarialDeps.readAcpSession = mock(async () => null);
   });
 
   afterEach(restoreAllDeps);
@@ -210,14 +234,14 @@ describe("runAdversarialReview — embedded diffMode", () => {
       ...ADVERSARIAL_CONFIG,
       diffMode: "embedded",
     };
-    const agent = makeAgent(PASSING_RESPONSE);
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
 
     await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       embeddedConfig,
-      () => agent,
+      agentManager,
     );
 
     expect(spawnMock).toHaveBeenCalled();
@@ -228,14 +252,14 @@ describe("runAdversarialReview — embedded diffMode", () => {
       ...ADVERSARIAL_CONFIG,
       diffMode: "embedded",
     };
-    const agent = makeAgent(PASSING_RESPONSE);
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
 
     await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       embeddedConfig,
-      () => agent,
+      agentManager,
     );
 
     const callCount = (spawnMock as ReturnType<typeof mock>).mock.calls.length;
@@ -256,28 +280,28 @@ describe("runAdversarialReview — cost propagation", () => {
   afterEach(restoreAllDeps);
 
   test("result.cost is populated from LLM estimatedCost", async () => {
-    const agent = makeAgent(PASSING_RESPONSE, 0.042);
+    const agentManager = makeAgentManager(PASSING_RESPONSE, 0.042);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.cost).toBe(0.042);
   });
 
   test("result.cost is 0 when estimatedCost is 0", async () => {
-    const agent = makeAgent(PASSING_RESPONSE, 0);
+    const agentManager = makeAgentManager(PASSING_RESPONSE, 0);
 
     const result = await runAdversarialReview(
       "/tmp/wd",
       "abc123",
       STORY,
       ADVERSARIAL_CONFIG,
-      () => agent,
+      agentManager,
     );
 
     expect(result.cost).toBe(0);
@@ -299,9 +323,9 @@ describe("runAdversarialReview — review audit gate", () => {
   test("audit disabled (default) — writeReviewAudit not called on success", async () => {
     const auditCalls: unknown[] = [];
     _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
-    const agent = makeAgent(PASSING_RESPONSE);
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
     expect(auditCalls).toHaveLength(0);
   });
@@ -309,10 +333,10 @@ describe("runAdversarialReview — review audit gate", () => {
   test("audit enabled — writeReviewAudit called with parsed:true on success", async () => {
     const auditCalls: unknown[] = [];
     _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
-    const agent = makeAgent(PASSING_RESPONSE);
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent, naxConfig);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager, naxConfig);
 
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(true);
@@ -322,10 +346,10 @@ describe("runAdversarialReview — review audit gate", () => {
   test("audit enabled — writeReviewAudit called with parsed:false on parse failure", async () => {
     const auditCalls: unknown[] = [];
     _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
-    const agent = makeAgent("not json at all");
+    const agentManager = makeAgentManager("not json at all");
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, () => agent, naxConfig);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager, naxConfig);
 
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(false);

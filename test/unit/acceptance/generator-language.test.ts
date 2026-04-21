@@ -15,7 +15,8 @@ import {
   generateSkeletonTests,
 } from "../../../src/acceptance/generator";
 import type { AcceptanceCriterion } from "../../../src/acceptance/types";
-import type { AgentAdapter } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents";
+import { wrapAdapterAsManager } from "../../../src/agents/utils";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -29,6 +30,13 @@ const sampleCriteria: AcceptanceCriterion[] = [
 const minimalConfig = {
   version: 1 as const,
   acceptance: { timeoutMs: 5000 },
+  models: {
+    claude: {
+      fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      powerful: { provider: "anthropic", model: "claude-opus-4-5" },
+    },
+  },
 } as any;
 
 const minimalModelDef = { provider: "anthropic" as const, model: "claude-sonnet-4-5" as any };
@@ -212,13 +220,13 @@ def test_ac_one():
 describe("generateFromPRD — Go language uses .nax-acceptance_test.go in prompt", () => {
   test("prompt contains '.nax-acceptance_test.go' when language is 'go'", async () => {
     let capturedPrompt = "";
-    const mockAdapter: AgentAdapter = {
-      complete: mock(async (prompt: string) => {
+    const mockManager: IAgentManager = {
+      getDefault: () => "claude",
+      completeWithFallback: mock(async (prompt: string) => {
         capturedPrompt = prompt;
-        // Return something that extractTestCode won't parse so we get a skeleton
-        return "I cannot generate a test file";
+        return { result: { output: "I cannot generate a test file", costUsd: 0, source: "mock" as const }, fallbacks: [] };
       }),
-    } as unknown as AgentAdapter;
+    } as unknown as IAgentManager;
 
     const refinedCriteria = [
       { original: "handles input", refined: "handles input", testable: true, storyId: "US-001" },
@@ -232,7 +240,7 @@ describe("generateFromPRD — Go language uses .nax-acceptance_test.go in prompt
       modelTier: "balanced",
       modelDef: minimalModelDef,
       config: minimalConfig,
-      adapter: mockAdapter,
+      agentManager: mockManager,
       language: "go",
     } as any);
 
@@ -244,12 +252,13 @@ describe("generateFromPRD — Go language uses .nax-acceptance_test.go in prompt
 describe("generateFromPRD — Python language uses .nax-acceptance.test.py in prompt", () => {
   test("prompt contains '.nax-acceptance.test.py' when language is 'python'", async () => {
     let capturedPrompt = "";
-    const mockAdapter: AgentAdapter = {
-      complete: mock(async (prompt: string) => {
+    const mockManager: IAgentManager = {
+      getDefault: () => "claude",
+      completeWithFallback: mock(async (prompt: string) => {
         capturedPrompt = prompt;
-        return "I cannot generate a test file";
+        return { result: { output: "I cannot generate a test file", costUsd: 0, source: "mock" as const }, fallbacks: [] };
       }),
-    } as unknown as AgentAdapter;
+    } as unknown as IAgentManager;
 
     const refinedCriteria = [
       { original: "handles input", refined: "handles input", testable: true, storyId: "US-001" },
@@ -263,7 +272,7 @@ describe("generateFromPRD — Python language uses .nax-acceptance.test.py in pr
       modelTier: "balanced",
       modelDef: minimalModelDef,
       config: minimalConfig,
-      adapter: mockAdapter,
+      agentManager: mockManager,
       language: "python",
     } as any);
 
@@ -275,12 +284,13 @@ describe("generateFromPRD — Python language uses .nax-acceptance.test.py in pr
 describe("generateFromPRD — no language defaults to .nax-acceptance.test.ts", () => {
   test("prompt contains '.nax-acceptance.test.ts' when language is omitted", async () => {
     let capturedPrompt = "";
-    const mockAdapter: AgentAdapter = {
-      complete: mock(async (prompt: string) => {
+    const mockManager: IAgentManager = {
+      getDefault: () => "claude",
+      completeWithFallback: mock(async (prompt: string) => {
         capturedPrompt = prompt;
-        return "I cannot generate a test file";
+        return { result: { output: "I cannot generate a test file", costUsd: 0, source: "mock" as const }, fallbacks: [] };
       }),
-    } as unknown as AgentAdapter;
+    } as unknown as IAgentManager;
 
     const refinedCriteria = [
       { original: "handles input", refined: "handles input", testable: true, storyId: "US-001" },
@@ -294,7 +304,7 @@ describe("generateFromPRD — no language defaults to .nax-acceptance.test.ts", 
       modelTier: "balanced",
       modelDef: minimalModelDef,
       config: minimalConfig,
-      adapter: mockAdapter,
+      agentManager: mockManager,
     } as any);
 
     expect(capturedPrompt).toContain(".nax-acceptance.test.ts");

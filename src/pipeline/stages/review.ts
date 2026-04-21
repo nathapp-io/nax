@@ -11,7 +11,6 @@
  */
 
 // RE-ARCH: rewrite
-import type { AgentAdapter } from "../../agents/types";
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { createReviewerSession } from "../../review/dialogue";
@@ -31,10 +30,6 @@ export const reviewStage: PipelineStage = {
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
     // MW-010: workdir is already resolved to the package directory at context creation
-
-    // Build agent resolver for dialogue session creation
-    const agentResolver = ctx.agentGetFn ?? ((_name: string): AgentAdapter | undefined => undefined);
-    const agentName = ctx.agentManager?.getDefault() ?? "claude";
 
     // AC3: When dialogue is enabled (non-debate) and a session already exists (retry loop), use reReview()
     if (dialogueEnabled && !reviewDebateEnabled && ctx.reviewerSession) {
@@ -76,12 +71,9 @@ export const reviewStage: PipelineStage = {
     }
 
     // AC2: When dialogue is enabled and no session exists (first run), create one
-    if (dialogueEnabled && !ctx.reviewerSession) {
-      const agent = agentName ? (agentResolver(agentName) ?? null) : null;
-      // Always create the session (agent may be provided by _reviewDeps mock in tests)
+    if (dialogueEnabled && !ctx.reviewerSession && ctx.agentManager) {
       ctx.reviewerSession = _reviewDeps.createReviewerSession(
-        // biome-ignore lint/suspicious/noExplicitAny: agent may be null when no defaultAgent configured
-        (agent ?? null) as any,
+        ctx.agentManager,
         ctx.story.id,
         ctx.workdir,
         ctx.prd.feature ?? "",
@@ -92,7 +84,7 @@ export const reviewStage: PipelineStage = {
       // For pure dialogue (no debate): try direct session.review(); fall back to orchestrator on error (AC9)
       if (!reviewDebateEnabled) {
         const semanticConfig = ctx.config.review?.semantic;
-        if (semanticConfig && agent) {
+        if (semanticConfig && ctx.agentManager) {
           try {
             const diff = ctx.storyGitRef ?? "";
             const story = {
@@ -137,7 +129,7 @@ export const reviewStage: PipelineStage = {
           }
         }
       }
-      // No semanticConfig/agent, debate mode, or AC9 fallback — fall through to orchestrator
+      // No semanticConfig/agentManager, debate mode, or AC9 fallback — fall through to orchestrator
     }
 
     // reviewFromContext reads and clears ctx.retrySkipChecks internally (#136)

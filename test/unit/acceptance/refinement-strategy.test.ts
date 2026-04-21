@@ -18,6 +18,7 @@ import {
   refineAcceptanceCriteria,
 } from "../../../src/acceptance/refinement";
 import { AcceptancePromptBuilder } from "../../../src/prompts";
+import type { IAgentManager } from "../../../src/agents";
 
 const buildRefinementPrompt = (
   criteria: string[],
@@ -156,17 +157,50 @@ function makeConfig(): NaxConfig {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers for saving/restoring _refineDeps.adapter.complete
+// Helpers for saving/restoring _refineDeps.createManager
 // ─────────────────────────────────────────────────────────────────────────────
 
-let savedComplete: typeof _refineDeps.adapter.complete;
-
-function saveComplete() {
-  savedComplete = _refineDeps.adapter.complete;
+function makeMockRefineManager(
+  completeFn?: (prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: string }>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({ complete: async () => ({ output: "", costUsd: 0, source: "fallback" }) } as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    completeWithFallback: completeFn
+      ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
+      : async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: completeFn
+      ? async (prompt: string, opts: any) => completeFn(prompt, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: completeFn
+      ? async (name: string, opts: any) => completeFn("", opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
 }
 
-function restoreComplete() {
-  _refineDeps.adapter.complete = savedComplete;
+let savedCreateManager: typeof _refineDeps.createManager;
+
+function saveCreateManager() {
+  savedCreateManager = _refineDeps.createManager;
+}
+
+function restoreCreateManager() {
+  _refineDeps.createManager = savedCreateManager;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -386,21 +420,27 @@ describe("buildRefinementPrompt — no testStrategy (backward compatibility)", (
 
 describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () => {
   test("propagates 'component' testStrategy into the prompt passed to adapter.complete()", async () => {
-    saveComplete();
+    saveCreateManager();
     const config = makeConfig();
     let capturedPrompt = "";
 
-    _refineDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return JSON.stringify(
-        SAMPLE_CRITERIA.map((c) => ({
-          original: c,
-          refined: `Verify rendered: ${c}`,
-          testable: true,
-          storyId: STORY_ID,
-        })),
-      );
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return {
+          output: JSON.stringify(
+            SAMPLE_CRITERIA.map((c) => ({
+              original: c,
+              refined: `Verify rendered: ${c}`,
+              testable: true,
+              storyId: STORY_ID,
+            })),
+          ),
+          costUsd: 0,
+          source: "mock" as const,
+        };
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -408,7 +448,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
       config,
       testStrategy: "component",
     });
-    restoreComplete();
+    restoreCreateManager();
 
     // The prompt sent to the LLM must include component-specific context
     const lowerPrompt = capturedPrompt.toLowerCase();
@@ -420,21 +460,27 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
   });
 
   test("propagates 'cli' testStrategy into the prompt passed to adapter.complete()", async () => {
-    saveComplete();
+    saveCreateManager();
     const config = makeConfig();
     let capturedPrompt = "";
 
-    _refineDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return JSON.stringify(
-        SAMPLE_CRITERIA.map((c) => ({
-          original: c,
-          refined: `Verify stdout: ${c}`,
-          testable: true,
-          storyId: STORY_ID,
-        })),
-      );
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return {
+          output: JSON.stringify(
+            SAMPLE_CRITERIA.map((c) => ({
+              original: c,
+              refined: `Verify stdout: ${c}`,
+              testable: true,
+              storyId: STORY_ID,
+            })),
+          ),
+          costUsd: 0,
+          source: "mock" as const,
+        };
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -442,7 +488,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
       config,
       testStrategy: "cli",
     });
-    restoreComplete();
+    restoreCreateManager();
 
     const lowerPrompt = capturedPrompt.toLowerCase();
     const hasStrategyContext =
@@ -453,21 +499,27 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
   });
 
   test("propagates testFramework into the prompt passed to adapter.complete()", async () => {
-    saveComplete();
+    saveCreateManager();
     const config = makeConfig();
     let capturedPrompt = "";
 
-    _refineDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPrompt = prompt;
-      return JSON.stringify(
-        SAMPLE_CRITERIA.map((c) => ({
-          original: c,
-          refined: `Verify: ${c}`,
-          testable: true,
-          storyId: STORY_ID,
-        })),
-      );
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return {
+          output: JSON.stringify(
+            SAMPLE_CRITERIA.map((c) => ({
+              original: c,
+              refined: `Verify: ${c}`,
+              testable: true,
+              storyId: STORY_ID,
+            })),
+          ),
+          costUsd: 0,
+          source: "mock" as const,
+        };
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -476,28 +528,34 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
       testStrategy: "component",
       testFramework: "ink-testing-library",
     });
-    restoreComplete();
+    restoreCreateManager();
 
     expect(capturedPrompt).toContain("ink-testing-library");
   });
 
   test("prompt does not include strategy instructions when testStrategy is unset", async () => {
-    saveComplete();
+    saveCreateManager();
     const config = makeConfig();
     let capturedPromptNoStrategy = "";
     let capturedPromptWithStrategy = "";
 
-    _refineDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPromptNoStrategy = prompt;
-      return JSON.stringify(
-        SAMPLE_CRITERIA.map((c) => ({
-          original: c,
-          refined: `Verify: ${c}`,
-          testable: true,
-          storyId: STORY_ID,
-        })),
-      );
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt: string) => {
+        capturedPromptNoStrategy = prompt;
+        return {
+          output: JSON.stringify(
+            SAMPLE_CRITERIA.map((c) => ({
+              original: c,
+              refined: `Verify: ${c}`,
+              testable: true,
+              storyId: STORY_ID,
+            })),
+          ),
+          costUsd: 0,
+          source: "mock" as const,
+        };
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -505,17 +563,23 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
       config,
     });
 
-    _refineDeps.adapter.complete = mock(async (prompt: string) => {
-      capturedPromptWithStrategy = prompt;
-      return JSON.stringify(
-        SAMPLE_CRITERIA.map((c) => ({
-          original: c,
-          refined: `Verify rendered: ${c}`,
-          testable: true,
-          storyId: STORY_ID,
-        })),
-      );
-    });
+    _refineDeps.createManager = mock(() =>
+      makeMockRefineManager(async (prompt: string) => {
+        capturedPromptWithStrategy = prompt;
+        return {
+          output: JSON.stringify(
+            SAMPLE_CRITERIA.map((c) => ({
+              original: c,
+              refined: `Verify rendered: ${c}`,
+              testable: true,
+              storyId: STORY_ID,
+            })),
+          ),
+          costUsd: 0,
+          source: "mock" as const,
+        };
+      }),
+    );
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -523,7 +587,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
       config,
       testStrategy: "component",
     });
-    restoreComplete();
+    restoreCreateManager();
 
     // Prompts should differ — strategy adds extra instructions
     expect(capturedPromptNoStrategy).not.toBe(capturedPromptWithStrategy);

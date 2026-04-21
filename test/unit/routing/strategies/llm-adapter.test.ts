@@ -86,6 +86,30 @@ function makeMockAdapter(responseText: string): AgentAdapter & { complete: Retur
   };
 }
 
+function makeMockAgentManager(adapter: AgentAdapter & { complete: ReturnType<typeof mock> }) {
+  return {
+    getDefault: () => "mock",
+    getAgent: (_name: string) => adapter,
+    complete: mock(async (_prompt: string, _options?: any) => {
+      const result = await adapter.complete(_prompt, _options);
+      return result;
+    }),
+    completeAs: mock(async (_name: string, _prompt: string, _options?: any) => {
+      const result = await adapter.complete(_prompt, _options);
+      return result;
+    }),
+    run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+    planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+    decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    on: () => {},
+  } as any;
+}
+
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
@@ -112,10 +136,26 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
     const config = makeConfig();
 
-    const result = await classifyWithLlm(makeStory(), config, mockAdapter);
+    const mockAgentManager = {
+      getDefault: () => "mock",
+      getAgent: (_name: string) => mockAdapter,
+      complete: mock(async (_prompt: string, _options?: any) => Promise.resolve(VALID_ROUTING_RESPONSE)),
+      completeAs: mock(async (_name: string, _prompt: string, _options?: any) => Promise.resolve(VALID_ROUTING_RESPONSE)),
+      run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
+      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
+      isUnavailable: () => false,
+      markUnavailable: () => {},
+      reset: () => {},
+      validateCredentials: async () => {},
+      on: () => {},
+    };
+
+    const result = await classifyWithLlm(makeStory(), config, mockAgentManager as any);
 
     expect(result).not.toBeNull();
-    expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
+    expect(mockAgentManager.complete).toHaveBeenCalledTimes(1);
     expect(result?.complexity).toBe("simple");
     expect(result?.modelTier).toBe("fast");
     // testStrategy is derived by determineTestStrategy() from complexity (BUG-045)
@@ -134,8 +174,9 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     (_llmStrategyDeps as Record<string, unknown>).spawn = spawnSpy;
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
 
-    const result = await classifyWithLlm(makeStory("NO-SPAWN"), makeConfig(), mockAdapter);
+    const result = await classifyWithLlm(makeStory("NO-SPAWN"), makeConfig(), mockAgentManager);
 
     expect(result).not.toBeNull();
     expect(spawnSpy).not.toHaveBeenCalled();
@@ -149,8 +190,9 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
     const config = makeConfig({ model: "balanced" });
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
 
-    await classifyWithLlm(makeStory("MODEL-TEST"), config, mockAdapter);
+    await classifyWithLlm(makeStory("MODEL-TEST"), config, mockAgentManager);
 
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     const [_prompt, opts] = mockAdapter.complete.mock.calls[0] as [string, CompleteOptions?];
@@ -165,9 +207,10 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
 
     const failingAdapter = makeMockAdapter("");
     failingAdapter.complete = mock(() => Promise.reject(new Error("adapter.complete failed")));
+    const mockAgentManager = makeMockAgentManager(failingAdapter);
 
     await expect(
-      classifyWithLlm(makeStory("FAIL-TEST"), makeConfig({ fallbackToKeywords: false }), failingAdapter),
+      classifyWithLlm(makeStory("FAIL-TEST"), makeConfig({ fallbackToKeywords: false }), mockAgentManager),
     ).rejects.toThrow("adapter.complete failed");
   });
 
@@ -177,11 +220,12 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
 
     const failingAdapter = makeMockAdapter("");
     failingAdapter.complete = mock(() => Promise.reject(new Error("LLM unavailable")));
+    const mockAgentManager = makeMockAgentManager(failingAdapter);
 
     const result = await classifyWithLlm(
       makeStory("FALLBACK-TEST"),
       makeConfig({ fallbackToKeywords: true }),
-      failingAdapter,
+      mockAgentManager,
     );
     expect(result).toBeNull();
   });
@@ -191,8 +235,9 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     clearCache();
 
     const mockAdapter = makeMockAdapter(COMPLEX_ROUTING_RESPONSE);
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
 
-    const result = await classifyWithLlm(makeStory("COMPLEX"), makeConfig(), mockAdapter);
+    const result = await classifyWithLlm(makeStory("COMPLEX"), makeConfig(), mockAgentManager);
 
     expect(result).not.toBeNull();
     expect(result?.complexity).toBe("complex");
@@ -206,31 +251,33 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
     const config = makeConfig({ cacheDecisions: true });
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
 
     const story = makeStory("CACHE-TEST");
-    const result1 = await classifyWithLlm(story, config, mockAdapter);
-    const result2 = await classifyWithLlm(story, config, mockAdapter);
+    const result1 = await classifyWithLlm(story, config, mockAgentManager);
+    const result2 = await classifyWithLlm(story, config, mockAgentManager);
 
     // Second call must use the cache — adapter invoked only once
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     expect(result1).toEqual(result2);
   });
 
-  test("adapter resolved via _llmStrategyDeps.adapter when not provided", async () => {
+  test("agent manager resolved via _llmStrategyDeps.agentManager when not provided", async () => {
     const { classifyWithLlm, clearCache, _llmStrategyDeps } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
-    const originalAdapter = (_llmStrategyDeps as Record<string, unknown>).adapter;
-    (_llmStrategyDeps as Record<string, unknown>).adapter = mockAdapter;
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
+    const originalAgentManager = (_llmStrategyDeps as Record<string, unknown>).agentManager;
+    (_llmStrategyDeps as Record<string, unknown>).agentManager = mockAgentManager;
 
-    // Pass undefined adapter — must fall back to _llmStrategyDeps.adapter
+    // Pass undefined manager — must fall back to _llmStrategyDeps.agentManager
     const result = await classifyWithLlm(makeStory("DEPS-TEST"), makeConfig(), undefined);
 
     expect(result).not.toBeNull();
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
 
-    (_llmStrategyDeps as Record<string, unknown>).adapter = originalAdapter;
+    (_llmStrategyDeps as Record<string, unknown>).agentManager = originalAgentManager;
   });
 });
 
@@ -256,9 +303,10 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
 
     const mockAdapter = makeMockAdapter(BATCH_RESPONSE);
     const config = makeConfig({ cacheDecisions: false });
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
 
     const stories = [makeStory("BATCH-001"), makeStory("BATCH-002")];
-    const decisions = await routeBatch(stories, { config, adapter: mockAdapter });
+    const decisions = await routeBatch(stories, { config, agentManager: mockAgentManager });
 
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     expect(decisions.size).toBeGreaterThan(0);
@@ -276,8 +324,9 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
 
     const mockAdapter = makeMockAdapter(BATCH_RESPONSE);
     const config = makeConfig({ cacheDecisions: false });
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
 
-    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], { config, adapter: mockAdapter });
+    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], { config, agentManager: mockAgentManager });
 
     expect(spawnSpy).not.toHaveBeenCalled();
 
@@ -290,8 +339,9 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
 
     const mockAdapter = makeMockAdapter(BATCH_RESPONSE);
     const config = makeConfig({ cacheDecisions: false });
+    const mockAgentManager = makeMockAgentManager(mockAdapter);
 
-    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], { config, adapter: mockAdapter });
+    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], { config, agentManager: mockAgentManager });
 
     const [prompt] = mockAdapter.complete.mock.calls[0] as [string, CompleteOptions?];
     expect(typeof prompt).toBe("string");

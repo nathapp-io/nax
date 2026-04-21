@@ -5,6 +5,7 @@
  * Delegates one-shot, stateful, and plan execution to focused sub-modules.
  */
 
+import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { _debateSessionDeps } from "./session-helpers";
 import { runHybrid } from "./session-hybrid";
@@ -37,7 +38,7 @@ export class DebateSession {
     this.storyId = opts.storyId;
     this.stage = opts.stage;
     this.stageConfig = opts.stageConfig;
-    this.config = opts.config;
+    this.config = opts.config ?? DEFAULT_CONFIG;
     this.workdir = opts.workdir ?? process.cwd();
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;

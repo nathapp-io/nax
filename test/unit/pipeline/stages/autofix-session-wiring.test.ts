@@ -36,6 +36,26 @@ function makeCtxWithAgent(
   mockAgent: { run: ReturnType<typeof mock> },
   autofixMaxAttempts = 1,
 ): PipelineContext {
+  // AgentManager.run() extracts request.runOptions and passes them to adapter.run().
+  // The mock must mirror this so test assertions on runOptions properties work.
+  const mockAgentManager = {
+    getDefault: () => "claude",
+    getAgent: (_name: string) => mockAgent as any,
+    run: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return await mockAgent.run(request.runOptions);
+    }),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+    completeAs: mock(async () => ({ output: "", costUsd: 0 })),
+    complete: mock(async () => ({ output: "", costUsd: 0 })),
+    planAs: mock(async () => ({ specContent: "", estimatedCost: 0 })),
+    decomposeAs: mock(async () => ({ stories: [] })),
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    on: () => {},
+  } as any;
+
   return {
     config: {
       ...DEFAULT_CONFIG,
@@ -57,7 +77,7 @@ function makeCtxWithAgent(
       checks: [makeFailedCheck("lint")],
       totalDurationMs: 100,
     },
-    agentGetFn: () => mockAgent as any,
+    agentManager: mockAgentManager,
   } as PipelineContext;
 }
 

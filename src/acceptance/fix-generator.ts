@@ -7,7 +7,7 @@
  * and enriches descriptions with test context (P1-A).
  */
 
-import type { AgentAdapter } from "../agents/types";
+import type { IAgentManager } from "../agents";
 import type { ModelDef, NaxConfig } from "../config/schema";
 import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd/types";
@@ -210,7 +210,7 @@ export function groupACsByRelatedStories(
  * ```
  */
 export async function generateFixStories(
-  adapter: AgentAdapter,
+  agentManager: IAgentManager,
   options: GenerateFixStoriesOptions,
 ): Promise<FixStory[]> {
   const { failedACs, testOutput, prd, specContent, modelDef, testFilePath } = options;
@@ -246,7 +246,7 @@ export async function generateFixStories(
     const workdir = relatedStory?.workdir;
 
     try {
-      const fixResult = await adapter.complete(prompt, {
+      const fixResult = await agentManager.complete(prompt, {
         model: modelDef.model,
         config: options.config,
         featureName: options.prd.feature,

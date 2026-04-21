@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../src/config";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
+import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { AgentRunOptions, CompleteOptions, CompleteResult, PlanOptions, PlanResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 
 async function waitForStartedPlans(
@@ -32,51 +34,81 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 
 const TEST_CONFIG = {
   autoMode: { defaultAgent: "opencode" },
-} as NaxConfig;
+} as unknown as NaxConfig;
+
+function makeMockManager(options: {
+  planFn?: (agentName: string, opts: PlanOptions) => Promise<PlanResult>;
+  runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: any[] }>;
+  completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
+  unavailableAgents?: Set<string>;
+} = {}): IAgentManager {
+  const unavailable = options.unavailableAgents ?? new Set<string>();
+  return {
+    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
+    getDefault: () => "opencode",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async (_req: AgentRunRequest) => ({
+      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] },
+      fallbacks: [],
+    }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: options.completeFn
+      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
+      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    runAs: options.runFn
+      ? async (agentName: string, request: AgentRunRequest) => options.runFn!(agentName, request.runOptions)
+      : async (_name: string, _request: AgentRunRequest) => ({
+          success: true,
+          exitCode: 0,
+          output: "",
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCost: 0,
+          agentFallbacks: [],
+        }),
+    plan: async () => ({ specContent: "" }),
+    planAs: options.planFn
+      ? async (agentName: string, opts: PlanOptions) => options.planFn!(agentName, opts)
+      : async () => ({ specContent: "ok" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
+}
 
 describe("DebateSession.runPlan()", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
   let origReadFile: typeof _debateSessionDeps.readFile;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
     origReadFile = _debateSessionDeps.readFile;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
     _debateSessionDeps.readFile = origReadFile;
   });
 
   test("passes unique indexed sessionRole to each plan debater", async () => {
     const planCalls: Array<{ sessionRole?: string; storyId?: string }> = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async (_agentName, options) => {
+          planCalls.push({ sessionRole: options.sessionRole, storyId: options.storyId });
+          return { specContent: "ok" };
+        },
       }),
-      buildCommand: () => [],
-      plan: async (options: { sessionRole?: string; storyId?: string }) => {
-        planCalls.push({ sessionRole: options.sessionRole, storyId: options.storyId });
-        return { specContent: "ok" };
-      },
-      decompose: async () => ({ stories: [] }),
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    }));
+    );
 
     _debateSessionDeps.readFile = mock(async (path: string) => `output:${path}`);
 
@@ -86,7 +118,7 @@ describe("DebateSession.runPlan()", () => {
       stageConfig: makeStageConfig({
         debaters: [{ agent: "opencode" }, { agent: "opencode" }, { agent: "opencode" }],
       }),
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     await session.runPlan("task context", "output format", {
@@ -104,32 +136,14 @@ describe("DebateSession.runPlan()", () => {
   test("passes storyId through to each plan debater call", async () => {
     const storyIds: string[] = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async (_agentName, options) => {
+          storyIds.push(options.storyId ?? "");
+          return { specContent: "ok" };
+        },
       }),
-      buildCommand: () => [],
-      plan: async (options: { storyId?: string }) => {
-        storyIds.push(options.storyId ?? "");
-        return { specContent: "ok" };
-      },
-      decompose: async () => ({ stories: [] }),
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    }));
+    );
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -137,7 +151,7 @@ describe("DebateSession.runPlan()", () => {
       storyId: "config-ssot",
       stage: "plan",
       stageConfig: makeStageConfig(),
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     await session.runPlan("task context", "output format", {
@@ -152,38 +166,27 @@ describe("DebateSession.runPlan()", () => {
   test("runs hybrid rebuttal loop when mode=hybrid and sessionMode=stateful", async () => {
     const runCalls: Array<{ prompt: string; sessionRole?: string; keepOpen?: boolean }> = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async (options: { prompt?: string; sessionRole?: string; keepOpen?: boolean }) => {
-        runCalls.push({
-          prompt: options.prompt ?? "",
-          sessionRole: options.sessionRole,
-          keepOpen: options.keepOpen,
-        });
-        return {
-          success: true,
-          exitCode: 0,
-          output: `run-output-${options.sessionRole}`,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0.05,
-        };
-      },
-      buildCommand: () => [],
-      plan: async (options: { sessionRole?: string }) => {
-        return { specContent: "ok" };
-      },
-      decompose: async () => ({ stories: [] }),
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    }));
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async () => ({ specContent: "ok" }),
+        runFn: async (_agentName, options) => {
+          runCalls.push({
+            prompt: options.prompt ?? "",
+            sessionRole: options.sessionRole,
+            keepOpen: options.keepOpen,
+          });
+          return {
+            success: true,
+            exitCode: 0,
+            output: `run-output-${options.sessionRole}`,
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCost: 0.05,
+            agentFallbacks: [],
+          };
+        },
+      }),
+    );
 
     _debateSessionDeps.readFile = mock(async (path: string) => `{"proposal":"from ${path}"}`);
 
@@ -195,7 +198,7 @@ describe("DebateSession.runPlan()", () => {
         sessionMode: "stateful",
         rounds: 1,
       }),
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     const result = await session.runPlan("task context", "output format", {
@@ -204,7 +207,7 @@ describe("DebateSession.runPlan()", () => {
       outputDir: "/tmp/out",
     });
 
-    // Rebuttal calls should use adapter.run() with plan-hybrid-{idx} session roles
+    // Rebuttal calls should use manager.runAs() with plan-hybrid-{idx} session roles
     const rebuttalCalls = runCalls.filter(
       (c) => c.prompt.includes("You are debater") && c.prompt.includes("## Your Task"),
     );
@@ -225,34 +228,23 @@ describe("DebateSession.runPlan()", () => {
   test("skips rebuttal loop when mode is panel (default)", async () => {
     const runCalls: Array<{ prompt: string }> = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async (options: { prompt?: string }) => {
-        runCalls.push({ prompt: options.prompt ?? "" });
-        return {
-          success: true,
-          exitCode: 0,
-          output: "run-output",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0,
-        };
-      },
-      buildCommand: () => [],
-      plan: async () => {
-        return { specContent: "ok" };
-      },
-      decompose: async () => ({ stories: [] }),
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    }));
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async () => ({ specContent: "ok" }),
+        runFn: async (_agentName, options) => {
+          runCalls.push({ prompt: options.prompt ?? "" });
+          return {
+            success: true,
+            exitCode: 0,
+            output: "run-output",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCost: 0,
+            agentFallbacks: [],
+          };
+        },
+      }),
+    );
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -260,7 +252,7 @@ describe("DebateSession.runPlan()", () => {
       storyId: "plan-panel-test",
       stage: "plan",
       stageConfig: makeStageConfig(), // defaults to panel mode
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     const result = await session.runPlan("task context", "output format", {
@@ -269,7 +261,7 @@ describe("DebateSession.runPlan()", () => {
       outputDir: "/tmp/out",
     });
 
-    // No adapter.run() calls should happen in panel mode
+    // No manager.runAs() calls should happen in panel mode
     expect(runCalls).toHaveLength(0);
     expect(result.rebuttals).toBeUndefined();
     expect(result.rounds).toBe(1);
@@ -278,39 +270,18 @@ describe("DebateSession.runPlan()", () => {
   test("warns and skips rebuttal when mode=hybrid but sessionMode=one-shot", async () => {
     const warnings: string[] = [];
     const origLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(
-      () =>
-        ({
-          warn: (_stage: string, msg: string) => warnings.push(msg),
-          info: () => {},
-          debug: () => {},
-          error: () => {},
-        }) as ReturnType<typeof _debateSessionDeps.getSafeLogger>,
-    );
+    _debateSessionDeps.getSafeLogger = mock(() => ({
+      warn: (_stage: string, msg: string) => warnings.push(msg),
+      info: () => {},
+      debug: () => {},
+      error: () => {},
+    })) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async () => ({ specContent: "ok" }),
       }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "ok" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    }));
+    );
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -322,7 +293,7 @@ describe("DebateSession.runPlan()", () => {
         sessionMode: "one-shot",
         rounds: 2,
       }),
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     const result = await session.runPlan("task context", "output format", {
@@ -341,32 +312,15 @@ describe("DebateSession.runPlan()", () => {
   test("includes spec anchor in synthesis prompt when specContent is provided", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async () => ({ specContent: "ok" }),
+        completeFn: async (_agentName, prompt) => {
+          capturedSynthesisPrompt = prompt;
+          return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+        },
       }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "ok" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (prompt: string) => {
-        capturedSynthesisPrompt = prompt;
-        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
-      },
-    }));
+    );
 
     _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
 
@@ -378,7 +332,7 @@ describe("DebateSession.runPlan()", () => {
       stageConfig: makeStageConfig({
         resolver: { type: "synthesis", agent: "opencode" },
       }),
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     await session.runPlan("task context", "output format", {
@@ -400,32 +354,15 @@ describe("DebateSession.runPlan()", () => {
   test("synthesis prompt omits spec anchor when specContent is not provided", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async () => ({ specContent: "ok" }),
+        completeFn: async (_agentName, prompt) => {
+          capturedSynthesisPrompt = prompt;
+          return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+        },
       }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "ok" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (prompt: string) => {
-        capturedSynthesisPrompt = prompt;
-        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
-      },
-    }));
+    );
 
     _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
 
@@ -435,7 +372,7 @@ describe("DebateSession.runPlan()", () => {
       stageConfig: makeStageConfig({
         resolver: { type: "synthesis", agent: "opencode" },
       }),
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     await session.runPlan("task context", "output format", {
@@ -454,36 +391,18 @@ describe("DebateSession.runPlan()", () => {
     const startedOrder: number[] = [];
     const resolvers: Array<() => void> = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager({
+        planFn: async (_agentName, options) => {
+          const index = Number((options.sessionRole ?? "").replace("plan-", ""));
+          startedOrder.push(index);
+          await new Promise<void>((resolve) => {
+            resolvers[index] = resolve;
+          });
+          return { specContent: "ok" };
+        },
       }),
-      buildCommand: () => [],
-      plan: async (options: { sessionRole?: string }) => {
-        const index = Number((options.sessionRole ?? "").replace("plan-", ""));
-        startedOrder.push(index);
-        await new Promise<void>((resolve) => {
-          resolvers[index] = resolve;
-        });
-        return { specContent: "ok" };
-      },
-      decompose: async () => ({ stories: [] }),
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    }));
+    );
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -491,7 +410,7 @@ describe("DebateSession.runPlan()", () => {
       storyId: "config-ssot",
       stage: "plan",
       stageConfig: makeStageConfig(),
-      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
     });
 
     const runPromise = session.runPlan("task context", "output format", {

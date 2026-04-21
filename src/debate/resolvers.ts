@@ -7,7 +7,8 @@
  * - judgeResolver: calls adapter.complete() with a judge prompt using resolver.agent
  */
 
-import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
+import type { IAgentManager } from "../agents";
+import type { CompleteOptions, CompleteResult } from "../agents/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { Debater, ResolverConfig } from "./types";
 
@@ -59,22 +60,28 @@ export function majorityResolver(proposals: string[], failOpen: boolean): "passe
 }
 
 /**
- * Synthesis resolver — calls adapter.complete() once with a synthesis prompt.
+ * Synthesis resolver — calls agentManager.completeAs() once with a synthesis prompt.
  * Returns the full completion result including output and cost metadata.
  */
 export async function synthesisResolver(
   proposals: string[],
   critiques: string[],
-  opts: { adapter: AgentAdapter; completeOptions?: CompleteOptions; promptSuffix?: string; debaters?: Debater[] },
+  opts: {
+    agentManager: IAgentManager;
+    agentName: string;
+    completeOptions: CompleteOptions;
+    promptSuffix?: string;
+    debaters?: Debater[];
+  },
 ): Promise<CompleteResult> {
   const base = DebatePromptBuilder.resolverSynthesisPrompt(proposals, critiques, opts.debaters);
   const prompt = opts.promptSuffix ? `${base}\n\n${opts.promptSuffix}` : base;
-  return opts.adapter.complete(prompt, opts.completeOptions);
+  return opts.agentManager.completeAs(opts.agentName, prompt, opts.completeOptions);
 }
 
 /**
- * Judge resolver — calls adapter.complete() once with a judge prompt.
- * Uses resolver.agent (or defaultAgentName) to look up the judge adapter.
+ * Judge resolver — calls agentManager.completeAs() once with a judge prompt.
+ * Uses resolver.agent (or defaultAgentName) to pick the judge agent.
  * Returns the full completion result including output and cost metadata.
  */
 export async function judgeResolver(
@@ -82,19 +89,13 @@ export async function judgeResolver(
   critiques: string[],
   resolverConfig: ResolverConfig,
   opts: {
-    getAgent: (name: string) => AgentAdapter | undefined;
+    agentManager: IAgentManager;
     defaultAgentName?: string;
-    completeOptions?: CompleteOptions;
+    completeOptions: CompleteOptions;
     debaters?: Debater[];
   },
 ): Promise<CompleteResult> {
   const agentName = resolverConfig.agent ?? opts.defaultAgentName ?? DEFAULT_FALLBACK_AGENT;
-  const adapter = opts.getAgent(agentName);
-
-  if (!adapter) {
-    throw new Error(`[debate] Judge agent '${agentName}' not found`);
-  }
-
   const prompt = DebatePromptBuilder.resolverJudgePrompt(proposals, critiques, opts.debaters);
-  return adapter.complete(prompt, opts.completeOptions);
+  return opts.agentManager.completeAs(agentName, prompt, opts.completeOptions);
 }

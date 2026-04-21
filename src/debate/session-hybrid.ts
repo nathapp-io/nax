@@ -6,6 +6,7 @@
  * The rebuttal loop is implemented in US-004-B.
  */
 
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
@@ -61,6 +62,7 @@ export async function runRebuttalLoop(
   const config = ctx.stageConfig;
   const rebuttals: Rebuttal[] = [];
   let costUsd = 0;
+  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
 
   const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
 
@@ -83,7 +85,8 @@ export async function runRebuttalLoop(
         try {
           const turnResult = await runStatefulTurn(
             ctx,
-            proposal.adapter,
+            agentManager,
+            proposal.agentName,
             proposal.debater,
             rebuttalPrompt,
             sessionRole,
@@ -106,7 +109,13 @@ export async function runRebuttalLoop(
       const proposal = proposals[debaterIdx];
       const sessionRole = `${sessionRolePrefix}-${debaterIdx}`;
       try {
-        const closeCost = await closeStatefulSession(ctx, proposal.adapter, proposal.debater, sessionRole);
+        const closeCost = await closeStatefulSession(
+          ctx,
+          agentManager,
+          proposal.agentName,
+          proposal.debater,
+          sessionRole,
+        );
         costUsd += closeCost;
       } catch {
         // Ignore close errors
@@ -136,15 +145,16 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
-  // Resolve adapters via shared helper — skip unavailable agents
+  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
+
+  // Resolve agents via shared helper — skip unavailable
   const resolved: ResolvedDebater[] = [];
   for (const debater of debaters) {
-    const adapter = _debateSessionDeps.getAgent(debater.agent, ctx.config);
-    if (!adapter) {
+    if (!agentManager.getAgent(debater.agent)) {
       logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
       continue;
     }
-    resolved.push({ debater, adapter });
+    resolved.push({ debater, agentName: debater.agent });
   }
 
   // Proposal round — bounded parallel, sessionRole 'debate-hybrid-{debaterIndex}'
@@ -153,9 +163,9 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
 
   const proposalSettled = await allSettledBounded(
     resolved.map(
-      ({ debater, adapter }, debaterIdx) =>
+      ({ debater, agentName }, debaterIdx) =>
         () =>
-          runStatefulTurn(ctx, adapter, debater, prompt, `debate-hybrid-${debaterIdx}`, true),
+          runStatefulTurn(ctx, agentManager, agentName, debater, prompt, `debate-hybrid-${debaterIdx}`, true),
     ),
     concurrencyLimit,
   );
@@ -191,9 +201,9 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       };
     }
 
-    // 0 succeeded — retry with first resolved adapter
+    // 0 succeeded — retry with first resolved agent
     if (resolved.length > 0) {
-      const { adapter: fallbackAdapter, debater: fallbackDebater } = resolved[0];
+      const { agentName: fallbackAgentName, debater: fallbackDebater } = resolved[0];
       logger?.warn("debate", "debate:fallback", {
         storyId: ctx.storyId,
         stage: ctx.stage,
@@ -202,7 +212,8 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       try {
         const fallbackResult = await runStatefulTurn(
           ctx,
-          fallbackAdapter,
+          agentManager,
+          fallbackAgentName,
           fallbackDebater,
           prompt,
           "debate-hybrid-fallback",

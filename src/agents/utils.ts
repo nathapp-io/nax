@@ -38,6 +38,15 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
     complete: async (prompt, opts) => adapter.complete(prompt, opts),
     getAgent: () => adapter,
     events: { on: () => {} },
+    runAs: async (_agentName, req) => {
+      const outcome = await mgr.runWithFallback(req);
+      return { ...outcome.result, agentFallbacks: outcome.fallbacks };
+    },
+    completeAs: async (_agentName, prompt, opts) => adapter.complete(prompt, opts),
+    plan: async (opts) => adapter.plan(opts),
+    planAs: async (_agentName, opts) => adapter.plan(opts),
+    decompose: async (opts) => adapter.decompose(opts),
+    decomposeAs: async (_agentName, opts) => adapter.decompose(opts),
   };
   return mgr;
 }

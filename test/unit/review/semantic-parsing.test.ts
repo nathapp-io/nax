@@ -13,7 +13,8 @@ import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import type { AgentAdapter } from "../../../src/agents/types";
+import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
 
 // ---------------------------------------------------------------------------
 // Helpers (mirrors semantic.test.ts patterns)
@@ -35,21 +36,47 @@ const CONFIG: SemanticReviewConfig = {
   timeoutMs: 60_000,
 };
 
-function makeMockAgent(response: string): AgentAdapter {
-  return {
-    name: "mock",
+function makeAgentManager(response: string, cost = 0): IAgentManager {
+  const adapter: AgentAdapter = {
+    name: "claude",
     displayName: "Mock Agent",
     binary: "mock",
-    capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
+    capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as any,
     isInstalled: mock(async () => true),
-    run: mock(async () => ({ output: response, estimatedCost: 0 })),
+    run: mock(async (_opts: any) => ({ output: response, estimatedCost: cost, success: true, exitCode: 0, rateLimited: false, durationMs: 100 } as AgentResult)),
     buildCommand: mock(() => []),
     plan: mock(async () => { throw new Error("not used"); }),
     decompose: mock(async () => { throw new Error("not used"); }),
-    complete: mock(async (_prompt: string) => response),
+    complete: mock(async () => ({ output: response, costUsd: cost, source: "mock" as const })),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
   } as unknown as AgentAdapter;
+
+  return {
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: mock(async (request: any) => {
+      const result = await adapter.run(request.runOptions);
+      return { result, fallbacks: [], bundle: request.bundle };
+    }),
+    completeWithFallback: mock(async () => ({ result: { output: response, costUsd: cost, source: "mock" as const }, fallbacks: [] })),
+    run: mock(async (request: any) => adapter.run(request.runOptions) as Promise<AgentResult>),
+    complete: mock(async () => ({ output: response, costUsd: cost, source: "mock" as const })),
+    completeAs: mock(async () => ({ output: response, costUsd: cost, source: "mock" as const })),
+    runAs: mock(async () => ({ output: response, estimatedCost: cost, success: true, exitCode: 0, rateLimited: false, durationMs: 100 } as AgentResult)),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+    getAgent: () => adapter,
+  } as unknown as IAgentManager;
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
@@ -99,7 +126,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
       "```json\n" +
       JSON.stringify({ passed: true, findings: [] }) +
       "\n```";
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
   });
@@ -112,7 +139,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
     };
     const response =
       "Let me check the implementation.\n```json\n" + JSON.stringify(payload) + "\n```";
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(false);
     expect(result.output).toContain("Semantic review failed");
   });
@@ -124,7 +151,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
       "```\n" +
       JSON.stringify({ passed: true, findings: [] }) +
       "\n```";
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
   });
@@ -134,7 +161,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response =
       'After analysis: {"passed":true,"findings":[]} All ACs are correctly implemented.';
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
   });
@@ -146,7 +173,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
       findings: [{ severity: "error", file: "src/bar.ts", line: 5, issue: "stub", suggestion: "implement" }],
     };
     const response = "I found issues. " + JSON.stringify(payload) + " That concludes my review.";
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(false);
   });
 
@@ -154,7 +181,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   test("parses JSON with trailing commas in fence", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response = '```json\n{"passed":true,"findings":[],}\n```';
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
   });
@@ -164,7 +191,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response =
       "I'll verify each acceptance criterion by examining the actual files to ensure all i18n keys exist and are correctly wired.";
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(true);
     expect(result.output).toContain("fail-open");
   });
@@ -173,7 +200,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   test("tier 1 still parses clean JSON directly", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const response = JSON.stringify({ passed: true, findings: [] });
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
     expect(result.success).toBe(true);
   });
 });

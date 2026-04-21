@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
+import type { AgentRunRequest, IAgentManager } from "../../../src/agents";
+import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import type { CompleteOptions } from "../../../src/agents/types";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -15,46 +16,58 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
+function makeMockManager(
+  completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
+): IAgentManager {
+  return {
+    getAgent: (_name: string) => ({} as any),
+    getDefault: () => "claude",
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} } as any,
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: async (_req: AgentRunRequest) => ({
+      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] },
+      fallbacks: [],
+    }),
+    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
+    completeAs: completeFn
+      ? async (name, prompt, opts) => completeFn(name, prompt, opts)
+      : async () => ({ output: '{"passed":true}', costUsd: 0, source: "fallback" }),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    plan: async () => ({ specContent: "" }),
+    planAs: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
+    decomposeAs: async () => ({ stories: [] }),
+  } as any;
+}
+
 describe("DebateSession.runOneShot() session roles", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
   });
 
   test("uses indexed session roles for proposal round", async () => {
     const roles: string[] = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager(async (_agentName, _prompt, opts) => {
+        roles.push(opts?.sessionRole ?? "");
+        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
       }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (_prompt: string, options?: { sessionRole?: string }) => {
-        roles.push(options?.sessionRole ?? "");
-        return { output: "{\"passed\":true}", costUsd: 0, source: "fallback" as const };
-      },
-    }));
+    );
 
     const session = new DebateSession({
       storyId: "US-ROLE",
@@ -71,32 +84,12 @@ describe("DebateSession.runOneShot() session roles", () => {
   test("uses indexed session roles for critique round", async () => {
     const roles: string[] = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "opencode",
-      displayName: "opencode",
-      binary: "opencode",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 0,
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager(async (_agentName, _prompt, opts) => {
+        roles.push(opts?.sessionRole ?? "");
+        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
       }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (_prompt: string, options?: { sessionRole?: string }) => {
-        roles.push(options?.sessionRole ?? "");
-        return { output: "{\"passed\":true}", costUsd: 0, source: "fallback" as const };
-      },
-    }));
+    );
 
     const session = new DebateSession({
       storyId: "US-ROLE",
@@ -117,38 +110,25 @@ describe("DebateSession.runOneShot() session roles", () => {
 // ─── P1: Proposal prompts include persona block ───────────────────────────────
 
 describe("DebateSession.runOneShot() — persona injection in proposal round (P1)", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
   });
 
   test("each debater receives a distinct persona block when autoPersona is true", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "claude",
-      displayName: "claude",
-      binary: "claude",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (prompt: string) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager(async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      },
-    }));
+      }),
+    );
 
     const session = new DebateSession({
       storyId: "US-P1",
@@ -182,25 +162,12 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
   test("proposal prompts do NOT contain persona block when autoPersona is false", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "claude",
-      displayName: "claude",
-      binary: "claude",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (prompt: string) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager(async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      },
-    }));
+      }),
+    );
 
     const session = new DebateSession({
       storyId: "US-P1-NO-PERSONA",
@@ -225,25 +192,12 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
   test("task context is preserved in proposal prompt alongside persona", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "claude",
-      displayName: "claude",
-      binary: "claude",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (prompt: string) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager(async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      },
-    }));
+      }),
+    );
 
     const session = new DebateSession({
       storyId: "US-P1-TASK",
@@ -265,43 +219,28 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
 // ─── P3: labeledProposals uses persona-aware label ────────────────────────────
 
 describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", () => {
-  let origGetAgent: typeof _debateSessionDeps.getAgent;
+  let origCreateManager: typeof _debateSessionDeps.createManager;
 
   beforeEach(() => {
-    origGetAgent = _debateSessionDeps.getAgent;
+    origCreateManager = _debateSessionDeps.createManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.getAgent = origGetAgent;
+    _debateSessionDeps.createManager = origCreateManager;
   });
 
   test("synthesis prompt labels proposals with persona when autoPersona is true", async () => {
     let capturedSynthesisPrompt = "";
-    let callIndex = 0;
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "claude",
-      displayName: "claude",
-      binary: "claude",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (prompt: string, opts?: CompleteOptions) => {
-        callIndex++;
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager(async (_agentName, prompt, opts) => {
         // The synthesis call is identified by sessionRole
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
         return { output: "proposal output", costUsd: 0, source: "fallback" as const };
-      },
-    }));
+      }),
+    );
 
     const session = new DebateSession({
       storyId: "US-P3",
@@ -330,27 +269,14 @@ describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", (
   test("synthesis prompt labels proposals without persona when autoPersona is false", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.getAgent = mock(() => ({
-      name: "claude",
-      displayName: "claude",
-      binary: "claude",
-      capabilities: {
-        supportedTiers: ["fast"] as const,
-        maxContextTokens: 100_000,
-        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
-      },
-      isInstalled: async () => true,
-      run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
-      buildCommand: () => [],
-      plan: async () => ({ specContent: "" }),
-      decompose: async () => ({ stories: [] }),
-      complete: async (prompt: string, opts?: CompleteOptions) => {
+    _debateSessionDeps.createManager = mock((_config) =>
+      makeMockManager(async (_agentName, prompt, opts) => {
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
         return { output: "proposal output", costUsd: 0, source: "fallback" as const };
-      },
-    }));
+      }),
+    );
 
     const session = new DebateSession({
       storyId: "US-P3-NO-PERSONA",

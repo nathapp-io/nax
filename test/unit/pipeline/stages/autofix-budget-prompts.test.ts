@@ -1,5 +1,5 @@
 // RE-ARCH: keep
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { _autofixDeps, autofixStage } from "../../../../src/pipeline/stages/autofix";
 import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { PipelineContext } from "../../../../src/pipeline/types";
@@ -16,6 +16,38 @@ function makeFailedReviewResult(checks: Partial<ReviewCheckResult>[]) {
     durationMs: c.durationMs ?? 100,
   }));
   return { success: false, checks: fullChecks, summary: "" } as any;
+}
+
+/**
+ * Creates a mock IAgentManager that captures run() calls.
+ * AgentManager.run() takes AgentRunRequest and passes request.runOptions to adapter.run(),
+ * so the mock extracts runOptions and forwards them to the inner mock.
+ */
+function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
+  return {
+    getDefault: () => "claude",
+    run: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return await mockRun(request.runOptions);
+    }),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+    completeAs: mock(async () => ({ output: "", costUsd: 0 })),
+    complete: mock(async () => ({ output: "", costUsd: 0 })),
+    planAs: mock(async () => ({ specContent: "" })),
+    decomposeAs: mock(async () => ({ stories: [] })),
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} },
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+    runWithFallback: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return { result: await mockRun(request.runOptions), fallbacks: [] };
+    }),
+    completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
+    getAgent: () => undefined,
+  } as any;
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
@@ -50,18 +82,17 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 
 describe("autofixStage — global budget (#106)", () => {
   test("ctx.autofixAttempt persists across cycles", async () => {
-    const saved = { ..._autofixDeps };
     let agentSpawnCount = 0;
-    _autofixDeps.getAgent = () =>
-      ({
-        run: async () => {
-          agentSpawnCount++;
-          return { success: false };
-        },
-      }) as any;
+    const mockRun = mock(async () => {
+      agentSpawnCount++;
+      return { success: false, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+    const saved = { recheckReview: _autofixDeps.recheckReview };
     _autofixDeps.recheckReview = async () => false;
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
       config: {
         ...DEFAULT_CONFIG,
@@ -97,7 +128,7 @@ describe("autofixStage — global budget (#106)", () => {
     expect(ctx.autofixAttempt).toBe(5);
     expect(agentSpawnCount).toBe(5);
 
-    Object.assign(_autofixDeps, saved);
+    _autofixDeps.recheckReview = saved.recheckReview;
   });
 });
 
@@ -107,19 +138,17 @@ describe("autofixStage — global budget (#106)", () => {
 
 describe("autofixStage — prompt escalation", () => {
   test("injects rethink prompt on configured autofix attempt", async () => {
-    const saved = { ..._autofixDeps };
     const prompts: string[] = [];
-
-    _autofixDeps.getAgent = () =>
-      ({
-        run: async ({ prompt }: { prompt: string }) => {
-          prompts.push(prompt);
-          return { success: false };
-        },
-      }) as any;
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      prompts.push(opts.prompt as string);
+      return { success: false, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+    const saved = { recheckReview: _autofixDeps.recheckReview };
     _autofixDeps.recheckReview = async () => false;
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
       config: {
         ...DEFAULT_CONFIG,
@@ -134,7 +163,7 @@ describe("autofixStage — prompt escalation", () => {
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
+    _autofixDeps.recheckReview = saved.recheckReview;
 
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toContain("Rethink your approach");
@@ -143,19 +172,17 @@ describe("autofixStage — prompt escalation", () => {
   });
 
   test("injects urgency and rethink when urgencyAtAttempt is reached", async () => {
-    const saved = { ..._autofixDeps };
     const prompts: string[] = [];
-
-    _autofixDeps.getAgent = () =>
-      ({
-        run: async ({ prompt }: { prompt: string }) => {
-          prompts.push(prompt);
-          return { success: false };
-        },
-      }) as any;
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      prompts.push(opts.prompt as string);
+      return { success: false, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+    const saved = { recheckReview: _autofixDeps.recheckReview };
     _autofixDeps.recheckReview = async () => false;
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
       config: {
         ...DEFAULT_CONFIG,
@@ -170,7 +197,7 @@ describe("autofixStage — prompt escalation", () => {
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
+    _autofixDeps.recheckReview = saved.recheckReview;
 
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toContain("Rethink your approach");
@@ -179,19 +206,17 @@ describe("autofixStage — prompt escalation", () => {
   });
 
   test("uses default rethink and urgency thresholds when autofix escalation config is not set", async () => {
-    const saved = { ..._autofixDeps };
     const prompts: string[] = [];
-
-    _autofixDeps.getAgent = () =>
-      ({
-        run: async ({ prompt }: { prompt: string }) => {
-          prompts.push(prompt);
-          return { success: false };
-        },
-      }) as any;
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      prompts.push(opts.prompt as string);
+      return { success: false, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+    const saved = { recheckReview: _autofixDeps.recheckReview };
     _autofixDeps.recheckReview = async () => false;
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
       config: {
         ...DEFAULT_CONFIG,
@@ -206,7 +231,7 @@ describe("autofixStage — prompt escalation", () => {
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
+    _autofixDeps.recheckReview = saved.recheckReview;
 
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toContain("Rethink your approach");
@@ -222,19 +247,17 @@ describe("autofixStage — prompt escalation", () => {
 
 describe("autofixStage — #412 prompt selection", () => {
   test("#412: attempt===1 && sessionConfirmedOpen===true uses firstAttemptDelta (not full prompt, not continuation)", async () => {
-    const saved = { ..._autofixDeps };
     const prompts: string[] = [];
-
-    _autofixDeps.getAgent = () =>
-      ({
-        run: async ({ prompt }: { prompt: string }) => {
-          prompts.push(prompt);
-          return { success: false };
-        },
-      }) as any;
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      prompts.push(opts.prompt as string);
+      return { success: false, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+    const saved = { recheckReview: _autofixDeps.recheckReview };
     _autofixDeps.recheckReview = async () => false;
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS type error" }]),
       config: {
         ...DEFAULT_CONFIG,
@@ -249,7 +272,7 @@ describe("autofixStage — #412 prompt selection", () => {
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
+    _autofixDeps.recheckReview = saved.recheckReview;
 
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain("TS type error");
@@ -260,8 +283,6 @@ describe("autofixStage — #412 prompt selection", () => {
   });
 
   test("#412: attempt===1 && sessionConfirmedOpen===false uses full prompt", async () => {
-    const saved = { ..._autofixDeps };
-
     const errorText = "Unused variable at line 42";
     const failedChecks: ReviewCheckResult[] = [
       {
@@ -277,26 +298,22 @@ describe("autofixStage — #412 prompt selection", () => {
 
     const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
 
-    Object.assign(_autofixDeps, saved);
-
     expect(prompt).toContain("US-412");
     expect(prompt).toContain(errorText);
   });
 
   test("#412: attempt===2 && sessionConfirmedOpen===true uses continuation prompt", async () => {
-    const saved = { ..._autofixDeps };
     const prompts: string[] = [];
-
-    _autofixDeps.getAgent = () =>
-      ({
-        run: async ({ prompt }: { prompt: string }) => {
-          prompts.push(prompt);
-          return { success: false };
-        },
-      }) as any;
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      prompts.push(opts.prompt as string);
+      return { success: false, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+    const saved = { recheckReview: _autofixDeps.recheckReview };
     _autofixDeps.recheckReview = async () => false;
 
     const ctx = makeCtx({
+      agentManager,
       reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error attempt 2" }]),
       config: {
         ...DEFAULT_CONFIG,
@@ -311,7 +328,7 @@ describe("autofixStage — #412 prompt selection", () => {
 
     await autofixStage.execute(ctx);
 
-    Object.assign(_autofixDeps, saved);
+    _autofixDeps.recheckReview = saved.recheckReview;
 
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).toContain("Review failed after your implementation");

@@ -5,7 +5,7 @@
  * implementations for DebateSession.
  */
 
-import type { AgentAdapter } from "../agents/types";
+import type { IAgentManager } from "../agents";
 import type { ModelDef, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -40,7 +40,8 @@ interface StatefulCtx {
 
 export async function runStatefulTurn(
   ctx: StatefulCtx,
-  adapter: AgentAdapter,
+  agentManager: IAgentManager,
+  agentName: string,
   debater: Debater,
   prompt: string,
   roleKey: string,
@@ -50,20 +51,22 @@ export async function runStatefulTurn(
   const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
   const pipelineStage = pipelineStageForDebate(ctx.stage);
 
-  const runResult = await adapter.run({
-    prompt,
-    workdir: ctx.workdir,
-    modelTier,
-    modelDef,
-    timeoutSeconds: ctx.timeoutSeconds,
-    dangerouslySkipPermissions: resolvePermissions(ctx.config, pipelineStage).skipPermissions,
-    pipelineStage,
-    config: ctx.config,
-    featureName: ctx.featureName,
-    storyId: ctx.storyId,
-    sessionRole: roleKey,
-    maxInteractionTurns: ctx.config?.agent?.maxInteractionTurns,
-    keepOpen,
+  const runResult = await agentManager.runAs(agentName, {
+    runOptions: {
+      prompt,
+      workdir: ctx.workdir,
+      modelTier,
+      modelDef,
+      timeoutSeconds: ctx.timeoutSeconds,
+      dangerouslySkipPermissions: resolvePermissions(ctx.config, pipelineStage).skipPermissions,
+      pipelineStage,
+      config: ctx.config,
+      featureName: ctx.featureName,
+      storyId: ctx.storyId,
+      sessionRole: roleKey,
+      maxInteractionTurns: ctx.config?.agent?.maxInteractionTurns,
+      keepOpen,
+    },
   });
 
   if (!runResult.success) {
@@ -72,7 +75,7 @@ export async function runStatefulTurn(
 
   return {
     debater,
-    adapter,
+    agentName,
     output: runResult.output,
     cost: runResult.estimatedCost,
     roleKey,
@@ -81,7 +84,8 @@ export async function runStatefulTurn(
 
 export async function closeStatefulSession(
   ctx: StatefulCtx,
-  adapter: AgentAdapter,
+  agentManager: IAgentManager,
+  agentName: string,
   debater: Debater,
   roleKey: string,
 ): Promise<number> {
@@ -89,20 +93,22 @@ export async function closeStatefulSession(
   const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
   const pipelineStage = pipelineStageForDebate(ctx.stage);
 
-  const runResult = await adapter.run({
-    prompt: "Close this debate session.",
-    workdir: ctx.workdir,
-    modelTier,
-    modelDef,
-    timeoutSeconds: ctx.timeoutSeconds,
-    dangerouslySkipPermissions: resolvePermissions(ctx.config, pipelineStage).skipPermissions,
-    pipelineStage,
-    config: ctx.config,
-    featureName: ctx.featureName,
-    storyId: ctx.storyId,
-    sessionRole: roleKey,
-    maxInteractionTurns: ctx.config?.agent?.maxInteractionTurns,
-    keepOpen: false,
+  const runResult = await agentManager.runAs(agentName, {
+    runOptions: {
+      prompt: "Close this debate session.",
+      workdir: ctx.workdir,
+      modelTier,
+      modelDef,
+      timeoutSeconds: ctx.timeoutSeconds,
+      dangerouslySkipPermissions: resolvePermissions(ctx.config, pipelineStage).skipPermissions,
+      pipelineStage,
+      config: ctx.config,
+      featureName: ctx.featureName,
+      storyId: ctx.storyId,
+      sessionRole: roleKey,
+      maxInteractionTurns: ctx.config?.agent?.maxInteractionTurns,
+      keepOpen: false,
+    },
   });
 
   return runResult.success ? runResult.estimatedCost : 0;
@@ -115,16 +121,16 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   const rawDebaters = config.debaters ?? [];
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
+  const agentManager = _debateSessionDeps.createManager(ctx.config);
 
-  // Resolve adapters — skip unavailable agents
+  // Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];
   for (const debater of debaters) {
-    const adapter = _debateSessionDeps.getAgent(debater.agent, ctx.config);
-    if (!adapter) {
+    if (!agentManager.getAgent(debater.agent)) {
       logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
       continue;
     }
-    resolved.push({ debater, adapter });
+    resolved.push({ debater, agentName: debater.agent });
   }
 
   logger?.info("debate", "debate:start", {
@@ -142,11 +148,12 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   );
   const proposalSettled = await allSettledBounded(
     resolved.map(
-      ({ debater, adapter }, debaterIdx) =>
+      ({ debater, agentName }, debaterIdx) =>
         () =>
           runStatefulTurn(
             ctx,
-            adapter,
+            agentManager,
+            agentName,
             debater,
             proposalBuilder.buildProposalPrompt(debaterIdx),
             `debate-${ctx.stage}-${debaterIdx}`,
@@ -171,7 +178,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     if (successfulProposals.length === 1) {
       const solo = successfulProposals[0];
       if (config.rounds > 1 && solo.roleKey) {
-        totalCostUsd += await closeStatefulSession(ctx, solo.adapter, solo.debater, solo.roleKey);
+        totalCostUsd += await closeStatefulSession(ctx, agentManager, solo.agentName, solo.debater, solo.roleKey);
       }
       logger?.warn("debate", "debate:fallback", {
         storyId: ctx.storyId,
@@ -196,7 +203,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     }
 
     if (resolved.length > 0) {
-      const { adapter: fallbackAdapter, debater: fallbackDebater } = resolved[0];
+      const { agentName: fallbackAgentName, debater: fallbackDebater } = resolved[0];
       logger?.warn("debate", "debate:fallback", {
         storyId: ctx.storyId,
         stage: ctx.stage,
@@ -205,7 +212,8 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       try {
         const fallbackResult = await runStatefulTurn(
           ctx,
-          fallbackAdapter,
+          agentManager,
+          fallbackAgentName,
           fallbackDebater,
           prompt,
           `debate-${ctx.stage}-fallback`,
@@ -264,7 +272,8 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
         (proposal, successfulIdx) => () =>
           runStatefulTurn(
             ctx,
-            proposal.adapter,
+            agentManager,
+            proposal.agentName,
             proposal.debater,
             critiqueBuilder.buildCritiquePrompt(successfulIdx, proposals),
             proposal.roleKey ?? `debate-${ctx.stage}-${successfulIdx}`,

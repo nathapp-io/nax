@@ -5,8 +5,7 @@
  * Determines whether the failure is due to a source bug, test bug, or both.
  */
 
-import { resolveDefaultAgent } from "../agents";
-import type { AgentAdapter } from "../agents/types";
+import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
 import { AcceptancePromptBuilder, MAX_FILE_LINES } from "../prompts";
@@ -62,20 +61,20 @@ async function readSourceFileContent(
 }
 
 export async function diagnoseAcceptanceFailure(
-  agent: AgentAdapter,
+  agentManager: IAgentManager,
   options: DiagnoseOptions,
 ): Promise<DiagnosisResult> {
-  if (!agent) {
-    throw new Error("[diagnosis] Agent adapter is required");
+  if (!agentManager) {
+    throw new Error("[diagnosis] IAgentManager is required");
   }
 
   const { testOutput, testFileContent, config, workdir, featureName, storyId } = options;
 
   const resolvedModel = resolveConfiguredModel(
     config.models,
-    resolveDefaultAgent(config),
+    agentManager.getDefault(),
     config.acceptance.fix.diagnoseModel,
-    resolveDefaultAgent(config),
+    agentManager.getDefault(),
   );
 
   const imports = parseImportStatements(testFileContent);
@@ -94,16 +93,18 @@ export async function diagnoseAcceptanceFailure(
   try {
     const timeoutSeconds = (config.acceptance?.timeoutMs ?? 120_000) / 1000;
 
-    const result = await agent.run({
-      prompt,
-      workdir,
-      modelTier: resolvedModel.modelTier ?? "fast",
-      modelDef: resolvedModel.modelDef,
-      timeoutSeconds,
-      sessionRole: "diagnose",
-      featureName,
-      storyId,
-      config,
+    const result = await agentManager.run({
+      runOptions: {
+        prompt,
+        workdir,
+        modelTier: resolvedModel.modelTier ?? "fast",
+        modelDef: resolvedModel.modelDef,
+        timeoutSeconds,
+        sessionRole: "diagnose",
+        featureName,
+        storyId,
+        config,
+      },
     });
 
     const diagnosis = parseDiagnosisResult(result.output);
