@@ -87,9 +87,9 @@ describe("SessionManager.create() — descriptor persistence", () => {
   });
 
   test("writes descriptor.json when scratchDir is resolved", async () => {
-    const writes: Array<{ scratchDir: string; descriptor: unknown }> = [];
-    _sessionManagerDeps.writeDescriptor = async (scratchDir, descriptor) => {
-      writes.push({ scratchDir, descriptor });
+    const writes: Array<{ scratchDir: string; descriptor: unknown; projectDir?: string }> = [];
+    _sessionManagerDeps.writeDescriptor = async (scratchDir, descriptor, projectDir) => {
+      writes.push({ scratchDir, descriptor, projectDir });
     };
 
     const mgr = new SessionManager();
@@ -113,6 +113,7 @@ describe("SessionManager.create() — descriptor persistence", () => {
     const persisted = writes[0]?.descriptor as { storyId?: string; role?: string };
     expect(persisted.storyId).toBe("US-001");
     expect(persisted.role).toBe("test-writer");
+    expect(writes[0]?.projectDir).toBe("/repo");
 
     _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
   });

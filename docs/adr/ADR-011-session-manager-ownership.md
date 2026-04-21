@@ -129,6 +129,7 @@ Instead of `failAndClose` doing inline close, have `closeStory()` include termin
 - **Two layers of cleanup.** A failed session is physically closed at the point of failure (`failAndClose`), AND run-completion teardown runs `closeAllRunSessions()`. The second is a no-op for already-FAILED sessions but must be correct under that assumption. Documented; tested.
 - **`keepSessionOpen` removal is a breaking change to `AgentRunOptions`.** Migration: old callers keep passing the flag during Phase 0 dual-write; it is ignored when a `session: SessionDescriptor` is present. Phase 5.5 removes the old parameter entirely. Captured in SPEC-session-manager-integration Interface Changes.
 - **State machine is enforceable but not enforced everywhere yet.** Only `CREATED → RUNNING` and implicit `RUNNING → COMPLETED` (via `closeStory`) are wired on main. The explicit `RUNNING → FAILED` transition is new in the H-1 fix. `PAUSED` / `RESUMING` are spec'd but not consumed by any call site yet (Phase 1+).
+- **Path serialization is now relative on disk.** Persisted `descriptor.json` and `context-manifest-*.json` path fields are stored relative to `projectDir` for cross-machine portability; loaders rehydrate them to absolute paths at read time for runtime use.
 
 ### Scope of Changes
 

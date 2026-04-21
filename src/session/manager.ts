@@ -13,7 +13,7 @@
 
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import type { AgentResult } from "../agents/types";
 import { NaxError } from "../errors";
@@ -55,12 +55,36 @@ export const _sessionManagerDeps = {
    * architecture review). Creates the scratch directory if it does not exist.
    * `handle` is omitted — it is process-bound and cannot be rehydrated.
    */
-  writeDescriptor: async (scratchDir: string, descriptor: SessionDescriptor): Promise<void> => {
+  writeDescriptor: async (scratchDir: string, descriptor: SessionDescriptor, projectDir?: string): Promise<void> => {
     await mkdir(scratchDir, { recursive: true });
     const { handle: _handle, ...persistable } = descriptor;
+    const derivedProjectDir = projectDir ?? resolveProjectDirFromScratchDir(scratchDir);
+    if (derivedProjectDir) {
+      persistable.workdir = toProjectRelativePath(derivedProjectDir, persistable.workdir);
+      if (persistable.scratchDir) {
+        persistable.scratchDir = toProjectRelativePath(derivedProjectDir, persistable.scratchDir);
+      }
+    }
     await Bun.write(join(scratchDir, "descriptor.json"), JSON.stringify(persistable, null, 2));
   },
 };
+
+function resolveProjectDirFromScratchDir(scratchDir: string): string | undefined {
+  const marker = `${sep}.nax${sep}features${sep}`;
+  const markerIdx = scratchDir.lastIndexOf(marker);
+  if (markerIdx > 0) return scratchDir.slice(0, markerIdx);
+
+  // Backstop: tolerate persisted forward-slash paths regardless of platform.
+  const posixIdx = scratchDir.lastIndexOf("/.nax/features/");
+  if (posixIdx > 0) return scratchDir.slice(0, posixIdx);
+
+  return undefined;
+}
+
+function toProjectRelativePath(projectDir: string, pathValue: string): string {
+  if (!isAbsolute(pathValue)) return pathValue;
+  return relative(projectDir, pathValue);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SessionManager
@@ -99,7 +123,8 @@ export class SessionManager implements ISessionManager {
    */
   private _persistDescriptor(descriptor: SessionDescriptor): void {
     if (!descriptor.scratchDir) return;
-    void _sessionManagerDeps.writeDescriptor(descriptor.scratchDir, descriptor).catch((err) => {
+    const projectDir = resolveProjectDirFromScratchDir(descriptor.scratchDir);
+    void _sessionManagerDeps.writeDescriptor(descriptor.scratchDir, descriptor, projectDir).catch((err) => {
       getLogger().warn("session", "Failed to re-persist session descriptor", {
         storyId: descriptor.storyId,
         sessionId: descriptor.id,
@@ -140,7 +165,8 @@ export class SessionManager implements ISessionManager {
     // disk discovery (Finding 2). Failures do not block session creation —
     // disk discovery is a best-effort supplement to the in-memory registry.
     if (scratchDir) {
-      void _sessionManagerDeps.writeDescriptor(scratchDir, descriptor).catch((err) => {
+      const projectDir = options.projectDir ?? resolveProjectDirFromScratchDir(scratchDir);
+      void _sessionManagerDeps.writeDescriptor(scratchDir, descriptor, projectDir).catch((err) => {
         getLogger().warn("session", "Failed to persist session descriptor", {
           storyId: options.storyId,
           sessionId: id,

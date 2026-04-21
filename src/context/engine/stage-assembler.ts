@@ -15,7 +15,7 @@
  */
 
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
@@ -54,6 +54,10 @@ export interface StageAssembleOptions {
 
 function dedupeScratchDirs(dirs: Array<string | undefined>): string[] {
   return [...new Set(dirs.filter((dir): dir is string => Boolean(dir)))];
+}
+
+function toAbsolutePath(projectDir: string, pathValue: string): string {
+  return isAbsolute(pathValue) ? pathValue : resolve(projectDir, pathValue);
 }
 
 /**
@@ -96,7 +100,7 @@ export async function discoverSessionScratchDirsOnDisk(
       const activity = parsed.lastActivityAt ? Date.parse(parsed.lastActivityAt) : Number.NaN;
       if (Number.isNaN(activity) || activity < cutoff) continue;
 
-      found.push(parsed.scratchDir);
+      found.push(toAbsolutePath(projectDir, parsed.scratchDir));
     } catch (err) {
       logger.debug("context-v2", "Skipped malformed session descriptor", {
         storyId,
