@@ -1,7 +1,7 @@
 # ADR-013: SessionManager → AgentManager Hierarchy
 
-**Status:** Proposed
-**Date:** 2026-04-20
+**Status:** Accepted (Phases 1–5 complete; Phase 6 in progress — see addendum)
+**Date:** 2026-04-20 (Phase 6 addendum: 2026-04-21)
 **Author:** William Khoo, Claude
 **Extends:** ADR-012 (AgentManager Ownership); ADR-011 (SessionManager Ownership)
 **Related:** #592 (auth error bypasses fallback due to adapter retry); #594 (SIGINT cascade); #596–#598 (ISessionRunner / runInSession foundation); #601 (tracking)
@@ -439,6 +439,16 @@ Rejected: topology is the runner's concern, not the manager's. Each new method w
 
 **(f) Route all calls through SessionManager, including complete() and ephemeral run() calls.**
 Rejected: `complete()` calls are stateless and ephemeral — no descriptor, no state machine, no crash recovery needed. Forcing them through `SessionManager.runInSession()` would create session descriptors for one-shot LLM calls (routing decisions, AC refinement, auto-approve) that have no meaningful lifecycle. The two-path rule (descriptor sessions via `runInSession()`, ephemeral calls via `IAgentManager` directly) gives each call site exactly the overhead it needs — no more, no less.
+
+---
+
+## Addendum — Phase 6: Manager Lifetime & Factory (2026-04-21)
+
+Post-Phase 5 review surfaced that this ADR assumed a single `AgentManager` per run but did not enforce it. Seven `new AgentManager(config)` call sites exist outside `src/execution/runner.ts`, and at least two of them (`verification/rectification-loop.ts`, `debate/session-helpers.ts`) run **mid-story** — where creating a fresh manager silently discards the unavailability map (`_unavailable`) and fallback-pruning state (`_prunedFallback`) accumulated by the canonical manager. The symptom is a story re-hitting a 401 on an agent the main runner already marked unavailable, because the mid-story manager starts with empty state.
+
+This was not a wrong decision in Phases 1–5; it was a gap in the lifetime contract. Phases 1–5 established "all adapter calls go through `IAgentManager`" and enforced it via `test/integration/cli/adapter-boundary.test.ts`. They did not establish "one manager per run."
+
+Phase 6 corrects this without changing the decided hierarchy. Implementation details, migration plan per call site, acceptance criteria, and rollback are tracked in `docs/specs/SPEC-agent-manager-lifetime.md` — kept separate so this ADR remains a stable record of the decision while the SPEC evolves through implementation.
 
 ---
 
