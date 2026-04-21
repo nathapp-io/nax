@@ -59,7 +59,7 @@
 | Canonical accessors used | `agentManager.getDefault()` used at 12+ sites under `src/pipeline/stages/` and `src/review/`; `resolveDefaultAgent(config)` at 26 files including `src/routing/`, `src/tdd/`, `src/acceptance/`, `src/debate/`, `src/verification/`, `src/cli/`. | Pass | |
 | Full test suite green | Not run in review. | Not verified | |
 | No behaviour change | Historic. | N/A | |
-| Codemod artefact preserved in `scripts/codemods/agent-manager-migration.ts` | **Directory `scripts/codemods/` does not exist.** | Fail (minor) | Phase 3 plan called for this for auditability. Lost. |
+| Codemod artefact preserved in `scripts/codemods/agent-manager-migration.ts` | AC dropped in #584 — git diff in #568 is the audit record; script had no reuse value. | Resolved | |
 
 ### Findings
 
@@ -216,7 +216,7 @@ Recommended: delete `resetStoryState` + `clearUnavailableAgents` (one PR, ~30 li
 10. Replace the `{} as ContextBundle` sentinel in `src/agents/manager.ts:293` with an explicit `{ skipBundleCheck: true }` option to `shouldSwap`.
 11. Make rate-limit backoff cancellable (`Promise.race` vs. an `AbortSignal`) to comply with `.claude/rules/forbidden-patterns.md` on uncancellable `Bun.sleep`.
 12. If follow-up #577 / #578 exist for aggregates or credential-pre-flight surfacing, link them from the ADR's "Phase 5 follow-ups" section so the doc-vs-code drift is at least traceable.
-13. Recover the codemod artefact (Phase 3 AC) or remove the AC from the ADR. Either is fine; the discrepancy is what matters.
+13. ~~Recover the codemod artefact (Phase 3 AC) or remove the AC from the ADR.~~ Resolved in #584 — AC dropped from ADR.
 
 ---
 
