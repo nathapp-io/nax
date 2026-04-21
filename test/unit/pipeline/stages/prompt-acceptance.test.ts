@@ -11,27 +11,13 @@ import type { NaxConfig } from "../../../../src/config";
 import { _promptStageDeps, promptStage } from "../../../../src/pipeline/stages/prompt";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeStory } from "../../../helpers";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
-
-function makeStory(): UserStory {
-  return {
-    id: "US-001",
-    title: "Acceptance bridge story",
-    description: "Inject acceptance tests into implementer prompt",
-    acceptanceCriteria: ["AC1"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-  };
-}
 
 function makePRD(): PRD {
   return {
@@ -40,7 +26,7 @@ function makePRD(): PRD {
     branchName: "feat/bridge",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    userStories: [makeStory()],
+    userStories: [makeStory({ status: "in-progress", passes: false, attempts: 0, acceptanceCriteria: ["AC1"] })],
   };
 }
 
@@ -53,7 +39,7 @@ function makeConfig(): NaxConfig {
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
-  const story = makeStory();
+  const story = makeStory({ status: "in-progress", passes: false, attempts: 0, acceptanceCriteria: ["AC1"] });
   return {
     config: makeConfig(),
     rootConfig: makeConfig(),
