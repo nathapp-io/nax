@@ -100,6 +100,46 @@ describe("validateConfig — agent.fallback.map agent key validation", () => {
     const fallbackErrors = result.errors.filter((e) => e.toLowerCase().includes("fallback"));
     expect(fallbackErrors).toHaveLength(0);
   });
+
+  test("returns error when fallback agent key exists in models but is missing a required tier", () => {
+    const config = cfg({
+      models: {
+        claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+        codex: { fast: "codex-mini" },
+      },
+      agent: {
+        fallback: {
+          map: { claude: ["codex"] },
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.valid).toBe(false);
+    const errors = result.errors.join(" ");
+    expect(errors).toMatch(/codex/);
+  });
+
+  test("returns errors for each missing tier on a fallback agent", () => {
+    const config = cfg({
+      models: {
+        claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+        codex: {},
+      },
+      agent: {
+        fallback: {
+          map: { claude: ["codex"] },
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.valid).toBe(false);
+    const errors = result.errors.filter((e) => e.includes("codex"));
+    expect(errors.length).toBeGreaterThanOrEqual(3);
+  });
 });
 
 describe("validateConfig — tierOrder agent key validation", () => {

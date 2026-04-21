@@ -144,14 +144,35 @@ describe("resolveModelForAgent", () => {
     expect(result).toEqual({ provider: "openai", model: "codex-mini" });
   });
 
-  test("falls back to defaultAgent tier when requested agent has no entry for that tier", () => {
-    const result = resolveModelForAgent(models, "codex", "powerful", "claude");
-    expect(result).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
+  test("throws NaxError when requested agent has no entry for that tier (non-default agent)", () => {
+    expect(() => resolveModelForAgent(models, "codex", "powerful", "claude")).toThrow(NaxError);
   });
 
-  test("falls back to defaultAgent tier when requested agent key is missing entirely", () => {
-    const result = resolveModelForAgent(models, "unknown-agent", "fast", "claude");
-    expect(result).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
+  test("thrown NaxError for missing tier on non-default agent has code MODEL_NOT_FOUND", () => {
+    let thrown: unknown;
+    try {
+      resolveModelForAgent(models, "codex", "powerful", "claude");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NaxError);
+    expect((thrown as NaxError).code).toBe("MODEL_NOT_FOUND");
+  });
+
+  test("error message for missing non-default agent tier includes agent name and config hint", () => {
+    let thrown: unknown;
+    try {
+      resolveModelForAgent(models, "codex", "powerful", "claude");
+    } catch (err) {
+      thrown = err;
+    }
+    const msg = (thrown as NaxError).message;
+    expect(msg).toContain("codex");
+    expect(msg).toContain("powerful");
+  });
+
+  test("throws NaxError when requested agent key is missing entirely (non-default agent)", () => {
+    expect(() => resolveModelForAgent(models, "unknown-agent", "fast", "claude")).toThrow(NaxError);
   });
 
   test("throws NaxError with code MODEL_NOT_FOUND when neither agent nor defaultAgent has the tier", () => {
