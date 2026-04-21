@@ -14,22 +14,7 @@ import type { NaxConfig } from "../../../src/config/schema";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import type { ReviewResult } from "../../../src/review/types";
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeStory(overrides?: Partial<UserStory>): UserStory {
-  return {
-    id: "US-001",
-    title: "Test story",
-    description: "A test story",
-    acceptanceCriteria: [],
-    status: "pending",
-    attempts: 0,
-    ...overrides,
-  };
-}
+import { makeStory } from "../../helpers";
 
 function makePrd(story?: UserStory): PRD {
   const s = story ?? makeStory();
@@ -284,7 +269,7 @@ describe("stage config usage", () => {
     };
 
     // Mark all stories complete so the only gate is acceptance.enabled
-    const story = makeStory({ status: "passed" });
+    const story = makeStory({ status: "passed", passes: true, attempts: 1 });
     const prd = makePrd(story);
     const ctx = makeCtx({
       config: packageConfig,
