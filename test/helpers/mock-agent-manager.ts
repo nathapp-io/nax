@@ -78,12 +78,12 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
       ? async (name, prompt, completeOpts) => opts.completeFn!(name, prompt, completeOpts)
       : async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0, source: "primary" as const }),
     plan: opts.planFn
-      ? async (opts: PlanOptions) => opts.planFn!("claude", opts)
+      ? async (planOpts: PlanOptions) => opts.planFn!("claude", planOpts)
       : async () => ({ specContent: "" }),
     planAs: opts.planAsFn
-      ? async (agentName: string, opts: PlanOptions) => opts.planAsFn!(agentName, opts)
+      ? async (agentName: string, planOpts: PlanOptions) => opts.planAsFn!(agentName, planOpts)
       : opts.planFn
-        ? async (agentName: string, opts: PlanOptions) => opts.planFn!("claude", opts)
+        ? async (agentName: string, planOpts: PlanOptions) => opts.planFn!("claude", planOpts)
         : async () => ({ specContent: "" }),
     decompose: opts.decomposeFn ?? (async () => ({ stories: [] })),
     decomposeAs: opts.decomposeAsFn ?? (async () => ({ stories: [] })),
