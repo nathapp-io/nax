@@ -9,46 +9,15 @@
  *         (or default agent at fast tier if resolver.agent is unset)
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   judgeResolver,
   majorityResolver,
   synthesisResolver,
 } from "../../../src/debate/resolvers";
-import type { IAgentManager } from "../../../src/agents";
-import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import type { CompleteOptions } from "../../../src/agents/types";
 import type { Debater, ResolverConfig } from "../../../src/debate/types";
-
-// ─── Mock Helpers ──────────────────────────────────────────────────────────────
-
-function makeMockManager(
-  completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "default output", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async (_p, _o) => ({ output: "default output", costUsd: 0, source: "fallback" }),
-    completeAs: completeFn
-      ? async (name, prompt, opts) => completeFn(name, prompt, opts)
-      : async () => ({ output: "default output", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
+import { makeMockAgentManager } from "../../helpers";
 
 // ─── AC7 & AC8: majorityResolver ─────────────────────────────────────────────
 
@@ -211,10 +180,10 @@ describe("majorityResolver(..., true) — fail-open", () => {
 describe("synthesisResolver()", () => {
   test("calls agentManager.completeAs() exactly once", async () => {
     let callCount = 0;
-    const agentManager = makeMockManager(async () => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => {
       callCount++;
       return { output: "synthesis output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await synthesisResolver(["proposal 1", "proposal 2", "proposal 3"], [], {
       agentManager,
@@ -227,10 +196,10 @@ describe("synthesisResolver()", () => {
 
   test("includes all proposals in the synthesis prompt", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "synthesis output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await synthesisResolver(
       ["proposal A content", "proposal B content", "proposal C content"],
@@ -245,10 +214,10 @@ describe("synthesisResolver()", () => {
 
   test("includes all critiques in the synthesis prompt", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "synthesis output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await synthesisResolver(["proposal 1"], ["critique X", "critique Y"], {
       agentManager,
@@ -261,7 +230,7 @@ describe("synthesisResolver()", () => {
   });
 
   test("returns output and cost metadata from agentManager.completeAs()", async () => {
-    const agentManager = makeMockManager(async () => ({ output: "the synthesis result", costUsd: 0, source: "fallback" }));
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "the synthesis result", costUsd: 0, source: "fallback" }) });
 
     const result = await synthesisResolver(["prop 1", "prop 2"], [], {
       agentManager,
@@ -275,7 +244,7 @@ describe("synthesisResolver()", () => {
   });
 
   test("works when critiques array is empty", async () => {
-    const agentManager = makeMockManager(async () => ({ output: "synthesis without critiques", costUsd: 0, source: "fallback" }));
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "synthesis without critiques", costUsd: 0, source: "fallback" }) });
 
     const result = await synthesisResolver(["p1", "p2"], [], {
       agentManager,
@@ -289,7 +258,7 @@ describe("synthesisResolver()", () => {
   });
 
   test("preserves exact cost metadata from agentManager.completeAs()", async () => {
-    const agentManager = makeMockManager(async () => ({ output: "exact synthesis", costUsd: 0.42, source: "exact" }));
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "exact synthesis", costUsd: 0.42, source: "exact" }) });
 
     const result = await synthesisResolver(["p1", "p2"], ["c1"], {
       agentManager,
@@ -304,10 +273,10 @@ describe("synthesisResolver()", () => {
 
   test("forwards complete options to agentManager.completeAs()", async () => {
     let capturedOptions: CompleteOptions | undefined;
-    const agentManager = makeMockManager(async (_name, _prompt, opts) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, _prompt, opts) => {
       capturedOptions = opts;
       return { output: "exact synthesis", costUsd: 0.42, source: "exact" };
-    });
+    } });
 
     const completeOptions = {
       model: "claude-sonnet-4-5",
@@ -333,10 +302,10 @@ describe("judgeResolver()", () => {
   test("uses resolver.agent as the agent name passed to agentManager.completeAs()", async () => {
     let usedAgentName = "";
 
-    const agentManager = makeMockManager(async (name, _prompt, _opts) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (name, _prompt, _opts) => {
       usedAgentName = name;
       return { output: "judge output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     const resolverConfig: ResolverConfig = {
       type: "custom",
@@ -354,10 +323,10 @@ describe("judgeResolver()", () => {
   test("calls agentManager.completeAs() exactly once", async () => {
     let callCount = 0;
 
-    const agentManager = makeMockManager(async () => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => {
       callCount++;
       return { output: "judge output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await judgeResolver(["p1", "p2"], ["c1"], { type: "custom", agent: "judge" }, {
       agentManager,
@@ -370,10 +339,10 @@ describe("judgeResolver()", () => {
   test("includes all proposals in the judge prompt", async () => {
     let capturedPrompt = "";
 
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "judge output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await judgeResolver(
       ["proposal alpha", "proposal beta"],
@@ -389,10 +358,10 @@ describe("judgeResolver()", () => {
   test("includes critiques in the judge prompt", async () => {
     let capturedPrompt = "";
 
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "judge output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await judgeResolver(
       ["p1"],
@@ -406,7 +375,7 @@ describe("judgeResolver()", () => {
   });
 
   test("returns output and cost metadata from agentManager.completeAs()", async () => {
-    const agentManager = makeMockManager(async () => ({ output: "final judge verdict", costUsd: 0, source: "fallback" }));
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "final judge verdict", costUsd: 0, source: "fallback" }) });
 
     const result = await judgeResolver(["p1"], [], { type: "custom", agent: "judge" }, {
       agentManager,
@@ -419,7 +388,7 @@ describe("judgeResolver()", () => {
   });
 
   test("preserves exact cost metadata from judge agentManager.completeAs()", async () => {
-    const agentManager = makeMockManager(async () => ({ output: "judge verdict", costUsd: 0.55, source: "exact" }));
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "judge verdict", costUsd: 0.55, source: "exact" }) });
 
     const result = await judgeResolver(["p1"], ["c1"], { type: "custom", agent: "judge" }, {
       agentManager,
@@ -434,10 +403,10 @@ describe("judgeResolver()", () => {
   test("uses defaultAgentName when resolver.agent is not specified", async () => {
     let usedAgentName = "";
 
-    const agentManager = makeMockManager(async (name, _prompt, _opts) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (name, _prompt, _opts) => {
       usedAgentName = name;
       return { output: "judge output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     const resolverConfig: ResolverConfig = {
       type: "custom",
@@ -456,10 +425,10 @@ describe("judgeResolver()", () => {
   test("falls back to a default agent when resolver.agent is unset and no defaultAgentName", async () => {
     let wasCalled = false;
 
-    const agentManager = makeMockManager(async () => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => {
       wasCalled = true;
       return { output: "fallback judge output", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     const resolverConfig: ResolverConfig = {
       type: "custom",
@@ -479,10 +448,10 @@ describe("judgeResolver()", () => {
 
   test("forwards complete options to agentManager.completeAs()", async () => {
     let capturedOptions: CompleteOptions | undefined;
-    const agentManager = makeMockManager(async (_name, _prompt, opts) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, _prompt, opts) => {
       capturedOptions = opts;
       return { output: "judge verdict", costUsd: 0.55, source: "exact" };
-    });
+    } });
 
     const completeOptions = {
       model: "claude-haiku-4-5",
@@ -506,10 +475,10 @@ describe("judgeResolver()", () => {
 describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
   test("labels proposals with agent+persona when debaters provided with personas", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "synthesis", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     const debaters: Debater[] = [
       { agent: "claude", persona: "challenger" },
@@ -533,10 +502,10 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
 
   test("labels proposals with agent name only when debaters have no persona", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "synthesis", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     const debaters: Debater[] = [
       { agent: "claude" },
@@ -557,10 +526,10 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
 
   test("falls back to numeric labels when no debaters provided", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "synthesis", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await synthesisResolver(["proposal A", "proposal B"], [], {
       agentManager,
@@ -574,10 +543,10 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
 
   test("mixed personas: labeled where present, agent name where absent", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "synthesis", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     const debaters: Debater[] = [
       { agent: "claude", persona: "security" },
@@ -599,10 +568,10 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
 describe("judgeResolver() — persona-aware proposal labels (P2)", () => {
   test("labels proposals with agent+persona when debaters provided with personas", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "judge verdict", costUsd: 0, source: "fallback" };
-    });
+      return { output: "synthesis output", costUsd: 0, source: "fallback" };
+    } });
 
     const debaters: Debater[] = [
       { agent: "claude", persona: "testability" },
@@ -621,10 +590,10 @@ describe("judgeResolver() — persona-aware proposal labels (P2)", () => {
 
   test("falls back to numeric labels when no debaters provided", async () => {
     let capturedPrompt = "";
-    const agentManager = makeMockManager(async (_name, prompt) => {
+    const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
       return { output: "verdict", costUsd: 0, source: "fallback" };
-    });
+    } });
 
     await judgeResolver(["p1", "p2"], [], { type: "custom", agent: "judge" }, {
       agentManager,

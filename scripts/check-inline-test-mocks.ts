@@ -39,7 +39,6 @@ const SKIP_FILES = new Set([
   "test/unit/storyid-events.test.ts",
   "test/unit/agents/manager-iface-run.test.ts",
   "test/unit/agents/manager-credentials.test.ts",
-  "test/unit/debate/resolvers.test.ts",
   "test/unit/debate/session-events.test.ts",
   "test/unit/debate/session-helpers-resolver-model.test.ts",
   "test/unit/debate/session-helpers.test.ts",
@@ -230,6 +229,8 @@ const SKIP_FILES = new Set([
   "test/integration/execution/agent-swap.test.ts",
   "test/integration/execution/deferred-review-integration.test.ts",
   "test/integration/prompts/pb-004-migration.test.ts",
+  // Pattern A (makeConfig) — local factory for ContextPluginProviderConfig (not NaxConfig)
+  "test/unit/context/engine/providers/plugin-cache.test.ts",
 ]);
 
 /**
