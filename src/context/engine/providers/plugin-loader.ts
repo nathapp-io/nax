@@ -51,11 +51,11 @@ export const _pluginLoaderDeps = {
  * Providers that need always-run initialisation should handle defaults
  * internally (i.e. treat an empty config as valid input).
  *
- * dispose() — forward-compatible teardown hook. Not invoked by any caller
- * today; reserved for the future PluginProviderCache (Finding 5). Plugin
- * authors that own long-lived handles (sockets, DB connections, spawned
- * subprocesses) may implement dispose() now and it will be honored once
- * the cache lands. Implementations must not throw — handle errors internally.
+ * dispose() — teardown hook called by PluginProviderCache.disposeAll() at run
+ * completion. Plugin authors that own long-lived handles (sockets, DB
+ * connections, spawned subprocesses) should implement this; it will be invoked
+ * once per cached instance with a 5 s bounded timeout. Implementations must
+ * not throw — handle errors internally.
  * See docs/reviews/context-engine-v2-findings-2-and-5-proposal.md.
  */
 export interface InitialisableProvider extends IContextProvider {

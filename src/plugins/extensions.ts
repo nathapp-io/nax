@@ -138,6 +138,11 @@ export interface IContextProvider {
   /**
    * Fetch external context relevant to a story.
    *
+   * **Concurrency contract:** In parallel-story mode, a single cached provider
+   * instance is shared across all concurrently running stories. Implementations
+   * must be safe to call concurrently (no shared mutable state keyed on story,
+   * or guarded by a lock if state is required).
+   *
    * @param story - The user story being executed
    * @returns Markdown content to inject into the agent prompt
    */
