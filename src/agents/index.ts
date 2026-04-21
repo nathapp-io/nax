@@ -26,3 +26,4 @@ export type {
   AgentRunRequest,
 } from "./manager-types";
 export { resolveDefaultAgent, wrapAdapterAsManager } from "./utils";
+export { createAgentManager } from "./factory";

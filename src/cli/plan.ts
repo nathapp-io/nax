@@ -11,8 +11,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { AgentManager, resolveDefaultAgent } from "../agents";
-import type { IAgentManager } from "../agents";
+import { createAgentManager, resolveDefaultAgent } from "../agents";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
 import { buildDecomposePromptAsync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
@@ -59,7 +58,7 @@ export const _planDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   scanCodebase: (workdir: string): Promise<CodebaseScan> => scanCodebase(workdir),
-  createManager: (cfg: NaxConfig): IAgentManager => new AgentManager(cfg),
+  createManager: createAgentManager,
   readPackageJson: (workdir: string): Promise<Record<string, unknown> | null> =>
     Bun.file(join(workdir, "package.json"))
       .json()
