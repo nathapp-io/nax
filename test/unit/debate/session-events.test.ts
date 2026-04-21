@@ -11,43 +11,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps, resolveDebaterModel } from "../../../src/debate/session";
 import type { DebateStageConfig, Debater } from "../../../src/debate/types";
 import type { NaxConfig } from "../../../src/config";
-import type { IAgentManager } from "../../../src/agents";
-import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
-
-// ─── Mock Helpers ──────────────────────────────────────────────────────────────
-
-function makeMockManager(
-  options: {
-    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-    unavailableAgents?: Set<string>;
-  } = {},
-): IAgentManager {
-  const unavailable = options.unavailableAgents ?? new Set<string>();
-  return {
-    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "default output", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async (_, _o) => ({ output: "default output", costUsd: 0, source: "fallback" }),
-    completeAs: options.completeFn
-      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
-      : async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
+import type { CompleteOptions } from "../../../src/agents/types";
+import { makeMockAgentManager } from "../../helpers";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -94,7 +59,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager());
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -126,7 +91,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager());
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -157,7 +122,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager());
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -188,7 +153,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       unavailableAgents: new Set(["missing"]),
     }));
 
@@ -211,7 +176,7 @@ describe("DebateSession.run() — JSONL log events", () => {
   test("uses resolveDebaterModel to pass resolved model to completeAs()", async () => {
     const completeCalls: Array<{ agent: string; model: string | undefined }> = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (agentName, _prompt, opts) => {
         completeCalls.push({ agent: agentName, model: opts?.model });
         return { output: `output from ${agentName}`, costUsd: 0, source: "fallback" };
