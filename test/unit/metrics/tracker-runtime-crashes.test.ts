@@ -13,11 +13,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
+import { makeNaxConfig } from "../../helpers";
 
 const WORKDIR = `/tmp/nax-test-metrics-${randomUUID()}`;
 const WORKDIR_BATCH = `/tmp/nax-test-metrics-batch-${randomUUID()}`;
@@ -53,13 +53,9 @@ function makePRD(story: UserStory): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return { ...DEFAULT_CONFIG };
-}
-
 function makeContext(story: UserStory, overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    config: makeConfig(),
+    config: makeNaxConfig(),
     prd: makePRD(story),
     story,
     stories: [story],
@@ -164,7 +160,7 @@ describe("collectBatchMetrics - runtimeCrashes per story", () => {
 
     const stories = [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })];
     const ctx = {
-      config: makeConfig(),
+      config: makeNaxConfig(),
       prd: makePRD(stories[0]),
       story: stories[0],
       stories,

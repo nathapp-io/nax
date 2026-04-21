@@ -9,12 +9,12 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
 import type { VerifyResult } from "../../../src/verification/orchestrator-types";
+import { makeNaxConfig } from "../../helpers";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;
 
@@ -50,17 +50,13 @@ function makePRD(story: UserStory): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return { ...DEFAULT_CONFIG };
-}
-
 function makeCtx(
   story: UserStory,
   routingOverrides?: Partial<PipelineContext["routing"]>,
   verifyResult?: VerifyResult,
 ): PipelineContext {
   return {
-    config: makeConfig(),
+    config: makeNaxConfig(),
     prd: makePRD(story),
     story,
     stories: [story],
