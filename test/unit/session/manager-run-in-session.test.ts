@@ -13,11 +13,12 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { SessionManager } from "../../../src/session/manager";
 import type { IAgentManager } from "../../../src/agents/manager-types";
 import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentResult } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
+import { SessionManager } from "../../../src/session/manager";
+import { makeMockAgentManager } from "../../../test/helpers";
 
 function makeRequest(overrides: Partial<AgentRunRequest> = {}): AgentRunRequest {
   return {
@@ -47,22 +48,11 @@ function makeResult(overrides: Partial<AgentResult> = {}): AgentResult {
 
 function makeAgentManager(result: AgentResult | (() => Promise<AgentResult>)): IAgentManager {
   const runFn = typeof result === "function" ? result : async () => result;
-  return {
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (_req) => ({ result: await runFn(), fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
-    run: mock(runFn),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    getAgent: () => undefined,
-    events: { on: () => {} },
-  };
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runFn: async (_agent, _opts) => await runFn(),
+    runWithFallbackFn: async (_req) => ({ result: await runFn(), fallbacks: [] }),
+  });
 }
 
 describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
@@ -101,7 +91,9 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
     try {
       await mgr.runInSession(
         d.id,
-        makeAgentManager(async () => { throw err; }),
+        makeAgentManager(async () => {
+          throw err;
+        }),
         makeRequest(),
       );
     } catch (e) {
@@ -157,9 +149,11 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
 
     const result = await mgr.runInSession(
       d.id,
-      makeAgentManager(makeResult({
-        tokenUsage: { inputTokens: 100, outputTokens: 50, cache_read_input_tokens: 10 },
-      })),
+      makeAgentManager(
+        makeResult({
+          tokenUsage: { inputTokens: 100, outputTokens: 50, cache_read_input_tokens: 10 },
+        }),
+      ),
       makeRequest(),
     );
 
@@ -179,14 +173,13 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
       return origBind(...args);
     });
 
-    const agentMgr: IAgentManager = {
-      ...makeAgentManager(makeResult()),
-      run: mock(async (req) => {
-        // Fire onSessionEstablished as if adapter established a session
-        req.runOptions.onSessionEstablished?.({ recordId: "r1", sessionId: "s1" }, "nax-test");
+    const agentMgr = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runFn: async (agent, opts) => {
+        opts.onSessionEstablished?.({ recordId: "r1", sessionId: "s1" }, "nax-test");
         return makeResult();
-      }),
-    };
+      },
+    });
 
     await mgr.runInSession(
       d.id,
@@ -199,7 +192,9 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
           modelDef: { provider: "anthropic", model: "m", env: {} },
           timeoutSeconds: 30,
           config: {} as NaxConfig,
-          onSessionEstablished: () => { callerFired = true; },
+          onSessionEstablished: () => {
+            callerFired = true;
+          },
         },
       }),
     );

@@ -15,11 +15,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
-import type { IAgentManager, AgentRunRequest } from "../../../src/agents/manager-types";
+import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentResult } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import type { AdapterFailure } from "../../../src/context/engine";
+import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
+import { makeMockAgentManager } from "../../../test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -69,27 +70,15 @@ function makeFailure(outcome: AdapterFailure["outcome"], retriable: boolean): Ad
 /** Build a mock IAgentManager that returns results in sequence from the queue. */
 function makeSequencedManager(queue: AgentResult[]): IAgentManager {
   let callIndex = 0;
-  const runFn = mock(async () => {
+  const runMock = mock(async () => {
     const result = queue[callIndex] ?? queue[queue.length - 1];
     callIndex++;
     return result;
   });
   return {
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: makeResult(), fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
-    run: runFn,
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    getAgent: () => undefined,
-    events: { on: () => {} },
-  };
+    ...makeMockAgentManager({ getDefaultAgent: "claude" }),
+    run: runMock,
+  } as IAgentManager;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,8 +86,12 @@ function makeSequencedManager(queue: AgentResult[]): IAgentManager {
 // ─────────────────────────────────────────────────────────────────────────────
 
 let origNow: typeof _sessionManagerDeps.now;
-beforeEach(() => { origNow = _sessionManagerDeps.now; });
-afterEach(() => { _sessionManagerDeps.now = origNow; });
+beforeEach(() => {
+  origNow = _sessionManagerDeps.now;
+});
+afterEach(() => {
+  _sessionManagerDeps.now = origNow;
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Retry on fail-adapter-error retriable: true
@@ -189,14 +182,15 @@ describe("SessionManager.runInSession — retry on fail-adapter-error", () => {
 
     let callIndex = 0;
     const queue = [failResult, failResult, successResult];
+    const runMock = mock(async () => {
+      states.push(mgr.get(d.id)?.state ?? "?");
+      const result = queue[callIndex] ?? queue[queue.length - 1];
+      callIndex++;
+      return result;
+    });
     const manager: IAgentManager = {
-      ...makeSequencedManager(queue),
-      run: mock(async () => {
-        states.push(mgr.get(d.id)?.state ?? "?");
-        const result = queue[callIndex] ?? queue[queue.length - 1];
-        callIndex++;
-        return result;
-      }),
+      ...makeMockAgentManager({ getDefaultAgent: "claude" }),
+      run: runMock,
     };
 
     await mgr.runInSession(d.id, manager, makeRequest());

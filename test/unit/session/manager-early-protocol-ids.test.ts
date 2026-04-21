@@ -10,11 +10,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { IAgentManager } from "../../../src/agents";
 import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents";
 import type { NaxConfig } from "../../../src/config";
 import { SessionManager } from "../../../src/session/manager";
+import { makeMockAgentManager } from "../../../test/helpers";
 
 function makeOptions(): AgentRunOptions {
   return {
@@ -39,25 +40,13 @@ function makeBaseResult(): AgentResult {
 }
 
 function makeAgentManager(runFn: (req: AgentRunRequest) => Promise<AgentResult>): IAgentManager {
-  return {
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (req) => ({ result: await runFn(req), fallbacks: [] }),
-    completeWithFallback: async () => ({
-      result: { output: "", costUsd: 0, source: "fallback" as const },
-      fallbacks: [],
-    }),
-    run: runFn,
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    getAgent: () => undefined,
-    events: { on: () => {} },
-  };
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runFn: async (agent, opts) => {
+      return await runFn({ runOptions: opts } as AgentRunRequest);
+    },
+    runWithFallbackFn: async (req) => ({ result: await runFn(req), fallbacks: [] }),
+  });
 }
 
 function makeRequest(extraOpts?: Partial<AgentRunOptions>): AgentRunRequest {

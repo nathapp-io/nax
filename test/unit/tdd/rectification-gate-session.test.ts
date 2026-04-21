@@ -10,6 +10,7 @@ import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
+import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -128,28 +129,15 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 2 (final check)
     ];
 
-    const agentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => agent as any,
-      run: mock(async (req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    } as any;
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: (_name: string) => agent as any,
+      runFn: async (_agentName: string, opts: AgentRunOptions) => {
+        agent.calls.push(opts);
+        const result = await agent.run(opts);
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+      },
+    });
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
@@ -179,28 +167,15 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 3 (final)
     ];
 
-    const agentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => agent as any,
-      run: mock(async (req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    } as any;
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: (_name: string) => agent as any,
+      runFn: async (_agentName: string, opts: AgentRunOptions) => {
+        agent.calls.push(opts);
+        const result = await agent.run(opts);
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+      },
+    });
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
@@ -229,28 +204,15 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
     ];
 
-    const agentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => agent as any,
-      run: mock(async (req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    } as any;
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: (_name: string) => agent as any,
+      runFn: async (_agentName: string, opts: AgentRunOptions) => {
+        agent.calls.push(opts);
+        const result = await agent.run(opts);
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+      },
+    });
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
@@ -275,28 +237,15 @@ describe("rectification session reuse", () => {
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
     ];
 
-    const agentManager = {
-      getDefault: () => "claude",
-      getAgent: (_name: string) => agent as any,
-      run: mock(async (req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      runAs: mock(async (_agentName: string, req: any) => {
-        agent.calls.push(req.runOptions);
-        const result = await agent.run(req.runOptions);
-        return result;
-      }),
-      completeAs: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
-      isUnavailable: () => false,
-      markUnavailable: () => {},
-      reset: () => {},
-      validateCredentials: async () => {},
-      on: () => {},
-    } as any;
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: (_name: string) => agent as any,
+      runFn: async (_agentName: string, opts: AgentRunOptions) => {
+        agent.calls.push(opts);
+        const result = await agent.run(opts);
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+      },
+    });
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir-2", agentManager, "balanced", true, {
       info: () => {},
