@@ -18,6 +18,7 @@ import type { NaxConfig } from "../../../../src/config";
 import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
 
 const WORKDIR = `/tmp/nax-test-exec-${randomUUID()}`;
 
@@ -33,19 +34,51 @@ const originalDetectMergeConflict = _executionDeps.detectMergeConflict;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStory(): UserStory {
+function makePRD(): PRD {
   return {
-    id: "US-001",
-    title: "Write login button",
-    description: "Add a login button",
-    acceptanceCriteria: ["Button is visible"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
+    project: "test",
+    feature: "my-feature",
+    branchName: "test-branch",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    userStories: [makeStory()],
   };
+}
+
+function makeCtx(
+  testStrategy: "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite",
+  overrides: Partial<PipelineContext> = {},
+): PipelineContext {
+  const story = makeStory();
+  return {
+    config: makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} },
+    }),
+    prd: makePRD(),
+    story,
+    stories: [story],
+    routing: {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy,
+      reasoning: "",
+    },
+    rootConfig: DEFAULT_CONFIG,
+    workdir: WORKDIR,
+    projectDir: WORKDIR,
+    prompt: "Your tdd-simple task: write tests first, then implement.",
+    hooks: {} as PipelineContext["hooks"],
+    ...overrides,
+  } as unknown as PipelineContext;
 }
 
 function makePRD(): PRD {
@@ -85,7 +118,7 @@ function makeConfig(): NaxConfig {
 }
 
 function makeAgent(success = true) {
-  return {
+  return makeAgentAdapter({
     name: "test-agent",
     capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
     run: mock(async () => ({
@@ -97,7 +130,7 @@ function makeAgent(success = true) {
       durationMs: 100,
       estimatedCost: 0.01,
     })),
-  };
+  });
 }
 
 function makeCtx(

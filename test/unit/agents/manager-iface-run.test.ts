@@ -11,14 +11,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
 import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentAdapter } from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
 
 function makeConfig(fallbackEnabled = false): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     agent: {
-      ...DEFAULT_CONFIG.agent,
       default: "claude",
       fallback: {
         enabled: fallbackEnabled,
@@ -28,11 +25,11 @@ function makeConfig(fallbackEnabled = false): NaxConfig {
         rebuildContext: true,
       },
     },
-  } as NaxConfig;
+  });
 }
 
 function makeAdapter(name: string, success = true): AgentAdapter {
-  return {
+  return makeAgentAdapter({
     name,
     displayName: name,
     binary: name,
@@ -53,7 +50,7 @@ function makeAdapter(name: string, success = true): AgentAdapter {
     buildCommand: () => [],
     plan: async () => ({ success: true, spec: "" }),
     decompose: async () => ({ success: true, stories: [] }),
-  } as unknown as AgentAdapter;
+  });
 }
 
 function makeRegistry(adapters: AgentAdapter[]) {

@@ -9,10 +9,10 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
 import { getLogger, initLogger, resetLogger } from "../../../src/logger";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd/types";
+import { makeAgentAdapter } from "../../../test/helpers";
 
 const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
@@ -33,14 +33,13 @@ const mockAgentRun = mock(async () => ({
   durationMs: 100,
 }));
 
-const mockAgent = {
+const mockAgent = makeAgentAdapter({
   name: "claude",
-  // Only supports "balanced"/"powerful" — triggers tier mismatch when ctx.routing.modelTier="fast"
   capabilities: { supportedTiers: ["balanced", "powerful"] },
   run: mockAgentRun,
   isInstalled: async () => true,
   buildCommand: () => ["claude"],
-};
+});
 
 // ── Capture originals for afterEach restoration ───────────────────────────────
 
@@ -190,7 +189,7 @@ describe("storyId is present in JSONL event payloads", () => {
       const logger = getLogger();
       const infoSpy = spyOn(logger, "info").mockImplementation(() => {});
 
-      const mockAgent = {
+      const mockAgent = makeAgentAdapter({
         name: "dry-run-agent",
         capabilities: { supportedTiers: ["fast"] },
         run: mock(async () => ({
@@ -201,10 +200,10 @@ describe("storyId is present in JSONL event payloads", () => {
           exitCode: 0,
           durationMs: 0,
         })),
-      };
+      });
 
       await runThreeSessionTdd({
-        agent: mockAgent as any,
+        agent: mockAgent,
         story: mockStory,
         config: makeCtx().config,
         workdir: WORKDIR,

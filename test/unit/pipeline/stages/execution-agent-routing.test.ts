@@ -11,35 +11,11 @@ import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "Test story",
-    description: "desc",
-    acceptanceCriteria: ["AC-1"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    attempts: 1,
-    escalations: [],
-    ...overrides,
-  };
-}
-
-function makeConfig(modelsOverride?: NaxConfig["models"]): NaxConfig {
-  return {
-    agent: { default: "claude" },
-    execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
-    models: modelsOverride ?? { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
-    quality: { requireTests: false, commands: { test: "bun test" } },
-  } as unknown as NaxConfig;
-}
 
 function makeCtx(
   storyOverrides: Partial<UserStory> = {},
@@ -47,9 +23,15 @@ function makeCtx(
   configOverride?: NaxConfig,
 ): PipelineContext {
   const story = makeStory(storyOverrides);
+  const defaultModelsConfig = makeNaxConfig({
+    agent: { default: "claude" },
+    models: {
+      claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" },
+    },
+  });
   return {
-    config: configOverride ?? makeConfig(),
-    rootConfig: configOverride ?? makeConfig(),
+    config: configOverride ?? defaultModelsConfig,
+    rootConfig: configOverride ?? defaultModelsConfig,
     prd: { project: "p", feature: "f", branchName: "b", createdAt: "", updatedAt: "", userStories: [story] } as PRD,
     story,
     stories: [story],
@@ -86,19 +68,18 @@ describe("execution stage — routing.agent unset uses defaultAgent", () => {
     let capturedModelDef: { model: string; provider: string } | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async (opts: { modelDef?: { model: string; provider: string } }) => {
           capturedModelDef = opts.modelDef;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
-    // routing.agent is NOT set — should use defaultAgent "claude"
     const ctx = makeCtx({}, { modelTier: "fast" });
     await executionStage.execute(ctx);
 
@@ -114,25 +95,26 @@ describe("execution stage — routing.agent overrides default agent for model re
   test("uses codex fast model when routing.agent is 'codex'", async () => {
     let capturedModelDef: { model: string; provider: string } | undefined;
 
-    const multiAgentConfig = makeConfig({
-      claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" },
-      codex: { fast: "codex-mini-latest", balanced: "codex-full", powerful: "codex-full" },
+    const multiAgentConfig = makeNaxConfig({
+      models: {
+        claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" },
+        codex: { fast: "codex-mini-latest", balanced: "codex-full", powerful: "codex-full" },
+      },
     });
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "codex",
         capabilities: { supportedTiers: ["fast"] },
         run: async (opts: { modelDef?: { model: string; provider: string } }) => {
           capturedModelDef = opts.modelDef;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
-    // routing.agent is 'codex' — should resolve codex's fast model
     const ctx = makeCtx(
       {},
       { modelTier: "fast", agent: "codex" },
@@ -146,25 +128,26 @@ describe("execution stage — routing.agent overrides default agent for model re
   test("falls back to claude when routing.agent is 'codex' but no codex model entry for tier", async () => {
     let capturedModelDef: { model: string; provider: string } | undefined;
 
-    const partialCodexConfig = makeConfig({
-      claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" },
-      codex: { fast: "codex-mini-latest" },  // no 'powerful' tier
+    const partialCodexConfig = makeNaxConfig({
+      models: {
+        claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" },
+        codex: { fast: "codex-mini-latest" },
+      },
     });
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "codex",
         capabilities: { supportedTiers: ["powerful"] },
         run: async (opts: { modelDef?: { model: string; provider: string } }) => {
           capturedModelDef = opts.modelDef;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
-    // routing.agent='codex', tier='powerful', codex has no powerful → falls back to claude.powerful
     const ctx = makeCtx(
       {},
       { modelTier: "powerful", agent: "codex" },
@@ -172,7 +155,6 @@ describe("execution stage — routing.agent overrides default agent for model re
     );
     await executionStage.execute(ctx);
 
-    // Should fall back to claude's powerful model
     expect(capturedModelDef?.model).toBe("claude-opus");
   });
 });
@@ -186,23 +168,21 @@ describe("execution stage — tier mismatch clamps to first supported tier", () 
     let capturedTier: string | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "opencode",
         capabilities: { supportedTiers: ["balanced"] },
         run: async (opts: { modelTier?: string }) => {
           capturedTier = opts.modelTier;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
-    // validateAgentForTier returns false → tier mismatch
     _executionDeps.validateAgentForTier = () => false;
     _executionDeps.detectMergeConflict = () => false;
 
     const ctx = makeCtx({}, { modelTier: "fast" });
     await executionStage.execute(ctx);
 
-    // Should be clamped to "balanced", not the original "fast"
     expect(capturedTier).toBe("balanced");
   });
 
@@ -210,23 +190,21 @@ describe("execution stage — tier mismatch clamps to first supported tier", () 
     let capturedTier: string | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "claude",
         capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
         run: async (opts: { modelTier?: string }) => {
           capturedTier = opts.modelTier;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
-    // validateAgentForTier returns true → no mismatch
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
     const ctx = makeCtx({}, { modelTier: "fast" });
     await executionStage.execute(ctx);
 
-    // Original tier is preserved
     expect(capturedTier).toBe("fast");
   });
 });

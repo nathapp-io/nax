@@ -13,37 +13,11 @@ import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "Test story",
-    description: "desc",
-    acceptanceCriteria: ["AC-1"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    attempts: 1,
-    escalations: [],
-    ...overrides,
-  };
-}
-
-function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
-    agent: { default: "claude" },
-    execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
-    models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
-    quality: { requireTests: false, commands: { test: "bun test" } },
-    review: { enabled: false },
-    ...overrides,
-  } as unknown as NaxConfig;
-}
 
 function makeCtx(
   storyOverrides: Partial<UserStory> = {},
@@ -52,8 +26,18 @@ function makeCtx(
 ): PipelineContext {
   const story = makeStory(storyOverrides);
   return {
-    config: configOverride ?? makeConfig(),
-    rootConfig: configOverride ?? makeConfig(),
+    config: configOverride ?? makeNaxConfig({
+      agent: { default: "claude" },
+      models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
+      quality: { requireTests: false, commands: { test: "bun test" } },
+      review: { enabled: false },
+    }),
+    rootConfig: configOverride ?? makeNaxConfig({
+      agent: { default: "claude" },
+      models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
+      quality: { requireTests: false, commands: { test: "bun test" } },
+      review: { enabled: false },
+    }),
     prd: { project: "p", feature: "test-feature", branchName: "b", createdAt: "", updatedAt: "", userStories: [story] } as PRD,
     story,
     stories: [story],
@@ -90,14 +74,14 @@ describe("execution stage — session role normalization (AC-1)", () => {
     let capturedSessionRole: string | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async (opts: { sessionRole?: string }) => {
           capturedSessionRole = opts.sessionRole;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
@@ -112,14 +96,14 @@ describe("execution stage — session role normalization (AC-1)", () => {
     let capturedSessionRole: string | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async (opts: { sessionRole?: string }) => {
           capturedSessionRole = opts.sessionRole;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
@@ -140,19 +124,19 @@ describe("execution stage — keepOpen when review enabled (AC-2)", () => {
     let capturedKeepSessionOpen: boolean | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async (opts: { keepOpen?: boolean }) => {
           capturedKeepSessionOpen = opts.keepOpen;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
-    const configWithReview = makeConfig({ review: { enabled: true } });
+    const configWithReview = makeNaxConfig({ review: { enabled: true } });
     const ctx = makeCtx({}, { testStrategy: "test-after" }, configWithReview);
     await executionStage.execute(ctx);
 
@@ -160,28 +144,24 @@ describe("execution stage — keepOpen when review enabled (AC-2)", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-3: keepOpen: true when rectification.enabled is true
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("execution stage — keepOpen when rectification enabled (AC-3)", () => {
   test("passes keepOpen: true when rectification.enabled is true", async () => {
     let capturedKeepSessionOpen: boolean | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async (opts: { keepOpen?: boolean }) => {
           capturedKeepSessionOpen = opts.keepOpen;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
-    const configWithRectification = makeConfig({
+    const configWithRectification = makeNaxConfig({
       execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60, rectification: { enabled: true } },
     });
     const ctx = makeCtx({}, { testStrategy: "test-after" }, configWithRectification);
@@ -191,28 +171,24 @@ describe("execution stage — keepOpen when rectification enabled (AC-3)", () =>
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-4: keepOpen: false when both review and rectification are falsy
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("execution stage — keepOpen when review and rectification disabled (AC-4)", () => {
   test("passes keepOpen: false when both review and rectification are disabled", async () => {
     let capturedKeepSessionOpen: boolean | undefined;
 
     _executionDeps.getAgent = () =>
-      ({
+      makeAgentAdapter({
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async (opts: { keepOpen?: boolean }) => {
           capturedKeepSessionOpen = opts.keepOpen;
           return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
         },
-      }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+      });
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
-    const configWithoutReviewOrRectification = makeConfig({
+    const configWithoutReviewOrRectification = makeNaxConfig({
       review: { enabled: false },
       execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60, rectification: { enabled: false } },
     });
