@@ -12,7 +12,7 @@ import { _executionDeps, executionStage, resolveStoryWorkdir } from "../../../..
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
+import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveStoryWorkdir — pure unit tests
@@ -54,35 +54,10 @@ afterEach(() => {
   _executionDeps.detectMergeConflict = originalDetectMergeConflict;
 });
 
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "Test story",
-    description: "desc",
-    acceptanceCriteria: ["AC-1"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    attempts: 1,
-    escalations: [],
-    ...overrides,
-  };
-}
-
-function makeConfig(): NaxConfig {
-  return {
-    agent: { default: "claude" },
-    execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
-    models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
-    quality: { requireTests: false, commands: { test: "bun test" } },
-  } as unknown as NaxConfig;
-}
-
 function makeCtx(storyOverrides: Partial<UserStory> = {}): PipelineContext {
   const story = makeStory(storyOverrides);
   return {
-    config: makeConfig(),
+    config: makeNaxConfig(),
     prd: { project: "p", feature: "f", branchName: "b", createdAt: "", updatedAt: "", userStories: [story] } as PRD,
     story,
     stories: [story],
@@ -99,14 +74,14 @@ test("execution stage passes repoRoot workdir when story.workdir is undefined", 
   let capturedWorkdir: string | undefined;
 
   _executionDeps.getAgent = () =>
-    ({
+    makeAgentAdapter({
       name: "claude",
       capabilities: { supportedTiers: ["fast"] },
       run: async (opts: { workdir: string }) => {
         capturedWorkdir = opts.workdir;
         return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
       },
-    }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+    });
 
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.detectMergeConflict = () => false;
@@ -121,14 +96,14 @@ test("execution stage passes resolved package workdir when story.workdir is set"
   let capturedWorkdir: string | undefined;
 
   _executionDeps.getAgent = () =>
-    ({
+    makeAgentAdapter({
       name: "claude",
       capabilities: { supportedTiers: ["fast"] },
       run: async (opts: { workdir: string }) => {
         capturedWorkdir = opts.workdir;
         return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
       },
-    }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
+    });
 
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.detectMergeConflict = () => false;
