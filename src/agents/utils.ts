@@ -1,4 +1,5 @@
 import type { NaxConfig } from "../config";
+import { getLogger } from "../logger";
 import type { IAgentManager } from "./manager-types";
 import type { AgentAdapter } from "./types";
 
@@ -17,6 +18,19 @@ export function resolveDefaultAgent(config: NaxConfig): string {
  * ADR-013 Phase 1.
  */
 export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
+  const warnMismatch = (method: string, requested: string): void => {
+    if (requested !== adapter.name) {
+      getLogger().warn(
+        "agents",
+        "wrapAdapterAsManager: agentName mismatch — bootstrap manager wraps a single adapter",
+        {
+          method,
+          requested,
+          wrapped: adapter.name,
+        },
+      );
+    }
+  };
   const mgr: IAgentManager = {
     getDefault: () => adapter.name,
     isUnavailable: () => false,
@@ -38,15 +52,25 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
     complete: async (prompt, opts) => adapter.complete(prompt, opts),
     getAgent: () => adapter,
     events: { on: () => {} },
-    runAs: async (_agentName, req) => {
+    runAs: async (agentName, req) => {
+      warnMismatch("runAs", agentName);
       const outcome = await mgr.runWithFallback(req);
       return { ...outcome.result, agentFallbacks: outcome.fallbacks };
     },
-    completeAs: async (_agentName, prompt, opts) => adapter.complete(prompt, opts),
+    completeAs: async (agentName, prompt, opts) => {
+      warnMismatch("completeAs", agentName);
+      return adapter.complete(prompt, opts);
+    },
     plan: async (opts) => adapter.plan(opts),
-    planAs: async (_agentName, opts) => adapter.plan(opts),
+    planAs: async (agentName, opts) => {
+      warnMismatch("planAs", agentName);
+      return adapter.plan(opts);
+    },
     decompose: async (opts) => adapter.decompose(opts),
-    decomposeAs: async (_agentName, opts) => adapter.decompose(opts),
+    decomposeAs: async (agentName, opts) => {
+      warnMismatch("decomposeAs", agentName);
+      return adapter.decompose(opts);
+    },
   };
   return mgr;
 }
