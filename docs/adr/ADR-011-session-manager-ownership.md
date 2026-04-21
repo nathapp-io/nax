@@ -45,14 +45,18 @@ Owns:                                        Owns:
   - State machine (7 states)                   - loadSession / createSession
   - Scratch directory                          - sendPrompt / multi-turn loop
   - index.json (sidecar replacement)           - token / cost tracking
-  - Close / resume / handoff decisions         - prompt audit
-  - Orphan detection (state-based)             - protocol-level retry on
-  - Agent-agnostic session naming                QUEUE_DISCONNECTED (AC-79)
+  - Close / resume / handoff decisions         - protocol-level retry on
+  - Orphan detection (state-based)               QUEUE_DISCONNECTED (AC-79)
+  - Agent-agnostic session naming
+  - Prompt audit policy + file writing         Does NOT own:
+    (src/session/audit.ts + audit-writer.ts)     - session lifecycle decisions
+    See: docs/specs/SPEC-session-manager-audit.md - crash detection
+                                                 - sidecar files
+                                                 - prompt audit (reports via callback)
 
-Does NOT own:                                Does NOT own:
-  - acpx process                               - session lifecycle decisions
-  - protocol-level retry                       - crash detection
-  - prompt audit                               - sidecar files
+Does NOT own:
+  - acpx process
+  - protocol-level retry
 ```
 
 ### State machine (7 states, terminal = COMPLETED | FAILED)

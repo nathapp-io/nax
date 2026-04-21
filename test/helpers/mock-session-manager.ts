@@ -21,6 +21,7 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
       durationMs: 0,
       estimatedCost: 0,
     })),
+    auditPrompt: mock(() => {}),
     ...overrides,
   } as ISessionManager;
 }

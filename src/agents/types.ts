@@ -179,6 +179,16 @@ export interface AgentRunOptions {
     protocolIds: { recordId: string | null; sessionId: string | null },
     sessionName: string,
   ) => void;
+  /**
+   * Per-turn audit sink injected by SessionManager.runInSession (#523).
+   * When provided, the adapter calls this instead of writing prompt audit files
+   * directly — the manager enriches the entry with stable sess-<uuid> identity
+   * before delegating to src/session/audit-writer.ts.
+   *
+   * Undefined when there is no active session (e.g. complete() outside a
+   * session context) or when promptAudit is disabled in config.
+   */
+  auditCallback?: (entry: import("../session/types").AuditTurnEntry) => void;
 }
 
 /**

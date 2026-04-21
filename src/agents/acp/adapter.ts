@@ -646,9 +646,20 @@ export class AcpAgentAdapter implements AgentAdapter {
         turnCount++;
         getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
-        // Audit: fire-and-forget prompt write — never blocks or throws
-        const _runAuditConfig = options.config;
-        if (_runAuditConfig?.agent?.promptAudit?.enabled) {
+        // Audit: report turn via injected callback (policy owned by SessionManager).
+        // Falls back to direct write when no session context is present (e.g. tests).
+        if (options.auditCallback) {
+          options.auditCallback({
+            prompt: currentPrompt,
+            callType: "run",
+            pipelineStage: options.pipelineStage ?? "run",
+            turn: turnCount,
+            resumed: sessionResumed,
+            sessionName,
+            recordId: session.recordId ?? undefined,
+            sessionId: session.id ?? undefined,
+          });
+        } else if (options.config?.agent?.promptAudit?.enabled) {
           void writePromptAudit({
             prompt: currentPrompt,
             sessionName,
@@ -656,7 +667,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             sessionId: session.id,
             workdir: options.workdir,
             projectDir: options.projectDir,
-            auditDir: _runAuditConfig.agent.promptAudit.dir,
+            auditDir: options.config.agent.promptAudit.dir,
             storyId: options.storyId,
             featureName: options.featureName,
             pipelineStage: options.pipelineStage ?? "run",

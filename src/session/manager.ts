@@ -18,7 +18,9 @@ import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import type { AgentResult } from "../agents/types";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { auditTurn } from "./audit";
 import type {
+  AuditTurnEntry,
   CreateSessionOptions,
   ISessionManager,
   ProtocolIds,
@@ -124,6 +126,7 @@ export class SessionManager implements ISessionManager {
       state: "CREATED",
       agent: options.agent,
       workdir: options.workdir,
+      projectDir: options.projectDir,
       featureName: options.featureName,
       storyId: options.storyId,
       protocolIds: NULL_PROTOCOL_IDS,
@@ -361,7 +364,12 @@ export class SessionManager implements ISessionManager {
     // session-established and result-returned, the descriptor already
     // carries the correlation needed to resume. The caller's own callback
     // (if any) is chained afterwards so both fire.
+    //
+    // Also inject auditCallback so the adapter reports prompt turns here
+    // instead of deciding audit policy itself. The callback enriches entries
+    // with the stable sess-<uuid> before writing to audit-writer.ts.
     const callerCallback = request.runOptions.onSessionEstablished;
+    const runConfig = request.runOptions.config;
     const injectedRequest: AgentRunRequest = {
       ...request,
       runOptions: {
@@ -378,6 +386,9 @@ export class SessionManager implements ISessionManager {
           }
           callerCallback?.(protocolIds, sessionName);
         },
+        auditCallback: runConfig?.agent?.promptAudit?.enabled
+          ? (entry: AuditTurnEntry) => this.auditPrompt(id, entry, runConfig)
+          : undefined,
       },
     };
 
@@ -450,6 +461,12 @@ export class SessionManager implements ISessionManager {
     }
 
     return result;
+  }
+
+  auditPrompt(sessionId: string, entry: AuditTurnEntry, config: import("../config").NaxConfig): void {
+    const descriptor = this._sessions.get(sessionId);
+    if (!descriptor) return;
+    auditTurn(descriptor, entry, config);
   }
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {

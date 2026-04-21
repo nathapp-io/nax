@@ -108,6 +108,8 @@ export interface SessionDescriptor {
   agent: string;
   /** Working directory this session is bound to */
   workdir: string;
+  /** Absolute path to the repo root where .nax/ lives — used by the audit writer to resolve the audit dir. */
+  projectDir?: string;
   /** Feature name for session naming and log correlation */
   featureName?: string;
   /** Story this session is executing (undefined for feature-level sessions) */
@@ -146,6 +148,25 @@ export interface SessionDescriptor {
 // ─────────────────────────────────────────────────────────────────────────────
 // Manager interface
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Minimal audit entry reported by adapters via the auditCallback hook.
+ * SessionManager.auditPrompt() enriches this with stable session identity
+ * (sess-<uuid>, agent, protocolIds) before writing to audit-writer.ts.
+ */
+export interface AuditTurnEntry {
+  prompt: string;
+  callType: "run" | "complete";
+  pipelineStage: string;
+  turn?: number;
+  resumed?: boolean;
+  /** Volatile ACP session name — used for filename and backward-compat header. */
+  sessionName?: string;
+  /** acpx record ID — stable across reconnects. */
+  recordId?: string;
+  /** acpx volatile session ID — changes on reconnect. */
+  sessionId?: string;
+}
 
 /** Options for creating a new session */
 export interface CreateSessionOptions {
@@ -252,4 +273,13 @@ export interface ISessionManager {
   getForStory(storyId: string): SessionDescriptor[];
   /** Remove completed/failed sessions older than ttlMs */
   sweepOrphans(ttlMs?: number): number;
+  /**
+   * Fire-and-forget audit write for a prompt turn. Enriches the raw entry with
+   * the stable sess-<uuid>, current agent, and protocolIds from the descriptor,
+   * then delegates to src/session/audit-writer.ts.
+   *
+   * No-op when the session is not found or audit is disabled in config.
+   * Best-effort — errors are warned and swallowed.
+   */
+  auditPrompt(sessionId: string, entry: AuditTurnEntry, config: import("../config").NaxConfig): void;
 }
