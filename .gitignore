@@ -57,12 +57,11 @@ TEST_SUMMARY_*.md
 .nax/**/runs/
 
 .tmp/
-.solo/
 
-~/
-prompt.txt
 .nax-wt/
 tmp/.ci-test-output.txt
 logs/
 .worktrees
 .vscode/
+opencode.json
+.codex
