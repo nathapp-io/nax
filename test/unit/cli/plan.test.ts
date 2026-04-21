@@ -9,11 +9,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
-import type { IAgentManager } from "../../../src/agents";
 import { PlanPromptBuilder } from "../../../src/prompts";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { PRD } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
+import { makeMockAgentManager } from "../../helpers";
+import { DEFAULT_CONFIG } from "../../../src/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -77,31 +76,12 @@ function makeFakeAdapter(prdContent: object = SAMPLE_PRD) {
 
 function makeMockPlanManager(
   planFn?: (agentName: string, opts: any) => Promise<void>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: planFn
+) {
+  return makeMockAgentManager({
+    planAsFn: planFn
       ? async (agentName: string, opts: any) => { await planFn(agentName, opts); return { specContent: "" }; }
-      : async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
+      : undefined,
+  });
 }
 
 function makeFakeScan() {

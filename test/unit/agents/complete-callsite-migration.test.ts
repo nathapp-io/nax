@@ -7,8 +7,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { IAgentManager } from "../../../src/agents/manager-types";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-
-// ─── Shared mock helpers ───────────────────────────────────────────────────
+import { makeMockAgentManager } from "../../helpers";
 
 const mockCompleteResult = { output: "ok", costUsd: 0.001, source: "exact" as const };
 
@@ -18,27 +17,15 @@ function makeAgentManager(): { mgr: IAgentManager; callCount: () => number } {
     count++;
     return { result: mockCompleteResult, fallbacks: [] };
   };
-  const mgr = {
-    getDefault: () => "claude",
-    completeWithFallback: completeWithFallbackFn,
-    complete: completeWithFallbackFn, // AgentManager.complete delegates here too
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
+  const mgr = makeMockAgentManager({
+    completeWithFallbackFn,
+  }) as unknown as IAgentManager;
+  Object.assign(mgr, {
+    complete: completeWithFallbackFn,
     completeAs: async () => mockCompleteResult,
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
     runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
     getAgent: () => ({ run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }) } as any),
-    events: { on: () => {} },
-  } as unknown as IAgentManager;
+  });
   return { mgr, callCount: () => count };
 }
 

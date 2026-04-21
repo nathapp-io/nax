@@ -14,39 +14,19 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
-import type { IAgentManager } from "../../../src/agents";
-import type { NaxConfig } from "../../../src/config";
 import { NaxError } from "../../../src/errors";
-import type { PRD, UserStory } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 function makeMockDecomposeManager(
-  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({ decompose: async () => ({ stories: [] }) } as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: decomposeFn
-      ? async (name: string, opts: any) => decomposeFn(name, opts)
-      : async () => ({ stories: [] }),
-  } as any;
+  decomposeFn?: (agentName: string, opts: DecomposeOptions) => Promise<{ stories: DecomposedStory[] }>,
+) {
+  return makeMockAgentManager({
+    decomposeAsFn: decomposeFn
+      ? async (name: string, opts: DecomposeOptions) => decomposeFn(name, opts)
+      : undefined,
+    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,38 +35,8 @@ function makeMockDecomposeManager(
 
 const FEATURE = "repair-feature";
 
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "Original story",
-    description: "Description",
-    acceptanceCriteria: ["AC-1"],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-    contextFiles: ["src/foo.ts"],
-    routing: {
-      complexity: "medium",
-      testStrategy: "test-after",
-      reasoning: "medium",
-      modelTier: "balanced",
-    },
-    ...overrides,
-  };
-}
-
 function makePrd(stories: UserStory[] = [makeStory()]): PRD {
-  return {
-    project: "test-project",
-    feature: FEATURE,
-    branchName: "feat/repair-feature",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    userStories: stories,
-  };
+  return makePRD({ feature: FEATURE, branchName: "feat/repair-feature", userStories: stories });
 }
 
 function makeValidSubStory(id: string): DecomposedStory {
@@ -114,20 +64,7 @@ function makeOversizedSubStory(id: string, acCount: number): DecomposedStory {
 }
 
 function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
-    precheck: {
-      storySizeGate: {
-        enabled: true,
-        maxAcCount: 5,
-        maxDescriptionLength: 3000,
-        maxBulletPoints: 12,
-        action: "block",
-        maxReplanAttempts: 3,
-      },
-    },
-    agent: { default: "claude" },
-    ...overrides,
-  } as NaxConfig;
+  return makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" }, ...overrides });
 }
 
 function makeFakeScan() {
