@@ -54,7 +54,8 @@ export function rebuildManifestPath(projectDir: string, featureId: string, story
 }
 
 function toStoredPath(projectDir: string, pathValue: string): string {
-  return isAbsolute(pathValue) ? relative(projectDir, pathValue) : pathValue;
+  const relativePath = isAbsolute(pathValue) ? relative(projectDir, pathValue) : pathValue;
+  return relativePath === "" ? "." : relativePath;
 }
 
 function toAbsolutePath(projectDir: string, pathValue: string): string {

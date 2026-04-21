@@ -82,8 +82,8 @@ function resolveProjectDirFromScratchDir(scratchDir: string): string | undefined
 }
 
 function toProjectRelativePath(projectDir: string, pathValue: string): string {
-  if (!isAbsolute(pathValue)) return pathValue;
-  return relative(projectDir, pathValue);
+  const relativePath = isAbsolute(pathValue) ? relative(projectDir, pathValue) : pathValue;
+  return relativePath === "" ? "." : relativePath;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

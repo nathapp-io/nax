@@ -47,7 +47,7 @@ describe("manifest-store", () => {
 
     const persistedRaw = writes.get("/repo/.nax/features/feat-auth/stories/US-001/context-manifest-review-semantic.json");
     const persisted = JSON.parse(persistedRaw ?? "{}") as { repoRoot?: string; packageDir?: string };
-    expect(persisted.repoRoot).toBe("");
+    expect(persisted.repoRoot).toBe(".");
     expect(persisted.packageDir).toBe("apps/api");
 
     const manifests = await loadContextManifests("/repo", "US-001");
@@ -92,6 +92,41 @@ describe("manifest-store", () => {
     expect(manifests).toHaveLength(1);
     expect(manifests[0]?.manifest.repoRoot).toBe("/repo");
     expect(manifests[0]?.manifest.packageDir).toBe("/repo/packages/web");
+  });
+
+  test("loadContextManifests resolves explicit dot-relative root paths", async () => {
+    const writes = new Map<string, string>();
+    const path = "/repo/.nax/features/feat-auth/stories/US-001/context-manifest-review-semantic.json";
+    writes.set(
+      path,
+      `${JSON.stringify(
+        {
+          requestId: "req-dot",
+          stage: "review-semantic",
+          totalBudgetTokens: 8_000,
+          usedTokens: 1_200,
+          includedChunks: [],
+          excludedChunks: [],
+          floorItems: [],
+          digestTokens: 0,
+          buildMs: 10,
+          repoRoot: ".",
+          packageDir: ".",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
+    _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-review-semantic.json"];
+    _manifestStoreDeps.fileExists = async (filePath) => writes.has(filePath);
+    _manifestStoreDeps.readFile = async (filePath) => writes.get(filePath) ?? "";
+
+    const manifests = await loadContextManifests("/repo", "US-001");
+    expect(manifests).toHaveLength(1);
+    expect(manifests[0]?.manifest.repoRoot).toBe("/repo");
+    expect(manifests[0]?.manifest.packageDir).toBe("/repo");
   });
 
   test("writeRebuildManifest appends rebuild events into rebuild-manifest.json", async () => {
