@@ -29,6 +29,7 @@ interface PlanCtx {
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
   readonly config: NaxConfig;
+  readonly agentManager?: IAgentManager;
 }
 
 export async function runPlan(
@@ -53,7 +54,7 @@ export async function runPlan(
   // Mutable: plan debater costs accumulated below; hybrid rebuttal loop adds cost via adapter.run().
   let totalCostUsd = 0;
 
-  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
+  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
 
   // Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];
@@ -220,6 +221,7 @@ export async function runPlan(
     /* resolverContext */ undefined,
     planSynthesisSuffix,
     successful.map((p) => p.debater),
+    agentManager,
   );
 
   // Winning output: synthesis/custom resolver returns a combined PRD — use it when available.

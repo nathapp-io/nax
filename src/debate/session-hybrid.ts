@@ -37,6 +37,7 @@ export interface HybridCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
+  readonly agentManager?: IAgentManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
 }
@@ -62,7 +63,7 @@ export async function runRebuttalLoop(
   const config = ctx.stageConfig;
   const rebuttals: Rebuttal[] = [];
   let costUsd = 0;
-  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
+  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
 
   const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
 
@@ -145,7 +146,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
-  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
+  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
 
   // Resolve agents via shared helper — skip unavailable
   const resolved: ResolvedDebater[] = [];
@@ -276,6 +277,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     fullResolverContext,
     /* promptSuffix */ undefined,
     successfulProposals.map((s) => s.debater),
+    agentManager,
   );
   totalCostUsd += resolveResult.resolverCostUsd;
 

@@ -31,6 +31,7 @@ interface OneShotCtx {
   readonly timeoutMs: number;
   readonly workdir?: string;
   readonly featureName?: string;
+  readonly agentManager?: IAgentManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
 }
@@ -43,7 +44,7 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
-  const agentManager: IAgentManager = _debateSessionDeps.createManager(ctx.config);
+  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
 
   // Step 1: Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];
@@ -244,6 +245,7 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
     fullResolverContext,
     /* promptSuffix */ undefined,
     successful.map((p) => p.debater),
+    agentManager,
   );
   totalCostUsd += outcome.resolverCostUsd;
 

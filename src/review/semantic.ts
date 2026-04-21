@@ -266,6 +266,7 @@ export async function runSemanticReview(
       workdir,
       featureName: featureName,
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
+      agentManager: agentManager ?? undefined,
       reviewerSession: resolverSession,
       resolverContextInput: resolverSession
         ? {
