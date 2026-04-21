@@ -1,5 +1,4 @@
-import type { AgentAdapter } from "../../src/agents";
-import type { IAgentManager } from "../../src/agents";
+import type { AgentAdapter, IAgentManager } from "../../src/agents";
 
 const DEFAULT_RESULT = {
   success: true,
@@ -10,9 +9,19 @@ const DEFAULT_RESULT = {
   estimatedCost: 0,
 };
 
-export function createMockAgentManager(defaultAgent = "claude"): IAgentManager {
+/**
+ * Creates a minimal IAgentManager mock. Pass `overrides` to customize behavior.
+ *
+ * Example:
+ * ```ts
+ * const manager = makeMockAgentManager({
+ *   complete: async () => ({ output: "stubbed", costUsd: 0, source: "primary" }),
+ * });
+ * ```
+ */
+export function makeMockAgentManager(overrides: Partial<IAgentManager> = {}): IAgentManager {
   return {
-    getDefault: () => defaultAgent,
+    getDefault: () => "claude",
     isUnavailable: () => false,
     markUnavailable: () => {},
     reset: () => {},
@@ -20,14 +29,20 @@ export function createMockAgentManager(defaultAgent = "claude"): IAgentManager {
     resolveFallbackChain: () => [],
     shouldSwap: () => false,
     nextCandidate: () => null,
-    runWithFallback: async (_req) => ({ result: DEFAULT_RESULT, fallbacks: [] }),
-    completeWithFallback: async (_prompt, _opts) => ({
+    runWithFallback: async () => ({ result: DEFAULT_RESULT, fallbacks: [] }),
+    completeWithFallback: async () => ({
       result: { output: "", costUsd: 0, source: "fallback" as const },
       fallbacks: [],
     }),
-    run: async (_req) => ({ ...DEFAULT_RESULT, agentFallbacks: [] }),
-    complete: async (_prompt, _opts) => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    run: async () => ({ ...DEFAULT_RESULT, agentFallbacks: [] }),
+    complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
     getAgent: (_name: string): AgentAdapter | undefined => undefined,
     events: { on: () => {} },
-  };
+    ...overrides,
+  } as IAgentManager;
+}
+
+/** @deprecated Use {@link makeMockAgentManager} with overrides instead. */
+export function createMockAgentManager(defaultAgent = "claude"): IAgentManager {
+  return makeMockAgentManager({ getDefault: () => defaultAgent });
 }

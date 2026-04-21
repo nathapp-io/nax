@@ -1,0 +1,100 @@
+#!/usr/bin/env bun
+/**
+ * Detect inline test mocks that should use test/helpers/ factories instead.
+ *
+ * Looks for the high-churn patterns documented in .claude/rules/test-helpers.md:
+ *   - Inline IAgentManager mocks (getDefault + run + complete)
+ *   - Inline AgentAdapter mocks (capabilities.supportedTiers)
+ *   - Local makeConfig() / makeStory() functions that duplicate shared helpers
+ *
+ * Exits 1 if violations found (CI can fail on this).
+ *
+ * Usage:
+ *   bun scripts/check-inline-test-mocks.ts          # report only
+ *   bun scripts/check-inline-test-mocks.ts --strict # exit 1 on any match
+ */
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
+
+const ROOT = join(import.meta.dir, "..");
+const TEST_DIR = join(ROOT, "test");
+const HELPERS_DIR = join(ROOT, "test/helpers");
+
+const strict = process.argv.includes("--strict");
+
+async function walk(dir: string, out: string[] = []): Promise<string[]> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (full === HELPERS_DIR) continue;
+    if (entry.isDirectory()) await walk(full, out);
+    else if (entry.name.endsWith(".test.ts")) out.push(full);
+  }
+  return out;
+}
+
+type Violation = { file: string; line: number; kind: string; snippet: string };
+
+const PATTERNS: Array<{ kind: string; re: RegExp; hint: string }> = [
+  {
+    kind: "inline-agent-manager",
+    re: /getDefault\s*:\s*\(\)\s*=>/,
+    hint: "Replace with makeMockAgentManager() from test/helpers",
+  },
+  {
+    kind: "inline-agent-adapter",
+    re: /supportedTiers\s*:\s*\[/,
+    hint: "Replace with makeAgentAdapter() from test/helpers",
+  },
+  {
+    kind: "local-makeConfig",
+    re: /^\s*function\s+makeConfig\s*\(/,
+    hint: "Replace with makeNaxConfig() from test/helpers",
+  },
+  {
+    kind: "local-makeStory",
+    re: /^\s*function\s+makeStory\s*\(/,
+    hint: "Replace with makeStory() from test/helpers",
+  },
+];
+
+const files = await walk(TEST_DIR);
+const violations: Violation[] = [];
+
+for (const file of files) {
+  const text = await Bun.file(file).text();
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    for (const p of PATTERNS) {
+      if (p.re.test(lines[i])) {
+        violations.push({ file, line: i + 1, kind: p.kind, snippet: lines[i].trim().slice(0, 100) });
+      }
+    }
+  }
+}
+
+const byKind = new Map<string, Violation[]>();
+for (const v of violations) {
+  const arr = byKind.get(v.kind) ?? [];
+  arr.push(v);
+  byKind.set(v.kind, arr);
+}
+
+if (violations.length === 0) {
+  console.log("[OK] No inline test mock violations found.");
+  process.exit(0);
+}
+
+console.log(`Found ${violations.length} inline mock patterns across ${files.length} test files.\n`);
+for (const [kind, arr] of byKind) {
+  const hint = PATTERNS.find((p) => p.kind === kind)?.hint ?? "";
+  console.log(`━━ [${arr.length}] ${kind} — ${hint} ━━`);
+  for (const v of arr.slice(0, 5)) {
+    const rel = v.file.replace(ROOT + "/", "");
+    console.log(`  ${rel}:${v.line}  ${v.snippet}`);
+  }
+  if (arr.length > 5) console.log(`  … +${arr.length - 5} more`);
+  console.log();
+}
+
+console.log(`See .claude/rules/test-helpers.md for guidance.`);
+process.exit(strict ? 1 : 0);
