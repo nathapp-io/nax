@@ -4,9 +4,9 @@ import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import type { IAgentManager } from "../../../../src/agents/manager-types";
-import type { AgentAdapter } from "../../../../src/agents/types";
 import { ContextOrchestrator } from "../../../../src/context/engine";
 import type { ContextBundle } from "../../../../src/context/engine";
+import { makeAgentAdapter } from "../../../../test/helpers";
 
 const origGetAgent = _executionDeps.getAgent;
 const origValidateAgent = _executionDeps.validateAgentForTier;
@@ -79,21 +79,13 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
       getAgent: () => undefined,
     };
 
-    const successAdapter: AgentAdapter = {
+    const successAdapter = makeAgentAdapter({
       name: "claude",
       displayName: "Claude",
       binary: "claude",
       capabilities: { supportedTiers: ["fast", "balanced", "powerful"], maxContextTokens: 100000, features: new Set() },
       run: mock(async () => ({ success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0.01 })),
-      closeSession: async () => {},
-      closePhysicalSession: async () => {},
-      deriveSessionName: mock(() => "nax-session-claude"),
-      isInstalled: async () => true,
-      buildCommand: () => [],
-      plan: async () => ({ success: true, spec: "" }),
-      decompose: async () => ({ success: true, stories: [] }),
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
-    } as unknown as AgentAdapter;
+    });
 
     _executionDeps.getAgent = mock(() => successAdapter);
     _executionDeps.validateAgentForTier = mock(() => true);
