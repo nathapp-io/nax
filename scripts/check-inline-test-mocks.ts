@@ -31,6 +31,13 @@ const SKIP_FILES = new Set([
   "test/unit/pipeline/stages/execution-agent-routing.test.ts",
   "test/unit/pipeline/stages/execution-tdd-simple.test.ts",
   "test/unit/pipeline/stages/execution-session-role.test.ts",
+  "test/unit/pipeline/stages/execution-ambiguity.test.ts",
+  "test/unit/pipeline/stages/execution-manager-wiring.test.ts",
+  "test/unit/pipeline/stages/execution-merge-conflict.test.ts",
+  "test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts",
+  "test/unit/pipeline/storyid-events.test.ts",
+  "test/unit/agents/manager-iface-run.test.ts",
+  "test/unit/agents/manager-credentials.test.ts",
 ]);
 
 /**

@@ -2,9 +2,10 @@ import { describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import { NaxConfigSchema } from "../../../src/config/schemas";
 import type { AgentAdapter } from "../../../src/agents/types";
+import { makeAgentAdapter } from "../../../test/helpers";
 
 function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
-  return {
+  return makeAgentAdapter({
     name,
     displayName: name,
     binary: name,
@@ -23,7 +24,7 @@ function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
     deriveSessionName: () => "",
     closePhysicalSession: async () => {},
     closeSession: async () => {},
-  };
+  });
 }
 
 describe("AgentManager.validateCredentials (#518)", () => {
