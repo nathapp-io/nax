@@ -228,6 +228,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
         undefined,
         expect.any(Array),
         undefined,
+        "/test/workdir",
       );
     });
 
