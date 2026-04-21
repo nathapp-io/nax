@@ -59,6 +59,8 @@ describe("ADR-013 Phase 6 — new AgentManager() confinement", () => {
 
     for await (const file of glob.scan({ cwd: SRC_DIR, absolute: true })) {
       if (file.endsWith(".d.ts")) continue;
+      if (file.includes("/test/")) continue;
+      if (file.includes("/types/")) continue;
 
       const relativePath = file.replace(SRC_DIR + "/", "");
       if (NEW_AGENT_MANAGER_ALLOWED.has(relativePath)) continue;

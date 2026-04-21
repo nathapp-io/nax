@@ -23,7 +23,6 @@ function makeManager(fallback: Record<string, unknown> = {}) {
 
 const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
 const qualityFailure = { category: "quality" as const, outcome: "fail-quality" as const, retriable: false, message: "" };
-const mockBundle = {} as import("../../../src/context/engine").ContextBundle;
 
 describe("AgentManager — Phase 1 pass-through", () => {
   test("getDefault() returns built-in default when config.agent.default is unset", () => {
@@ -62,13 +61,13 @@ describe("AgentManager — Phase 1 pass-through", () => {
     expect(manager.isUnavailable("claude")).toBe(false);
   });
 
-  test("shouldSwap() returns false when no bundle (Phase 4: bundle required)", () => {
+  test("shouldSwap() returns false when hasBundle is false", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
     expect(
       manager.shouldSwap(
         { category: "availability", outcome: "fail-auth", message: "x", retriable: false },
         0,
-        undefined,
+        false,
       ),
     ).toBe(false);
   });
@@ -127,31 +126,31 @@ describe("AgentManager — Phase 1 pass-through", () => {
 
 describe("AgentManager.shouldSwap (Phase 4)", () => {
   test("returns true for availability failure when enabled", () => {
-    expect(makeManager().shouldSwap(availFailure, 0, mockBundle)).toBe(true);
+    expect(makeManager().shouldSwap(availFailure, 0, true)).toBe(true);
   });
 
   test("returns false when fallback disabled", () => {
-    expect(makeManager({ enabled: false }).shouldSwap(availFailure, 0, mockBundle)).toBe(false);
+    expect(makeManager({ enabled: false }).shouldSwap(availFailure, 0, true)).toBe(false);
   });
 
   test("returns false when hop cap reached", () => {
-    expect(makeManager({ maxHopsPerStory: 1 }).shouldSwap(availFailure, 1, mockBundle)).toBe(false);
+    expect(makeManager({ maxHopsPerStory: 1 }).shouldSwap(availFailure, 1, true)).toBe(false);
   });
 
-  test("returns false when no bundle", () => {
-    expect(makeManager().shouldSwap(availFailure, 0, undefined)).toBe(false);
+  test("returns false when hasBundle is false", () => {
+    expect(makeManager().shouldSwap(availFailure, 0, false)).toBe(false);
   });
 
   test("returns false for quality failure when onQualityFailure=false", () => {
-    expect(makeManager({ onQualityFailure: false }).shouldSwap(qualityFailure, 0, mockBundle)).toBe(false);
+    expect(makeManager({ onQualityFailure: false }).shouldSwap(qualityFailure, 0, true)).toBe(false);
   });
 
   test("returns true for quality failure when onQualityFailure=true", () => {
-    expect(makeManager({ onQualityFailure: true }).shouldSwap(qualityFailure, 0, mockBundle)).toBe(true);
+    expect(makeManager({ onQualityFailure: true }).shouldSwap(qualityFailure, 0, true)).toBe(true);
   });
 
   test("returns false when failure is undefined", () => {
-    expect(makeManager().shouldSwap(undefined, 0, mockBundle)).toBe(false);
+    expect(makeManager().shouldSwap(undefined, 0, true)).toBe(false);
   });
 });
 

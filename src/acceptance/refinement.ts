@@ -85,7 +85,13 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
   } = context;
   const logger = getLogger();
 
-  const defaultAgent = (context.agentManager ?? _refineDeps.createManager(config)).getDefault();
+  const manager = context.agentManager ?? _refineDeps.createManager(config);
+  if (!context.agentManager) {
+    logger.warn("refinement", "No agentManager threaded — fresh manager created, unavailability state is lost", {
+      storyId,
+    });
+  }
+  const defaultAgent = manager.getDefault();
   const resolvedModel = resolveConfiguredModel(
     config.models,
     defaultAgent,
@@ -114,8 +120,8 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
       timeoutMs: config.acceptance?.timeoutMs ?? 120_000,
     } as const;
     const completeResult = context.agentManager
-      ? (await context.agentManager.completeWithFallback(prompt, completeOpts)).result
-      : await _refineDeps.createManager(config).complete(prompt, completeOpts);
+      ? (await manager.completeWithFallback(prompt, completeOpts)).result
+      : await manager.complete(prompt, completeOpts);
     const costUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
     response = typeof completeResult === "string" ? completeResult : completeResult.output;
 

@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import type { AgentResult } from "../../../src/agents/types";
-import type { AdapterFailure } from "../../../src/context/engine/types";
+import type { AdapterFailure, ContextBundle } from "../../../src/context/engine/types";
 import { makeNaxConfig } from "../../helpers/mock-nax-config";
 
 // adapterFailure that triggers a swap (category: "availability" → shouldSwap() returns true).
@@ -22,10 +22,9 @@ const AUTH_FAILURE: AdapterFailure = {
   message: "401 Unauthorized",
 };
 
-// Minimal truthy ContextBundle — only needed for shouldSwap's `if (!bundle) return false` guard.
-// Cast to satisfy the TypeScript type; none of the fields are read by shouldSwap.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const STUB_BUNDLE = { pushMarkdown: "", pullTools: [], digest: "", manifest: {}, chunks: [] } as any;
+// Minimal truthy ContextBundle — only the truthiness (hasBundle=true) matters to shouldSwap.
+// None of the fields are read by the manager; cast satisfies AgentRunRequest.bundle typing.
+const STUB_BUNDLE = { pushMarkdown: "", pullTools: [], digest: "", manifest: {}, chunks: [] } as unknown as ContextBundle;
 
 function makeFailResult(): AgentResult {
   return {
@@ -140,5 +139,26 @@ describe("ADR-013 Phase 6 — manager unavailability state threading", () => {
     // With both unavailable: no candidate left.
     manager.markUnavailable("gemini", AUTH_FAILURE);
     expect(manager.nextCandidate("claude", 0)).toBeNull();
+  });
+
+  test("run marks each failing agent unavailable — state persists for subsequent mid-story calls", async () => {
+    const manager = new AgentManager(config);
+
+    // claude and codex fail (adapterFailure triggers markUnavailable inside runWithFallback);
+    // gemini succeeds.
+    await manager.run({
+      runOptions: STUB_RUN_OPTIONS,
+      bundle: STUB_BUNDLE,
+      executeHop: async (agentName) => {
+        const res = agentName === "gemini" ? makeSuccessResult() : makeFailResult();
+        return { result: res, bundle: STUB_BUNDLE };
+      },
+    });
+
+    // runWithFallback marks each agent unavailable before moving to the next hop.
+    // A second mid-story call on the same shared manager would skip both failed agents.
+    expect(manager.isUnavailable("claude")).toBe(true);
+    expect(manager.isUnavailable("codex")).toBe(true);
+    expect(manager.isUnavailable("gemini")).toBe(false);
   });
 });
