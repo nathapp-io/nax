@@ -104,6 +104,12 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     for (const agent of fallbackAgents) {
       if (!modelKeys.includes(agent)) {
         errors.push(`agent.fallback.map: agent "${agent}" is not a key in models (available: ${modelKeys.join(", ")})`);
+      } else {
+        for (const tier of requiredTiers) {
+          if (!config.models[agent]?.[tier]) {
+            errors.push(`models.${agent}.${tier} is required (fallback agent "${agent}" in agent.fallback.map)`);
+          }
+        }
       }
     }
   }
