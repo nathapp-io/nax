@@ -13,7 +13,7 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
-import { AgentManager } from "../agents";
+import { createAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
@@ -113,7 +113,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
   const allStoryMetrics: any[] = [];
 
-  const agentManager = new AgentManager(config);
+  const agentManager = createAgentManager(config);
   const agentGetFn = agentManager.getAgent.bind(agentManager);
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
