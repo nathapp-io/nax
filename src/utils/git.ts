@@ -20,6 +20,21 @@ export const _gitDeps = { spawn, getSafeLogger };
 const GIT_TIMEOUT_MS = 10_000;
 
 /**
+ * Return the absolute path of the git repository root for the given workdir.
+ * Returns null if workdir is not inside a git repo or the command fails.
+ */
+export async function getGitRoot(workdir: string): Promise<string | null> {
+  try {
+    const { stdout, exitCode } = await gitWithTimeout(["rev-parse", "--show-toplevel"], workdir);
+    if (exitCode !== 0) return null;
+    const trimmed = stdout.trim();
+    return trimmed || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Spawn a git command with a hard timeout.
  *
  * Kills the process with SIGKILL after GIT_TIMEOUT_MS if it hasn't exited.

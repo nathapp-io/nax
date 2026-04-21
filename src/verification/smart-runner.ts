@@ -10,9 +10,9 @@
  * Smart-runner has to work across package layouts and languages, so only test
  * classification is hard-filtered here. Everything else stays generic.
  */
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
-import { gitWithTimeout } from "../utils/git";
+import { getGitRoot, gitWithTimeout } from "../utils/git";
 import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /**
@@ -25,6 +25,17 @@ import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns }
 const _bunDeps = {
   glob: (p: string) => new Bun.Glob(p),
   file: (path: string) => Bun.file(path),
+};
+
+/**
+ * Injectable git utilities — defined before functions so getChangedTestFiles and
+ * getChangedNonTestFiles can reference _gitUtilDeps.getGitRoot without a forward
+ * reference. Tests override this to avoid a real git spawn call.
+ *
+ * @internal
+ */
+export const _gitUtilDeps = {
+  getGitRoot,
 };
 
 /**
@@ -283,6 +294,7 @@ export async function getChangedNonTestFiles(
   packagePrefix?: string,
   testFileRegex: RegExp[] = [],
   naxIgnoreIndex?: NaxIgnoreIndex,
+  repoRoot?: string,
 ): Promise<string[]> {
   try {
     // FEAT-010: Use per-attempt baseRef for precise diff; fall back to HEAD~1 if not provided
@@ -292,12 +304,29 @@ export async function getChangedNonTestFiles(
     if (exitCode !== 0) return [];
 
     const lines = stdout.trim().split("\n").filter(Boolean);
-    const packageDir = packagePrefix ? join(workdir, packagePrefix) : undefined;
+    const effectiveRepoRoot = repoRoot ?? workdir;
+    const packageDir = packagePrefix ? join(effectiveRepoRoot, packagePrefix) : undefined;
     const ignoreMatchers =
-      naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(workdir, packageDir));
+      naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(effectiveRepoRoot, packageDir));
 
-    const scopedRaw = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
-    const scoped = filterNaxInternalPaths(scopedRaw, ignoreMatchers);
+    // Issue #565: git diff paths are relative to the true git root, which may be an
+    // ancestor of repoRoot. Compute the extra prefix so startsWith filtering works
+    // regardless of where the git root sits relative to the project root.
+    let effectivePrefix = packagePrefix;
+    if (packagePrefix && repoRoot) {
+      const gitRoot = await _gitUtilDeps.getGitRoot(workdir);
+      const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
+      effectivePrefix = extraPrefix ? `${extraPrefix}/${packagePrefix}` : packagePrefix;
+    }
+
+    const scopedRaw = effectivePrefix ? lines.filter((f) => f.startsWith(`${effectivePrefix}/`)) : lines;
+    // Strip the extraPrefix so returned paths are relative to repoRoot (packagePrefix-relative).
+    const extraPrefix =
+      effectivePrefix && packagePrefix && effectivePrefix !== packagePrefix
+        ? effectivePrefix.slice(0, effectivePrefix.length - packagePrefix.length - 1)
+        : "";
+    const stripped = extraPrefix ? scopedRaw.map((f) => f.slice(`${extraPrefix}/`.length)) : scopedRaw;
+    const scoped = filterNaxInternalPaths(stripped, ignoreMatchers);
     if (testFileRegex.length === 0) return scoped;
     return scoped.filter((f) => !testFileRegex.some((re) => re.test(f)));
   } catch {
@@ -343,10 +372,22 @@ export async function getChangedTestFiles(
     const ignoreMatchers =
       naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(repoRoot, packageDir));
 
-    // Scope to package directory — covers both co-located (src/) and separated (test/) layouts
-    const scopedRaw = packagePrefix ? lines.filter((f) => f.startsWith(`${packagePrefix}/`)) : lines;
+    // Issue #565: git diff paths are relative to the true git root, which may be an
+    // ancestor of repoRoot. Compute the extra prefix so startsWith filtering works
+    // regardless of where the git root sits relative to the project root.
+    const gitRoot = await _gitUtilDeps.getGitRoot(workdir);
+    const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
+    const effectivePrefix = packagePrefix
+      ? extraPrefix
+        ? `${extraPrefix}/${packagePrefix}`
+        : packagePrefix
+      : undefined;
+
+    const scopedRaw = effectivePrefix ? lines.filter((f) => f.startsWith(`${effectivePrefix}/`)) : lines;
     const scoped = filterNaxInternalPaths(scopedRaw, ignoreMatchers);
-    return scoped.filter((f) => testFileRegex.some((re) => re.test(f))).map((f) => join(repoRoot, f));
+    // Strip the extraPrefix before constructing absolute paths so join(repoRoot, f) is correct.
+    const stripped = extraPrefix ? scoped.map((f) => f.slice(`${extraPrefix}/`.length)) : scoped;
+    return stripped.filter((f) => testFileRegex.some((re) => re.test(f))).map((f) => join(repoRoot, f));
   } catch {
     return [];
   }
