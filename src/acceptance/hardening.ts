@@ -6,6 +6,7 @@
  */
 
 import { resolveDefaultAgent } from "../agents";
+import type { IAgentManager } from "../agents";
 import type { AgentAdapter } from "../agents/types";
 import { type ModelDef, resolveConfiguredModel } from "../config";
 import type { NaxConfig } from "../config";
@@ -37,6 +38,7 @@ export interface HardeningContext {
   workdir: string;
   config: NaxConfig;
   agentGetFn?: (name: string) => AgentAdapter | undefined;
+  agentManager?: IAgentManager;
 }
 
 // ─── Injectable deps ────────────────────────────────────────────────────────
@@ -80,6 +82,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
         config: ctx.config,
         storyTitle: story.title,
         storyDescription: story.description,
+        agentManager: ctx.agentManager,
       });
       allRefined.push(...refineResult.criteria);
       result.costUsd += refineResult.costUsd;
@@ -121,6 +124,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       config: ctx.config,
       language,
       targetTestFile: suggestedTestPath,
+      agentManager: ctx.agentManager,
     });
     result.costUsd += genResult.costUsd ?? 0;
 

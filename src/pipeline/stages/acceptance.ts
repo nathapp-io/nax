@@ -243,6 +243,7 @@ export const acceptanceStage: PipelineStage = {
             workdir: ctx.workdir,
             config: ctx.config,
             agentGetFn: ctx.agentGetFn,
+            agentManager: ctx.agentManager,
           });
           logger.info("acceptance", "Hardening pass complete", {
             storyId: ctx.story.id,

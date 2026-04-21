@@ -6,7 +6,7 @@
  */
 
 import { join } from "node:path";
-import { AgentManager } from "../agents";
+import { createAgentManager } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
@@ -72,7 +72,7 @@ function skeletonImportLine(testFramework?: string): string {
  * @internal
  */
 export const _generatorPRDDeps = {
-  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
+  createManager: (config: NaxConfig): IAgentManager => createAgentManager(config),
   writeFile: async (path: string, content: string): Promise<void> => {
     await Bun.write(path, content);
   },

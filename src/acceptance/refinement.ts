@@ -5,7 +5,7 @@
  * testable assertions using an LLM call via adapter.complete().
  */
 
-import { AgentManager } from "../agents";
+import { createAgentManager } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
@@ -22,7 +22,7 @@ import type { RefineResult, RefinedCriterion, RefinementContext } from "./types"
  * @internal
  */
 export const _refineDeps = {
-  createManager: (config: NaxConfig): IAgentManager => new AgentManager(config),
+  createManager: (config: NaxConfig): IAgentManager => createAgentManager(config),
 };
 
 /**
