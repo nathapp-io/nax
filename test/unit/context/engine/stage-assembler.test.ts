@@ -88,6 +88,18 @@ describe("discoverSessionScratchDirsOnDisk — Finding 2", () => {
     expect(result).toEqual([`${SESSIONS_ROOT}/sess-rel`]);
   });
 
+  test("resolves dot scratchDir from descriptor to project root", async () => {
+    _stageAssemblerDeps.readdir = async () => ["sess-dot"];
+    _stageAssemblerDeps.readDescriptor = async () => ({
+      storyId: STORY,
+      scratchDir: ".",
+      lastActivityAt: WITHIN_TTL_ISO,
+    });
+
+    const result = await discoverSessionScratchDirsOnDisk(PROJECT_DIR, FEATURE, STORY, TTL_4H);
+    expect(result).toEqual([PROJECT_DIR]);
+  });
+
   test("skips descriptors for a different story", async () => {
     _stageAssemblerDeps.readdir = async () => ["sess-mine", "sess-theirs"];
     _stageAssemblerDeps.readDescriptor = async (path: string) => {
