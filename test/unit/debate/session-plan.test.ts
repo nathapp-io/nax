@@ -37,54 +37,6 @@ const TEST_CONFIG = {
   autoMode: { defaultAgent: "opencode" },
 } as unknown as NaxConfig;
 
-function makeMockManager(options: {
-  planFn?: (agentName: string, opts: PlanOptions) => Promise<PlanResult>;
-  runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: any[] }>;
-  completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-  unavailableAgents?: Set<string>;
-} = {}): IAgentManager {
-  const unavailable = options.unavailableAgents ?? new Set<string>();
-  return {
-    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
-    getDefault: () => "opencode",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (_req: AgentRunRequest) => ({
-      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] },
-      fallbacks: [],
-    }),
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async (_req: AgentRunRequest) => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    completeAs: options.completeFn
-      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
-      : async () => ({ output: "", costUsd: 0, source: "fallback" }),
-    runAs: options.runFn
-      ? async (agentName: string, request: AgentRunRequest) => options.runFn!(agentName, request.runOptions)
-      : async (_name: string, _request: AgentRunRequest) => ({
-          success: true,
-          exitCode: 0,
-          output: "",
-          rateLimited: false,
-          durationMs: 0,
-          estimatedCost: 0,
-          agentFallbacks: [],
-        }),
-    plan: async () => ({ specContent: "" }),
-    planAs: options.planFn
-      ? async (agentName: string, opts: PlanOptions) => options.planFn!(agentName, opts)
-      : async () => ({ specContent: "ok" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
-
 describe("DebateSession.runPlan()", () => {
   let origCreateManager: typeof _debateSessionDeps.createManager;
   let origReadFile: typeof _debateSessionDeps.readFile;

@@ -8,10 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _debateSessionDeps, resolveOutcome } from "../../../src/debate/session-helpers";
-import type { IAgentManager } from "../../../src/agents";
 import type { CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import type { NaxConfig } from "../../../src/config";
+import { makeMockAgentManager } from "../../helpers";
 
 // Tests use undefined config — resolveModelDefForDebater falls back to DEFAULT_CONFIG when config is absent
 const NO_CONFIG = undefined as unknown as NaxConfig;
@@ -30,32 +30,13 @@ function makeStageConfig(
   } as DebateStageConfig;
 }
 
-function makeCaptureManager(captured: { opts?: CompleteOptions }[]): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "resolved", costUsd: 0.01, source: "exact" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output: "resolved", costUsd: 0.01, source: "exact" }),
-    completeAs: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
+function makeCaptureManager(captured: { opts?: CompleteOptions }[]) {
+  return makeMockAgentManager({
+    completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
       captured.push({ opts });
       return { output: "resolved", costUsd: 0.01, source: "exact" as const };
     },
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
+  });
 }
 
 // ─── Synthesis resolver ───────────────────────────────────────────────────────

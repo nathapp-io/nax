@@ -16,9 +16,9 @@ import { readdirSync } from "node:fs";
 import { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "../../../src/debate/session-helpers";
 import type { DebateSessionOptions } from "../../../src/debate/session-helpers";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import type { IAgentManager } from "../../../src/agents";
 import type { CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import { makeMockAgentManager } from "../../helpers";
 
 // Barrel re-export checks (resolveDebaterModel is also not yet in barrel — both are RED)
 import {
@@ -200,32 +200,13 @@ function makeResolveStageConfig(
 function makeCaptureManager(
   captured: { opts?: CompleteOptions }[],
   output = "resolved",
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output, costUsd: 0.01, source: "exact" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async () => ({ output, costUsd: 0.01, source: "exact" }),
-    completeAs: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
+) {
+  return makeMockAgentManager({
+    completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
       captured.push({ opts });
       return { output, costUsd: 0.01, source: "exact" as const };
     },
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
+  });
 }
 
 // ─── AC1: resolveOutcome() signature adds workdir? and featureName? ───────────
