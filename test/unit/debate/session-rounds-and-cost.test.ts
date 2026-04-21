@@ -12,41 +12,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import type { IAgentManager } from "../../../src/agents";
 import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
-
-// ─── Mock Helpers ──────────────────────────────────────────────────────────────
-
-function makeMockManager(
-  options: {
-    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-  } = {},
-): IAgentManager {
-  return {
-    getAgent: (_name: string) => ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "default output", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async (_, _o) => ({ output: "default output", costUsd: 0, source: "fallback" }),
-    completeAs: options.completeFn
-      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
-      : async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
+import { makeMockAgentManager } from "../../helpers";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -84,7 +51,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
   test("each debater is called twice when rounds === 2", async () => {
     const callCounts: Record<string, number> = {};
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name) => {
         callCounts[name] = (callCounts[name] ?? 0) + 1;
         return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
@@ -110,7 +77,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
   test("claude's critique prompt contains opencode's proposal", async () => {
     const promptsByAgent: Record<string, string[]> = {};
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
@@ -138,7 +105,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
   test("opencode's critique prompt contains claude's proposal", async () => {
     const promptsByAgent: Record<string, string[]> = {};
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
@@ -166,7 +133,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
   test("debater's critique prompt does NOT contain its own proposal", async () => {
     const promptsByAgent: Record<string, string[]> = {};
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
@@ -197,7 +164,7 @@ describe("DebateSession.run() — no critique round (rounds === 1)", () => {
   test("each debater's complete() is called exactly once when rounds === 1", async () => {
     const callCounts: Record<string, number> = {};
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name) => {
         callCounts[name] = (callCounts[name] ?? 0) + 1;
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
@@ -224,7 +191,7 @@ describe("DebateSession.run() — no critique round (rounds === 1)", () => {
 
 describe("DebateSession.run() — cost tracking", () => {
   test("DebateResult.totalCostUsd aggregates proposal, critique, and resolver costs", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async () => ({
         output: `{"passed": true}`,
         costUsd: 0.1,
@@ -248,7 +215,9 @@ describe("DebateSession.run() — cost tracking", () => {
   });
 
   test("DebateResult has totalCostUsd field", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager());
+    _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+      completeFn: async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0.1, source: "fallback" as const }),
+    }));
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -266,7 +235,7 @@ describe("DebateSession.run() — cost tracking", () => {
 
 describe("DebateSession.run() — proposals structure", () => {
   test("DebateResult.proposals contains one entry per successful debater", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
     }));
 
@@ -287,7 +256,7 @@ describe("DebateSession.run() — proposals structure", () => {
   });
 
   test("each proposal entry contains debater identity (agent name)", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
     }));
 
@@ -310,7 +279,7 @@ describe("DebateSession.run() — proposals structure", () => {
   });
 
   test("each proposal entry contains the output from completeAs()", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
     }));
 
@@ -335,7 +304,7 @@ describe("DebateSession.run() — proposals structure", () => {
   });
 
   test("DebateResult includes storyId, stage, and resolverType", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async () => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" }),
     }));
 

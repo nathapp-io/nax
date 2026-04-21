@@ -12,53 +12,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import type { IAgentManager } from "../../../src/agents";
 import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import { makeMockAgentManager } from "../../helpers";
 import { waitForCondition } from "../../helpers/timeout";
-
-// ─── Mock Helpers ──────────────────────────────────────────────────────────────
-
-function makeMockManager(
-  options: {
-    completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-    /** Set of agent names that are "unavailable" (getAgent returns undefined) */
-    unavailableAgents?: Set<string>;
-  } = {},
-): IAgentManager {
-  const unavailable = options.unavailableAgents ?? new Set<string>();
-  return {
-    getAgent: (name: string) => unavailable.has(name) ? undefined : ({} as any),
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallback: async (_p, _o) => ({ result: { output: "default output", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    complete: async (_p, _o) => ({ output: "default output", costUsd: 0, source: "fallback" }),
-    completeAs: options.completeFn
-      ? async (name, prompt, opts) => options.completeFn!(name, prompt, opts)
-      : async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
-    runAs: async (_name, request) => ({
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      durationMs: 0,
-      estimatedCost: 0,
-      agentFallbacks: [],
-    }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-  } as any;
-}
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -96,13 +52,12 @@ describe("DebateSession.run() — agent resolution", () => {
   test("resolves each debater via manager.getAgent(debater.agent)", async () => {
     const agentCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => ({
-      ...makeMockManager(),
-      getAgent: (name: string) => {
+    _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+      getAgentFn: (name: string) => {
         agentCalls.push(name);
         return {} as any;
       },
-    } as any));
+    }));
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -120,7 +75,7 @@ describe("DebateSession.run() — agent resolution", () => {
   test("calls manager.completeAs() with the debater's model override", async () => {
     const completeCalls: Array<{ agent: string; model: string | undefined }> = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (agentName, _prompt, opts) => {
         completeCalls.push({ agent: agentName, model: opts?.model });
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
@@ -150,7 +105,7 @@ describe("DebateSession.run() — agent resolution", () => {
   test("passes the original prompt to each debater's completeAs() call", async () => {
     const receivedPrompts: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (_name, prompt) => {
         receivedPrompts.push(prompt);
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
@@ -178,7 +133,7 @@ describe("DebateSession.run() — parallel execution", () => {
     const startTimes: number[] = [];
     const resolvers: Array<() => void> = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name) => {
         startTimes.push(Date.now());
         await new Promise<void>((resolve) => resolvers.push(resolve));
@@ -205,7 +160,7 @@ describe("DebateSession.run() — parallel execution", () => {
   });
 
   test("continues when one debater's completeAs() throws (allSettled semantics)", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async (name) => {
         if (name === "failing") throw new Error("agent error");
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
@@ -231,7 +186,7 @@ describe("DebateSession.run() — unavailable agent handling", () => {
   test("skips debaters where manager.getAgent returns undefined", async () => {
     const completeCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       unavailableAgents: new Set(["missing-agent"]),
       completeFn: async (name) => {
         completeCalls.push(name);
@@ -266,7 +221,7 @@ describe("DebateSession.run() — unavailable agent handling", () => {
       error: () => {},
     })) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       unavailableAgents: new Set(["missing-agent"]),
     }));
 
@@ -288,7 +243,7 @@ describe("DebateSession.run() — unavailable agent handling", () => {
   test("skips debaters where manager.getAgent returns null", async () => {
     const completeCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       unavailableAgents: new Set(["null-agent"]),
       completeFn: async (name) => {
         completeCalls.push(name);
@@ -314,7 +269,7 @@ describe("DebateSession.run() — unavailable agent handling", () => {
 
 describe("DebateSession.run() — single-agent fallback", () => {
   test("returns the one successful proposal when only 1 debater succeeds", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       unavailableAgents: new Set(["missing-1", "missing-2"]),
       completeFn: async () => ({ output: "the single successful proposal", costUsd: 0, source: "fallback" }),
     }));
@@ -334,7 +289,7 @@ describe("DebateSession.run() — single-agent fallback", () => {
   });
 
   test("result is not 'skipped' when falling back to single-agent", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       unavailableAgents: new Set(["missing"]),
     }));
 
@@ -352,7 +307,7 @@ describe("DebateSession.run() — single-agent fallback", () => {
   });
 
   test("falls back to fresh completeAs() call when all debaters fail", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockManager({
+    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
       completeFn: async () => {
         throw new Error("simulated failure");
       },
