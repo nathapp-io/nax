@@ -14,15 +14,16 @@ import { generateAcceptanceTests } from "../../../src/acceptance/generator";
 import { generateFixStories } from "../../../src/acceptance/fix-generator";
 import type { GenerateAcceptanceTestsOptions } from "../../../src/acceptance/types";
 import type { GenerateFixStoriesOptions } from "../../../src/acceptance/fix-generator";
-import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
+import type { CompleteOptions } from "../../../src/agents/types";
+import type { PRD } from "../../../src/prd/types";
+import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
 import type { PRD } from "../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeConfig(): NaxConfig {
+function makeNaxConfig(): NaxConfig {
   return {
     version: 1,
     models: {
@@ -154,37 +155,18 @@ describe("feature - Acceptance Tests", () => {
 `;
 
 function makeMockAdapter(completeResponse = SAMPLE_TEST_CODE): {
-  adapter: AgentAdapter;
+  adapter: ReturnType<typeof makeAgentAdapter>;
   completeCalls: Array<{ prompt: string; options?: CompleteOptions }>;
 } {
   const completeCalls: Array<{ prompt: string; options?: CompleteOptions }> = [];
 
-  const adapter = {
+  const adapter = makeAgentAdapter({
     name: "mock",
-    displayName: "Mock Adapter",
-    binary: "mock-binary",
-    capabilities: {
-      supportedTiers: ["fast" as const],
-      maxContextTokens: 100000,
-      features: new Set(["tdd" as const, "review" as const, "refactor" as const, "batch" as const]),
-    },
-    isInstalled: mock(async () => true),
-    run: mock(async () => ({
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      durationMs: 0,
-      estimatedCost: 0,
-    })),
-    buildCommand: mock(() => []),
-    plan: mock(async () => ({ spec: "", rawOutput: "" })),
-    decompose: mock(async () => ({ stories: [], rawOutput: "" })),
     complete: mock(async (prompt: string, options?: CompleteOptions) => {
       completeCalls.push({ prompt, options });
-      return completeResponse;
+      return { output: completeResponse, costUsd: 0.01, source: "exact" as const };
     }),
-  } as unknown as AgentAdapter;
+  });
 
   return { adapter, completeCalls };
 }
@@ -197,7 +179,7 @@ function makeGenerateOptions(): GenerateAcceptanceTestsOptions {
     codebaseContext: "File tree:\nsrc/\n  index.ts\n",
     modelTier: "fast",
     modelDef: MODEL_DEF,
-    config: makeConfig(),
+    config: makeNaxConfig(),
   };
 }
 
@@ -232,7 +214,7 @@ function makeFixOptions(): GenerateFixStoriesOptions {
     specContent: SPEC_WITH_ACS,
     workdir: "/tmp/test-workdir",
     modelDef: MODEL_DEF,
-    config: makeConfig(),
+    config: makeNaxConfig(),
   };
 }
 
