@@ -42,8 +42,6 @@ const SKIP_FILES = new Set([
   "test/unit/debate/session-events.test.ts",
   "test/unit/debate/session-helpers-resolver-model.test.ts",
   "test/unit/debate/session-helpers.test.ts",
-  "test/unit/debate/session-hybrid-rebuttal.test.ts",
-  "test/unit/debate/session-one-shot-roles.test.ts",
   "test/unit/debate/session-plan.test.ts",
   "test/unit/pipeline/stages/review-debate-dialogue.test.ts",
   "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts",
