@@ -9,28 +9,14 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { acceptanceStage, parseTestFailures } from "../../../../src/pipeline/stages/acceptance";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
+import { makeStory } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStory(id: string, status: "passed" | "pending" = "passed") {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "desc",
-    acceptanceCriteria: ["AC-1: criterion"],
-    tags: [],
-    dependencies: [],
-    status,
-    passes: status === "passed",
-    escalations: [],
-    attempts: 0,
-  };
-}
-
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
-  const stories = [makeStory("US-001", "passed")];
+  const stories = [makeStory({ id: "US-001", status: "passed", passes: true, attempts: 0, acceptanceCriteria: ["AC-1: criterion"] })];
   return {
     config: {
       ...DEFAULT_CONFIG,
@@ -175,7 +161,7 @@ describe("acceptanceStage.enabled()", () => {
   });
 
   test("disabled when not all stories complete", () => {
-    const stories = [makeStory("US-001", "pending")];
+    const stories = [makeStory({ id: "US-001", status: "pending", passes: false, attempts: 0, acceptanceCriteria: ["AC-1: criterion"] })];
     const ctx = makeCtx({
       prd: {
         project: "test",
