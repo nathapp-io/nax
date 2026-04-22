@@ -14,10 +14,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/execution";
 import { _singleSessionRunnerDeps } from "../../../../src/session/runners/single-session-runner";
 import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { ContextBundle } from "../../../../src/context/engine/types";
 import type { IAgentManager, AgentRunRequest, AgentRunOutcome } from "../../../../src/agents/manager-types";
+import { makeSparseNaxConfig } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,18 +37,6 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
     escalations: [],
     ...overrides,
   };
-}
-
-function makeConfig(): NaxConfig {
-  return {
-    agent: { default: "claude" },
-    execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
-    models: {
-      claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" },
-      codex: { fast: "codex-mini", balanced: "codex-full", powerful: "codex-full" },
-    },
-    quality: { requireTests: false, commands: { test: "bun test" } },
-  } as unknown as NaxConfig;
 }
 
 function makeBundle(): ContextBundle {
@@ -108,7 +96,7 @@ function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory();
-  const config = makeConfig();
+  const config = makeSparseNaxConfig({ agent: { default: "claude" }, execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 }, models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" }, codex: { fast: "codex-mini", balanced: "codex-full", powerful: "codex-full" } }, quality: { requireTests: false, commands: { test: "bun test" } } });
   return {
     config,
     rootConfig: config,

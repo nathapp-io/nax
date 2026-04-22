@@ -69,10 +69,6 @@ function makeDecomposeResponse(stories: UserStory[]): string {
   return JSON.stringify(stories.map(toDecomposedStory));
 }
 
-function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return { ...makeNaxConfig(), ...overrides };
-}
-
 function makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
@@ -170,7 +166,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const prd = makePrd([makeStory({ id: "US-001" })]);
     setupDeps(prd);
 
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
 
     const written = JSON.parse(capturedWriteArgs[0][1]) as PRD;
     const original = written.userStories.find((s) => s.id === "US-001");
@@ -182,7 +178,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
     setupDeps(prd, stories);
 
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
 
     const written = JSON.parse(capturedWriteArgs[0][1]) as PRD;
     const subA = written.userStories.find((s) => s.id === "US-001-A");
@@ -195,7 +191,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const prd = makePrd([makeStory({ id: "US-001" }), makeSiblingStory("US-002", "Sibling")]);
     setupDeps(prd, [makeSubStory("US-001-A"), makeSubStory("US-001-B")]);
 
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
 
     const written = JSON.parse(capturedWriteArgs[0][1]) as PRD;
     const ids = written.userStories.map((s) => s.id);
@@ -213,7 +209,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
 
     const expectedPath = join(tmpDir, ".nax", "features", FEATURE, "prd.json");
     expect(capturedWriteArgs.length).toBeGreaterThan(0);
@@ -224,7 +220,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
 
     const content = capturedWriteArgs[0][1];
     expect(() => JSON.parse(content)).not.toThrow();
@@ -274,7 +270,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
 
     await planDecomposeCommand(
       tmpDir,
-      makeConfig({ debate: debateConfig as never }),
+      makeNaxConfig({ debate: debateConfig as never }),
       { feature: FEATURE, storyId: "US-001" },
     );
 
@@ -324,7 +320,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
 
     await planDecomposeCommand(
       tmpDir,
-      makeConfig({ debate: debateConfig as never }),
+      makeNaxConfig({ debate: debateConfig as never }),
       { feature: FEATURE, storyId: "US-001" },
     );
 

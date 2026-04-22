@@ -10,10 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../../src/config";
 import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review";
 import type { PipelineContext } from "../../../../src/pipeline/types";
-import { makeMockAgentManager, makeStory } from "../../../helpers";
+import { makeMockAgentManager, makeSparseNaxConfig, makeStory } from "../../../helpers";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { PRD, UserStory } from "../../../../src/prd";
 
@@ -52,25 +51,6 @@ function makeSession(overrides: Partial<ReviewerSession> = {}): ReviewerSession 
     destroy: mock(async () => {}),
     ...overrides,
   } as unknown as ReviewerSession;
-}
-
-function makeConfig(dialogueEnabled: boolean, dialogueOverrides?: Record<string, unknown>): NaxConfig {
-  return {
-    review: {
-      enabled: true,
-      dialogue: {
-        enabled: dialogueEnabled,
-        maxDialogueMessages: 20,
-        maxClarificationsPerAttempt: 3,
-        ...dialogueOverrides,
-      },
-    },
-    interaction: {
-      plugin: "cli",
-      defaults: { timeout: 30000, fallback: "abort" as const },
-      triggers: {},
-    },
-  } as unknown as NaxConfig;
 }
 
 function makePRD(): PRD {
@@ -145,7 +125,7 @@ describe("PipelineContext — reviewerSession type field (AC1)", () => {
 
   test("reviewerSession field is assignable on a PipelineContext object", () => {
     const mockSession = makeSession();
-    const ctx = makeCtx(makeConfig(false));
+    const ctx = makeCtx(makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: false, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } }));
 
     // This should compile without error once the type is declared
     ctx.reviewerSession = mockSession;
@@ -164,7 +144,7 @@ describe("reviewStage — dialogue session creation (AC2)", () => {
     // biome-ignore lint/suspicious/noExplicitAny: _reviewDeps.createReviewerSession does not exist yet
     (_reviewDeps as any).createReviewerSession = createSessionMock;
 
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
     await reviewStage.execute(ctx);
 
@@ -176,7 +156,7 @@ describe("reviewStage — dialogue session creation (AC2)", () => {
     // biome-ignore lint/suspicious/noExplicitAny: _reviewDeps.createReviewerSession does not exist yet
     (_reviewDeps as any).createReviewerSession = mock(() => mockSession);
 
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
     await reviewStage.execute(ctx);
 
@@ -189,7 +169,7 @@ describe("reviewStage — dialogue session creation (AC2)", () => {
     // biome-ignore lint/suspicious/noExplicitAny: _reviewDeps.createReviewerSession does not exist yet
     (_reviewDeps as any).createReviewerSession = createSessionMock;
 
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const story = makeStory({ id: "US-042", status: "in-progress", passes: false, attempts: 1, acceptanceCriteria: ["AC1: thing works"] });
     const ctx = makeCtx(config, { story });
     await reviewStage.execute(ctx);
@@ -210,7 +190,7 @@ describe("reviewStage — dialogue session creation (AC2)", () => {
 describe("reviewStage — reReview on retry (AC3)", () => {
   test("calls ctx.reviewerSession.reReview() when session already exists in ctx", async () => {
     const mockSession = makeSession();
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config, { reviewerSession: mockSession });
 
     await reviewStage.execute(ctx);
@@ -224,7 +204,7 @@ describe("reviewStage — reReview on retry (AC3)", () => {
     // biome-ignore lint/suspicious/noExplicitAny: _reviewDeps.createReviewerSession does not exist yet
     (_reviewDeps as any).createReviewerSession = createSessionMock;
 
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config, { reviewerSession: existingSession });
     await reviewStage.execute(ctx);
 
@@ -233,7 +213,7 @@ describe("reviewStage — reReview on retry (AC3)", () => {
 
   test("preserves the existing session reference in ctx.reviewerSession after reReview", async () => {
     const existingSession = makeSession();
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config, { reviewerSession: existingSession });
 
     await reviewStage.execute(ctx);
@@ -249,7 +229,7 @@ describe("reviewStage — reReview on retry (AC3)", () => {
         deltaSummary: "All resolved.",
       })),
     });
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config, { reviewerSession: mockSession });
 
     const result = await reviewStage.execute(ctx);
@@ -267,7 +247,7 @@ describe("reviewStage — no session when dialogue disabled (AC8)", () => {
     // biome-ignore lint/suspicious/noExplicitAny: _reviewDeps.createReviewerSession does not exist yet
     (_reviewDeps as any).createReviewerSession = createSessionMock;
 
-    const config = makeConfig(false);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: false, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
     await reviewStage.execute(ctx);
 
@@ -275,7 +255,7 @@ describe("reviewStage — no session when dialogue disabled (AC8)", () => {
   });
 
   test("ctx.reviewerSession remains undefined when dialogue.enabled is false", async () => {
-    const config = makeConfig(false);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: false, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
     await reviewStage.execute(ctx);
 
@@ -291,7 +271,7 @@ describe("reviewStage — no session when dialogue disabled (AC8)", () => {
     }));
     reviewOrchestrator.review = orchestratorMock as typeof reviewOrchestrator.review;
 
-    const config = makeConfig(false);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: false, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
     const result = await reviewStage.execute(ctx);
 
@@ -322,7 +302,7 @@ describe("reviewStage — fallback on ReviewerSession.review() failure (AC9)", (
     }));
     reviewOrchestrator.review = orchestratorMock as typeof reviewOrchestrator.review;
 
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
     const result = await reviewStage.execute(ctx);
 
@@ -341,7 +321,7 @@ describe("reviewStage — fallback on ReviewerSession.review() failure (AC9)", (
     // biome-ignore lint/suspicious/noExplicitAny: _reviewDeps.createReviewerSession does not exist yet
     (_reviewDeps as any).createReviewerSession = mock(() => failingSession);
 
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
 
     // execute() must not throw — the error is handled internally
@@ -366,7 +346,7 @@ describe("reviewStage — fallback on ReviewerSession.review() failure (AC9)", (
       builtIn: { totalDurationMs: 5 },
     })) as typeof reviewOrchestrator.review;
 
-    const config = makeConfig(true);
+    const config = makeSparseNaxConfig({ review: { enabled: true, dialogue: { enabled: true, maxDialogueMessages: 20, maxClarificationsPerAttempt: 3 } }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     const ctx = makeCtx(config);
     const result = await reviewStage.execute(ctx);
 

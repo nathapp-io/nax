@@ -12,14 +12,13 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex, globsToPathspec, extractTestDirs } from "../../../../src/test-runners/conventions";
 import type { ResolvedTestPatterns } from "../../../../src/test-runners/resolver";
 import type { VerificationResult } from "../../../../src/verification";
 import type { ResolvedTestCommands } from "../../../../src/quality/command-resolver";
-import { makeStory } from "../../../helpers";
+import { makeNaxConfig, makeStory } from "../../../helpers";
 
 /** Pre-built fallback patterns used to mock resolveTestFilePatterns without disk access */
 const MOCK_RESOLVED_PATTERNS: ResolvedTestPatterns = {
@@ -47,33 +46,24 @@ function makePRD(): PRD {
   };
 }
 
-function makeConfig(
-  regressionMode?: "deferred" | "per-story" | "disabled",
-): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    quality: {
-      ...DEFAULT_CONFIG.quality,
-      requireTests: true,
-      commands: { test: "bun test" },
-    },
-    execution: {
-      ...DEFAULT_CONFIG.execution,
-      verificationTimeoutSeconds: 30,
-      regressionGate: {
-        enabled: true,
-        timeoutSeconds: 30,
-        acceptOnTimeout: true,
-        ...(regressionMode !== undefined ? { mode: regressionMode } : {}),
-      },
-    },
-  };
-}
-
 function makeContext(regressionMode?: "deferred" | "per-story" | "disabled") {
   const story = makeStory();
   return {
-    config: makeConfig(regressionMode),
+    config: makeNaxConfig({
+      quality: {
+        requireTests: true,
+        commands: { test: "bun test" },
+      },
+      execution: {
+        verificationTimeoutSeconds: 30,
+        regressionGate: {
+          enabled: true,
+          timeoutSeconds: 30,
+          acceptOnTimeout: true,
+          ...(regressionMode !== undefined ? { mode: regressionMode } : {}),
+        },
+      },
+    }),
     prd: makePRD(),
     story,
     stories: [story],
