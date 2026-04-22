@@ -1,12 +1,14 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-22T06-15-28-743Z",
+    "id": "run-2026-04-22T06-14-38-624Z",
     "feature": "test-coverage-provider",
-    "startedAt": "2026-04-22T06:15:28.743Z",
-    "status": "running",
+    "startedAt": "2026-04-22T06:14:38.624Z",
+    "status": "crashed",
     "dryRun": false,
-    "pid": 391875
+    "pid": 390452,
+    "crashedAt": "2026-04-22T06:14:55.010Z",
+    "crashSignal": "SIGINT"
   },
   "progress": {
     "total": 4,
@@ -22,7 +24,6 @@
   },
   "current": null,
   "iterations": 0,
-  "updatedAt": "2026-04-22T06:16:28.778Z",
-  "durationMs": 60035,
-  "lastHeartbeat": "2026-04-22T06:16:28.778Z"
+  "updatedAt": "2026-04-22T06:14:55.011Z",
+  "durationMs": 16387
 }
