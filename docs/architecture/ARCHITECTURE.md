@@ -56,7 +56,7 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§21 Verification & Test Runners** — Orchestrator, strategies (scoped/regression/acceptance), smart runner, rectification, test-runners module (framework detection, output parsing SSOT)
 - **§22 Routing & Classification** — `classifyComplexity()`, `determineTestStrategy()`, pluggable strategies
 - **§23 Plugin System** — Plugin interface, 7 extension points, lifecycle
-- **§24 Context & Constitution** — Token-budgeted context, auto-detect, 7 agent generators, constitution
+- **§24 Context Engine & Constitution** — Context Engine v2 (ADR-010): `ContextOrchestrator`, providers, scoring/dedup/packing, push/pull model, `rebuildForAgent`; legacy v1 builder; per-agent generators; constitution
 - **§25 Review & Quality** — Review orchestrator, semantic review, adversarial review, diff utilities, quality runner, test command resolver
 - **§26 Interaction & Human-in-the-Loop** — Interaction chain, 8 triggers, bridge, plugins
 - **§27 Hooks & Lifecycle** — 11 hook events, `HookDef`, `HookContext`
@@ -66,6 +66,8 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§31 Queue Management** — PAUSE/ABORT/SKIP mid-run control
 - **§32 TUI (Terminal UI)** — React/Ink terminal UI, components, hooks
 - **§33 Error Classes** — `NaxError` + 5 derived error classes
+- **§34 Session Manager** (ADR-011) — `SessionManager`, 7-state machine, scratch dir, `handoff`, orphan detection, runtime helpers (`failAndClose`)
+- **§35 Agent Manager** (ADR-012 + ADR-013) — `AgentManager`, three retry layers, availability fallback, `runWithFallback`, `resolveDefaultAgent`, SessionManager hierarchy
 
 ---
 
@@ -102,7 +104,10 @@ Deep reference for each subsystem — consult when working on a specific module.
 | Injectable sleep | Test performance | `_moduleDeps.sleep = Bun.sleep` → spy in tests |
 | PidRegistry | Subprocess lifecycle | Register on spawn, unregister on exit, `killAll()` on crash |
 | Permission resolver | Agent permissions | `resolvePermissions(config, stage)` → `{ mode, skipPermissions }` |
+| Context Engine v2 | Stage-aware context assembly | `ContextOrchestrator.assemble(request)` → `ContextBundle` |
+| Session Manager | Session lifecycle + state machine | `ctx.sessionManager.create() / transition() / handoff()` |
+| Agent Manager | Agent default + availability fallback | `ctx.agentManager.getDefault() / runWithFallback()` |
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-04-12. Maintained by nax-dev.*
+*Created: 2026-03-10. Last updated: 2026-04-22. Maintained by nax-dev.*

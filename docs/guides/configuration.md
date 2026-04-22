@@ -39,6 +39,49 @@ Config is layered — project overrides global:
 }
 ```
 
+### Agent Configuration
+
+<a name="agent-configuration"></a>
+
+The `agent` block is the canonical source of truth for agent selection and availability fallback (ADR-012). It consolidates three legacy configs (`autoMode.defaultAgent`, `autoMode.fallbackOrder`, `context.v2.fallback`) into a single shape.
+
+```json
+{
+  "agent": {
+    "protocol": "acp",
+    "default": "claude",
+    "maxInteractionTurns": 20,
+    "fallback": {
+      "enabled": true,
+      "map": {
+        "claude": ["codex", "opencode"],
+        "codex": ["claude"]
+      },
+      "maxHopsPerStory": 2,
+      "rebuildContext": true,
+      "onQualityFailure": false
+    }
+  }
+}
+```
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `agent.protocol` | `"acp"` | Transport protocol. Only `"acp"` is supported. |
+| `agent.default` | `"claude"` | Primary agent. Read via `resolveDefaultAgent(config)` / `ctx.agentManager.getDefault()`. |
+| `agent.maxInteractionTurns` | `20` | Max turns per agent session. |
+| `agent.fallback.enabled` | `false` | Master switch for availability fallback (auth / rate-limit / service-down). |
+| `agent.fallback.map` | `{}` | Keyed map — `{ primary: [next, ...] }`. Walked by `AgentManager.nextCandidate()`. |
+| `agent.fallback.maxHopsPerStory` | `2` | Swap ceiling per story. Prevents runaway swap loops. |
+| `agent.fallback.rebuildContext` | `true` | Call `ContextOrchestrator.rebuildForAgent()` on swap so the new agent sees a re-rendered bundle. |
+| `agent.fallback.onQualityFailure` | `false` | Also swap on review / verify reject, not just availability. Use with care — often masks real regressions. |
+
+**Scope — what this controls.** Only the *availability* retry layer (auth / 429 / service down). Transport retries (broken socket, stale session) stay on the same agent inside the adapter. Payload-shape retries (JSON parse fail) stay on the same agent inside the caller. See [Agents — How fallback works](agents.md#how-fallback-works) for the full three-layer split.
+
+**Legacy keys are rejected, not stripped.** `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` were removed in ADR-012 Phase 6. Loading a config with them throws `NaxError code: CONFIG_LEGACY_AGENT_KEYS` with a migration hint. This is intentional — silently stripping would mask the migration.
+
+---
+
 ### Shell Operators in Commands
 
 Review commands (`lint`, `typecheck`) are executed directly via `Bun.spawn` — **not** through a shell. This means shell operators like `&&`, `||`, `;`, and `|` are passed as literal arguments and will not work as expected.
