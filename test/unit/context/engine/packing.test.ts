@@ -117,6 +117,18 @@ describe("packChunks — budget floor", () => {
     expect(result.floorPackedIds).toContain("rules:1");
     expect(result.floorOverageIds).toHaveLength(0);
   });
+
+  test("test-coverage chunks are floor-included even when score is below minScore", () => {
+    const chunks = [
+      makeScored({ id: "tc:1", kind: "test-coverage", tokens: 300, score: 0.05, belowMinScore: true }),
+    ];
+    const result = packChunks(chunks, 100);
+    expect(result.packed).toHaveLength(1);
+    expect(result.packed[0].id).toBe("tc:1");
+    expect(result.floorPackedIds).toContain("tc:1");
+    expect(result.floorOverageIds).toContain("tc:1");
+    expect(result.packed[0].reason).toBe("budget-exceeded-by-floor");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

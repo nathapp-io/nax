@@ -84,11 +84,12 @@ export interface ToolDescriptor {
 
 /**
  * Chunk kind — controls floor/scoring behavior and provider grouping.
- * "static" and "feature" chunks are always floor-included (budget floor wins).
+ * "static", "feature", and "test-coverage" chunks are always floor-included (budget floor wins).
  */
 export type ChunkKind =
   | "static" // CLAUDE.md, .nax/rules/ — project-wide invariants
   | "feature" // context.md for this feature — accumulated learning
+  | "test-coverage" // test coverage data (US-002 foundation)
   | "session" // session scratch — cross-stage memory (Phase 1)
   | "history" // git history diffs (Phase 3)
   | "neighbor" // import-graph neighbors (Phase 3)
