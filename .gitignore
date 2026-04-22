@@ -48,6 +48,11 @@ nax.lock
 .nax/features/*/runs/
 .nax/features/*/plan/
 .nax/prompt-audit/
+.nax/review-audit/
+.nax/review-verdicts/
+.nax/**/semantic-verdicts/
+.nax/**/verdicts/
+.nax/**/sessions/
 test/tmp/
 test/integration/tmp/
 TEST_SUMMARY_*.md
