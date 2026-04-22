@@ -24,6 +24,7 @@
     "check-test-overlap": "bun run scripts/check-test-overlap.ts",
     "check-dead-tests": "bun run scripts/check-dead-tests.ts",
     "check:test-sizes": "bun run scripts/check-test-sizes.ts",
+    "check:test-mocks": "bun scripts/check-inline-test-mocks.ts --strict",
     "prepublishOnly": "bun run build",
     "test:full": "FULL=1 NAX_PRECHECK=1 bun test test/ --timeout=60000"
   },
