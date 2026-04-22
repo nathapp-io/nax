@@ -136,7 +136,7 @@ const SKIP_FILES = new Set([
   "test/integration/execution/status-file.test.ts",
   "test/integration/execution/agent-swap.test.ts",
   "test/integration/prompts/pb-004-migration.test.ts",
-  // Pattern A (makeConfig) - complex full configs not spreading DEFAULT_CONFIG
+// Pattern A (makeConfig) - complex full configs not spreading DEFAULT_CONFIG
   "test/unit/pipeline/stages/completion-semantic.test.ts",
   "test/unit/pipeline/stages/routing-persistence.test.ts",
   "test/unit/pipeline/stages/verify-crash-detection.test.ts",
@@ -145,7 +145,7 @@ const SKIP_FILES = new Set([
   "test/unit/pipeline/stages/execution-tdd-simple.test.ts",
   "test/unit/pipeline/stages/prompt-tdd-simple.test.ts",
   "test/unit/pipeline/stages/completion-review-gate.test.ts",
-"test/unit/pipeline/stages/routing-idempotence.test.ts",
+  "test/unit/pipeline/stages/routing-idempotence.test.ts",
   "test/unit/pipeline/stages/execution-ambiguity.test.ts",
   "test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts",
   "test/unit/pipeline/verify-smart-runner.test.ts",
@@ -155,7 +155,6 @@ const SKIP_FILES = new Set([
   "test/unit/context/generator.test.ts",
   "test/unit/quality/command-resolver.test.ts",
   "test/unit/config/permissions.test.ts",
-  "test/unit/worktree/dependencies.test.ts",
   "test/unit/agents/manager-complete.test.ts",
   "test/unit/agents/manager-iface-run.test.ts",
   "test/unit/agents/acp/registry.test.ts",
