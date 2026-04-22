@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 1.23118968,
+    "spent": 1.3697199,
     "limit": 50
   },
   "current": {
-    "storyId": "US-003",
-    "title": "Register TestCoverageProvider in orchestrator factory and stage config",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
-    "model": "fast",
+    "storyId": "US-004",
+    "title": "Integration test proving v1↔v2 byte-equality parity",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-04-22T07:00:28.865Z",
-  "durationMs": 2700122,
-  "lastHeartbeat": "2026-04-22T07:00:28.865Z"
+  "iterations": 4,
+  "updatedAt": "2026-04-22T07:10:28.896Z",
+  "durationMs": 3300153,
+  "lastHeartbeat": "2026-04-22T07:10:28.896Z"
 }
