@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "ChunkKind union in src/context/engine/types.ts includes 'test-coverage' as a member",
+    "refined": "File src/context/engine/types.ts contains a ChunkKind type/union that includes the literal string 'test-coverage' as a member; grep for `'test-coverage'` or `\"test-coverage\"` within the ChunkKind definition confirms its presence; bun run typecheck passes",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "The packer's floor-include predicate in src/context/engine/orchestrator.ts (or equivalent packer module) returns true when chunk.kind === 'test-coverage', matching the behavior already given to 'static' and 'feature'",
+    "refined": "A unit test in test/unit/context/engine/ calls the floor-include predicate (or the packer function that contains it) with a chunk whose kind is 'test-coverage' and asserts the return value is true; the same test confirms 'static' and 'feature' also return true; a chunk with kind 'code' (or any non-floor kind) returns false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "All existing switch/if statements that branch on ChunkKind handle 'test-coverage' either explicitly or via a default arm without throwing",
+    "refined": "bun run typecheck passes with no new TypeScript exhaustiveness errors; a unit test exercises each branching code path (or the TypeScript compiler's exhaustive-check pattern ensures coverage) confirming no unhandled-case error is thrown when chunk.kind === 'test-coverage'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Manifest analytics (any code that groups or counts by kind) treats 'test-coverage' as a valid distinct kind — it is not collapsed into 'feature' in includedChunks, excludedChunks, or providerResults output",
+    "refined": "A unit test constructs a manifest containing chunks with kind 'test-coverage' and asserts: (1) includedChunks output contains an entry whose kind field equals 'test-coverage', (2) that entry is not merged with or overwritten by the 'feature' entry, and (3) excludedChunks and providerResults similarly preserve 'test-coverage' as a distinct key/label",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "bun run typecheck passes with no new errors",
+    "refined": "Running `bun run typecheck` (tsc --noEmit) exits with code 0 and produces zero diagnostic lines referencing files changed in this story",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "A unit test in test/unit/context/engine/ asserts that a RawChunk with kind 'test-coverage' and score below config.context.v2.minScore is still included in the packed bundle",
+    "refined": "A test file under test/unit/context/engine/ contains a test case that: (1) sets config.context.v2.minScore to a value above 0, (2) creates a RawChunk with kind 'test-coverage' and score below that threshold, (3) runs the packer/orchestrator, and (4) asserts the resulting packed bundle contains that chunk; the test passes when run with `timeout 30 bun test test/unit/context/engine/ --timeout=5000`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "src/context/engine/providers/test-coverage.ts exports a class TestCoverageProvider implementing IContextProvider with readonly id 'test-coverage' and readonly kind 'test-coverage'",
+    "refined": "Importing TestCoverageProvider from the file and instantiating it yields an object where instance.id === 'test-coverage' and instance.kind === 'test-coverage'; both properties are non-writable (Object.getOwnPropertyDescriptor returns writable:false or the class uses readonly TypeScript modifier enforced at compile time); the class satisfies the IContextProvider interface (has fetch method).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "The constructor accepts (story: UserStory, config: NaxConfig) and retains both values for use in fetch()",
+    "refined": "After constructing new TestCoverageProvider(story, config), invoking fetch(request) with a valid request causes the internally stored story and config values to be used in downstream calls (observable via _testCoverageProviderDeps stub): the stub receives arguments derived from story (e.g. story.workdir, story.id) and from config.context.testCoverage.* fields.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "fetch(request) returns { chunks: [], pullTools: [] } when config.context.testCoverage.enabled === false",
+    "refined": "Given a NaxConfig where config.context.testCoverage.enabled === false, calling fetch(request) resolves to an object where result.chunks is an empty array (length 0) and result.pullTools is an empty array (length 0); the _testCoverageProviderDeps scanner function is NOT called.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "fetch(request) returns { chunks: [], pullTools: [] } when request.packageDir is undefined or an empty string",
+    "refined": "Given config.context.testCoverage.enabled === true, calling fetch with request.packageDir === undefined resolves to { chunks: [], pullTools: [] }; calling fetch with request.packageDir === '' also resolves to { chunks: [], pullTools: [] }; in both cases the scanner stub is NOT called.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "fetch(request) calls generateTestCoverageSummary with workdir set to request.packageDir (not request.repoRoot and not process.cwd())",
+    "refined": "When fetch is called with request.packageDir set to '/some/pkg', the _testCoverageProviderDeps scanner stub receives a call where the workdir argument equals '/some/pkg' exactly; if request.repoRoot differs from request.packageDir, the stub does NOT receive repoRoot as workdir; process.cwd() is never passed.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "fetch(request) forwards testDir, maxTokens (default 500), detail (default 'names-and-counts'), scopeToStory (default true), and contextFiles (from getContextFiles(story)) from config.context.testCoverage to the scanner",
+    "refined": "When config.context.testCoverage specifies explicit values for testDir, maxTokens, detail, scopeToStory, and contextFiles, the scanner stub receives those exact values. When those fields are absent from config, the scanner stub receives maxTokens===500, detail==='names-and-counts', scopeToStory===true, and contextFiles equal to getContextFiles(story) output. testDir is forwarded as-is (undefined if not set).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "fetch(request) passes resolvedTestGlobs from resolveTestFilePatterns(config, request.repoRoot, story.workdir) to the scanner",
+    "refined": "The _testCoverageProviderDeps object must include a stubbable resolveTestFilePatterns dependency. When stub returns a ResolvedTestPatterns object with a specific globs array, the scanner stub receives that exact globs array as resolvedTestGlobs. The call to resolveTestFilePatterns uses config as first arg, request.repoRoot as second arg, and story.workdir as third arg (verified via stub argument capture).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When the scanner returns an empty summary string, fetch returns { chunks: [], pullTools: [] }",
+    "refined": "When the scanner stub resolves to { summary: '', tokens: 0 } (or any object where summary is ''), fetch resolves to an object where result.chunks has length 0 and result.pullTools has length 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When the scanner returns a non-empty summary, the emitted RawChunk has content byte-equal to scanner summary, tokens equal to scanner tokens, kind 'test-coverage', scope 'story', role ['implementer','tdd'], and rawScore 0.85",
+    "refined": "When the scanner stub resolves to { summary: 'some coverage text', tokens: 42 }, fetch resolves to a result where result.chunks has length 1; result.chunks[0].content === 'some coverage text' (strict string equality); result.chunks[0].tokens === 42; result.chunks[0].kind === 'test-coverage'; result.chunks[0].scope === 'story'; result.chunks[0].role deep-equals ['implementer','tdd']; result.chunks[0].rawScore === 0.85.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "The emitted chunk id has the form 'test-coverage:<8-hex-chars>' where the hex is the first 8 chars of sha256 over the content",
+    "refined": "For a known content string (e.g. 'hello'), compute sha256 hex digest and take the first 8 characters; result.chunks[0].id must equal 'test-coverage:' + that 8-char hex prefix. The id matches the regex /^test-coverage:[0-9a-f]{8}$/.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When the scanner throws, fetch logs a warning via getLogger().warn with component 'test-coverage', includes { storyId, packageDir, error } in that order, and returns { chunks: [], pullTools: [] }",
+    "refined": "When the scanner stub throws an error, fetch resolves (does not reject) to { chunks: [], pullTools: [] }. The logger warn stub is called exactly once with first argument 'test-coverage'; the second argument (data object) has keys in the order ['storyId','packageDir','error'] (Object.keys order); data.storyId equals story.id; data.packageDir equals request.packageDir; data.error is the thrown error or its message.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "All logger calls in this file list storyId as the first data-object key and packageDir as the second",
+    "refined": "Every call to logger.info/debug/warn/error captured via the logger stub has a data argument where Object.keys(data)[0] === 'storyId' and Object.keys(data)[1] === 'packageDir'. This is verified across all code paths exercised in the test suite (early-return paths, success path, error path).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "A dependency-injection hook _testCoverageProviderDeps is exported and used to construct the scanner call so tests can stub it without mock.module",
+    "refined": "The file exports a mutable object named _testCoverageProviderDeps containing at minimum a generateTestCoverageSummary function and a resolveTestFilePatterns function. Tests can replace these by assigning to _testCoverageProviderDeps.generateTestCoverageSummary and _testCoverageProviderDeps.resolveTestFilePatterns without calling mock.module(). Replacing the stubs before calling fetch causes the replacement functions to be invoked (not the originals).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "src/context/engine/orchestrator-factory.ts constructs a TestCoverageProvider with (story, config) and pushes it into the providers array before any additionalProviders",
+    "refined": "In orchestrator-factory.ts, a TestCoverageProvider instance is constructed with (story, config) arguments and inserted into the providers array at an index less than the index of the first element from additionalProviders (or at position 0 if additionalProviders is empty). Verified by reading the source and confirming: (1) `new TestCoverageProvider(story, config)` call exists, (2) the push/unshift/splice occurs before the spread/concat of additionalProviders in the same array literal or mutation sequence.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "The provider is registered unconditionally — orchestrator-factory.ts does NOT branch on config.context.testCoverage.enabled for the registration itself",
+    "refined": "In orchestrator-factory.ts, there is no if/else or ternary guard around the TestCoverageProvider construction or array insertion that reads config.context.testCoverage.enabled (or any equivalent flag). Verified by static analysis: the line(s) constructing and pushing TestCoverageProvider are not nested inside a conditional block whose condition references testCoverage.enabled.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "src/context/engine/stage-config.ts lists 'test-coverage' among the providers for the implementer stage default config",
+    "refined": "In stage-config.ts, the default config object for the 'implementer' stage contains a providers array (or equivalent field) that includes the string 'test-coverage'. Verified by reading the exported stage config and asserting providers.includes('test-coverage') === true for the implementer entry.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "src/context/engine/stage-config.ts lists 'test-coverage' among the providers for the tdd stage default config",
+    "refined": "In stage-config.ts, the default config object for the 'tdd' stage contains a providers array (or equivalent field) that includes the string 'test-coverage'. Verified by reading the exported stage config and asserting providers.includes('test-coverage') === true for the tdd entry.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "src/context/engine/stage-config.ts does NOT list 'test-coverage' for the review, rectify, or decompose stages",
+    "refined": "In stage-config.ts, the default config objects for the 'review', 'rectify', and 'decompose' stages each have a providers array (or equivalent field) that does NOT include the string 'test-coverage'. Verified by asserting providers.includes('test-coverage') === false for each of the three stage entries.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "The stage-config validator that verifies every referenced provider id is registered in the orchestrator accepts 'test-coverage' without error — no 'unknown provider id' exception is thrown at assemble() time",
+    "refined": "Calling assemble() (or the equivalent orchestrator assembly function) with a stage config that references provider id 'test-coverage' does not throw an error matching /unknown provider/i or equivalent. Verified by a unit test that invokes assemble() with a stage config containing 'test-coverage' and asserts no exception is thrown and the returned value is non-null/non-error.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When config.context.v2.enabled is true and config.context.testCoverage.enabled is true, assemble() for the implementer stage produces a bundle whose manifest.providerResults contains an entry with providerId 'test-coverage' and status 'ok' given a fixture package with tests",
+    "refined": "Given: config.context.v2.enabled=true and config.context.testCoverage.enabled=true and a fixture packageDir containing at least one test file. When assemble() is called for the implementer stage, the returned bundle's manifest.providerResults array contains exactly one entry where entry.providerId === 'test-coverage' and entry.status === 'ok'. Verified by an integration test using a temp fixture directory with a test file present.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When config.context.testCoverage.enabled is false, assemble() still runs TestCoverageProvider (provider is registered) but manifest.providerResults for 'test-coverage' reports status 'empty' with chunkCount 0",
+    "refined": "Given: config.context.testCoverage.enabled=false. When assemble() is called for the implementer stage, the returned bundle's manifest.providerResults array contains exactly one entry where entry.providerId === 'test-coverage' and entry.status === 'empty' and entry.chunkCount === 0. The entry must be present (not absent), confirming the provider ran but produced no output. Verified by a unit/integration test asserting all three field values.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "No existing provider registration, order, or stage-config entry is modified beyond the additions described",
+    "refined": "A git diff of orchestrator-factory.ts and stage-config.ts shows only additive changes: no existing provider name is removed or reordered in any providers array, no existing stage config entry loses a provider id, and no existing constructor call or registration line is altered. Verified by diffing the files against the base branch and confirming all changed lines are net-new insertions with no deletions to pre-existing provider entries.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "test/integration/context/test-coverage-parity.test.ts exists and contains at least four test cases covering the scenarios in the description",
+    "refined": "File test/integration/context/test-coverage-parity.test.ts exists on disk AND grep for 'test(' or 'it(' in that file returns at least 4 matches",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Each test case constructs a temp package with a fixed set of test files (describe/test blocks) using test/helpers/temp.ts helpers — no hardcoded /tmp paths, no rm -rf",
+    "refined": "File test/integration/context/test-coverage-parity.test.ts contains no string literals matching /\\/tmp\\// and no 'rm -rf' substring, AND imports at least one helper from 'test/helpers/temp.ts' (e.g. makeTempDir, withTempDir, cleanupTempDir)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Each test case runs the v1 builder path to produce a ContextElement and the v2 TestCoverageProvider.fetch to produce a RawChunk, then asserts chunk.content === v1-element.content (byte-for-byte)",
+    "refined": "Each non-empty-dir test case in the file contains an assertion of the form 'expect(chunk.content).toBe(element.content)' or equivalent strict-equality check comparing the v2 RawChunk content to the v1 ContextElement content, AND the test suite passes under `timeout 60 bun test test/integration/context/test-coverage-parity.test.ts --timeout=30000` with exit code 0",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "The test case for scopeToStory=true uses a story with contextFiles set to a subset of the fixture files and asserts both paths emit a summary referencing only the matching test files",
+    "refined": "A test case exists where the story object has contextFiles set to a strict subset of fixture file paths and scopeToStory=true, AND both the v1 ContextElement.content and v2 RawChunk.content contain only filenames from that subset (i.e. no filename from the excluded files appears in the output), verified by string inclusion assertions in the test",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "The empty-test-directory case asserts v1 returns no element and v2 returns { chunks: [], pullTools: [] }",
+    "refined": "A test case exists that sets up a temp package directory with no test files, then asserts: (1) the v1 builder returns undefined or an empty array with no ContextElement, AND (2) the v2 TestCoverageProvider.fetch resolves to an object where chunks is an empty array and pullTools is an empty array",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "The test file passes when run under `timeout 60 bun test test/integration/context/test-coverage-parity.test.ts --timeout=30000`",
+    "refined": "Running `timeout 60 bun test test/integration/context/test-coverage-parity.test.ts --timeout=30000` exits with code 0 (all tests pass, no timeout, no SIGABRT)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "The test file is under 400 lines and uses the DI hook _testCoverageProviderDeps where stubbing is needed rather than mock.module",
+    "refined": "Line count of test/integration/context/test-coverage-parity.test.ts is less than 400 (verifiable via wc -l), AND the file contains no call to 'mock.module', AND wherever dependency injection is used the identifier '_testCoverageProviderDeps' appears in the file",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

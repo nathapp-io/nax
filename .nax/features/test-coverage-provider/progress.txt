@@ -1,0 +1,4 @@
+[2026-04-22T06:25:19.764Z] US-001 — PASSED — Add test-coverage ChunkKind and extend packer floor rule — Cost: $0.1986
+[2026-04-22T06:55:27.591Z] US-002 — PASSED — Implement TestCoverageProvider (v2 adapter over generateTestCoverageSummary) — Cost: $0.9791
+[2026-04-22T07:02:25.569Z] US-003 — PASSED — Register TestCoverageProvider in orchestrator factory and stage config — Cost: $0.1217
+[2026-04-22T07:25:51.310Z] US-004 — PASSED — Integration test proving v1↔v2 byte-equality parity — Cost: $0.5506
