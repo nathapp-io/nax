@@ -3,6 +3,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { IAgentManager } from "../../../src/agents";
 import type { UserStory } from "../../../src/prd/types";
 import { tryLlmBatchRoute } from "../../../src/routing/router";
+import { makeStory } from "../../helpers";
 
 function makeConfig(): NaxConfig {
   return {
@@ -107,21 +108,6 @@ function makeConfig(): NaxConfig {
       maxRetries: 1,
       model: "balanced",
     },
-  };
-}
-
-function makeStory(): UserStory {
-  return {
-    id: "US-001",
-    title: "Story",
-    description: "desc",
-    acceptanceCriteria: ["ac"],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
   };
 }
 
