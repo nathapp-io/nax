@@ -12,6 +12,7 @@ import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../src/logger";
 import type { UserStory } from "../../../src/prd/types";
 import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "../../../src/routing";
+import { makeStory } from "../../helpers";
 
 /** Minimal keyword-route helper replacing the deleted keywordStrategy object. */
 function keywordRoute(story: UserStory, config: NaxConfig) {
@@ -27,22 +28,6 @@ const routeCtxConfig: NaxConfig = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CON
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "TEST-001",
-    title: "Add login button",
-    description: "Simple button feature",
-    acceptanceCriteria: ["Button renders", "Click works"],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-    ...overrides,
-  };
-}
 
 beforeEach(() => {
   resetLogger();

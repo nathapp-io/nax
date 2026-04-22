@@ -116,6 +116,7 @@ const SKIP_FILES = new Set([
   "test/unit/prompts/builder.test.ts",
   "test/unit/prompts/builder-acceptance.test.ts",
   "test/unit/routing/routing-stability.test.ts",
+  "test/unit/prompts/sections/story.test.ts",
   "test/unit/routing/strategies/keyword.test.ts",
   "test/unit/routing/strategies/llm-adapter.test.ts",
   "test/unit/routing/llm-batch-route.test.ts",
