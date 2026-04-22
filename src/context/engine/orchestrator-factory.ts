@@ -14,6 +14,7 @@ import { FeatureContextProviderV2 } from "./providers/feature-context";
 import { GitHistoryProvider } from "./providers/git-history";
 import { SessionScratchProvider } from "./providers/session-scratch";
 import { StaticRulesProvider } from "./providers/static-rules";
+import { TestCoverageProvider } from "./providers/test-coverage";
 import type { IContextProvider } from "./types";
 
 /**
@@ -45,6 +46,9 @@ export function createDefaultOrchestrator(
     new StaticRulesProvider({ allowLegacyClaudeMd, budgetTokens: rulesBudgetTokens }),
     new FeatureContextProviderV2(story, config),
   ];
+  // TestCoverageProvider is always registered — provider itself gates via enabled flag.
+  // Registered before additionalProviders so it appears in providerResults for manifest.
+  providers.push(new TestCoverageProvider(story, config));
   // SessionScratchProvider is always registered so stage-config references to
   // "session-scratch" pass AC-16 validation. It returns empty chunks when
   // request.storyScratchDirs is empty (verify/rectify stages supply dirs).
