@@ -341,6 +341,22 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       const callArgs = mockRegression.mock.calls[0][0] as { command: string };
       expect(callArgs.command).toBe("bun test test/");
     });
+
+    test("treats object config without enabled flag as enabled", async () => {
+      mockGetChangedTestFiles.mockImplementation(async () => ["/test/workdir/src/foo/bar.spec.ts"]);
+      mockRegression.mockImplementation(async () => ({ success: true, status: "SUCCESS" as const }));
+
+      const ctx = makeContext({
+        smartTestRunner: {
+          fallback: "import-grep",
+          testFilePatterns: ["**/*.spec.ts"],
+        } as any,
+      });
+      await verifyStage.execute(ctx);
+
+      expect(mockGetChangedTestFiles).toHaveBeenCalledTimes(1);
+      expect(mockRegression).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("AC4: logs the mode used", () => {

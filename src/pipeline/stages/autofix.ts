@@ -270,6 +270,10 @@ function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
   return (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
 }
 
+function getCheckSignature(checks: ReviewCheckResult[]): string {
+  return [...new Set(checks.map((check) => check.check))].sort().join("|");
+}
+
 function buildAutofixEscalationPreamble(
   attempt: number,
   maxAttempts: number,
@@ -398,6 +402,8 @@ async function runAgentRectification(
   const loopState = {
     attempt: 0,
     failedChecks: implementerChecks,
+    checkSignature: getCheckSignature(implementerChecks),
+    checkSignatureChanged: false,
     /** Number of consecutive no-op turns (zero file changes) so far this cycle. */
     consecutiveNoOps: 0,
     /** True when the previous turn produced no file changes and the reprompt should fire. */
@@ -456,6 +462,13 @@ async function runAgentRectification(
       const isSessionContinuation = attempt > 1 && sessionConfirmedOpen;
 
       if (isSessionContinuation) {
+        // If failing check categories changed since the previous attempt, this is the
+        // first attempt for a new failure class (e.g. semantic -> adversarial). Reset
+        // to first-attempt framing instead of continuation wording.
+        if (state.checkSignatureChanged) {
+          const attemptsRemaining = Math.max(1, maxAttempts - attempt + 1);
+          return RectifierPromptBuilder.firstAttemptDelta(state.failedChecks, attemptsRemaining);
+        }
         // Apply the same capping as buildProgressivePromptPreamble so the last attempt
         // always triggers urgency even when urgencyAtAttempt > maxAttempts.
         return RectifierPromptBuilder.continuation(
@@ -660,7 +673,12 @@ async function runAgentRectification(
       }
 
       if (updatedFailed.length > 0) {
-        state.failedChecks.splice(0, state.failedChecks.length, ...collectFailedChecks(ctx));
+        const updatedCheckSignature = getCheckSignature(updatedFailed);
+        state.checkSignatureChanged = updatedCheckSignature !== state.checkSignature;
+        state.checkSignature = updatedCheckSignature;
+        state.failedChecks.splice(0, state.failedChecks.length, ...updatedFailed);
+      } else {
+        state.checkSignatureChanged = false;
       }
       return false;
     },
