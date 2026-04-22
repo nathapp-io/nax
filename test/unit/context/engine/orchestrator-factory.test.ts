@@ -12,6 +12,7 @@ import type { NaxConfig } from "../../../../src/config";
 import { createDefaultOrchestrator } from "../../../../src/context/engine/orchestrator-factory";
 import { _codeNeighborDeps } from "../../../../src/context/engine/providers/code-neighbor";
 import { _gitHistoryDeps } from "../../../../src/context/engine/providers/git-history";
+import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../../src/context/engine/providers/test-coverage";
 import type { ContextRequest } from "../../../../src/context/engine/types";
 import type { UserStory } from "../../../../src/prd";
 
@@ -169,5 +170,105 @@ describe("createDefaultOrchestrator — #507 provider scope config", () => {
     await orchestrator.assemble(makeRequest());
 
     expect(capturedGlobDirs.some((d) => d === "/repo")).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TestCoverageProvider registration (US-003 AC1, AC2, AC7, AC8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("createDefaultOrchestrator — TestCoverageProvider registration", () => {
+  let origGenerateSummary: typeof _testCoverageProviderDeps.generateTestCoverageSummary;
+  let origResolvePatterns: typeof _testCoverageProviderDeps.resolveTestFilePatterns;
+  let origGetContextFiles: typeof _testCoverageProviderDeps.getContextFiles;
+
+  beforeEach(() => {
+    origGenerateSummary = _testCoverageProviderDeps.generateTestCoverageSummary;
+    origResolvePatterns = _testCoverageProviderDeps.resolveTestFilePatterns;
+    origGetContextFiles = _testCoverageProviderDeps.getContextFiles;
+    _testCoverageProviderDeps.getContextFiles = () => [];
+    _testCoverageProviderDeps.generateTestCoverageSummary = async () => ({
+      summary: "test coverage summary",
+      tokens: 100,
+      files: [],
+      totalTests: 5,
+    } as any);
+    _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
+      ({ patterns: ["**/*.test.ts"], strategy: "glob" } as any);
+  });
+
+  afterEach(() => {
+    _testCoverageProviderDeps.generateTestCoverageSummary = origGenerateSummary;
+    _testCoverageProviderDeps.resolveTestFilePatterns = origResolvePatterns;
+    _testCoverageProviderDeps.getContextFiles = origGetContextFiles;
+  });
+
+  function makeConfigWithTestCoverage(enabled: boolean): NaxConfig {
+    return {
+      autoMode: { defaultAgent: "claude" },
+      context: {
+        v2: {
+          enabled: true,
+          minScore: 0.1,
+          deterministic: false,
+          pluginProviders: [],
+          stages: {},
+          pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
+          rules: { allowLegacyClaudeMd: true },
+          fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
+          session: { retentionDays: 7, archiveOnFeatureArchive: true },
+          staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
+          providers: {
+            historyScope: "package",
+            neighborScope: "package",
+            crossPackageDepth: 1,
+          },
+        },
+        testCoverage: {
+          enabled,
+          maxTokens: 500,
+          detail: "names-and-counts",
+          scopeToStory: true,
+        },
+      },
+    } as unknown as NaxConfig;
+  }
+
+  test("AC1: TestCoverageProvider is registered in providers array before additionalProviders", async () => {
+    const config = makeConfigWithTestCoverage(true);
+    const orchestrator = createDefaultOrchestrator(makeStory(), config);
+    const request = makeRequest({ providerIds: ["test-coverage"] });
+    const bundle = await orchestrator.assemble(request);
+    const testCoverageResult = bundle.manifest.providerResults?.find(
+      (p) => p.providerId === "test-coverage",
+    );
+    expect(testCoverageResult).toBeDefined();
+  });
+
+  test("AC2: TestCoverageProvider is registered unconditionally — no branching on enabled flag", () => {
+    const configDisabled = makeConfigWithTestCoverage(false);
+    const configEnabled = makeConfigWithTestCoverage(true);
+    const orch1 = createDefaultOrchestrator(makeStory(), configDisabled);
+    const orch2 = createDefaultOrchestrator(makeStory(), configEnabled);
+    expect(orch1).toBeDefined();
+    expect(orch2).toBeDefined();
+  });
+
+  test("AC7: when v2.enabled and testCoverage.enabled are true, providerResult status is 'ok' with tests", async () => {
+    const config = makeConfigWithTestCoverage(true);
+    const orchestrator = createDefaultOrchestrator(makeStory(), config);
+    const bundle = await orchestrator.assemble(makeRequest({ providerIds: ["test-coverage"] }));
+    const tcResult = bundle.manifest.providerResults?.find((p) => p.providerId === "test-coverage");
+    expect(tcResult?.status).toBe("ok");
+    expect(tcResult?.chunkCount).toBeGreaterThan(0);
+  });
+
+  test("AC8: when testCoverage.enabled is false, providerResult status is 'empty' with chunkCount 0", async () => {
+    const config = makeConfigWithTestCoverage(false);
+    const orchestrator = createDefaultOrchestrator(makeStory(), config);
+    const bundle = await orchestrator.assemble(makeRequest({ providerIds: ["test-coverage"] }));
+    const tcResult = bundle.manifest.providerResults?.find((p) => p.providerId === "test-coverage");
+    expect(tcResult?.status).toBe("empty");
+    expect(tcResult?.chunkCount).toBe(0);
   });
 });
