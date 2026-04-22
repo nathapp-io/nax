@@ -46,17 +46,6 @@
 | `test/unit/context/generator.test.ts` | `return {} as unknown as NaxConfig` — empty sparse cast to wrong type; not a `makeConfig` factory issue |
 | `test/unit/context/engine/providers/plugin-cache.test.ts` | Local factory produces `ContextPluginProviderConfig`, not `NaxConfig` — no migration path |
 
-### Single-call-site bespoked signatures — pending cleanup
-
-| File | Reason | Migration path |
-|------|--------|----------------|
-| `test/unit/pipeline/stages/routing-persistence.test.ts` | Bespoked `makeConfig()` signature; 1 call site | Could migrate to `makeNaxConfig({ tdd: { greenfieldDetection: false } })` but file has other issues |
-| `test/unit/pipeline/stages/routing-initial-complexity.test.ts` | Bespoked `makeConfig()` signature; 1 call site | Could migrate to `makeNaxConfig({ tdd: { greenfieldDetection: false } })` but file has other issues |
-| `test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts` | Sparse `as unknown as NaxConfig` cast; 1 call site | Could migrate to `makeSparseNaxConfig()` but file has other issues |
-| `test/unit/cli/plan-decompose-ac-repair.test.ts` | Bespoked `makeConfig()` — `makeNaxConfig()` used internally at call sites | Could inline factory to `makeNaxConfig()` calls but file has other issues |
-| `test/unit/cli/plan-decompose-writeback.test.ts` | Bespoked `makeConfig()` — `makeNaxConfig()` used internally at call sites | Could inline factory to `makeNaxConfig()` calls but file has other issues |
-| `test/unit/agents/manager-iface-run.test.ts` | Bespoked `makeConfig()` — `makeNaxConfig()` used internally at call sites | Could inline factory to `makeNaxConfig()` calls but file has other issues |
-
 ---
 
 ## Batch 2 — Pattern B (makeStory)
@@ -138,6 +127,20 @@
 | `test/unit/pipeline/stages/review-dialogue.test.ts` | Bespoke `makeConfig(dialogueEnabled, dialogueOverrides?)` — 14 call sites → `makeSparseNaxConfig` |
 | `test/unit/pipeline/stages/review.test.ts` | Bespoke `makeConfig(triggers)` — 10 call sites → `makeSparseNaxConfig` |
 | `test/unit/pipeline/stages/verify.test.ts` | DEFAULT_CONFIG spreader with conditional → `makeNaxConfig` |
+| `test/unit/pipeline/stages/routing-persistence.test.ts` | Bespoke `makeConfig()` — 1 call site → `makeNaxConfig({ tdd: { greenfieldDetection: false } })` |
+| `test/unit/pipeline/stages/routing-initial-complexity.test.ts` | Bespoke `makeConfig()` — 1 call site → `makeNaxConfig({ tdd: { greenfieldDetection: false } })` |
+| `test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts` | Sparse `as unknown as NaxConfig` cast → `makeSparseNaxConfig` |
+| `test/unit/cli/plan-decompose-ac-repair.test.ts` | Factory was `makeNaxConfig` wrapper → inlined (6 call sites) |
+| `test/unit/cli/plan-decompose-writeback.test.ts` | Factory was `makeNaxConfig` wrapper → inlined (7 call sites) |
+| `test/unit/agents/manager-iface-run.test.ts` | Factory was `makeNaxConfig` wrapper → inlined (11 call sites) |
+
+### Batch 5 (this branch — pending PR)
+
+| File | Reason |
+|------|--------|
+| `test/unit/pipeline/stages/routing-idempotence.test.ts` | Factory was `makeNaxConfig` wrapper → inlined (1 call site) |
+| `test/unit/pipeline/stages/execution-ambiguity.test.ts` | Factory was `makeNaxConfig` wrapper with bespoke trigger param → inlined (7 call sites) |
+| `test/unit/pipeline/stages/execution-tdd-simple.test.ts` | Bespoke `makeConfig()` — sparse cast → `makeSparseNaxConfig` (1 call site via `makeCtx`)
 
 ---
 
