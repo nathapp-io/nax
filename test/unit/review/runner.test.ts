@@ -172,6 +172,30 @@ describe("nax runtime file exclusions", () => {
     expect(result.success).toBe(true);
   });
 
+  test(".nax/features/*/stories/*/context-manifest-*.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
+      ".nax/features/memory-guardrails/stories/US-001/context-manifest-review-semantic.json",
+    ]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
+  test("monorepo-prefixed context-manifest is excluded", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
+      "apps/backend/nax/features/memory-guardrails/stories/US-001/context-manifest-verify.json",
+    ]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
+  test(".nax/features/*/stories/*/rebuild-manifest.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
+      ".nax/features/memory-guardrails/stories/US-001/rebuild-manifest.json",
+    ]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
   test("agent source files are still caught by uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       ".nax/status.json",

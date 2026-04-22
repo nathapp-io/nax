@@ -252,12 +252,19 @@ export async function runReview(
     /nax\/features\/[^/]+\/interactions\//,
     /nax\/features\/[^/]+\/progress\.txt$/,
     /nax\/features\/[^/]+\/acceptance-refined\.json$/,
+    /nax\/features\/[^/]+\/stories\/[^/]+\/context-manifest-[^/]+\.json$/,
+    /nax\/features\/[^/]+\/stories\/[^/]+\/rebuild-manifest\.json$/,
     /\.nax-verifier-verdict\.json$/,
     /\.nax-pids$/,
     /\.nax-wt\//,
     /\.nax-acceptance[^/]*$/,
   ];
-  const uncommittedFiles = allUncommittedFiles.filter((f) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(f)));
+  const afterRuntimeFilter = allUncommittedFiles.filter(
+    (f) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(f)),
+  );
+  // Apply .naxignore as a second, user-extensible layer on top of the built-in patterns.
+  // Pass workdir as packageDir so per-package .naxignore rules apply in monorepos.
+  const uncommittedFiles = naxIgnoreIndex ? naxIgnoreIndex.filter(afterRuntimeFilter, workdir) : afterRuntimeFilter;
   if (uncommittedFiles.length > 0) {
     const fileList = uncommittedFiles.join(", ");
     logger?.warn("review", `Uncommitted changes detected before review: ${fileList}`);
