@@ -9,11 +9,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { StoryRouting } from "../../../../src/prd/types";
-import { makeStory } from "../../../helpers";
+import { makeNaxConfig, makeStory } from "../../../helpers";
 
 const WORKDIR = `/tmp/nax-routing-initial-complexity-test-${randomUUID()}`;
 
@@ -32,20 +31,10 @@ function makePRD(story: UserStory): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    tdd: {
-      ...DEFAULT_CONFIG.tdd,
-      greenfieldDetection: false,
-    },
-  };
-}
-
 function makeCtx(story: UserStory, overrides?: Partial<PipelineContext>): PipelineContext & { prdPath: string } {
   const prd = makePRD(story);
   return {
-    config: makeConfig(),
+    config: makeNaxConfig({ tdd: { greenfieldDetection: false } }),
     prd,
     story,
     stories: [story],

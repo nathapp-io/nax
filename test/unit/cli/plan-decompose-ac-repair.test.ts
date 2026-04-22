@@ -63,10 +63,6 @@ function makeOversizedSubStory(id: string, acCount: number): DecomposedStory {
   };
 }
 
-function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" }, ...overrides });
-}
-
 function makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
@@ -154,7 +150,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     );
 
     await expect(
-      planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
+      planDecomposeCommand(tmpDir, makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }), { feature: FEATURE, storyId: "US-001" }),
     ).resolves.not.toThrow();
 
     expect(callCount).toBe(2);
@@ -177,7 +173,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
       }),
     );
 
-    const config = makeConfig(); // maxReplanAttempts: 3
+    const config = makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }); // maxReplanAttempts: 3
     await expect(
       planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
     ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
@@ -197,18 +193,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
       }),
     );
 
-    const config = makeConfig({
-      precheck: {
-        storySizeGate: {
-          enabled: true,
-          maxAcCount: 5,
-          maxDescriptionLength: 3000,
-          maxBulletPoints: 12,
-          action: "block",
-          maxReplanAttempts: 1,
-        },
-      },
-    } as Partial<NaxConfig>);
+    const config = makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 1 } }, agent: { default: "claude" } });
 
     await expect(
       planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
@@ -237,7 +222,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let caught: NaxError | undefined;
     try {
-      await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+      await planDecomposeCommand(tmpDir, makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }), { feature: FEATURE, storyId: "US-001" });
     } catch (err) {
       caught = err as NaxError;
     }
@@ -264,7 +249,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let caught: NaxError | undefined;
     try {
-      await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+      await planDecomposeCommand(tmpDir, makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }), { feature: FEATURE, storyId: "US-001" });
     } catch (err) {
       caught = err as NaxError;
     }
@@ -295,7 +280,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
       }),
     );
 
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }), { feature: FEATURE, storyId: "US-001" });
 
     expect(capturedContexts).toHaveLength(2);
     // First call: no repair hint

@@ -1,5 +1,64 @@
 # Phase 2 Skipped Files
 
+## Pattern A — Permanent Skips (makeConfig / DEFAULT_CONFIG spreaders)
+
+### Legacy config keys — causes CONFIG_LEGACY_AGENT_KEYS error
+
+| File | Reason |
+|------|--------|
+| `test/unit/pipeline/verify-smart-runner.test.ts` | Uses `autoMode.defaultAgent` / `autoMode.fallbackOrder` — legacy keys removed from schema; `makeContext` helper uses sparse cast, not local factory |
+
+### Behavioral differences — cannot migrate without changing test semantics
+
+| File | Reason |
+|------|--------|
+| `test/unit/config/permissions.test.ts` | Factory hardcodes `dangerouslySkipPermissions: false` which differs from schema default `true` (DEFAULT_CONFIG.execution.dangerouslySkipPermissions) — behavioral difference; reverted in Batch 3 |
+
+### Inline DEFAULT_CONFIG outside factory — requires separate third pass
+
+| File | Reason |
+|------|--------|
+| `test/unit/agents/manager-complete.test.ts` | Inline `DEFAULT_CONFIG` references at lines 51/62/70/72/86 OUTSIDE the local `makeConfig()` factory — passed directly to `completeWithFallback()` |
+
+### Bespoked makeStory (Batch 2 concern) — Pattern A issues deferred
+
+| File | Reason |
+|------|--------|
+| `test/unit/pipeline/stages/verify-crash-detection.test.ts` | Bespoked `makeStory` (status: "in-progress", attempts: 1) — Batch 2; `makeConfig` also bespoked (DEFAULT_CONFIG spread with quality/commands overrides) but file cannot be fully resolved until Batch 2 |
+| `test/unit/pipeline/stages/completion-review-gate.test.ts` | Bespoked `makeConfig(triggers: Record<string, unknown>)` + bespoked `makeStory` — non-standard factory signature; Pattern B deferred |
+| `test/unit/pipeline/stages/prompt-tdd-simple.test.ts` | Bespoked `makeConfig()` + `makeStory()` — DEFAULT_CONFIG spread but bespoked signature; Pattern B deferred |
+
+### Complex DEFAULT_CONFIG spreaders — too many call sites to migrate safely
+
+| File | Reason |
+|------|--------|
+| `test/unit/quality/command-resolver.test.ts` | 14 call sites; each spreads `DEFAULT_CONFIG.quality.commands` with nested structure — would require deep per-call-site analysis |
+| `test/unit/execution/lifecycle-execution.test.ts` | 10+ call sites; nested `DEFAULT_CONFIG.execution.regressionGate` + `DEFAULT_CONFIG.quality` spread with conditional regressionGate mode |
+| `test/unit/execution/runner-completion-skip.test.ts` | 13 call sites; DEFAULT_CONFIG spreader with regressionGate overrides |
+| `test/unit/agents/manager-swap-loop.test.ts` | 9 call sites; nested `DEFAULT_CONFIG.agent.fallback` spread with deep object merge |
+
+### ContextPluginProviderConfig — not NaxConfig, no migration path
+
+| File | Reason |
+|------|--------|
+| `test/unit/context/engine/providers/plugin-loader.test.ts` | Factory produces `ContextPluginProviderConfig`, not `NaxConfig` — no shared helper covers this type |
+| `test/unit/context/engine/orchestrator-factory.test.ts` | Bespoked `makeConfig()` for `ContextPluginProviderConfig` — also has bespoked `makeStory` (Batch 2); no NaxConfig migration path |
+| `test/unit/context/generator.test.ts` | `return {} as unknown as NaxConfig` — empty sparse cast to wrong type; not a `makeConfig` factory issue |
+| `test/unit/context/engine/providers/plugin-cache.test.ts` | Local factory produces `ContextPluginProviderConfig`, not `NaxConfig` — no migration path |
+
+### Single-call-site bespoked signatures — pending cleanup
+
+| File | Reason | Migration path |
+|------|--------|----------------|
+| `test/unit/pipeline/stages/routing-persistence.test.ts` | Bespoked `makeConfig()` signature; 1 call site | Could migrate to `makeNaxConfig({ tdd: { greenfieldDetection: false } })` but file has other issues |
+| `test/unit/pipeline/stages/routing-initial-complexity.test.ts` | Bespoked `makeConfig()` signature; 1 call site | Could migrate to `makeNaxConfig({ tdd: { greenfieldDetection: false } })` but file has other issues |
+| `test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts` | Sparse `as unknown as NaxConfig` cast; 1 call site | Could migrate to `makeSparseNaxConfig()` but file has other issues |
+| `test/unit/cli/plan-decompose-ac-repair.test.ts` | Bespoked `makeConfig()` — `makeNaxConfig()` used internally at call sites | Could inline factory to `makeNaxConfig()` calls but file has other issues |
+| `test/unit/cli/plan-decompose-writeback.test.ts` | Bespoked `makeConfig()` — `makeNaxConfig()` used internally at call sites | Could inline factory to `makeNaxConfig()` calls but file has other issues |
+| `test/unit/agents/manager-iface-run.test.ts` | Bespoked `makeConfig()` — `makeNaxConfig()` used internally at call sites | Could inline factory to `makeNaxConfig()` calls but file has other issues |
+
+---
+
 ## Batch 2 — Pattern B (makeStory)
 
 | File | Reason |
@@ -29,8 +88,8 @@
 | `test/unit/execution/story-context.test.ts` | Positional args: `makeStory(id = "US-001")` |
 | `test/unit/execution/runner-completion-skip.test.ts` | Positional args: `makeStory(id, status)` |
 | `test/unit/execution/lifecycle/paused-story-prompts.test.ts` | Positional args: `makeStory(id, overrides)` — `status: "paused"` in defaults |
-| `test/unit/execution/lifecycle/run-completion-fallback.test.ts` | Positional args: `makeStory(id, status)` |
-| `test/unit/execution/lifecycle/run-completion-postrun.test.ts` | Positional args: `makeStory(id, status)` |
+| `test/unit/execution/run-completion-fallback.test.ts` | Positional args: `makeStory(id, status)` |
+| `test/unit/execution/run-completion-postrun.test.ts` | Positional args: `makeStory(id, status)` |
 | `test/unit/execution/pipeline-result-handler.test.ts` | Positional args: `makeStory(id, overrides)` |
 | `test/unit/execution/runner-completion-postrun.test.ts` | Positional args: `makeStory(id, status)` |
 | `test/unit/execution/lifecycle-completion.test.ts` | Positional args: `makeStory(id, status)` |
@@ -55,71 +114,36 @@
 | `test/unit/context/engine/orchestrator-factory.test.ts` | Bespoke defaults (`status: "in-progress", attempts: 1`) |
 | `test/unit/acceptance/generator-strategy.test.ts` | No call sites for `makeStory()` (just `makeCriteria`) |
 | `test/unit/prd/schema.test.ts` | Schema fuzz test — intentionally constructs invalid `UserStory` |
+| `test/unit/cli/plan-replan.test.ts` | Bespoke `contextFiles` field + complex `routing` in defaults |
+| `test/unit/cli/plan-decompose-regression.test.ts` | Bespoke `contextFiles` field + complex `routing` in defaults |
 
 ---
 
-## Batch 3 — Pattern A (makeConfig, DEFAULT_CONFIG spreaders)
+## Pattern A — Already Migrated
 
-### DEFAULT_CONFIG spreaders (complex — high call-site count)
-
-| File | Reason |
-|------|--------|
-| `test/unit/quality/command-resolver.test.ts` | `return { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands: {...} } }` — 14 call sites, each with nested quality.commands spread |
-| `test/unit/config/permissions.test.ts` | Factory hardcodes `dangerouslySkipPermissions: false` which differs from `DEFAULT_CONFIG.execution.dangerouslySkipPermissions` (schema default `true`) — behavioral difference |
-| `test/unit/agents/manager-swap-loop.test.ts` | `return { ...DEFAULT_CONFIG, agent: { ...DEFAULT_CONFIG.agent, fallback: { ... } } }` — nested agent.fallback spread, 9 call sites |
-| `test/unit/execution/lifecycle-execution.test.ts` | `return { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, regressionGate: {...} }, quality: {...} }` — 10+ call sites, conditional regressionGate mode |
-| `test/unit/execution/runner-completion-skip.test.ts` | DEFAULT_CONFIG spreader with regressionGate overrides — 13 call sites |
-| `test/unit/execution/story-context.test.ts` | DEFAULT_CONFIG spreader — bespoked `makeStory` signature (positional) also present |
-
-### Sparse casts → Batch 4
+### Batch 3 (PR #642 — merged)
 
 | File | Reason |
 |------|--------|
-| `test/unit/pipeline/verify-smart-runner.test.ts` | `makeContext({ smartTestRunner: true })` — sparse cast via `makeContext` helper, not a local `makeConfig` |
-| `test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts` | Sparse `as unknown as NaxConfig` — no DEFAULT_CONFIG spread |
-| `test/unit/context/generator.test.ts` | `return {} as unknown as NaxConfig` — empty sparse cast |
+| `test/unit/worktree/dependencies.test.ts` | `makeConfig(mode, setupCommand?)` → `makeNaxConfig({ execution: { worktreeDependencies: { mode, setupCommand } } })` |
+| `test/unit/context/feature-context.test.ts` | `makeConfig(enabled, budgetTokens?)` → `makeNaxConfig({ context: { featureEngine: { enabled, budgetTokens } } })` |
+| `test/unit/agents/acp/registry.test.ts` | `makeConfig(agentOverrides?)` → `makeNaxConfig({ agent: agentOverrides })` — 19 call sites; backward-compat test uses `{ agent: undefined as any }` |
+| `test/unit/test-runners/resolver.test.ts` | `makeConfig(patterns?)` using `structuredClone(DEFAULT_CONFIG)` → `makeNaxConfig()` — 20 call sites |
 
-### Bespoked signatures → Batch 4
-
-| File | Reason |
-|------|--------|
-| `test/unit/pipeline/stages/routing-persistence.test.ts` | Bespoke `makeConfig()` signature |
-| `test/unit/pipeline/stages/routing-initial-complexity.test.ts` | Bespoke `makeConfig()` signature — `makeStory` already migrated to shared helper |
-| `test/unit/pipeline/stages/verify-crash-detection.test.ts` | Bespoke `makeConfig()` + `makeStory()` — both have DEFAULT_CONFIG spread but nested quality/commands overrides |
-| `test/unit/pipeline/stages/completion-review-gate.test.ts` | Bespoke `makeConfig(triggers: Record<string, unknown>)` — non-standard signature |
-| `test/unit/pipeline/stages/prompt-tdd-simple.test.ts` | Bespoke `makeConfig()` + `makeStory()` — DEFAULT_CONFIG spread but also bespoked signature |
-| `test/unit/pipeline/stages/prompt-acceptance.test.ts` | Bespoke `makeConfig()` — sparse cast, bespoked signature |
-| `test/unit/pipeline/stages/review-dialogue.test.ts` | Bespoke `makeConfig(dialogueEnabled: boolean, dialogueOverrides?: Record<string, unknown>)` |
-| `test/unit/pipeline/stages/review.test.ts` | Bespoke `makeConfig(triggers: Record<string, unknown>)` — non-standard signature |
-| `test/unit/context/engine/providers/plugin-loader.test.ts` | Bespoke `makeConfig()` for `ContextPluginProviderConfig` (not `NaxConfig`) |
-| `test/unit/context/engine/orchestrator-factory.test.ts` | Bespoke `makeConfig()` for `ContextPluginProviderConfig` — both makeConfig and makeStory bespoked |
-| `test/unit/agents/manager-complete.test.ts` | Bespoke `makeConfig()` — inline `DEFAULT_CONFIG` references at lines 35/46 NOT inside factory |
-| `test/unit/agents/manager-iface-run.test.ts` | Bespoke `makeConfig()` — uses `makeNaxConfig()` internally but has local factory too |
-| `test/unit/cli/plan-decompose-ac-repair.test.ts` | Bespoke `makeConfig()` — already uses `makeNaxConfig()` internally at call sites |
-| `test/unit/cli/plan-decompose-writeback.test.ts` | Bespoke `makeConfig()` — already uses `makeNaxConfig()` internally at call sites |
-
-### Already migrated (Batch 3 — record for reference)
+### Batch 4 (PR #643 — merged)
 
 | File | Reason |
 |------|--------|
-| `test/unit/worktree/dependencies.test.ts` | `makeConfig(mode, setupCommand?)` → `makeNaxConfig({ execution: { worktreeDependencies: { mode, setupCommand } } })` — migrated ✓ |
-| `test/unit/context/feature-context.test.ts` | `makeConfig(enabled, budgetTokens?)` → `makeNaxConfig({ context: { featureEngine: { enabled, budgetTokens } } })` — migrated ✓ |
-| `test/unit/agents/acp/registry.test.ts` | `makeConfig(agentOverrides?)` → `makeNaxConfig({ agent: agentOverrides })` — 19 call sites — migrated ✓ |
-| `test/unit/test-runners/resolver.test.ts` | `makeConfig(patterns?)` using `structuredClone(DEFAULT_CONFIG)` → `makeNaxConfig()` — 20 call sites — migrated ✓ |
+| `test/unit/pipeline/stages/prompt-acceptance.test.ts` | Bespoke `makeConfig()` — sparse cast → `makeSparseNaxConfig` |
+| `test/unit/pipeline/stages/review-dialogue.test.ts` | Bespoke `makeConfig(dialogueEnabled, dialogueOverrides?)` — 14 call sites → `makeSparseNaxConfig` |
+| `test/unit/pipeline/stages/review.test.ts` | Bespoke `makeConfig(triggers)` — 10 call sites → `makeSparseNaxConfig` |
+| `test/unit/pipeline/stages/verify.test.ts` | DEFAULT_CONFIG spreader with conditional → `makeNaxConfig` |
 
 ---
 
-### ContextPluginProviderConfig (not NaxConfig — permanent skip)
+## Pattern B files with Pattern A issues (see Batch 2 above)
 
-| File | Reason |
-|------|--------|
-| `test/unit/context/engine/providers/plugin-cache.test.ts` | Local factory produces `ContextPluginProviderConfig`, not `NaxConfig` — no migration path |
-
----
-
-*Files below are Pattern B (makeStory) entries that also have Pattern A (makeConfig) violations. Listed under Batch 2 above; listed here for completeness.*
-
-### Pattern B files also in Pattern A section (see Batch 2 above)
+These files are skipped under Batch 2 (makeStory) but also have Pattern A violations — listed here for completeness:
 
 - `test/unit/pipeline/stages/prompt-batch.test.ts` — Pattern B: positional args; Pattern A: DEFAULT_CONFIG spreader
 - `test/unit/pipeline/stages/completion-semantic.test.ts` — Pattern B: positional args; Pattern A: sparse cast
