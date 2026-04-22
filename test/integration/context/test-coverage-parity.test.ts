@@ -11,23 +11,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { withTempDir } from "../../helpers/temp";
+import { makeNaxConfig, makeStory } from "../../helpers";
 import { generateTestCoverageSummary } from "../../../src/context/test-scanner";
 import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../src/context/engine/providers/test-coverage";
-import type { NaxConfig } from "../../../src/config/types";
-import type { UserStory } from "../../../src/prd/types";
 
-const STORY: UserStory = {
-  id: "story-001",
-  title: "Test Story",
-  description: "",
-  acceptanceCriteria: [],
-  status: "pending",
-} as unknown as UserStory;
-
-const BASE_CONFIG: NaxConfig = {
+const STORY = makeStory({ id: "story-001", title: "Test Story" });
+const BASE_CONFIG = makeNaxConfig({
   context: {
     testCoverage: {
       enabled: true,
@@ -36,7 +27,7 @@ const BASE_CONFIG: NaxConfig = {
       scopeToStory: true,
     },
   },
-} as unknown as NaxConfig;
+});
 
 function makeRequest(packageDir: string) {
   return {
@@ -49,9 +40,9 @@ function makeRequest(packageDir: string) {
   };
 }
 
-function writeTestFile(dir: string, filename: string, content: string): void {
-  mkdirSync(join(dir, "test"), { recursive: true });
-  writeFileSync(join(dir, "test", filename), content);
+async function writeTestFile(dir: string, filename: string, content: string): Promise<void> {
+  Bun.spawnSync(["mkdir", "-p", join(dir, "test")]);
+  await Bun.write(join(dir, "test", filename), content);
 }
 
 
@@ -70,7 +61,7 @@ describe("test-coverage-parity", () => {
   describe("default detail 'names-and-counts'", () => {
     test("v1 and v2 emit byte-equal content", async () => {
       await withTempDir(async (dir) => {
-        writeTestFile(dir, "foo.test.ts", [
+        await writeTestFile(dir,"foo.test.ts", [
           'describe("foo suite", () => {',
           '  test("foo test 1", () => {});',
           '  test("foo test 2", () => {});',
@@ -102,12 +93,12 @@ describe("test-coverage-parity", () => {
   describe("scopeToStory=true with contextFiles filtering", () => {
     test("v1 and v2 emit byte-equal content filtered to matching test files", async () => {
       await withTempDir(async (dir) => {
-        writeTestFile(dir, "foo.test.ts", [
+        await writeTestFile(dir,"foo.test.ts", [
           'describe("foo suite", () => {',
           '  test("foo test", () => {});',
           '});',
         ].join("\n"));
-        writeTestFile(dir, "bar.test.ts", [
+        await writeTestFile(dir,"bar.test.ts", [
           'describe("bar suite", () => {',
           '  test("bar test", () => {});',
           '});',
@@ -119,21 +110,11 @@ describe("test-coverage-parity", () => {
         _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
         _testCoverageProviderDeps.getContextFiles = () => ["src/foo.ts"];
 
-        const storyWithContextFiles = {
-          ...STORY,
-          contextFiles: ["src/foo.ts"],
-        } as unknown as UserStory;
+        const storyWithContextFiles = makeStory({ id: "story-001", contextFiles: ["src/foo.ts"] });
 
-        const cfgWithScope = {
-          ...BASE_CONFIG,
-          context: {
-            ...BASE_CONFIG.context,
-            testCoverage: {
-              ...BASE_CONFIG.context.testCoverage,
-              scopeToStory: true,
-            },
-          },
-        } as NaxConfig;
+        const cfgWithScope = makeNaxConfig({
+          context: { testCoverage: { enabled: true, maxTokens: 500, detail: "names-and-counts", scopeToStory: true } },
+        });
 
         const v2Provider = new TestCoverageProvider(storyWithContextFiles, cfgWithScope);
         const v2Result = await v2Provider.fetch(makeRequest(dir));
@@ -156,13 +137,13 @@ describe("test-coverage-parity", () => {
   describe("scopeToStory=false full scan", () => {
     test("v1 and v2 emit byte-equal content scanning all test files", async () => {
       await withTempDir(async (dir) => {
-        writeTestFile(dir, "alpha.test.ts", [
+        await writeTestFile(dir,"alpha.test.ts", [
           'describe("alpha suite", () => {',
           '  test("alpha test 1", () => {});',
           '  test("alpha test 2", () => {});',
           '});',
         ].join("\n"));
-        writeTestFile(dir, "beta.test.ts", [
+        await writeTestFile(dir,"beta.test.ts", [
           'describe("beta suite", () => {',
           '  test("beta test", () => {});',
           '});',
@@ -174,16 +155,9 @@ describe("test-coverage-parity", () => {
         _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
         _testCoverageProviderDeps.getContextFiles = () => [];
 
-        const cfgNoScope = {
-          ...BASE_CONFIG,
-          context: {
-            ...BASE_CONFIG.context,
-            testCoverage: {
-              ...BASE_CONFIG.context.testCoverage,
-              scopeToStory: false,
-            },
-          },
-        } as NaxConfig;
+        const cfgNoScope = makeNaxConfig({
+          context: { testCoverage: { enabled: true, maxTokens: 500, detail: "names-and-counts", scopeToStory: false } },
+        });
 
         const v2Provider = new TestCoverageProvider(STORY, cfgNoScope);
         const v2Result = await v2Provider.fetch(makeRequest(dir));
@@ -206,7 +180,7 @@ describe("test-coverage-parity", () => {
   describe("empty test directory", () => {
     test("v1 returns no element and v2 returns { chunks: [], pullTools: [] }", async () => {
       await withTempDir(async (dir) => {
-        mkdirSync(join(dir, "test"), { recursive: true });
+        Bun.spawnSync(["mkdir", "-p", join(dir, "test")]);
 
         _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
           ({ globs: ["**/*.test.ts"], patterns: ["**/*.test.ts"], testDirs: ["test"], pathspec: [], regex: [], resolution: "fallback" as const } as any);

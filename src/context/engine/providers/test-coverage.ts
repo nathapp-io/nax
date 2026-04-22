@@ -10,9 +10,12 @@
 import { createHash } from "node:crypto";
 import type { NaxConfig } from "../../../config/types";
 import { getLogger } from "../../../logger";
+import { getContextFiles } from "../../../prd";
 import type { UserStory } from "../../../prd/types";
+import { resolveTestFilePatterns } from "../../../test-runners/resolver";
 import type { ResolvedTestPatterns } from "../../../test-runners/resolver";
 import { errorMessage } from "../../../utils/errors";
+import { generateTestCoverageSummary } from "../../test-scanner";
 import type { TestScanOptions, TestScanResult } from "../../test-scanner";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -26,21 +29,10 @@ export const _testCoverageProviderDeps: {
   getLogger: () => ReturnType<typeof getLogger>;
   getContextFiles: (story: UserStory) => string[];
 } = {
-  generateTestCoverageSummary: async (opts: TestScanOptions) => {
-    throw new Error("Not implemented — tests should mock this via _testCoverageProviderDeps");
-  },
-  resolveTestFilePatterns: async (
-    _config: NaxConfig,
-    _workdir: string,
-    _packageDir?: string,
-  ): Promise<ResolvedTestPatterns> => {
-    throw new Error("Not implemented — tests should mock this via _testCoverageProviderDeps");
-  },
+  generateTestCoverageSummary,
+  resolveTestFilePatterns,
   getLogger: () => getLogger(),
-  getContextFiles: (story: UserStory) => {
-    const { getContextFiles: gcf } = require("../../../prd/types");
-    return gcf(story);
-  },
+  getContextFiles,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +58,7 @@ export class TestCoverageProvider implements IContextProvider {
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const tcConfig = this.config.context?.testCoverage;
-    if (!tcConfig?.enabled) {
+    if (tcConfig?.enabled === false) {
       return { chunks: [], pullTools: [] };
     }
     if (!request.packageDir) {

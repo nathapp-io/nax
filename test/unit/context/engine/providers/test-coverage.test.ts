@@ -1,18 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../../../src/context/engine/providers/test-coverage";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
-import type { NaxConfig } from "../../../../../src/config/types";
-import type { UserStory } from "../../../../../src/prd/types";
+import { makeNaxConfig, makeStory } from "../../../../helpers";
 
-const STORY: UserStory = {
-  id: "story-001",
-  title: "Test story",
-  description: "",
-  acceptanceCriteria: [],
-  status: "pending",
-} as unknown as UserStory;
-
-const CONFIG = {} as NaxConfig;
+const STORY = makeStory({ id: "story-001", title: "Test story" });
+const CONFIG = makeNaxConfig();
 
 function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   return {
@@ -40,8 +33,9 @@ function mockScanner(result: ScannerResult) {
   _testCoverageProviderDeps.generateTestCoverageSummary = async () => result as any;
 }
 
-function mockResolvePatterns(result: Awaited<ReturnType<typeof _testCoverageProviderDeps.resolveTestFilePatterns>>) {
-  _testCoverageProviderDeps.resolveTestFilePatterns = async () => result as any;
+// biome-ignore lint/suspicious/noExplicitAny: test stub — accepts partial shapes for convenience
+function mockResolvePatterns(result: any) {
+  _testCoverageProviderDeps.resolveTestFilePatterns = async () => result;
 }
 
 beforeEach(() => {
@@ -61,22 +55,21 @@ function makeConfigWithTestCoverage(overrides: Partial<{
   detail: "names-only" | "names-and-counts" | "describe-blocks";
   scopeToStory: boolean;
   contextFiles: string[];
-}> = {}): NaxConfig {
-  return {
+}> = {}) {
+  return makeNaxConfig({
     context: {
       testCoverage: {
-        enabled: true,
-        maxTokens: 500,
-        detail: "names-and-counts",
-        scopeToStory: true,
-        ...overrides,
+        enabled: overrides.enabled ?? true,
+        maxTokens: overrides.maxTokens ?? 500,
+        detail: overrides.detail ?? "names-and-counts",
+        scopeToStory: overrides.scopeToStory ?? true,
+        ...(overrides.testDir !== undefined ? { testDir: overrides.testDir } : {}),
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function sha256hex(content: string): string {
-  const { createHash } = require("node:crypto");
   return createHash("sha256").update(content).digest("hex");
 }
 
@@ -230,10 +223,7 @@ describe("TestCoverageProvider", () => {
     });
 
     test("forwards contextFiles from getContextFiles(story)", async () => {
-      const storyWithContextFiles = {
-        ...STORY,
-        contextFiles: ["src/foo.ts", "src/bar.ts"],
-      } as unknown as UserStory;
+      const storyWithContextFiles = makeStory({ id: "story-001", contextFiles: ["src/foo.ts", "src/bar.ts"] });
       const cfg = makeConfigWithTestCoverage();
       mockResolvePatterns(["**/*.test.ts"]);
 
@@ -252,7 +242,7 @@ describe("TestCoverageProvider", () => {
 
   describe("AC7: passes resolvedTestGlobs from resolveTestFilePatterns", () => {
     test("calls resolveTestFilePatterns with config, repoRoot, story.workdir", async () => {
-      const storyWithWorkdir = { ...STORY, workdir: "packages/api" } as unknown as UserStory;
+      const storyWithWorkdir = makeStory({ id: "story-001", workdir: "packages/api" });
       const cfg = makeConfigWithTestCoverage();
 
       let receivedConfig: any;
@@ -427,18 +417,6 @@ describe("TestCoverageProvider", () => {
     test("logs warning with component 'test-coverage' on scanner error", async () => {
       const cfg = makeConfigWithTestCoverage();
       mockResolvePatterns(["**/*.test.ts"]);
-
-      let loggedComponent: string | undefined;
-      let loggedMessage: string | undefined;
-      let loggedData: Record<string, unknown> | undefined;
-
-      const mockLogger = {
-        warn: (component: string, message: string, data?: Record<string, unknown>) => {
-          loggedComponent = component;
-          loggedMessage = message;
-          loggedData = data;
-        },
-      };
 
       _testCoverageProviderDeps.generateTestCoverageSummary = async () => {
         throw new Error("scanner failed");
