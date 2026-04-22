@@ -259,6 +259,92 @@ The loader validates the shape structurally (duck-typed — no import from nax i
 
 **Determinism.** If your provider is non-deterministic (network call, LLM summary), set `deterministic: false` on it. Users who set `context.v2.deterministic: true` in their config will have it excluded — this is how you opt out of reproducibility-sensitive runs.
 
+#### Scoping a provider to specific stages
+
+A common question is "how do I run my provider only on `tdd-test-writer`?" or "only on `review-semantic`?" There's no config-level toggle for this today — the stage-to-provider mapping is hardcoded in `STAGE_CONTEXT_MAP` ([src/context/engine/stage-config.ts](../../src/context/engine/stage-config.ts)) and `context.v2.stages.*` only overrides `budgetTokens`. Tracked in [#662](https://github.com/nathapp-io/nax/issues/662).
+
+Three patterns work today:
+
+**Pattern A — chunk `role` tags (audience filter).** Every pipeline stage has a fixed *role* and the orchestrator drops chunks whose `role` doesn't match. This is the right tool when you want a provider to serve one audience (e.g. reviewers).
+
+| Role | Stages that consume it |
+|:-----|:-----------------------|
+| `implementer` | `execution`, `context`, `tdd-implementer`, `verify`, `rectify`, `autofix`, `acceptance`, `plan`, `single-session`, `tdd-simple`, `no-test`, `batch`, `route` |
+| `tdd` | `tdd-test-writer`, `tdd-verifier` |
+| `reviewer` | `review`, `review-semantic`, `review-adversarial`, `review-dialogue`, `debate` |
+| `all` | matches every stage |
+
+```typescript
+// Appears only in reviewer-role stages:
+{ id: "my:design-decisions", role: ["reviewer"], content: "...", /* ... */ }
+
+// Appears only in tdd-role stages:
+{ id: "my:acceptance-invariants", role: ["tdd"], content: "...", /* ... */ }
+
+// Multi-role — matches if ANY tag aligns with the stage role:
+{ id: "my:cross-cutting", role: ["reviewer", "tdd"], content: "...", /* ... */ }
+```
+
+**Pattern B — switch on `request.stage` inside `fetch()`.** Use this when you need finer granularity than `role` (e.g. `tdd-test-writer` but not `tdd-verifier`):
+
+```typescript
+export const provider: IContextProvider = {
+  id: "my-provider",
+  kind: "rag",
+  fetch: async (request) => {
+    if (request.stage === "tdd-test-writer") {
+      return {
+        chunks: [{
+          id: "my:acceptance-fixtures",
+          kind: "rag",
+          scope: "retrieved",
+          role: ["tdd"],
+          content: await loadAcceptanceFixtures(request.touchedFiles),
+          tokens: 400,
+          rawScore: 0.9,
+        }],
+        pullTools: [],
+      };
+    }
+    if (request.stage === "review-semantic") {
+      return {
+        chunks: [{
+          id: "my:design-rationale",
+          kind: "rag",
+          scope: "retrieved",
+          role: ["reviewer"],
+          content: await loadDesignRationale(request.featureId),
+          tokens: 300,
+          rawScore: 0.85,
+        }],
+        pullTools: [],
+      };
+    }
+    return { chunks: [], pullTools: [] };  // no-op on other stages
+  },
+};
+```
+
+**Pattern C — combine A + B.** Use chunk `role` for coarse audience scoping and `request.stage` inside `fetch()` for fine per-stage variation (e.g. different framings for `tdd-test-writer` vs. `tdd-implementer`, both `tdd`-role).
+
+#### The catch — getting your plugin to fire at all
+
+Plugin providers load and register with the orchestrator, but the orchestrator then filters by each stage's `providerIds`. None of the built-in stages include plugin IDs today, so a freshly registered plugin **runs on zero stages** until someone adds its ID to `STAGE_CONTEXT_MAP`.
+
+**Until [#662](https://github.com/nathapp-io/nax/issues/662) lands**, the only way to wire a plugin into a stage is a source edit:
+
+```typescript
+// src/context/engine/stage-config.ts
+"tdd-test-writer": {
+  role: "tdd",
+  budgetTokens: 8_000,
+  providerIds: [...PHASE_3_TDD_TEST_WRITER, "my-symbol-graph"],  // <-- add plugin ID
+  pullToolNames: ["query_neighbor"],
+},
+```
+
+Unknown IDs in a stage's `providerIds` throw `CONTEXT_UNKNOWN_PROVIDER_IDS` at assembly time, so typos surface immediately.
+
 ---
 
 ### 7. Debug & audit — the manifest
