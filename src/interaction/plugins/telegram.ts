@@ -133,6 +133,8 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           if (update.callback_query) {
             await this.answerCallbackQuery(update.callback_query.id);
           }
+          // Clean up tracking entry before returning to avoid accumulating stale entries
+          this.pendingMessages.delete(requestId);
           // Reset backoff on successful response
           this.backoffMs = 1000;
           return response;

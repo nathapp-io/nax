@@ -1,4 +1,5 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { appendFile } from "node:fs/promises";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../logging/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
@@ -41,6 +42,8 @@ export class Logger {
   private readonly useChalk: boolean;
   private readonly formatterMode?: VerbosityMode;
   private readonly headless: boolean;
+  /** Tail of the async write chain — await this to know all writes have landed */
+  private writeQueueTail: Promise<void> = Promise.resolve();
 
   constructor(options: LoggerOptions) {
     this.level = options.level;
@@ -154,16 +157,27 @@ export class Logger {
   }
 
   /**
-   * Write JSONL line to file (synchronous append)
+   * Append a JSONL line to the log file asynchronously.
+   * Writes are chained so ordering is preserved and callers can await flush().
+   * Avoids blocking the event loop during parallel execution and high-frequency logging.
    */
   private writeToFile(entry: LogEntry): void {
     if (!this.filePath) return;
+    const line = `${formatJsonl(entry)}\n`;
+    const filePath = this.filePath;
+    this.writeQueueTail = this.writeQueueTail.then(() =>
+      appendFile(filePath, line).catch((error) => {
+        console.error(`[logger] Failed to write to log file: ${error}`);
+      }),
+    );
+  }
 
-    try {
-      appendFileSync(this.filePath, `${formatJsonl(entry)}\n`);
-    } catch (error) {
-      console.error(`[logger] Failed to write to log file: ${error}`);
-    }
+  /**
+   * Wait for all pending async log writes to complete.
+   * Useful in tests that read the log file immediately after writing.
+   */
+  async flush(): Promise<void> {
+    await this.writeQueueTail;
   }
 
   /**

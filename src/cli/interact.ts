@@ -12,7 +12,12 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import type { InteractionRequest, InteractionResponse } from "../interaction";
-import { deletePendingInteraction, listPendingInteractions, loadPendingInteraction } from "../interaction";
+import {
+  deletePendingInteraction,
+  listPendingInteractions,
+  loadPendingInteraction,
+  validateInteractionId,
+} from "../interaction";
 
 /**
  * Options for interact list command
@@ -136,6 +141,9 @@ export async function interactListCommand(options: InteractListOptions): Promise
  * Respond to a pending interaction
  */
 export async function interactRespondCommand(requestId: string, options: InteractRespondOptions): Promise<void> {
+  // Validate before using the ID in any filesystem path
+  validateInteractionId(requestId);
+
   // Find the feature by searching all features for the request
   let featureDir: string | null = null;
   let request: InteractionRequest | null = null;
@@ -224,6 +232,9 @@ export async function interactRespondCommand(requestId: string, options: Interac
  * Cancel a pending interaction (applies fallback)
  */
 export async function interactCancelCommand(requestId: string, options: InteractCancelOptions): Promise<void> {
+  // Validate before using the ID in any filesystem path
+  validateInteractionId(requestId);
+
   // Find the feature by searching all features for the request
   let featureDir: string | null = null;
   let request: InteractionRequest | null = null;

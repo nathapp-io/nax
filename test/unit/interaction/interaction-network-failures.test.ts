@@ -188,7 +188,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
 describe("WebhookInteractionPlugin - Network Failures", () => {
   test("should handle network error in send()", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     // Mock fetch to throw network error
     const originalFetch = globalThis.fetch;
@@ -215,7 +215,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
   test("should handle HTTP error in send()", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     // Mock fetch to return 503 error
     const originalFetch = globalThis.fetch;
@@ -242,7 +242,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
   test("should return timeout skip response when no callback arrives", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     // With instant sleep mock, receive() times out quickly (50ms).
     // We verify the timeout path fires correctly — not the wall-clock duration.
@@ -256,7 +256,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
   test("should resolve in-flight receive immediately when destroyed", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     const receivePromise = plugin.receive("destroy-inflight", 60_000);
     await Promise.resolve();
@@ -276,7 +276,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
   test("should clear pending response/callback/timer maps on destroy", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
 
@@ -313,7 +313,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
   test("should supersede previous in-flight receive for same requestId", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     const firstReceive = plugin.receive("duplicate-id", 60_000);
     await Promise.resolve();
@@ -349,7 +349,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 describe("WebhookInteractionPlugin - Payload Security", () => {
   test("should reject oversized payload via Content-Length header", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook", maxPayloadBytes: 1000 });
+    await plugin.init({ url: "https://example.com/webhook", maxPayloadBytes: 1000, requireSecret: false });
 
     // Create a mock request with large Content-Length
     const req = new Request("http://localhost:8765/nax/interact/test-id", {
@@ -396,7 +396,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
 
   test("should reject malformed JSON with sanitized error", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     const req = new Request("http://localhost:8765/nax/interact/test-id", {
       method: "POST",
@@ -421,7 +421,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
 
   test("should reject invalid schema with sanitized error", async () => {
     const plugin = new WebhookInteractionPlugin();
-    await plugin.init({ url: "https://example.com/webhook" });
+    await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     // Valid JSON but invalid InteractionResponse schema
     const req = new Request("http://localhost:8765/nax/interact/test-id", {

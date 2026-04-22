@@ -70,11 +70,10 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
   logger?.info("quality", `Running ${commandName}`, { storyId, commandName, command, workdir });
 
   try {
-    const parts = command.split(/\s+/);
-    const [executable, ...args] = parts;
-
+    // Execute via shell to preserve quoting semantics of configured commands.
+    // Splitting on whitespace loses quoted args and escaped spaces.
     const proc = _qualityRunnerDeps.spawn({
-      cmd: [executable, ...args],
+      cmd: ["/bin/sh", "-c", command],
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
@@ -85,10 +84,15 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     });
 
     let timedOut = false;
+    let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+
     const killTimer = setTimeout(() => {
       timedOut = true;
       killProcessGroup(proc.pid, "SIGTERM");
-      setTimeout(() => {
+      // Track the nested timer so it can be cleared if proc exits during grace period,
+      // preventing a late SIGKILL on a reused PID.
+      sigkillTimer = setTimeout(() => {
+        sigkillTimer = undefined;
         killProcessGroup(proc.pid, "SIGKILL");
       }, SIGKILL_GRACE_PERIOD_MS);
     }, timeoutMs);
@@ -102,6 +106,10 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     ]);
 
     clearTimeout(killTimer);
+    if (sigkillTimer !== undefined) {
+      clearTimeout(sigkillTimer);
+      sigkillTimer = undefined;
+    }
 
     const durationMs = Date.now() - startTime;
 

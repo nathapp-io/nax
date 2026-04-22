@@ -4,6 +4,7 @@
  * Serializes run state when pausing, loads state when resuming.
  */
 
+import { unlink } from "node:fs/promises";
 import * as path from "node:path";
 import type { InteractionRequest, InteractionResponse } from "./types";
 
@@ -38,6 +39,31 @@ export interface RunState {
   currentModel?: string;
   /** Arbitrary metadata */
   metadata?: Record<string, unknown>;
+}
+
+/** Safe interaction ID: UUID-style or slug-only characters, bounded length */
+const SAFE_INTERACTION_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
+
+/**
+ * Validate that an interaction ID contains only safe characters.
+ * Prevents path traversal when the ID is interpolated into filesystem paths.
+ */
+export function validateInteractionId(id: string): void {
+  if (!SAFE_INTERACTION_ID_RE.test(id)) {
+    throw new Error(`Invalid interaction ID — must match [a-zA-Z0-9_-]{1,128}: ${id}`);
+  }
+}
+
+/**
+ * Assert that a resolved file path stays within the expected base directory.
+ * Defense-in-depth alongside ID validation.
+ */
+function assertPathWithin(filePath: string, baseDir: string): void {
+  const resolved = path.resolve(filePath);
+  const base = path.resolve(baseDir);
+  if (!resolved.startsWith(base + path.sep) && resolved !== base) {
+    throw new Error(`Path traversal detected: ${filePath} is outside ${baseDir}`);
+  }
 }
 
 /**
@@ -76,10 +102,9 @@ export async function deserializeRunState(featureDir: string): Promise<RunState 
 export async function clearRunState(featureDir: string): Promise<void> {
   const stateFile = path.join(featureDir, "run-state.json");
   try {
-    await Bun.write(stateFile, ""); // truncate
-    // Note: Bun doesn't have fs.unlink, so we truncate instead
+    await unlink(stateFile);
   } catch {
-    // Ignore errors
+    // Ignore errors (file may not exist)
   }
 }
 
@@ -87,12 +112,14 @@ export async function clearRunState(featureDir: string): Promise<void> {
  * Save a pending interaction to the interactions directory
  */
 export async function savePendingInteraction(request: InteractionRequest, featureDir: string): Promise<string> {
+  validateInteractionId(request.id);
   const interactionsDir = path.join(featureDir, "interactions");
   // Ensure directory exists
   await Bun.write(path.join(interactionsDir, ".gitkeep"), "");
 
   const filename = `${request.id}.json`;
   const filePath = path.join(interactionsDir, filename);
+  assertPathWithin(filePath, interactionsDir);
   const json = JSON.stringify(request, null, 2);
   await Bun.write(filePath, json);
   return filePath;
@@ -105,9 +132,11 @@ export async function loadPendingInteraction(
   requestId: string,
   featureDir: string,
 ): Promise<InteractionRequest | null> {
+  validateInteractionId(requestId);
   const interactionsDir = path.join(featureDir, "interactions");
   const filename = `${requestId}.json`;
   const filePath = path.join(interactionsDir, filename);
+  assertPathWithin(filePath, interactionsDir);
 
   try {
     const file = Bun.file(filePath);
@@ -127,14 +156,16 @@ export async function loadPendingInteraction(
  * Delete a pending interaction file (after response received)
  */
 export async function deletePendingInteraction(requestId: string, featureDir: string): Promise<void> {
+  validateInteractionId(requestId);
   const interactionsDir = path.join(featureDir, "interactions");
   const filename = `${requestId}.json`;
   const filePath = path.join(interactionsDir, filename);
+  assertPathWithin(filePath, interactionsDir);
 
   try {
-    await Bun.write(filePath, ""); // truncate
+    await unlink(filePath);
   } catch {
-    // Ignore errors
+    // Ignore errors (file may already be deleted)
   }
 }
 
@@ -145,26 +176,19 @@ export async function listPendingInteractions(featureDir: string): Promise<strin
   const interactionsDir = path.join(featureDir, "interactions");
 
   try {
-    const dir = Bun.file(interactionsDir);
-    const exists = await dir.exists();
-    if (!exists) {
-      return [];
+    const ids: string[] = [];
+    const glob = new Bun.Glob("*.json");
+    for await (const filename of glob.scan({ cwd: interactionsDir })) {
+      const id = filename.slice(0, -5); // strip ".json"
+      // Only yield IDs that pass validation (filters out any legacy malformed entries)
+      try {
+        validateInteractionId(id);
+        ids.push(id);
+      } catch {
+        // Skip invalid filenames
+      }
     }
-
-    // Use Bun.spawn to list files
-    const proc = Bun.spawn(["ls", interactionsDir], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const output = await new Response(proc.stdout).text();
-    await proc.exited;
-
-    const files = output
-      .split("\n")
-      .filter((f) => f.endsWith(".json") && f !== ".gitkeep")
-      .map((f) => f.replace(".json", ""));
-
-    return files;
+    return ids;
   } catch {
     return [];
   }

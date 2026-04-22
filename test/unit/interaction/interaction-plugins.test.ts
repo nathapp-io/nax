@@ -84,6 +84,7 @@ describe("WebhookInteractionPlugin", () => {
     await plugin.init({
       url: "https://example.com/webhook",
       callbackPort: 9999,
+      requireSecret: false,
     });
 
     expect(plugin.name).toBe("webhook");
@@ -96,6 +97,7 @@ describe("WebhookInteractionPlugin", () => {
 
     await plugin.init({
       url: "https://example.com/webhook",
+      requireSecret: false,
     });
 
     expect(plugin.name).toBe("webhook");
@@ -401,7 +403,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
 
     const plugin = new WebhookInteractionPlugin();
     try {
-      await plugin.init({ url: `http://localhost:${testServer.port}/hook` });
+      await plugin.init({ url: `http://localhost:${testServer.port}/hook`, requireSecret: false });
 
       await plugin.send(makeWebhookRequest("wh-send-1"));
 

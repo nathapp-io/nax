@@ -30,6 +30,8 @@ interface WebhookConfig {
   secret?: string;
   /** Maximum payload size in bytes (default: 1MB) */
   maxPayloadBytes?: number;
+  /** Reject startup when no secret is configured (default: true) */
+  requireSecret?: boolean;
 }
 
 /** Zod schema for validating webhook plugin config */
@@ -44,6 +46,7 @@ const WebhookConfigSchema = z.object({
     .optional(),
   secret: z.string().optional(),
   maxPayloadBytes: z.number().int().positive().optional(),
+  requireSecret: z.boolean().optional(),
 });
 
 /** Zod schema for validating webhook callback payloads */
@@ -55,6 +58,9 @@ const InteractionResponseSchema = z.object({
   respondedAt: z.number(),
 });
 
+/** Max entries in pendingResponses (defense-in-depth; registered-ID gate is the primary control) */
+const MAX_PENDING_RESPONSES = 500;
+
 /**
  * Webhook plugin for HTTP-based interaction
  */
@@ -64,7 +70,9 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   private server: Server | null = null;
   private serverStartPromise: Promise<void> | null = null;
   private isDestroyed = false;
-  /** Legacy map for responses that arrive before receive() is called */
+  /** IDs for which send() has been called but no response has been consumed yet */
+  private registeredRequestIds = new Set<string>();
+  /** Early-pickup map: responses that arrive before receive() is called */
   private pendingResponses = new Map<string, InteractionResponse>();
   /** Event-driven callbacks: requestId → resolve fn (set by receive(), called by handleRequest) */
   private receiveCallbacks = new Map<string, (response: InteractionResponse) => void>();
@@ -85,9 +93,18 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       callbackPort: cfg.callbackPort ?? 8765,
       secret: cfg.secret,
       maxPayloadBytes: cfg.maxPayloadBytes ?? 1024 * 1024, // 1MB default
+      requireSecret: cfg.requireSecret ?? true,
     };
     if (!this.config.url) {
       throw new Error("Webhook plugin requires 'url' config");
+    }
+    // Require a shared secret unless caller explicitly opts out.
+    // Without a secret, any reachable caller can submit crafted actions.
+    if (this.config.requireSecret && !this.config.secret) {
+      throw new Error(
+        "Webhook plugin requires 'secret' for callback authentication. " +
+          "Set requireSecret: false to allow unsigned callbacks (not recommended).",
+      );
     }
   }
 
@@ -95,6 +112,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     this.isDestroyed = true;
     this.resolvePendingReceivesOnDestroy();
     this.pendingResponses.clear();
+    this.registeredRequestIds.clear();
 
     if (this.server) {
       await this.stopServer();
@@ -106,9 +124,12 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       throw new Error("Webhook plugin not initialized");
     }
 
+    // Register this ID so callbacks for it are accepted
+    this.registeredRequestIds.add(request.id);
+
     const payload = {
       ...request,
-      callbackUrl: `http://localhost:${this.config.callbackPort}/nax/interact/${request.id}`,
+      callbackUrl: `http://127.0.0.1:${this.config.callbackPort}/nax/interact/${request.id}`,
     };
 
     const signature = this.config.secret ? this.sign(JSON.stringify(payload)) : undefined;
@@ -132,6 +153,8 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
         throw new Error(`Webhook POST failed (${response.status}): ${errorBody || response.statusText}`);
       }
     } catch (err) {
+      // Unregister on send failure so the ID slot is released
+      this.registeredRequestIds.delete(request.id);
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to send webhook request: ${msg}`);
     }
@@ -157,10 +180,15 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       return destroyedResponse;
     }
 
+    // Mark this ID as actively expected so deliverResponse() accepts its callback.
+    // receive() can be called without a prior send() in some flows (e.g. resume after restart).
+    this.registeredRequestIds.add(requestId);
+
     // Check if a response already arrived before receive() was called
     const early = this.pendingResponses.get(requestId);
     if (early) {
       this.pendingResponses.delete(requestId);
+      this.registeredRequestIds.delete(requestId);
       return early;
     }
 
@@ -180,6 +208,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       const timer = setTimeout(() => {
         this.clearReceiveTimer(requestId);
         this.receiveCallbacks.delete(requestId);
+        this.registeredRequestIds.delete(requestId);
         resolve({
           requestId,
           action: "skip",
@@ -192,6 +221,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       this.receiveCallbacks.set(requestId, (response) => {
         this.clearReceiveTimer(requestId);
         this.receiveCallbacks.delete(requestId);
+        this.registeredRequestIds.delete(requestId);
         resolve(response);
       });
     });
@@ -201,20 +231,27 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     this.clearReceiveTimer(requestId);
     this.pendingResponses.delete(requestId);
     this.receiveCallbacks.delete(requestId);
+    this.registeredRequestIds.delete(requestId);
   }
 
   /**
    * Deliver a response to a waiting receive() callback, or store for later pickup.
+   * Responses for unknown (unregistered) request IDs are rejected.
    */
   private deliverResponse(requestId: string, response: InteractionResponse): void {
     if (this.isDestroyed) {
       return;
     }
 
+    // Reject callbacks for IDs that were never sent — prevents DoS via unknown IDs
+    if (!this.registeredRequestIds.has(requestId)) {
+      return;
+    }
+
     const cb = this.receiveCallbacks.get(requestId);
     if (cb) {
       cb(response);
-    } else {
+    } else if (this.pendingResponses.size < MAX_PENDING_RESPONSES) {
       // receive() hasn't been called yet — store for early-pickup path
       this.pendingResponses.set(requestId, response);
     }
@@ -249,7 +286,8 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Start HTTP server for callbacks (with mutex to prevent race conditions)
+   * Start HTTP server for callbacks (with mutex to prevent race conditions).
+   * Binds to localhost only — the callback URL is an internal nax-to-nax channel.
    */
   private async startServer(): Promise<void> {
     if (this.server) return; // Already running
@@ -261,6 +299,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       const port = this.config.callbackPort ?? 8765;
       this.server = Bun.serve({
         port,
+        hostname: "127.0.0.1",
         fetch: (req) => this.handleRequest(req),
       }) as unknown as Server;
     })();
@@ -297,46 +336,43 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       return new Response("Bad Request", { status: 400 });
     }
 
+    const maxBytes = this.config.maxPayloadBytes ?? 1024 * 1024;
+
     // Check content length before reading body
     const contentLength = req.headers.get("Content-Length");
-    const maxBytes = this.config.maxPayloadBytes ?? 1024 * 1024;
     if (contentLength && Number.parseInt(contentLength, 10) > maxBytes) {
+      return new Response("Payload Too Large", { status: 413 });
+    }
+
+    // Read body once, then enforce byte-accurate size limit in both branches
+    let body: string;
+    try {
+      body = await req.text();
+    } catch {
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    // Use TextEncoder for byte-accurate measurement (handles multibyte chars correctly)
+    if (new TextEncoder().encode(body).byteLength > maxBytes) {
       return new Response("Payload Too Large", { status: 413 });
     }
 
     // Verify signature if secret is configured
     if (this.config.secret) {
       const signature = req.headers.get("X-Nax-Signature");
-      const body = await req.text();
-
-      // Check actual body size (in case Content-Length was missing)
-      if (body.length > maxBytes) {
-        return new Response("Payload Too Large", { status: 413 });
-      }
-
       if (!signature || !this.verify(body, signature)) {
         return new Response("Unauthorized", { status: 401 });
       }
+    }
 
-      // Parse and validate verified body
-      try {
-        const parsed = JSON.parse(body);
-        const response = InteractionResponseSchema.parse(parsed);
-        this.deliverResponse(requestId, response);
-      } catch {
-        // Sanitize error - do not leak parse/validation details
-        return new Response("Bad Request: Invalid response format", { status: 400 });
-      }
-    } else {
-      // No signature verification - still validate structure
-      try {
-        const parsed = await req.json();
-        const response = InteractionResponseSchema.parse(parsed);
-        this.deliverResponse(requestId, response);
-      } catch {
-        // Sanitize error - do not leak parse/validation details
-        return new Response("Bad Request: Invalid response format", { status: 400 });
-      }
+    // Parse and validate body
+    try {
+      const parsed = JSON.parse(body);
+      const response = InteractionResponseSchema.parse(parsed);
+      this.deliverResponse(requestId, response);
+    } catch {
+      // Sanitize error - do not leak parse/validation details
+      return new Response("Bad Request: Invalid response format", { status: 400 });
     }
 
     return new Response("OK", { status: 200 });

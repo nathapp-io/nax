@@ -3,7 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { initLogger, resetLogger } from "../../../src/logger";
+import { getLogger, initLogger, resetLogger } from "../../../src/logger";
 import { createPluginLogger } from "../../../src/plugins/plugin-logger";
 import type { PluginLogger } from "../../../src/plugins/types";
 
@@ -29,6 +29,7 @@ describe("createPluginLogger", () => {
 
   test("logs info with plugin:<name> stage prefix", async () => {
     logger.info("Scanning files", { count: 5 });
+    await getLogger().flush();
 
     // Read the JSONL log file
     const content = await Bun.file(logFile).text();
@@ -42,6 +43,7 @@ describe("createPluginLogger", () => {
 
   test("logs error with correct level", async () => {
     logger.error("Something broke");
+    await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
     const entry = JSON.parse(content.trim().split("\n").pop()!);
@@ -53,6 +55,7 @@ describe("createPluginLogger", () => {
 
   test("logs warn with correct level", async () => {
     logger.warn("Deprecated API usage");
+    await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
     const entry = JSON.parse(content.trim().split("\n").pop()!);
@@ -63,6 +66,7 @@ describe("createPluginLogger", () => {
 
   test("logs debug with correct level", async () => {
     logger.debug("Internal state", { phase: "init" });
+    await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
     const entry = JSON.parse(content.trim().split("\n").pop()!);
@@ -76,6 +80,7 @@ describe("createPluginLogger", () => {
 
     logger.info("From test-plugin");
     logger2.info("From semgrep");
+    await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
     const lines = content.trim().split("\n").map((l) => JSON.parse(l));
@@ -86,6 +91,7 @@ describe("createPluginLogger", () => {
 
   test("works without data parameter", async () => {
     logger.info("No data");
+    await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
     const entry = JSON.parse(content.trim().split("\n").pop()!);

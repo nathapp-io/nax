@@ -62,6 +62,7 @@ describe("Headless mode formatter integration", () => {
     }
 
     // Verify JSONL file was written
+    await logger.flush();
     expect(existsSync(logFile)).toBe(true);
     const fileContent = await Bun.file(logFile).text();
     expect(fileContent).toContain('"stage":"test.stage"');
