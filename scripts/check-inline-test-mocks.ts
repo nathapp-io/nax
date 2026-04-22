@@ -71,7 +71,6 @@ const SKIP_FILES = new Set([
   "test/unit/pipeline/stages/review-debate-dialogue.test.ts",
   "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts",
   "test/unit/pipeline/stages/routing-greenfield-monorepo.test.ts",
-  "test/unit/pipeline/stages/routing-initial-complexity.test.ts",
   "test/unit/pipeline/stages/prompt-batch.test.ts",
   "test/unit/pipeline/stages/acceptance-setup-gate.test.ts",
   "test/unit/pipeline/stages/acceptance-setup-criteria.test.ts",
