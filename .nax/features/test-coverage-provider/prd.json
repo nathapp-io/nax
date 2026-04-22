@@ -194,9 +194,10 @@
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
-      "status": "pending",
-      "storyGitRef": "1aee81b83c8b3512b61abed42d56fa36eb93b116"
+      "status": "passed",
+      "storyGitRef": "1aee81b83c8b3512b61abed42d56fa36eb93b116",
+      "passes": true
     }
   ],
-  "updatedAt": "2026-04-22T07:02:27.604Z"
+  "updatedAt": "2026-04-22T07:25:51.312Z"
 }
