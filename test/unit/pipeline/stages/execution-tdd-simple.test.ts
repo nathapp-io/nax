@@ -14,11 +14,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
 import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
+import { makeAgentAdapter, makeNaxConfig, makeSparseNaxConfig, makeStory } from "../../../../test/helpers";
 
 const WORKDIR = `/tmp/nax-test-exec-${randomUUID()}`;
 
@@ -92,31 +91,6 @@ function makePRD(): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    agent: { default: "test-agent" },
-    models: {
-      "test-agent": {
-        fast: "claude-haiku-4-5",
-        balanced: "claude-sonnet-4-5",
-        powerful: "claude-opus-4-5",
-      },
-    },
-    execution: {
-      sessionTimeoutSeconds: 60,
-      dangerouslySkipPermissions: false,
-      costLimit: 10,
-      maxIterations: 10,
-      rectification: { maxRetries: 3 },
-    },
-    interaction: {
-      plugin: "cli",
-      defaults: { timeout: 30000, fallback: "abort" as const },
-      triggers: {},
-    },
-  } as unknown as NaxConfig;
-}
-
 function makeAgent(success = true) {
   return makeAgentAdapter({
     name: "test-agent",
@@ -139,7 +113,22 @@ function makeCtx(
 ): PipelineContext {
   const story = makeStory();
   return {
-    config: makeConfig(),
+    config: makeSparseNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: {},
+      },
+    }),
     prd: makePRD(),
     story,
     stories: [story],

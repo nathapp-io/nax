@@ -1,111 +1,149 @@
 {
-    "version": 1,
-    "models": {
-        "claude": {
-            "fast": "haiku",
-            "balanced": "sonnet",
-            "powerful": "opus"
-        },
-        "opencode": {
-            "fast": "minimax/MiniMax-M2.7",
-            "balanced": "minimax/MiniMax-M2.7",
-            "powerful": "minimax/MiniMax-M2.7"            
-        }        
+  "version": 1,
+  "models": {
+    "claude": {
+      "fast": "haiku",
+      "balanced": "sonnet",
+      "powerful": "opus"
     },
-    "autoMode": {
-        "enabled": true,
-        "complexityRouting": {
-            "simple": "fast",
-            "medium": "balanced",
-            "complex": "balanced",
-            "expert": "powerful"
-        },
-        "escalation": {
-            "enabled": true,
-            "tierOrder": [
-                {
-                    "tier": "fast",
-                    "attempts": 3
-                },
-                {
-                    "tier": "balanced",
-                    "attempts": 2
-                },
-                {
-                    "tier": "powerful",
-                    "attempts": 1
-                }
-            ],
-            "escalateEntireBatch": false
-        }
-    },
-    "generate": {
-        "agents": ["claude", "codex", "gemini", "opencode"]
-    },
-    "agent": {
-        "protocol": "acp",
-        "default": "claude",
-        "fallback": {
-            "enabled": false,
-            "map": {},
-            "maxHopsPerStory": 2,
-            "onQualityFailure": false,
-            "rebuildContext": true
-        }
-    },
-    "routing": {
-        "strategy": "llm",
-        "llm": {
-            "model": "fast",
-            "fallbackToKeywords": true,
-            "cacheDecisions": true,
-            "mode": "hybrid",
-            "timeoutMs": 60000
-        }
-    },
-    "execution": {
-        "permissionProfile": "unrestricted",
-        "sessionTimeoutSeconds": 3600,
-        "maxStoriesPerFeature": 15
-    },
-    "quality": {
-        "requireTypecheck": true,
-        "requireLint": true,
-        "requireTests": true,
-        "commands": {
-            "test": "bun run test",
-            "typecheck": "bun run typecheck",
-            "lint": "bun run lint",
-            "build": "bun run build",
-            "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
-        },
-        "forceExit": false,
-        "detectOpenHandles": true,
-        "detectOpenHandlesRetries": 1,
-        "gracePeriodMs": 5000,
-        "drainTimeoutMs": 2000
-    },
-    "review": {
-        "enabled": true,
-        "checks": ["build", "typecheck", "lint", "semantic"],
-        "commands": {
-            "typecheck": "bun run typecheck",
-            "lint": "bun run lint",
-            "build": "bun run build",
-            "lintFix": "bun run lint:fix",
-            "formatFix": "bun run lint:fix"
-        },
-        "pluginMode": "deferred",
-        "semantic": {
-            "modelTier": "fast",
-            "rules": []
-        }
-    },
-    "plan": {
-        "model": "powerful",
-        "timeoutSeconds": 1200
-    },
-    "acceptance": {
-        "model": "balanced"
+    "opencode": {
+      "fast": "minimax/MiniMax-M2.7",
+      "balanced": "minimax/MiniMax-M2.7",
+      "powerful": "minimax/MiniMax-M2.7"
     }
+  },
+  "autoMode": {
+    "enabled": true,
+    "complexityRouting": {
+      "simple": "fast",
+      "medium": "balanced",
+      "complex": "balanced",
+      "expert": "powerful"
+    },
+    "escalation": {
+      "enabled": true,
+      "tierOrder": [
+        {
+          "tier": "fast",
+          "attempts": 3
+        },
+        {
+          "tier": "balanced",
+          "attempts": 2
+        },
+        {
+          "tier": "powerful",
+          "attempts": 1
+        }
+      ],
+      "escalateEntireBatch": false
+    }
+  },
+  "generate": {
+    "agents": [
+      "claude",
+      "codex",
+      "gemini",
+      "opencode"
+    ]
+  },
+  "agent": {
+    "protocol": "acp",
+    "default": "claude",
+    "fallback": {
+      "enabled": false,
+      "map": {},
+      "maxHopsPerStory": 2,
+      "onQualityFailure": false,
+      "rebuildContext": true
+    }
+  },
+  "routing": {
+    "strategy": "llm",
+    "llm": {
+      "model": "fast",
+      "fallbackToKeywords": true,
+      "cacheDecisions": true,
+      "mode": "hybrid",
+      "timeoutMs": 60000
+    }
+  },
+  "execution": {
+    "permissionProfile": "unrestricted",
+    "sessionTimeoutSeconds": 3600,
+    "maxStoriesPerFeature": 15,
+    "smartTestRunner": {
+      "testFilePatterns": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.test.js",
+        "**/*.test.jsx",
+        "**/*.test.mjs",
+        "**/*.test.cjs",
+        "**/*_test.ts",
+        "**/*_test.tsx",
+        "**/*_test.js",
+        "**/*_test.jsx",
+        "**/*_test.mjs",
+        "**/*_test.cjs",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        "**/*.spec.js",
+        "**/*.spec.jsx",
+        "**/*.spec.mjs",
+        "**/*.spec.cjs",
+        "**/*_spec.ts",
+        "**/*_spec.tsx",
+        "**/*_spec.js",
+        "**/*_spec.jsx",
+        "**/*_spec.mjs",
+        "**/*_spec.cjs"
+      ]
+    }
+  },
+  "quality": {
+    "requireTypecheck": true,
+    "requireLint": true,
+    "requireTests": true,
+    "commands": {
+      "test": "bun run test",
+      "typecheck": "bun run typecheck",
+      "lint": "bun run lint",
+      "build": "bun run build",
+      "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
+    },
+    "forceExit": false,
+    "detectOpenHandles": true,
+    "detectOpenHandlesRetries": 1,
+    "gracePeriodMs": 5000,
+    "drainTimeoutMs": 2000
+  },
+  "review": {
+    "enabled": true,
+    "checks": [
+      "build",
+      "typecheck",
+      "lint",
+      "semantic"
+    ],
+    "commands": {
+      "typecheck": "bun run typecheck",
+      "lint": "bun run lint",
+      "build": "bun run build",
+      "lintFix": "bun run lint:fix",
+      "formatFix": "bun run lint:fix"
+    },
+    "pluginMode": "deferred",
+    "semantic": {
+      "modelTier": "fast",
+      "rules": []
+    }
+  },
+  "plan": {
+    "model": "powerful",
+    "timeoutSeconds": 1200
+  },
+  "acceptance": {
+    "model": "balanced"
+  }
 }
