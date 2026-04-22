@@ -394,19 +394,69 @@ loadPlugins() → plugin.setup(config, logger)
 
 ---
 
-## §24 Context & Constitution System
+## §24 Context Engine & Constitution System
 
-### Context Builder
+### Context Engine v2 (`src/context/engine/`)
 
-`src/context/builder.ts`:
-- Token-budgeted context assembly for agent prompts
-- Priority-based element selection (story context > dependencies > project context)
+Stage-aware, session-aware, pluggable context assembly. Single point of context
+assembly for all pipeline stages. Spec: `SPEC-context-engine-v2.md`;
+decision record: ADR-010.
 
-### Auto-Detection
+**Entry point:** `ContextOrchestrator.assemble(ContextRequest)` →
+`ContextBundle { pushMarkdown, pullTools, digest, manifest, chunks }`.
 
-`src/context/auto-detect.ts`:
-- Scans git, detects language, frameworks, test files
-- Populates `BuiltContext` with relevant code/docs
+**Pipeline (9 steps):**
+
+1. Filter providers for this stage (`stageConfig.providerIds`).
+2. Parallel `fetch()` with 5-second timeout per provider.
+3. Score chunks (role × freshness × kind weights).
+4. Deduplicate (character-level trigram Jaccard ≥ 0.9).
+5. Role-filter (drop chunks whose audience tag mismatches `request.role`).
+6. Min-score filter (`config.context.v2.minScore`).
+7. Greedy pack (floor items first, then fill budget ceiling).
+8. Render push markdown (scope-ordered: project → feature → story → session → retrieved).
+9. Build digest (≤250 tokens, deterministic — threaded into the next stage's `priorStageDigest`).
+
+**Provider contract — `IContextProvider`:** duck-typed, three fields —
+`id: string`, `kind: ChunkKind`, `fetch(request): Promise<ContextProviderResult>`.
+No base class; validated structurally at load time.
+
+**Built-in providers (`src/context/engine/providers/`):**
+
+| Provider | Source | Scope |
+|:---------|:-------|:------|
+| `StaticRulesProvider` | `.nax/rules/` — canonical, agent-agnostic markdown | `repo-scoped` |
+| `FeatureContextProvider` | `context.md` — feature working memory | `repo-scoped` |
+| `SessionScratchProvider` | per-session scratch dir | `package-scoped` |
+| `GitHistoryProvider` | git log diffs — recent changes | `package-scoped` |
+| `CodeNeighborProvider` | import graph — co-changed files | `package-scoped` / `cross-package` |
+| `TestCoverageProvider` | coverage metrics | `package-scoped` |
+| Plugin providers | npm packages or project-relative paths | operator-registered |
+
+**Hybrid push/pull model.** Push markdown is pre-injected on every stage. Pull
+tools (`query_neighbor`, `query_feature_context`) are agent-callable mid-session,
+opt-in per stage via `config.context.v2.pull`, capped by
+`maxCallsPerSession`.
+
+**Availability fallback (ADR-010 D5).** On agent-availability failure,
+`ContextOrchestrator.rebuildForAgent(prior, { newAgentId, failure })` re-renders
+the existing bundle under the new agent's profile without re-fetching providers
+and injects a synthetic failure-note chunk. Called by `AgentManager` during
+swap (see §35).
+
+**Auditability.** Every bundle emits a `ContextManifest` recording exactly which
+chunks were included, excluded, and why. Persisted per story for post-hoc review.
+
+**Barrel:** `src/context/engine/index.ts` exports `ContextOrchestrator`,
+`IContextProvider`, all built-in providers, types (`ContextRequest`,
+`ContextBundle`, `ContextChunk`, `RawChunk`, `ContextManifest`), and utilities
+(`scoreChunks`, `dedupeChunks`, `packChunks`, `renderChunks`, `buildDigest`).
+
+### Context v1 (Legacy)
+
+`src/context/builder.ts` + `src/context/auto-detect.ts` remain for
+backwards compatibility and fall-through when v2 is disabled. New code must use
+the v2 engine; v1 is no longer the recommended entry point.
 
 ### Context Generators
 
@@ -421,6 +471,9 @@ loadPlugins() → plugin.setup(config, logger)
 | OpenCode | `opencode.ts` | Agent config |
 | Aider | `aider.ts` | `.aider.conf` |
 | Windsurf | `windsurf.ts` | Agent config |
+
+Generators remain agent-facing shims over the canonical `.nax/rules/` store
+consumed by `StaticRulesProvider`.
 
 ### Constitution
 
@@ -748,3 +801,177 @@ DebateSession.run()
 | `StoryLimitExceededError` | Too many stories for current plan |
 | `AllAgentsUnavailableError` | All configured agents failed or missing |
 | `LockAcquisitionError` | Another nax instance holds the lock |
+
+---
+
+## §34 Session Manager
+
+`src/session/manager.ts` — `SessionManager` class implementing `ISessionManager`.
+Decision record: ADR-011 (extraction) + ADR-013 (hierarchy with AgentManager).
+Spec: `SPEC-session-manager-integration.md`.
+
+Owns session *lifecycle*. The adapter keeps the *physical* session (acpx
+process, protocol calls). Policy from ADR-008 is preserved but re-expressed as
+state-machine transitions instead of a `keepSessionOpen: boolean`.
+
+### Ownership boundary
+
+```
+SessionManager                               AcpAgentAdapter
+─────────────────────────────────            ─────────────────────────
+Owns:                                        Owns:
+  - Stable session ID (sess-<uuid>)            - acpx process lifecycle
+  - State machine (7 states)                   - loadSession / createSession
+  - Scratch directory                          - sendPrompt / multi-turn loop
+  - index.json (sidecar replacement)           - token / cost tracking
+  - Close / resume / handoff decisions         - prompt audit
+  - Orphan detection (state-based)             - protocol-level retry on
+  - Agent-agnostic session naming                QUEUE_DISCONNECTED (AC-79)
+  - Prompt audit (per #523)
+```
+
+### State machine
+
+```
+CREATED → RUNNING → { PAUSED | COMPLETED | FAILED | CLOSING }
+PAUSED   → { RESUMING | FAILED }
+RESUMING → { RUNNING | FAILED }
+CLOSING  → { COMPLETED | FAILED }
+```
+
+Transitions are validated by `SESSION_TRANSITIONS`. `COMPLETED` and `FAILED` are
+terminal.
+
+### Key methods
+
+- `create(options)` → `SessionDescriptor` (stable `sess-<uuid>`).
+- `get(sessionId)` / `listActive()` → descriptor lookup; `listActive()` excludes
+  terminal states.
+- `transition(sessionId, toState)` → state-machine guard.
+- `handoff(id, newAgent)` → updates `descriptor.agent` while preserving `id`,
+  `handle`, and `scratchDir` (availability fallback; AC-42 cross-agent scratch
+  neutralization).
+- `scratchDir(sessionId)` → persistent per-session scratch path consumed by
+  `SessionScratchProvider` (§24).
+
+### Runtime helpers (not on the manager)
+
+`src/execution/session-manager-runtime.ts`:
+
+- `closeStorySessions` / `closeAllRunSessions` — orchestration.
+- `failAndClose(sm, sessionId, agentGetFn)` — atomic `→ FAILED` transition +
+  `closePhysicalSession(handle, workdir, { force: true })` (AC-83). Required
+  because `listActive()` excludes terminal sessions; teardown would otherwise
+  miss a failed session's handle.
+
+### Persistence & portability
+
+- `index.json` replaces the protocol-specific `acp-sessions.json` sidecar.
+- `descriptor.json` and `context-manifest-*.json` store paths **relative to
+  `projectDir`**; loaders rehydrate to absolute paths for runtime use.
+- One `SessionManager` per run, threaded through `PipelineContext`. Sessions do
+  not persist across runs; `index.json` is rewritten at run start.
+
+### Barrel
+
+`src/session/index.ts` exports `SessionManager`, `ISessionManager`,
+`SessionDescriptor`, `SessionState`, `SESSION_TRANSITIONS`, and
+`CreateSessionOptions`.
+
+---
+
+## §35 Agent Manager
+
+`src/agents/manager.ts` — `AgentManager` class implementing `IAgentManager`.
+Decision record: ADR-012 (extraction) + ADR-013 (SessionManager hierarchy).
+Spec: `SPEC-agent-manager-integration.md`.
+
+Owns agent *policy*: default resolution, availability fallback, unavailable-agent
+tracking. The adapter keeps the *physical* agent call. ContextOrchestrator keeps
+`rebuildForAgent()` as a utility the manager invokes.
+
+### Three retry layers — only one is owned here
+
+| Layer | Owner | Scope |
+|:------|:------|:------|
+| **Availability retry** (auth / 429 / service-down → swap agent) | **AgentManager** | Cross-agent policy |
+| **Transport retry** (broken socket, `QUEUE_DISCONNECTED`, stale session) | Adapter (`sessionErrorRetryable` loop) | Protocol-level, same agent |
+| **Payload-shape retry** (JSON parse fail → re-ask LLM) | Caller (`src/review/semantic.ts`, `adversarial.ts`) | Output validation, same agent |
+
+Conflating these was the root of the T16.3 silent-fallback regression. Reviewers
+must preserve this boundary — availability swaps never fire on payload-shape
+failures.
+
+### Ownership boundary
+
+```
+AgentManager                                  AcpAgentAdapter
+─────────────────────────────────             ─────────────────────────
+Owns:                                         Owns:
+  - Default agent resolution                    - acpx process lifecycle
+  - Fallback chain (flat or keyed map)          - sendPrompt / multi-turn loop
+  - Per-run unavailable-agent tracking          - token / cost tracking
+  - shouldSwap(failure) decision                - RunResult { adapterFailure }
+  - nextCandidate(current, failure)             - Transport-level retry
+  - runWithFallback / completeWithFallback
+  - Swap event emission
+  - Calls ContextOrchestrator.rebuildForAgent
+  - Calls SessionManager.handoff on swap
+```
+
+### Key methods
+
+- `getDefault()` → reads `config.agent.default` (replaces 79-site
+  `config.autoMode.defaultAgent` access).
+- `runAs(name, request)` / `runWithFallback(request)` → delegate to adapter;
+  on availability failure, consult `nextCandidate`, rebuild context, hand off
+  session, retry.
+- `completeAs(name, prompt, opts?)` / `completeWithFallback(...)` — one-shot
+  variant.
+- `planAs()` / `decomposeAs()` — delegators for the specialized calls.
+- `shouldSwap(failure)` / `nextCandidate(agentName, failure)` /
+  `isUnavailable(agent)` — fallback policy primitives.
+
+### Canonical resolution helper
+
+`resolveDefaultAgent(config)` in `src/agents/index.ts` is the standalone-module
+form for code that does not carry a `ctx`. In pipeline stages, prefer
+`ctx.agentManager?.getDefault() ?? "claude"`. **Never** read
+`config.autoMode.defaultAgent` directly — that key was removed in ADR-012
+Phase 6 and is rejected at config-load time.
+
+### Swap flow
+
+1. Adapter returns `RunResult { adapterFailure: { category, outcome, retriable, message } }`
+   (adapters no longer throw `AllAgentsUnavailableError`).
+2. Manager calls `shouldSwap(failure)`; if false, returns original result.
+3. Manager calls `nextCandidate(current, failure)` → next agent name or `null`.
+4. Manager calls `ContextOrchestrator.rebuildForAgent(bundle, { newAgentId, failure })`
+   to re-render under the new profile (no provider re-fetch).
+5. Manager calls `SessionManager.handoff(sessionId, newAgent)` so the descriptor
+   reflects the swap (ADR-013 Gap A).
+6. Manager emits `onSwapAttempt` event (consumed by reporters / TUI / audit).
+7. Manager invokes `runAs(newAgent, request)` and loops until terminal or
+   `maxHopsPerStory` exhausted.
+
+### Hierarchy with SessionManager (ADR-013)
+
+SessionManager orchestrates AgentManager, not the other way around.
+Execution-layer code receives `ISessionRunner` from the SessionManager; the
+runner holds a reference to AgentManager and calls `runInSession()` which
+internally dispatches through `AgentManager.runWithFallback`. This keeps all
+retry decisions in one place and prevents direct `adapter.run()` calls from
+bypassing the fallback chain (ADR-013 Problem 4).
+
+### Configuration
+
+See `docs/guides/configuration.md` → *Agent Configuration* for the canonical
+`config.agent` shape. Legacy keys (`autoMode.defaultAgent`,
+`autoMode.fallbackOrder`, `context.v2.fallback`) are rejected at load time with
+a migration hint (`NaxError code: CONFIG_LEGACY_AGENT_KEYS`).
+
+### Barrel
+
+`src/agents/index.ts` exports `AgentManager`, `IAgentManager`,
+`resolveDefaultAgent`, `AgentRunRequest`, `AgentRunOutcome`,
+`AgentCompleteOutcome`, and `AgentManagerEvents`.
