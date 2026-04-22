@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
-import { loadConfig } from "../config/loader";
+import { findProjectDir, loadConfig } from "../config/loader";
 import { discoverPackages, generateAll, generateFor, generateForPackage } from "../context/generator";
 import type { AgentType } from "../context/types";
 
@@ -165,8 +165,11 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
       const suffix = dryRun ? " (dry run)" : "";
       console.log(chalk.green(`✓ ${agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`));
     } else {
-      // No --agent flag: use config.generate.agents filter, or generate all
-      let configAgents = config?.generate?.agents;
+      // No --agent flag: use config.generate.agents filter, or generate all.
+      // Only apply the filter when a project-level config exists — global config's
+      // generate.agents should not restrict generation in unconfigured projects.
+      const projectNaxDir = findProjectDir(workdir);
+      let configAgents = projectNaxDir ? config?.generate?.agents : null;
 
       // Detect misplaced generate config (autoMode.generate.agents) and warn
       const misplacedAgents = (config?.autoMode as unknown as Record<string, unknown> | undefined)?.generate as
