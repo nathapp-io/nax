@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 5
     strategy:
       fail-fast: true
-        matrix:
+      matrix:
         check: [typecheck, lint, check:test-mocks]
     steps:
       - uses: actions/checkout@v4
