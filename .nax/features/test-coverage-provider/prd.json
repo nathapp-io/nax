@@ -101,8 +101,9 @@
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
-      "status": "pending",
-      "storyGitRef": "4735d401d6e16bacc2dd395fcc970636b197ede9"
+      "status": "passed",
+      "storyGitRef": "4735d401d6e16bacc2dd395fcc970636b197ede9",
+      "passes": true
     },
     {
       "id": "US-003",
@@ -146,7 +147,8 @@
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
-      "status": "pending"
+      "status": "pending",
+      "storyGitRef": "13d4de31d7f394cfa46ca2e8018f1e3474466532"
     },
     {
       "id": "US-004",
@@ -194,5 +196,5 @@
       "status": "pending"
     }
   ],
-  "updatedAt": "2026-04-22T06:25:21.784Z"
+  "updatedAt": "2026-04-22T06:55:29.610Z"
 }

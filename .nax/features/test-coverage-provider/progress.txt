@@ -1,1 +1,2 @@
 [2026-04-22T06:25:19.764Z] US-001 — PASSED — Add test-coverage ChunkKind and extend packer floor rule — Cost: $0.1986
+[2026-04-22T06:55:27.591Z] US-002 — PASSED — Implement TestCoverageProvider (v2 adapter over generateTestCoverageSummary) — Cost: $0.9791
