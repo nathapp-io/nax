@@ -15,6 +15,7 @@ import { createAgentRegistry } from "../../../../src/agents/registry";
 import type { AgentConfig } from "../../../../src/config/schema";
 import type { NaxConfig } from "../../../../src/config/schema";
 import { logActiveProtocol } from "../../../../src/execution/lifecycle/run-initialization";
+import { DEFAULT_CONFIG } from "../../../../src/config/schema";
 import { makeNaxConfig } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ describe("createAgentRegistry — protocol selection", () => {
   });
 
   test("returns AcpAgentAdapter for 'claude' when agent config is unset (default acp)", () => {
-    const registry = createAgentRegistry(makeConfig(undefined));
+    const registry = createAgentRegistry(makeNaxConfig());
     const agent = registry.getAgent("claude");
     expect(agent).toBeInstanceOf(AcpAgentAdapter);
   });
@@ -58,7 +59,7 @@ describe("createAgentRegistry — protocol selection", () => {
 
   test("exposes protocol field as 'acp'", () => {
     const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
-    const defaultRegistry = createAgentRegistry(makeConfig());
+    const defaultRegistry = createAgentRegistry(makeNaxConfig());
     expect(registry.protocol).toBe("acp");
     expect(defaultRegistry.protocol).toBe("acp");
   });
@@ -103,7 +104,7 @@ describe("Config schema — AgentConfig", () => {
   });
 
   test("NaxConfig agent field is optional (backward compatibility)", () => {
-    const config: NaxConfig = makeConfig();
+    const config: NaxConfig = makeNaxConfig({ agent: undefined as any });
     expect(config.agent).toBeUndefined();
   });
 
@@ -172,7 +173,7 @@ describe("logActiveProtocol()", () => {
   });
 
   test("does not throw when agent config is unset", () => {
-    expect(() => logActiveProtocol(makeConfig())).not.toThrow();
+    expect(() => logActiveProtocol(makeNaxConfig())).not.toThrow();
   });
 
   test("is exported from run-initialization module", () => {
