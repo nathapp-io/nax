@@ -16,7 +16,7 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import type { UserStory } from "../../../../src/prd";
 import { _isolationDeps } from "../../../../src/tdd/isolation";
-import { runFullSuiteGate } from "../../../../src/tdd/rectification-gate";
+import { _rectificationGateDeps, runFullSuiteGate } from "../../../../src/tdd/rectification-gate";
 import { _sessionRunnerDeps } from "../../../../src/tdd/session-runner";
 import { _gitDeps } from "../../../../src/utils/git";
 import { _executorDeps } from "../../../../src/verification/executor";
@@ -103,6 +103,7 @@ const story: UserStory = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 withDepsRestore(_acpAdapterDeps, ["createClient", "sleep"]);
+withDepsRestore(_rectificationGateDeps, ["executeWithTimeout", "resolveTestCommands"]);
 withDepsRestore(_gitDeps, ["spawn"]);
 withDepsRestore(_sessionRunnerDeps, ["autoCommitIfDirty", "spawn"]);
 withDepsRestore(_isolationDeps, ["spawn"]);
@@ -210,43 +211,32 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       return makeClient(session);
     });
 
-    let testRunCount = 0;
-
-    _executorDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+    _rectificationGateDeps.resolveTestCommands = mock(async () => ({
+      rawTestCommand: "bun test",
+      testCommand: "bun test",
+      testScopedTemplate: undefined,
+      isMonorepoOrchestrator: false,
+      scopeFileThreshold: 10,
+    }));
+    let runCount = 0;
+    _rectificationGateDeps.executeWithTimeout = mock(async (_cmd: string) => {
+      runCount++;
+      if (runCount === 1) {
         return {
-          exited: Promise.resolve(0),
-          stdout: new Response("abc123\n").body,
-          stderr: new Response("").body,
+          success: false,
+          timeout: false,
+          exitCode: 1,
+          output: "test/feature.test.ts:\n✘ should work [1.0ms]\n(fail) suite > should work [1.0ms]\nError: boom\n",
+          countsTowardEscalation: true,
         };
       }
-      if (cmd[0] === "git" && cmd[1] === "diff") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("src/feature.ts\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "status") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("nothing to commit\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash") && cmd[1] === "-c") {
-        testRunCount++;
-        const failed = testRunCount === 1;
-        const failedOutput = "test/feature.test.ts:\n✘ should work [1.0ms]\n";
-        const passedOutput = "test/feature.test.ts:\n✓ should work [1.0ms]\n";
-        return {
-          pid: 9999,
-          exited: Promise.resolve(failed ? 1 : 0),
-          stdout: new Response(failed ? failedOutput : passedOutput).body,
-          stderr: new Response("").body,
-        };
-      }
-      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
+      return {
+        success: true,
+        timeout: false,
+        exitCode: 0,
+        output: "test/feature.test.ts:\n✓ should work [1.0ms]\n",
+        countsTowardEscalation: true,
+      };
     });
 
     const adapter = new AcpAgentAdapter("claude");
@@ -271,34 +261,20 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       return makeClient(session);
     });
 
-    let testRunCount = 0;
-
-    _executorDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("abc123\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && (cmd[1] === "diff" || cmd[1] === "status")) {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("src/feature.ts\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash") && cmd[1] === "-c") {
-        testRunCount++;
-        return {
-          pid: 9999,
-          exited: Promise.resolve(1),
-          stdout: new Response("test/feature.test.ts:\n✘ should work [1.0ms]\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
-    });
+    _rectificationGateDeps.resolveTestCommands = mock(async () => ({
+      rawTestCommand: "bun test",
+      testCommand: "bun test",
+      testScopedTemplate: undefined,
+      isMonorepoOrchestrator: false,
+      scopeFileThreshold: 10,
+    }));
+    _rectificationGateDeps.executeWithTimeout = mock(async (_cmd: string) => ({
+      success: false,
+      timeout: false,
+      exitCode: 1,
+      output: "test/feature.test.ts:\n✘ should work [1.0ms]\n(fail) suite > should work [1.0ms]\nError: boom\n",
+      countsTowardEscalation: true,
+    }));
 
     const adapter = new AcpAgentAdapter("claude");
     const result = await runFullSuiteGate(

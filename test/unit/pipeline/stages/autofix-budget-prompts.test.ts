@@ -336,4 +336,46 @@ describe("autofixStage — #412 prompt selection", () => {
     expect(prompts[1]).toContain("Your previous fix attempt did not resolve all issues");
     expect(prompts[1]).not.toContain("Review failed after your implementation");
   });
+
+  test("resets to first-attempt framing when failed check type changes between attempts", async () => {
+    const prompts: string[] = [];
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      prompts.push(opts.prompt as string);
+      return { success: false, estimatedCost: 0 };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+    const saved = { recheckReview: _autofixDeps.recheckReview };
+    let recheckCount = 0;
+
+    const ctx = makeCtx({
+      agentManager,
+      reviewResult: makeFailedReviewResult([{ check: "semantic", output: "AC mismatch" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 2 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    _autofixDeps.recheckReview = async () => {
+      recheckCount++;
+      if (recheckCount === 1) {
+        ctx.reviewResult = makeFailedReviewResult([{ check: "adversarial", output: "Security gap" }]);
+      }
+      return false;
+    };
+
+    await autofixStage.execute(ctx);
+
+    _autofixDeps.recheckReview = saved.recheckReview;
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Review failed after your implementation");
+    expect(prompts[1]).toContain("Review failed after your implementation");
+    expect(prompts[1]).not.toContain("Your previous fix attempt did not resolve all issues");
+  });
 });

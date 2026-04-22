@@ -35,7 +35,7 @@ const DEFAULT_SMART_RUNNER_CONFIG: SmartTestRunnerConfig = {
 function coerceSmartTestRunner(val: boolean | SmartTestRunnerConfig | undefined): SmartTestRunnerConfig {
   if (val === undefined || val === true) return DEFAULT_SMART_RUNNER_CONFIG;
   if (val === false) return { ...DEFAULT_SMART_RUNNER_CONFIG, enabled: false };
-  return val;
+  return { ...DEFAULT_SMART_RUNNER_CONFIG, ...val };
 }
 
 /**
@@ -102,6 +102,10 @@ export const verifyStage: PipelineStage = {
           command: effectiveCommand,
         });
       }
+    } else if (!smartRunnerConfig.enabled) {
+      logger.info("verify", "[smart-runner] Disabled by config", {
+        storyId: ctx.story.id,
+      });
     } else if (smartRunnerConfig.enabled) {
       // Resolve test file patterns via ADR-009 SSOT — language-agnostic, config-driven,
       // per-package override-aware. ctx.projectDir is the repo root; story.workdir is the
@@ -175,16 +179,20 @@ export const verifyStage: PipelineStage = {
     // US-003: If we are falling back to the full suite AND mode is deferred, skip this stage
     // because the deferred regression gate will handle the full suite at run-end.
     if (isFullSuite && regressionMode === "deferred") {
-      logger.info("verify", "[smart-runner] No mapped tests — deferring full suite to run-end (mode: deferred)", {
-        storyId: ctx.story.id,
-      });
+      const message =
+        !isMonorepoOrchestrator && !smartRunnerConfig.enabled
+          ? "[smart-runner] Disabled by config — deferring full suite to run-end (mode: deferred)"
+          : "[smart-runner] No mapped tests — deferring full suite to run-end (mode: deferred)";
+      logger.info("verify", message, { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
     if (isFullSuite) {
-      logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", {
-        storyId: ctx.story.id,
-      });
+      const message =
+        !isMonorepoOrchestrator && !smartRunnerConfig.enabled
+          ? "[smart-runner] Disabled by config — running full suite"
+          : "[smart-runner] No mapped tests — falling back to full suite";
+      logger.info("verify", message, { storyId: ctx.story.id });
     }
 
     // BUG-044: Log the effective command for observability
