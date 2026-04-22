@@ -76,14 +76,14 @@ const PHASE_3_TDD_TEST_WRITER = [...PHASE_1_PROVIDERS, "code-neighbor"];
 
 /**
  * Phase 3 providers for tdd-implementer and execution — adds git history
- * (recent commits on touched files) and code neighbors.
+ * (recent commits on touched files), code neighbors, and test coverage.
  */
-const PHASE_3_TDD_IMPLEMENTER = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor"];
+const PHASE_3_TDD_IMPLEMENTER = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage"];
 
 /**
  * Phase 3 providers for execution stage — same as tdd-implementer.
  */
-const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor"];
+const PHASE_3_EXECUTION = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage"];
 
 /**
  * Phase 3 providers for rectify — code neighbors help the agent understand

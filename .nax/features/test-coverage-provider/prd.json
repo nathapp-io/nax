@@ -1,0 +1,203 @@
+{
+  "project": "nax",
+  "feature": "test-coverage-provider",
+  "branchName": "feat/test-coverage-provider",
+  "createdAt": "2026-04-22T00:00:00.000Z",
+  "analysis": "Port the v1 context.testCoverage summary (src/context/builder.ts:173-202) into a Context Engine v2 provider so the four legacy context.* fields can be deprecated as a group.\n\nSpec: docs/specs/SPEC-test-coverage-provider.md\nIssue: https://github.com/nathapp-io/nax/issues/644\n\nThe scanner (src/context/test-scanner.ts generateTestCoverageSummary) is reused unchanged. New work is: (1) a test-coverage ChunkKind + packer floor-rule extension, (2) a thin TestCoverageProvider adapter following the FeatureContextProviderV2 pattern, (3) orchestrator-factory and stage-config wiring, (4) a byte-equality parity integration test gating the eventual v1 removal.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add test-coverage ChunkKind and extend packer floor rule",
+      "description": "Introduce a new 'test-coverage' member in the ChunkKind union in src/context/engine/types.ts and extend the packer's floor-include rule so chunks of this kind are always packed (matching 'static' and 'feature'). This is the type/packer foundation for the TestCoverageProvider landing in US-002. No provider registration yet; no behavior change for any existing stage because no provider emits chunks of this kind until US-002. Update any exhaustive switch/if arms over ChunkKind so TypeScript compilation stays clean.",
+      "acceptanceCriteria": [
+        "ChunkKind union in src/context/engine/types.ts includes 'test-coverage' as a member",
+        "The packer's floor-include predicate in src/context/engine/orchestrator.ts (or equivalent packer module) returns true when chunk.kind === 'test-coverage', matching the behavior already given to 'static' and 'feature'",
+        "All existing switch/if statements that branch on ChunkKind handle 'test-coverage' either explicitly or via a default arm without throwing",
+        "Manifest analytics (any code that groups or counts by kind) treats 'test-coverage' as a valid distinct kind — it is not collapsed into 'feature' in includedChunks, excludedChunks, or providerResults output",
+        "bun run typecheck passes with no new errors",
+        "A unit test in test/unit/context/engine/ asserts that a RawChunk with kind 'test-coverage' and score below config.context.v2.minScore is still included in the packed bundle"
+      ],
+      "tags": [
+        "types",
+        "context-engine",
+        "packer"
+      ],
+      "dependencies": [],
+      "contextFiles": [
+        "src/context/engine/types.ts",
+        "src/context/engine/orchestrator.ts",
+        "src/context/engine/scoring.ts",
+        "src/context/engine/stage-assembler.ts",
+        "docs/specs/SPEC-test-coverage-provider.md"
+      ],
+      "expectedFiles": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single union extension plus one packer predicate change; exhaustiveness fallout is localized. No new logic, no external dependencies.",
+        "modelTier": "fast"
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "passed",
+      "storyGitRef": "95af23b0ffcf687fbc7f5621f055152e29043260",
+      "passes": true
+    },
+    {
+      "id": "US-002",
+      "title": "Implement TestCoverageProvider (v2 adapter over generateTestCoverageSummary)",
+      "description": "Create src/context/engine/providers/test-coverage.ts with a TestCoverageProvider class implementing IContextProvider. The provider wraps the existing src/context/test-scanner.ts generateTestCoverageSummary() scanner — no rewrite of the scanner itself. It is constructed per-request with story and config bound (same pattern as FeatureContextProviderV2). On fetch() it: reads config.context.testCoverage, short-circuits when enabled === false or request.packageDir is empty, resolves test-file globs via resolveTestFilePatterns(config, repoRoot, story.workdir), calls generateTestCoverageSummary() with workdir = request.packageDir (package-scoped per monorepo-awareness.md §7), and on non-empty summary emits a single RawChunk with id prefix 'test-coverage:<hash8>', kind 'test-coverage', scope 'story', role ['implementer','tdd'], rawScore 0.85, content equal to the scanner summary byte-for-byte, tokens equal to scanner-reported tokens. Errors are caught and logged as warnings; the provider returns empty chunks and never throws. Logs include storyId and packageDir as the first two keys (monorepo-awareness.md §9).",
+      "acceptanceCriteria": [
+        "src/context/engine/providers/test-coverage.ts exports a class TestCoverageProvider implementing IContextProvider with readonly id 'test-coverage' and readonly kind 'test-coverage'",
+        "The constructor accepts (story: UserStory, config: NaxConfig) and retains both values for use in fetch()",
+        "fetch(request) returns { chunks: [], pullTools: [] } when config.context.testCoverage.enabled === false",
+        "fetch(request) returns { chunks: [], pullTools: [] } when request.packageDir is undefined or an empty string",
+        "fetch(request) calls generateTestCoverageSummary with workdir set to request.packageDir (not request.repoRoot and not process.cwd())",
+        "fetch(request) forwards testDir, maxTokens (default 500), detail (default 'names-and-counts'), scopeToStory (default true), and contextFiles (from getContextFiles(story)) from config.context.testCoverage to the scanner",
+        "fetch(request) passes resolvedTestGlobs from resolveTestFilePatterns(config, request.repoRoot, story.workdir) to the scanner",
+        "When the scanner returns an empty summary string, fetch returns { chunks: [], pullTools: [] }",
+        "When the scanner returns a non-empty summary, the emitted RawChunk has content byte-equal to scanner summary, tokens equal to scanner tokens, kind 'test-coverage', scope 'story', role ['implementer','tdd'], and rawScore 0.85",
+        "The emitted chunk id has the form 'test-coverage:<8-hex-chars>' where the hex is the first 8 chars of sha256 over the content",
+        "When the scanner throws, fetch logs a warning via getLogger().warn with component 'test-coverage', includes { storyId, packageDir, error } in that order, and returns { chunks: [], pullTools: [] }",
+        "All logger calls in this file list storyId as the first data-object key and packageDir as the second",
+        "A dependency-injection hook _testCoverageProviderDeps is exported and used to construct the scanner call so tests can stub it without mock.module"
+      ],
+      "tags": [
+        "context-engine",
+        "providers",
+        "test-coverage"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "contextFiles": [
+        "src/context/engine/providers/feature-context.ts",
+        "src/context/engine/providers/static-rules.ts",
+        "src/context/engine/types.ts",
+        "src/context/test-scanner.ts",
+        "src/context/builder.ts",
+        "src/test-runners/resolver.ts",
+        "src/config/runtime-types.ts",
+        "src/prd/types.ts",
+        "docs/specs/SPEC-test-coverage-provider.md"
+      ],
+      "expectedFiles": [
+        "src/context/engine/providers/test-coverage.ts",
+        "test/unit/context/engine/providers/test-coverage.test.ts"
+      ],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single new provider class following the established FeatureContextProviderV2 adapter pattern; wraps an existing scanner; no new algorithms; requires careful monorepo scoping and structured logging compliance.",
+        "modelTier": "balanced"
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "passed",
+      "storyGitRef": "4735d401d6e16bacc2dd395fcc970636b197ede9",
+      "passes": true
+    },
+    {
+      "id": "US-003",
+      "title": "Register TestCoverageProvider in orchestrator factory and stage config",
+      "description": "Wire the new TestCoverageProvider into the v2 pipeline: (1) in src/context/engine/orchestrator-factory.ts add `providers.push(new TestCoverageProvider(story, config));` alongside the existing FeatureContextProviderV2 registration; (2) in src/context/engine/stage-config.ts add 'test-coverage' to the provider list for the implementer and tdd stages. Do NOT add it to review or rectify stages (role filter would drop it anyway, but stage config should reflect intent). Registration happens regardless of config.context.testCoverage.enabled — the provider itself gates via the enabled flag. This means zero behavior change when users have enabled:false (the default case produces no chunk).",
+      "acceptanceCriteria": [
+        "src/context/engine/orchestrator-factory.ts constructs a TestCoverageProvider with (story, config) and pushes it into the providers array before any additionalProviders",
+        "The provider is registered unconditionally — orchestrator-factory.ts does NOT branch on config.context.testCoverage.enabled for the registration itself",
+        "src/context/engine/stage-config.ts lists 'test-coverage' among the providers for the implementer stage default config",
+        "src/context/engine/stage-config.ts lists 'test-coverage' among the providers for the tdd stage default config",
+        "src/context/engine/stage-config.ts does NOT list 'test-coverage' for the review, rectify, or decompose stages",
+        "The stage-config validator that verifies every referenced provider id is registered in the orchestrator accepts 'test-coverage' without error — no 'unknown provider id' exception is thrown at assemble() time",
+        "When config.context.v2.enabled is true and config.context.testCoverage.enabled is true, assemble() for the implementer stage produces a bundle whose manifest.providerResults contains an entry with providerId 'test-coverage' and status 'ok' given a fixture package with tests",
+        "When config.context.testCoverage.enabled is false, assemble() still runs TestCoverageProvider (provider is registered) but manifest.providerResults for 'test-coverage' reports status 'empty' with chunkCount 0",
+        "No existing provider registration, order, or stage-config entry is modified beyond the additions described"
+      ],
+      "tags": [
+        "context-engine",
+        "wiring",
+        "stage-config"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "contextFiles": [
+        "src/context/engine/orchestrator-factory.ts",
+        "src/context/engine/stage-config.ts",
+        "src/context/engine/orchestrator.ts",
+        "src/context/engine/types.ts"
+      ],
+      "expectedFiles": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two wiring edits in well-understood files; integration tested against a fixture package. No new behavior — all logic lives in US-002.",
+        "modelTier": "fast"
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "passed",
+      "storyGitRef": "13d4de31d7f394cfa46ca2e8018f1e3474466532",
+      "passes": true
+    },
+    {
+      "id": "US-004",
+      "title": "Integration test proving v1↔v2 byte-equality parity",
+      "description": "Add an integration test under test/integration/context/ that builds the test-coverage summary via both paths (v1 addTestCoverageElement in src/context/builder.ts and v2 TestCoverageProvider.fetch) on the same fixture package and asserts the emitted content is byte-equal. Uses test/helpers/temp.ts (withTempDir) to scaffold a fixture package with a known set of describe/test blocks. Covers at least: (a) default detail 'names-and-counts', (b) scopeToStory=true with contextFiles filtering, (c) scopeToStory=false full scan, (d) empty test directory produces empty chunks from both. This test is the AC-10 parity gate in SPEC-test-coverage-provider.md and must pass before PR 4 (legacy removal) can land.",
+      "acceptanceCriteria": [
+        "test/integration/context/test-coverage-parity.test.ts exists and contains at least four test cases covering the scenarios in the description",
+        "Each test case constructs a temp package with a fixed set of test files (describe/test blocks) using test/helpers/temp.ts helpers — no hardcoded /tmp paths, no rm -rf",
+        "Each test case runs the v1 builder path to produce a ContextElement and the v2 TestCoverageProvider.fetch to produce a RawChunk, then asserts chunk.content === v1-element.content (byte-for-byte)",
+        "The test case for scopeToStory=true uses a story with contextFiles set to a subset of the fixture files and asserts both paths emit a summary referencing only the matching test files",
+        "The empty-test-directory case asserts v1 returns no element and v2 returns { chunks: [], pullTools: [] }",
+        "The test file passes when run under `timeout 60 bun test test/integration/context/test-coverage-parity.test.ts --timeout=30000`",
+        "The test file is under 400 lines and uses the DI hook _testCoverageProviderDeps where stubbing is needed rather than mock.module"
+      ],
+      "tags": [
+        "integration-test",
+        "parity",
+        "context-engine"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "contextFiles": [
+        "src/context/builder.ts",
+        "src/context/engine/providers/test-coverage.ts",
+        "src/context/test-scanner.ts",
+        "test/helpers/temp.ts",
+        "test/integration/context/"
+      ],
+      "expectedFiles": [
+        "test/integration/context/test-coverage-parity.test.ts"
+      ],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integration test across two subsystems with temp-package scaffolding; no production code changes; requires careful fixture construction and understanding of both v1 and v2 paths to assert true byte-equality.",
+        "modelTier": "balanced"
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "passed",
+      "storyGitRef": "1aee81b83c8b3512b61abed42d56fa36eb93b116",
+      "passes": true
+    }
+  ],
+  "updatedAt": "2026-04-22T07:25:51.312Z"
+}

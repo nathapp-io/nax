@@ -20,7 +20,7 @@ import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { buildDigest, digestTokens } from "./digest";
-import { packChunks } from "./packing";
+import { FLOOR_KINDS, packChunks } from "./packing";
 import type { PackedChunk } from "./packing";
 import { PULL_TOOL_REGISTRY } from "./pull-tools";
 import { renderChunks } from "./render";
@@ -363,8 +363,9 @@ export class ContextOrchestrator {
     const roleFiltered = postRoleFilter.filter((c) => c.roleFiltered);
 
     // Step 6: min-score filter (already marked in step 3; still applies after dedupe).
-    const belowMin = postRoleFilter.filter((c) => !c.roleFiltered && c.belowMinScore);
-    const kept = postRoleFilter.filter((c) => !c.roleFiltered && !c.belowMinScore);
+    // Floor kinds (static, feature, test-coverage) bypass the filter regardless of score.
+    const belowMin = postRoleFilter.filter((c) => !c.roleFiltered && c.belowMinScore && !FLOOR_KINDS.includes(c.kind));
+    const kept = postRoleFilter.filter((c) => !c.roleFiltered && (!c.belowMinScore || FLOOR_KINDS.includes(c.kind)));
 
     // Step 7: greedy pack. Apply agent-profile ceiling to the stage budget so
     // the final budget is min(stage, profile, caller availableBudget).

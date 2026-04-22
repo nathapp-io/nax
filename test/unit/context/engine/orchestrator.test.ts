@@ -149,6 +149,30 @@ describe("ContextOrchestrator.assemble()", () => {
     const bundle = await orch.assemble(BASE_REQUEST); // BASE_REQUEST has no pullConfig
     expect(bundle.pullTools).toEqual([]);
   });
+
+  test("test-coverage chunks are floor-included when score is below minScore", async () => {
+    // AC6: test-coverage kind is always packed regardless of score (budget floor wins)
+    const provider = makeProvider("p1", {
+      chunks: [{
+        id: "tc:1",
+        kind: "test-coverage" as const,
+        scope: "feature",
+        role: ["implementer"],
+        content: "coverage data",
+        tokens: 200,
+        rawScore: 0.05,
+      }],
+      pullTools: [],
+    });
+    const orch = new ContextOrchestrator([provider]);
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      providerIds: ["p1"],
+      minScore: 0.1,
+    });
+    expect(bundle.chunks.some((c) => c.id === "tc:1")).toBe(true);
+    expect(bundle.manifest.floorItems).toContain("tc:1");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
