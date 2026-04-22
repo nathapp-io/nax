@@ -38,7 +38,13 @@
         "testStrategy": "tdd-simple",
         "reasoning": "Single union extension plus one packer predicate change; exhaustiveness fallout is localized. No new logic, no external dependencies.",
         "modelTier": "fast"
-      }
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "pending",
+      "storyGitRef": "95af23b0ffcf687fbc7f5621f055152e29043260"
     },
     {
       "id": "US-002",
@@ -89,7 +95,12 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Single new provider class following the established FeatureContextProviderV2 adapter pattern; wraps an existing scanner; no new algorithms; requires careful monorepo scoping and structured logging compliance.",
         "modelTier": "balanced"
-      }
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "pending"
     },
     {
       "id": "US-003",
@@ -128,7 +139,12 @@
         "testStrategy": "tdd-simple",
         "reasoning": "Two wiring edits in well-understood files; integration tested against a fixture package. No new behavior — all logic lives in US-002.",
         "modelTier": "fast"
-      }
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "pending"
     },
     {
       "id": "US-004",
@@ -168,8 +184,13 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Integration test across two subsystems with temp-package scaffolding; no production code changes; requires careful fixture construction and understanding of both v1 and v2 paths to assert true byte-equality.",
         "modelTier": "balanced"
-      }
+      },
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "status": "pending"
     }
   ],
-  "updatedAt": "2026-04-22T00:00:00.000Z"
+  "updatedAt": "2026-04-22T06:16:55.473Z"
 }
