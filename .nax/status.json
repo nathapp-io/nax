@@ -20,9 +20,17 @@
     "spent": 0,
     "limit": 50
   },
-  "current": null,
-  "iterations": 0,
-  "updatedAt": "2026-04-22T06:16:28.778Z",
-  "durationMs": 60035,
-  "lastHeartbeat": "2026-04-22T06:16:28.778Z"
+  "current": {
+    "storyId": "US-001",
+    "title": "Add test-coverage ChunkKind and extend packer floor rule",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "fast",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-04-22T06:23:28.786Z",
+  "durationMs": 480043,
+  "lastHeartbeat": "2026-04-22T06:23:28.786Z"
 }
