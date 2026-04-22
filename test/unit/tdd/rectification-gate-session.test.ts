@@ -11,28 +11,13 @@ import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
 import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
+import { makeStory } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FAILING_OUTPUT = "✗ some test [1ms]\n(fail) some test\nerror: Expected 1\n 34 fail\n 0 pass";
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "US-001",
-    title: "Test story",
-    description: "Desc",
-    acceptanceCriteria: ["AC-1"],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-    ...overrides,
-  };
-}
 
 function makeConfig(maxRetries = 2): NaxConfig {
   return {
