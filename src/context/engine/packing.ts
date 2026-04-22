@@ -23,7 +23,7 @@ import type { ChunkKind } from "./types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Chunk kinds that are always included (budget floor) */
-const FLOOR_KINDS: ChunkKind[] = ["static", "feature"];
+export const FLOOR_KINDS: ChunkKind[] = ["static", "feature", "test-coverage"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
