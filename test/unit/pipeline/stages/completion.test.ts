@@ -12,11 +12,7 @@ import { _completionDeps, completionStage } from "../../../../src/pipeline/stage
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { PRD, UserStory } from "../../../../src/prd";
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+import { makeStory } from "../../../helpers";
 
 function makeSession(overrides: Partial<ReviewerSession> = {}): ReviewerSession {
   return {
@@ -42,22 +38,6 @@ function makeSession(overrides: Partial<ReviewerSession> = {}): ReviewerSession 
     destroy: mock(async () => {}),
     ...overrides,
   } as unknown as ReviewerSession;
-}
-
-function makeStory(overrides?: Partial<UserStory>): UserStory {
-  return {
-    id: "US-001",
-    title: "Test Story",
-    description: "Test description",
-    acceptanceCriteria: ["AC1: thing works"],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-    ...overrides,
-  };
 }
 
 function makePRD(stories?: UserStory[]): PRD {

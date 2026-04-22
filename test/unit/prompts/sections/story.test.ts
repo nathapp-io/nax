@@ -1,25 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { UserStory } from "../../../../src/prd/types";
 import { buildBatchStorySection, buildStorySection } from "../../../../src/prompts/sections/story";
-
-function makeStory(overrides: Partial<UserStory> = {}): UserStory {
-  return {
-    id: "STORY-001",
-    title: "Test Story",
-    description: "This is a test story",
-    acceptanceCriteria: ["Criterion 1", "Criterion 2", "Criterion 3"],
-    status: "pending",
-    passes: false,
-    dependencies: [],
-    tags: [],
-    escalations: [],
-    attempts: 0,
-    ...overrides,
-  };
-}
+import { makeStory } from "../../../helpers";
 
 describe("buildStorySection", () => {
-  const mockStory = makeStory();
+  const mockStory = makeStory({ id: "STORY-001", title: "Test Story", description: "This is a test story", acceptanceCriteria: ["Criterion 1", "Criterion 2", "Criterion 3"] });
 
   test("includes story title", () => {
     const result = buildStorySection(mockStory);

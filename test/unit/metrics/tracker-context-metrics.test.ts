@@ -13,32 +13,14 @@ import type { PipelineContext } from "../../../src/pipeline/types";
 import type { ContextManifest } from "../../../src/context/engine/types";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+import { makeStory } from "../../helpers";
 
 const PROJECT_DIR = "/repo";
 const FEATURE = "test-feature";
 const STORY_ID = "US-001";
 
-function makeStory(): UserStory {
-  return {
-    id: STORY_ID,
-    title: "Test Story",
-    description: "Test",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "passed",
-    passes: true,
-    escalations: [],
-    attempts: 1,
-  };
-}
-
 function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
-  const story = makeStory();
+  const story = makeStory({ id: STORY_ID, status: "passed", passes: true, attempts: 1 });
   return {
     config: DEFAULT_CONFIG,
     prd: {

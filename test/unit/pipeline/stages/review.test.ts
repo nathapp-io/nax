@@ -18,6 +18,7 @@ import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { ReviewFinding } from "../../../../src/plugins/extensions";
+import { makeStory } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -52,22 +53,6 @@ function makeConfig(triggers: Record<string, unknown>): NaxConfig {
   } as unknown as NaxConfig;
 }
 
-function makeStory(overrides?: Partial<UserStory>): UserStory {
-  return {
-    id: "US-001",
-    title: "Test Story",
-    description: "Test",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-    ...overrides,
-  };
-}
-
 function makePRD(): PRD {
   return {
     project: "test",
@@ -75,7 +60,7 @@ function makePRD(): PRD {
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    userStories: [makeStory()],
+    userStories: [makeStory({ status: "in-progress", attempts: 1 })],
   };
 }
 
@@ -83,8 +68,8 @@ function makeCtx(overrides: Partial<PipelineContext>): PipelineContext {
   return {
     config: makeConfig({}),
     prd: makePRD(),
-    story: makeStory(),
-    stories: [makeStory()],
+    story: makeStory({ status: "in-progress", attempts: 1 }),
+    stories: [makeStory({ status: "in-progress", attempts: 1 })],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     rootConfig: DEFAULT_CONFIG,
     workdir: "/tmp/test",

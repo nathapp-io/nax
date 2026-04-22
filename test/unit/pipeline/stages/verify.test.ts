@@ -19,6 +19,7 @@ import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex, globsToPathspec, extractT
 import type { ResolvedTestPatterns } from "../../../../src/test-runners/resolver";
 import type { VerificationResult } from "../../../../src/verification";
 import type { ResolvedTestCommands } from "../../../../src/quality/command-resolver";
+import { makeStory } from "../../../helpers";
 
 /** Pre-built fallback patterns used to mock resolveTestFilePatterns without disk access */
 const MOCK_RESOLVED_PATTERNS: ResolvedTestPatterns = {
@@ -35,22 +36,6 @@ const WORKDIR = `/tmp/nax-test-verify-${randomUUID()}`;
 // Test helpers
 // ---------------------------------------------------------------------------
 
-function makeStory(overrides?: Partial<UserStory>): UserStory {
-  return {
-    id: "US-001",
-    title: "Test Story",
-    description: "Test",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 1,
-    ...overrides,
-  };
-}
-
 function makePRD(): PRD {
   return {
     project: "test",
@@ -58,7 +43,7 @@ function makePRD(): PRD {
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    userStories: [makeStory()],
+    userStories: [makeStory({ status: "in-progress", attempts: 1 })],
   };
 }
 
@@ -453,7 +438,7 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
 
     try {
       // No workdir on story — mode per-story forces full suite run
-      const story = makeStory(); // no workdir
+      const story = makeStory({ status: "in-progress", attempts: 1 });
       const config: NaxConfig = {
         ...DEFAULT_CONFIG,
         quality: {

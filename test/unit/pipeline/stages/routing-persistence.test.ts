@@ -11,28 +11,13 @@ import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { StoryRouting } from "../../../../src/prd/types";
+import { makeStory } from "../../../helpers";
 
 const WORKDIR = `/tmp/nax-routing-test-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function makeStory(overrides?: Partial<UserStory>): UserStory {
-  return {
-    id: "US-001",
-    title: "Test Story",
-    description: "Test description",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-    ...overrides,
-  };
-}
 
 function makePRD(story: UserStory): PRD {
   return {
