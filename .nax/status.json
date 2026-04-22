@@ -4,7 +4,7 @@
     "id": "run-2026-04-22T08-05-29-172Z",
     "feature": "test-coverage-provider",
     "startedAt": "2026-04-22T08:05:29.172Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 581103
   },
@@ -22,15 +22,16 @@
   },
   "current": null,
   "iterations": 0,
-  "updatedAt": "2026-04-22T08:17:29.220Z",
-  "durationMs": 720048,
-  "lastHeartbeat": "2026-04-22T08:17:29.220Z",
+  "updatedAt": "2026-04-22T08:24:03.625Z",
+  "durationMs": 1114453,
   "postRun": {
     "acceptance": {
-      "status": "running"
+      "status": "passed",
+      "lastRunAt": "2026-04-22T08:18:13.733Z"
     },
     "regression": {
-      "status": "not-run"
+      "status": "passed",
+      "lastRunAt": "2026-04-22T08:24:03.616Z"
     }
   }
 }
