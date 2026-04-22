@@ -31,6 +31,7 @@ export {
   loadPendingInteraction,
   deletePendingInteraction,
   listPendingInteractions,
+  validateInteractionId,
 } from "./state";
 export type { RunState } from "./state";
 

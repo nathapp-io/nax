@@ -112,15 +112,20 @@ export async function executeWithTimeout(
     // Wait for graceful shutdown, but bail early if process already exited.
     // Bun.sleep is not cancellable; use Promise.race so parallel kills in
     // high-concurrency runs don't each block for the full grace period unnecessarily.
+    let exitedDuringGrace = false;
     await Promise.race([
-      proc.exited,
+      proc.exited.then(() => {
+        exitedDuringGrace = true;
+      }),
       new Promise<void>((resolve) => {
         setTimeout(resolve, gracePeriodMs);
       }),
     ]);
 
-    // Force SIGKILL entire process group if still running
-    killProcessGroup(pid, "SIGKILL");
+    // Only send SIGKILL if the process is still alive — avoids signaling a reused PID
+    if (!exitedDuringGrace) {
+      killProcessGroup(pid, "SIGKILL");
+    }
 
     // Bun bug: piped streams may not close after kill — cap the already-in-progress
     // reads with a deadline so we collect whatever was buffered without hanging.

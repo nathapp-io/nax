@@ -223,7 +223,7 @@ describe("runQualityCommand — storyId correlation", () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const callArg = (spawnMock.mock.calls[0] as unknown[])[0] as { cmd: string[]; cwd: string };
-    expect(callArg.cmd).toEqual(["bun", "run", "typecheck"]);
+    expect(callArg.cmd).toEqual(["/bin/sh", "-c", "bun run typecheck"]);
     expect(callArg.cwd).toBe("/tmp/project");
   });
 });

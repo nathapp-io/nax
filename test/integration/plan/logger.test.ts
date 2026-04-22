@@ -143,7 +143,7 @@ describe("Logger", () => {
   });
 
   describe("file output", () => {
-    test("writes all log levels to file regardless of console level", () => {
+    test("writes all log levels to file regardless of console level", async () => {
       // Console level is "error", but file should get all levels
       const logger = initLogger({ level: "error", filePath: TEST_LOG_FILE });
 
@@ -151,6 +151,7 @@ describe("Logger", () => {
       logger.warn("test", "warn message");
       logger.info("test", "info message");
       logger.debug("test", "debug message");
+      await logger.flush();
 
       // Read log file
       const content = readFileSync(TEST_LOG_FILE, "utf8");
@@ -169,10 +170,11 @@ describe("Logger", () => {
       expect(entries[3].level).toBe("debug");
     });
 
-    test("JSONL lines are valid JSON with required fields", () => {
+    test("JSONL lines are valid JSON with required fields", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
 
       logger.info("routing", "Task classified", { complexity: "simple" });
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const line = content.trim();
@@ -192,10 +194,11 @@ describe("Logger", () => {
       expect(() => new Date(entry.timestamp)).not.toThrow();
     });
 
-    test("handles log entries without data field", () => {
+    test("handles log entries without data field", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
 
       logger.info("test", "message without data");
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const entry = JSON.parse(content.trim());
@@ -203,10 +206,11 @@ describe("Logger", () => {
       expect(entry.data).toBeUndefined();
     });
 
-    test("handles log entries without storyId", () => {
+    test("handles log entries without storyId", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
 
       logger.info("test", "message without storyId");
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const entry = JSON.parse(content.trim());
@@ -214,11 +218,12 @@ describe("Logger", () => {
       expect(entry.storyId).toBeUndefined();
     });
 
-    test("appends to existing log file", () => {
+    test("appends to existing log file", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
 
       logger.info("test", "first message");
       logger.info("test", "second message");
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const lines = content
@@ -263,11 +268,12 @@ describe("Logger", () => {
       expect(logs[0]).toContain("Starting agent");
     });
 
-    test("auto-injects storyId into file output", () => {
+    test("auto-injects storyId into file output", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
       const storyLogger = logger.withStory("user-auth-001");
 
       storyLogger.info("agent.start", "Starting agent");
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const entry = JSON.parse(content.trim());
@@ -295,7 +301,7 @@ describe("Logger", () => {
       expect(logs[0]).toContain("warn message");
     });
 
-    test("story logger writes all levels to file", () => {
+    test("story logger writes all levels to file", async () => {
       const logger = initLogger({ level: "error", filePath: TEST_LOG_FILE });
       const storyLogger = logger.withStory("story-123");
 
@@ -303,6 +309,7 @@ describe("Logger", () => {
       storyLogger.warn("test", "warn");
       storyLogger.info("test", "info");
       storyLogger.debug("test", "debug");
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const lines = content
@@ -387,7 +394,7 @@ describe("Logger", () => {
   });
 
   describe("data handling", () => {
-    test("logs complex data structures", () => {
+    test("logs complex data structures", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
 
       const complexData = {
@@ -402,6 +409,7 @@ describe("Logger", () => {
       };
 
       logger.info("test", "Complex data", complexData);
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const entry = JSON.parse(content.trim());
@@ -413,10 +421,11 @@ describe("Logger", () => {
       expect(entry.data.boolean).toBe(true);
     });
 
-    test("handles empty data object", () => {
+    test("handles empty data object", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
 
       logger.info("test", "Empty data", {});
+      await logger.flush();
 
       const content = readFileSync(TEST_LOG_FILE, "utf8");
       const entry = JSON.parse(content.trim());
