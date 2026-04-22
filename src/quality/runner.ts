@@ -84,16 +84,22 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     });
 
     let timedOut = false;
+    let exitedBeforeSigkill = false;
     let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+
+    // Track process exit so SIGKILL is skipped if the process already died during the grace period.
+    proc.exited.then(() => {
+      exitedBeforeSigkill = true;
+    });
 
     const killTimer = setTimeout(() => {
       timedOut = true;
       killProcessGroup(proc.pid, "SIGTERM");
-      // Track the nested timer so it can be cleared if proc exits during grace period,
-      // preventing a late SIGKILL on a reused PID.
       sigkillTimer = setTimeout(() => {
         sigkillTimer = undefined;
-        killProcessGroup(proc.pid, "SIGKILL");
+        if (!exitedBeforeSigkill) {
+          killProcessGroup(proc.pid, "SIGKILL");
+        }
       }, SIGKILL_GRACE_PERIOD_MS);
     }, timeoutMs);
 

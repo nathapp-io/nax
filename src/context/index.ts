@@ -4,7 +4,7 @@
 
 export type { ContextElement, ContextBudget, StoryContext, BuiltContext } from "./types";
 
-export { resolveFeatureId, clearFeatureResolverCache } from "./feature-resolver";
+export { resolveFeatureId, clearFeatureResolverCache, disposeFeatureResolver } from "./feature-resolver";
 export {
   filterContextByRole,
   parseAudienceTags,

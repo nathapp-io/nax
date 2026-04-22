@@ -394,8 +394,6 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   private verify(payload: string, signature: string): boolean {
     if (!this.config.secret) return false;
     const expected = this.sign(payload);
-    if (expected.length !== signature.length) return false;
-
     try {
       return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
     } catch {

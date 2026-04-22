@@ -10,6 +10,7 @@
  * - Release lock
  */
 
+import { disposeFeatureResolver } from "../../context";
 import type { InteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
 import type { PostRunContext } from "../../plugins/extensions";
@@ -156,6 +157,9 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
       logger?.warn("interaction", "Interaction chain cleanup failed", { error });
     }
   }
+
+  // Release per-workdir feature resolver index to prevent memory leak across runs
+  disposeFeatureResolver(workdir);
 
   // Always release lock, even if execution fails
   await releaseLock(workdir);
