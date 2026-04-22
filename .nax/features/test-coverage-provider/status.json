@@ -1,22 +1,22 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-22T06-14-38-624Z",
+    "id": "run-2026-04-22T07-49-43-867Z",
     "feature": "test-coverage-provider",
-    "startedAt": "2026-04-22T06:14:38.624Z",
+    "startedAt": "2026-04-22T07:49:43.867Z",
     "status": "crashed",
     "dryRun": false,
-    "pid": 390452,
-    "crashedAt": "2026-04-22T06:14:55.010Z",
+    "pid": 563256,
+    "crashedAt": "2026-04-22T08:04:25.419Z",
     "crashSignal": "SIGINT"
   },
   "progress": {
     "total": 4,
-    "passed": 0,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 0
   },
   "cost": {
     "spent": 0,
@@ -24,6 +24,14 @@
   },
   "current": null,
   "iterations": 0,
-  "updatedAt": "2026-04-22T06:14:55.011Z",
-  "durationMs": 16387
+  "updatedAt": "2026-04-22T08:04:25.419Z",
+  "durationMs": 881552,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "not-run"
+    }
+  }
 }
