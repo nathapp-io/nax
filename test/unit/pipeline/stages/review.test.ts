@@ -11,14 +11,13 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
 import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { ReviewFinding } from "../../../../src/plugins/extensions";
-import { makeStory } from "../../../helpers";
+import { makeSparseNaxConfig, makeStory } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -42,17 +41,6 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   return chain;
 }
 
-function makeConfig(triggers: Record<string, unknown>): NaxConfig {
-  return {
-    review: { enabled: true },
-    interaction: {
-      plugin: "cli",
-      defaults: { timeout: 30000, fallback: "abort" as const },
-      triggers,
-    },
-  } as unknown as NaxConfig;
-}
-
 function makePRD(): PRD {
   return {
     project: "test",
@@ -66,7 +54,7 @@ function makePRD(): PRD {
 
 function makeCtx(overrides: Partial<PipelineContext>): PipelineContext {
   return {
-    config: makeConfig({}),
+    config: makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } }),
     prd: makePRD(),
     story: makeStory({ status: "in-progress", attempts: 1 }),
     stories: [makeStory({ status: "in-progress", attempts: 1 })],
@@ -99,7 +87,7 @@ describe("reviewStage — pluginMode deferred path", () => {
     const original = reviewOrchestrator.review;
     reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
 
-    const config = makeConfig({});
+    const config = makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     config.review.pluginMode = "deferred";
     const ctx = makeCtx({ config });
     const result = await reviewStage.execute(ctx);
@@ -118,7 +106,7 @@ describe("reviewStage — pluginMode deferred path", () => {
     }));
     reviewOrchestrator.review = orchestratorMock as typeof reviewOrchestrator.review;
 
-    const config = makeConfig({});
+    const config = makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     config.review.pluginMode = "deferred";
     const ctx = makeCtx({ config });
     await reviewStage.execute(ctx);
@@ -139,7 +127,7 @@ describe("reviewStage — pluginMode deferred path", () => {
     const original = reviewOrchestrator.review;
     reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
 
-    const config = makeConfig({});
+    const config = makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } });
     config.review.pluginMode = "deferred";
     const ctx = makeCtx({ config });
     const result = await reviewStage.execute(ctx);
@@ -163,7 +151,7 @@ describe("reviewStage — plugin failure, no trigger", () => {
     const original = reviewOrchestrator.review;
     reviewOrchestrator.review = orchestratorMock as typeof reviewOrchestrator.review;
 
-    const ctx = makeCtx({ config: makeConfig({}) });
+    const ctx = makeCtx({ config: makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} } }) });
     const result = await reviewStage.execute(ctx);
 
     expect(result.action).toBe("fail");
@@ -186,7 +174,7 @@ describe("reviewStage — security-review trigger via _reviewDeps", () => {
 
     const chain = makeChain("abort");
     const ctx = makeCtx({
-      config: makeConfig({ "security-review": { enabled: true } }),
+      config: makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: { "security-review": { enabled: true } } } }),
       interaction: chain,
     });
     const result = await reviewStage.execute(ctx);
@@ -206,7 +194,7 @@ describe("reviewStage — security-review trigger via _reviewDeps", () => {
 
     const chain = makeChain("approve");
     const ctx = makeCtx({
-      config: makeConfig({ "security-review": { enabled: true } }),
+      config: makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: { "security-review": { enabled: true } } } }),
       interaction: chain,
     });
     const result = await reviewStage.execute(ctx);
@@ -225,7 +213,7 @@ describe("reviewStage — security-review trigger via _reviewDeps", () => {
     reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
 
     const ctx = makeCtx({
-      config: makeConfig({ "security-review": { enabled: true } }),
+      config: makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: { "security-review": { enabled: true } } } }),
       // no interaction
     });
     const result = await reviewStage.execute(ctx);
@@ -244,7 +232,7 @@ describe("reviewStage — security-review trigger via _reviewDeps", () => {
     reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
 
     const ctx = makeCtx({
-      config: makeConfig({ "security-review": { enabled: true } }),
+      config: makeSparseNaxConfig({ review: { enabled: true }, interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: { "security-review": { enabled: true } } } }),
       interaction: makeChain("abort"),
     });
     const result = await reviewStage.execute(ctx);

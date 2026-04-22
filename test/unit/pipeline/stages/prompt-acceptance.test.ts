@@ -7,11 +7,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../../../src/config";
 import { _promptStageDeps, promptStage } from "../../../../src/pipeline/stages/prompt";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { makeStory } from "../../../helpers";
+import { makeSparseNaxConfig, makeStory } from "../../../helpers";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 
@@ -30,19 +29,11 @@ function makePRD(): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    agent: { default: "test-agent" },
-    models: {},
-    execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxRetries: 3 } },
-  } as unknown as NaxConfig;
-}
-
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ status: "in-progress", passes: false, attempts: 0, acceptanceCriteria: ["AC1"] });
   return {
-    config: makeConfig(),
-    rootConfig: makeConfig(),
+    config: makeSparseNaxConfig({ agent: { default: "test-agent" }, models: {}, execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxRetries: 3 } } }),
+    rootConfig: makeSparseNaxConfig({ agent: { default: "test-agent" }, models: {}, execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxRetries: 3 } } }),
     prd: makePRD(),
     story,
     stories: [story],

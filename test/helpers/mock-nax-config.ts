@@ -20,3 +20,7 @@ function deepMerge<T>(base: T, override: DeepPartial<T>): T {
 export function makeNaxConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {
   return deepMerge(DEFAULT_CONFIG as NaxConfig, overrides);
 }
+
+export function makeSparseNaxConfig(partial: Partial<NaxConfig>): NaxConfig {
+  return partial as NaxConfig;
+}
