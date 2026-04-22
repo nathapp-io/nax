@@ -47,25 +47,6 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   return chain;
 }
 
-function makeConfig(triggers: Record<string, unknown>) {
-  return makeNaxConfig({
-    agent: { default: "test-agent" },
-    models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
-    execution: {
-      sessionTimeoutSeconds: 60,
-      dangerouslySkipPermissions: false,
-      costLimit: 10,
-      maxIterations: 10,
-      rectification: { maxRetries: 3 },
-    },
-    interaction: {
-      plugin: "cli",
-      defaults: { timeout: 30000, fallback: "abort" as const },
-      triggers,
-    },
-  });
-}
-
 function makePRD(): PRD {
   return {
     project: "test",
@@ -178,7 +159,22 @@ describe("executionStage — story-ambiguity trigger", () => {
     _executionDeps.getAgent = mock(() => agent as ReturnType<typeof _executionDeps.getAgent>);
     _executionDeps.checkStoryAmbiguity = mock(async () => false);
 
-    const config = makeConfig({ "story-ambiguity": { enabled: true } });
+    const config = makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: { "story-ambiguity": { enabled: true } },
+      },
+    });
     const chain = makeChain("abort");
     const ctx = makeCtx(config, chain);
 
@@ -195,7 +191,22 @@ describe("executionStage — story-ambiguity trigger", () => {
     _executionDeps.getAgent = mock(() => agent as ReturnType<typeof _executionDeps.getAgent>);
     _executionDeps.checkStoryAmbiguity = mock(async () => true);
 
-    const config = makeConfig({ "story-ambiguity": { enabled: true } });
+    const config = makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: { "story-ambiguity": { enabled: true } },
+      },
+    });
     const chain = makeChain("approve");
     const ctx = makeCtx(config, chain);
 
@@ -211,7 +222,22 @@ describe("executionStage — story-ambiguity trigger", () => {
     _executionDeps.getAgent = mock(() => agent as ReturnType<typeof _executionDeps.getAgent>);
     _executionDeps.checkStoryAmbiguity = mock(async () => false);
 
-    const config = makeConfig({});
+    const config = makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: {},
+      },
+    });
     const chain = makeChain("abort");
     const ctx = makeCtx(config, chain);
 
@@ -227,7 +253,22 @@ describe("executionStage — story-ambiguity trigger", () => {
     _executionDeps.getAgent = mock(() => agent as ReturnType<typeof _executionDeps.getAgent>);
     _executionDeps.checkStoryAmbiguity = mock(async () => false);
 
-    const config = makeConfig({ "story-ambiguity": { enabled: true } });
+    const config = makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: { "story-ambiguity": { enabled: true } },
+      },
+    });
     const chain = makeChain("abort");
     const ctx = makeCtx(config, chain);
 
@@ -243,7 +284,22 @@ describe("executionStage — story-ambiguity trigger", () => {
     _executionDeps.getAgent = mock(() => agent as ReturnType<typeof _executionDeps.getAgent>);
     _executionDeps.checkStoryAmbiguity = mock(async () => false);
 
-    const config = makeConfig({ "story-ambiguity": { enabled: true } });
+    const config = makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: { "story-ambiguity": { enabled: true } },
+      },
+    });
     const ctx = makeCtx(config); // no chain
 
     const result = await executionStage.execute(ctx);
@@ -271,7 +327,22 @@ describe("executionStage — story-ambiguity trigger", () => {
     );
     _executionDeps.checkStoryAmbiguity = mock(async () => false);
 
-    const config = makeConfig({ "story-ambiguity": { enabled: true } });
+    const config = makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: { "story-ambiguity": { enabled: true } },
+      },
+    });
     const chain = makeChain("abort");
     const ctx = makeCtx(config, chain);
 
@@ -287,7 +358,22 @@ describe("executionStage — story-ambiguity trigger", () => {
     _executionDeps.getAgent = mock(() => agent as ReturnType<typeof _executionDeps.getAgent>);
     _executionDeps.checkStoryAmbiguity = mock(async () => true);
 
-    const config = makeConfig({ "story-ambiguity": { enabled: true } });
+    const config = makeNaxConfig({
+      agent: { default: "test-agent" },
+      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxRetries: 3 },
+      },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: { "story-ambiguity": { enabled: true } },
+      },
+    });
     const chain = makeChain("approve");
     const ctx = makeCtx(config, chain);
 
