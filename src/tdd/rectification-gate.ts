@@ -48,6 +48,7 @@ export async function runFullSuiteGate(
   logger: ReturnType<typeof getLogger>,
   featureName?: string,
   projectDir?: string,
+  baselineFailingFiles?: ReadonlySet<string>,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) return { passed: false, cost: 0 };
@@ -80,6 +81,32 @@ export async function runFullSuiteGate(
     const testSummary = _rectificationGateDeps.parseTestOutput(fullSuiteResult.output);
 
     if (testSummary.failed > 0) {
+      // Filter out failures that existed before this story started (baseline pollution).
+      // A pre-existing failure in an unrelated test file must not consume rectification attempts.
+      const newFailures =
+        baselineFailingFiles && baselineFailingFiles.size > 0
+          ? testSummary.failures.filter((f) => !baselineFailingFiles.has(f.file))
+          : testSummary.failures;
+
+      if (newFailures.length === 0) {
+        logger.info("tdd", "Full suite gate: all failures are pre-existing — accepting as pass", {
+          storyId: story.id,
+          suppressedFailures: testSummary.failed,
+          suppressedFiles: testSummary.failures.map((f) => f.file),
+        });
+        return { passed: true, cost: 0 };
+      }
+
+      if (newFailures.length < testSummary.failed) {
+        logger.info("tdd", "Full suite gate: suppressed pre-existing failures", {
+          storyId: story.id,
+          total: testSummary.failed,
+          suppressed: testSummary.failed - newFailures.length,
+          remaining: newFailures.length,
+        });
+      }
+
+      const filteredSummary = { ...testSummary, failures: newFailures, failed: newFailures.length };
       return await runRectificationLoop(
         story,
         config,
@@ -88,7 +115,7 @@ export async function runFullSuiteGate(
         implementerTier,
         lite,
         logger,
-        testSummary,
+        filteredSummary,
         rectificationConfig,
         effectiveTestCmd,
         fullSuiteTimeout,

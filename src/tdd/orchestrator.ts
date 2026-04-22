@@ -23,6 +23,7 @@ import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
+import { captureBaselineFailingFiles } from "./baseline";
 import { runFullSuiteGate } from "./rectification-gate";
 import { rollbackToRef, runTddSession, truncateTestOutput } from "./session-runner";
 import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
@@ -187,6 +188,11 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   const initialRef = (await captureGitRef(workdir)) ?? "HEAD";
   const shouldRollbackOnFailure = config.tdd.rollbackOnFailure ?? true;
+
+  // Snapshot which test files were already failing before this story starts.
+  // runFullSuiteGate will subtract these so pre-existing failures never trigger
+  // false rectification (regression test pollution, BUG-TC-001).
+  const baselineFailingFiles = await captureBaselineFailingFiles(config, workdir, story.workdir, logger, story.id);
 
   // Session 1: Test Writer
   // BUG-018 Fix: Skip test-writer on retry iterations — tests already exist from first attempt.
@@ -389,6 +395,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     logger,
     featureName,
     projectDir,
+    baselineFailingFiles,
   );
 
   // Session 3: Verifier
