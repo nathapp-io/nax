@@ -12,6 +12,7 @@ import {
 import type { NaxConfig } from "../../../src/config/types";
 import type { UserStory } from "../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { makeNaxConfig } from "../../helpers";
 
 function makeStory(id: string): UserStory {
   return {
@@ -25,19 +26,6 @@ function makeStory(id: string): UserStory {
     passes: false,
     escalations: [],
     attempts: 0,
-  };
-}
-
-function makeConfig(enabled: boolean, budgetTokens = 2048): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    context: {
-      ...DEFAULT_CONFIG.context,
-      featureEngine: {
-        enabled,
-        budgetTokens,
-      },
-    },
   };
 }
 
@@ -61,7 +49,7 @@ describe("FeatureContextProvider", () => {
   test("returns null when feature engine disabled", async () => {
     const provider = new FeatureContextProvider();
     const story = makeStory("US-001");
-    const config = makeConfig(false);
+    const config = makeNaxConfig({ context: { featureEngine: { enabled: false, budgetTokens: 2048 } } });
     const result = await provider.getContext(story, "/workdir", config);
     expect(result).toBeNull();
   });
@@ -71,7 +59,7 @@ describe("FeatureContextProvider", () => {
 
     const provider = new FeatureContextProvider();
     const story = makeStory("US-001");
-    const config = makeConfig(true);
+    const config = makeNaxConfig({ context: { featureEngine: { enabled: true, budgetTokens: 2048 } } });
     const result = await provider.getContext(story, "/workdir", config);
     expect(result).toBeNull();
   });
@@ -82,7 +70,7 @@ describe("FeatureContextProvider", () => {
 
     const provider = new FeatureContextProvider();
     const story = makeStory("US-001");
-    const config = makeConfig(true);
+    const config = makeNaxConfig({ context: { featureEngine: { enabled: true, budgetTokens: 2048 } } });
     const result = await provider.getContext(story, "/workdir", config);
     expect(result).toBeNull();
   });
@@ -94,7 +82,7 @@ describe("FeatureContextProvider", () => {
 
     const provider = new FeatureContextProvider();
     const story = makeStory("US-001");
-    const config = makeConfig(true);
+    const config = makeNaxConfig({ context: { featureEngine: { enabled: true, budgetTokens: 2048 } } });
     const result = await provider.getContext(story, "/workdir", config);
     expect(result).toBeNull();
   });
@@ -107,7 +95,7 @@ describe("FeatureContextProvider", () => {
 
     const provider = new FeatureContextProvider();
     const story = makeStory("US-005");
-    const config = makeConfig(true);
+    const config = makeNaxConfig({ context: { featureEngine: { enabled: true, budgetTokens: 2048 } } });
     const result = await provider.getContext(story, "/workdir", config);
 
     expect(result).not.toBeNull();
@@ -128,7 +116,7 @@ describe("FeatureContextProvider", () => {
 
     const provider = new FeatureContextProvider();
     const story = makeStory("US-001");
-    const config = makeConfig(true);
+    const config = makeNaxConfig({ context: { featureEngine: { enabled: true, budgetTokens: 2048 } } });
     const result = await provider.getContext(story, "/workdir", config);
     expect(result).toBeNull();
   });
