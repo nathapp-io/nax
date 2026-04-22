@@ -196,6 +196,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const resolvedPerm = resolvePermissions(config, "plan");
     // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
     const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
+    const debateAgentManager = _planDeps.createManager(config);
     const debateSession = _planDeps.createDebateSession({
       storyId: options.feature,
       stage: "plan",
@@ -204,6 +205,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       workdir,
       featureName: options.feature,
       timeoutSeconds,
+      agentManager: debateAgentManager,
     });
     logger?.info("plan", "Starting debate planning session", {
       debaters: planStageConfig.debaters?.map((d) => d.agent),
@@ -646,6 +648,7 @@ export async function planDecomposeCommand(
         workdir,
         featureName: options.feature,
         timeoutSeconds,
+        agentManager,
       });
       const debateResult = await debateSession.run(prompt);
       if (debateResult.outcome !== "failed" && debateResult.output) {
