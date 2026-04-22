@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.22100652,
     "limit": 50
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Add test-coverage ChunkKind and extend packer floor rule",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
-    "model": "fast",
+    "storyId": "US-002",
+    "title": "Implement TestCoverageProvider (v2 adapter over generateTestCoverageSummary)",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-04-22T06:23:28.786Z",
-  "durationMs": 480043,
-  "lastHeartbeat": "2026-04-22T06:23:28.786Z"
+  "iterations": 2,
+  "updatedAt": "2026-04-22T06:37:28.830Z",
+  "durationMs": 1320087,
+  "lastHeartbeat": "2026-04-22T06:37:28.830Z"
 }
