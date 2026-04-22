@@ -146,6 +146,7 @@ export async function executeUnified(
         routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
         hooks: ctx.hooks,
         agentGetFn: ctx.agentGetFn,
+        agentManager: ctx.agentManager,
       };
       await runPipeline(preRunPipeline, preRunCtx, ctx.eventEmitter);
     }
@@ -243,6 +244,7 @@ export async function executeUnified(
                 hooks: ctx.hooks,
                 featureDir: ctx.featureDir,
                 agentGetFn: ctx.agentGetFn,
+                agentManager: ctx.agentManager,
                 pidRegistry: ctx.pidRegistry,
                 abortSignal: ctx.abortSignal,
               },
