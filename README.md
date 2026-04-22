@@ -183,14 +183,14 @@ nax communicates with all coding agents via [ACP](https://github.com/openclaw/ac
 
 | Agent | Binary | Notes |
 |:------|:-------|:------|
-| Claude Code | `claude` | Default. Set `autoMode.defaultAgent: "claude"` |
-| OpenCode | `opencode` | Set `autoMode.defaultAgent: "opencode"` |
-| Codex | `codex` | Set `autoMode.defaultAgent: "codex"` |
-| Gemini CLI | `gemini` | Set `autoMode.defaultAgent: "gemini"` |
-| Aider | `aider` | Set `autoMode.defaultAgent: "aider"` |
+| Claude Code | `claude` | Default. Set `agent.default: "claude"` |
+| OpenCode | `opencode` | Set `agent.default: "opencode"` |
+| Codex | `codex` | Set `agent.default: "codex"` |
+| Gemini CLI | `gemini` | Set `agent.default: "gemini"` |
+| Aider | `aider` | Set `agent.default: "aider"` |
 | Any ACP-compatible | — | See [acpx agent docs](https://github.com/openclaw/acpx#agents) |
 
-See [Agents Guide](docs/guides/agents.md).
+See [Agents Guide](docs/guides/agents.md) and the [Context Engine Guide](docs/guides/context-engine.md) for agent-portable context configuration.
 
 ---
 

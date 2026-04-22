@@ -400,7 +400,7 @@ loadPlugins() → plugin.setup(config, logger)
 
 Stage-aware, session-aware, pluggable context assembly. Single point of context
 assembly for all pipeline stages. Spec: `SPEC-context-engine-v2.md`;
-decision record: ADR-010.
+decision record: ADR-010. **User guide:** [docs/guides/context-engine.md](../guides/context-engine.md).
 
 **Entry point:** `ContextOrchestrator.assemble(ContextRequest)` →
 `ContextBundle { pushMarkdown, pullTools, digest, manifest, chunks }`.

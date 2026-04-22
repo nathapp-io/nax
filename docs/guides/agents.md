@@ -91,7 +91,7 @@ Why this matters for agent configuration:
 - **Force-terminate is explicit.** A terminally failed session transitions to `FAILED` and is closed atomically via `failAndClose()`. This guarantees AC-83 fires on availability-category exhaustion — previously the adapter's `finally` block could silently swallow the intent.
 - **Resume is deterministic.** Orphan detection walks `index.json` for non-terminal sessions older than TTL, replacing the old mtime heuristic. Crash-resume picks up with the same `sess-<uuid>` the original run would have used.
 
-See [Architecture — §34 Session Manager](../architecture/subsystems.md) and [§35 Agent Manager](../architecture/subsystems.md) for the full ownership boundary and state machine.
+See [Architecture — §34 Session Manager](../architecture/subsystems.md) and [§35 Agent Manager](../architecture/subsystems.md) for the full ownership boundary and state machine. For configuring what context the agent sees at each stage (and how to plug in RAG / graph providers), see the [Context Engine Guide](context-engine.md).
 
 ---
 
