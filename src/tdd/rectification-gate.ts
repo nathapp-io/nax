@@ -36,7 +36,31 @@ export const _rectificationGateDeps = {
 };
 
 /**
+ * Return the set of files changed since `fromRef` via `git diff --name-only`.
+ * Used to infer which failures the story is responsible for (BUG-TC-001).
+ */
+async function getStoryChangedFiles(workdir: string, fromRef: string): Promise<ReadonlySet<string>> {
+  const result = await _rectificationGateDeps.executeWithTimeout(
+    `git diff --name-only ${fromRef} HEAD`,
+    15,
+    undefined,
+    { cwd: workdir },
+  );
+  if (!result.output) return new Set();
+  return new Set(
+    result.output
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean),
+  );
+}
+
+/**
  * Run full test suite gate before verifier session (v0.11 Rectification).
+ *
+ * @param storyFromRef - git ref captured before the story started (initialRef).
+ *   When provided, failures in test files the story never touched are suppressed
+ *   to prevent pre-existing failures from consuming rectification attempts (BUG-TC-001).
  */
 export async function runFullSuiteGate(
   story: UserStory,
@@ -48,7 +72,7 @@ export async function runFullSuiteGate(
   logger: ReturnType<typeof getLogger>,
   featureName?: string,
   projectDir?: string,
-  baselineFailingFiles?: ReadonlySet<string>,
+  storyFromRef?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) return { passed: false, cost: 0 };
@@ -81,13 +105,17 @@ export async function runFullSuiteGate(
     const testSummary = _rectificationGateDeps.parseTestOutput(fullSuiteResult.output);
 
     if (testSummary.failed > 0) {
-      // Filter out failures that existed before this story started (baseline pollution).
-      // Only apply when the parser extracted structured failures — if failures[] is empty
+      // Filter out failures in files the story never touched (pre-existing pollution).
+      // Uses git diff since storyFromRef to identify story-owned files.
+      // Only applies when structured failures are available — if failures[] is empty
       // (parser limitation / count-only output), fall through to rectification unchanged.
-      const canFilter = baselineFailingFiles && baselineFailingFiles.size > 0 && testSummary.failures.length > 0;
-      const filteredFailures = canFilter
-        ? testSummary.failures.filter((f) => !baselineFailingFiles.has(f.file))
-        : testSummary.failures;
+      let filteredFailures = testSummary.failures;
+      if (storyFromRef && testSummary.failures.length > 0) {
+        const storyFiles = await getStoryChangedFiles(workdir, storyFromRef);
+        if (storyFiles.size > 0) {
+          filteredFailures = testSummary.failures.filter((f) => storyFiles.has(f.file));
+        }
+      }
       const wasFiltered = filteredFailures.length < testSummary.failures.length;
 
       if (wasFiltered && filteredFailures.length === 0) {
