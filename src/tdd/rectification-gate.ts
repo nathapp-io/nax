@@ -36,7 +36,31 @@ export const _rectificationGateDeps = {
 };
 
 /**
+ * Return the set of files changed since `fromRef` via `git diff --name-only`.
+ * Used to infer which failures the story is responsible for (BUG-TC-001).
+ */
+async function getStoryChangedFiles(workdir: string, fromRef: string): Promise<ReadonlySet<string>> {
+  const result = await _rectificationGateDeps.executeWithTimeout(
+    `git diff --name-only ${fromRef} HEAD`,
+    15,
+    undefined,
+    { cwd: workdir },
+  );
+  if (!result.output) return new Set();
+  return new Set(
+    result.output
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean),
+  );
+}
+
+/**
  * Run full test suite gate before verifier session (v0.11 Rectification).
+ *
+ * @param storyFromRef - git ref captured before the story started (initialRef).
+ *   When provided, failures in test files the story never touched are suppressed
+ *   to prevent pre-existing failures from consuming rectification attempts (BUG-TC-001).
  */
 export async function runFullSuiteGate(
   story: UserStory,
@@ -48,7 +72,7 @@ export async function runFullSuiteGate(
   logger: ReturnType<typeof getLogger>,
   featureName?: string,
   projectDir?: string,
-  baselineFailingFiles?: ReadonlySet<string>,
+  storyFromRef?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) return { passed: false, cost: 0 };
@@ -81,32 +105,43 @@ export async function runFullSuiteGate(
     const testSummary = _rectificationGateDeps.parseTestOutput(fullSuiteResult.output);
 
     if (testSummary.failed > 0) {
-      // Filter out failures that existed before this story started (baseline pollution).
-      // A pre-existing failure in an unrelated test file must not consume rectification attempts.
-      const newFailures =
-        baselineFailingFiles && baselineFailingFiles.size > 0
-          ? testSummary.failures.filter((f) => !baselineFailingFiles.has(f.file))
-          : testSummary.failures;
+      // Filter out failures in files the story never touched (pre-existing pollution).
+      // Uses git diff since storyFromRef to identify story-owned files.
+      // Only applies when structured failures are available — if failures[] is empty
+      // (parser limitation / count-only output), fall through to rectification unchanged.
+      let filteredFailures = testSummary.failures;
+      if (storyFromRef && testSummary.failures.length > 0) {
+        const storyFiles = await getStoryChangedFiles(workdir, storyFromRef);
+        if (storyFiles.size > 0) {
+          filteredFailures = testSummary.failures.filter((f) => storyFiles.has(f.file));
+        }
+      }
+      const wasFiltered = filteredFailures.length < testSummary.failures.length;
 
-      if (newFailures.length === 0) {
+      if (wasFiltered && filteredFailures.length === 0) {
         logger.info("tdd", "Full suite gate: all failures are pre-existing — accepting as pass", {
           storyId: story.id,
-          suppressedFailures: testSummary.failed,
+          suppressedCount: testSummary.failures.length,
           suppressedFiles: testSummary.failures.map((f) => f.file),
         });
         return { passed: true, cost: 0 };
       }
 
-      if (newFailures.length < testSummary.failed) {
+      if (wasFiltered) {
         logger.info("tdd", "Full suite gate: suppressed pre-existing failures", {
           storyId: story.id,
-          total: testSummary.failed,
-          suppressed: testSummary.failed - newFailures.length,
-          remaining: newFailures.length,
+          total: testSummary.failures.length,
+          suppressed: testSummary.failures.length - filteredFailures.length,
+          remaining: filteredFailures.length,
         });
       }
 
-      const filteredSummary = { ...testSummary, failures: newFailures, failed: newFailures.length };
+      // Preserve the original failed count when no structured failures were available to filter
+      const filteredSummary = {
+        ...testSummary,
+        failures: filteredFailures,
+        failed: wasFiltered ? filteredFailures.length : testSummary.failed,
+      };
       return await runRectificationLoop(
         story,
         config,
