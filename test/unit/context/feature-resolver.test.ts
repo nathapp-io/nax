@@ -131,6 +131,64 @@ describe("resolveFeatureId", () => {
     _resolverDeps.readFile = originalReadFile;
   });
 
+  test("prefers activeFeature hint over first alphabetical match when story ID collides", async () => {
+    // Reproduces issue #663: US-001 exists in multiple features; alphabetical first
+    // match would point to the wrong feature.
+    const firstDir = join(tempDir, ".nax", "features", "aaa-other-feature");
+    const activeDir = join(tempDir, ".nax", "features", "zzz-active-feature");
+    mkdirSync(firstDir, { recursive: true });
+    mkdirSync(activeDir, { recursive: true });
+    writeFileSync(join(firstDir, "prd.json"), makePrd(["US-001"]));
+    writeFileSync(join(activeDir, "prd.json"), makePrd(["US-001"]));
+
+    const story = makeStory("US-001");
+    const result = await resolveFeatureId(story, tempDir, "zzz-active-feature");
+    expect(result).toBe("zzz-active-feature");
+  });
+
+  test("activeFeature hint skips the global index scan", async () => {
+    const activeDir = join(tempDir, ".nax", "features", "active-feature");
+    mkdirSync(activeDir, { recursive: true });
+    writeFileSync(join(activeDir, "prd.json"), makePrd(["US-001"]));
+
+    let globCalls = 0;
+    const originalGlob = _resolverDeps.glob;
+    _resolverDeps.glob = ((pattern: string, opts: { cwd: string }) => {
+      globCalls++;
+      return originalGlob(pattern, opts);
+    }) as typeof _resolverDeps.glob;
+
+    const story = makeStory("US-001");
+    const result = await resolveFeatureId(story, tempDir, "active-feature");
+    expect(result).toBe("active-feature");
+    expect(globCalls).toBe(0);
+
+    _resolverDeps.glob = originalGlob;
+  });
+
+  test("falls back to index scan when activeFeature does not contain the story", async () => {
+    const activeDir = join(tempDir, ".nax", "features", "active-feature");
+    const otherDir = join(tempDir, ".nax", "features", "other-feature");
+    mkdirSync(activeDir, { recursive: true });
+    mkdirSync(otherDir, { recursive: true });
+    writeFileSync(join(activeDir, "prd.json"), makePrd(["US-999"]));
+    writeFileSync(join(otherDir, "prd.json"), makePrd(["US-001"]));
+
+    const story = makeStory("US-001");
+    const result = await resolveFeatureId(story, tempDir, "active-feature");
+    expect(result).toBe("other-feature");
+  });
+
+  test("falls back to index scan when activeFeature PRD does not exist", async () => {
+    const otherDir = join(tempDir, ".nax", "features", "other-feature");
+    mkdirSync(otherDir, { recursive: true });
+    writeFileSync(join(otherDir, "prd.json"), makePrd(["US-001"]));
+
+    const story = makeStory("US-001");
+    const result = await resolveFeatureId(story, tempDir, "nonexistent-feature");
+    expect(result).toBe("other-feature");
+  });
+
   test("clearFeatureResolverCache clears all cached results", async () => {
     const featDir = join(tempDir, ".nax", "features", "some-feature");
     mkdirSync(featDir, { recursive: true });
