@@ -130,6 +130,17 @@ export const AGENT_PROFILES: Record<string, AgentProfile> = {
       toolSchemaDialect: "openai",
     },
   },
+  opencode: {
+    caps: {
+      maxContextTokens: 128_000,
+      preferredPromptTokens: 12_000,
+      supportsToolCalls: true,
+      supportsSystemPrompt: true,
+      supportsMarkdown: true,
+      systemPromptStyle: "markdown-sections",
+      toolSchemaDialect: "openai",
+    },
+  },
   local: {
     caps: {
       maxContextTokens: 32_000,
