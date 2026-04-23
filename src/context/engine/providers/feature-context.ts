@@ -79,7 +79,7 @@ export class FeatureContextProviderV2 implements IContextProvider {
 
     try {
       const v1 = _featureContextV2Deps.createV1Provider();
-      const result = await v1.getContext(this.story, request.repoRoot, this.config);
+      const result = await v1.getContext(this.story, request.repoRoot, this.config, request.featureId);
       if (!result) {
         return { chunks: [], pullTools: [] };
       }

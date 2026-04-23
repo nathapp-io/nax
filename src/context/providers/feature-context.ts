@@ -45,13 +45,22 @@ export class FeatureContextProvider {
   /**
    * Fetch the feature context for the given story.
    * Returns null when: feature engine disabled, story unattached, no context.md.
+   *
+   * When `activeFeature` is provided (typically `ctx.prd.feature`), the resolver
+   * prefers that feature when the story ID matches. This avoids story-ID
+   * collisions across features that both number from US-001.
    */
-  async getContext(story: UserStory, workdir: string, config: NaxConfig): Promise<FeatureContextResult | null> {
+  async getContext(
+    story: UserStory,
+    workdir: string,
+    config: NaxConfig,
+    activeFeature?: string,
+  ): Promise<FeatureContextResult | null> {
     const logger = getLogger();
 
     if (!config.context?.featureEngine?.enabled) return null;
 
-    const featureId = await _featureContextDeps.resolveFeatureId(story, workdir);
+    const featureId = await _featureContextDeps.resolveFeatureId(story, workdir, activeFeature);
     if (!featureId) return null;
 
     const contextPath = `${workdir}/.nax/features/${featureId}/context.md`;

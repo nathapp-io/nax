@@ -100,13 +100,60 @@ async function buildIndex(workdir: string): Promise<Map<string, string | null>> 
 }
 
 /**
+ * Check whether a specific feature's prd.json contains the given story.
+ * Returns the featureId when the story is present, otherwise null.
+ *
+ * This bypasses the global index and is used when the caller already knows
+ * which feature the story belongs to (e.g. `nax run -f <feature>`) — it
+ * avoids story-ID collisions across features that restart numbering at US-001.
+ */
+async function tryResolveFromActiveFeature(
+  story: UserStory,
+  workdir: string,
+  activeFeature: string,
+): Promise<string | null> {
+  const logger = getLogger();
+  const prdPath = `${workdir}/.nax/features/${activeFeature}/prd.json`;
+
+  try {
+    const raw = await _resolverDeps.readFile(prdPath);
+    const prd = JSON.parse(raw) as { userStories?: Array<{ id: string }> };
+    for (const entry of prd.userStories ?? []) {
+      if (entry.id === story.id) return activeFeature;
+    }
+    return null;
+  } catch (err) {
+    logger.debug("feature-resolver", "Active-feature PRD unreadable — falling back to index scan", {
+      storyId: story.id,
+      activeFeature,
+      error: errorMessage(err),
+    });
+    return null;
+  }
+}
+
+/**
  * Resolve which feature a story belongs to by scanning .nax/features/<id>/prd.json.
  * Returns the feature directory name (featureId) or null if the story is unattached.
  *
- * The first call per workdir builds a full index of all features in one pass.
- * Subsequent calls for any story in the same workdir are O(1) map lookups.
+ * When `activeFeature` is provided, the resolver first checks that feature's prd.json
+ * directly. This prevents story-ID collisions (US-001 in multiple features) from
+ * pointing at the wrong feature and is the common path for `nax run -f <feature>`.
+ *
+ * When the hint does not resolve (missing PRD, story not listed), falls back to the
+ * global index: the first call per workdir builds a full index of all features in
+ * one pass; subsequent calls for any story in the same workdir are O(1) map lookups.
  */
-export async function resolveFeatureId(story: UserStory, workdir: string): Promise<string | null> {
+export async function resolveFeatureId(
+  story: UserStory,
+  workdir: string,
+  activeFeature?: string,
+): Promise<string | null> {
+  if (activeFeature) {
+    const hinted = await tryResolveFromActiveFeature(story, workdir, activeFeature);
+    if (hinted) return hinted;
+  }
+
   // Return from completed index if available
   const existing = _index.get(workdir);
   if (existing) {
