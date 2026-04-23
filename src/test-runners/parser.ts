@@ -209,7 +209,18 @@ function parseJestOutput(output: string): TestSummary {
     }
   }
 
-  return { passed, failed, failures };
+  // Jest output repeats FAIL <file> headers in multiple sections (run-summary and
+  // per-file detail), sometimes with different path forms (e.g. "src/foo.spec.ts"
+  // vs "foo.spec.ts"). Deduplicate by testName to prevent inflated failure counts.
+  const seen = new Set<string>();
+  const dedupedFailures = failures.filter((f) => {
+    const key = f.testName;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { passed, failed, failures: dedupedFailures };
 }
 
 /**
