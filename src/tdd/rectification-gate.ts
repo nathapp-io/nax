@@ -41,7 +41,7 @@ export const _rectificationGateDeps = {
  */
 async function getStoryChangedFiles(workdir: string, fromRef: string): Promise<ReadonlySet<string>> {
   const result = await _rectificationGateDeps.executeWithTimeout(
-    `git diff --name-only ${fromRef} HEAD`,
+    `git diff --name-only --relative ${fromRef} HEAD`,
     15,
     undefined,
     { cwd: workdir },
@@ -119,10 +119,12 @@ export async function runFullSuiteGate(
       const wasFiltered = filteredFailures.length < testSummary.failures.length;
 
       if (wasFiltered && filteredFailures.length === 0) {
+        const uniqueSuppressedFiles = [...new Set(testSummary.failures.map((f) => f.file))];
         logger.info("tdd", "Full suite gate: all failures are pre-existing — accepting as pass", {
           storyId: story.id,
-          suppressedCount: testSummary.failures.length,
-          suppressedFiles: testSummary.failures.map((f) => f.file),
+          suppressedFileCount: uniqueSuppressedFiles.length,
+          suppressedTestCount: testSummary.failures.length,
+          suppressedFiles: uniqueSuppressedFiles,
         });
         return { passed: true, cost: 0 };
       }
