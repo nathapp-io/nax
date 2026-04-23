@@ -64,6 +64,8 @@ export interface Operation<I, O, C = NaxConfig> {
 
 export interface OperationRequires<C> {
   readonly session: boolean;                 // if true, scope provides ISession in ctx
+  readonly sessionRole?: SessionRole;        // required iff session === true; default role (runner may override via InvokeOptions.sessionRole)
+  readonly sessionLifetime?: "fresh" | "warm"; // default "fresh"; "warm" = keepOpen:true per ADR-008 matrix
   readonly scope: "package" | "cross-package" | "repo";
   readonly permissions: PipelineStage;       // drives resolvePermissions()
   readonly config: ConfigSelector<C>;        // narrows NaxConfig → C
@@ -121,6 +123,9 @@ export interface InvokeOptions {
   readonly agentName?: string;              // override default agent (used by DebateSessionRunner)
   readonly signal?: AbortSignal;            // override scope-level signal
   readonly logger?: Logger;                 // override scope-level logger (used for per-proposer attribution)
+  readonly sessionRole?: SessionRole;       // override op's declared role (e.g. runner stamps "debate-hybrid" / "plan-i")
+  readonly discriminator?: string | number; // N-sibling disambiguator (debater index, proposal slot)
+  readonly sessionHandle?: string;          // full ACP wire handle override — matches existing AgentRunOptions.sessionHandle escape hatch
 }
 ```
 
@@ -131,7 +136,11 @@ What `scope.invoke()` does, per call:
 3. Slice config: `ctx.config = resolveSlice(op.requires.config, scope.config)`.
    > **Forward-reference:** after ADR-016 introduces `PackageView`, slicing is applied to `ctx.package.config` (per-package-merged) instead of `scope.config` (root). Behavior is identical for single-package repos; polyglot monorepos gain per-package override support automatically.
 4. Resolve permissions: `resolvePermissions(ctx.config, op.requires.permissions)` and set on the `IAgent` options for downstream calls.
-5. If `op.requires.session`, create/reuse session via `scope.sessionManager`; otherwise `ctx.session = undefined`.
+5. If `op.requires.session`, thread session identity onto `AgentRunOptions` via `{ featureName, storyId, sessionRole: opts.sessionRole ?? op.sessionRole, discriminator: opts.discriminator, keepOpen: op.requires.sessionLifetime === "warm" }`. `scope.invoke()` does **not** mint sessionIds — the two-level ID model is preserved intact:
+   - **SessionManager owns `descriptor.id` = `sess-<uuid>`** — the nax-internal state machine key. Minted by SessionManager, opaque to callers; used as the first argument to `runInSession()` (ADR-013).
+   - **Adapter owns `descriptor.handle` = `nax-<hash8>-<feature>-<storyId>-<role>[-<discriminator>]`** — the ACP wire name, derived by `computeAcpHandle()` in [src/agents/acp/adapter.ts:175-193](src/agents/acp/adapter.ts#L175-L193) from the `AgentRunOptions` fields above. Deterministic: same role + storyId + feature + workdir → same handle → adapter's `loadSession` resumes automatically. This is how rectification's "reuse the implementer session" already works today ([src/verification/rectification-loop.ts:167](src/verification/rectification-loop.ts#L167)) and it survives unchanged.
+
+   Ephemerality for reviewer "fresh-per-round" (ADR-008) is expressed via `keepOpen: false` on the relevant call, not via a separate flag — closing the session makes the next deterministic-handle derivation hit a fresh ACP session. If `op.requires.session` is false, `ctx.session = undefined`.
 6. Build pre-scoped logger: `opts.logger ?? scope.services.logger.child({ storyId, packageDir, op: op.name })`.
 7. Thread `opts.signal ?? scope.signal` through as `ctx.signal`.
 8. Call `op.execute(ctx, input)`.
@@ -159,7 +168,7 @@ Compose via a thin composite operation that calls `scope.invoke()` on its parts.
 | `review/` semantic + adversarial | `semanticReview`, `adversarialReview`, `review` (composite, optional) | N/A (session-less) |
 | `tdd/` writer + implementer + verifier | `writeTest`, `implement`, `verify` | `ThreeSessionRunner` invokes each in its session |
 | `acceptance/` generate + refine + diagnose + fix | `generateAcceptance`, `refineAcceptance`, `diagnoseAcceptance`, `fixAcceptance` | `fixAcceptance` may use `SingleSessionRunner` |
-| `debate/` one-shot + stateful + plan | `debateProposer`, `debateResolve` (+ synthesis/judge variants) | `DebateSessionRunner` orchestrates proposers + resolver |
+| `debate/` one-shot + stateful + hybrid | `proposeCandidate`, `rebutCandidate`, `reviewDialogue`, `rankCandidates` | `DebateSessionRunner` (three internal modes) — used by both plan and review stages |
 | `routing/` keyword + LLM + plugin-chain | One `classifyRoute` op; strategies are internal | N/A |
 | `verification/` rectification-loop | `rectify` is an operation (one attempt); the loop is **control-flow** | N/A |
 | Adapter `.plan()` | `plan` operation | N/A (wraps `agent.run()` internally) |
@@ -200,7 +209,9 @@ Three properties this preserves:
 
 ### 2. `ISessionRunner` implementations
 
-Topology unit from ADR-013. Implementations invoke operations via `scope.invoke()`; they do not invoke `IAgent` directly.
+`ISessionRunner` is the abstraction for **session topologies** — how many sessions a logical unit of work opens, how they are sequenced, when they stay warm, when they close. It is not TDD-specific, and `SingleSessionRunner` is not the canonical form. Each concrete runner captures a distinct topology that may be reused across stages.
+
+Runners invoke operations via `scope.invoke()`; they do not invoke `IAgent` directly. **Topology is the runner's concern; content is the op's.** The same op composes into different runners when the topology differs; the same runner orchestrates different ops when the stage differs (e.g. `DebateSessionRunner` orchestrates plan-specific ops in the plan stage and review-specific ops in the review stage).
 
 ```typescript
 // src/sessions/runners/types.ts (ADR-013, re-referenced)
@@ -250,39 +261,93 @@ export class ThreeSessionRunner implements ISessionRunner<TddInput, TddResult> {
 
 #### 2.3 `DebateSessionRunner`
 
-N proposer sessions in parallel + 1 resolver session. Per-proposer isolation via `InvokeOptions.agentName`, `signal`, `logger` overrides — no `RunScope` fork.
+The third topology: N debater sessions (± a reviewer-dialogue session) across M rounds. Used by **both the plan stage and the review stage** — same runner, different ops plugged in.
+
+Reflects three internal modes already present in today's [src/debate/session.ts:24-174](src/debate/session.ts#L24-L174). The runner absorbs the mode dispatch:
+
+| Mode | Topology | Current file | Used by |
+|:---|:---|:---|:---|
+| `one-shot` | N × `complete()`, no sessions | [src/debate/session-one-shot.ts](src/debate/session-one-shot.ts) | panel review with `sessionMode: "one-shot"` |
+| `stateful` | N debater sessions, kept warm across proposal → critique rounds | [src/debate/session-stateful.ts](src/debate/session-stateful.ts) | panel review with `sessionMode: "stateful"` |
+| `hybrid` | N stateful debaters + reviewer-dialogue session across proposal + rebuttal rounds | [src/debate/session-hybrid.ts](src/debate/session-hybrid.ts) | plan stage; review with hybrid mode |
+
+**Decomposition — debate is ops inside a topology runner.** The runner owns *topology* (how many sessions, keep-open boundaries, round sequencing, abort isolation). The ops own *content* (prompt building, response parsing, validation). Four ops cover all three modes:
+
+| Op | What it does | Used in mode(s) |
+|:---|:---|:---|
+| `proposeCandidate` | One debater's proposal (plan draft or review verdict) | all three |
+| `rebutCandidate` | Debater refines under critique | stateful, hybrid |
+| `reviewDialogue` | Reviewer critiques / synthesizes across rounds | hybrid |
+| `rankCandidates` | Pick winner from the N debaters | all three |
+
+The same `proposeCandidate` op runs whether the stage is `plan` or `review` — the builder and config slice differ, but the contract is identical. That is the point of making debate ops-based.
 
 ```typescript
-export class DebateSessionRunner implements ISessionRunner<DebateInput, DebateResult> {
-  async run(scope: RunScope, input: DebateInput, opts: RunnerOptions): Promise<DebateResult> {
-    const results = await Promise.allSettled(
-      input.debaters.map((debater) => {
-        const proposerSignal = linkAbortSignals(opts.signal);
-        const proposerLogger = scope.services.logger.child({
-          storyId: opts.storyId,
-          debater: debater.agent,
-        });
-        return scope.invoke(debateProposer, { debater, prompt: input.prompt }, {
+export class DebateSessionRunner<I, O> implements ISessionRunner<DebateInput<I>, DebateResult<O>> {
+  async run(scope: RunScope, input: DebateInput<I>, opts: RunnerOptions): Promise<DebateResult<O>> {
+    switch (input.mode) {
+      case "one-shot": return this.runOneShot(scope, input, opts);
+      case "stateful": return this.runStateful(scope, input, opts);
+      case "hybrid":   return this.runHybrid(scope, input, opts);
+    }
+  }
+
+  private async runOneShot(scope, input, opts) {
+    const proposals = await Promise.allSettled(
+      input.debaters.map((debater, i) =>
+        scope.invoke(input.proposeOp, { debater, prompt: input.prompt }, {
           ...opts,
           agentName: debater.agent,
-          signal: proposerSignal,
-          logger: proposerLogger,
-        });
-      }),
+          sessionRole: `debate-${opts.stage}`,        // e.g. "debate-plan", "debate-review"
+          discriminator: i,
+          signal: linkAbortSignals(opts.signal),
+          logger: scope.services.logger.child({ storyId: opts.storyId, debater: debater.agent }),
+        }),
+      ),
     );
-
-    const successful = results.filter(isFulfilled).map((p) => p.value);
-    return scope.invoke(debateResolve, { proposals: successful, resolver: input.resolver }, opts);
+    return scope.invoke(input.rankOp, { proposals: proposals.filter(isFulfilled).map(p => p.value) }, opts);
   }
+
+  private async runStateful(scope, input, opts)  { /* proposals kept warm across critique round */ }
+  private async runHybrid(scope, input, opts)    { /* proposals + reviewDialogue interleaved across rounds */ }
 }
 ```
 
-Key points:
+Key properties:
 
-- Each proposer's middleware envelope fires independently → N audit entries, N cost events, each tagged with the proposer's `agentName`.
-- One proposer's timeout/error doesn't kill siblings (`Promise.allSettled` + per-proposer `AbortController`).
-- The runner does **not** construct an `AgentManager`, does **not** build prompts, does **not** resolve permissions. All that is inside `scope.invoke()`.
-- `src/debate/session-helpers.ts` shrinks drastically: proposal resolution logic collapses to `DebateSessionRunner.run()`; `_debateSessionDeps.createManager` and the orphan `createAgentManager` import delete (already removed by ADR-014 Phase 2).
+- Each debater's middleware envelope fires independently → N audit entries, N cost events, each tagged with `agentName` + `sessionRole`. A 401 on debater 0 is visibly distinct from a 401 on debater 2.
+- One debater's timeout/error does not kill siblings (`Promise.allSettled` + per-debater `AbortController`).
+- Per-debater sessionId is derived by `computeAcpHandle` from `{ sessionRole, discriminator }` — so `debate-review-0`, `debate-review-1`, `debate-hybrid-0`, `plan-0` all emerge from the same derivation rule. No inline string construction.
+- The runner does **not** construct an `AgentManager`, does **not** build prompts, does **not** resolve permissions — all of that is inside `scope.invoke()`.
+- `src/debate/session-helpers.ts` collapses: mode-specific topology logic moves into the runner; `_debateSessionDeps.createManager` and the orphan `createAgentManager` import are already removed by ADR-014 Phase 2. Files under `src/debate/` become thin strategy methods on the runner (or move to `src/sessions/runners/debate/*`).
+
+#### 2.4 What this ADR does NOT change
+
+The session primitives from ADR-007/008/011/013 are preserved intact. `ISessionRunner` is a topology abstraction *over* them, not a replacement:
+
+| Primitive | Owner | Preserved as-is |
+|:---|:---|:---|
+| `sess-<uuid>` descriptor ID | SessionManager | Yes — `runInSession(id, ...)` signature unchanged |
+| `nax-<hash8>-<feature>-<storyId>-<role>` wire handle | `computeAcpHandle()` in adapter | Yes — still the single place that builds the name |
+| `keepSessionOpen` per-role policy (ADR-008 matrix) | Caller of `agent.run()` | Yes — ops pass `keepOpen` on `AgentRunOptions` |
+| `sweepFeatureSessions` at story completion | SessionManager | Yes — still the single cleanup point |
+| `AgentRunOptions.sessionHandle` override | Adapter | Yes — exposed through `InvokeOptions.sessionHandle` for dialogue-style per-generation names |
+| Implementer session continuity across rectification | `computeAcpHandle` determinism | Yes — same role → same handle → automatic resume |
+| Fresh sessionId per reviewer round | `keepOpen: false` + deterministic handle | Yes — next round's `loadSession` creates fresh ACP session |
+
+What changes is the *path* by which operations reach these primitives: via `scope.invoke()` threading `AgentRunOptions` from `op.requires` + `InvokeOptions`, instead of each subsystem assembling the request by hand.
+
+**SessionRole latent bug fix.** Debate roles today (`debate-review-0`, `debate-hybrid-1`, `debate-hybrid-fallback`) bypass the `SessionRole` union at [src/session/types.ts:56-70](src/session/types.ts#L56-L70) and are constructed inline as strings ([src/debate/session-stateful.ts:160](src/debate/session-stateful.ts#L160), [src/debate/session-hybrid.ts:169](src/debate/session-hybrid.ts#L169)). Phase 2 of this ADR extends the union:
+
+```typescript
+export type SessionRole =
+  | /* existing 14 fixed roles */
+  | `debate-${string}`
+  | `debate-${string}-fallback`
+  | `plan-${number}`;
+```
+
+Runners generate these via `{ sessionRole, discriminator }` passed through `InvokeOptions` — no more inline string building at call sites.
 
 ---
 
@@ -434,6 +499,10 @@ is control-flow. It lives in `src/control/`. It imports `RunScope` and `Operatio
 
 #### 4.1 `plan` operation
 
+Two shapes, selected by the plan stage based on `config.debate.stages.plan.enabled`:
+
+**Shape A — simple `plan` op (debate disabled):** single `agent.run()` call.
+
 ```typescript
 // src/operations/plan.ts
 export const plan: Operation<PlanInput, PlanResult, PlanConfig> = {
@@ -455,6 +524,27 @@ export const plan: Operation<PlanInput, PlanResult, PlanConfig> = {
   },
 };
 ```
+
+**Shape B — debated plan (debate enabled):** plan stage invokes `DebateSessionRunner` with plan-specific ops. The stage module picks the shape; both paths produce a `PlanResult`:
+
+```typescript
+// src/pipeline/stages/plan.ts (sketch)
+async function planStage(scope, story, opts) {
+  if (scope.config.debate.stages.plan.enabled) {
+    return new DebateSessionRunner().run(scope, {
+      mode: scope.config.debate.stages.plan.mode,  // "one-shot" | "stateful" | "hybrid"
+      debaters: scope.config.debate.stages.plan.debaters,
+      proposeOp: planProposeCandidate,             // plan-specific builder
+      rebutOp:   planRebutCandidate,
+      rankOp:    planRankCandidates,
+      input: planInput,
+    }, opts);
+  }
+  return scope.invoke(plan, planInput, opts);
+}
+```
+
+Note: `proposeCandidate`, `rebutCandidate`, `rankCandidates` are the same ops used by the review stage's debated path (§2.3) — differing only in the builder and config slice passed to the op instance. Today's `plan-<i>` wire roles (ADR-008) fall out of the runner passing `sessionRole: "plan"` + `discriminator: i` through `InvokeOptions`.
 
 #### 4.2 `decompose` operation
 
@@ -504,10 +594,18 @@ Operation<I, O, C> (semantic unit)
   ├─ requires: { session, scope, permissions, config }
   └─ execute(ctx, input)
 
-ISessionRunner<I, O> (topology, ADR-013)
-  ├─ SingleSessionRunner
-  ├─ ThreeSessionRunner                       // tdd
-  └─ DebateSessionRunner                      // debate — no RunScope fork
+ISessionRunner<I, O> (topology, ADR-013 — reused across stages)
+  ├─ SingleSessionRunner                      // implementer, rectifier, diagnose, source-fix
+  ├─ ThreeSessionRunner                       // tdd (writer → implementer → verifier)
+  └─ DebateSessionRunner                      // plan AND review stages
+     ├─ mode: "one-shot"                      // N × complete(), no sessions
+     ├─ mode: "stateful"                      // N debater sessions across rounds
+     └─ mode: "hybrid"                        // N stateful debaters + reviewer-dialogue
+
+Session primitives (ADR-007/008/011/013 — preserved)
+  ├─ SessionManager.runInSession(sess-<uuid>, ...)       // unchanged
+  ├─ computeAcpHandle(workdir, feature, storyId, role)   // unchanged — still in adapter
+  └─ keepSessionOpen per-role matrix                     // unchanged
 
 Control-flow (src/control/, non-operations)
   ├─ escalation                               // tier decisions
@@ -567,7 +665,7 @@ Four phases. Phase 1 and Phase 2 are independent; Phase 3 and Phase 4 depend on 
   2. `generateAcceptance`, `refineAcceptance`, `diagnoseAcceptance`, `fixAcceptance`
   3. `semanticReview`, `adversarialReview` (and optional `review` composite)
   4. `writeTest`, `implement`, `verify` (TDD — behind `ThreeSessionRunner`)
-  5. `debateProposer`, `debateResolve` (behind `DebateSessionRunner`)
+  5. `proposeCandidate`, `rebutCandidate`, `reviewDialogue`, `rankCandidates` — the debate ops. Simultaneously extend `SessionRole` union to admit `debate-*` / `plan-<n>` forms (§2.3). Ship `DebateSessionRunner` with all three modes; switch plan stage and review stage to use it.
   6. `rectify`
 - Each migration ships independently and uses the middleware envelope from ADR-014.
 - **Exit criteria:** All subsystems invoke through `scope.invoke()`. No stage constructs ad-hoc prompt-permission-session ceremony.
@@ -619,7 +717,15 @@ Four phases. Phase 1 and Phase 2 are independent; Phase 3 and Phase 4 depend on 
 
 **Rejected** (ADR-014 §C already rejected `child()` generally). Per-proposer isolation is a per-call concern (own signal, own logger), not a scope-level concern. `InvokeOptions.{agentName, signal, logger}` covers it. Introducing child scopes re-raises all the lifecycle questions (who closes what, does child inherit or own) for no gain.
 
-### F. `ConfigSelector<C>` is lambda-only (no keyof-array sugar)
+### F. Separate `StatefulDebateRunner` / `OneShotDebateRunner` / `HybridDebateRunner`
+
+**Rejected.** The three modes differ in topology details (keep-open policy, round count, whether a reviewer-dialogue participates) but share debater vocabulary, per-debater abort isolation, and ranking. A mode parameter on one runner matches how today's [src/debate/session.ts](src/debate/session.ts) already dispatches; splitting into three runners triples the surface without simplifying any call site. The stages still have to choose a mode — choosing it on the runner input vs choosing which runner class to instantiate is the same decision, and input-choice keeps `ISessionRunner` a small enumerable set.
+
+### G. Mint sessionIds inside `scope.invoke()`
+
+**Rejected.** There are already two sessionIds in the stack (`sess-<uuid>` owned by SessionManager; ACP wire handle owned by adapter's `computeAcpHandle`) and both have correct owners per ADR-007/008/011/013. Moving mint logic into `scope.invoke()` would duplicate one of them or conflict with deterministic handle derivation (which is what makes rectification's automatic session-resume work). `scope.invoke()` threads `AgentRunOptions`; SessionManager and the adapter do what they already do.
+
+### H. `ConfigSelector<C>` is lambda-only (no keyof-array sugar)
 
 **Rejected.** 95% of operations want to pick top-level keys. Writing `(c) => ({ review: c.review })` for every op is noise. Keyof-array covers the common case; lambda covers reshape. Both are type-checked.
 
