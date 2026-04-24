@@ -321,13 +321,16 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // emitted inside executeUnified/executeSequential after bus wiring.
 
     // Initialize run: check agent, reconcile state, validate limits
+    // Fall back to runtime.agentManager.getAgent when no explicit agentGetFn is
+    // provided (runner.ts derives agentGetFn from runtime only after setupRun returns).
+    const effectiveAgentGetFn = options.agentGetFn ?? runtime.agentManager.getAgent.bind(runtime.agentManager);
     const { initializeRun } = await import("./run-initialization");
     const initResult = await initializeRun({
       config,
       prdPath,
       workdir,
       dryRun,
-      agentGetFn: options.agentGetFn,
+      agentGetFn: effectiveAgentGetFn,
     });
     prd = initResult.prd;
     // initializeRun calls loadPRD() internally, producing a new object.
