@@ -1,6 +1,4 @@
-import type { NaxConfig } from "../config";
-import type { ConfigLoader } from "../config/loader-runtime";
-import type { ConfigSelector } from "../config/selector";
+import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
 
 export interface PackageView {
   readonly packageDir: string;

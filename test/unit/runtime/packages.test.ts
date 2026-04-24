@@ -1,10 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import { createPackageRegistry } from "../../../src/runtime/packages";
-import { createConfigLoader } from "../../../src/config/loader-runtime";
-import { pickSelector } from "../../../src/config/selector";
-import type { NaxConfig } from "../../../src/config";
+import { createConfigLoader, pickSelector } from "../../../src/config";
+import { makeNaxConfig } from "../../helpers";
 
-const minConfig = { routing: { strategy: "keyword" } } as unknown as NaxConfig;
+const minConfig = makeNaxConfig({ routing: { strategy: "keyword" } });
 const routingSel = pickSelector("routing-pkg-test", "routing");
 
 describe("PackageRegistry", () => {
