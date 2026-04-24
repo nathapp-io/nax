@@ -43,3 +43,5 @@ export { deepMergeConfig } from "./merger";
 export { resolveProfileName, loadProfile, loadProfileEnv, listProfiles } from "./profile";
 export { pickSelector, reshapeSelector } from "./selector";
 export type { ConfigSelector } from "./selector";
+export { createConfigLoader } from "./loader-runtime";
+export type { ConfigLoader } from "./loader-runtime";
