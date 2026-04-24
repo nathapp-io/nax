@@ -296,7 +296,7 @@ export async function runReview(
       };
       const semanticCfg = config.semantic ?? {
         modelTier: "balanced" as const,
-        diffMode: "embedded" as const,
+        diffMode: "ref" as const,
         resetRefOnRerun: false,
         rules: [] as string[],
         timeoutMs: 600_000,
