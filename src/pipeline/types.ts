@@ -144,6 +144,18 @@ export interface PipelineContext {
    */
   agentManager?: import("../agents").IAgentManager;
   /**
+   * Per-run NaxRuntime (ADR-018 Wave 1).
+   * Owns AgentManager, SessionManager, ConfigLoader, PackageRegistry,
+   * CostAggregator, PromptAuditor, signal. Set once in run-setup.ts.
+   */
+  runtime?: import("../runtime").NaxRuntime;
+  /**
+   * Package-scoped view for the current story's package (ADR-018 Wave 1).
+   * Use this for all op config slicing — ctx.packageView.select(selector).
+   * Set once per story in iteration-runner.ts.
+   */
+  packageView?: import("../runtime").PackageView;
+  /**
    * Per-run plugin-provider cache (Finding 5 / issue #473).
    * Constructed once in runner.ts and disposed at run completion.
    * When present, context stage and stage-assembler call
