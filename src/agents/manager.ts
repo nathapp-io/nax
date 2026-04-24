@@ -7,9 +7,14 @@
 
 import { EventEmitter } from "node:events";
 import type { NaxConfig } from "../config";
+import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
+// Leaf import to avoid barrel cycle:
+// src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
+import { MiddlewareChain } from "../runtime/agent-middleware";
+import type { MiddlewareContext } from "../runtime/agent-middleware";
 import { cancellableDelay } from "../utils/bun-deps";
 import type {
   AgentCompleteOutcome,
@@ -54,12 +59,20 @@ export class AgentManager implements IAgentManager {
   private readonly _prunedFallback = new Set<string>();
   private readonly _emitter = new EventEmitter();
   private readonly _logger: LoggerLike;
+  private readonly _middleware: MiddlewareChain;
+  private readonly _runId: string;
   readonly events: AgentManagerEvents;
 
-  constructor(config: NaxConfig, registry?: AgentRegistry, opts?: { logger?: LoggerLike }) {
+  constructor(
+    config: NaxConfig,
+    registry?: AgentRegistry,
+    opts?: { logger?: LoggerLike; middleware?: MiddlewareChain; runId?: string },
+  ) {
     this._config = config;
     this._registry = registry;
     this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {}, info: () => {} };
+    this._middleware = opts?.middleware ?? MiddlewareChain.empty();
+    this._runId = opts?.runId ?? crypto.randomUUID();
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
@@ -357,17 +370,12 @@ export class AgentManager implements IAgentManager {
     }
   }
 
-  async run(request: AgentRunRequest): Promise<import("./types").AgentResult> {
-    const outcome = await this.runWithFallback(request);
-    return { ...outcome.result, agentFallbacks: outcome.fallbacks };
+  async run(request: AgentRunRequest): Promise<AgentResult> {
+    return this.runAs(this.getDefault(), request);
   }
 
-  async complete(
-    prompt: string,
-    options: import("./types").CompleteOptions,
-  ): Promise<import("./types").CompleteResult> {
-    const outcome = await this.completeWithFallback(prompt, options);
-    return outcome.result;
+  async complete(prompt: string, options: CompleteOptions): Promise<CompleteResult> {
+    return this.completeAs(this.getDefault(), prompt, options);
   }
 
   getAgent(name: string): import("./types").AgentAdapter | undefined {
@@ -375,13 +383,72 @@ export class AgentManager implements IAgentManager {
   }
 
   async runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult> {
-    const outcome = await this.runWithFallback(request, agentName);
-    return { ...outcome.result, agentFallbacks: outcome.fallbacks };
+    const resolvedPermissions = resolvePermissions(
+      (request.runOptions.config as NaxConfig | undefined) ?? this._config,
+      request.runOptions.pipelineStage ?? "run",
+    );
+    const augmented: AgentRunRequest = {
+      ...request,
+      runOptions: { ...request.runOptions, resolvedPermissions },
+    };
+    const ctx: MiddlewareContext = {
+      runId: this._runId,
+      agentName,
+      kind: "run",
+      request: augmented,
+      prompt: null,
+      config: this._config,
+      signal: request.signal ?? request.runOptions.abortSignal,
+      resolvedPermissions,
+      storyId: request.runOptions.storyId,
+      stage: request.runOptions.pipelineStage,
+    };
+    const start = Date.now();
+    await this._middleware.runBefore(ctx);
+    try {
+      if (!request.executeHop && !this._resolveRegistry().getAgent(agentName)) {
+        throw new NaxError(`Agent "${agentName}" not found in registry`, "AGENT_NOT_FOUND", {
+          stage: "run",
+          agentName,
+        });
+      }
+      const outcome = await this.runWithFallback(augmented, agentName);
+      const result = { ...outcome.result, agentFallbacks: outcome.fallbacks };
+      await this._middleware.runAfter(ctx, result, Date.now() - start);
+      return result;
+    } catch (err) {
+      await this._middleware.runOnError(ctx, err, Date.now() - start);
+      throw err;
+    }
   }
 
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
-    const outcome = await this.completeWithFallback(prompt, options, agentName);
-    return outcome.result;
+    const resolvedPermissions = resolvePermissions(
+      (options.config as NaxConfig | undefined) ?? this._config,
+      options.pipelineStage ?? "complete",
+    );
+    const augmented: CompleteOptions = { ...options, resolvedPermissions };
+    const ctx: MiddlewareContext = {
+      runId: this._runId,
+      agentName,
+      kind: "complete",
+      request: null,
+      prompt,
+      config: this._config,
+      resolvedPermissions,
+      storyId: options.storyId,
+      stage: options.pipelineStage,
+    };
+    const start = Date.now();
+    await this._middleware.runBefore(ctx);
+    try {
+      const outcome = await this.completeWithFallback(prompt, augmented, agentName);
+      await this._middleware.runAfter(ctx, outcome.result, Date.now() - start);
+      return outcome.result;
+    } catch (err) {
+      await this._middleware.runOnError(ctx, err, Date.now() - start);
+      throw err;
+    }
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
@@ -389,9 +456,11 @@ export class AgentManager implements IAgentManager {
   }
 
   async planAs(agentName: string, options: PlanOptions): Promise<PlanResult> {
+    const resolvedPermissions = resolvePermissions((options.config as NaxConfig | undefined) ?? this._config, "plan");
+    const augmented: PlanOptions = { ...options, resolvedPermissions };
     const adapter = this._resolveRegistry().getAgent(agentName);
     if (!adapter) return { specContent: `Agent "${agentName}" not found` };
-    return adapter.plan(options);
+    return adapter.plan(augmented);
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
