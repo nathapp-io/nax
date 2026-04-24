@@ -83,7 +83,7 @@ describe("run() — session flow", () => {
     expect(closeCalled).toBe(true);
   });
 
-  test("uses approve-all permission mode when permissionProfile is unrestricted", async () => {
+  test("uses approve-all permission mode when resolvedPermissions.mode is approve-all", async () => {
     let capturedMode = "";
     const session = makeSession();
     const client = makeClient(session, {
@@ -96,7 +96,7 @@ describe("run() — session flow", () => {
 
     await new AcpAgentAdapter("claude").run(
       makeRunOptions({
-        config: { execution: { permissionProfile: "unrestricted" } } as import("../../../../src/config").NaxConfig,
+        resolvedPermissions: { mode: "approve-all", skipPermissions: true },
       }),
     );
     expect(capturedMode).toBe("approve-all");
