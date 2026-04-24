@@ -33,6 +33,7 @@ interface OperationBase<I, O, C> {
 
 export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "run";
+  /** Reserved for future model-tier override; not yet consumed by callOp (Wave 3). */
   readonly mode?: string;
   readonly session: {
     readonly role: SessionRole;

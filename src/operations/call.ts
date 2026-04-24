@@ -1,5 +1,6 @@
 import { pickSelector, resolveModelForAgent } from "../config";
 import type { ConfigSelector, NaxConfig } from "../config";
+import { NaxError } from "../errors";
 import { composeSections, join } from "../prompts/compose";
 import type {
   CallContext,
@@ -83,5 +84,13 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     noFallback: runOp.noFallback,
   };
   const outcome = await runOpSession(runnerCtx);
-  return op.parse(outcome.primaryResult.output ?? "");
+  const rawOutput = outcome.primaryResult.output;
+  if (!rawOutput) {
+    throw new NaxError(`callOp[${op.name}]: agent returned no output`, "CALL_OP_NO_OUTPUT", {
+      stage: op.stage,
+      storyId: ctx.storyId,
+      agentName: ctx.agentName,
+    });
+  }
+  return op.parse(rawOutput);
 }

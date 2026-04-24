@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { classifyRouteOp } from "../../../src/operations/classify-route";
-import { makeTestRuntime } from "../../helpers/runtime";
+import { makeTestRuntime } from "../../helpers";
 
 describe("classifyRouteOp shape", () => {
   test("kind is complete", () => {
@@ -18,7 +18,7 @@ describe("classifyRouteOp.build()", () => {
   test("build returns role + task sections with content", () => {
     const runtime = makeTestRuntime();
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(classifyRouteOp.config as import("../../../src/config").ConfigSelector<Record<string, unknown>>) };
+    const ctx = { packageView: view, config: view.select(classifyRouteOp.config) };
     const composeInput = classifyRouteOp.build(
       { title: "Add button", description: "Add a red button", acceptanceCriteria: ["Button exists"], tags: [] },
       ctx,

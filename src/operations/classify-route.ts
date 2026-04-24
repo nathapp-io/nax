@@ -1,4 +1,5 @@
-import { routingConfigSelector } from "../config/selectors";
+import { routingConfigSelector } from "../config";
+import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
 import type { BuildContext, CompleteOperation } from "./types";
 
@@ -11,6 +12,9 @@ export interface ClassifyRouteOutput {
 }
 
 type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
+
+const VALID_COMPLEXITY = new Set<string>(["simple", "medium", "complex", "expert"]);
+const VALID_TIERS = new Set<string>(["fast", "balanced", "powerful"]);
 
 const CLASSIFY_ROLE = `You are a story classifier that assigns complexity and model tier to user stories.
 Respond with JSON only — no explanation text before or after.`;
@@ -54,10 +58,18 @@ export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRout
       .trim()
       .replace(/^```json?\s*/i, "")
       .replace(/\s*```$/, "");
-    const parsed = JSON.parse(trimmed) as ClassifyRouteOutput;
-    if (!parsed.complexity || !parsed.modelTier) {
-      throw new Error(`classify-route: invalid response — ${JSON.stringify(parsed)}`);
+    const raw = JSON.parse(trimmed) as Record<string, unknown>;
+    if (
+      !VALID_COMPLEXITY.has(raw.complexity as string) ||
+      !VALID_TIERS.has(raw.modelTier as string) ||
+      typeof raw.reasoning !== "string"
+    ) {
+      throw new NaxError(
+        `classify-route: invalid response — ${JSON.stringify(raw)}`,
+        "CLASSIFY_ROUTE_INVALID_RESPONSE",
+        { stage: "run", parsed: raw },
+      );
     }
-    return parsed;
+    return raw as unknown as ClassifyRouteOutput;
   },
 };
