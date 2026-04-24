@@ -13,7 +13,6 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
-import { createAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { PluginProviderCache } from "../context/engine";
 import type { LoadedHooksConfig } from "../hooks";
@@ -114,8 +113,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
   const allStoryMetrics: any[] = [];
 
-  const agentManager = createAgentManager(config);
-  const agentGetFn = agentManager.getAgent.bind(agentManager);
   const pluginProviderCache = new PluginProviderCache();
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
@@ -139,8 +136,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
     skipPrecheck,
     headless,
     formatterMode,
-    agentGetFn,
-    agentManager,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
     // BUG-017: Pass getters for run.complete event on SIGTERM
@@ -156,8 +151,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
     pluginRegistry,
     interactionChain,
     shutdownController,
+    runtime,
   } = setupResult;
   prd = setupResult.prd;
+  const agentManager = runtime.agentManager;
+  const agentGetFn = agentManager.getAgent.bind(agentManager);
 
   try {
     // ── Phase 2: Execution ──────────────────────────────────────────────────────
@@ -241,6 +239,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       sessionManager,
       agentManager,
       pluginProviderCache,
+      runtime,
     });
 
     const { durationMs, acceptancePassed } = completionResult;

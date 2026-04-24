@@ -51,6 +51,7 @@ export interface RunnerSetupResult {
   interactionChain: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["interactionChain"];
   prd: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["prd"];
   shutdownController: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["shutdownController"];
+  runtime: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["runtime"];
 }
 
 /**

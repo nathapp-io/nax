@@ -58,6 +58,8 @@ export interface RunnerCompletionOptions {
   agentManager?: import("../agents").IAgentManager;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed in handleRunCompletion. */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
+  /** NaxRuntime created in setup phase — closed at end of completion phase. */
+  runtime?: import("../runtime").NaxRuntime;
 }
 
 /**
@@ -248,6 +250,10 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // Commit status.json and any other nax runtime files left dirty at run end
   logger?.debug("execution", "Completion phase — auto-committing dirty files");
   await autoCommitIfDirty(options.workdir, "run.complete", "run-summary", options.feature);
+
+  // Close the NaxRuntime — flushes auditors, drains cost aggregator, aborts signal
+  await options.runtime?.close();
+
   logger?.debug("execution", "Completion phase done — returning to runner");
 
   return {
