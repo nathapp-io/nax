@@ -34,7 +34,7 @@ import {
 } from "../../verification/shared-rectification-loop";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
-import { runTestWriterRectification, splitAdversarialFindingsByScope } from "./autofix-adversarial";
+import { runTestWriterRectification, splitFindingsByScope } from "./autofix-adversarial";
 
 const CLARIFY_REGEX = /^CLARIFY:\s*(.+)$/ms;
 /** Matches the REVIEW-003 reviewer contradiction escape hatch emitted by the implementer. */
@@ -163,13 +163,12 @@ export const autofixStage: PipelineStage = {
       if (
         failedChecks.length > 0 &&
         failedChecks.every((c) => {
-          if (c.check !== "adversarial") return false;
-          const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(c, testFilePatterns);
+          const { testFindings, sourceFindings } = splitFindingsByScope(c, testFilePatterns);
           return testFindings !== null && sourceFindings === null;
         })
       ) {
         const skippedFindingCount = failedChecks.flatMap((c) => c.findings ?? []).length;
-        logger.warn("autofix", "Adversarial review found test-file issues — skipped (no-test strategy)", {
+        logger.warn("autofix", "Review found test-file issues only — skipped (no-test strategy)", {
           storyId: ctx.story.id,
           skippedFindingCount,
         });
@@ -344,9 +343,10 @@ async function runAgentRectification(
   }
   const { agentManager } = ctx;
 
-  // #409: Split adversarial findings by file scope.
+  // #409 #669: Split findings by file scope.
   // Test-file findings cannot be fixed by the implementer (isolation constraint) —
   // route them to a separate test-writer rectification call before the implementer loop.
+  // Handles both adversarial checks (structured findings[]) and lint checks (raw output).
   let implementerChecks = failedChecks;
   let testWriterChecks: ReviewCheckResult[] = [];
 
@@ -355,17 +355,19 @@ async function runAgentRectification(
       ? ctx.rootConfig.execution.smartTestRunner?.testFilePatterns
       : undefined;
   for (const check of failedChecks) {
-    if (check.check === "adversarial" && check.findings?.length) {
-      const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check, stageTestFilePatterns);
-      if (testFindings) testWriterChecks = [...testWriterChecks, testFindings];
-      if (sourceFindings) {
-        // Use reference equality (c === check) rather than type matching so that multiple
-        // adversarial entries don't all get replaced with the last iteration's sourceFindings.
-        implementerChecks = implementerChecks.map((c) => (c === check ? sourceFindings : c));
-      } else {
-        // All adversarial findings are in test files — remove only this check from implementer
-        // checks using reference equality so other adversarial entries (if present) are not dropped.
-        implementerChecks = implementerChecks.filter((c) => c !== check);
+    if (check.check === "adversarial" || check.check === "lint") {
+      const { testFindings, sourceFindings } = splitFindingsByScope(check, stageTestFilePatterns);
+      // null/null means the check has no classifiable findings — leave implementerChecks unchanged.
+      if (testFindings || sourceFindings) {
+        if (testFindings) testWriterChecks = [...testWriterChecks, testFindings];
+        if (sourceFindings) {
+          // Use reference equality (c === check) rather than type matching so that multiple
+          // entries don't all get replaced with the last iteration's sourceFindings.
+          implementerChecks = implementerChecks.map((c) => (c === check ? sourceFindings : c));
+        } else {
+          // All findings are in test files — remove only this check from implementer checks.
+          implementerChecks = implementerChecks.filter((c) => c !== check);
+        }
       }
     }
   }
@@ -376,24 +378,24 @@ async function runAgentRectification(
     if (ctx.routing.testStrategy === "no-test") {
       // STRAT-001: no-test stories must not modify test files — skip test-writer session.
       // The execute()-level early exit handles the common case; this guard is a safety net
-      // for mixed failures (adversarial test-file + other checks) that bypass the early exit.
+      // for mixed failures (test-file checks + other checks) that bypass the early exit.
       logger.warn("autofix", "Skipping test-writer rectification (no-test strategy)", {
         storyId: ctx.story.id,
-        skippedFindingCount: testWriterChecks.flatMap((c) => c.findings ?? []).length,
+        checks: testWriterChecks.map((c) => c.check),
       });
     } else {
-      logger.info("autofix", "Routing test-file adversarial findings to test-writer session", {
+      logger.info("autofix", "Routing test-file findings to test-writer session", {
         storyId: ctx.story.id,
-        findingCount: testWriterChecks.flatMap((c) => c.findings ?? []).length,
+        checks: testWriterChecks.map((c) => c.check),
       });
       autofixCostAccum += await _autofixDeps.runTestWriterRectification(ctx, testWriterChecks, ctx.story, agentManager);
     }
   }
 
-  // If all adversarial findings were test-file scoped and no other checks failed,
+  // If all findings were test-file scoped and no other checks failed,
   // skip the implementer loop — return for recheck after test-writer fixed the issues.
   if (implementerChecks.length === 0) {
-    logger.info("autofix", "All adversarial findings routed to test-writer — skipping implementer loop", {
+    logger.info("autofix", "All findings routed to test-writer — skipping implementer loop", {
       storyId: ctx.story.id,
     });
     return { succeeded: false, cost: autofixCostAccum };

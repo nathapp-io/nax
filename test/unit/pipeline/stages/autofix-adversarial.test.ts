@@ -1,20 +1,21 @@
 /**
- * Tests for autofix-adversarial helpers (#409 post-review fixes)
+ * Tests for autofix-adversarial helpers (#409, #669)
  *
  * Covers:
- * - splitAdversarialFindingsByScope: test-file vs source-file bucket classification
- * - Edge cases: no findings, all test, all source, mixed, file:undefined, non-adversarial check
- * - Raw output preservation — scoped check retains original check.output
+ * - extractFilesFromLintOutput: ESLint stylish/compact + Biome format parsing
+ * - splitFindingsByScope (replaces splitAdversarialFindingsByScope):
+ *   - Structured findings path (adversarial checks)
+ *   - Output parsing path (lint checks)
  * - runTestWriterRectification: success, agent unavailable, agent throws
  */
 
 import { describe, expect, mock, test, afterEach } from "bun:test";
 import {
-  splitAdversarialFindingsByScope,
+  extractFilesFromLintOutput,
+  splitFindingsByScope,
   runTestWriterRectification,
 } from "../../../../src/pipeline/stages/autofix-adversarial";
 import { isTestFile } from "../../../../src/test-runners";
-import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
 import type { PipelineContext } from "../../../../src/pipeline/types";
@@ -50,6 +51,17 @@ function makeAdversarialCheck(
   };
 }
 
+function makeLintCheck(output: string): ReviewCheckResult {
+  return {
+    check: "lint",
+    success: false,
+    command: "biome",
+    exitCode: 1,
+    output,
+    durationMs: 10,
+  };
+}
+
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     config: DEFAULT_CONFIG as any,
@@ -66,7 +78,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST_FILE_PATTERN
+// isTestFile (sanity check)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("isTestFile", () => {
@@ -95,28 +107,100 @@ describe("isTestFile", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// splitAdversarialFindingsByScope
+// extractFilesFromLintOutput
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("splitAdversarialFindingsByScope", () => {
-  test("non-adversarial check → both buckets null", () => {
+describe("extractFilesFromLintOutput", () => {
+  test("empty string → empty array", () => {
+    expect(extractFilesFromLintOutput("")).toEqual([]);
+  });
+
+  test("whitespace-only string → empty array", () => {
+    expect(extractFilesFromLintOutput("   \n  \n")).toEqual([]);
+  });
+
+  test("unparseable output (no file paths) → empty array", () => {
+    const output = "Lint failed\nSome warnings\nPlease fix the errors above\n";
+    expect(extractFilesFromLintOutput(output)).toEqual([]);
+  });
+
+  test("ESLint stylish format — file header line", () => {
+    const output = `
+src/foo.test.ts
+  1:5   error  Non-null assertion  @typescript-eslint/no-non-null-assertion
+`.trim();
+    const files = extractFilesFromLintOutput(output);
+    expect(files).toContain("src/foo.test.ts");
+  });
+
+  test("Biome stylish format — path:line:col prefix", () => {
+    const output = `
+src/entity-store.integration.spec.ts:232:26 lint/suspicious/noNonNullAssertion ━━━━━
+  ✖ Non-null assertion operator is forbidden.
+  232 │ const result = store.search(projectId, "foo")!;
+`.trim();
+    const files = extractFilesFromLintOutput(output);
+    expect(files).toContain("src/entity-store.integration.spec.ts");
+  });
+
+  test("ESLint compact format — path:line:col: severity", () => {
+    const output = "src/foo.test.ts:1:5: error  Non-null assertion  @typescript-eslint/no-non-null-assertion";
+    const files = extractFilesFromLintOutput(output);
+    expect(files).toContain("src/foo.test.ts");
+  });
+
+  test("multiple test files deduplicated", () => {
+    const output = `
+src/foo.test.ts:1:5 lint/error
+src/foo.test.ts:2:8 lint/error
+src/bar.spec.ts:10:3 lint/error
+`.trim();
+    const files = extractFilesFromLintOutput(output);
+    expect(files).toContain("src/foo.test.ts");
+    expect(files).toContain("src/bar.spec.ts");
+    // deduplicated — foo.test.ts appears only once
+    expect(files.filter((f) => f === "src/foo.test.ts")).toHaveLength(1);
+  });
+
+  test("mixed test and source files extracted", () => {
+    const output = `
+src/service.ts:10:3 lint/error message
+test/unit/service.test.ts:5:1 lint/error message
+`.trim();
+    const files = extractFilesFromLintOutput(output);
+    expect(files).toContain("src/service.ts");
+    expect(files).toContain("test/unit/service.test.ts");
+  });
+
+  test("absolute paths extracted", () => {
+    const output = "/home/user/project/src/foo.test.ts:5:3 lint/error message";
+    const files = extractFilesFromLintOutput(output);
+    expect(files).toContain("/home/user/project/src/foo.test.ts");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// splitFindingsByScope — structured findings path (adversarial checks)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("splitFindingsByScope — structured findings path", () => {
+  test("non-LLM check (typecheck) → both buckets null", () => {
     const check: ReviewCheckResult = {
-      check: "lint",
+      check: "typecheck",
       success: false,
-      command: "biome",
+      command: "tsc",
       exitCode: 1,
-      output: "lint error",
+      output: "type error",
       durationMs: 10,
-      findings: [makeFinding("src/foo.test.ts")],
     };
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
     expect(testFindings).toBeNull();
     expect(sourceFindings).toBeNull();
   });
 
   test("adversarial check with no findings → both buckets null", () => {
     const check = makeAdversarialCheck([]);
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
     expect(testFindings).toBeNull();
     expect(sourceFindings).toBeNull();
   });
@@ -130,7 +214,7 @@ describe("splitAdversarialFindingsByScope", () => {
       output: "output",
       durationMs: 10,
     };
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
     expect(testFindings).toBeNull();
     expect(sourceFindings).toBeNull();
   });
@@ -138,7 +222,7 @@ describe("splitAdversarialFindingsByScope", () => {
   test("all test-file findings → testFindings non-null, sourceFindings null", () => {
     const findings = [makeFinding("src/auth.test.ts"), makeFinding("test/unit/foo.spec.ts")];
     const check = makeAdversarialCheck(findings);
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
     expect(testFindings).not.toBeNull();
     expect(testFindings!.findings).toHaveLength(2);
     expect(sourceFindings).toBeNull();
@@ -147,7 +231,7 @@ describe("splitAdversarialFindingsByScope", () => {
   test("all source-file findings → sourceFindings non-null, testFindings null", () => {
     const findings = [makeFinding("src/auth.ts"), makeFinding("src/utils/helpers.ts")];
     const check = makeAdversarialCheck(findings);
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
     expect(testFindings).toBeNull();
     expect(sourceFindings).not.toBeNull();
     expect(sourceFindings!.findings).toHaveLength(2);
@@ -161,7 +245,7 @@ describe("splitAdversarialFindingsByScope", () => {
       makeFinding("test/unit/auth.spec.ts"),
     ];
     const check = makeAdversarialCheck(findings);
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
 
     expect(testFindings!.findings).toHaveLength(2);
     expect(testFindings!.findings!.map((f) => f.file)).toEqual(["src/auth.test.ts", "test/unit/auth.spec.ts"]);
@@ -172,7 +256,7 @@ describe("splitAdversarialFindingsByScope", () => {
   test("finding with file:undefined is treated as source-file (non-test)", () => {
     const finding: ReviewFinding = { ruleId: "r", severity: "error", file: undefined as any, line: 1, message: "m" };
     const check = makeAdversarialCheck([finding]);
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
     expect(testFindings).toBeNull();
     expect(sourceFindings).not.toBeNull();
     expect(sourceFindings!.findings).toHaveLength(1);
@@ -182,7 +266,7 @@ describe("splitAdversarialFindingsByScope", () => {
     const rawOutput = "adversarial tool raw output with stack trace\n  at line 42\n  at line 100";
     const findings = [makeFinding("src/foo.ts"), makeFinding("src/foo.test.ts")];
     const check = makeAdversarialCheck(findings, rawOutput);
-    const { testFindings, sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
 
     expect(testFindings!.output).toBe(rawOutput);
     expect(sourceFindings!.output).toBe(rawOutput);
@@ -191,8 +275,77 @@ describe("splitAdversarialFindingsByScope", () => {
   test("scoped check exitCode is inherited from parent check", () => {
     const findings = [makeFinding("src/foo.ts")];
     const check = makeAdversarialCheck(findings);
-    const { sourceFindings } = splitAdversarialFindingsByScope(check);
+    const { sourceFindings } = splitFindingsByScope(check);
     expect(sourceFindings!.exitCode).toBe(check.exitCode);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// splitFindingsByScope — lint output parsing path
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("splitFindingsByScope — lint output path", () => {
+  test("lint check with empty output → both buckets null", () => {
+    const check = makeLintCheck("");
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).toBeNull();
+  });
+
+  test("lint check with unparseable output → conservative: sourceFindings non-null, testFindings null", () => {
+    const check = makeLintCheck("Lint failed with unknown format\nPlease check your code");
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).not.toBeNull();
+  });
+
+  test("lint check with all test-file paths → testFindings non-null, sourceFindings null", () => {
+    const output = `
+src/entity-store.integration.spec.ts:232:26 lint/style/noNonNullAssertion
+src/entity-store.integration.spec.ts:247:18 lint/style/noNonNullAssertion
+test/unit/foo.test.ts:10:5 lint/style/noNonNullAssertion
+`.trim();
+    const check = makeLintCheck(output);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).not.toBeNull();
+    expect(sourceFindings).toBeNull();
+  });
+
+  test("lint check with all source-file paths → sourceFindings non-null, testFindings null", () => {
+    const output = `
+src/service.ts:10:3 lint/style/useConst
+src/utils/helpers.ts:25:1 lint/style/useConst
+`.trim();
+    const check = makeLintCheck(output);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).not.toBeNull();
+  });
+
+  test("lint check with mixed paths → both buckets non-null", () => {
+    const output = `
+src/service.ts:10:3 lint/style/useConst
+src/service.test.ts:5:1 lint/style/noNonNullAssertion
+`.trim();
+    const check = makeLintCheck(output);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).not.toBeNull();
+    expect(sourceFindings).not.toBeNull();
+  });
+
+  test("lint scoped checks carry the original full output (agent needs full context)", () => {
+    const output = "src/foo.test.ts:1:5 lint/style/noNonNullAssertion\n  ✖ Non-null assertion";
+    const check = makeLintCheck(output);
+    const { testFindings } = splitFindingsByScope(check);
+    expect(testFindings!.output).toBe(output);
+  });
+
+  test("lint check is not a structured-findings split — testFindings.findings is undefined", () => {
+    const output = "src/foo.test.ts:1:5 lint/style/noNonNullAssertion";
+    const check = makeLintCheck(output);
+    const { testFindings } = splitFindingsByScope(check);
+    expect(testFindings).not.toBeNull();
+    expect(testFindings!.findings).toBeUndefined();
   });
 });
 

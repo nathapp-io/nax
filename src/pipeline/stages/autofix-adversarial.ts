@@ -1,9 +1,13 @@
 /**
- * Scope-aware adversarial rectification helpers (#409).
+ * Scope-aware rectification helpers (#409, #669).
  *
- * When adversarial review flags issues in test files, the implementer session
- * cannot fix them (isolation constraint). These helpers classify adversarial
- * findings by file scope and route test-file findings to a test-writer session.
+ * When review flags issues in test files, the implementer session cannot fix them
+ * (isolation constraint). These helpers classify findings by file scope and route
+ * test-file findings to a test-writer session.
+ *
+ * Handles two input shapes:
+ * - Adversarial checks: structured `findings[]` with explicit file paths
+ * - Lint checks: raw CLI `output` text -- file paths extracted via regex heuristics
  */
 
 import type { IAgentManager } from "../../agents";
@@ -16,22 +20,43 @@ import type { ReviewCheckResult } from "../../review/types";
 import { isTestFile } from "../../test-runners";
 import type { PipelineContext } from "../types";
 
+// Known source-file extensions for lint output path extraction.
+const SOURCE_EXT_RE = /\.(ts|tsx|js|jsx|mjs|cjs|go|py|rs|rb|java|cs|cpp|c|h|swift|kt)$/;
+
 /**
- * Split adversarial findings in a check result into test-file vs source-file buckets.
- * Returns null for each bucket when there are no findings for that scope.
- *
- * @param check            - The adversarial review check result to split.
- * @param testFilePatterns - Configured test file globs (ADR-009). When undefined, falls back to
- *   the broad language-agnostic regex (Phase 1 backward-compat path).
+ * Extract unique file paths from raw lint CLI output.
+ * Handles ESLint stylish, ESLint compact, and Biome stylish formats.
+ * Returns empty array when output is empty or no recognisable paths are found.
  */
-export function splitAdversarialFindingsByScope(
+export function extractFilesFromLintOutput(output: string): string[] {
+  if (!output.trim()) return [];
+
+  const files = new Set<string>();
+
+  // Matches file paths at the start of a line (stylish headers) and path:line or
+  // path:line:col patterns (compact format). Covers absolute and relative forms.
+  const PATH_RE = /^[ \t]*((?:\/[\w./-]+|\.\.?\/[\w./-]+|[\w][\w-]*(?:\/[\w./-]+)+))(?::\d+)?(?::\d+)?(?:\s|:|$)/gm;
+
+  let startIndex = 0;
+  while (startIndex <= output.length) {
+    PATH_RE.lastIndex = startIndex;
+    const m = PATH_RE.exec(output);
+    if (m === null) break;
+    const candidate = m[1];
+    if (SOURCE_EXT_RE.test(candidate)) {
+      files.add(candidate);
+    }
+    startIndex = m.index + 1;
+  }
+
+  return Array.from(files);
+}
+
+function splitByStructuredFindings(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
-): {
-  testFindings: ReviewCheckResult | null;
-  sourceFindings: ReviewCheckResult | null;
-} {
-  if (check.check !== "adversarial" || !check.findings?.length) {
+): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
+  if (!check.findings?.length) {
     return { testFindings: null, sourceFindings: null };
   }
 
@@ -40,17 +65,67 @@ export function splitAdversarialFindingsByScope(
 
   const toCheck = (findings: typeof testFs): ReviewCheckResult | null => {
     if (findings.length === 0) return null;
-    // Preserve the raw tool output from the original check — it may contain structured
-    // diagnostics, stack traces, or indented blocks that the agent needs for accurate
-    // diagnosis. Only `findings` is scoped; output carries the full reviewer context.
+    // Preserve the raw tool output -- it may contain structured diagnostics or stack traces
+    // that the agent needs for accurate diagnosis. Only `findings` is scoped.
     return { ...check, findings };
   };
 
   return { testFindings: toCheck(testFs), sourceFindings: toCheck(sourceFs) };
 }
 
+function splitByOutputParsing(
+  check: ReviewCheckResult,
+  testFilePatterns?: readonly string[],
+): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
+  const files = extractFilesFromLintOutput(check.output);
+
+  if (files.length === 0) {
+    // Cannot classify by file -- conservative fallback: route to implementer if output is non-empty
+    if (check.output.trim()) {
+      return { testFindings: null, sourceFindings: check };
+    }
+    return { testFindings: null, sourceFindings: null };
+  }
+
+  const hasTest = files.some((f) => isTestFile(f, testFilePatterns));
+  const hasSource = files.some((f) => !isTestFile(f, testFilePatterns));
+
+  return {
+    testFindings: hasTest ? check : null,
+    sourceFindings: hasSource ? check : null,
+  };
+}
+
 /**
- * Run a test-writer session to fix adversarial review findings scoped to test files (#409).
+ * Split a check result into test-file vs source-file buckets for scope-aware routing.
+ * Returns null for each bucket when there are no findings for that scope.
+ *
+ * - Adversarial checks: splits structured `findings[]` by file path classification.
+ * - Lint checks: extracts file paths from raw `output` text and classifies.
+ * - All other check types: returns null/null (not routable by scope).
+ *
+ * @param check            - The review check result to split.
+ * @param testFilePatterns - Configured test file globs (ADR-009). Omit to use the
+ *   broad language-agnostic regex (Phase 1 backward-compat path).
+ */
+export function splitFindingsByScope(
+  check: ReviewCheckResult,
+  testFilePatterns?: readonly string[],
+): {
+  testFindings: ReviewCheckResult | null;
+  sourceFindings: ReviewCheckResult | null;
+} {
+  if (check.check === "adversarial") {
+    return splitByStructuredFindings(check, testFilePatterns);
+  }
+  if (check.check === "lint") {
+    return splitByOutputParsing(check, testFilePatterns);
+  }
+  return { testFindings: null, sourceFindings: null };
+}
+
+/**
+ * Run a test-writer session to fix review findings scoped to test files (#409).
  * Returns the cost incurred, or 0 if the agent is unavailable.
  *
  * @param keepOpen - Whether to keep the ACP session open after this call so subsequent
@@ -65,11 +140,11 @@ export async function runTestWriterRectification(
 ): Promise<number> {
   const logger = getLogger();
   const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story);
-  // Use the TDD test-writer tier from config — consistent with how the TDD orchestrator
+  // Use the TDD test-writer tier from config -- consistent with how the TDD orchestrator
   // selects the tier for the test-writer session (tdd.orchestrator.ts:150).
   const defaultAgent = agentManager.getDefault();
   if (!defaultAgent) {
-    logger.warn("autofix", "Test-writer rectification skipped — no default agent", { storyId: ctx.story.id });
+    logger.warn("autofix", "Test-writer rectification skipped -- no default agent", { storyId: ctx.story.id });
     return 0;
   }
   const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
@@ -95,7 +170,7 @@ export async function runTestWriterRectification(
     });
     return twResult.estimatedCost ?? 0;
   } catch {
-    logger.warn("autofix", "Test-writer rectification failed — proceeding with implementer", {
+    logger.warn("autofix", "Test-writer rectification failed -- proceeding with implementer", {
       storyId: ctx.story.id,
     });
     return 0;
