@@ -11,3 +11,5 @@ export type {
   PromptAuditEntry,
   PromptAuditErrorEntry,
 } from "./prompt-auditor";
+export type { PackageView, PackageRegistry } from "./packages";
+export { createPackageRegistry } from "./packages";
