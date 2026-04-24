@@ -23,6 +23,7 @@ import { ReviewPromptBuilder } from "../prompts";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
+import { looksLikeTruncatedJson } from "./adversarial";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
@@ -479,18 +480,23 @@ export async function runSemanticReview(
     };
   }
 
-  // Retry once when the response cannot be parsed — the session has full context so
-  // a short follow-up asking for valid JSON is sufficient.
-  if (!parseLLMResponse(rawResponse)) {
+  // Detect cap truncation before attempting parse — the ACP adapter tail-truncates
+  // output at MAX_AGENT_OUTPUT_CHARS, so a near-cap response is corrupted JSON and
+  // parsing it is pointless. Go straight to condensed retry in that case.
+  // For short unparseable responses (model misbehaved), use the standard retry.
+  const isTruncated = looksLikeTruncatedJson(rawResponse);
+  if (isTruncated || !parseLLMResponse(rawResponse)) {
     retryAttempted = true;
+    const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
     logger?.info("semantic", "JSON parse failed, retrying (1/1)", {
       storyId: story.id,
       rawHead: rawResponse.slice(0, 200),
       responseLen: rawResponse.length,
+      isTruncated,
     });
     try {
       const retryResult = await agentManager.run({
-        runOptions: { prompt: ReviewPromptBuilder.jsonRetry(), ...runOpts, keepOpen: false },
+        runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
       });
       rawResponse = retryResult.output;
       llmCost += retryResult.estimatedCost ?? 0;
