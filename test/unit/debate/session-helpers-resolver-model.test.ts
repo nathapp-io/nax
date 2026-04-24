@@ -42,20 +42,20 @@ function makeCaptureManager(captured: { opts?: CompleteOptions }[]) {
 // ─── Synthesis resolver ───────────────────────────────────────────────────────
 
 describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
     mock.restore();
   });
 
   test("passes modelTier='powerful' when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "powerful"), NO_CONFIG, "US-352", 30_000);
 
@@ -65,7 +65,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", (
 
   test("passes modelTier='fast' when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis"), NO_CONFIG, "US-352", 30_000);
 
@@ -75,7 +75,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", (
 
   test("passes modelTier='balanced' when resolver.model is 'sonnet' (alias)", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "sonnet"), NO_CONFIG, "US-352", 30_000);
 
@@ -87,20 +87,20 @@ describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", (
 // ─── Judge / custom resolver ──────────────────────────────────────────────────
 
 describe("resolveOutcome() custom/judge — resolver.model → modelTier (#352)", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
     mock.restore();
   });
 
   test("passes modelTier='powerful' when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a"], [], makeStageConfig("custom", "powerful"), NO_CONFIG, "US-352", 30_000);
 
@@ -110,7 +110,7 @@ describe("resolveOutcome() custom/judge — resolver.model → modelTier (#352)"
 
   test("passes modelTier='fast' when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a"], [], makeStageConfig("custom"), NO_CONFIG, "US-352", 30_000);
 

@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { PipelineContext } from "../../../../src/pipeline/types";
+import type { _routingDeps as RoutingDeps } from "../../../../src/pipeline/stages/routing";
 import { makeNaxConfig, makeStory } from "../../../helpers";
 
 const WORKDIR = `/tmp/nax-routing-test-${randomUUID()}`;
@@ -62,7 +63,7 @@ const FRESH_ROUTING_RESULT = {
 // ---------------------------------------------------------------------------
 
 describe("routingStage - savePRD called exactly once per story (not per iteration)", () => {
-  let origRoutingDeps: typeof import("../../../../src/pipeline/stages/routing")["_routingDeps"];
+  let origRoutingDeps: typeof RoutingDeps;
 
   afterEach(() => {
     mock.restore();

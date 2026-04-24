@@ -27,6 +27,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
+import { type NaxRuntime, createRuntime } from "../../runtime";
 import { SessionManager } from "../../session";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
@@ -120,6 +121,8 @@ export interface RunSetupResult {
    * instead of spawning new work during teardown.
    */
   shutdownController: AbortController;
+  /** NaxRuntime created during setup — exposes agentManager, sessionManager, etc. */
+  runtime: NaxRuntime;
 }
 
 /**
@@ -171,6 +174,16 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // AgentRunOptions.abortSignal so the ACP adapter's retry loop stops
   // spawning fresh acpx processes during teardown (Issue 5).
   const shutdownController = new AbortController();
+
+  // NaxRuntime — single owner of agentManager + sessionManager for this run.
+  // Passes through the existing sessionManager and options.agentManager (if any)
+  // so callers that pre-create an AgentManager for credential validation continue
+  // to work (e.g. run-precheck validates credentials before handing off the manager).
+  const runtime = createRuntime(config, workdir, {
+    parentSignal: shutdownController.signal,
+    sessionManager,
+    agentManager: options.agentManager,
+  });
 
   // Cleanup stale PIDs from previous crashed runs
   await pidRegistry.cleanupStale();
@@ -308,13 +321,16 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // emitted inside executeUnified/executeSequential after bus wiring.
 
     // Initialize run: check agent, reconcile state, validate limits
+    // Fall back to runtime.agentManager.getAgent when no explicit agentGetFn is
+    // provided (runner.ts derives agentGetFn from runtime only after setupRun returns).
+    const effectiveAgentGetFn = options.agentGetFn ?? runtime.agentManager.getAgent.bind(runtime.agentManager);
     const { initializeRun } = await import("./run-initialization");
     const initResult = await initializeRun({
       config,
       prdPath,
       workdir,
       dryRun,
-      agentGetFn: options.agentGetFn,
+      agentGetFn: effectiveAgentGetFn,
     });
     prd = initResult.prd;
     // initializeRun calls loadPRD() internally, producing a new object.
@@ -347,6 +363,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       storyCounts: counts,
       interactionChain,
       shutdownController,
+      runtime,
     };
   } catch (error) {
     // Release lock before re-throwing so the directory isn't permanently locked

@@ -44,7 +44,10 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
-  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
+  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
+  if (!agentManager) {
+    return buildFailedResult(ctx.storyId, ctx.stage, config, 0);
+  }
 
   // Step 1: Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];

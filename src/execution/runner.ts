@@ -13,7 +13,6 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
-import { createAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { PluginProviderCache } from "../context/engine";
 import type { LoadedHooksConfig } from "../hooks";
@@ -114,8 +113,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
   const allStoryMetrics: any[] = [];
 
-  const agentManager = createAgentManager(config);
-  const agentGetFn = agentManager.getAgent.bind(agentManager);
   const pluginProviderCache = new PluginProviderCache();
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
@@ -139,8 +136,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
     skipPrecheck,
     headless,
     formatterMode,
-    agentGetFn,
-    agentManager,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
     // BUG-017: Pass getters for run.complete event on SIGTERM
@@ -156,8 +151,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
     pluginRegistry,
     interactionChain,
     shutdownController,
+    runtime,
   } = setupResult;
   prd = setupResult.prd;
+  const agentManager = runtime.agentManager;
+  const agentGetFn = agentManager.getAgent.bind(agentManager);
 
   try {
     // ── Phase 2: Execution ──────────────────────────────────────────────────────
@@ -241,6 +239,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       sessionManager,
       agentManager,
       pluginProviderCache,
+      runtime,
     });
 
     const { durationMs, acceptancePassed } = completionResult;
@@ -255,43 +254,47 @@ export async function run(options: RunOptions): Promise<RunResult> {
     };
   } finally {
     const logger = getSafeLogger();
-    logger?.debug("execution", "Runner finally block — starting cleanup");
-    // Stop heartbeat on any exit (US-007)
-    stopHeartbeat();
-    // Cleanup crash handlers (MEM-1 fix)
-    cleanupCrashHandlers();
-
-    // Phase 3 (#477): sidecar sweep removed — SessionManager.closeStory() handles
-    // session cleanup at story completion. Orphan sweep is via SessionManager.sweepOrphans().
-
-    // Resolve current branch at runtime
-    let branch = "";
     try {
-      const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
-      if (exitCode === 0) branch = stdout.trim();
-    } catch {
-      // Branch resolution is non-critical
-    }
+      logger?.debug("execution", "Runner finally block — starting cleanup");
+      // Stop heartbeat on any exit (US-007)
+      stopHeartbeat();
+      // Cleanup crash handlers (MEM-1 fix)
+      cleanupCrashHandlers();
 
-    // Execute cleanup operations
-    logger?.debug("execution", "Runner finally — running cleanupRun");
-    const { cleanupRun } = await import("./lifecycle/run-cleanup");
-    await cleanupRun({
-      runId,
-      startTime,
-      totalCost,
-      storiesCompleted,
-      prd,
-      pluginRegistry,
-      workdir,
-      interactionChain,
-      feature,
-      prdPath,
-      branch,
-      version: NAX_VERSION,
-      runCompleted,
-    });
-    logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
+      // Phase 3 (#477): sidecar sweep removed — SessionManager.closeStory() handles
+      // session cleanup at story completion. Orphan sweep is via SessionManager.sweepOrphans().
+
+      // Resolve current branch at runtime
+      let branch = "";
+      try {
+        const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
+        if (exitCode === 0) branch = stdout.trim();
+      } catch {
+        // Branch resolution is non-critical
+      }
+
+      // Execute cleanup operations
+      logger?.debug("execution", "Runner finally — running cleanupRun");
+      const { cleanupRun } = await import("./lifecycle/run-cleanup");
+      await cleanupRun({
+        runId,
+        startTime,
+        totalCost,
+        storiesCompleted,
+        prd,
+        pluginRegistry,
+        workdir,
+        interactionChain,
+        feature,
+        prdPath,
+        branch,
+        version: NAX_VERSION,
+        runCompleted,
+      });
+      logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
+    } finally {
+      await runtime.close();
+    }
   }
 }
 

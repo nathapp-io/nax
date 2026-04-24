@@ -45,4 +45,9 @@ export { PlanPromptBuilder } from "./builders/plan-builder";
 export type { PlanningPromptParts, PackageSummary } from "./builders/plan-builder";
 
 // Core types — re-exported for callsites that need them
-export type { PromptRole, PromptSection, PromptOptions } from "./core/types";
+export type { PromptRole, PromptSection, PromptOptions, SectionSlot } from "./core/types";
+export { SLOT_ORDER } from "./core/types";
+
+// Wave 1 composition utilities — slot-ordered assembly and serialisation.
+export { composeSections, join } from "./compose";
+export type { ComposeInput } from "./compose";

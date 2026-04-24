@@ -23,17 +23,17 @@ function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): Deba
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origCreateManager: typeof _debateSessionDeps.createManager;
+let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origCreateManager = _debateSessionDeps.createManager;
+  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
   _debateSessionDeps.getSafeLogger = mock(() => null) as unknown as typeof _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.createManager = origCreateManager;
+  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
   mock.restore();
 });
@@ -44,8 +44,7 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
   test("debater 0 gets sessionRole 'debate-hybrid-0' and debater 1 gets 'debate-hybrid-1'", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -58,8 +57,7 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-role",
@@ -82,8 +80,7 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
   test("sessionRole index matches debater position in the debaters array (3 debaters)", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -96,8 +93,7 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-role-3",
@@ -131,8 +127,7 @@ describe("runHybrid() — keepOpen for proposal calls (AC3)", () => {
   test("all proposal run() calls have keepOpen: true", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -145,8 +140,7 @@ describe("runHybrid() — keepOpen for proposal calls (AC3)", () => {
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-ksopen",
@@ -173,8 +167,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
   test("all debaters are invoked in the proposal round", async () => {
     const invoked: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName) => {
           invoked.push(agentName);
           return {
@@ -187,8 +180,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-parallel",
@@ -215,8 +207,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
   test("maxConcurrentDebaters: 1 still runs all proposals (sequentially)", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -229,8 +220,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-concurrency",
@@ -253,8 +243,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
 
 describe("runHybrid() — single-agent fallback when fewer than 2 proposals succeed (AC4)", () => {
   test("returns outcome=passed with single debater when exactly 1 proposal succeeds", async () => {
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName) => {
           if (agentName === "opencode") {
             return {
@@ -277,8 +266,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-fallback-1",
@@ -299,8 +287,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
   });
 
   test("returns outcome=failed when 0 proposals succeed and fallback retry also fails", async () => {
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async () => ({
           success: false,
           exitCode: 1,
@@ -310,8 +297,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
           estimatedCost: 0,
           agentFallbacks: [],
         }),
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-fallback-0",
@@ -333,8 +319,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
 
 describe("runHybrid() — successful proposal outputs collected (AC5)", () => {
   test("both proposal outputs appear in result.proposals when 2 proposals succeed", async () => {
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName) => ({
           success: true,
           exitCode: 0,
@@ -344,8 +329,7 @@ describe("runHybrid() — successful proposal outputs collected (AC5)", () => {
           estimatedCost: 0.01,
           agentFallbacks: [],
         }),
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-proposals",
@@ -371,12 +355,12 @@ describe("runHybrid() — adapter resolution via shared helper (AC6)", () => {
   test("manager.getAgent is called for each debater to resolve adapters", async () => {
     const agentCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       getAgentFn: (name: string) => {
         agentCalls.push(name);
         return {} as any;
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-dep-calls",
@@ -394,8 +378,7 @@ describe("runHybrid() — adapter resolution via shared helper (AC6)", () => {
   });
 
   test("debater is skipped when manager.getAgent returns undefined — triggers single-agent fallback", async () => {
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         unavailableAgents: new Set(["opencode"]),
         runFn: async (agentName) => ({
           success: true,
@@ -406,8 +389,7 @@ describe("runHybrid() — adapter resolution via shared helper (AC6)", () => {
           estimatedCost: 0.01,
           agentFallbacks: [],
         }),
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-A-helper-skip",

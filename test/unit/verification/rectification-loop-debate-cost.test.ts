@@ -25,12 +25,12 @@ const SUCCESS_VERIFICATION = {
 };
 
 describe("runRectificationLoop — debate cost included in story total", () => {
-  const origCreateManager = _rectificationDeps.createManager;
+  const origAgentManager = _rectificationDeps.agentManager;
   const origRunVerification = _rectificationDeps.runVerification;
   const origRunDebate = _rectificationDeps.runDebate;
 
   afterEach(() => {
-    _rectificationDeps.createManager = origCreateManager;
+    _rectificationDeps.agentManager = origAgentManager;
     _rectificationDeps.runVerification = origRunVerification;
     _rectificationDeps.runDebate = origRunDebate;
     mock.restore();
@@ -42,7 +42,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
   });
 
   test("debate cost is accumulated into story.routing.estimatedCost when totalCostUsd > 0", async () => {
-    _rectificationDeps.createManager = mock(() => makeMockAgentManager());
+    _rectificationDeps.agentManager = makeMockAgentManager();
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause: incorrect state mutation.",
@@ -64,7 +64,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
   });
 
   test("story.routing.estimatedCost is not modified when debate returns totalCostUsd === 0", async () => {
-    _rectificationDeps.createManager = mock(() => makeMockAgentManager());
+    _rectificationDeps.agentManager = makeMockAgentManager();
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause analysis output.",
@@ -86,7 +86,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
   });
 
   test("debate cost is tracked and loop completes without error when debate succeeds", async () => {
-    _rectificationDeps.createManager = mock(() => makeMockAgentManager());
+    _rectificationDeps.agentManager = makeMockAgentManager();
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause: incorrect state mutation.",

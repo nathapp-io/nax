@@ -25,25 +25,23 @@ function makeMockManager(
 }
 
 describe("DebateSession.runOneShot() session roles", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
   });
 
   test("uses indexed session roles for proposal round", async () => {
     const roles: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager(async (_agentName, _prompt, opts) => {
+    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, _prompt, opts) => {
         roles.push(opts?.sessionRole ?? "");
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-ROLE",
@@ -60,12 +58,10 @@ describe("DebateSession.runOneShot() session roles", () => {
   test("uses indexed session roles for critique round", async () => {
     const roles: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager(async (_agentName, _prompt, opts) => {
+    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, _prompt, opts) => {
         roles.push(opts?.sessionRole ?? "");
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-ROLE",
@@ -86,25 +82,23 @@ describe("DebateSession.runOneShot() session roles", () => {
 // ─── P1: Proposal prompts include persona block ───────────────────────────────
 
 describe("DebateSession.runOneShot() — persona injection in proposal round (P1)", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
   });
 
   test("each debater receives a distinct persona block when autoPersona is true", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager(async (_agentName, prompt) => {
+    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-P1",
@@ -138,12 +132,10 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
   test("proposal prompts do NOT contain persona block when autoPersona is false", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager(async (_agentName, prompt) => {
+    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-P1-NO-PERSONA",
@@ -168,12 +160,10 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
   test("task context is preserved in proposal prompt alongside persona", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager(async (_agentName, prompt) => {
+    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-P1-TASK",
@@ -195,28 +185,26 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
 // ─── P3: labeledProposals uses persona-aware label ────────────────────────────
 
 describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
   });
 
   test("synthesis prompt labels proposals with persona when autoPersona is true", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager(async (_agentName, prompt, opts) => {
+    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt, opts) => {
         // The synthesis call is identified by sessionRole
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
         return { output: "proposal output", costUsd: 0, source: "fallback" as const };
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-P3",
@@ -245,14 +233,12 @@ describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", (
   test("synthesis prompt labels proposals without persona when autoPersona is false", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager(async (_agentName, prompt, opts) => {
+    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt, opts) => {
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
         return { output: "proposal output", costUsd: 0, source: "fallback" as const };
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-P3-NO-PERSONA",

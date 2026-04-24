@@ -143,7 +143,9 @@ export async function runExecutionPhase(
   const batchPlan = options.useBatch ? precomputeBatchPlan(readyStories, 4) : [];
 
   if (options.useBatch) {
-    await tryLlmBatchRoute(options.config, readyStories, "routing");
+    await tryLlmBatchRoute(options.config, readyStories, "routing", {
+      agentManager: options.agentManager,
+    });
   }
 
   const { executeUnified } = await import("./unified-executor");

@@ -7,7 +7,6 @@
  * Used by: src/pipeline/stages/rectify.ts, src/execution/lifecycle/run-regression.ts
  */
 
-import { createAgentManager } from "../agents";
 import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
@@ -127,7 +126,7 @@ async function _defaultRunDebate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _rectificationDeps = {
-  createManager: createAgentManager,
+  agentManager: undefined as IAgentManager | undefined,
   runVerification: _fullSuite as typeof _fullSuite,
   escalateTier: _escalateTier,
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,
@@ -156,7 +155,13 @@ export async function runRectificationLoop(
     sessionId,
   } = opts;
   const logger = getSafeLogger();
-  const agentManager = opts.agentManager ?? _rectificationDeps.createManager(config);
+  const agentManager = opts.agentManager ?? _rectificationDeps.agentManager;
+  if (!agentManager) {
+    logger?.warn("rectification", "No agentManager threaded — skipping rectification loop", {
+      storyId: story.id,
+    });
+    return { succeeded: false, cost: 0, durationMs: 0 };
+  }
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseTestOutput(testOutput);
   let currentTestOutput = testOutput;

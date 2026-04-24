@@ -75,16 +75,16 @@ function makeOptions(workdir: string, overrides?: Partial<GenerateFromPRDOptions
   };
 }
 
-let savedCreateManager: typeof _generatorPRDDeps.createManager;
+let savedAgentManager: typeof _generatorPRDDeps.agentManager;
 let savedWriteFile: typeof _generatorPRDDeps.writeFile;
 
 function saveDeps() {
-  savedCreateManager = _generatorPRDDeps.createManager;
+  savedAgentManager = _generatorPRDDeps.agentManager;
   savedWriteFile = _generatorPRDDeps.writeFile;
 }
 
 function restoreDeps() {
-  _generatorPRDDeps.createManager = savedCreateManager;
+  _generatorPRDDeps.agentManager = savedAgentManager;
   _generatorPRDDeps.writeFile = savedWriteFile;
 }
 
@@ -409,14 +409,12 @@ describe("generateFromPRD — defaults to unit behavior when testStrategy is omi
     const options = makeOptions(tmpDir); // no testStrategy
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
         },
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -432,15 +430,13 @@ describe("generateFromPRD — defaults to unit behavior when testStrategy is omi
     const criteria = makeCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string) => ({
           output: `import { describe, test, expect } from "bun:test";\ndescribe("my-feature - Acceptance Tests", () => {\n  test("AC-1: Component renders correctly", async () => {\n    expect(true).toBe(true);\n  });\n});\n`,
           costUsd: 0,
           source: "mock" as const,
         }),
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -474,14 +470,12 @@ describe("generateFromPRD — component strategy selection", () => {
     });
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
         },
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -519,14 +513,12 @@ describe("generateFromPRD — cli strategy selection", () => {
     const options = makeOptions(tmpDir, { testStrategy: "cli" });
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
         },
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -560,14 +552,12 @@ describe("generateFromPRD — e2e strategy selection", () => {
     const options = makeOptions(tmpDir, { testStrategy: "e2e" });
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
         },
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -601,14 +591,12 @@ describe("generateFromPRD — snapshot strategy selection", () => {
     const options = makeOptions(tmpDir, { testStrategy: "snapshot" });
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return { output: `import { describe, test, expect } from "bun:test";\ndescribe("test", () => {});`, costUsd: 0, source: "mock" as const };
         },
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);

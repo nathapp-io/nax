@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { createAgentManager, resolveDefaultAgent } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
 import { buildDecomposePromptAsync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
@@ -34,6 +34,7 @@ import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
+import { createAgentManager } from "../runtime/internal/agent-manager-factory";
 import { errorMessage } from "../utils/errors";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
