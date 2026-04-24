@@ -201,18 +201,27 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         }
       }
 
-      // Back-fill storyMetrics for stories rectified by the regression gate (issue #679).
-      // Stories that completed in a prior run-resume or earlier execution batch may not have an
-      // entry in allStoryMetrics — the aggregator only sees stories that entered the normal
-      // execution loop in this run. Injecting synthetic "rectification" entries here ensures
-      // their cost and outcome are visible in run.complete analytics and saved metrics.
+      // Back-fill or merge storyMetrics for stories rectified by the regression gate (issue #679).
+      // Two cases:
+      //   1. Story has no existing entry (prior run-resume or earlier execution batch): inject a
+      //      synthetic "rectification" entry so cost and outcome show up in run.complete analytics.
+      //   2. Story already has an entry (normal execution loop + regression-gate rectification in
+      //      the same run): fold the rectification cost + duration into the existing entry so the
+      //      regression-gate effort isn't silently dropped.
       const regressionStoryCosts = regressionResult.storyCosts ?? {};
+      const regressionStoryDurations = regressionResult.storyDurations ?? {};
+      const regressionStoryOutcomes = regressionResult.storyOutcomes ?? {};
       if (Object.keys(regressionStoryCosts).length > 0) {
-        const existingStoryIds = new Set(allStoryMetrics.map((m) => m.storyId));
+        const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
         const rectCompletedAt = new Date().toISOString();
         const defaultAgent = options.agentManager?.getDefault() ?? resolveDefaultAgent(config);
         for (const [storyId, storyCost] of Object.entries(regressionStoryCosts)) {
-          if (!existingStoryIds.has(storyId)) {
+          const storyDuration = regressionStoryDurations[storyId] ?? 0;
+          // Per-story outcome; fall back to the overall regression result only when missing
+          // (e.g. older mocks emit storyCosts without storyOutcomes).
+          const storySuccess = regressionStoryOutcomes[storyId] ?? regressionResult.success;
+          const existingIdx = existingIndex.get(storyId);
+          if (existingIdx === undefined) {
             const regrStory = prd.userStories.find((s) => s.id === storyId);
             allStoryMetrics.push({
               storyId,
@@ -221,9 +230,9 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
               modelUsed: defaultAgent,
               attempts: 1,
               finalTier: "balanced",
-              success: regressionResult.success,
+              success: storySuccess,
               cost: storyCost,
-              durationMs: 0,
+              durationMs: storyDuration,
               firstPassSuccess: false,
               startedAt: rectCompletedAt,
               completedAt: rectCompletedAt,
@@ -232,6 +241,18 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
               fullSuiteGatePassed: false,
               runtimeCrashes: 0,
             });
+          } else {
+            const existing = allStoryMetrics[existingIdx];
+            allStoryMetrics[existingIdx] = {
+              ...existing,
+              cost: existing.cost + storyCost,
+              durationMs: existing.durationMs + storyDuration,
+              rectificationCost: (existing.rectificationCost ?? 0) + storyCost,
+              // A story that needed regression-gate rectification was not a clean first pass.
+              firstPassSuccess: false,
+              // Preserve the normal-loop success flag unless the regression attempt actually failed.
+              success: existing.success && storySuccess,
+            };
           }
         }
       }

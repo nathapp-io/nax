@@ -133,10 +133,14 @@ export const _rectificationDeps = {
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,
 };
 
-/** Run the rectification retry loop. Returns whether all failures were fixed and the accumulated agent cost. */
+/**
+ * Run the rectification retry loop.
+ * Returns whether all failures were fixed, the accumulated agent cost, and total wall-clock duration.
+ */
 export async function runRectificationLoop(
   opts: RectificationLoopOptions,
-): Promise<{ succeeded: boolean; cost: number }> {
+): Promise<{ succeeded: boolean; cost: number; durationMs: number }> {
+  const loopStartMs = Date.now();
   const {
     config,
     workdir,
@@ -486,7 +490,7 @@ export async function runRectificationLoop(
     throw error;
   });
 
-  return { succeeded, cost: costAccum };
+  return { succeeded, cost: costAccum, durationMs: Date.now() - loopStartMs };
 }
 
 /**
@@ -496,7 +500,7 @@ export async function runRectificationLoop(
 export function runRectificationLoopFromCtx(
   ctx: PipelineContext,
   opts: { testCommand: string; testOutput: string; promptPrefix?: string; testScopedTemplate?: string },
-): Promise<{ succeeded: boolean; cost: number }> {
+): Promise<{ succeeded: boolean; cost: number; durationMs: number }> {
   return runRectificationLoop({
     config: ctx.config,
     workdir: ctx.workdir,

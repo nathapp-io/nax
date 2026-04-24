@@ -49,6 +49,18 @@ export interface DeferredRegressionResult {
    * Optional for backward-compatibility with existing mocks and snapshots.
    */
   storyCosts?: Record<string, number>;
+  /**
+   * Accumulated rectification wall-clock duration per affected story ID (ms).
+   * Same population rules as `storyCosts`.
+   */
+  storyDurations?: Record<string, number>;
+  /**
+   * Per-story rectification outcome: `true` when the story was successfully rectified
+   * (at least one attempt returned succeeded:true), `false` otherwise. Lets downstream
+   * metrics attribute success/failure to the right story instead of using the overall
+   * regression result as a blanket answer.
+   */
+  storyOutcomes?: Record<string, boolean>;
 }
 
 /**
@@ -103,6 +115,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: [],
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -116,6 +130,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: [],
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -152,6 +168,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: [],
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -173,6 +191,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: [],
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -187,6 +207,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: [],
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -200,6 +222,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: [],
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -223,6 +247,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: [],
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -273,6 +299,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       rectificationAttempts: 0,
       affectedStories: Array.from(affectedStories),
       storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
     };
   }
 
@@ -281,8 +309,10 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   let storiesRectified = 0;
   let currentTestOutput = fullSuiteResult.output;
   const affectedStoriesList = Array.from(affectedStoriesObjs.values());
-  // Accumulated rectification cost per story — populated below for metrics back-fill (issue #679).
+  // Accumulated rectification telemetry per story — populated below for metrics back-fill (issue #679).
   const storyCostAccum: Record<string, number> = {};
+  const storyDurationAccum: Record<string, number> = {};
+  const storyOutcomeAccum: Record<string, boolean> = {};
 
   for (const story of affectedStoriesList) {
     for (let attempt = 0; attempt < maxRectificationAttempts; attempt++) {
@@ -302,8 +332,13 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
         featureName: prd.feature,
       });
 
-      // Accumulate cost regardless of whether the attempt succeeded (issue #679).
+      // Accumulate telemetry regardless of whether the attempt succeeded (issue #679).
+      // Story outcome is latched true once any attempt succeeds; default false otherwise.
       storyCostAccum[story.id] = (storyCostAccum[story.id] ?? 0) + rectResult.cost;
+      storyDurationAccum[story.id] = (storyDurationAccum[story.id] ?? 0) + rectResult.durationMs;
+      if (!storyOutcomeAccum[story.id]) {
+        storyOutcomeAccum[story.id] = rectResult.succeeded;
+      }
 
       if (rectResult.succeeded) {
         storiesRectified++;
@@ -334,6 +369,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
             rectificationAttempts,
             affectedStories: Array.from(affectedStories),
             storyCosts: storyCostAccum,
+            storyDurations: storyDurationAccum,
+            storyOutcomes: storyOutcomeAccum,
           };
         }
 
@@ -371,5 +408,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     rectificationAttempts,
     affectedStories: Array.from(affectedStories),
     storyCosts: storyCostAccum,
+    storyDurations: storyDurationAccum,
+    storyOutcomes: storyOutcomeAccum,
   };
 }

@@ -11,9 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { NaxConfig } from "../../../../src/config";
 import { _regressionDeps, runDeferredRegression } from "../../../../src/execution/lifecycle/run-regression";
 import type { DeferredRegressionOptions } from "../../../../src/execution/lifecycle/run-regression";
-import type { NaxConfig } from "../../../../src/config";
 import type { PRD } from "../../../../src/prd";
 import type { VerificationResult } from "../../../../src/verification/types";
 
@@ -101,7 +101,7 @@ describe("runDeferredRegression — initial suite passes", () => {
       verifyCallCount.n++;
       return makePassResult();
     });
-    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: false, cost: 0 }));
+    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: false, cost: 0, durationMs: 0 }));
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 150, failed: 0, failures: [] }));
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
@@ -139,7 +139,7 @@ describe("runDeferredRegression — early exit after first story", () => {
     const rectifiedStories: string[] = [];
     _regressionDeps.runRectificationLoop = mock(async (opts) => {
       rectifiedStories.push(opts.story.id);
-      return { succeeded: true, cost: 0.5 }; // fixed on first attempt
+      return { succeeded: true, cost: 0.5, durationMs: 200 }; // fixed on first attempt
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002", "US-003"]));
@@ -167,9 +167,9 @@ describe("runDeferredRegression — early exit after second story", () => {
     _regressionDeps.runVerification = mock(async () => {
       const call = verifyCalls.length;
       verifyCalls.push(`call-${call}`);
-      if (call === 0) return makeVerifyResult();          // initial: fail
-      if (call === 1) return makeVerifyResult();          // mid-loop after US-001: still fail
-      return makePassResult(100);                          // mid-loop after US-002: pass → early exit
+      if (call === 0) return makeVerifyResult(); // initial: fail
+      if (call === 1) return makeVerifyResult(); // mid-loop after US-001: still fail
+      return makePassResult(100); // mid-loop after US-002: pass → early exit
     });
 
     _regressionDeps.parseTestOutput = mock(() => ({
@@ -180,7 +180,7 @@ describe("runDeferredRegression — early exit after second story", () => {
     const rectifiedStories: string[] = [];
     _regressionDeps.runRectificationLoop = mock(async (opts) => {
       rectifiedStories.push(opts.story.id);
-      return { succeeded: true, cost: 0.3 }; // each story claims it fixed things
+      return { succeeded: true, cost: 0.3, durationMs: 150 }; // each story claims it fixed things
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002", "US-003"]));
@@ -212,7 +212,7 @@ describe("runDeferredRegression — no story fixes anything", () => {
       failed: 92,
       failures: [],
     }));
-    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: false, cost: 0 })); // never fixed
+    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: false, cost: 0, durationMs: 0 })); // never fixed
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
@@ -248,7 +248,7 @@ describe("runDeferredRegression — test output context forwarding", () => {
     }));
     _regressionDeps.runRectificationLoop = mock(async (opts) => {
       capturedOutputs.push(opts.testOutput);
-      return { succeeded: true, cost: 0.1 };
+      return { succeeded: true, cost: 0.1, durationMs: 75 };
     });
 
     await runDeferredRegression(makeOptions(["US-001", "US-002"]));
@@ -296,12 +296,12 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
       return makePassResult(); // mid-loop after first story: pass
     });
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 5, failures: [] }));
-    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: true, cost: 1.2559 }));
+    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: true, cost: 1.2559, durationMs: 500 }));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
 
     expect(result.success).toBe(true);
-    expect(result.storyCosts["US-001"]).toBeCloseTo(1.2559);
+    expect(result.storyCosts?.["US-001"]).toBeCloseTo(1.2559);
   });
 
   test("accumulates cost for multiple attempts on the same story when no early exit fires", async () => {
@@ -313,13 +313,13 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
     _regressionDeps.runRectificationLoop = mock(async () => {
       rectifyCallIndex++;
       // Never claim succeeded so there's no mid-loop verify call and we fall through
-      return { succeeded: false, cost: 0.75 };
+      return { succeeded: false, cost: 0.75, durationMs: 120 };
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
 
     // 2 attempts × $0.75 each — cost accumulated even when failed
-    expect(result.storyCosts["US-001"]).toBeCloseTo(1.5);
+    expect(result.storyCosts?.["US-001"]).toBeCloseTo(1.5);
     expect(rectifyCallIndex).toBe(2); // maxRectificationAttempts = 2
   });
 
@@ -335,13 +335,76 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
     let storyIdx = 0;
     _regressionDeps.runRectificationLoop = mock(async () => {
       storyIdx++;
-      return { succeeded: true, cost: storyIdx === 1 ? 0.4 : 0.6 };
+      return { succeeded: true, cost: storyIdx === 1 ? 0.4 : 0.6, durationMs: storyIdx === 1 ? 90 : 110 };
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
     expect(result.success).toBe(true);
-    expect(result.storyCosts["US-001"]).toBeCloseTo(0.4);
-    expect(result.storyCosts["US-002"]).toBeCloseTo(0.6);
+    expect(result.storyCosts?.["US-001"]).toBeCloseTo(0.4);
+    expect(result.storyCosts?.["US-002"]).toBeCloseTo(0.6);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// storyDurations + storyOutcomes — follow-up to #679
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
+  test("accumulates wall-clock duration per story across rectification attempts", async () => {
+    _regressionDeps.runVerification = mock(async () => makeVerifyResult());
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    _regressionDeps.runRectificationLoop = mock(async () => ({
+      succeeded: false,
+      cost: 0.2,
+      durationMs: 175,
+    }));
+
+    const result = await runDeferredRegression(makeOptions(["US-001"]));
+
+    // 2 attempts × 175 ms
+    expect(result.storyDurations?.["US-001"]).toBe(350);
+  });
+
+  test("storyOutcomes reflects per-story rectification success rather than the overall result", async () => {
+    let verifyCallIndex = 0;
+    _regressionDeps.runVerification = mock(async () => {
+      const i = verifyCallIndex++;
+      if (i === 0) return makeVerifyResult(); // initial: fail
+      if (i === 1) return makeVerifyResult(); // mid after US-001: still fail
+      return makeVerifyResult(); // final re-run: still fail
+    });
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    let storyIdx = 0;
+    _regressionDeps.runRectificationLoop = mock(async () => {
+      storyIdx++;
+      // First story "succeeds" locally but the overall suite still fails; second story fails.
+      return storyIdx === 1
+        ? { succeeded: true, cost: 0.4, durationMs: 80 }
+        : { succeeded: false, cost: 0.5, durationMs: 120 };
+    });
+
+    const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
+
+    expect(result.success).toBe(false); // overall still failing
+    expect(result.storyOutcomes?.["US-001"]).toBe(true);
+    expect(result.storyOutcomes?.["US-002"]).toBe(false);
+  });
+
+  test("storyOutcomes latches true once any attempt succeeds", async () => {
+    _regressionDeps.runVerification = mock(async () => makeVerifyResult());
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+    let attempt = 0;
+    _regressionDeps.runRectificationLoop = mock(async () => {
+      attempt++;
+      // First attempt succeeds; early-exit triggers before second attempt.
+      return attempt === 1
+        ? { succeeded: true, cost: 0.3, durationMs: 100 }
+        : { succeeded: false, cost: 0.3, durationMs: 100 };
+    });
+
+    const result = await runDeferredRegression(makeOptions(["US-001"]));
+
+    expect(result.storyOutcomes?.["US-001"]).toBe(true);
   });
 });
