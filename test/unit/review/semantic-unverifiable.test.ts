@@ -208,6 +208,94 @@ describe("unverifiable finding handling", () => {
     expect(result.advisoryFindings).toBeDefined();
     expect(result.advisoryFindings![0].message).toBe("Minor observation");
   });
+
+  test("ref mode downgrades error findings that were not verified against files", async () => {
+    const response = JSON.stringify({
+      passed: false,
+      findings: [
+        {
+          severity: "error",
+          file: "apps/api/package.json",
+          line: 0,
+          issue: "The evaluate:retrieval script is missing.",
+          suggestion: "Add the script to package.json.",
+        },
+      ],
+    });
+    const agentManager = makeAgentManager(response);
+    const result = await runSemanticReview(
+      "/tmp/repo",
+      "abc123",
+      STORY,
+      { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+      agentManager,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.findings).toBeUndefined();
+    expect(result.advisoryFindings?.length).toBe(1);
+    expect(result.advisoryFindings?.[0].severity).toBe("info");
+  });
+
+  test("ref mode downgrades error findings that admit they only used the diff", async () => {
+    const response = JSON.stringify({
+      passed: false,
+      findings: [
+        {
+          severity: "error",
+          file: "apps/api/src/retrieval/fixtures/eval-queries.json",
+          line: 0,
+          issue: "Cannot verify from diff alone that exactly 50 evaluation queries exist.",
+          suggestion: "Read the fixture to count the queries.",
+        },
+      ],
+    });
+    const agentManager = makeAgentManager(response);
+    const result = await runSemanticReview(
+      "/tmp/repo",
+      "abc123",
+      STORY,
+      { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+      agentManager,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.findings).toBeUndefined();
+    expect(result.advisoryFindings?.[0].message).toContain("Cannot verify from diff alone");
+  });
+
+  test("ref mode preserves verified error findings as blocking", async () => {
+    const response = JSON.stringify({
+      passed: false,
+      findings: [
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 5,
+          issue: "AC not implemented",
+          suggestion: "Implement it",
+          verifiedBy: {
+            command: "sed -n '1,80p' src/foo.ts",
+            file: "src/foo.ts",
+            line: 5,
+            observed: "Function body is empty.",
+          },
+        },
+      ],
+    });
+    const agentManager = makeAgentManager(response);
+    const result = await runSemanticReview(
+      "/tmp/repo",
+      "abc123",
+      STORY,
+      { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+      agentManager,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.findings?.length).toBe(1);
+    expect(result.findings?.[0].message).toBe("AC not implemented");
+  });
 });
 
 describe("semantic prompt includes tool-access instructions", () => {

@@ -100,7 +100,7 @@ Add `"semantic"` to `review.checks` in `.nax/config.json`:
   "review": {
     "semantic": {
       "modelTier": "fast",
-      "diffMode": "embedded",
+      "diffMode": "ref",
       "resetRefOnRerun": false,
       "rules": []
     }
@@ -120,8 +120,8 @@ Controls how the production diff is provided to the reviewer:
 
 | Mode | Description | Diff cap | Best for |
 |:-----|:-----------|:---------|:---------|
-| `"embedded"` (default) | Diff is inlined directly in the prompt | ~50KB | Small-to-medium diffs, simple review |
-| `"ref"` | Reviewer self-serves via git tools (READ, GREP) | No cap | Large diffs, adversarial review |
+| `"ref"` (default) | Reviewer self-serves via git tools (READ, GREP) | No cap | Large diffs, multi-tier retries |
+| `"embedded"` | Diff is inlined directly in the prompt | ~50KB | Small-to-medium diffs, simple review |
 
 In `"ref"` mode, the reviewer receives the story's `storyGitRef` and uses git commands to inspect the diff on demand. This removes the 50KB cap and lets the reviewer focus on specific files rather than scanning the entire diff.
 

@@ -30,8 +30,8 @@ export interface SemanticReviewConfig {
   modelTier: import("../config/schema-types").ModelTier;
   /**
    * How the semantic reviewer accesses the git diff.
-   * "embedded" (default): pre-collected diff truncated at 50KB and embedded in prompt.
-   * "ref": only stat summary + storyGitRef passed; reviewer fetches full diff via tools.
+   * "embedded": pre-collected diff truncated at 50KB and embedded in prompt.
+   * "ref" (default): only stat summary + storyGitRef passed; reviewer fetches full diff via tools.
    */
   diffMode: "embedded" | "ref";
   /**
