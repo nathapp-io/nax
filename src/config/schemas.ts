@@ -295,10 +295,10 @@ const SemanticReviewConfigSchema = z.object({
   modelTier: ModelTierSchema.default("balanced"),
   /**
    * How the semantic reviewer accesses the git diff.
-   * "embedded" (default): pre-collected diff truncated at 50KB and embedded in prompt.
-   * "ref": only stat summary + storyGitRef passed; reviewer fetches full diff via tools.
+   * "embedded": pre-collected diff truncated at 50KB and embedded in prompt.
+   * "ref" (default): only stat summary + storyGitRef passed; reviewer fetches full diff via tools.
    */
-  diffMode: z.enum(["embedded", "ref"]).default("embedded"),
+  diffMode: z.enum(["embedded", "ref"]).default("ref"),
   /**
    * When true, clears storyGitRef on failed stories during re-run initialization so
    * the ref is re-captured at the next story start. Prevents cross-story diff pollution
@@ -1003,7 +1003,7 @@ export const NaxConfigSchema = z
       blockingThreshold: "error",
       semantic: {
         modelTier: "balanced",
-        diffMode: "embedded",
+        diffMode: "ref",
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,

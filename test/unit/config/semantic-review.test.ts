@@ -111,7 +111,7 @@ describe("ReviewConfig semantic field", () => {
     if (result.success) {
       expect(result.data.review.semantic).toEqual({
         modelTier: "balanced",
-        diffMode: "embedded",
+        diffMode: "ref",
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
@@ -227,7 +227,7 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
   test("DEFAULT_CONFIG.review.semantic has correct defaults", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
       modelTier: "balanced",
-      diffMode: "embedded",
+      diffMode: "ref",
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,

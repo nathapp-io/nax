@@ -165,7 +165,7 @@ export async function runSemanticReview(
     };
   }
 
-  const diffMode = semanticConfig.diffMode ?? "embedded";
+  const diffMode = semanticConfig.diffMode ?? "ref";
   logger?.info("review", "Running semantic check", {
     storyId: story.id,
     modelTier: semanticConfig.modelTier,
