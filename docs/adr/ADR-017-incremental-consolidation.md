@@ -1,9 +1,10 @@
 # ADR-017: Incremental Consolidation — NaxRuntime, Adapter Shrink, Prompt Composition Helper, Unified Retry
 
-**Status:** Reviewing
+**Status:** Superseded by ADR-018
 **Date:** 2026-04-24
 **Author:** William Khoo, Claude
 **Supersedes:** ADR-014 (RunScope and Middleware), ADR-015 (Operation Contract), ADR-016 (Prompt Composition and PackageView)
+**Superseded-by:** ADR-018 (Runtime Layering with SessionRunners) — amends §E to reinstate `ISessionRunner` as Layer-3 bookkeeping surface per #596; all other sections carried forward
 **Extends:** ADR-011 (SessionManager Ownership), ADR-012 (AgentManager Ownership), ADR-013 (SessionManager → AgentManager Hierarchy), ADR-009 (Test-File Pattern SSOT), ADR-008 (Session Lifecycle)
 **Related:** #523 (fallback state divergence across orphan AgentManagers), #533–#536 (monorepo awareness violations)
 
