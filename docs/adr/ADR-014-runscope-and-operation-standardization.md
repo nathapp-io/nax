@@ -1,6 +1,6 @@
 # ADR-014: RunScope Composition, Operation Standardization, and Prompt Middleware
 
-**Status:** Proposed
+**Status:** Reject
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-013 (SessionManager → AgentManager Hierarchy); ADR-012 (AgentManager Ownership); ADR-011 (SessionManager Ownership); ADR-010 (Context Engine)

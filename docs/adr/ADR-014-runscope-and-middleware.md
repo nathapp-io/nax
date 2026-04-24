@@ -1,6 +1,6 @@
 # ADR-014: RunScope, Agent Middleware, and Orphan Consolidation
 
-**Status:** Proposed
+**Status:** Reject
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-013 (SessionManager → AgentManager Hierarchy); ADR-012 (AgentManager Ownership); ADR-011 (SessionManager Ownership)
@@ -132,9 +132,346 @@ Every `createAgentManager(config)` call outside this factory becomes a compile e
 
 ---
 
-### 2. Agent middleware chain
+### 2. Permission resolution and agent middleware
 
-Wraps every `IAgent` returned by `scope.getAgent()` and every agent used inside a `sessionManager.runInSession()`. Intercepts `run()` and `complete()`.
+Permissions flow through **three** layers today: a stage-driven **resolver** produces canonical policy; a per-transport **transport translator** renders canonical into the transport's wire format; the **adapter** applies the wire format. `scope.invoke()` owns the resolver call; the adapter owns its transport translator (which lives inside the adapter's folder). The middleware chain is purely observational — permission resolution happens pre-chain.
+
+An **agent-level translator layer** is intentionally **not** introduced in Phase 2. Today the only transport is ACP, and acpx passes tool-allowlist entries through to each hosted agent unchanged — per-agent tool-name translation (e.g. `"Read"` → `"read_file"` for a hypothetical non-Claude agent) is not something nax needs to own. If a future agent genuinely requires vocabulary adjustment nax must apply, the agent translator slots **between** canonical and transport as Layer 2′ with zero call-site churn: transport translators would then consume the agent-native policy instead of canonical directly.
+
+#### 2.1 Three-layer model
+
+```
+Config + stage (declarative — op.requires.permissions)
+       │
+       ▼ Layer 1 — RESOLVER (adapter-agnostic, agent-agnostic, transport-agnostic)
+       │   src/config/permissions.ts :: resolvePermissions()
+       │
+ResolvedPermissions (canonical — StandardTool vocabulary)
+       │
+       ▼ Layer 2 — TRANSPORT TRANSLATOR (transport-specific)
+       │   src/agents/acp/permissions.ts :: toAcpWire()
+       │   wrapped as `acpTranslator: IPermissionTranslator<AcpWirePolicy>`
+       │   registered in scope.services.translatorRegistry keyed by "acp"
+       │   adapter resolves via registry (middleman) — does not import directly
+       │
+AcpWirePolicy (ACP wire format — { permissionMode, allowedToolsArg })
+       │
+       ▼ Layer 3 — ADAPTER APPLICATION (transport I/O)
+       │   src/agents/acp/adapter.ts
+       │
+createSession({ permissionMode, … }) + acpxArgs.push("--allowed-tools", …)
+```
+
+Responsibilities:
+
+| Layer | Knows about | Does not know about |
+|:---|:---|:---|
+| Resolver | Config schema, pipeline stages | Transports, wire formats, agents |
+| Transport translator | Canonical policy, this transport's wire format | Pipeline stages, config schema |
+| Adapter | Wire format of its transport, session/process plumbing | Policy semantics, wire-token decisions |
+
+**Why no agent translator today:** ACP is the only transport, and acpx is agent-agnostic at the permission level — it forwards `permissionMode` and `--allowed-tools` entries without rewriting them. Every agent that runs under acpx consumes the same tokens. An agent translator would be a pass-through today, shipping ceremony for no benefit. When/if a future agent requires nax-side vocabulary adjustment, Layer 2′ slots in cleanly; transport translators re-target from consuming canonical to consuming agent-native. YAGNI applied to the "we might need it" speculation.
+
+**Future Layer 2′ (agent translator) — for reference, not Phase 2:**
+
+```
+                                 (future, only when a real agent demands it)
+ResolvedPermissions ─► Layer 2′ AGENT TRANSLATOR ─► AgentPermissionPolicy ─► Layer 2 TRANSPORT TRANSLATOR ─► Wire
+                       src/runtime/permissions/
+                       translators/<agent>.ts
+                       resolved via IPermissionTranslatorRegistry
+```
+
+At that point, `AgentPermissionPolicy` would mirror canonical's shape (profile, allowedTools with agent-native tool names, warnings for agent-capability downgrades). The transport translator's input type changes from `ResolvedPermissions` to `AgentPermissionPolicy`; the transport signature is otherwise stable.
+
+#### 2.2 Canonical `ResolvedPermissions`
+
+`src/config/permissions.ts` is amended. The existing type is replaced to remove adapter-specific fields.
+
+```typescript
+// src/config/permissions.ts
+export interface ResolvedPermissions {
+  readonly profile: PermissionProfile;
+  /** Scoped-profile patterns; undefined when profile ≠ "scoped". */
+  readonly allowedTools?: readonly ToolAllowPattern[];
+}
+
+/**
+ * Permission profile — single source of truth for auto-approve behavior.
+ *
+ *   "unrestricted" — blanket auto-approve; no user prompts for any action.
+ *   "auto"         — agent decides via its own policy/judgment (newer Claude Code
+ *                    ships a built-in auto-approve mode narrower than "unrestricted"
+ *                    but broader than "safe"). Transport translator emits the
+ *                    agent's native auto token.
+ *   "safe"         — auto-approve read-only operations; prompt on writes / shell / network.
+ *                    This is the default.
+ *   "none"         — prompt for every action.
+ *   "scoped"       — per-tool allowlist from `allowedTools`; actions matching the
+ *                    allowlist are auto-approved, everything else prompts.
+ *
+ * Permissiveness ordering (for static profiles): unrestricted > auto > safe > none.
+ * "scoped" is orthogonal — permissiveness depends on the allowlist.
+ */
+export type PermissionProfile =
+  | "unrestricted"
+  | "auto"
+  | "safe"
+  | "none"
+  | "scoped";
+
+export interface ToolAllowPattern {
+  readonly tool: StandardTool;
+  readonly paths?: readonly string[];     // globs for Read/Write/Edit
+  readonly commands?: readonly string[];  // globs for Bash
+}
+
+export type StandardTool =
+  | "Read"
+  | "Write"
+  | "Edit"
+  | "Bash"
+  | "Network"
+  | "Notebook";
+```
+
+**Dropped from the current type:**
+
+- `mode: "approve-all" | "approve-reads" | "default"` — ACP-specific vocabulary; moves inside the ACP adapter's folder (§2.5).
+- `skipPermissions: boolean` — dead (was the removed CLI adapter's `--dangerously-skip-permissions` flag).
+
+**Unchanged:** `resolvePermissions(config, stage): ResolvedPermissions` remains the single entry point. Phase 2 implementation of `resolveScopedPermissions()` populates `allowedTools`; until then it returns `undefined` and #374 delivers the stage-by-stage body.
+
+#### 2.3 `scope.invoke()` pre-chain resolution
+
+Resolution happens once, before the middleware chain fires, at the top of `scope.invoke()`:
+
+```typescript
+// src/runtime/scope.ts — scope.invoke() internal flow
+async invoke<I, O, C>(op, input, opts) {
+  // ... validate, resolve agent name, slice config ...
+
+  // Canonical policy — agent-agnostic, transport-agnostic.
+  const canonical = resolvePermissions(packageView.config, op.requires.permissions);
+
+  // Thread into agent-call options. Adapter consumes it via its transport translator;
+  // middleware observes it for audit/logging.
+  const agentCallOptions = {
+    ...baseOptions,
+    permissions: canonical,
+  };
+
+  // ... build OperationContext, invoke middleware-wrapped agent with agentCallOptions ...
+}
+```
+
+Neither the adapter nor any middleware calls `resolvePermissions()` at runtime. Single resolution per agent call. The adapter's transport translator (§2.5) consumes `canonical` and produces wire format.
+
+#### 2.4 `AgentRunOptions.permissions` and `.scope` shape
+
+```typescript
+// src/agents/types.ts — AgentRunOptions amended
+export interface AgentRunOptions {
+  // ... existing fields ...
+
+  readonly permissions: ResolvedPermissions;  // canonical; adapter calls its transport translator on this
+  readonly scope: RunScope;                   // scope reference — gives adapter access to services.translatorRegistry
+
+  // REMOVED:
+  // dangerouslySkipPermissions?: boolean;   (dead — CLI adapter removed)
+  // pipelineStage?: PipelineStage;          (no longer needed — pre-resolution handles it)
+}
+```
+
+`CompleteOptions` gets both `permissions` and `scope` fields on the same terms. `config` stays on both (still needed by audit/cost middleware, but **not** for permission derivation anywhere).
+
+The options carry the canonical `ResolvedPermissions` directly. When Layer 2′ (agent translator) is added later, this widens to a union or nested shape — the change is local to `scope.invoke()` and the transport translator signature.
+
+**Why thread `scope` through options** rather than have the adapter reach for a global: adapter calls happen inside middleware-wrapped paths; the wrapping middleware is the only thing that knows the active scope for this call. Threading via options keeps the adapter a pure function of its inputs — no singletons, no async-local storage — which matches the observer-only middleware invariant (§2.8) and keeps tests isolated (each `makeTestScope()` instance is self-contained).
+
+#### 2.5 ACP transport translator
+
+The ACP wire format lives **inside the ACP adapter folder**. No module outside `src/agents/acp/` treats ACP wire types as first-class — they surface only at the generic parameter of the registry's `get<AcpWirePolicy>()` call at the adapter boundary (§2.7). A pure function `toAcpWire()` bridges canonical `ResolvedPermissions` to the ACP wire tokens that `createSession()` and acpx expect.
+
+```typescript
+// src/agents/acp/permissions.ts (NEW — inside the adapter's folder)
+import type { ResolvedPermissions, ToolAllowPattern } from "../../config/permissions";
+
+// ACP wire tokens — exclusively scoped to this module
+export type AcpPermissionMode =
+  | "approve-all"
+  | "approve-auto"
+  | "approve-reads"
+  | "default";
+
+export interface AcpWirePolicy {
+  readonly permissionMode: AcpPermissionMode;
+  readonly allowedToolsArg?: readonly string[];   // pre-formatted strings for acpx --allowed-tools
+  /**
+   * Reserved for #374 (scoped tool allowlists) and for future transport-capability validation.
+   * Phase 2 leaves this undefined — `toAcpWire()` does not emit warnings today because every
+   * canonical profile maps cleanly to an ACP mode. Populated when validation in #374 encounters
+   * an allowlist pattern the wire cannot express.
+   */
+  readonly warnings?: readonly string[];
+}
+
+export function toAcpWire(resolved: ResolvedPermissions): AcpWirePolicy {
+  // Map canonical profile → ACP permissionMode.
+  // "scoped" uses "approve-reads" as the ceiling; the allowlist (below) carries the
+  // per-tool grants that acpx forwards to the underlying agent.
+  const permissionMode: AcpPermissionMode =
+    resolved.profile === "unrestricted" ? "approve-all"   :
+    resolved.profile === "auto"         ? "approve-auto"  :
+    resolved.profile === "safe"         ? "approve-reads" :
+    resolved.profile === "scoped"       ? "approve-reads" :
+                                          "default"; // "none"
+
+  const allowedToolsArg = resolved.allowedTools?.map(formatAsAcpAllowlistEntry);
+
+  return { permissionMode, allowedToolsArg };
+}
+
+function formatAsAcpAllowlistEntry(p: ToolAllowPattern): string {
+  // acpx passes the allowlist string through to the underlying agent, which enforces it.
+  // Tool names are in StandardTool vocabulary; acpx handles agent-specific name mapping today.
+  // Format: "Tool" or "Tool(glob1,glob2,...)"
+  if (p.paths && p.paths.length > 0)       return `${p.tool}(${p.paths.join(",")})`;
+  if (p.commands && p.commands.length > 0) return `${p.tool}(${p.commands.join(",")})`;
+  return p.tool;
+}
+```
+
+**What this buys us:**
+
+- ACP wire vocabulary (`approve-all`, `approve-reads`, etc.) never appears outside `src/agents/acp/`.
+- A future direct-API transport would live in `src/agents/<transport>/permissions.ts` with its own `toXxxWire()` function. Canonical stays stable.
+- `toAcpWire()` is a pure function — unit-testable without spawning a process. All ACP mode decisions live in one ~25-line function.
+- When Layer 2′ (agent translator) is added later, `toAcpWire()` re-targets from `ResolvedPermissions` to `AgentPermissionPolicy` — a one-line signature change inside this file.
+
+#### 2.6 Translator registry — middleman pattern
+
+The adapter does **not** import `toAcpWire` directly. Instead a `IPermissionTranslator` interface wraps the wire function, the registry holds it, and the adapter resolves through the registry. The registry is a scope-level service.
+
+**Why a registry when only one transport exists today:**
+
+- **Test injection.** Tests can supply a fake translator without stubbing the adapter or monkey-patching `toAcpWire`.
+- **Plugin extension seam.** Plugin API v2 (future ADR) can register additional translators or override the default without touching the ACP adapter's code.
+- **Extension for future transports.** Direct-API Claude, HTTP bridges, or any other transport add a new registry entry; the adapter wiring pattern stays identical.
+- **Keeps the adapter ignorant of *how* the translation is resolved.** Adapter calls `registry.get("acp")`; what that returns is the registry's concern.
+
+One entry today. Not speculative per-agent stubs — a deliberate middleman so the shape is stable when the second entry arrives.
+
+```typescript
+// src/runtime/permissions/translator.ts
+export interface IPermissionTranslator<W = unknown> {
+  readonly transport: string;                          // "acp" today; future: "claude-api" | ...
+  translate(resolved: ResolvedPermissions): W;         // W is the transport's wire type
+}
+
+export interface IPermissionTranslatorRegistry {
+  /** Returns the translator for a transport; throws NaxError PERMISSION_TRANSLATOR_MISSING on miss. */
+  get<W = unknown>(transport: string): IPermissionTranslator<W>;
+  /** Returns the translator or null — for composite chaining. */
+  tryGet<W = unknown>(transport: string): IPermissionTranslator<W> | null;
+}
+
+// src/runtime/permissions/registries/static.ts — Phase 2 default
+export class StaticTranslatorRegistry implements IPermissionTranslatorRegistry {
+  constructor(private readonly map: ReadonlyMap<string, IPermissionTranslator<unknown>>) {}
+  tryGet<W>(transport: string) {
+    // Runtime cast — the generic parameter is asserted by the caller. See "Generic type erasure"
+    // commentary in §2.7: the registry stores IPermissionTranslator<unknown>; the caller at the
+    // adapter boundary specifies the concrete wire type (e.g. AcpWirePolicy) in the type argument.
+    return (this.map.get(transport) ?? null) as IPermissionTranslator<W> | null;
+  }
+  get<W>(transport: string) {
+    const t = this.tryGet<W>(transport);
+    if (t) return t;
+    throw new NaxError(
+      `No permission translator registered for transport "${transport}"`,
+      "PERMISSION_TRANSLATOR_MISSING",
+      { transport },
+    );
+  }
+}
+```
+
+**Each transport contributes its translator** inside its own folder:
+
+```typescript
+// src/agents/acp/permissions.ts — appended to existing file
+import type { IPermissionTranslator } from "../../runtime/permissions/translator";
+
+export const acpTranslator: IPermissionTranslator<AcpWirePolicy> = {
+  transport: "acp",
+  translate: toAcpWire,     // the pure function defined above
+};
+```
+
+**Scope construction registers the Phase 2 set:**
+
+```typescript
+// src/runtime/scope-factory.ts — inside forRun()
+import { acpTranslator } from "../agents/acp/permissions";
+
+const translatorRegistry: IPermissionTranslatorRegistry = new StaticTranslatorRegistry(
+  new Map<string, IPermissionTranslator<unknown>>([
+    ["acp", acpTranslator],
+  ])
+);
+
+const scope: RunScope = {
+  // ...
+  services: {
+    costAggregator,
+    promptAuditor,
+    permissionResolver: resolvePermissions,
+    translatorRegistry,                     // NEW
+    logger,
+  },
+  // ...
+};
+```
+
+**Future variants** (deferred to plugin API v2 ADR, same pattern):
+
+- `AgentDescriptorTranslatorRegistry` — reads translators from `AgentDescriptor` entries when plugins contribute agents with custom transports.
+- `CompositeTranslatorRegistry` — chains multiple registries (plugins first, then built-ins).
+
+All three implementations satisfy the same `IPermissionTranslatorRegistry` interface. Adapter code is unaware which registry type backs it.
+
+#### 2.7 ACP adapter application
+
+The adapter resolves the translator from the registry and applies its output. Zero permission-semantics logic, zero direct translator imports.
+
+```typescript
+// src/agents/acp/adapter.ts — inside run()
+// No import of toAcpWire. Registry is the only seam.
+
+const translator = options.scope.services.translatorRegistry.get<AcpWirePolicy>("acp");
+const wire = translator.translate(options.permissions);
+
+const session = await client.createSession({
+  agentName: options.agentName,
+  permissionMode: wire.permissionMode,
+  sessionName,
+});
+if (wire.allowedToolsArg) {
+  acpxArgs.push("--allowed-tools", wire.allowedToolsArg.join(","));
+}
+if (wire.warnings) {
+  for (const w of wire.warnings) {
+    getSafeLogger()?.warn("acp-adapter", w, { agentName: options.agentName });
+  }
+}
+```
+
+Existing ACP adapter sites that call `resolvePermissions()` — [adapter.ts:593](../../src/agents/acp/adapter.ts#L593), [adapter.ts:847](../../src/agents/acp/adapter.ts#L847), [adapter.ts:1036](../../src/agents/acp/adapter.ts#L1036) — all delete. They become the ~8 lines above.
+
+#### 2.8 Agent middleware chain — observers only
+
+After pre-chain resolution, the middleware chain is pure observation. No middleware reads or derives permissions; `options.permissions` is present for audit/logging inspection only.
 
 ```typescript
 // src/runtime/agent-middleware.ts
@@ -146,7 +483,7 @@ export interface AgentMiddleware {
 
 export interface MiddlewareContext {
   readonly prompt: string;
-  readonly options: RunOptions | CompleteOptions;
+  readonly options: AgentRunOptions | CompleteOptions;  // includes .permissions (canonical) and .scope
   readonly agentName: string;
   readonly scope: RunScope;
   readonly stage?: PipelineStage;
@@ -160,18 +497,19 @@ export interface MiddlewareContext {
 
 | Middleware | Concern | Semantics |
 |:---|:---|:---|
-| `permissions` | Resolve permission mode from stage + config, apply to options | **Observer** — reads stage, enriches options; does not mutate prompt |
-| `audit` | Capture prompt + response via `IPromptAuditor` | Observer — emits `PromptAuditEntry` on success and on error |
-| `cost` | Emit `CostEvent` to `ICostAggregator` tagged with `{ agentName, stage, storyId, packageDir }` | Observer — emits on success only; partial/errored calls emit a separate `CostErrorEvent` |
-| `cancellation` | Thread `signal` into adapter call; translate `AbortError` to `NaxError CANCELLED` | Pass-through with error translation |
-| `logging` | Structured JSONL per `project-conventions.md`, `storyId` first | Observer |
+| `audit` | Capture prompt + response via `IPromptAuditor`; record `options.permissions.profile` | Observer — emits `PromptAuditEntry` on success, `PromptAuditErrorEntry` on error |
+| `cost` | Emit `CostEvent` to `ICostAggregator`, tagged with `{ agentName, stage, storyId, packageDir }` | Observer — `CostEvent` on success, `CostErrorEvent` on error |
+| `cancellation` | Thread `signal` into adapter call; translate `AbortError` to `NaxError CANCELLED` | Pass-through with error translation; does not observe prompt/response |
+| `logging` | Structured JSONL per `project-conventions.md`, `storyId` first, includes canonical `profile` | Observer |
+
+Note: no `permissions` entry — permission resolution is pre-chain (§2.3), not a middleware concern.
 
 **Middleware invariants:**
 
-- **Middleware are observers, not transformers** (Phase 1 constraint). No middleware mutates the prompt or response for the next middleware in the chain. This keeps ordering irrelevant in Phase 1 — middleware can be registered in any order and produce equivalent behavior.
-- **On error:** every middleware must be resilient to the call throwing. `audit` emits an error entry, `cost` emits a `CostErrorEvent`, `cancellation` translates the error. No middleware may swallow the thrown error.
+- **Middleware are observers, not transformers** (Phase 1 constraint). No middleware mutates the prompt, response, or options for the next middleware in the chain. Order-independence is preserved.
+- **On error:** every middleware is resilient to the call throwing. `audit` emits an error entry, `cost` emits a `CostErrorEvent`, `cancellation` translates the error. No middleware may swallow the thrown error.
 - **Frozen at scope construction.** The chain is registered once in `IRunScopeFactory.forRun()` and immutable for the scope lifetime. No per-call reordering, no per-op opt-out.
-- **Future extension:** if a later middleware needs to transform (e.g. inject system prompt, rewrite options), the invariant tightens to a declared order. Deferred until a concrete case exists.
+- **Future extension:** if a later middleware needs to transform (e.g. inject system prompt, rewrite options), the invariant tightens to a declared order at that point, with the concrete case as justification. The `permissions` case is handled pre-chain and does not justify loosening this invariant.
 
 ---
 
@@ -318,13 +656,24 @@ RunScope (per run / plan / ephemeral)
   ├─ services:
   │    ├─ costAggregator                         // NEW
   │    ├─ promptAuditor                          // NEW
-  │    ├─ permissionResolver
+  │    ├─ permissionResolver: resolvePermissions
+  │    ├─ translatorRegistry                     // NEW — IPermissionTranslatorRegistry
   │    └─ logger
   ├─ getAgent(name) → IAgent                     // middleware-wrapped
+  ├─ invoke<I,O,C>(op, input, opts) → O          // pre-chain resolves permissions, §2.3
   └─ close() → Promise<void>
 
-Agent middleware chain (observers only, order-independent)
-  permissions / audit / cost / cancellation / logging → rawAgent
+Permission flow (pre-chain, §2.1–§2.7)
+  scope.invoke() → resolvePermissions() → options.permissions (canonical)
+                                            │
+                                            ▼ adapter reads via registry
+  options.scope.services.translatorRegistry.get<AcpWirePolicy>("acp")
+                                            │
+                                            ▼ translate
+  toAcpWire(canonical) → AcpWirePolicy → createSession + acpx args
+
+Agent middleware chain (observers only, order-independent, no permissions entry)
+  audit / cost / cancellation / logging → rawAgent
 
 IAgent (ADR-013, unchanged)
   ├─ run(prompt, opts): Promise<AgentResult>
@@ -379,10 +728,25 @@ Three phases, each independently shippable. Each phase preserves all ADR-011/012
   3. Runner constructs and closes scope cleanly; `close()` idempotency verified by test.
 - **Risk:** Low. Purely additive. The one behavior change (SessionManager's `getAgent` callback) is constructor-level and invisible to call sites.
 
-### Phase 2 — Agent middleware chain + orphan consolidation
+### Phase 2 — Permission resolution, middleware chain, orphan consolidation
 
-- Implement `AgentMiddleware` interface and canonical middleware (permissions, audit, cost, cancellation, logging) as independent observers.
+**Permission resolution (§2.1–§2.7):**
+
+- Amend `src/config/permissions.ts` — canonical `ResolvedPermissions` as `{ profile, allowedTools? }`. `PermissionProfile` widens to `"unrestricted" | "auto" | "safe" | "none" | "scoped"`. Drops legacy `mode` and `skipPermissions`.
+- Add `AgentRunOptions.permissions: ResolvedPermissions` and `AgentRunOptions.scope: RunScope`; same on `CompleteOptions`.
+- Implement `scope.invoke()` pre-chain resolution — calls `resolvePermissions()` once, stuffs `options.permissions`.
+- Add `src/agents/acp/permissions.ts` — `AcpPermissionMode`, `AcpWirePolicy`, `toAcpWire()`, `acpTranslator`. ACP wire vocabulary scoped to this module.
+- Add `src/runtime/permissions/translator.ts` (interfaces) and `src/runtime/permissions/registries/static.ts` (`StaticTranslatorRegistry`).
+- Wire `scope.services.translatorRegistry` in `IRunScopeFactory.forRun()` with single entry `"acp" → acpTranslator`.
+- Shrink ACP adapter permission handling to registry-resolved translator call. Delete `resolvePermissions()` calls at [adapter.ts:593](../../src/agents/acp/adapter.ts#L593), [adapter.ts:847](../../src/agents/acp/adapter.ts#L847), [adapter.ts:1036](../../src/agents/acp/adapter.ts#L1036).
+
+**Middleware chain (§2.8):**
+
+- Implement `AgentMiddleware` interface and canonical middleware (audit, cost, cancellation, logging) as independent observers. **No `permissions` middleware** — it was pre-chain work above.
 - `scope.getAgent()` returns middleware-wrapped agent.
+
+**Orphan consolidation:**
+
 - Migrate orphan call sites in order of lowest blast radius:
   1. `routing/router.ts` — use `scope.getAgent(defaultAgent).complete()`
   2. `acceptance/refinement.ts`, `acceptance/generator.ts`
@@ -391,8 +755,14 @@ Three phases, each independently shippable. Each phase preserves all ADR-011/012
   5. `review/semantic.ts`
   6. `cli/plan.ts` — uses `forPlan()` factory
 - **Delete `createAgentManager` from public barrel.** Move to `src/runtime/internal/`.
-- **Exit criteria:** Zero `createAgentManager` imports outside `src/runtime/`. #523 verifiable: a 401 on routing activates the same fallback chain as execution.
-- **Risk:** Medium. Mechanical migrations touch many files; each site's behavior change is small and individually reviewable.
+
+**Exit criteria:**
+
+- Zero `createAgentManager` imports outside `src/runtime/`. #523 verifiable: a 401 on routing activates the same fallback chain as execution.
+- Zero `resolvePermissions()` calls inside `src/agents/acp/adapter.ts`.
+- No ACP wire-token literals (`"approve-all"`, etc.) outside `src/agents/acp/`.
+
+**Risk:** Medium. Mechanical migrations touch many files; each site's behavior change is small and individually reviewable.
 
 ### Phase 3 — Drain aggregator and auditor into metrics/disk
 
@@ -422,7 +792,27 @@ Three phases, each independently shippable. Each phase preserves all ADR-011/012
 
 ### D. Middleware as transformers from day one
 
-**Rejected.** Transformers (middleware that can rewrite prompt/response for the next middleware) introduce load-bearing ordering semantics: permissions-then-audit captures the permission-mutated prompt; audit-then-permissions captures caller intent. Phase 1 ships observers only — all middleware read `MiddlewareContext` and emit side effects without affecting the chain. If a future middleware needs to transform, the invariant tightens to a declared order at that point, with the concrete case as justification.
+**Rejected.** Transformers (middleware that can rewrite prompt/response for the next middleware) introduce load-bearing ordering semantics. Phase 1 ships observers only — all middleware read `MiddlewareContext` and emit side effects without affecting the chain. If a future middleware needs to transform, the invariant tightens to a declared order at that point, with the concrete case as justification.
+
+### E. Permissions as middleware
+
+**Rejected.** Early drafts listed `permissions` as a middleware entry. The middleware interface (observer-only, `readonly ctx`, args-less `next()`) cannot actually rewrite agent-call options — so a `permissions` middleware would either have to mutate (breaking the observer invariant) or do nothing useful. Resolution happens **pre-chain** inside `scope.invoke()` (§2.3), stuffs `options.permissions` with canonical policy, and the observer chain runs unchanged. The `permissions` entry disappears from the middleware table (§2.8).
+
+### F. Adapter-side `resolvePermissions()` calls (current code path)
+
+**Rejected.** Today's ACP adapter calls `resolvePermissions()` three times inside `run()`/`complete()`/`plan()` — duplicative with caller-side resolution. Single resolution in `scope.invoke()` puts canonical on options so middleware + audit can observe policy decisions without re-resolving, and adapters become pure consumers of pre-resolved state.
+
+### G. Adapter imports `toAcpWire` directly (no registry)
+
+**Rejected.** Loses the test-injection seam and forces each future transport to replicate its own ad-hoc wiring. The `IPermissionTranslatorRegistry` middleman (§2.6) is minor ceremony now (one entry) and pays off the moment a second transport or a plugin override appears.
+
+### H. Per-agent translator layer in Phase 2
+
+**Rejected as speculative.** Early drafts proposed per-agent translators (`translateToClaude`, `translateToGemini`, etc.) under ACP. Today acpx passes allowlist entries through unchanged — an agent translator would be a pass-through for every entry. Layer 2′ (§2.1 future reference) slots in cleanly when a real agent demands vocabulary adjustment; shipping the layer now would add ceremony without benefit.
+
+### I. ACP wire tokens in shared runtime types
+
+**Rejected.** Early drafts exported `AcpPermissionMode` from `src/runtime/permissions/`. Wire tokens are transport-specific and belong inside the transport's folder. `AcpPermissionMode`, `AcpWirePolicy`, and `toAcpWire()` all live inside `src/agents/acp/`. The registry stores `IPermissionTranslator<unknown>`; the adapter asserts the concrete wire type via the generic parameter at the call site.
 
 ---
 
