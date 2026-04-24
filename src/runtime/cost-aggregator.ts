@@ -67,3 +67,80 @@ export function createNoOpCostAggregator(): ICostAggregator {
     async drain() {},
   };
 }
+
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+
+/** Injectable deps — swap `write` in tests to avoid real disk I/O. */
+export const _costAggDeps = {
+  write: (path: string, data: string): Promise<number> => Bun.write(path, data),
+};
+
+function emptySnap(): CostSnapshot {
+  return { totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 };
+}
+
+function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
+  return {
+    totalCostUsd: snap.totalCostUsd + e.costUsd,
+    totalInputTokens: snap.totalInputTokens + e.tokens.input,
+    totalOutputTokens: snap.totalOutputTokens + e.tokens.output,
+    callCount: snap.callCount + 1,
+    errorCount: snap.errorCount,
+  };
+}
+
+export class CostAggregator implements ICostAggregator {
+  private readonly _events: CostEvent[] = [];
+  private readonly _errors: CostErrorEvent[] = [];
+
+  constructor(
+    private readonly _runId: string,
+    private readonly _drainDir: string,
+  ) {}
+
+  record(event: CostEvent): void {
+    this._events.push(event);
+  }
+
+  recordError(event: CostErrorEvent): void {
+    this._errors.push(event);
+  }
+
+  snapshot(): CostSnapshot {
+    return this._events.reduce(accumulate, { ...emptySnap(), errorCount: this._errors.length });
+  }
+
+  byAgent(): Record<string, CostSnapshot> {
+    const m: Record<string, CostSnapshot> = {};
+    for (const e of this._events) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
+    return m;
+  }
+
+  byStage(): Record<string, CostSnapshot> {
+    const m: Record<string, CostSnapshot> = {};
+    for (const e of this._events) {
+      const k = e.stage ?? "unknown";
+      m[k] = accumulate(m[k] ?? emptySnap(), e);
+    }
+    return m;
+  }
+
+  byStory(): Record<string, CostSnapshot> {
+    const m: Record<string, CostSnapshot> = {};
+    for (const e of this._events) {
+      const k = e.storyId ?? "unknown";
+      m[k] = accumulate(m[k] ?? emptySnap(), e);
+    }
+    return m;
+  }
+
+  async drain(): Promise<void> {
+    if (this._events.length === 0 && this._errors.length === 0) return;
+    mkdirSync(this._drainDir, { recursive: true });
+    const path = join(this._drainDir, `${this._runId}.jsonl`);
+    const sorted = [...this._events, ...this._errors].sort((a, b) => a.ts - b.ts);
+    const content = `${sorted.map((e) => JSON.stringify(e)).join("\n")}\n`;
+    await _costAggDeps.write(path, content);
+  }
+}
