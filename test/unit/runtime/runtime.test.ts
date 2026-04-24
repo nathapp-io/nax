@@ -45,6 +45,40 @@ describe("createRuntime", () => {
     parent.abort();
     expect(rt.signal.aborted).toBe(true);
   });
+
+  test("runtime has runId field", () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    expect(rt.runId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  test("production CostAggregator is wired (not no-op)", () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    rt.costAggregator.record({
+      ts: Date.now(),
+      runId: "x",
+      agentName: "claude",
+      model: "m",
+      tokens: { input: 10, output: 5 },
+      costUsd: 0.001,
+      durationMs: 100,
+    });
+    expect(rt.costAggregator.snapshot().callCount).toBe(1);
+  });
+
+  test("production PromptAuditor accumulates entries", () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    expect(() =>
+      rt.promptAuditor.record({
+        ts: Date.now(),
+        runId: "x",
+        agentName: "claude",
+        permissionProfile: "approve-reads",
+        prompt: "p",
+        response: "r",
+        durationMs: 50,
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe("makeTestRuntime", () => {
@@ -58,5 +92,10 @@ describe("makeTestRuntime", () => {
   test("accepts config override", () => {
     const rt = makeTestRuntime({ workdir: "/tmp/custom" });
     expect(rt.workdir).toBe("/tmp/custom");
+  });
+
+  test("makeTestRuntime produces runtime with runId", () => {
+    const rt = makeTestRuntime();
+    expect(rt.runId).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
