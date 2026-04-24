@@ -113,6 +113,18 @@ function buildReviewSummary(checks: ReviewCheckResult[]): ReviewResult["reviewSu
   return summary;
 }
 
+function formatFailureReason(check: ReviewCheckResult): string {
+  return check.check === "semantic" || check.check === "adversarial"
+    ? `${check.check} failed`
+    : `${check.check} failed (exit code ${check.exitCode})`;
+}
+
+function buildFailureReason(checks: ReviewCheckResult[]): string | undefined {
+  const failedChecks = checks.filter((check) => !check.success);
+  if (failedChecks.length === 0) return undefined;
+  return failedChecks.map(formatFailureReason).join(", ");
+}
+
 export class ReviewOrchestrator {
   /** Run built-in checks + plugin reviewers. Returns unified result. */
   async review(
@@ -333,12 +345,7 @@ export class ReviewOrchestrator {
       const allChecks = [...mechanicalResult.checks, ...llmCheckResults];
       const mechanicalPassed = mechanicalResult.success;
       const llmPassed = llmCheckResults.every((c) => c.success);
-      const firstFailure = allChecks.find((c) => !c.success);
-      const failureReason = firstFailure
-        ? firstFailure.check === "semantic" || firstFailure.check === "adversarial"
-          ? `${firstFailure.check} failed`
-          : `${firstFailure.check} failed (exit code ${firstFailure.exitCode})`
-        : undefined;
+      const failureReason = buildFailureReason(allChecks);
 
       // Build per-reviewer finding summary from LLM check results
       const reviewSummary = buildReviewSummary(llmCheckResults);
