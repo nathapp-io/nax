@@ -254,43 +254,47 @@ export async function run(options: RunOptions): Promise<RunResult> {
     };
   } finally {
     const logger = getSafeLogger();
-    logger?.debug("execution", "Runner finally block — starting cleanup");
-    // Stop heartbeat on any exit (US-007)
-    stopHeartbeat();
-    // Cleanup crash handlers (MEM-1 fix)
-    cleanupCrashHandlers();
-
-    // Phase 3 (#477): sidecar sweep removed — SessionManager.closeStory() handles
-    // session cleanup at story completion. Orphan sweep is via SessionManager.sweepOrphans().
-
-    // Resolve current branch at runtime
-    let branch = "";
     try {
-      const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
-      if (exitCode === 0) branch = stdout.trim();
-    } catch {
-      // Branch resolution is non-critical
-    }
+      logger?.debug("execution", "Runner finally block — starting cleanup");
+      // Stop heartbeat on any exit (US-007)
+      stopHeartbeat();
+      // Cleanup crash handlers (MEM-1 fix)
+      cleanupCrashHandlers();
 
-    // Execute cleanup operations
-    logger?.debug("execution", "Runner finally — running cleanupRun");
-    const { cleanupRun } = await import("./lifecycle/run-cleanup");
-    await cleanupRun({
-      runId,
-      startTime,
-      totalCost,
-      storiesCompleted,
-      prd,
-      pluginRegistry,
-      workdir,
-      interactionChain,
-      feature,
-      prdPath,
-      branch,
-      version: NAX_VERSION,
-      runCompleted,
-    });
-    logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
+      // Phase 3 (#477): sidecar sweep removed — SessionManager.closeStory() handles
+      // session cleanup at story completion. Orphan sweep is via SessionManager.sweepOrphans().
+
+      // Resolve current branch at runtime
+      let branch = "";
+      try {
+        const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
+        if (exitCode === 0) branch = stdout.trim();
+      } catch {
+        // Branch resolution is non-critical
+      }
+
+      // Execute cleanup operations
+      logger?.debug("execution", "Runner finally — running cleanupRun");
+      const { cleanupRun } = await import("./lifecycle/run-cleanup");
+      await cleanupRun({
+        runId,
+        startTime,
+        totalCost,
+        storiesCompleted,
+        prd,
+        pluginRegistry,
+        workdir,
+        interactionChain,
+        feature,
+        prdPath,
+        branch,
+        version: NAX_VERSION,
+        runCompleted,
+      });
+      logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
+    } finally {
+      await runtime.close();
+    }
   }
 }
 

@@ -81,6 +81,14 @@ describe("RunCleanupOptions", () => {
     const opts = makeCleanupOptions({ version: "2.0.0" });
     expect(opts.version).toBe("2.0.0");
   });
+
+  test("runner.ts closes runtime from finally so failure paths flush runtime sinks", async () => {
+    const runnerSource = await Bun.file(
+      new URL("../../../../src/execution/runner.ts", import.meta.url).pathname,
+    ).text();
+    const finallyMatch = runnerSource.match(/finally \{[\s\S]*?await runtime\.close\(\);[\s\S]*?\n  \}/m);
+    expect(finallyMatch).not.toBeNull();
+  });
 });
 
 // ============================================================================

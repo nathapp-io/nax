@@ -19,6 +19,11 @@ describe("run-level SessionManager wiring", () => {
     expect(src).not.toContain("new SessionManager()");
   });
 
+  test("iteration-runner does not reset the shared AgentManager before story execution", async () => {
+    const src = await readSrc("execution/iteration-runner.ts");
+    expect(src).not.toContain("agentManager?.reset()");
+  });
+
   test("run-setup creates and returns a run-level sessionManager", async () => {
     const src = await readSrc("execution/lifecycle/run-setup.ts");
     expect(src).toContain("const sessionManager = new SessionManager()");

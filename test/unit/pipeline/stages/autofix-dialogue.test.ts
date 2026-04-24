@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _autofixDeps, autofixStage } from "../../../../src/pipeline/stages/autofix";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
+import type { PRD, UserStory } from "../../../../src/prd";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { ReviewCheckResult } from "../../../../src/review/types";
 
@@ -124,7 +125,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     config: makeDialogueConfig(true),
     rootConfig: makeDialogueConfig(true),
-    prd: { feature: "my-feature", userStories: [] } as import("../../../../src/prd").PRD,
+    prd: { feature: "my-feature", userStories: [] } as PRD,
     story: {
       id: "US-001",
       title: "Test Story",
@@ -136,7 +137,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
       passes: false,
       escalations: [],
       attempts: 1,
-    } as import("../../../../src/prd").UserStory,
+    } as UserStory,
     stories: [],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     workdir: "/tmp",

@@ -1,3 +1,6 @@
+import { wrapAdapterAsManager } from "../agents";
+import type { IAgentManager } from "../agents";
+import type { AgentRunRequest } from "../agents/manager-types";
 import { pickSelector, resolveModelForAgent } from "../config";
 import type { ConfigSelector, NaxConfig } from "../config";
 import { NaxError } from "../errors";
@@ -19,10 +22,11 @@ function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[
 }
 
 async function runOpSession(ctx: SessionRunnerContext): Promise<SessionRunnerOutcome> {
-  const { runtime, agentName, packageDir, storyId, prompt, op, sessionOverride } = ctx;
+  const { runtime, agentName, packageDir, storyId, prompt, op, sessionOverride, noFallback } = ctx;
   const config = runtime.configLoader.current();
   const sessionRole = sessionOverride?.role ?? op.session.role;
   const defaultAgent = runtime.agentManager.getDefault();
+  const manager = createRunOpManager(runtime.agentManager, agentName, noFallback);
 
   const sessionDesc = runtime.sessionManager.create({
     role: sessionRole,
@@ -31,7 +35,7 @@ async function runOpSession(ctx: SessionRunnerContext): Promise<SessionRunnerOut
     storyId,
   });
 
-  const result = await runtime.sessionManager.runInSession(sessionDesc.id, runtime.agentManager, {
+  const result = await runtime.sessionManager.runInSession(sessionDesc.id, manager, {
     runOptions: {
       prompt,
       workdir: packageDir,
@@ -43,10 +47,30 @@ async function runOpSession(ctx: SessionRunnerContext): Promise<SessionRunnerOut
       sessionRole,
       pipelineStage: op.stage,
       keepOpen: op.session.lifetime === "warm",
+      abortSignal: runtime.signal,
     },
+    signal: runtime.signal,
   });
 
   return { primaryResult: result, fallbacks: [] };
+}
+
+function createRunOpManager(base: IAgentManager, agentName: string, noFallback?: boolean): IAgentManager {
+  if (noFallback) {
+    const adapter = base.getAgent(agentName);
+    if (!adapter) {
+      throw new NaxError(`callOp: agent "${agentName}" not found`, "CALL_OP_AGENT_NOT_FOUND", {
+        stage: "run",
+        agentName,
+      });
+    }
+    return wrapAdapterAsManager(adapter);
+  }
+
+  return {
+    getDefault: () => agentName,
+    run: (request: AgentRunRequest) => base.runAs(agentName, request),
+  } as IAgentManager;
 }
 
 export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> {
