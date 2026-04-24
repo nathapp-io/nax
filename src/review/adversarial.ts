@@ -339,6 +339,7 @@ export async function runAdversarialReview(
     return {
       check: "adversarial",
       success: true,
+      failOpen: true,
       command: "",
       exitCode: 0,
       output: `skipped: LLM call failed — ${String(err)}`,

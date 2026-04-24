@@ -144,9 +144,10 @@ export const reviewStage: PipelineStage = {
     // Fail-closed when fail-open occurs in a retry context (autofix has already run ≥1 time).
     // A reviewer that cannot parse its LLM response is ambiguous — it must not count as a
     // genuine pass when the review was previously failing with real blocking findings.
-    const failOpenChecks = result.success
-      ? (result.builtIn.checks ?? []).filter((c) => c.failOpen).map((c) => c.check)
-      : [];
+    const failOpenChecks =
+      (ctx.reviewResult?.success ?? false)
+        ? (result.builtIn.checks ?? []).filter((c) => c.failOpen).map((c) => c.check)
+        : [];
     if (failOpenChecks.length > 0 && (ctx.autofixAttempt ?? 0) > 0) {
       logger.warn("review", "Fail-open on partial-progress retry — treating as failure (fail-closed on ambiguity)", {
         storyId: ctx.story.id,
