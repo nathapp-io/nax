@@ -1299,19 +1299,21 @@ Five waves. Each independently shippable and revertible.
 
 ## Open Questions
 
-1. **`Operation.validate(input)` hook.** If pre-execution input validation proves repetitive, add `validate?: (input: I) => void | NaxError`. Leaning toward caller's responsibility (Zod at the boundary); revisit after Wave 3.
+All 7 questions resolved 2026-04-24.
 
-2. **Composite operations.** Expressible today as an op whose `build()` or caller invokes `callOp()` on sub-ops — no framework support. If a canonical pattern emerges (e.g. `review` as `semantic + adversarial`), add a thin `composite()` helper. Not a blocker.
+1. **`Operation.validate(input)` hook.** ~~Leaning toward caller's responsibility (Zod at the boundary); revisit after Wave 3.~~ **Closed — not added.** Callers validate via Zod at system boundaries; `callOp` trusts a typed input. No `validate?` hook. Reopen after Wave 3 only if ≥3 ops repeat the same guard logic.
 
-3. **Domain-orchestrator override at call time.** Today TDD orchestration (`runThreeSessionTdd`) and debate orchestration (`DebateRunner`) live next to their domains and are invoked directly by pipeline stages. If a stage needs to force single-session behaviour on a flow that defaults to multi-session (e.g. a cheap debate-free plan for cost reasons), the orchestrator gets a mode parameter — not a runner-registry override. No framework-level override mechanism needed.
+2. **Composite operations.** ~~Not a blocker.~~ **Deferred post-Wave 3.** `review = semantic + adversarial` is the only plausible candidate. Add a thin `composite()` helper only if that pattern proves canonical during Wave 3 migration. No framework support in Waves 1–3.
 
-4. **Token budget enforcement.** Trivial once `CostAggregator.snapshot()` exposes a running total. Alternatively, add a `budget` middleware that inspects the chain's cost accumulator and aborts via `signal` when exhausted. `runRetryLoop`'s `verify` callback can return `{ success: false, reason: "budget-exhausted" }`.
+3. **Domain-orchestrator override at call time.** **Closed — resolved in §5.3/§5.4.** Mode parameter on the orchestrator function (e.g. `runThreeSessionTdd(mode)`, `DebateRunner.run({ mode })`). No runner-registry override mechanism; no framework change needed.
 
-5. **Session resume across runtime restarts.** A crashed run's `NaxRuntime` is gone; its persisted session descriptors can be reattached via `SessionManager.resume(descriptors)`. Inherits ADR-008's open question.
+4. **Token budget enforcement.** **Assigned to Wave 2.** Implement as a `budget` middleware that reads `CostAggregator.snapshot()` and calls `signal.abort()` when the configured limit is exceeded. `runRetryLoop`'s `verify` callback can return `{ success: false, reason: "budget-exhausted" }`. No separate tracking structure needed — snapshot is the source.
 
-6. **`CostAggregator` + `PromptAuditor` disk schema.** `.nax/audit/<runId>.jsonl` and `.nax/cost/<runId>.jsonl` formats. Specified in Wave 2 implementation.
+5. **Session resume across runtime restarts.** **Deferred — blocked on ADR-008.** The `SessionManager.resume(descriptors)` attachment shape is correct. Schema and protocol deferred until ADR-008 resolves the resume contract.
 
-7. **`nax ops list` introspection.** A CLI showing every registered `Operation` + its `config` slice — useful for config-refactor audits. Nice-to-have.
+6. **`CostAggregator` + `PromptAuditor` disk schema.** **Assigned to Wave 2 implementation.** Formats: `.nax/audit/<runId>.jsonl` and `.nax/cost/<runId>.jsonl`, one JSON line per call (tokens + cost + timestamp + storyId + sessionRole). Schema locked at Wave 2 start.
+
+7. **`nax ops list` introspection.** **Deferred post-Wave 5.** Add as a CLI subcommand once `src/operations/` reaches ≥10 ops and config-refactor audits become a recurring need. Not a Wave 1–5 blocker.
 
 ---
 
