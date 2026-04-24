@@ -429,3 +429,94 @@ describe("runAdversarialReview — retry logging", () => {
     expect(exhaustLog?.data?.retries).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Truncation detection — condensed retry prompt
+// ---------------------------------------------------------------------------
+
+// The ACP adapter tail-truncates output at MAX_AGENT_OUTPUT_CHARS (5000 chars).
+// looksLikeTruncatedJson() fires when the response length is within 100 chars of
+// that cap, indicating the tail was cut off mid-stream.
+const AT_CAP_UNPARSEABLE = "x".repeat(4950); // 4950 chars — within 100 of 5000 cap, not valid JSON
+
+
+describe("runAdversarialReview — truncation-detected condensed retry", () => {
+  beforeEach(() => {
+    saveAllDeps();
+    setupHappyPathDeps();
+  });
+
+  afterEach(restoreAllDeps);
+
+  test("uses condensed retry prompt when response length is at the ACP output cap", async () => {
+    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, PASSING_RESPONSE]);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+
+    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
+    const retryPrompt = (calls[1][0] as Record<string, unknown>).prompt as string;
+    expect(retryPrompt).toContain("truncated");
+  });
+
+  test("uses standard retry prompt when response is short unparseable text (not at cap)", async () => {
+    const nonJson = "here is my analysis: the code looks fine overall";
+    const agentManager = makeMultiCallAgentManager([nonJson, PASSING_RESPONSE]);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+
+    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
+    const retryPrompt = (calls[1][0] as Record<string, unknown>).prompt as string;
+    expect(retryPrompt).not.toContain("truncated");
+  });
+
+  test("condensed retry prompt caps findings — prompt mentions a number limit", async () => {
+    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, PASSING_RESPONSE]);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+
+    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
+    const retryPrompt = (calls[1][0] as Record<string, unknown>).prompt as string;
+    expect(retryPrompt).toMatch(/\d+ finding/);
+  });
+
+  test("succeeds when condensed retry returns valid JSON after cap-length truncation", async () => {
+    const condensedResponse = JSON.stringify({
+      passed: false,
+      findings: [{ severity: "error", category: "abandonment", file: "src/foo.ts", line: 1, issue: "missing impl", suggestion: "add it" }],
+    });
+    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, condensedResponse]);
+
+    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+
+    expect(result.success).toBe(false);
+    expect(result.findings).toHaveLength(1);
+  });
+
+  test("logs isTruncated:true when response length is at the ACP output cap", async () => {
+    const logger = makeLogger();
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, PASSING_RESPONSE]);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+
+    const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
+    expect(parseFailLog?.data?.isTruncated).toBe(true);
+
+    loggerSpy.mockRestore();
+  });
+
+  test("logs isTruncated:false when response is short unparseable text (not at cap)", async () => {
+    const logger = makeLogger();
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    const agentManager = makeMultiCallAgentManager(["not json text", PASSING_RESPONSE]);
+
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+
+    const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
+    expect(parseFailLog?.data?.isTruncated).toBe(false);
+
+    loggerSpy.mockRestore();
+  });
+});
