@@ -7,6 +7,7 @@
  */
 
 import type { NaxConfig } from "../config";
+import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
 import type { SessionDescriptor } from "../session/types";
@@ -95,6 +96,8 @@ export interface AgentRunOptions {
   env?: Record<string, string>;
   /** Use --dangerously-skip-permissions flag (default: true) */
   dangerouslySkipPermissions?: boolean;
+  /** Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions(). */
+  resolvedPermissions?: ResolvedPermissions;
   /** Interaction bridge for mid-session human interaction (ACP) */
   interactionBridge?: {
     detectQuestion: (text: string) => Promise<boolean>;
@@ -205,6 +208,8 @@ export interface CompleteOptions {
   model?: string;
   /** Whether to skip permission prompts (maps to permissionMode in ACP) */
   dangerouslySkipPermissions?: boolean;
+  /** Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions(). */
+  resolvedPermissions?: ResolvedPermissions;
   /**
    * Working directory for the completion call.
    * Used by ACP adapter to set --cwd on the spawned acpx session.

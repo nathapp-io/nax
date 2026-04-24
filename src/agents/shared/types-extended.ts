@@ -5,6 +5,7 @@
  * Separated from core types to keep each file under 400 lines.
  */
 
+import type { ResolvedPermissions } from "../../config/permissions";
 import type { ModelDef, ModelTier, NaxConfig } from "../../config/schema";
 
 /**
@@ -54,6 +55,8 @@ export interface PlanOptions {
   timeoutSeconds?: number;
   /** Whether to skip permission prompts (maps to permissionMode in ACP) */
   dangerouslySkipPermissions?: boolean;
+  /** Pre-resolved permissions from AgentManager.planAs() — adapter reads this instead of calling resolvePermissions(). */
+  resolvedPermissions?: ResolvedPermissions;
   /** Max interaction turns when interactionBridge is active (default: 10) */
   maxInteractionTurns?: number;
   /**
