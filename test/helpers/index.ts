@@ -13,4 +13,5 @@ export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manag
 export { makeLogger, type LogCall, type MockLogger } from "./mock-logger";
 export { makeNaxConfig, makeSparseNaxConfig } from "./mock-nax-config";
 export { makeSessionManager } from "./mock-session-manager";
+export { makeTestRuntime, type TestRuntimeOptions } from "./runtime";
 export { makeInProgressStory, makePRD, makePendingStory, makeStory } from "./mock-story";
