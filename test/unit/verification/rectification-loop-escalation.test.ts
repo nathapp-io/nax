@@ -126,7 +126,7 @@ describe("_rectificationDeps", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runRectificationLoop — escalation on exhaustion", () => {
-  const origCreateManager = _rectificationDeps.createManager;
+  const origAgentManager = _rectificationDeps.agentManager;
   const origRunVerification = _rectificationDeps.runVerification;
   const origEscalateTier = _rectificationDeps.escalateTier;
 
@@ -155,7 +155,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   });
 
   afterEach(() => {
-    _rectificationDeps.createManager = origCreateManager;
+    _rectificationDeps.agentManager = origAgentManager;
     _rectificationDeps.runVerification = origRunVerification;
     _rectificationDeps.escalateTier = origEscalateTier;
     resetLogger();
@@ -190,7 +190,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return origRunAs(agentName, req);
     });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
     _rectificationDeps.runVerification = mock(async () =>
       makeVerificationResult(false, FAILING_TEST_OUTPUT),
     );
@@ -238,7 +238,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return origRunAs(agentName, req);
     });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
     _rectificationDeps.runVerification = mock(async () =>
       makeVerificationResult(false, FAILING_TEST_OUTPUT),
     );
@@ -283,7 +283,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return origRun(req);
     });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
     _rectificationDeps.runVerification = mock(async () =>
       makeVerificationResult(false, FAILING_TEST_OUTPUT),
     );
@@ -333,7 +333,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return origRunAs(agentName, req);
     });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
 
     // Normal retries fail, escalated attempt's verification succeeds
     let verificationCallCount = 0;
@@ -379,7 +379,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
   }),
 });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
 
     // All verifications fail (including escalated attempt)
     _rectificationDeps.runVerification = mock(async () =>
@@ -425,7 +425,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return origRun(req);
     });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
     _rectificationDeps.runVerification = mock(async () =>
       makeVerificationResult(false, FAILING_TEST_OUTPUT),
     );
@@ -479,7 +479,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return origRun(req);
     });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
 
     // Return more failures than initial to trigger abortOnIncreasingFailures
     // Initial output has 1 failure; retry output has 5 failures
@@ -550,7 +550,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return origRunAs(agentName, req);
     });
 
-    _rectificationDeps.createManager = mock(() => mockAgentManager as any);
+    _rectificationDeps.agentManager = mockAgentManager as any;
     _rectificationDeps.runVerification = mock(async () =>
       makeVerificationResult(false, FAILING_TEST_OUTPUT),
     );

@@ -31,16 +31,16 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origCreateManager: typeof _debateSessionDeps.createManager;
+let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origCreateManager = _debateSessionDeps.createManager;
+  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.createManager = origCreateManager;
+  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
 });
 
@@ -59,7 +59,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager());
+    _debateSessionDeps.agentManager = makeMockAgentManager();
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -91,7 +91,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager());
+    _debateSessionDeps.agentManager = makeMockAgentManager();
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -122,7 +122,7 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager());
+    _debateSessionDeps.agentManager = makeMockAgentManager();
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -153,9 +153,9 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing"]),
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-LOG",
@@ -176,12 +176,12 @@ describe("DebateSession.run() — JSONL log events", () => {
   test("uses resolveDebaterModel to pass resolved model to completeAs()", async () => {
     const completeCalls: Array<{ agent: string; model: string | undefined }> = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       completeFn: async (agentName, _prompt, opts) => {
         completeCalls.push({ agent: agentName, model: opts?.model });
         return { output: `output from ${agentName}`, costUsd: 0, source: "fallback" };
       },
-    }));
+    });
 
     const config = {
       models: { claude: { fast: "claude-haiku-4-5" } },

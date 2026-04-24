@@ -33,22 +33,22 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-_debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+_debateSessionDeps.agentManager = makeMockAgentManager({
   completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
-}));
+});
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────────
 
 let loggedWarnings: Array<{ stage: string; message: string }> = [];
 let loggedInfos: Array<{ stage: string; message: string }> = [];
 let mockGetSafeLogger: ReturnType<typeof mock>;
-let origCreateManager: typeof _debateSessionDeps.createManager;
+let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
   loggedWarnings = [];
   loggedInfos = [];
-  origCreateManager = _debateSessionDeps.createManager;
+  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 
   mockGetSafeLogger = mock(() => ({
@@ -63,14 +63,14 @@ beforeEach(() => {
   }));
 
   // Mock manager so debaters resolve quickly
-  _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+  _debateSessionDeps.agentManager = makeMockAgentManager({
     completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
-  }));
+  });
   _debateSessionDeps.getSafeLogger = mockGetSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.createManager = origCreateManager;
+  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
   loggedWarnings = [];
   loggedInfos = [];
@@ -144,9 +144,9 @@ describe("DebateSession.run() mode routing — AC3: mode undefined defaults to p
 describe("DebateSession.run() mode routing — AC4: hybrid + stateful", () => {
   test("with mode 'hybrid' and sessionMode 'stateful', calls runHybrid", async () => {
   // Mock manager so debaters resolve quickly
-  _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+  _debateSessionDeps.agentManager = makeMockAgentManager({
     completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
-  }));
+  });
 
     const session = new DebateSession({
       storyId: "test-story",

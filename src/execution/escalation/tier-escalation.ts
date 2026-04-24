@@ -145,7 +145,9 @@ export async function preIterationTierCheck(
 
     // Hybrid mode: re-route story after escalation
     if (routingMode === "hybrid") {
-      await tryLlmBatchRoute(config, [story], "hybrid-re-route");
+      await tryLlmBatchRoute(config, [story], "hybrid-re-route", {
+        agentManager: undefined,
+      });
     }
 
     // Skip to next iteration (will reload PRD and use new tier)
@@ -207,6 +209,8 @@ export interface EscalationHandlerContext {
   verifyResult?: { status: string; success: boolean };
   /** Cost of the failed attempt being escalated (BUG-067: accumulated across escalations) */
   attemptCost?: number;
+  /** Per-run AgentManager — threaded for LLM batch re-routing after escalation */
+  agentManager?: import("../../agents").IAgentManager;
 }
 
 export interface EscalationHandlerResult {
@@ -354,7 +358,9 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
 
   // Hybrid mode: re-route escalated stories
   if (routingMode === "hybrid") {
-    await tryLlmBatchRoute(ctx.config, storiesToEscalate, "hybrid-re-route-pipeline");
+    await tryLlmBatchRoute(ctx.config, storiesToEscalate, "hybrid-re-route-pipeline", {
+      agentManager: ctx.agentManager,
+    });
   }
 
   return {

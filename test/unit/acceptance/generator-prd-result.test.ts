@@ -250,7 +250,7 @@ function makeMockGeneratorManager(
   } as any;
 }
 
-withDepsRestore(_generatorPRDDeps, ["createManager", "writeFile", "backupFile"]);
+withDepsRestore(_generatorPRDDeps, ["agentManager", "writeFile", "backupFile"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // generateFromPRD — result shape
@@ -268,7 +268,7 @@ describe("generateFromPRD — result shape", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -283,7 +283,7 @@ describe("generateFromPRD — result shape", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -295,7 +295,7 @@ describe("generateFromPRD — result shape", () => {
     const story = makeUserStory({ acceptanceCriteria: [] });
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: "", costUsd: 0, source: "mock" as const })))
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: "", costUsd: 0, source: "mock" as const }))
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], [], options);
@@ -322,7 +322,7 @@ describe("generateFromPRD — uses refined criterion text", () => {
     const options = makeOptions(tmpDir);
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; }));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -345,7 +345,7 @@ describe("generateFromPRD — uses refined criterion text", () => {
     const options = makeOptions(tmpDir);
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; }));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -359,7 +359,7 @@ describe("generateFromPRD — uses refined criterion text", () => {
     const options = makeOptions(tmpDir);
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; }));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -376,7 +376,7 @@ describe("generateFromPRD — uses refined criterion text", () => {
     const options = makeOptions(tmpDir);
     let capturedPrompt = "";
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; }));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async (prompt: string) => { capturedPrompt = prompt; return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: 'mock' as const }; });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -401,7 +401,7 @@ describe("generateFromPRD — AC-N naming format in generated tests", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -414,7 +414,7 @@ describe("generateFromPRD — AC-N naming format in generated tests", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -441,7 +441,7 @@ describe("generateFromPRD — bun:test import in generated file", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -454,7 +454,7 @@ describe("generateFromPRD — bun:test import in generated file", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -482,7 +482,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
     const options = makeOptions(tmpDir);
     const writtenPaths: string[] = [];
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async (path: string) => {
       writtenPaths.push(path);
     });
@@ -499,7 +499,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
     const options = makeOptions(tmpDir);
     let refinedJsonContent = "";
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async (path: string, content: string) => {
       if (path.endsWith("acceptance-refined.json")) {
         refinedJsonContent = content;
@@ -519,7 +519,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
     const options = makeOptions(tmpDir);
     let refinedJsonContent = "";
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async (path: string, content: string) => {
       if (path.endsWith("acceptance-refined.json")) {
         refinedJsonContent = content;
@@ -550,7 +550,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
       return originalSpawn(...(args as Parameters<typeof originalSpawn>));
     };
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -578,12 +578,10 @@ describe("generateFromPRD — adapter.complete() usage", () => {
     const options = makeOptions(tmpDir);
     let callCount = 0;
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => {
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => {
         callCount++;
         return { output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const };
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -596,12 +594,10 @@ describe("generateFromPRD — adapter.complete() usage", () => {
     const options = makeOptions(tmpDir);
     let callCount = 0;
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => {
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => {
         callCount++;
         return { output: "", costUsd: 0, source: "mock" as const };
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], [], options);
@@ -619,8 +615,8 @@ describe("_generatorPRDDeps", () => {
     expect(_generatorPRDDeps).toBeDefined();
   });
 
-  test("has createManager function", () => {
-    expect(typeof _generatorPRDDeps.createManager).toBe("function");
+  test("has agentManager field (defaults to undefined)", () => {
+    expect(_generatorPRDDeps).toHaveProperty("agentManager");
   });
 
   test("has writeFile function", () => {

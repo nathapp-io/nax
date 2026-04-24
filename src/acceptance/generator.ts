@@ -6,9 +6,7 @@
  */
 
 import { join } from "node:path";
-import { createAgentManager } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
@@ -72,7 +70,7 @@ function skeletonImportLine(testFramework?: string): string {
  * @internal
  */
 export const _generatorPRDDeps = {
-  createManager: (config: NaxConfig): IAgentManager => createAgentManager(config),
+  agentManager: undefined as IAgentManager | undefined,
   writeFile: async (path: string, content: string): Promise<void> => {
     await Bun.write(path, content);
   },
@@ -198,10 +196,20 @@ export async function generateFromPRD(
     featureName: options.featureName,
     sessionRole: "acceptance-gen",
   } as const;
-  if (!options.agentManager) {
-    logger.warn("acceptance", "No agentManager threaded — fresh manager created, unavailability state is lost");
+  const prdManager = options.agentManager ?? _generatorPRDDeps.agentManager;
+  if (!prdManager) {
+    logger.warn("acceptance", "No agentManager threaded — falling back to skeleton tests");
+    const skeletonCriteria: AcceptanceCriterion[] = refinedCriteria.map((c, i) => ({
+      id: `AC-${i + 1}`,
+      text: c.refined,
+      lineNumber: i + 1,
+    }));
+    return {
+      testCode: generateSkeletonTests(options.featureName, skeletonCriteria, options.testFramework, options.language),
+      criteria: skeletonCriteria,
+      costUsd: 0,
+    };
   }
-  const prdManager = options.agentManager ?? _generatorPRDDeps.createManager(options.config);
   const completeResult = options.agentManager
     ? (await prdManager.completeWithFallback(prompt, prdCompleteOpts)).result
     : await prdManager.complete(prompt, prdCompleteOpts);

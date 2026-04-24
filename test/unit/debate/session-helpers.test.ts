@@ -79,8 +79,8 @@ describe("_debateSessionDeps export from session-helpers.ts (AC5)", () => {
     expect(typeof _debateSessionDeps).toBe("object");
   });
 
-  test("_debateSessionDeps.createManager is a function", () => {
-    expect(typeof _debateSessionDeps.createManager).toBe("function");
+  test("_debateSessionDeps.agentManager defaults to undefined", () => {
+    expect(_debateSessionDeps).toHaveProperty("agentManager");
   });
 
   test("_debateSessionDeps.getSafeLogger is a function", () => {
@@ -94,7 +94,7 @@ describe("_debateSessionDeps export from session-helpers.ts (AC5)", () => {
   test("_debateSessionDeps is re-exported through the debate barrel index.ts", () => {
     expect(barrelDeps).toBeDefined();
     expect(typeof barrelDeps).toBe("object");
-    expect(typeof barrelDeps.createManager).toBe("function");
+    expect(barrelDeps).toHaveProperty("agentManager");
   });
 });
 
@@ -238,20 +238,20 @@ describe("resolveOutcome() — workdir and featureName parameters (US-004 AC1)",
 // ─── AC2: synthesisResolver receives sessionName=implementer when workdir set ─
 
 describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
     mock.restore();
   });
 
   test("passes sessionName=computeAcpHandle(workdir,featureName,storyId,'implementer') in completeOptions", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     const stageConfig = makeResolveStageConfig("synthesis");
     const workdir = "/tmp/workspace";
@@ -278,7 +278,7 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
 
   test("does not pass sessionName when workdir is undefined", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     const stageConfig = makeResolveStageConfig("synthesis");
 
@@ -301,20 +301,20 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
 // ─── AC3: judgeResolver receives sessionName=judge when workdir set ─────
 
 describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
     mock.restore();
   });
 
   test("custom resolver: passes sessionName=computeAcpHandle(...,'judge') in completeOptions", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     const stageConfig = makeResolveStageConfig("custom", "claude");
     const workdir = "/tmp/judge-workspace";
@@ -341,7 +341,7 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
 
   test("custom resolver: does not pass sessionName when workdir is undefined", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.createManager = mock((_config) => makeCaptureManager(captured));
+    _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     const stageConfig = makeResolveStageConfig("custom", "claude");
 

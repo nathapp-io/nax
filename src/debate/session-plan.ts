@@ -54,7 +54,10 @@ export async function runPlan(
   // Mutable: plan debater costs accumulated below; hybrid rebuttal loop adds cost via adapter.run().
   let totalCostUsd = 0;
 
-  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
+  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
+  if (!agentManager) {
+    return buildFailedResult(ctx.storyId, ctx.stage, config, 0);
+  }
 
   // Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];

@@ -190,7 +190,7 @@ function makeOptions(workdir: string, overrides?: Partial<GenerateFromPRDOptions
   };
 }
 
-let savedCreateManager: typeof _generatorPRDDeps.createManager;
+let savedAgentManager: typeof _generatorPRDDeps.agentManager;
 let savedWriteFile: typeof _generatorPRDDeps.writeFile;
 
 function makeMockGeneratorManager(
@@ -227,12 +227,12 @@ function makeMockGeneratorManager(
 }
 
 function saveDeps() {
-  savedCreateManager = _generatorPRDDeps.createManager;
+  savedAgentManager = _generatorPRDDeps.agentManager;
   savedWriteFile = _generatorPRDDeps.writeFile;
 }
 
 function restoreDeps() {
-  _generatorPRDDeps.createManager = savedCreateManager;
+  _generatorPRDDeps.agentManager = savedAgentManager;
   _generatorPRDDeps.writeFile = savedWriteFile;
 }
 
@@ -279,7 +279,7 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -307,7 +307,7 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -335,7 +335,7 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.createManager = mock(() => makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const })));
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: expectedCode, costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -356,12 +356,10 @@ describe("ink-counter - Acceptance Tests", () => {
     });
 
     let capturedPrompt = "";
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async (prompt: string) => {
         capturedPrompt = prompt;
         return { output: `import { describe, test, expect } from "bun:test"; describe("test", () => {});`, costUsd: 0, source: "mock" as const };
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -445,12 +443,10 @@ describe("CLI strategy generator — Bun.spawn usage unit test", () => {
     const options = makeOptions(tmpDir, { testStrategy: "cli" });
 
     let capturedPrompt = "";
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async (prompt: string) => {
         capturedPrompt = prompt;
         return { output: `import { describe, test, expect } from "bun:test"; describe("test", () => {});`, costUsd: 0, source: "mock" as const };
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -488,12 +484,10 @@ describe("default strategy — import-and-call pattern when testStrategy is unse
     const options = makeOptions(tmpDir); // no testStrategy
 
     let capturedPrompt = "";
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async (prompt: string) => {
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async (prompt: string) => {
         capturedPrompt = prompt;
         return { output: `import { describe, test, expect } from "bun:test"; describe("test", () => {});`, costUsd: 0, source: "mock" as const };
-      }),
-    );
+    });
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -522,9 +516,7 @@ describe("ink-counter - Acceptance Tests", () => {
 });
 `;
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: unitCode, costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: unitCode, costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);

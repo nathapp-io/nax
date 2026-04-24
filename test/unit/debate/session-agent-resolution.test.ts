@@ -33,16 +33,16 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origCreateManager: typeof _debateSessionDeps.createManager;
+let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origCreateManager = _debateSessionDeps.createManager;
+  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.createManager = origCreateManager;
+  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
 });
 
@@ -52,12 +52,12 @@ describe("DebateSession.run() — agent resolution", () => {
   test("resolves each debater via manager.getAgent(debater.agent)", async () => {
     const agentCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock(() => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       getAgentFn: (name: string) => {
         agentCalls.push(name);
         return {} as any;
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -75,12 +75,12 @@ describe("DebateSession.run() — agent resolution", () => {
   test("calls manager.completeAs() with the debater's model override", async () => {
     const completeCalls: Array<{ agent: string; model: string | undefined }> = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       completeFn: async (agentName, _prompt, opts) => {
         completeCalls.push({ agent: agentName, model: opts?.model });
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -105,12 +105,12 @@ describe("DebateSession.run() — agent resolution", () => {
   test("passes the original prompt to each debater's completeAs() call", async () => {
     const receivedPrompts: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       completeFn: async (_name, prompt) => {
         receivedPrompts.push(prompt);
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -133,13 +133,13 @@ describe("DebateSession.run() — parallel execution", () => {
     const startTimes: number[] = [];
     const resolvers: Array<() => void> = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       completeFn: async (name) => {
         startTimes.push(Date.now());
         await new Promise<void>((resolve) => resolvers.push(resolve));
         return { output: `output from ${name}`, costUsd: 0, source: "fallback" };
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -160,12 +160,12 @@ describe("DebateSession.run() — parallel execution", () => {
   });
 
   test("continues when one debater's completeAs() throws (allSettled semantics)", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       completeFn: async (name) => {
         if (name === "failing") throw new Error("agent error");
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -186,13 +186,13 @@ describe("DebateSession.run() — unavailable agent handling", () => {
   test("skips debaters where manager.getAgent returns undefined", async () => {
     const completeCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing-agent"]),
       completeFn: async (name) => {
         completeCalls.push(name);
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -221,9 +221,9 @@ describe("DebateSession.run() — unavailable agent handling", () => {
       error: () => {},
     })) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing-agent"]),
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -243,13 +243,13 @@ describe("DebateSession.run() — unavailable agent handling", () => {
   test("skips debaters where manager.getAgent returns null", async () => {
     const completeCalls: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["null-agent"]),
       completeFn: async (name) => {
         completeCalls.push(name);
         return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -269,10 +269,10 @@ describe("DebateSession.run() — unavailable agent handling", () => {
 
 describe("DebateSession.run() — single-agent fallback", () => {
   test("returns the one successful proposal when only 1 debater succeeds", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing-1", "missing-2"]),
       completeFn: async () => ({ output: "the single successful proposal", costUsd: 0, source: "fallback" }),
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -289,9 +289,9 @@ describe("DebateSession.run() — single-agent fallback", () => {
   });
 
   test("result is not 'skipped' when falling back to single-agent", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing"]),
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",
@@ -307,11 +307,11 @@ describe("DebateSession.run() — single-agent fallback", () => {
   });
 
   test("falls back to fresh completeAs() call when all debaters fail", async () => {
-    _debateSessionDeps.createManager = mock((_config) => makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
       completeFn: async () => {
         throw new Error("simulated failure");
       },
-    }));
+    });
 
     const session = new DebateSession({
       storyId: "US-002",

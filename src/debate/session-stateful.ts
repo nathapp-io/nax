@@ -122,7 +122,10 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   const rawDebaters = config.debaters ?? [];
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
-  const agentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
+  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
+  if (!agentManager) {
+    return buildFailedResult(ctx.storyId, ctx.stage, config, 0);
+  }
 
   // Resolve agents — skip unavailable
   const resolved: ResolvedDebater[] = [];

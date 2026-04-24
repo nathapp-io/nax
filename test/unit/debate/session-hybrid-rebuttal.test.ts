@@ -59,17 +59,17 @@ function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): Deba
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origCreateManager: typeof _debateSessionDeps.createManager;
+let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origCreateManager = _debateSessionDeps.createManager;
+  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
   _debateSessionDeps.getSafeLogger = mock(() => null) as unknown as typeof _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.createManager = origCreateManager;
+  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
   mock.restore();
 });
@@ -80,8 +80,7 @@ describe("runHybrid() — sequential rebuttal call count with 2 debaters (AC1)",
   test("with 2 debaters and rounds=1, rebuttal runStatefulTurn is called exactly 2 times", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
@@ -96,8 +95,7 @@ describe("runHybrid() — sequential rebuttal call count with 2 debaters (AC1)",
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac1-count",
@@ -116,8 +114,7 @@ describe("runHybrid() — sequential rebuttal call count with 2 debaters (AC1)",
   test("with 2 debaters and rounds=1, rebuttal calls happen in sequential debater order (0 then 1)", async () => {
     const rebuttalRoles: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalRoles.push(opts.sessionRole ?? "");
@@ -132,8 +129,7 @@ describe("runHybrid() — sequential rebuttal call count with 2 debaters (AC1)",
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac1-order",
@@ -158,8 +154,7 @@ describe("runHybrid() — rebuttal call count with 3 debaters and 2 rounds (AC2)
   test("with 3 debaters and rounds=2, rebuttal runStatefulTurn is called exactly 6 times", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
@@ -174,8 +169,7 @@ describe("runHybrid() — rebuttal call count with 3 debaters and 2 rounds (AC2)
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac2",
@@ -205,8 +199,7 @@ describe("runHybrid() — rebuttal prompts include proposal outputs (AC3)", () =
   test("each rebuttal turn prompt contains all successful proposal outputs", async () => {
     const rebuttalPrompts: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalPrompts.push(opts.prompt ?? "");
@@ -221,8 +214,7 @@ describe("runHybrid() — rebuttal prompts include proposal outputs (AC3)", () =
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac3",
@@ -251,8 +243,7 @@ describe("runHybrid() — round 2 rebuttal prompts include round 1 outputs (AC4)
     const round1RebuttalOutputs: string[] = [];
     const round2Prompts: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isRebuttalPrompt(prompt)) {
@@ -283,8 +274,7 @@ describe("runHybrid() — round 2 rebuttal prompts include round 1 outputs (AC4)
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac4",
@@ -323,8 +313,7 @@ describe("runHybrid() — failed rebuttal turn is skipped with warning (AC5)", (
 
     let rebuttalCallCount = 0;
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isRebuttalPrompt(prompt)) {
@@ -343,8 +332,7 @@ describe("runHybrid() — failed rebuttal turn is skipped with warning (AC5)", (
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac5",
@@ -372,8 +360,7 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepOpen (A
   test("every rebuttal runStatefulTurn call uses the same sessionRole as the proposal round for that debater", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
@@ -388,8 +375,7 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepOpen (A
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac6-role",
@@ -411,8 +397,7 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepOpen (A
   test("every rebuttal runStatefulTurn call has keepOpen: true", async () => {
     const rebuttalCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           if (isRebuttalPrompt(opts.prompt ?? "")) {
             rebuttalCalls.push(opts);
@@ -427,8 +412,7 @@ describe("runHybrid() — rebuttal calls use correct sessionRole and keepOpen (A
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac6-ksopen",
@@ -454,8 +438,7 @@ describe("runHybrid() — closeStatefulSession called after normal rebuttal loop
   test("after the rebuttal loop completes normally, closeStatefulSession is called once per opened debater session", async () => {
     const closeCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           if (isClosePrompt(opts.prompt ?? "")) {
             closeCalls.push(opts);
@@ -470,8 +453,7 @@ describe("runHybrid() — closeStatefulSession called after normal rebuttal loop
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac7",
@@ -498,8 +480,7 @@ describe("runHybrid() — closeStatefulSession called when rebuttal turns fail (
   test("when all rebuttal turns fail, closeStatefulSession is still called for all opened sessions", async () => {
     const closeCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isClosePrompt(prompt)) {
@@ -527,8 +508,7 @@ describe("runHybrid() — closeStatefulSession called when rebuttal turns fail (
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac8",
@@ -554,8 +534,7 @@ describe("runHybrid() — rebuttal costs accumulated in totalCostUsd (AC9)", () 
     // Rebuttal cost: 2 × 0.05 = 0.10
     // Total expected: at least 0.30
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (_agentName, opts) => {
           const prompt = opts.prompt ?? "";
           if (isClosePrompt(prompt)) {
@@ -572,8 +551,7 @@ describe("runHybrid() — rebuttal costs accumulated in totalCostUsd (AC9)", () 
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac9",
@@ -595,8 +573,7 @@ describe("runHybrid() — rebuttal costs accumulated in totalCostUsd (AC9)", () 
 
 describe("runHybrid() — DebateResult.rebuttals populated and debug event emitted (AC10)", () => {
   test("DebateResult.rebuttals contains one entry per successful rebuttal with correct debaterIndex, round, and output", async () => {
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName, opts) => ({
           success: true,
           exitCode: 0,
@@ -606,8 +583,7 @@ describe("runHybrid() — DebateResult.rebuttals populated and debug event emitt
           estimatedCost: 0.01,
           agentFallbacks: [],
         }),
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac10-rebuttals",
@@ -645,8 +621,7 @@ describe("runHybrid() — DebateResult.rebuttals populated and debug event emitt
     };
     _debateSessionDeps.getSafeLogger = mock(() => mockLogger) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockManager({
+    _debateSessionDeps.agentManager = makeMockManager({
         runFn: async (agentName) => ({
           success: true,
           exitCode: 0,
@@ -656,8 +631,7 @@ describe("runHybrid() — DebateResult.rebuttals populated and debug event emitt
           estimatedCost: 0.01,
           agentFallbacks: [],
         }),
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004-B-ac10-event",

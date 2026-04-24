@@ -63,7 +63,10 @@ export async function runRebuttalLoop(
   const config = ctx.stageConfig;
   const rebuttals: Rebuttal[] = [];
   let costUsd = 0;
-  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
+  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
+  if (!agentManager) {
+    return { rebuttals: [], costUsd: 0 };
+  }
 
   const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
 
@@ -146,7 +149,10 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
-  const agentManager: IAgentManager = ctx.agentManager ?? _debateSessionDeps.createManager(ctx.config);
+  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
+  if (!agentManager) {
+    return buildFailedResult(ctx.storyId, ctx.stage, config, 0);
+  }
 
   // Resolve agents via shared helper — skip unavailable
   const resolved: ResolvedDebater[] = [];

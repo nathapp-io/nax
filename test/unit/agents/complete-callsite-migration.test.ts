@@ -1,7 +1,7 @@
 /**
- * Tests that acceptance pipeline call sites use agentManager.completeWithFallback()
- * when agentManager is injected, rather than calling adapter.complete() directly.
- * Part of #567 — Phase 4 adapter cleanup.
+ * Tests that acceptance pipeline call sites use the injected agentManager
+ * rather than constructing one via createManager (which has been removed).
+ * Part of #567 — Phase 4 adapter cleanup / ADR-018 Wave 1 migration.
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -31,16 +31,13 @@ function makeAgentManager(): { mgr: IAgentManager; callCount: () => number } {
 
 // ─── refineAcceptanceCriteria ──────────────────────────────────────────────
 
-describe("refineAcceptanceCriteria uses completeWithFallback when agentManager provided (#567)", () => {
-  test("calls agentManager.completeWithFallback instead of createManager().complete when agentManager is provided", async () => {
+describe("refineAcceptanceCriteria uses injected agentManager (#567 / ADR-018)", () => {
+  test("uses context.agentManager when provided", async () => {
     const { refineAcceptanceCriteria, _refineDeps } = await import("../../../src/acceptance/refinement");
     const { mgr, callCount: mgrCallCount } = makeAgentManager();
-    let createManagerCalled = false;
-    const savedCreateManager = _refineDeps.createManager;
-    _refineDeps.createManager = mock(() => {
-      createManagerCalled = true;
-      return savedCreateManager(DEFAULT_CONFIG);
-    });
+
+    const savedAgentManager = _refineDeps.agentManager;
+    _refineDeps.agentManager = undefined; // ensure only context.agentManager is used
 
     try {
       const ctx = {
@@ -53,22 +50,17 @@ describe("refineAcceptanceCriteria uses completeWithFallback when agentManager p
       };
       await refineAcceptanceCriteria(["AC-1: does something"], ctx);
       expect(mgrCallCount()).toBeGreaterThan(0);
-      expect(createManagerCalled).toBe(false);
     } finally {
-      _refineDeps.createManager = savedCreateManager;
+      _refineDeps.agentManager = savedAgentManager;
     }
   });
 
-  test("falls back to createManager().complete when agentManager is absent", async () => {
+  test("uses _refineDeps.agentManager when context.agentManager is absent", async () => {
     const { refineAcceptanceCriteria, _refineDeps } = await import("../../../src/acceptance/refinement");
     const { mgr, callCount: mgrCallCount } = makeAgentManager();
-    const savedCreateManager = _refineDeps.createManager;
-    // Use a plain function instead of mock() to ensure the inner function runs
-    let createManagerCalled = false;
-    _refineDeps.createManager = function createManagerReplacement(config: any) {
-      createManagerCalled = true;
-      return mgr;
-    };
+
+    const savedAgentManager = _refineDeps.agentManager;
+    _refineDeps.agentManager = mgr;
 
     try {
       const ctx = {
@@ -79,27 +71,51 @@ describe("refineAcceptanceCriteria uses completeWithFallback when agentManager p
         config: DEFAULT_CONFIG,
         // agentManager absent
       };
-      await refineAcceptanceCriteria(["AC-1: does something"], ctx).catch(() => {});
-      expect(createManagerCalled).toBe(true);
+      await refineAcceptanceCriteria(["AC-1: does something"], ctx);
       expect(mgrCallCount()).toBeGreaterThan(0);
     } finally {
-      _refineDeps.createManager = savedCreateManager;
+      _refineDeps.agentManager = savedAgentManager;
+    }
+  });
+
+  test("returns graceful fallback when both context.agentManager and _refineDeps.agentManager are absent", async () => {
+    const { refineAcceptanceCriteria, _refineDeps } = await import("../../../src/acceptance/refinement");
+
+    const savedAgentManager = _refineDeps.agentManager;
+    _refineDeps.agentManager = undefined;
+
+    try {
+      const ctx = {
+        storyId: "us-001",
+        featureName: "feature",
+        workdir: "/tmp",
+        codebaseContext: "ctx",
+        config: DEFAULT_CONFIG,
+        // agentManager absent
+      };
+      const result = await refineAcceptanceCriteria(["AC-1: does something"], ctx);
+      // Should not throw; returns fallback result
+      expect(result).toBeDefined();
+      expect(result.costUsd).toBe(0);
+    } finally {
+      _refineDeps.agentManager = savedAgentManager;
     }
   });
 });
 
 // ─── generateFromPRD ──────────────────────────────────────────────────────
 
-describe("generateFromPRD uses completeWithFallback when agentManager provided (#567)", () => {
-  test("calls agentManager.completeWithFallback instead of createManager().complete when agentManager is provided", async () => {
+describe("generateFromPRD uses injected agentManager (#567 / ADR-018)", () => {
+  test("uses agentManager from options when provided", async () => {
     const { generateFromPRD, _generatorPRDDeps } = await import("../../../src/acceptance/generator");
     const { mgr, callCount: mgrCallCount } = makeAgentManager();
-    const savedCreateManager = _generatorPRDDeps.createManager;
-    let createManagerCalled = false;
-    _generatorPRDDeps.createManager = mock((config: any) => {
-      createManagerCalled = true;
-      return savedCreateManager(config);
-    });
+
+    const savedAgentManager = _generatorPRDDeps.agentManager;
+    _generatorPRDDeps.agentManager = undefined; // ensure only options.agentManager is used
+
+    // Also stub writeFile to prevent actual writes
+    const savedWriteFile = _generatorPRDDeps.writeFile;
+    (_generatorPRDDeps as { writeFile: unknown }).writeFile = mock(async () => {});
 
     try {
       const options = {
@@ -115,9 +131,9 @@ describe("generateFromPRD uses completeWithFallback when agentManager provided (
       const dummyCriteria = [{ original: "AC-1", refined: "returns ok", testable: true, storyId: "us-001" }];
       await generateFromPRD([], dummyCriteria, options).catch(() => {});
       expect(mgrCallCount()).toBeGreaterThan(0);
-      expect(createManagerCalled).toBe(false);
     } finally {
-      _generatorPRDDeps.createManager = savedCreateManager;
+      _generatorPRDDeps.agentManager = savedAgentManager;
+      (_generatorPRDDeps as { writeFile: unknown }).writeFile = savedWriteFile;
     }
   });
 });

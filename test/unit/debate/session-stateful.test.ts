@@ -20,14 +20,14 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-let origCreateManager: typeof _debateSessionDeps.createManager;
+let origAgentManager: typeof _debateSessionDeps.agentManager;
 
 beforeEach(() => {
-  origCreateManager = _debateSessionDeps.createManager;
+  origAgentManager = _debateSessionDeps.agentManager;
 });
 
 afterEach(() => {
-  _debateSessionDeps.createManager = origCreateManager;
+  _debateSessionDeps.agentManager = origAgentManager;
   mock.restore();
 });
 
@@ -35,8 +35,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("proposal round calls adapter.run for each debater with stable sessionRole", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -49,8 +48,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-003",
@@ -77,8 +75,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("uses explicit non-tier debater model override for modelDef", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -91,8 +88,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-003b",
@@ -116,8 +112,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("rounds > 1 keeps proposal session open and reuses same role in critique", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           return {
@@ -130,8 +125,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-004",
@@ -156,8 +150,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
   test("falls back to single-agent passed when only one proposal run succeeds", async () => {
     const runCalls: AgentRunOptions[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (agentName, opts) => {
           runCalls.push(opts);
           if (opts.prompt === "Close this debate session.") {
@@ -192,8 +185,7 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
             agentFallbacks: [],
           };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-005",
@@ -216,8 +208,7 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
   test("synthesis resolver receives sessionName built from ctx.workdir and ctx.featureName", async () => {
     const completeCalls: { opts?: CompleteOptions }[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (_agentName, _opts) => ({
           success: true,
           exitCode: 0,
@@ -231,8 +222,7 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
           completeCalls.push({ opts });
           return { output: "synthesis resolved", costUsd: 0.01, source: "exact" as const };
         },
-      }),
-    );
+    });
 
     const workdir = "/tmp/stateful-work";
     const featureName = "stateful-feature";
@@ -262,8 +252,7 @@ describe("DebateSession.run() — one-shot mode unchanged", () => {
     let runCount = 0;
     let completeCount = 0;
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
+    _debateSessionDeps.agentManager = makeMockAgentManager({
         runFn: async (_agentName, _opts) => {
           runCount += 1;
           return {
@@ -280,8 +269,7 @@ describe("DebateSession.run() — one-shot mode unchanged", () => {
           completeCount += 1;
           return { output: '{"passed": true}', costUsd: 0.1, source: "exact" };
         },
-      }),
-    );
+    });
 
     const session = new DebateSession({
       storyId: "US-006",

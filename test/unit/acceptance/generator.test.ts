@@ -153,26 +153,24 @@ function makeRefinedCriteria(): RefinedCriterion[] {
 
 describe("generateFromPRD() prompt — implementationContext (US-002 AC-2 / AC-3)", () => {
   let capturedPrompt: string;
-  let origCreateManager: typeof _generatorPRDDeps.createManager;
+  let origAgentManager: typeof _generatorPRDDeps.agentManager;
   let origWriteFile: typeof _generatorPRDDeps.writeFile;
 
   beforeEach(() => {
     capturedPrompt = "";
-    origCreateManager = _generatorPRDDeps.createManager;
+    origAgentManager = _generatorPRDDeps.agentManager;
     origWriteFile = _generatorPRDDeps.writeFile;
-    (_generatorPRDDeps as { createManager: unknown }).createManager = mock(() =>
-      makeMockAgentManager({
-        completeFn: async (_agent: string, prompt: string, _opts: any) => {
-          capturedPrompt = prompt;
-          return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
-        },
-      }),
-    );
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
+      completeFn: async (_agent: string, prompt: string, _opts: any) => {
+        capturedPrompt = prompt;
+        return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
+      },
+    });
     (_generatorPRDDeps as { writeFile: unknown }).writeFile = mock(async () => {});
   });
 
   afterEach(() => {
-    (_generatorPRDDeps as { createManager: unknown }).createManager = origCreateManager;
+    _generatorPRDDeps.agentManager = origAgentManager;
     (_generatorPRDDeps as { writeFile: unknown }).writeFile = origWriteFile;
   });
 
@@ -226,26 +224,24 @@ describe("generateFromPRD() prompt — implementationContext (US-002 AC-2 / AC-3
 
 describe("generateFromPRD() prompt — previousFailure (US-002 AC-4 / AC-5)", () => {
   let capturedPrompt: string;
-  let origCreateManager: typeof _generatorPRDDeps.createManager;
+  let origAgentManager: typeof _generatorPRDDeps.agentManager;
   let origWriteFile: typeof _generatorPRDDeps.writeFile;
 
   beforeEach(() => {
     capturedPrompt = "";
-    origCreateManager = _generatorPRDDeps.createManager;
+    origAgentManager = _generatorPRDDeps.agentManager;
     origWriteFile = _generatorPRDDeps.writeFile;
-    (_generatorPRDDeps as { createManager: unknown }).createManager = mock(() =>
-      makeMockAgentManager({
-        completeFn: async (_agent: string, prompt: string, _opts: any) => {
-          capturedPrompt = prompt;
-          return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
-        },
-      }),
-    );
+    _generatorPRDDeps.agentManager = makeMockAgentManager({
+      completeFn: async (_agent: string, prompt: string, _opts: any) => {
+        capturedPrompt = prompt;
+        return { output: MOCK_TEST_OUTPUT, costUsd: 0, source: "exact" as const };
+      },
+    });
     (_generatorPRDDeps as { writeFile: unknown }).writeFile = mock(async () => {});
   });
 
   afterEach(() => {
-    (_generatorPRDDeps as { createManager: unknown }).createManager = origCreateManager;
+    _generatorPRDDeps.agentManager = origAgentManager;
     (_generatorPRDDeps as { writeFile: unknown }).writeFile = origWriteFile;
   });
 

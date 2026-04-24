@@ -1,4 +1,4 @@
-import { createAgentManager, resolveDefaultAgent } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
@@ -80,7 +80,7 @@ export interface DebateSessionOptions {
 
 /** Injectable deps for testability */
 export const _debateSessionDeps = {
-  createManager: createAgentManager,
+  agentManager: undefined as IAgentManager | undefined,
   getSafeLogger: getSafeLogger as () => ReturnType<typeof getSafeLogger>,
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
 };
@@ -295,8 +295,8 @@ export async function resolveOutcome(
 
   if (resolverConfig.type === "synthesis") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
-    const manager = agentManager ?? _debateSessionDeps.createManager(config ?? DEFAULT_CONFIG);
-    if (manager.getAgent(agentName) !== undefined) {
+    const manager = agentManager ?? _debateSessionDeps.agentManager;
+    if (manager !== undefined && manager.getAgent(agentName) !== undefined) {
       const configModels = config?.models ?? DEFAULT_CONFIG.models;
       const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
       const synthesisSessionName =
@@ -342,7 +342,10 @@ export async function resolveOutcome(
 
   if (resolverConfig.type === "custom") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
-    const manager = agentManager ?? _debateSessionDeps.createManager(config ?? DEFAULT_CONFIG);
+    const manager = agentManager ?? _debateSessionDeps.agentManager;
+    if (!manager) {
+      return { outcome: "passed", resolverCostUsd: 0 };
+    }
     const configModels = config?.models ?? DEFAULT_CONFIG.models;
     const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
     const judgeSessionName =

@@ -42,14 +42,14 @@ const CODEBASE_CONTEXT = "File tree:\nsrc/\n  acceptance/\n    refinement.ts\n";
 // Helpers for saving/restoring _refineDeps.createManager
 // ─────────────────────────────────────────────────────────────────────────────
 
-let savedCreateManager: typeof _refineDeps.createManager;
+let savedAgentManager: typeof _refineDeps.agentManager;
 
 function saveCreateManager() {
-  savedCreateManager = _refineDeps.createManager;
+  savedAgentManager = _refineDeps.agentManager;
 }
 
 function restoreCreateManager() {
-  _refineDeps.createManager = savedCreateManager;
+  _refineDeps.agentManager = savedAgentManager;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,8 +273,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
     const config = makeNaxConfig();
     let capturedPrompt = "";
 
-    _refineDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _refineDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return {
@@ -290,8 +289,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
             source: "mock" as const,
           };
         },
-      }),
-    );
+    });
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -315,8 +313,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
     const config = makeNaxConfig();
     let capturedPrompt = "";
 
-    _refineDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _refineDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return {
@@ -332,8 +329,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
             source: "mock" as const,
           };
         },
-      }),
-    );
+    });
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -356,8 +352,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
     const config = makeNaxConfig();
     let capturedPrompt = "";
 
-    _refineDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _refineDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPrompt = prompt;
           return {
@@ -373,8 +368,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
             source: "mock" as const,
           };
         },
-      }),
-    );
+    });
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -394,8 +388,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
     let capturedPromptNoStrategy = "";
     let capturedPromptWithStrategy = "";
 
-    _refineDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _refineDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPromptNoStrategy = prompt;
           return {
@@ -411,8 +404,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
             source: "mock" as const,
           };
         },
-      }),
-    );
+    });
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,
@@ -420,8 +412,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
       config,
     });
 
-    _refineDeps.createManager = mock(() =>
-      makeMockAgentManager({
+    _refineDeps.agentManager = makeMockAgentManager({
         completeFn: async (_agent: string, prompt: string) => {
           capturedPromptWithStrategy = prompt;
           return {
@@ -437,8 +428,7 @@ describe("refineAcceptanceCriteria — strategy propagated to LLM prompt", () =>
             source: "mock" as const,
           };
         },
-      }),
-    );
+    });
 
     await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
       storyId: STORY_ID,

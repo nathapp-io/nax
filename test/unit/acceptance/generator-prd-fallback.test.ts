@@ -234,7 +234,7 @@ function makeMockGeneratorManager(
   });
 }
 
-withDepsRestore(_generatorPRDDeps, ["createManager", "writeFile", "backupFile"]);
+withDepsRestore(_generatorPRDDeps, ["agentManager", "writeFile", "backupFile"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BUG-075: acceptance-refined.json written to featureDir not workdir
@@ -255,9 +255,7 @@ describe("generateFromPRD — acceptance-refined.json is written to featureDir n
     const options = makeOptions(workdir, featureDir);
     const writtenPaths: string[] = [];
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: makeGeneratedTestCode(options.featureName, criteria), costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async (path: string) => {
       writtenPaths.push(path);
     });
@@ -287,9 +285,7 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: "File written to `nax/features/refactor-standard/acceptance.test.ts`. Here's a summary of the 43 tests and their verification strategy:\n\n**US-001 — Planning (AC-1 to AC-5):** Validates the PRD JSON exists.", costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: "File written to `nax/features/refactor-standard/acceptance.test.ts`. Here's a summary of the 43 tests and their verification strategy:\n\n**US-001 — Planning (AC-1 to AC-5):** Validates the PRD JSON exists.", costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -304,9 +300,7 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: "Here are the acceptance tests I would generate:\n\n1. Test that the system handles empty input\n2. Test that tokens expire correctly", costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: "Here are the acceptance tests I would generate:\n\n1. Test that the system handles empty input\n2. Test that tokens expire correctly", costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -322,9 +316,7 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
 
     const codeInFences =
       '```typescript\nimport { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});\n```';
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: codeInFences, costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: codeInFences, costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -341,9 +333,7 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
 
     const rawCode =
       'import { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});';
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: rawCode, costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: rawCode, costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -372,9 +362,7 @@ test("AC-1: preserves file", () => {
     mkdirSync(join(tmpDir, ".nax", "features", options.featureName), { recursive: true });
     await Bun.write(targetPath, llmWrittenTest);
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: "I wrote the file directly to disk.", costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: "I wrote the file directly to disk.", costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
     _generatorPRDDeps.backupFile = mock(async (path: string, content: string) => {
       await Bun.write(path, content);
@@ -403,9 +391,7 @@ test("AC-1: keep even if backup fails", () => {
     mkdirSync(join(tmpDir, ".nax", "features", options.featureName), { recursive: true });
     await Bun.write(targetPath, llmWrittenTest);
 
-    _generatorPRDDeps.createManager = mock(() =>
-      makeMockGeneratorManager(async () => ({ output: "I wrote the file directly to disk.", costUsd: 0, source: "mock" as const })),
-    );
+    _generatorPRDDeps.agentManager = makeMockGeneratorManager(async () => ({ output: "I wrote the file directly to disk.", costUsd: 0, source: "mock" as const }));
     _generatorPRDDeps.writeFile = mock(async () => {});
     _generatorPRDDeps.backupFile = mock(async () => {
       throw new Error("disk full");

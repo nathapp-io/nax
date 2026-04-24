@@ -1,7 +1,7 @@
-import { createAgentManager as createAgentManagerFromAgents } from "../../agents";
 import type { IAgentManager } from "../../agents";
+import { createAgentManager as createAgentManagerFromFactory } from "../../agents/factory";
 import type { NaxConfig } from "../../config";
 
 export function createAgentManager(config: NaxConfig): IAgentManager {
-  return createAgentManagerFromAgents(config);
+  return createAgentManagerFromFactory(config);
 }

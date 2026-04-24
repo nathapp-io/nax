@@ -38,30 +38,28 @@ const TEST_CONFIG = {
 } as unknown as NaxConfig;
 
 describe("DebateSession.runPlan()", () => {
-  let origCreateManager: typeof _debateSessionDeps.createManager;
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
   let origReadFile: typeof _debateSessionDeps.readFile;
 
   beforeEach(() => {
-    origCreateManager = _debateSessionDeps.createManager;
+    origAgentManager = _debateSessionDeps.agentManager;
     origReadFile = _debateSessionDeps.readFile;
   });
 
   afterEach(() => {
-    _debateSessionDeps.createManager = origCreateManager;
+    _debateSessionDeps.agentManager = origAgentManager;
     _debateSessionDeps.readFile = origReadFile;
   });
 
   test("passes unique indexed sessionRole to each plan debater", async () => {
     const planCalls: Array<{ sessionRole?: string; storyId?: string }> = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async (_agentName, options) => {
-          planCalls.push({ sessionRole: options.sessionRole, storyId: options.storyId });
-          return { specContent: "ok" };
-        },
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async (_agentName, options) => {
+        planCalls.push({ sessionRole: options.sessionRole, storyId: options.storyId });
+        return { specContent: "ok" };
+      },
+    });
 
     _debateSessionDeps.readFile = mock(async (path: string) => `output:${path}`);
 
@@ -89,14 +87,12 @@ describe("DebateSession.runPlan()", () => {
   test("passes storyId through to each plan debater call", async () => {
     const storyIds: string[] = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async (_agentName, options) => {
-          storyIds.push(options.storyId ?? "");
-          return { specContent: "ok" };
-        },
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async (_agentName, options) => {
+        storyIds.push(options.storyId ?? "");
+        return { specContent: "ok" };
+      },
+    });
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -119,27 +115,25 @@ describe("DebateSession.runPlan()", () => {
   test("runs hybrid rebuttal loop when mode=hybrid and sessionMode=stateful", async () => {
     const runCalls: Array<{ prompt: string; sessionRole?: string; keepOpen?: boolean }> = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async () => ({ specContent: "ok" }),
-        runFn: async (_agentName, options) => {
-          runCalls.push({
-            prompt: options.prompt ?? "",
-            sessionRole: options.sessionRole,
-            keepOpen: options.keepOpen,
-          });
-          return {
-            success: true,
-            exitCode: 0,
-            output: `run-output-${options.sessionRole}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.05,
-            agentFallbacks: [],
-          };
-        },
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async () => ({ specContent: "ok" }),
+      runFn: async (_agentName, options) => {
+        runCalls.push({
+          prompt: options.prompt ?? "",
+          sessionRole: options.sessionRole,
+          keepOpen: options.keepOpen,
+        });
+        return {
+          success: true,
+          exitCode: 0,
+          output: `run-output-${options.sessionRole}`,
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0.05,
+          agentFallbacks: [],
+        };
+      },
+    });
 
     _debateSessionDeps.readFile = mock(async (path: string) => `{"proposal":"from ${path}"}`);
 
@@ -181,23 +175,21 @@ describe("DebateSession.runPlan()", () => {
   test("skips rebuttal loop when mode is panel (default)", async () => {
     const runCalls: Array<{ prompt: string }> = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async () => ({ specContent: "ok" }),
-        runFn: async (_agentName, options) => {
-          runCalls.push({ prompt: options.prompt ?? "" });
-          return {
-            success: true,
-            exitCode: 0,
-            output: "run-output",
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0,
-            agentFallbacks: [],
-          };
-        },
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async () => ({ specContent: "ok" }),
+      runFn: async (_agentName, options) => {
+        runCalls.push({ prompt: options.prompt ?? "" });
+        return {
+          success: true,
+          exitCode: 0,
+          output: "run-output",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0,
+          agentFallbacks: [],
+        };
+      },
+    });
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -230,11 +222,9 @@ describe("DebateSession.runPlan()", () => {
       error: () => {},
     })) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async () => ({ specContent: "ok" }),
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async () => ({ specContent: "ok" }),
+    });
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -265,15 +255,13 @@ describe("DebateSession.runPlan()", () => {
   test("includes spec anchor in synthesis prompt when specContent is provided", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async () => ({ specContent: "ok" }),
-        completeFn: async (_agentName, prompt) => {
-          capturedSynthesisPrompt = prompt;
-          return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
-        },
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async () => ({ specContent: "ok" }),
+      completeFn: async (_agentName, prompt) => {
+        capturedSynthesisPrompt = prompt;
+        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+      },
+    });
 
     _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
 
@@ -307,15 +295,13 @@ describe("DebateSession.runPlan()", () => {
   test("synthesis prompt omits spec anchor when specContent is not provided", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async () => ({ specContent: "ok" }),
-        completeFn: async (_agentName, prompt) => {
-          capturedSynthesisPrompt = prompt;
-          return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
-        },
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async () => ({ specContent: "ok" }),
+      completeFn: async (_agentName, prompt) => {
+        capturedSynthesisPrompt = prompt;
+        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+      },
+    });
 
     _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
 
@@ -344,18 +330,16 @@ describe("DebateSession.runPlan()", () => {
     const startedOrder: number[] = [];
     const resolvers: Array<() => void> = [];
 
-    _debateSessionDeps.createManager = mock((_config) =>
-      makeMockAgentManager({
-        planFn: async (_agentName, options) => {
-          const index = Number((options.sessionRole ?? "").replace("plan-", ""));
-          startedOrder.push(index);
-          await new Promise<void>((resolve) => {
-            resolvers[index] = resolve;
-          });
-          return { specContent: "ok" };
-        },
-      }),
-    );
+    _debateSessionDeps.agentManager = makeMockAgentManager({
+      planFn: async (_agentName, options) => {
+        const index = Number((options.sessionRole ?? "").replace("plan-", ""));
+        startedOrder.push(index);
+        await new Promise<void>((resolve) => {
+          resolvers[index] = resolve;
+        });
+        return { specContent: "ok" };
+      },
+    });
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 

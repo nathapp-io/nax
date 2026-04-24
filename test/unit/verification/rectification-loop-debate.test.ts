@@ -22,11 +22,11 @@ import { makeMockAgentManager } from "../../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runRectificationLoop — debate disabled (default)", () => {
-  const origCreateManager = _rectificationDeps.createManager;
+  const origAgentManager = _rectificationDeps.agentManager;
   const origRunVerification = _rectificationDeps.runVerification;
 
   afterEach(() => {
-    _rectificationDeps.createManager = origCreateManager;
+    _rectificationDeps.agentManager = origAgentManager;
     _rectificationDeps.runVerification = origRunVerification;
     mock.restore();
   });
@@ -53,7 +53,7 @@ describe("runRectificationLoop — debate disabled (default)", () => {
       decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
-    _rectificationDeps.createManager = mock(() => mockManager as any);
+    _rectificationDeps.agentManager = mockManager as any;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
 
     await runRectificationLoop({
@@ -91,7 +91,7 @@ describe("runRectificationLoop — debate disabled (default)", () => {
       decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
-    _rectificationDeps.createManager = mock(() => mockManager as any);
+    _rectificationDeps.agentManager = mockManager as any;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
 
     await runRectificationLoop({
@@ -114,11 +114,11 @@ describe("runRectificationLoop — debate disabled (default)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runRectificationLoop — debate enabled", () => {
-  const origCreateManager = _rectificationDeps.createManager;
+  const origAgentManager = _rectificationDeps.agentManager;
   const origRunVerification = _rectificationDeps.runVerification;
 
   afterEach(() => {
-    _rectificationDeps.createManager = origCreateManager;
+    _rectificationDeps.agentManager = origAgentManager;
     _rectificationDeps.runVerification = origRunVerification;
     mock.restore();
   });
@@ -149,7 +149,7 @@ describe("runRectificationLoop — debate enabled", () => {
       decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
-    _rectificationDeps.createManager = mock(() => mockManager as any);
+    _rectificationDeps.agentManager = mockManager as any;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
 
     await runRectificationLoop({
@@ -187,7 +187,7 @@ describe("runRectificationLoop — debate enabled", () => {
       decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
-    _rectificationDeps.createManager = mock(() => mockManager as any);
+    _rectificationDeps.agentManager = mockManager as any;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
 
     await runRectificationLoop({
@@ -221,7 +221,7 @@ describe("runRectificationLoop — debate enabled", () => {
       decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
     });
 
-    _rectificationDeps.createManager = mock(() => mockManager as any);
+    _rectificationDeps.agentManager = mockManager as any;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
 
     await runRectificationLoop({
@@ -246,11 +246,11 @@ describe("runRectificationLoop — debate enabled", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runRectificationLoop — debate fallback when all debaters fail", () => {
-  const origCreateManager = _rectificationDeps.createManager;
+  const origAgentManager = _rectificationDeps.agentManager;
   const origRunVerification = _rectificationDeps.runVerification;
 
   afterEach(() => {
-    _rectificationDeps.createManager = origCreateManager;
+    _rectificationDeps.agentManager = origAgentManager;
     _rectificationDeps.runVerification = origRunVerification;
     mock.restore();
   });
@@ -274,7 +274,7 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
       decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
     });
 
-    _rectificationDeps.createManager = mock(() => mockManager as any);
+    _rectificationDeps.agentManager = mockManager as any;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
 
     await runRectificationLoop({
@@ -310,7 +310,7 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
       decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
     });
 
-    _rectificationDeps.createManager = mock(() => mockManager as any);
+    _rectificationDeps.agentManager = mockManager as any;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
 
     const result = await runRectificationLoop({

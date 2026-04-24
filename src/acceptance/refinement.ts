@@ -5,9 +5,7 @@
  * testable assertions using an LLM call via adapter.complete().
  */
 
-import { createAgentManager } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config";
 import { getLogger } from "../logger";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -22,7 +20,7 @@ import type { RefineResult, RefinedCriterion, RefinementContext } from "./types"
  * @internal
  */
 export const _refineDeps = {
-  createManager: (config: NaxConfig): IAgentManager => createAgentManager(config),
+  agentManager: undefined as IAgentManager | undefined,
 };
 
 /**
@@ -85,11 +83,12 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
   } = context;
   const logger = getLogger();
 
-  const manager = context.agentManager ?? _refineDeps.createManager(config);
-  if (!context.agentManager) {
-    logger.warn("refinement", "No agentManager threaded — fresh manager created, unavailability state is lost", {
+  const manager = context.agentManager ?? _refineDeps.agentManager;
+  if (!manager) {
+    logger.warn("refinement", "No agentManager threaded — falling back to original criteria", {
       storyId,
     });
+    return { criteria: fallbackCriteria(criteria, storyId), costUsd: 0 };
   }
   const defaultAgent = manager.getDefault();
   const resolvedModel = resolveConfiguredModel(
