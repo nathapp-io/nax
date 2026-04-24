@@ -338,6 +338,10 @@ function makePassedCheck(check: "semantic" | "adversarial"): ReviewCheckResult {
   return { check, success: true, command: "", exitCode: 0, output: "", durationMs: 50 };
 }
 
+function makeFailedCheck(check: "semantic" | "adversarial"): ReviewCheckResult {
+  return { check, success: false, command: "", exitCode: 1, output: `${check} failed`, durationMs: 50 };
+}
+
 describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)", () => {
   beforeEach(() => {
     _runnerDeps.getUncommittedFiles = mock(async () => []);
@@ -457,5 +461,21 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
 
     expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
     expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
+  });
+
+  test("aggregates failureReason across multiple failing LLM reviewers", async () => {
+    _orchestratorDeps.runSemanticReview = mock(async () => makeFailedCheck("semantic"));
+    _orchestratorDeps.runAdversarialReview = mock(async () => makeFailedCheck("adversarial"));
+    const orchestrator = new ReviewOrchestrator();
+
+    const result = await orchestrator.review(
+      makeParallelConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.failureReason).toBe("semantic failed, adversarial failed");
+    expect(result.builtIn.failureReason).toBe("semantic failed, adversarial failed");
   });
 });
