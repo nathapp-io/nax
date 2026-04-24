@@ -134,6 +134,15 @@ ${SEMANTIC_OUTPUT_SCHEMA}`;
       "The object must start with { and end with }."
     );
   }
+
+  /**
+   * Follow-up prompt when the previous response was truncated mid-JSON.
+   * Asking the same question again produces the same long output; instead
+   * ask for a condensed summary capped at maxFindings to fit within limits.
+   */
+  static jsonRetryCondensed(maxFindings = 3): string {
+    return `Your previous response was truncated and could not be parsed as valid JSON.\nRespond with a condensed summary: at most ${maxFindings} findings, highest severity first.\nOutput ONLY a complete, valid JSON object. It must start with { and end with }.\nSchema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string}]}`;
+  }
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────

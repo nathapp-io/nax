@@ -14,7 +14,7 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { computeAcpHandle } from "../agents/acp/adapter";
+import { MAX_AGENT_OUTPUT_CHARS, computeAcpHandle } from "../agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
@@ -71,6 +71,19 @@ function parseAdversarialResponse(raw: string): AdversarialLLMResponse | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Returns true when the raw response was almost certainly truncated by the
+ * ACP adapter's MAX_AGENT_OUTPUT_CHARS tail-truncation cap.
+ *
+ * The adapter keeps the LAST N chars (tail truncation), so a truncated response
+ * ends at the cap boundary — not at a natural JSON close. Checking for a near-cap
+ * length is more reliable than heuristics on the string content, since the tail
+ * may start anywhere inside the JSON and may or may not end with `}`.
+ */
+export function looksLikeTruncatedJson(raw: string): boolean {
+  return raw.trimEnd().length >= MAX_AGENT_OUTPUT_CHARS - 100;
 }
 
 /** Format findings into readable text output. */
@@ -333,18 +346,23 @@ export async function runAdversarialReview(
     };
   }
 
-  // Retry once when the response cannot be parsed — the session has full context so
-  // a short follow-up asking for valid JSON is sufficient.
-  if (!parseAdversarialResponse(rawResponse)) {
+  // Detect cap truncation before attempting parse — the ACP adapter tail-truncates
+  // output at MAX_AGENT_OUTPUT_CHARS, so a near-cap response is corrupted JSON and
+  // parsing it is pointless. Go straight to condensed retry in that case.
+  // For short unparseable responses (model misbehaved), use the standard retry.
+  const isTruncated = looksLikeTruncatedJson(rawResponse);
+  if (isTruncated || !parseAdversarialResponse(rawResponse)) {
     retryAttempted = true;
+    const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
     logger?.info("adversarial", "JSON parse failed, retrying (1/1)", {
       storyId: story.id,
       rawHead: rawResponse.slice(0, 200),
       responseLen: rawResponse.length,
+      isTruncated,
     });
     try {
       const retryResult = await agentManager.run({
-        runOptions: { prompt: ReviewPromptBuilder.jsonRetry(), ...runOpts, keepOpen: false },
+        runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
       });
       rawResponse = retryResult.output;
       llmCost += retryResult.estimatedCost ?? 0;

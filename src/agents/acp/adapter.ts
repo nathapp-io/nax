@@ -42,7 +42,7 @@ import type { AgentRegistryEntry } from "./types";
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MAX_AGENT_OUTPUT_CHARS = 5000;
+export const MAX_AGENT_OUTPUT_CHARS = 5000;
 const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
 const CONTEXT_TOOL_CALL_PATTERN = /<nax_tool_call\s+name="([^"]+)">\s*([\s\S]*?)\s*<\/nax_tool_call>/i;
 
