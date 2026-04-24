@@ -14,7 +14,7 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { MAX_AGENT_OUTPUT_CHARS, computeAcpHandle } from "../agents/acp/adapter";
+import { computeAcpHandle } from "../agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
@@ -29,6 +29,7 @@ import { tryParseLLMJson } from "../utils/llm-json";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
+import { looksLikeTruncatedJson } from "./truncation";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
@@ -71,19 +72,6 @@ function parseAdversarialResponse(raw: string): AdversarialLLMResponse | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Returns true when the raw response was almost certainly truncated by the
- * ACP adapter's MAX_AGENT_OUTPUT_CHARS tail-truncation cap.
- *
- * The adapter keeps the LAST N chars (tail truncation), so a truncated response
- * ends at the cap boundary — not at a natural JSON close. Checking for a near-cap
- * length is more reliable than heuristics on the string content, since the tail
- * may start anywhere inside the JSON and may or may not end with `}`.
- */
-export function looksLikeTruncatedJson(raw: string): boolean {
-  return raw.trimEnd().length >= MAX_AGENT_OUTPUT_CHARS - 100;
 }
 
 /** Format findings into readable text output. */
