@@ -29,7 +29,7 @@ Issue #596 (merged) documents that **six past PRs added the same cross-cutting f
 | Early protocolIds capture | execution.ts + tdd/session-runner.ts | #591 |
 | Abort signal plumbing | execution.ts + tdd/session-runner.ts | #585 / #593 |
 
-The root cause is that there is no shared layer for per-session bookkeeping. #596 introduced one — `SessionManager.runInSession(sessionId, runFn, options)` as the primitive, with `ISessionRunner` + `SingleSessionRunner` as the shared call site. `ThreeSessionRunner` was scoped as the Phase 2 follow-up that would close #589 and #590 by construction — "every runner going through `runInSession` gets state transitions and the token-passthrough result shape for free."
+The root cause is that there is no shared layer for per-session bookkeeping. #596 introduced one — `SessionManager.runInSession(sessionId, runFn, options)` as the primitive, with `ISessionRunner` + `SingleSessionRunner` as the shared call site. Originally #596's Phase 2 was scoped as a `ThreeSessionRunner` class; this ADR revises that (§5.3 + Rejected Alternative §M) — TDD's three-session flow stays a plain orchestrator function that sequences three `callOp` calls through `SingleSessionRunner`. Every TDD session still goes through `runInSession`, so the #589/#590/#591 "by construction" claim still holds. The load-bearing piece is the shared `runInSession` call site, not the Phase-2 class.
 
 ADR-017 §E framed `ISessionRunner` as a topology abstraction. It is not. It is a **per-session bookkeeping surface** — the single call site where future cross-cutting per-session concerns land once instead of twice. Removing it re-opens the six drift paths above.
 
@@ -50,7 +50,7 @@ The runtime stack is **four layers**, each with exactly one reason to change:
 | Layer | Owner | Reason to change |
 |:---|:---|:---|
 | 4 — Operation envelope | `callOp()` | new operation, new config slice |
-| 3 — Session topology & bookkeeping | `SingleSessionRunner` (the `ISessionRunner` impl) | new per-session cross-cutting concern |
+| 3 — Session bookkeeping | `SingleSessionRunner` (the `ISessionRunner` impl) | new per-session cross-cutting concern |
 | 2 — Per-session lifecycle | `SessionManager.runInSession()` | lifecycle primitive (CREATED→RUNNING→COMPLETED/FAILED, bindHandle) — rarely changes |
 | 1 — Per-call cross-cutting | `AgentManager.runAs()` + observer middleware chain | new per-call concern (permissions pre-chain; cost/audit/cancellation/logging as observer middleware) |
 
@@ -131,9 +131,9 @@ Nine self-contained refactors, shipped in sequence.
 **One layer, one reason to change:**
 
 - Adding a new operation (e.g. a variant of `review`) → Layer 4 (one file in `src/operations/`)
-- Adding a fourth session topology (e.g. "pair-debate") → Layer 3 (one new `ISessionRunner` impl)
+- Adding a new multi-session flow (e.g. "pair-debate") → Layer 4 orchestrator (new domain file, e.g. `src/pair-debate/runner.ts`, sequencing `callOp`s). `ISessionRunner` stays one implementation.
 - Adding a new descriptor field that every session needs → Layer 2 (one edit to `runInSession`)
-- Adding rate limiting → Layer 1 (one method-local branch in `runAs`)
+- Adding rate limiting → Layer 1 (one observer middleware, appended to the frozen chain in `createRuntime`)
 
 Every past PR that landed twice in #596's table would have landed once under this model — because the Layer-3 runner would have been the single call site for the Layer-2 primitive.
 
@@ -237,9 +237,11 @@ Other sites (`routing/router.ts`, `cli/plan.ts`, `debate/session-helpers.ts`, `v
 ```typescript
 // src/agents/manager.ts — amend existing runAs()
 async runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult> {
-  // Pre-chain: permission resolution happens once, BEFORE middleware
+  // Pre-chain: permission resolution happens once, BEFORE middleware.
+  // Manager reads its own this._config (already held since constructor in today's code)
+  // — callers never thread config through runOptions.
   const permissions = resolvePermissions(
-    request.runOptions.config,
+    this._config,
     request.runOptions.pipelineStage,
   );
   const runOptions = { ...request.runOptions, resolvedPermissions: permissions };
@@ -258,6 +260,8 @@ async runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult> {
   );
 }
 ```
+
+**Why `this._config` and not `runOptions.config`:** `AgentManager` already owns the full `NaxConfig` via its constructor — `createAgentManager(config, ...)` ([src/agents/manager.ts:60](../../src/agents/manager.ts#L60)). Gap 4 resolution forbids ops from threading config through call sites; the manager is not an op, so it reads its own field. `AgentRunOptions.config` field gets removed during Wave 2 cleanup (adapter stops needing it once audit moves to middleware). This closes the last "why would an op need to know full NaxConfig" question: it doesn't.
 
 **`createAgentManager` grows one optional slot:**
 
@@ -551,8 +555,9 @@ When/if hot-reload lands, the contract is fixed now so callers can depend on the
 
 - `reload(next: NaxConfig)` — atomic swap. Zod validates `next` before swap; on failure, old config is retained and `reload` throws.
 - After swap, `current()` returns `next`; `select()` memo is invalidated per selector (re-runs on next access); `onReload` subscribers fire.
-- **In-flight calls keep their sliced view.** `callOp()` captures `ctx.config` once at the top of `op.build()`; the slice remains stable for the op's duration. Frozen-during-call is the invariant — reload affects *subsequent* ops only.
+- **In-flight calls keep their sliced view.** `callOp()` captures `buildCtx.config` once at the top of `op.build()` via `ctx.packageView.select(op.config)`; the slice remains stable for the op's duration. Frozen-during-call is the invariant — reload affects *subsequent* ops only.
 - Runtime does not re-fire or cancel in-flight ops on reload. That is a separate feature, deliberately not coupled.
+- Reload cascades to `PackageRegistry` — all `PackageView` select-caches invalidate atomically alongside the root cache. Otherwise stale per-package slices would survive reload.
 
 No concrete plan today. Documented so the seam is real, not vapor.
 
@@ -719,7 +724,8 @@ export class SingleSessionRunner implements ISessionRunner {
           storyId: ctx.storyId,
           sessionRole: resolveSessionRole(ctx.op.session.role, ctx.sessionOverride),
           keepOpen: ctx.op.session.lifetime === "warm",
-          config: ctx.runtime.configLoader.current(),
+          // Note: no `config` field — manager reads this._config for permissions (§3).
+          // AgentRunOptions.config is removed during Wave 2 cleanup once audit moves to middleware.
           ...options,
         },
       }),
@@ -809,7 +815,7 @@ export const plan: RunOperation<PlanInput, PlanResult, Pick<NaxConfig, "planner"
   name: "plan",
   stage: "plan",
   mode: "plan",
-  session: { role: "plan", lifetime: "fresh", topology: "single" },  // debated plan uses topology: "debate"
+  session: { role: "plan", lifetime: "fresh" },  // debated plan is dispatched by a DebateRunner orchestrator invoking debate-session ops
   config: ["planner", "debate"],
   build: (input, ctx) => ({
     role: planBuilder.role(input),
@@ -840,7 +846,11 @@ export const decompose: CompleteOperation<DecomposeInput, DecomposeResult, Pick<
 };
 ```
 
-Adapter shrinks to `run(options)` + `complete(prompt, options)` — 2 methods, permanently. `IAgentManager.planAs` and `decomposeAs` delete.
+Adapter shrinks to `run(options)` + `complete(prompt, options)` — 2 methods, permanently after Wave 3.5.
+
+**Deprecation window (Wave 3 → Wave 3.5):**
+- Wave 3: `AgentAdapter.plan()` / `.decompose()` and `IAgentManager.planAs()` / `.decomposeAs()` throw `NaxError ADAPTER_METHOD_DEPRECATED` with a migration pointer to the replacement ops (`scope.invoke(planOp, ...)` / `callOp(ctx, decomposeOp, input)`). Compile-time surface already shrunk (internal call sites migrated); external plugin authors implementing the old 4-method interface get a loud runtime error with a pointer.
+- Wave 3.5 (release gate after Wave 3): methods deleted entirely. Compile-time surface permanently at 2 methods.
 
 ---
 
@@ -1099,7 +1109,7 @@ Plugin extensions (unchanged — 7 types)
 |:---|:---|
 | **#523 closes** | One `AgentManager` per run via `NaxRuntime`. Uniform fallback, cost, audit. |
 | **#589, #590, #591 close by construction** | Every runner routes through `SessionManager.runInSession`. The next per-session concern lands once, not twice. |
-| **Four reasons to change, four layers** | Adding an op → Layer 4. New topology → Layer 3. New per-session concern → Layer 2. New per-call concern → Layer 1. No cross-layer bleed. |
+| **Four reasons to change, four layers** | Adding an op → Layer 4 (file in `src/operations/`). New multi-session flow → Layer 4 orchestrator (new domain file). New per-session concern → Layer 2 (edit `runInSession`). New per-call concern → Layer 1 (new observer middleware). No cross-layer bleed. |
 | **Adapter surface shrinks permanently** | `run` + `complete`. Prompt-building cannot leak back. |
 | **Cross-cutting uniform** | Permissions/cost/audit/error wrapping happen once in `runAs()`. Three `resolvePermissions()` calls in ACP adapter delete. |
 | **Operations have a standard shape** | `Operation<I, O, C>` + `callOp` + `ConfigSelector<C>`. One file per op, compiler-checked config slice. |
@@ -1293,7 +1303,7 @@ Five waves. Each independently shippable and revertible.
 
 2. **Composite operations.** Expressible today as an op whose `build()` or caller invokes `callOp()` on sub-ops — no framework support. If a canonical pattern emerges (e.g. `review` as `semantic + adversarial`), add a thin `composite()` helper. Not a blocker.
 
-3. **Runner selection override at call time.** `op.session.topology` declares the default; `CallContext` could grow a `topologyOverride` field for edge cases (e.g. a stage wants to force single-session debate for cost reasons). Not needed today; revisit on concrete request.
+3. **Domain-orchestrator override at call time.** Today TDD orchestration (`runThreeSessionTdd`) and debate orchestration (`DebateRunner`) live next to their domains and are invoked directly by pipeline stages. If a stage needs to force single-session behaviour on a flow that defaults to multi-session (e.g. a cheap debate-free plan for cost reasons), the orchestrator gets a mode parameter — not a runner-registry override. No framework-level override mechanism needed.
 
 4. **Token budget enforcement.** Trivial once `CostAggregator.snapshot()` exposes a running total. Alternatively, add a `budget` middleware that inspects the chain's cost accumulator and aborts via `signal` when exhausted. `runRetryLoop`'s `verify` callback can return `{ success: false, reason: "budget-exhausted" }`.
 
