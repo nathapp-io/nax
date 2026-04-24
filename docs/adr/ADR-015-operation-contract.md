@@ -1,6 +1,6 @@
 # ADR-015: Operation Contract, SessionRunners, and Control-Flow Layer
 
-**Status:** Proposed
+**Status:** Reject
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-014 (RunScope & Middleware); ADR-013 (SessionManager → AgentManager Hierarchy); ADR-012 (AgentManager Ownership)

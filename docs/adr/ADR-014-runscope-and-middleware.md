@@ -1,6 +1,6 @@
 # ADR-014: RunScope, Agent Middleware, and Orphan Consolidation
 
-**Status:** Proposed
+**Status:** Reject
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-013 (SessionManager → AgentManager Hierarchy); ADR-012 (AgentManager Ownership); ADR-011 (SessionManager Ownership)

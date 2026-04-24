@@ -1,6 +1,6 @@
 # ADR-016: Prompt Composition (Immutable Sections) and PackageView
 
-**Status:** Proposed
+**Status:** Reject
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-015 (Operation Contract); ADR-014 (RunScope & Middleware); ADR-010 (Context Engine)
