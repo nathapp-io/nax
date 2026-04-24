@@ -50,23 +50,23 @@ The runtime stack is **four layers**, each with exactly one reason to change:
 | Layer | Owner | Reason to change |
 |:---|:---|:---|
 | 4 — Operation envelope | `callOp()` | new operation, new config slice |
-| 3 — Session topology & bookkeeping | `ISessionRunner` impls | new session topology, new per-session cross-cutting concern |
+| 3 — Session topology & bookkeeping | `SingleSessionRunner` (the `ISessionRunner` impl) | new per-session cross-cutting concern |
 | 2 — Per-session lifecycle | `SessionManager.runInSession()` | lifecycle primitive (CREATED→RUNNING→COMPLETED/FAILED, bindHandle) — rarely changes |
-| 1 — Per-call cross-cutting | `AgentManager.runAs()` | new per-call concern (permissions, cost, audit, fallback) |
+| 1 — Per-call cross-cutting | `AgentManager.runAs()` + observer middleware chain | new per-call concern (permissions pre-chain; cost/audit/cancellation/logging as observer middleware) |
 
 Nine self-contained refactors, shipped in sequence.
 
-1. **`NaxRuntime`** — single lifecycle container owning `AgentManager`, `SessionManager`, `ConfigLoader`, `CostTracker`, `PromptAuditor`, `PackageRegistry`, logger, signal. Replaces 3 orphan `createAgentManager` instantiations and threads through existing `PipelineContext`.
-2. **`ConfigLoader` + `ConfigSelector` interface** — loader caches config in memory with a future hot-reload seam; named selectors (`reviewConfigSelector`, `planConfigSelector`, …) in one registry file declare each subsystem's config slice. Memoized per selector name.
-3. **Cross-cutting in `AgentManager.runAs()`** — `resolvePermissions()`, cost tagging, audit, error wrapping, fallback all land method-local. Three `resolvePermissions()` calls in the ACP adapter delete.
-4. **`Operation<I, O, C>` spec + `callOp()` helper** — typed shape for internal extensibility; each op declares its `ConfigSelector<C>`. `callOp()` routes `kind: "run"` ops through Layer 3, `kind: "complete"` ops straight to Layer 1.
-5. **`ISessionRunner` family expands** — `SingleSessionRunner` (#596, already shipped) + `ThreeSessionRunner` (#596 Phase 2) + `DebateSessionRunner` (new, absorbs `src/debate/session.ts` mode dispatch). All three delegate to `SessionManager.runInSession()` so per-session bookkeeping lands once.
-6. **`.plan()` / `.decompose()` leave the adapter** — become `Operation` specs under `src/operations/`. Adapter shrinks to `run` + `complete` permanently.
-7. **`composeSections()` + typed `PromptSection` slots** — one helper, canonical `SLOT_ORDER`. Builders expose slot-specific methods; no middleware chain.
+1. **`NaxRuntime`** — single lifecycle container owning `AgentManager`, `SessionManager`, `ConfigLoader`, `CostAggregator`, `PromptAuditor`, `PackageRegistry`, logger, signal. Replaces 3 orphan `createAgentManager` instantiations and threads through existing `PipelineContext`. `CostAggregator`/`PromptAuditor` are middleware-owned sinks, not manager fields.
+2. **`ConfigLoader` + `ConfigSelector` interface** — loader caches config in memory with a future hot-reload seam; named selectors (`reviewConfigSelector`, `planConfigSelector`, …) in one registry file declare each subsystem's config slice. Memoized per selector name. **Ops never read from `configLoader.current()` directly — all slicing goes through `ctx.packageView.select(selector)` so per-package overrides always apply (polyglot-monorepo correctness by construction; no `scope` field needed).**
+3. **Cross-cutting in `AgentManager.runAs()` + observer middleware** — `resolvePermissions()` pre-chain (once). Cost/audit/cancellation/logging as observer-only middleware registered at `createRuntime` time, frozen for runtime lifetime. Middleware is structurally uniform across all adapters and all session-internal calls. Three `resolvePermissions()` calls in the ACP adapter delete.
+4. **`Operation<I, O, C>` spec + `callOp()` helper** — typed shape for internal extensibility; each op declares its `ConfigSelector<C>`. `callOp()` routes `kind: "run"` ops through Layer 3, `kind: "complete"` ops straight to Layer 1. Config slicing goes through `ctx.packageView.select(op.config)`, not the loader directly.
+5. **`ISessionRunner` family stays tight — one implementation, `SingleSessionRunner`.** TDD's three-session flow stays an orchestrator in `src/tdd/orchestrator.ts` that sequences three `callOp(ctx, op, input)` calls through `SingleSessionRunner` (Gap 1 resolution). `DebateRunner` stays as a cohesive debate-domain orchestrator and does **not** implement `ISessionRunner` — it uses `callOp` uniformly across all modes (Gap 6 resolution). `SingleSessionRunner` remains the only class conforming to the interface, keeping "shared call site for `runInSession`" tight.
+6. **`.plan()` / `.decompose()` leave the adapter** — become `Operation` specs under `src/operations/`. Adapter shrinks to `run` + `complete` permanently. One-release deprecation window: Wave 3 makes the old methods throw `NaxError ADAPTER_METHOD_DEPRECATED`; deletion lands in the next release.
+7. **`composeSections()` + typed `PromptSection` slots — ships in Wave 1.** One helper, minimal `SLOT_ORDER` (grows per wave as builders migrate). Builders expose slot-specific methods in Wave 3; no middleware chain.
 8. **Unified `RetryInput<TFailure, TResult>`** — five callers of `runSharedRectificationLoop` normalize on one shape. Progressive composition is a `buildPrompt(failure, previous)` callback, not middleware.
 9. **CI lint + `SessionRole` tightening** — `process.cwd()` outside CLI banned; prompt builders' forbidden imports enforced; `SessionRole` admits `debate-${string}` / `plan-${number}`.
 
-**Explicitly out of scope:** prompt caching / `cache_control`, third-party plugin composability for cross-cutting concerns, plugin operation registration API.
+**Explicitly out of scope:** prompt caching / `cache_control`, third-party plugin composability for cross-cutting concerns, plugin operation registration API, transformer middleware (Phase 1 observer-only).
 
 ---
 
@@ -76,7 +76,7 @@ Nine self-contained refactors, shipped in sequence.
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Layer 4 — Operation semantic envelope                                │
 │   callOp(ctx, op, input)                                             │
-│     • slices config per op.config (ConfigSelector<C>)                │
+│     • slices config via ctx.packageView.select(op.config)            │
 │     • op.build → composeSections → join                              │
 │     • op.parse                                                       │
 │     • routes kind:"run" → Layer 3, kind:"complete" → Layer 1         │
@@ -85,13 +85,16 @@ Nine self-contained refactors, shipped in sequence.
                 ┌──────────────────┴──────────────────┐
                 ▼                                     ▼
 ┌──────────────────────────────────┐   ┌─────────────────────────────┐
-│ Layer 3 — Session topology       │   │                             │
-│   ISessionRunner implementations │   │                             │
-│    • SingleSessionRunner (#596)  │   │                             │
-│    • ThreeSessionRunner (TDD)    │   │                             │
-│    • DebateSessionRunner         │   │                             │
-│   owns "how many sessions, in    │   │                             │
-│   what order, with what policy"  │   │                             │
+│ Layer 3 — Session bookkeeping    │   │                             │
+│   SingleSessionRunner (#596)     │   │                             │
+│   — the ISessionRunner impl.     │   │                             │
+│   One session + fallback + bundle│   │                             │
+│   rebuild + swap-handoff rewrite.│   │                             │
+│                                  │   │                             │
+│   Orchestrators above (TDD 3-session│                             │
+│   sequencer, DebateRunner) call    │                             │
+│   callOp → SingleSessionRunner for │                             │
+│   each underlying session.         │                             │
 └──────────────────────────────────┘   │                             │
                 │                      │                             │
                 ▼                      │                             │
@@ -103,16 +106,19 @@ Nine self-contained refactors, shipped in sequence.
 │    • bindHandle(protocolIds)     │   │                             │
 │    • RUNNING → COMPLETED/FAILED  │   │                             │
 │   future per-session concerns    │   │                             │
-│   land HERE, once                 │   │                             │
+│   land HERE, once                │   │                             │
 └──────────────────────────────────┘   │                             │
                 │                      │                             │
                 ▼                      ▼                             │
 ┌──────────────────────────────────────────────────────────────────┐ │
 │ Layer 1 — Per-call cross-cutting                                 │ │
 │   AgentManager.runAs / runWithFallback / completeAs              │ │
-│     • resolvePermissions (once, pre-dispatch)                    │ │
-│     • cost tag                                                   │ │
-│     • prompt audit                                               │ │
+│     • resolvePermissions (pre-chain, once)                       │ │
+│     • observer middleware chain (frozen at runtime construction) │ │
+│         - audit    (observes prompt + result → PromptAuditor)    │ │
+│         - cost     (observes tokens + cost → CostAggregator)     │ │
+│         - cancellation (threads signal; translates AbortError)   │ │
+│         - logging  (structured JSONL)                            │ │
 │     • error wrap                                                 │ │
 │     • fallback on failure                                        │ │
 └──────────────────────────────────────────────────────────────────┘
@@ -143,9 +149,9 @@ export interface NaxRuntime {
   readonly projectDir: string;
   readonly agentManager: IAgentManager;
   readonly sessionManager: ISessionManager;
-  readonly costTracker: CostTracker;
-  readonly promptAuditor: IPromptAuditor;
-  readonly packages: PackageRegistry;
+  readonly costAggregator: ICostAggregator;  // §3.2 — middleware-owned sink
+  readonly promptAuditor: IPromptAuditor;    // §3.2 — middleware-owned sink
+  readonly packages: PackageRegistry;        // §9.3 — always resolvable (root-equiv if no workdir)
   readonly logger: Logger;
   readonly signal: AbortSignal;
   close(): Promise<void>;
@@ -194,7 +200,7 @@ No concrete hot-reload feature today. The loader exists so adding it later is a 
 **Contract:**
 
 - `createRuntime()` is the only public constructor for `AgentManager` and `SessionManager`. `createAgentManager` leaves the public barrel ([src/agents/index.ts:29](../../src/agents/index.ts#L29)) and moves to `src/runtime/internal/agent-manager-factory.ts`.
-- `close()` is idempotent and cascades in explicit order: `signal.abort()` → `sessionManager.sweepAll()` → `promptAuditor.flush()` → `costTracker.drain()` → `agentManager.dispose()`.
+- `close()` is idempotent and cascades in explicit order: `signal.abort()` → `sessionManager.sweepAll()` → `promptAuditor.flush()` → `costAggregator.drain()` → `agentManager.dispose()`.
 - `signal` is a scope-internal `AbortController`; `opts.parentSignal` (e.g. CLI SIGINT) links via `AbortSignal.any()`.
 - `config` frozen at construction. No hot reload.
 - Threaded through `PipelineContext` as `ctx.runtime` (single field; no new container types).
@@ -218,7 +224,7 @@ Only 3 real `createAgentManager` call sites exist today (ADR-017 overcounted at 
 
 Other sites (`routing/router.ts`, `cli/plan.ts`, `debate/session-helpers.ts`, `verification/rectification-loop.ts`) **import** the factory but receive it via threaded deps; they migrate by swapping the `createManager` dep for `runtime`.
 
-**Why this closes #523:** one `AgentManager` per run, so a 401 on routing falls into the same fallback chain as execution. Cost events from rectification and debate proposers roll into one `CostTracker`.
+**Why this closes #523:** one `AgentManager` per run, so a 401 on routing falls into the same fallback chain as execution. Cost events from rectification and debate proposers roll into one `CostAggregator` via the shared middleware chain.
 
 ---
 
@@ -226,53 +232,140 @@ Other sites (`routing/router.ts`, `cli/plan.ts`, `debate/session-helpers.ts`, `v
 
 **Problem:** [src/agents/acp/adapter.ts:593,847,1036](../../src/agents/acp/adapter.ts#L593) calls `resolvePermissions()` three times. Cost tagging and audit are inconsistent across orphan call sites.
 
-**Fix:** one place — `AgentManager.runAs()` (and siblings `completeAs()`, `runWithFallback()`):
+**Fix:** one place — `AgentManager.runAs()` (and siblings `completeAs()`, `runWithFallback()`). Permissions resolve pre-chain (once); cost, audit, cancellation, and logging concerns ride an observer-middleware chain frozen at runtime construction.
 
 ```typescript
 // src/agents/manager.ts — amend existing runAs()
 async runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult> {
+  // Pre-chain: permission resolution happens once, BEFORE middleware
   const permissions = resolvePermissions(
     request.runOptions.config,
     request.runOptions.pipelineStage,
   );
-  const logger = this._logger.child({
-    storyId: request.runOptions.storyId,
-    stage:   request.runOptions.pipelineStage,
-    agent:   agentName,
-  });
-  const started = Date.now();
+  const runOptions = { ...request.runOptions, resolvedPermissions: permissions };
 
-  try {
-    const result = await this._dispatch(agentName, {
-      ...request,
-      runOptions: { ...request.runOptions, resolvedPermissions: permissions },
-    });
-    this._costTracker.record({
+  // Run through observer-middleware chain; terminal is the actual dispatch
+  return this._middleware.execute(
+    {
       agentName,
-      stage: request.runOptions.pipelineStage,
-      storyId: request.runOptions.storyId,
-      tokens: result.tokenUsage,
-      costUsd: result.estimatedCost,
-      durationMs: Date.now() - started,
-    });
-    this._promptAuditor.record({ /* prompt hash, response hash, ... */ });
-    return result;
-  } catch (err) {
-    this._costTracker.recordError({
-      agentName, stage: request.runOptions.pipelineStage,
-      errorCode: extractErrorCode(err), durationMs: Date.now() - started,
-    });
-    this._promptAuditor.recordError({ /* ... */ });
-    throw wrapNaxError(err, { stage: request.runOptions.pipelineStage, agentName });
-  }
+      options: runOptions,
+      signal: request.signal,
+      stage: runOptions.pipelineStage,
+      storyId: runOptions.storyId,
+      packageDir: request.packageDir,
+    },
+    async () => this._dispatch(agentName, { ...request, runOptions }),
+  );
 }
 ```
+
+**`createAgentManager` grows one optional slot:**
+
+```typescript
+export function createAgentManager(
+  config: NaxConfig,
+  opts?: { middleware?: readonly AgentMiddleware[] },
+): IAgentManager;
+```
+
+Default empty chain — keeps tests construction-cheap. `createRuntime` composes the production chain (audit + cost + cancellation + logging) and passes it in.
 
 **Adapter simplification:** the three `resolvePermissions()` calls delete. The adapter reads `request.runOptions.resolvedPermissions` (pre-resolved by the manager).
 
 **Wire mapping stays in the adapter's folder.** No `IPermissionTranslatorRegistry`. When a second transport arrives, add `toWirePolicy(resolved)` to `AgentAdapter`.
 
-**No middleware chain.** Method-local ordering is readable and testable. Extension via internal method branches or subscribers to `CostTracker` / `PromptAuditor`.
+### 3.1 Agent middleware — observers only, frozen, pre-chain permissions
+
+Ported from ADR-014 §2.8 with RunScope wording stripped. Three invariants carry over unchanged:
+
+```typescript
+// src/runtime/agent-middleware.ts (new, ~60 lines)
+export interface AgentMiddleware {
+  readonly name: string;
+  run?(ctx: MiddlewareContext, next: () => Promise<AgentResult>): Promise<AgentResult>;
+  complete?(ctx: MiddlewareContext, next: () => Promise<CompleteResult>): Promise<CompleteResult>;
+}
+
+export interface MiddlewareContext {
+  readonly agentName: string;
+  readonly options: AgentRunOptions | CompleteOptions;  // includes .resolvedPermissions (canonical)
+  readonly signal: AbortSignal;
+  readonly stage?: PipelineStage;
+  readonly storyId?: string;
+  readonly packageDir?: string;
+}
+```
+
+**Phase 1 chain (observer-only):**
+
+| Middleware | Concern | Semantics |
+|:---|:---|:---|
+| `audit` | Capture prompt + response via `IPromptAuditor`; record `options.resolvedPermissions.profile` | Observer — emits `PromptAuditEntry` on success, `PromptAuditErrorEntry` on error |
+| `cost` | Emit `CostEvent` to `ICostAggregator`, tagged with `{ agentName, stage, storyId, packageDir }` | Observer — `CostEvent` on success, `CostErrorEvent` on error |
+| `cancellation` | Thread `signal` into adapter call; translate `AbortError` to `NaxError CANCELLED` | Pass-through with error translation; does not observe prompt/response |
+| `logging` | Structured JSONL per `project-conventions.md`; `storyId` first; includes canonical `profile` | Observer |
+
+**Three invariants:**
+
+- **Observer-only in Phase 1.** Middleware does not mutate prompt, response, or options for the next middleware in the chain. Order-independence is preserved. Transformer middleware reopens only when a concrete transformer case emerges with justification.
+- **Frozen at runtime construction.** Chain registered once in `createRuntime()` and immutable for the runtime lifetime. No per-call / per-op middleware overrides.
+- **Permissions pre-chain, not middleware.** `resolvePermissions()` fires before the chain executes (§3 code above); middleware reads `options.resolvedPermissions` for audit but does not compute it. Matches ADR-014's explicit rejection of permissions-as-middleware.
+
+**Resilience:** every middleware is resilient to the terminal call throwing. `audit` emits an error entry; `cost` emits `CostErrorEvent`; `cancellation` translates the error; no middleware swallows the thrown error.
+
+**Session-internal calls are covered by construction.** ADR-013 Phase 5 locked down direct adapter calls — everything flows through `IAgentManager`. `SessionManager.runInSession(id, manager, req)` therefore invokes `manager.run(req)` which routes through `runAs()` → middleware chain. No SessionManager rewire required (contrast ADR-014, which needed a `scope.getAgent` callback).
+
+### 3.2 Observability sinks — `CostAggregator` + `PromptAuditor`
+
+Ported from ADR-014 §3 + §4. Both live on `NaxRuntime`; drained/flushed on `runtime.close()`.
+
+```typescript
+// src/runtime/cost-aggregator.ts (new, ~50 lines)
+export interface ICostAggregator {
+  record(event: CostEvent): void;
+  recordError(event: CostErrorEvent): void;
+  snapshot(): CostSnapshot;
+  byAgent(): Record<string, CostSnapshot>;
+  byStage(): Record<string, CostSnapshot>;
+  byStory(): Record<string, CostSnapshot>;
+  drain(): Promise<void>;  // flushes to StoryMetrics on runtime close
+}
+
+export interface CostEvent {
+  readonly ts: number;
+  readonly runId: string;
+  readonly agentName: string;
+  readonly model: string;
+  readonly stage?: PipelineStage;
+  readonly storyId?: string;
+  readonly packageDir?: string;
+  readonly tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+  readonly costUsd: number;
+  readonly durationMs: number;
+}
+
+export interface CostErrorEvent {
+  readonly ts: number;
+  readonly runId: string;
+  readonly agentName: string;
+  readonly model?: string;
+  readonly stage?: PipelineStage;
+  readonly storyId?: string;
+  readonly errorCode: string;
+  readonly durationMs: number;
+}
+
+// src/runtime/prompt-auditor.ts (new, ~40 lines)
+export interface IPromptAuditor {
+  record(entry: PromptAuditEntry): void;
+  recordError(entry: PromptAuditErrorEntry): void;
+  flush(): Promise<void>;  // writes to .nax/audit/<runId>.jsonl
+}
+```
+
+Nested calls (rectification, debate proposers, pre-execution refinement) flow through the same aggregator via the shared runtime. `StoryMetrics` reads aggregate totals on `runtime.close()`.
+
+**Audit writes from `src/agents/acp/adapter.ts:651-666` (existing inline `writePromptAudit`) delete in Wave 2** — the `audit` middleware writes uniformly for every adapter.
 
 ---
 
@@ -298,7 +391,9 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly session: {
     readonly role: SessionRole;
     readonly lifetime: "fresh" | "warm";
-    readonly topology?: "single" | "three" | "debate";  // default "single"
+    // No topology field — every kind:"run" op routes through SingleSessionRunner.
+    // Multi-session flows (TDD three-session, debate) sequence multiple callOps
+    // from their domain orchestrator (src/tdd/orchestrator.ts, src/debate/runner.ts).
   };
 }
 
@@ -314,6 +409,7 @@ export interface BuildContext<C> {
 
 export interface CallContext {
   readonly runtime: NaxRuntime;
+  readonly packageView: PackageView;           // always present; root-equivalent when no workdir
   readonly packageDir: string;
   readonly storyId?: string;
   readonly agentName: string;
@@ -323,6 +419,8 @@ export interface CallContext {
   };
 }
 ```
+
+**`parse` contract clarification:** for `kind:"complete"` ops, `parse(output)` is a pure text→domain transform (typical JSON-mode completion result). For `kind:"run"` ops that need session-close post-work (autoCommit, isolation verification, changed-file diff, PID cleanup), that work lives in the domain orchestrator that called `callOp` (for TDD: in `src/tdd/session-op.ts`'s shared helper), not inside `parse`. This keeps `parse` side-effect-free for the common case while accommodating the session-based ops that need session-close bookkeeping.
 
 ### 4.2 `ConfigSelector<C>` — named, reusable, interface-based
 
@@ -435,15 +533,17 @@ Name-based keying means `configLoader.select(reviewConfigSelector)` always maps 
 
 The existing Zod `safeParse` in [src/config/loader.ts](../../src/config/loader.ts) stays the validation boundary. `ConfigLoader` receives an already-validated `NaxConfig`. Selectors project — they do not enforce invariants. This keeps `select()` O(1), exception-free on the happy path, and composable without each selector re-running Zod.
 
-**4. `current()` is public but off-limits inside operations.**
+**4. `current()` is public but off-limits inside operations — and so is direct `configLoader.select(...)`.**
 
-Three legitimate uses of `configLoader.current()`:
+All ops read config through `ctx.packageView.select(selector)`. This is polyglot-monorepo-correct by construction: `packageView.config` is always a safe base because `mergePackageConfig` is a one-way merge — whitelisted sections get package overrides when present; root-only sections pass through unchanged. A repo-scoped op reading a root-only section (e.g. `planConfigSelector` over `config.plan`) gets the root value via `packageView.config.plan`; a package-scoped op reading a whitelisted section (e.g. `reviewConfigSelector` over `config.review`) gets the package-specific override. One code path, no `scope` field needed.
 
-- `AgentManager.runAs()` threading the full config into `AgentRunOptions` (session-handle derivation, adapter internals).
+Three legitimate uses of `configLoader.current()` — **all outside ops**:
+
+- Run-level setup (creating `PackageRegistry` views at the start of the run).
+- `AgentManager.runAs()` threading the full config into `AgentRunOptions` for session-handle derivation / adapter internals (not semantically owned by any specific op).
 - CLI commands that display config (`nax config show`).
-- Wave-1 bridge code while ops migrate to selectors.
 
-Inside `src/operations/**` and inside prompt builders, `configLoader.current()` is a lint error. The sliced `ctx.config` (selector output) is the only allowed path. Enforced by the same forbidden-import pattern as the Prompt Builder Convention.
+Inside `src/operations/**` and inside prompt builders, **both** `configLoader.current()` and direct `configLoader.select(...)` are lint errors. The sliced `ctx.config` (via `ctx.packageView.select(op.config)`) is the only allowed path. Enforced by the same forbidden-import pattern as the Prompt Builder Convention.
 
 **5. Hot-reload semantics (future — contract shape only, not shipped).**
 
@@ -477,31 +577,34 @@ A hypothetical `composeSelectors(a, b)` combinator adds a second way to name a s
 ### 4.3 `callOp()` — Layer-3 dispatch
 
 ```typescript
-// src/operations/call.ts (new, ~70 lines)
+// src/operations/call.ts (new, ~60 lines)
 export async function callOp<I, O, C>(
   ctx: CallContext,
   op: Operation<I, O, C>,
   input: I,
 ): Promise<O> {
-  // Config slicing goes through the loader — memoized per selector name.
-  const slicedConfig = ctx.runtime.configLoader.select(normalizeSelector(op.config, op.name));
-  const packageView  = ctx.runtime.packages.get(ctx.packageDir);
-  const buildCtx: BuildContext<C> = { packageView, config: slicedConfig };
-  const sections = composeSections(op.build(input, buildCtx));
+  // Config slicing goes through the packageView — always correct for polyglot monorepos.
+  // No scope field: packageView.config is root-equivalent when no workdir, or root+package-merged
+  // when workdir is set. Root-only sections pass through unchanged either way.
+  const selector    = normalizeSelector(op.config, op.name);
+  const slicedConfig = ctx.packageView.select(selector);
+  const buildCtx: BuildContext<C> = { packageView: ctx.packageView, config: slicedConfig };
+  const sections = composeSections(op.build(input, buildCtx));  // §7 — ships in Wave 1
   const prompt   = join(sections);
 
   if (op.kind === "complete") {
-    // Session-less path → straight to Layer 1
+    // Session-less path → straight to Layer 1 (through manager → middleware chain)
     const raw = await ctx.runtime.agentManager.completeAs(ctx.agentName, prompt, {
       jsonMode: op.jsonMode ?? false,
       pipelineStage: op.stage,
-      config: ctx.runtime.configLoader.current(),
+      storyId: ctx.storyId,
+      packageDir: ctx.packageDir,
     });
     return op.parse(raw);
   }
 
-  // kind:"run" → Layer 3 (ISessionRunner) → Layer 2 (runInSession) → Layer 1 (runAs)
-  const runner = selectSessionRunner(op.session.topology ?? "single");
+  // kind:"run" → Layer 3 (SingleSessionRunner) → Layer 2 (runInSession) → Layer 1 (runAs + middleware)
+  const runner = new SingleSessionRunner();
   const outcome = await runner.run({
     runtime: ctx.runtime,
     agentName: ctx.agentName,
@@ -523,41 +626,47 @@ function normalizeSelector<C>(
 }
 ```
 
-`callOp` is ~70 lines. It does not mint sessionIds, does not resolve permissions, does not wrap errors redundantly — those are Layer 2, Layer 1, and Layer 1 respectively.
+`callOp` is ~60 lines. It does not mint sessionIds, does not resolve permissions, does not wrap errors redundantly — those are Layer 2, Layer 1, and Layer 1 respectively. Config slicing goes through `packageView.select` — single dispatch path, no scope branching.
 
 ### 4.4 Operation directory as discovery surface
 
 ```
 src/operations/
 ├── types.ts             — Operation, RunOperation, CompleteOperation, ConfigSelector, ...
-├── call.ts              — callOp() + resolveSlice + selectSessionRunner
+├── call.ts              — callOp() — single dispatch through SingleSessionRunner
 ├── index.ts             — barrel
 ├── plan.ts              — replaces AgentAdapter.plan()
 ├── decompose.ts         — replaces AgentAdapter.decompose()
 ├── rectify.ts           — per-attempt op used by runRetryLoop
-├── classify-route.ts    — replaces routing LLM classifier
+├── classify-route.ts    — replaces routing LLM classifier (Wave-1 proof-of-shape)
 ├── acceptance-generate.ts
 ├── acceptance-refine.ts
 ├── acceptance-diagnose.ts
 ├── acceptance-fix.ts
 ├── semantic-review.ts
 ├── adversarial-review.ts
-├── write-test.ts        — TDD: test-writer op
-├── implement.ts         — shared by single-session stage and ThreeSessionRunner
-├── verify.ts            — TDD: verifier op
-├── debate-propose.ts
-├── debate-rebut.ts
-├── debate-rank.ts
+├── write-test.ts        — TDD: test-writer op (kind:"run")
+├── implement.ts         — TDD: implementer op; also used by single-session execution stage
+├── verify.ts            — TDD: verifier op (kind:"run")
+├── debate-propose.ts    — kind:"complete" for oneshot mode
+├── debate-rebut.ts      — kind:"complete" for oneshot mode
+├── debate-rank.ts       — kind:"complete" for oneshot mode
+├── debate-session.ts    — kind:"run" for stateful/hybrid modes
 └── README.md            — standard shape, when to add a new op, migration checklist
 ```
 
 `ls src/operations/` answers "what operations does nax have?" No hunting through subsystems.
 
+**Domain orchestrators that sequence multiple ops live next to their domain, not in `src/operations/`:**
+
+- `src/tdd/orchestrator.ts` — `runThreeSessionTdd`. Sequences three `callOp` calls (writeTestOp → implementOp → verifyOp), owning between-session concerns (greenfield detect, full-suite gate, verdict read, rollback).
+- `src/debate/runner.ts` — `DebateRunner` class. Dispatches on mode: oneshot → N parallel complete-kind callOps; stateful/hybrid → N parallel run-kind callOps. Does **not** implement `ISessionRunner` — it's a debate-domain orchestrator, not a session-runner.
+
 ---
 
 ## 5. `ISessionRunner` — Layer 3 bookkeeping surface
 
-### 5.1 The interface (preserved from #596)
+### 5.1 The interface (preserved from #596; kept tight)
 
 ```typescript
 // src/session/runners/types.ts (from #596, amended)
@@ -574,6 +683,7 @@ export interface SessionRunnerContext {
   readonly prompt: string;                     // composed at Layer 4
   readonly op: RunOperation<unknown, unknown, unknown>;
   readonly sessionOverride?: CallContext["sessionOverride"];
+  readonly noFallback?: boolean;               // opt-out of cross-agent fallback (TDD per-role sessions)
 }
 
 export interface SessionRunnerOutcome {
@@ -582,18 +692,25 @@ export interface SessionRunnerOutcome {
 }
 ```
 
+**`ISessionRunner` has exactly one implementation: `SingleSessionRunner`.** The interface exists to document the Layer-3 contract (shared call site for `runInSession`), not to enable polymorphism. Multi-session flows (TDD three-session, debate) are orchestrator-level concerns that sequence multiple `callOp` invocations — they live next to their domain in `src/tdd/orchestrator.ts` and `src/debate/runner.ts`.
+
+**`noFallback` rationale:** TDD per-role sessions explicitly do not participate in cross-agent fallback (established behaviour — see [src/tdd/three-session-runner.ts:87](../../src/tdd/three-session-runner.ts#L87) `fallbacks: []`). Before ADR-018 this was expressed by passing `wrapAdapterAsManager(agent)` instead of the real `agentManager`. Under ADR-018, TDD ops set `noFallback: true` explicitly at the type level. Silent-regression-proof.
+
 ### 5.2 `SingleSessionRunner` (already shipped in #596)
 
-One session per story. Migration from #596's code is the existing implementation at [src/session/runners/single-session-runner.ts](../../src/session/runners/single-session-runner.ts); signature aligns to the new `SessionRunnerContext` (swapping `_executionDeps`-shaped fields for `runtime`-sourced ones).
+One session per story. Migration from #596's code is the existing implementation at [src/session/runners/single-session-runner.ts](../../src/session/runners/single-session-runner.ts); signature aligns to the new `SessionRunnerContext`.
 
 ```typescript
 export class SingleSessionRunner implements ISessionRunner {
   readonly name = "single-session";
   async run(ctx: SessionRunnerContext): Promise<SessionRunnerOutcome> {
     const sessionId = deriveSessionId(ctx);     // via SessionManager factory
+    const manager = ctx.noFallback
+      ? wrapAdapterAsManager(ctx.runtime.agentManager.getAdapter(ctx.agentName))
+      : ctx.runtime.agentManager;
     const result = await ctx.runtime.sessionManager.runInSession(
       sessionId,
-      async (options) => ctx.runtime.agentManager.runWithFallback(ctx.agentName, {
+      async (options) => manager.runWithFallback(ctx.agentName, {
         runOptions: {
           prompt: ctx.prompt,
           workdir: ctx.packageDir,
@@ -602,7 +719,7 @@ export class SingleSessionRunner implements ISessionRunner {
           storyId: ctx.storyId,
           sessionRole: resolveSessionRole(ctx.op.session.role, ctx.sessionOverride),
           keepOpen: ctx.op.session.lifetime === "warm",
-          config: ctx.runtime.config,
+          config: ctx.runtime.configLoader.current(),
           ...options,
         },
       }),
@@ -613,73 +730,58 @@ export class SingleSessionRunner implements ISessionRunner {
 }
 ```
 
-### 5.3 `ThreeSessionRunner` (Phase 2 of #596 — NEW in this ADR's migration)
+### 5.3 TDD orchestrator (not an `ISessionRunner`)
 
-Three sessions — test-writer → implementer → verifier — each in its own session for isolation (ADR-007). Each session goes through `runInSession` so state transitions, bindHandle, token propagation, and future per-session concerns land once.
+TDD's three-session flow (test-writer → implementer → verifier) stays in [src/tdd/orchestrator.ts](../../src/tdd/orchestrator.ts) as a plain function, not a runner class. `runThreeSessionTdd(options)` keeps its current responsibilities: recursion guard, dry-run short-circuit, retry-skip logic, greenfield detection, `runFullSuiteGate` between sessions 2 and 3, `readVerdict` post-session, `executeWithTimeout` post-verify fallback, `rollbackToRef` on failure, cost/token/duration aggregation.
 
-```typescript
-export class ThreeSessionRunner implements ISessionRunner {
-  readonly name = "three-session";
-  async run(ctx: SessionRunnerContext): Promise<SessionRunnerOutcome> {
-    // TDD input carries sub-operation references; the runner sequences the three sessions.
-    const input = ctx.op.input as TddInput;   // op.build produced a TDD composite
+**What changes:** the three `runTddSession(role, ...)` call sites become `callOp(ctx, writeTestOp, input)` / `callOp(ctx, implementOp, input)` / `callOp(ctx, verifyOp, input)`. A shared helper `src/tdd/session-op.ts :: runTddSessionOp(role, input, ctx)` (extracted from today's `runTddSession`) holds the post-session side effects (autoCommit, isolation verification, changed-file diff, PID cleanup). Each of the three TDD ops is a thin wrapper around the helper.
 
-    const tests = await runOne(ctx, writeTest, input, "test-writer");
-    const impl  = await runOne(ctx, implement, { ...input, tests }, "implementer");
-    const vrf   = await runOne(ctx, verify,    { ...input, tests, impl }, "verifier");
-    return { primaryResult: vrf.primary, fallbacks: [] };
-  }
-}
-// runOne() invokes callOp with a session-override role, which routes back through
-// SingleSessionRunner → runInSession. Bookkeeping applies uniformly per session.
-```
+**TDD ops set `noFallback: true`** when invoking `callOp` (via `sessionOverride` or a dedicated field on input) so `SingleSessionRunner` wraps the adapter without fallback. Preserves today's `fallbacks: []` invariant at the type level.
 
-**This is what closes #589, #590, #591 "by construction":** every runner that goes through `runInSession` inherits state transitions, token passthrough, and early protocolIds capture. Adding the seventh cross-cutting concern from #596's table requires editing `runInSession` once, not editing both `execution.ts` and `tdd/session-runner.ts`.
+**This closes #589, #590, #591 "by construction":** every TDD session still goes through `SingleSessionRunner → SessionManager.runInSession`. State transitions, token passthrough, early protocolIds capture apply per session, uniformly, via the one shared call site.
 
-### 5.4 `DebateSessionRunner` — absorbs mode dispatch
+### 5.4 `DebateRunner` (not an `ISessionRunner`)
 
-Today [src/debate/session.ts:24-174](../../src/debate/session.ts#L24-L174) dispatches between `one-shot`, `stateful`, and `hybrid` modes. That dispatch moves into `DebateSessionRunner`. The runner owns topology; the ops own content.
+Today [src/debate/session.ts:24-174](../../src/debate/session.ts#L24-L174) dispatches between `one-shot`, `stateful`, and `hybrid` modes. That dispatch moves into `DebateRunner` — a cohesive debate-domain class that does **not** implement `ISessionRunner`.
 
-| Mode | Topology | Used by |
+The `*Runner` suffix here describes domain role (runs debates), not interface conformance. `ISessionRunner` conformance is reserved for classes that genuinely share the `runInSession` primitive — today, only `SingleSessionRunner`.
+
+| Mode | Dispatch | Op kind |
 |:---|:---|:---|
-| `one-shot` | N × `complete()`, no sessions | review with `sessionMode: "one-shot"` |
-| `stateful` | N debater sessions, warm across rounds | review with `sessionMode: "stateful"` |
-| `hybrid` | N stateful debaters + reviewer-dialogue across rounds | plan stage; hybrid review |
+| `oneshot` | N parallel `callOp(ctx, debateProposeOp, ...)` | `kind: "complete"` |
+| `stateful` | N parallel `callOp(ctx, debateSessionOp, ...)` | `kind: "run"` (via SingleSessionRunner) |
+| `hybrid` | N parallel `callOp(ctx, debateSessionOp, ...)` + reviewer-dialogue rounds | `kind: "run"` (via SingleSessionRunner) |
 
 ```typescript
-export class DebateSessionRunner implements ISessionRunner {
-  readonly name = "debate-session";
-  async run(ctx: SessionRunnerContext): Promise<SessionRunnerOutcome> {
-    const input = ctx.op.input as DebateInput;
+// src/debate/runner.ts
+export class DebateRunner {
+  async run(ctx: OpContext, input: DebateInput): Promise<DebateOutput> {
     switch (input.mode) {
-      case "one-shot": return this.runOneShot(ctx, input);
-      case "stateful": return this.runStateful(ctx, input);
-      case "hybrid":   return this.runHybrid(ctx, input);
+      case "oneshot":
+        return Promise.all(
+          input.personas.map((p, i) =>
+            callOp(ctx, debateProposeOp, { persona: p, topic: input.topic, discriminator: i }),
+          ),
+        ).then(aggregate);
+      case "stateful":
+      case "hybrid":
+        return Promise.all(
+          input.personas.map((p, i) =>
+            callOp(ctx, debateSessionOp, { persona: p, mode: input.mode, discriminator: i }),
+          ),
+        ).then(aggregate);
     }
   }
-  // Each mode invokes callOp on debate-propose / debate-rebut / debate-rank with
-  // sessionOverride: { role: "debate", discriminator: i } — derived sessionHandle
-  // is the existing deterministic formula (computeAcpHandle).
 }
 ```
 
-Per-debater isolation: `Promise.allSettled` + per-debater `AbortController`. A 401 on debater 0 is visibly distinct from a 401 on debater 2 (Layer-1 audit tags each).
+Per-debater isolation: `Promise.allSettled` + per-debater `AbortController` (threaded via `sessionOverride`). A 401 on debater 0 is visibly distinct from a 401 on debater 2 (Layer-1 middleware audit tags each).
 
-**`src/debate/session-*.ts` mode-specific files collapse into methods on the runner.** `_debateSessionDeps.createManager` is removed by the Wave-1 orphan consolidation.
+**`src/debate/session-*.ts` mode-specific files collapse into the orchestrator's body.** `_debateSessionDeps.createManager` is removed by the Wave-1 orphan consolidation.
 
-### 5.5 Runner selection in `callOp()`
+### 5.5 `*Runner` naming convention
 
-```typescript
-function selectSessionRunner(topology: "single" | "three" | "debate"): ISessionRunner {
-  switch (topology) {
-    case "single": return new SingleSessionRunner();
-    case "three":  return new ThreeSessionRunner();
-    case "debate": return new DebateSessionRunner();
-  }
-}
-```
-
-Declared on the op as `session.topology`; defaults to `"single"`. Orchestrators that need finer control (e.g. the plan stage toggling debate on/off) invoke `callOp` with the appropriate op variant; they do not instantiate runners directly.
+The `*Runner` suffix on a class name describes its domain role — "runs X." It does **not** imply `ISessionRunner` interface conformance. Only classes that genuinely share the `runInSession` call site (today: `SingleSessionRunner`) implement the interface. `DebateRunner`, `runThreeSessionTdd` (function), and any future domain orchestrators sit at Layer 4-or-above and use `callOp` to reach Layer 3.
 
 ### 5.6 What this does *not* change about sessions
 
@@ -742,7 +844,16 @@ Adapter shrinks to `run(options)` + `complete(prompt, options)` — 2 methods, p
 
 ---
 
-## 7. `composeSections()` + typed `PromptSection` slots
+## 7. `composeSections()` + typed `PromptSection` slots — ships in Wave 1
+
+`composeSections` is a pure total function with no builder entanglement; Wave 1's `callOp` needs it to prove the Operation shape end-to-end. Builder migrations (slot-method exposure, rectifier collapse) stay in Wave 3.
+
+**Wave 1 `SLOT_ORDER` is minimal** — only the slots Wave-1 ops use (`constitution`, `instructions`, `input`, `candidates`, `json-schema`). Grows per wave as builders migrate. Builders not yet migrated keep using `SectionAccumulator` unchanged.
+
+**Wave 1 design notes:**
+- **Dynamic labelled inputs** (today's `OneShotPromptBuilder.inputData` pattern with `input-<label>` slot names) use a **single `input` slot holding an array of `{label, body}`** — avoids polluting the `SectionSlot` union with template-literal slot names.
+- **`composeSections.join()` reuses `SECTION_SEP`** from [src/prompts/core/wrappers.ts](../../src/prompts/core/wrappers.ts) and the empty-content filter logic from `SectionAccumulator.join()`. Single source of truth for separator + empty-section policy.
+- **Wave 2/3 coexistence pattern for legacy-builder-backed ops:** wrap the builder's string output in a single-slot `ComposeInput` (`{ slots: { role_task: body } }`). Wave 3 collapses this when builders expose slot methods.
 
 ```typescript
 // src/prompts/core/types.ts — extend existing type
@@ -753,16 +864,17 @@ export interface PromptSection {
   readonly slot: SectionSlot;  // NEW
 }
 
+// Wave 1 minimal set — grows per wave as builders migrate
 export type SectionSlot =
-  | "constitution" | "role" | "context" | "static-rules" | "monorepo-hints"
-  | "task" | "previous-attempts" | "examples" | "output-format";
+  | "constitution" | "instructions" | "input" | "candidates" | "json-schema";
 
+// Wave 3 adds: "role", "context", "static-rules", "monorepo-hints",
+//              "task", "previous-attempts", "examples", "output-format"
 export const SLOT_ORDER: readonly SectionSlot[] = [
-  "constitution", "role", "context", "static-rules", "monorepo-hints",
-  "task", "previous-attempts", "examples", "output-format",
+  "constitution", "instructions", "input", "candidates", "json-schema",
 ];
 
-// src/prompts/compose.ts (new, ~100 lines)
+// src/prompts/compose.ts (new, ~80 lines — ships in Wave 1)
 export interface ComposeInput {
   readonly role: PromptSection;
   readonly task: PromptSection;
@@ -858,27 +970,48 @@ export type SessionRole =
 
 `AgentRunOptions.sessionRole?: string` tightens to `sessionRole?: SessionRole`. Debate/plan inline string construction becomes type-checked.
 
-### 9.3 `PackageRegistry`
+### 9.3 `PackageRegistry` + `PackageView`
 
 ```typescript
-// src/runtime/packages.ts (new, ~60 lines)
+// src/runtime/packages.ts (new, ~100 lines)
 export interface PackageRegistry {
   all(): readonly PackageView[];
-  get(packageDir: string): PackageView;
+  /**
+   * Resolve a PackageView for the given packageDir. When packageDir is undefined
+   * or there is no per-package override, returns a root-equivalent view
+   * (view.config === configLoader.current()). Never throws; never returns null.
+   * Cached per packageDir for runtime lifetime.
+   */
+  resolve(packageDir?: string): PackageView;
+  /** Alias for resolve(undefined). */
   repo(): PackageView;
 }
 
 export interface PackageView {
-  readonly packageDir: string;
+  readonly packageDir: string;                    // "" for repo/root-equivalent view
   readonly relativeFromRoot: string;
-  readonly config: NaxConfig;                     // merged with .nax/mono/<pkg>/config.json
+  readonly config: NaxConfig;                     // root, merged with .nax/mono/<pkg>/config.json when applicable
   readonly testPatterns: ResolvedTestPatterns;
   readonly language: DetectedLanguage;
   readonly framework: TestFramework | null;
+  /**
+   * Apply a ConfigSelector against this view's config.
+   * Memoized per selector.name, per PackageView instance.
+   * This is the canonical config-access path for all ops — callOp routes here.
+   */
+  select<C>(selector: ConfigSelector<C>): C;
 }
 ```
 
-Backed by existing detectors (`discoverWorkspacePackages`, `findPackageDir`, `detectLanguage`, `detectTestFramework`, `resolveTestFilePatterns`). Cache valid for runtime lifetime (config is frozen). Threaded into `ComposeInput`; closes #533–#536 plus the ≥5 additional sites.
+**Always resolvable:** `PackageRegistry.resolve(undefined)` (or when `packageDir` isn't under `.nax/mono/<pkg>/`) returns a root-equivalent view. Pre-story ops, single-package runs, and no-workdir runs all get a valid `PackageView` whose `.config` equals `configLoader.current()`. No null checks; no scope field.
+
+**Polyglot-monorepo correctness by construction:** `mergePackageConfig` is a one-way merge — whitelisted sections (agent, models, routing, execution, review, acceptance, quality, context, project) get package overrides when present; root-only sections (autoMode, generate, tdd, decompose, plan, constitution, interaction) pass through unchanged. A selector over a root-only section gets the root value via `packageView.config.plan`; a selector over a whitelisted section gets the package-specific override. One code path.
+
+**Caching:** `PackageView.select<C>()` maintains its own memoization cache keyed on `selector.name` — separate from `ConfigLoader.select()`'s root cache. Same invalidation rules on future hot-reload: `ConfigLoader.reload()` → clears root cache → `PackageRegistry.clear()` → all `PackageView` caches invalidate. Documented now; not implemented today.
+
+Backed by existing detectors (`discoverWorkspacePackages`, `findPackageDir`, `detectLanguage`, `detectTestFramework`, `resolveTestFilePatterns`, `loadConfigForWorkdir`). Cache valid for runtime lifetime (config is frozen). Threaded into `ComposeInput`; closes #533–#536 plus the ≥5 additional sites.
+
+**Wave-3 migration task — grep audit of `rootConfig.*` reads:** today's [pipeline/types.ts:69-72](../../src/pipeline/types.ts#L69-L72) notes that `ctx.rootConfig` is read for `agent.default`, `models`, and `autoMode.escalation`. When those ops migrate, classify each read as (a) defensive legacy — safe to migrate; per-package overrides start applying (which was arguably always correct), or (b) semantically root-required — document and keep an explicit `configLoader.current()` access in that specific op. Expected hits: <10. Estimate: ~45 minutes plus ~30 minutes per semantic-root-required site.
 
 ---
 
@@ -886,35 +1019,44 @@ Backed by existing detectors (`discoverWorkspacePackages`, `findPackageDir`, `de
 
 ```
 NaxRuntime (per run / plan / standalone CLI invocation)
-  ├─ configLoader: ConfigLoader               // NEW — current()/select(); future hot-reload seam
+  ├─ configLoader: ConfigLoader               // NEW — current()/select(); future hot-reload seam; OFF-LIMITS inside ops
   ├─ workdir, projectDir, signal
-  ├─ agentManager: IAgentManager              // Layer 1 envelope lives on runAs()/completeAs()
+  ├─ agentManager: IAgentManager              // Layer 1 envelope lives on runAs()/completeAs() + middleware chain
   ├─ sessionManager: ISessionManager          // Layer 2 primitive — runInSession() preserved (#596)
-  ├─ costTracker: CostTracker                 // NEW — one per runtime
-  ├─ promptAuditor: IPromptAuditor            // NEW — flushes on close()
-  ├─ packages: PackageRegistry                // NEW — cached per-package views
+  ├─ costAggregator: ICostAggregator          // NEW — middleware-owned sink; drains on close
+  ├─ promptAuditor: IPromptAuditor            // NEW — middleware-owned sink; flushes on close
+  ├─ packages: PackageRegistry                // NEW — always resolvable; root-equiv view when no workdir
   └─ logger: Logger
 
 Config layer (src/config/)
   ├─ ConfigLoader — current() + select<C>(selector) memoized per selector.name
+  │                 — ONLY used by run-level setup; NOT by ops
   └─ ConfigSelector<C> interface — named registry in selectors.ts
         reviewConfigSelector, planConfigSelector, rectifyConfigSelector, ...
 
 Operations (Layer 4 — src/operations/)
-  ├─ Operation<I, O, C> typed spec
-  ├─ RunOperation adds { session: { role, lifetime, topology? } }
+  ├─ Operation<I, O, C> typed spec (no scope field — always packageView-scoped)
+  ├─ RunOperation adds { session: { role, lifetime } }
   ├─ CompleteOperation adds { jsonMode? }
   └─ callOp(ctx, op, input)
-       ├─ slices config per op.config
+       ├─ slices config via ctx.packageView.select(op.config) — one dispatch path
        ├─ runs op.build → composeSections → join
-       ├─ kind:"run"      → ISessionRunner → runInSession → runAs
-       └─ kind:"complete" → completeAs directly
+       ├─ kind:"run"      → SingleSessionRunner → runInSession → runAs (+ middleware)
+       └─ kind:"complete" → completeAs directly (+ middleware)
 
-Session runners (Layer 3 — src/session/runners/)
-  ├─ SingleSessionRunner    (#596)
-  ├─ ThreeSessionRunner     (#596 Phase 2 — closes #589, #590 by construction)
-  └─ DebateSessionRunner    (absorbs src/debate/session.ts mode dispatch)
-     each delegates to SessionManager.runInSession per session
+Domain orchestrators (live next to their domain, not in src/operations/)
+  ├─ src/tdd/orchestrator.ts :: runThreeSessionTdd
+  │    sequences three callOps (writeTestOp → implementOp → verifyOp) through SingleSessionRunner
+  │    closes #589, #590 by construction (all three use runInSession via SingleSessionRunner)
+  └─ src/debate/runner.ts :: DebateRunner
+       dispatches on mode; oneshot = N parallel complete-kind callOps;
+       stateful/hybrid = N parallel run-kind callOps through SingleSessionRunner
+       NOT an ISessionRunner — domain orchestrator, not a session runner
+
+Session runner (Layer 3 — src/session/runners/)
+  └─ SingleSessionRunner    (#596 — the only ISessionRunner implementation)
+     supports noFallback: true for TDD per-role sessions
+     delegates to SessionManager.runInSession
 
 Session primitive (Layer 2)
   └─ SessionManager.runInSession(sessionId, runFn, options)
@@ -922,7 +1064,10 @@ Session primitive (Layer 2)
 
 Per-call cross-cutting (Layer 1)
   └─ AgentManager.runAs / .completeAs / .runWithFallback
-       • resolvePermissions (once)  •  cost tag  •  audit  •  error wrap  •  fallback
+       • resolvePermissions (pre-chain, once)
+       • observer middleware chain (frozen at runtime construction):
+           audit → cost → cancellation → logging
+       • error wrap  •  fallback on failure
 
 Prompt composition
   ├─ Builders own slot-specific sections: role, task, examples, output-format
@@ -961,7 +1106,8 @@ Plugin extensions (unchanged — 7 types)
 | **Prompt composition uniform** | `composeSections()` as a total function. Rectifier builder drops 720 → ~200 lines. |
 | **Monorepo violations close structurally** | `PackageView` in `ComposeInput` + `process.cwd()` lint. #533–#536 plus ≥5 additional sites fixed. |
 | **Retry inputs unify** | Five callers → one `RetryInput` shape. Progressive composition is a callback. |
-| **Minimal concept surface** | ~10 new types (`NaxRuntime`, `ConfigLoader`, `ConfigSelector`, `Operation`, `RunOperation`, `CompleteOperation`, `CostTracker`, `RetryInput`, `ComposeInput`, `SessionRunnerContext`) vs ADR-014/015/016's ~24. |
+| **Minimal concept surface** | ~12 new types (`NaxRuntime`, `ConfigLoader`, `ConfigSelector`, `Operation`, `RunOperation`, `CompleteOperation`, `ICostAggregator`, `IPromptAuditor`, `AgentMiddleware`, `RetryInput`, `ComposeInput`, `SessionRunnerContext`) vs ADR-014/015/016's ~24. Observer middleware ported whole from ADR-014 §2.8 — pattern survives the RunScope rejection. |
+| **Structural audit/cost uniformity** | Observer middleware in `runAs()` fires for every run/complete call across every adapter, including session-internal calls. No adapter-specific "remember to call the helper." Session-internal calls covered by construction via ADR-013 Phase 5 (everything through IAgentManager). |
 | **Config dependency graph is one file** | `src/config/selectors.ts` lists every subsystem's slice as a named selector. Refactoring `config.*` surfaces every dependent via the compiler. |
 
 ### Negative / Tradeoffs
@@ -969,11 +1115,11 @@ Plugin extensions (unchanged — 7 types)
 | Cost | Mitigation |
 |:---|:---|
 | `NaxRuntime` owns 5+ services | Admission criteria documented: scope-bound lifecycle + ≥2 consumers. Revisit if field count >8. |
-| Method-local envelope in `runAs()` | Extension via method branches or subscribers. Third-party mid-call interception explicitly out of scope. |
-| `ISessionRunner` adds one layer vs raw `runAs()` | Required by #596. Without it, cross-cutting per-session concerns re-land twice. |
+| Middleware chain adds one indirection | Observer-only in Phase 1; frozen at runtime construction; three invariants documented (§3.1). Third-party mid-call transformer middleware explicitly out of scope. |
+| `ISessionRunner` adds one layer vs raw `runAs()` | Required by #596. Without it, cross-cutting per-session concerns re-land twice. Interface is kept tight — one impl (`SingleSessionRunner`). |
 | Operations are internal — no plugin registration | Plugins extend via the existing 7 types. Revisit when a third-party concrete case surfaces. |
-| `SectionSlot` enum constrains ordering | Canonical; non-canonical ordering requires amending `SLOT_ORDER` + review. |
-| Migration spans 5 waves | Each wave ~1–2 days, independently shippable. Total ~1700 LOC vs ~3000 LOC for ADR-014/015/016. |
+| `SectionSlot` enum constrains ordering | Minimal in Wave 1; grows per wave. Non-canonical ordering requires amending `SLOT_ORDER` + review. |
+| Migration spans 5 waves | Each wave ~1–2 days (Wave 2 grows to ~4 days for middleware infra), independently shippable. |
 
 ---
 
@@ -981,54 +1127,70 @@ Plugin extensions (unchanged — 7 types)
 
 Five waves. Each independently shippable and revertible.
 
-### Wave 1 — `NaxRuntime` + `ConfigLoader`/`ConfigSelector` + orphan consolidation
+### Wave 1 — `NaxRuntime` + `ConfigLoader`/`ConfigSelector` + `composeSections` + orphan consolidation
 
 - Introduce `src/runtime/index.ts` (`NaxRuntime` + `createRuntime`).
 - Introduce `src/config/loader-runtime.ts` (`ConfigLoader` + `createConfigLoader`) — §2.1.
 - Introduce `src/config/selector.ts` (`ConfigSelector` interface, `pickSelector`, `reshapeSelector`) and `src/config/selectors.ts` (named registry) — §4.2.1. Seed with the selectors for operations migrated in Wave 3; add more as ops land.
-- Introduce `CostTracker`, `PromptAuditor`, `PackageRegistry` as plain classes in `src/runtime/`.
+- Introduce `PackageRegistry` + `PackageView` in `src/runtime/packages.ts` with `resolve(undefined)` returning root-equivalent view — §9.3.
+- Introduce `ICostAggregator` + `IPromptAuditor` placeholder implementations (middleware fires them no-op in Wave 1; real middleware wires them in Wave 2).
 - Move `createAgentManager` from `src/agents/index.ts:29` to `src/runtime/internal/`.
 - Migrate the 3 real orphan instantiations to `createRuntime`; other sites swap `createManager` dep for `runtime`.
 - Runner constructs runtime in `runSetupPhase()`, closes in `runCompletionPhase()`.
-- Thread `ctx.runtime: NaxRuntime` through `PipelineContext`.
-- **Introduce `Operation<I, O, C>` types + `callOp()` — delegate `kind:"run"` to the existing `SingleSessionRunner` (#596). `callOp` goes through `runtime.configLoader.select(op.config)`.**
+- Thread `ctx.runtime: NaxRuntime` and `ctx.packageView: PackageView` through `PipelineContext`.
+- **Introduce `Operation<I, O, C>` types + `callOp()` — delegate `kind:"run"` to the existing `SingleSessionRunner` (#596). `callOp` routes config through `ctx.packageView.select(op.config)`.**
+- **Introduce `src/prompts/compose.ts`** (`ComposeInput`, `composeSections`, `join`) — Wave 1 ships the total function; builder migrations stay in Wave 3. Add minimal `SectionSlot` + `SLOT_ORDER` to `src/prompts/core/types.ts` (5 slots for Wave-1 ops only).
+- **Publish `test/helpers/runtime.ts` with `makeTestRuntime(opts)` fixture** (Gap 7 resolution). Opts permit overriding individual runtime services (agentManager, sessionManager, configLoader, middleware, costAggregator, promptAuditor) so tests can inject mocks without constructing the full runtime. Default middleware chain is empty (observable behaviour matches today's pre-middleware adapter path).
 - Prove on one op — `classifyRoute` (`kind: "complete"`, uses `routingConfigSelector`).
-- **Exit criteria:** zero `createAgentManager` imports outside `src/runtime/`; `#523` reproducer green; one operation end-to-end through `callOp`; `ConfigLoader` memoization verified in unit tests.
+- **Exit criteria:** zero `createAgentManager` imports outside `src/runtime/`; `#523` reproducer green; one operation end-to-end through `callOp` + `composeSections`; `ConfigLoader`/`PackageView` memoization verified in unit tests; `makeTestRuntime()` published and used by new op tests.
 - **Risk:** Low. Purely additive.
 
-### Wave 2 — `runAs()` cross-cutting envelope + adapter simplification
+### Wave 2 — `runAs()` cross-cutting envelope + middleware chain + adapter simplification
 
-- Amend `runAs()` / `completeAs()` / `runWithFallback()` to resolve permissions, tag cost, emit audit, wrap errors.
+- Amend `runAs()` / `completeAs()` / `runWithFallback()`: permissions pre-chain, middleware chain wraps the terminal dispatch (§3).
+- Introduce `src/runtime/agent-middleware.ts` (`AgentMiddleware` + `MiddlewareContext`) — §3.1.
+- Implement Phase 1 middleware: `audit`, `cost`, `cancellation`, `logging`. Observer-only; each resilient to the terminal throwing.
+- Wire `createRuntime()` to compose the production chain and pass it to `createAgentManager(config, { middleware })`.
 - Add `AgentRunOptions.resolvedPermissions?: ResolvedPermissions`.
 - Delete three `resolvePermissions()` calls in [src/agents/acp/adapter.ts:593,847,1036](../../src/agents/acp/adapter.ts#L593).
-- **Exit criteria:** zero `resolvePermissions()` calls inside the ACP adapter; `CostTracker.snapshot()` reflects all calls including nested.
-- **Risk:** Low.
+- Delete inline `writePromptAudit` call in [src/agents/acp/adapter.ts:651-666](../../src/agents/acp/adapter.ts#L651-L666) — the `audit` middleware writes uniformly for every adapter.
+- **Exit criteria:** zero `resolvePermissions()` calls inside the ACP adapter; `CostAggregator.snapshot()` reflects all calls including nested and session-internal; `PromptAuditor` flushes to `.nax/audit/<runId>.jsonl` on runtime close.
+- **Risk:** Low–Medium. Middleware adds ~200 lines of infra; sinks are bounded-scope.
+- **Budget:** ~4 days (from original ~2): middleware infra (~1 day) + sinks (~0.5 day) + per-middleware impl (~1 day) + adapter migration + tests (~1.5 days).
 
-### Wave 3 — Extract operations + `ThreeSessionRunner` + `DebateSessionRunner`
+### Wave 3 — Extract operations + TDD orchestrator rewire + `DebateRunner`
 
 - Migrate operation candidates (lowest blast radius first):
   1. `classifyRoute` — proved in Wave 1
   2. `acceptance-generate`, `acceptance-refine`, `acceptance-diagnose`, `acceptance-fix`
   3. `semantic-review`, `adversarial-review`
-  4. `plan`, `decompose` (adapter-removal set)
+  4. `plan`, `decompose` (adapter-removal set) — see deprecation-window bullet below
   5. `rectify` (per-attempt op for Wave 4's `runRetryLoop`)
-  6. `write-test`, `implement`, `verify` — **land `ThreeSessionRunner` here; closes #589, #590 by construction**
-  7. `debate-propose`, `debate-rebut`, `debate-rank` — **land `DebateSessionRunner` here; `src/debate/session-*.ts` mode-specific files collapse into runner methods**
-- Introduce `src/prompts/compose.ts` (`ComposeInput`, `composeSections`, `join`, slot helpers).
-- Add `SectionSlot` + `SLOT_ORDER` to `src/prompts/core/types.ts`.
-- Migrate builders to expose slot methods, in order:
+  6. `write-test`, `implement`, `verify` — **extract `src/tdd/session-op.ts :: runTddSessionOp(role, input, ctx)` shared helper from today's `runTddSession`; rewire `runThreeSessionTdd` to call `callOp(ctx, op, input)` for each role; delete `ThreeSessionRunner` class. Closes #589, #590 by construction (each op routes through `SingleSessionRunner` → `runInSession`).**
+  7. `debate-propose`, `debate-rebut`, `debate-rank` (kind:"complete"), `debate-session` (kind:"run") — **land `src/debate/runner.ts :: DebateRunner` class; `src/debate/session-*.ts` mode-specific files collapse into the orchestrator's body.** `DebateRunner` does NOT implement `ISessionRunner`.
+- Migrate builders to expose slot methods (Wave-1 `composeSections` already in place), in order:
   1. `rectifier-builder.ts` (720 → ~200 lines)
   2. `review-builder.ts`, `adversarial-review-builder.ts`
   3. `tdd-builder.ts`
   4. `acceptance-builder.ts`
   5. `debate-builder.ts`
   6. `plan-builder.ts`, `decompose-builder.ts`
-  7. `one-shot-builder.ts`
+  7. `one-shot-builder.ts` — also migrate the labelled-input pattern to single `input` slot with array value
+- Grow `SLOT_ORDER` per builder migration (append new slots as they land).
 - Update `nax plan` CLI and decompose callers to `callOp(...)`.
+- **Deprecate `.plan()` / `.decompose()` with a one-release window (Gap 8 resolution):** `AgentAdapter.plan()` / `.decompose()` throw `NaxError ADAPTER_METHOD_DEPRECATED` with a migration pointer to the replacement ops. `IAgentManager.planAs()` / `.decomposeAs()` similarly throw. Full deletion lands in the release following Wave 3.
+- Grep audit of existing `rootConfig.*` reads (§9.3 migration task). Classify each hit as defensive-legacy (safe to migrate) or semantically-root-required (document + keep `configLoader.current()` access). Expected <10 hits.
+- Keep existing `_deps.createManager` factory sites as legacy wrappers (Gap 7 resolution) — each wrapper's body becomes `(opts) => { const runtime = makeTestRuntime(opts); return runtime.agentManager; }`. Call sites migrate opportunistically; delete aliases in the cleanup pass.
+- Add CI lint rule for forbidden imports in `src/prompts/builders/**`; add lint for `configLoader.current()` / `configLoader.select(...)` inside `src/operations/**`.
+- **Exit criteria:** `AgentAdapter.plan()` / `.decompose()` throw deprecation `NaxError`; TDD goes through the orchestrator-sequenced path (`runThreeSessionTdd` → three `callOp`s); debate goes through `DebateRunner` (no `ISessionRunner` conformance); `ISessionRunner` has exactly one implementation (`SingleSessionRunner`); no builder imports `ContextBundle`/`loadConstitution`/`loadStaticRules`; no op touches `configLoader.*` directly.
+- **Risk:** Medium. Broad touch; each op + builder migration lands independently.
+
+### Wave 3.5 — Adapter method deletion (release gate after Wave 3)
+
 - Delete `AgentAdapter.plan()`, `AgentAdapter.decompose()`, `IAgentManager.planAs()`, `IAgentManager.decomposeAs()`.
-- Add CI lint rule for forbidden imports in `src/prompts/builders/**`.
-- **Exit criteria:** `AgentAdapter` has only `run` and `complete`; TDD goes through `ThreeSessionRunner`; debate goes through `DebateSessionRunner`; every runner delegates to `SessionManager.runInSession`; no builder imports `ContextBundle`/`loadConstitution`/`loadStaticRules`.
-- **Risk:** Medium. Broad touch; each op + builder + runner migration lands independently.
+- Delete `_deps.createManager` legacy wrappers (Gap 7 cleanup) once all tests have migrated to `makeTestRuntime()`.
+- **Exit criteria:** `AgentAdapter` has only `run` and `complete`, permanently.
+- **Risk:** Low. Compiler-enforced.
 
 ### Wave 4 — `RetryInput` unification
 
@@ -1063,9 +1225,17 @@ Five waves. Each independently shippable and revertible.
 
 **Rejected.** ADR-017's reasoning stands. `NaxRuntime` (flat 5-service container) + `callOp()` (~70 lines) + layered Layer-1/2/3 responsibilities subsume the envelope without a god method.
 
-### D. Agent middleware chain
+### D. Transformer middleware chain
 
-**Rejected.** Method-local cross-cutting in `AgentManager.runAs()` solves the same problems without observer-vs-transformer invariants, per-middleware resilience rules, or chain ordering. If mid-call interception becomes concrete, a single extension callback on the manager method suffices.
+**Rejected — but observer middleware accepted.** ADR-017 rejected "middleware chains" as a blanket; gap-review analysis (Gap 5) re-opened the question and found observer middleware is the right tool for structurally uniform audit + cost across adapters and session-internal calls. **Transformer** middleware (mutating prompt/response/options) stays rejected — Phase 1 invariant is observer-only. If a concrete transformer case ever emerges, it opens with justification and defines ordering semantics then; today's concerns (audit, cost, cancellation, logging) are all observers. Sketch contract lives in §3.1.
+
+### D.1 Cost/audit as `AgentManager` fields (Option A during gap review)
+
+**Rejected.** Growing `createAgentManager(config)` to `createAgentManager(config, { costTracker, promptAuditor, logger, signal })` couples observability to agent lifecycle. Manager class inflates with unrelated concerns; every new observability concern (budget enforcement, rate tracking) requires a new manager field + constructor parameter. Observer middleware (§3.1) solves the same problem with one extensible pattern.
+
+### D.2 Cost pass-through + shared audit helper (Option F during gap review)
+
+**Rejected.** Keeping `createAgentManager(config)` untouched and adding a `maybeAuditPrompt()` helper that each adapter calls works today but relies on "every adapter author remembers to call the helper" — code-review discipline, not structural correctness. First forgotten call site = silent audit miss. Observer middleware wraps at the manager envelope; adapter authors cannot bypass it.
 
 ### E. Prompt middleware chain with ownership registry
 
@@ -1097,7 +1267,23 @@ Five waves. Each independently shippable and revertible.
 
 ### L. Topology as runner-class proliferation (`StatefulDebateRunner` / `OneShotDebateRunner` / `HybridDebateRunner`)
 
-**Rejected (per ADR-015 §F).** The three debate modes differ in topology details but share debater vocabulary, per-debater abort isolation, and ranking. One `DebateSessionRunner` with a mode parameter matches today's [src/debate/session.ts](../../src/debate/session.ts) dispatch. Splitting triples the surface without simplifying any call site.
+**Rejected (per ADR-015 §F).** The three debate modes differ in topology details but share debater vocabulary, per-debater abort isolation, and ranking. One `DebateRunner` class with mode dispatch (§5.4) keeps cohesion. Splitting triples the surface without simplifying any call site.
+
+### M. `CompositeRunOperation` with `subOps: readonly RunOperation[]` (Gap 1 Option B)
+
+**Rejected.** Proposed for TDD three-session: introduce a composite op kind whose runner sequences sub-ops internally. Analysis showed between-session logic (greenfield detection, `runFullSuiteGate`, `readVerdict`, `executeWithTimeout` post-verify, `rollbackToRef`) cannot be expressed as a sub-op sequence — the composite abstraction would need escape hatches for all of it, earning no duplication savings. Instead, TDD orchestration stays a plain function in [src/tdd/orchestrator.ts](../../src/tdd/orchestrator.ts) that sequences three `callOp` calls — matches how the code is already shaped today.
+
+### N. `Operation.scope: "package" | "repo"` field (Gap 4 Option B)
+
+**Rejected.** Proposed: each op declares whether its config selector slices against root or packageView. Analysis showed `mergePackageConfig` is a one-way merge — `packageView.config` is always a safe base because whitelisted sections apply package overrides when present and root-only sections pass through unchanged. A scope field would have every op author declare information that is redundant with the selector's target section. Instead, `callOp` always reads through `ctx.packageView.select(op.config)` — one dispatch path, no field, polyglot-correct by construction.
+
+### O. Selector-owned scope (Gap 4 Option C)
+
+**Rejected for the same reason as N.** Moving the `scope` declaration from op to selector (`ConfigSelector.scope: "package" | "repo"`) is strictly better than op-scoped declaration (fewer sites, better cohesion) — but it still solves a problem that doesn't exist. `packageView.config` is always correct; no scope flag needed anywhere.
+
+### P. Renaming `SessionManager.runInSession` to `runInTopology` / `runWithRunner` (Gap 6)
+
+**Rejected.** Proposed rename to reconcile `DebateSessionRunner.runOneShot` being session-less. `SessionManager.runInSession` is a per-session lifecycle primitive — the name describes exactly what it does. The real problem was forcing `DebateRunner` to implement `ISessionRunner` when its oneshot mode has no session. Fixed by dropping the interface conformance (§5.4), not by renaming the primitive.
 
 ---
 
@@ -1109,11 +1295,11 @@ Five waves. Each independently shippable and revertible.
 
 3. **Runner selection override at call time.** `op.session.topology` declares the default; `CallContext` could grow a `topologyOverride` field for edge cases (e.g. a stage wants to force single-session debate for cost reasons). Not needed today; revisit on concrete request.
 
-4. **Token budget enforcement.** Trivial once `CostTracker` exposes `currentTotal()`. `runRetryLoop`'s `verify` callback can return `{ success: false, reason: "budget-exhausted" }`.
+4. **Token budget enforcement.** Trivial once `CostAggregator.snapshot()` exposes a running total. Alternatively, add a `budget` middleware that inspects the chain's cost accumulator and aborts via `signal` when exhausted. `runRetryLoop`'s `verify` callback can return `{ success: false, reason: "budget-exhausted" }`.
 
 5. **Session resume across runtime restarts.** A crashed run's `NaxRuntime` is gone; its persisted session descriptors can be reattached via `SessionManager.resume(descriptors)`. Inherits ADR-008's open question.
 
-6. **CostTracker + PromptAuditor disk schema.** `.nax/audit/<runId>.jsonl` and `.nax/cost/<runId>.jsonl` formats. Specified in Wave 2 implementation.
+6. **`CostAggregator` + `PromptAuditor` disk schema.** `.nax/audit/<runId>.jsonl` and `.nax/cost/<runId>.jsonl` formats. Specified in Wave 2 implementation.
 
 7. **`nax ops list` introspection.** A CLI showing every registered `Operation` + its `config` slice — useful for config-refactor audits. Nice-to-have.
 
@@ -1123,8 +1309,10 @@ Five waves. Each independently shippable and revertible.
 
 - **Supersedes:** ADR-017 (Incremental Consolidation — amended here at §E)
 - **Also superseded:** ADR-014 (RunScope and Middleware), ADR-015 (Operation Contract), ADR-016 (Prompt Composition and PackageView) — rejected in ADR-017; this ADR inherits those rejections
+- **Partial revival of ADR-014:** observer middleware chain (ADR-014 §2.8 + §3 + §4) is ported whole into §3.1/§3.2 of this ADR. The RunScope composite stays rejected; the middleware pattern is not.
+- **Pre-implementation review:** [ADR-018-gap-review.md](./ADR-018-gap-review.md) — 8 gaps surfaced and resolved during review. Resolutions inform most of the non-trivial design choices above (no `scope` field, observer middleware, DebateRunner cohesion, TDD orchestrator sequential callOps, `composeSections` in Wave 1).
 - **Preserved invariants from:** ADR-008 (session lifecycle), ADR-011 (SessionManager ownership), ADR-012 (AgentManager ownership), ADR-013 (SessionManager → AgentManager hierarchy), ADR-009 (test-file pattern SSOT)
-- **Preserved architecture from:** [#596](https://github.com/nathapp-io/nax/pull/596) (`SessionManager.runInSession` + `ISessionRunner` Phase 1) — load-bearing; Phase 2 (`ThreeSessionRunner`) lands in Wave 3 of this ADR's migration
+- **Preserved architecture from:** [#596](https://github.com/nathapp-io/nax/pull/596) (`SessionManager.runInSession` + `ISessionRunner` Phase 1) — load-bearing; `SingleSessionRunner` stays the only `ISessionRunner` implementation under this ADR
 - `docs/architecture/ARCHITECTURE.md` — subsystem index
 - `docs/architecture/agent-adapters.md` — adapter protocol (amended to 2-method surface in Wave 3)
 - `.claude/rules/forbidden-patterns.md` — Prompt Builder Convention (tightened by Wave 3)
