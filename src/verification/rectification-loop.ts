@@ -22,6 +22,7 @@ import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
+import { buildFailureRecords } from "./failure-records";
 import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
 import { type RectificationState, shouldRetryRectification } from "./rectification";
@@ -154,6 +155,7 @@ export async function runRectificationLoop(
   const agentManager = opts.agentManager ?? _rectificationDeps.createManager(config);
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseTestOutput(testOutput);
+  let currentTestOutput = testOutput;
   const label = promptPrefix ? "regression rectification" : "rectification";
 
   const rectificationState: RectificationState = {
@@ -219,12 +221,7 @@ export async function runRectificationLoop(
         }
       }
 
-      const failureRecords: FailureRecord[] = testSummary.failures.map((f) => ({
-        test: f.testName,
-        file: f.file,
-        message: f.error,
-        output: f.stackTrace.length > 0 ? f.stackTrace.join("\n") : undefined,
-      }));
+      const failureRecords: FailureRecord[] = buildFailureRecords(testSummary, currentTestOutput);
       let rectificationPrompt = await RectifierPromptBuilder.for("verify-failure")
         .story(story)
         .priorFailures(failureRecords)
@@ -327,6 +324,7 @@ export async function runRectificationLoop(
 
       if (retryVerification.output) {
         const newTestSummary = parseTestOutput(retryVerification.output);
+        currentTestOutput = retryVerification.output;
         state.currentFailures = newTestSummary.failed;
         state.lastExitCode = retryVerification.status === "SUCCESS" ? 0 : 1;
         testSummary.failures = newTestSummary.failures;

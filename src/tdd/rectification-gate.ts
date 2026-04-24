@@ -24,6 +24,7 @@ import {
   shouldRetryRectification as _shouldRetryRectification,
   runSharedRectificationLoop,
 } from "../verification";
+import { buildFailureRecords } from "../verification/failure-records";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
 
@@ -156,6 +157,7 @@ export async function runFullSuiteGate(
         rectificationConfig,
         effectiveTestCmd,
         fullSuiteTimeout,
+        fullSuiteResult.output,
         featureName,
         projectDir,
       );
@@ -208,6 +210,7 @@ async function runRectificationLoop(
   rectificationConfig: NonNullable<NaxConfig["execution"]["rectification"]>,
   testCmd: string,
   fullSuiteTimeout: number,
+  testOutput: string,
   featureName?: string,
   projectDir?: string,
 ): Promise<{ passed: boolean; cost: number }> {
@@ -236,6 +239,7 @@ async function runRectificationLoop(
     isolationPassed: true,
   };
   let gateCostAccum = 0;
+  let currentTestOutput = testOutput;
 
   const fixed = await runSharedRectificationLoop({
     stage: "tdd",
@@ -257,12 +261,7 @@ async function runRectificationLoop(
     canContinue: (state) =>
       state.isolationPassed && _rectificationGateDeps.shouldRetryRectification(state, rectificationConfig),
     buildPrompt: async () => {
-      const failureRecords: FailureRecord[] = testSummary.failures.map((f) => ({
-        test: f.testName,
-        file: f.file,
-        message: f.error,
-        output: f.stackTrace.length > 0 ? f.stackTrace.join("\n") : undefined,
-      }));
+      const failureRecords: FailureRecord[] = buildFailureRecords(testSummary, currentTestOutput);
       return RectifierPromptBuilder.for("tdd-suite-failure")
         .story(story)
         .priorFailures(failureRecords)
@@ -359,6 +358,7 @@ async function runRectificationLoop(
 
       if (retryFullSuite.output) {
         const newTestSummary = _rectificationGateDeps.parseTestOutput(retryFullSuite.output);
+        currentTestOutput = retryFullSuite.output;
         state.currentFailures = newTestSummary.failed;
         testSummary.failures = newTestSummary.failures;
         testSummary.failed = newTestSummary.failed;

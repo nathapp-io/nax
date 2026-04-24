@@ -227,6 +227,59 @@ describe("runRectificationLoop — session context params", () => {
     expect(result.succeeded).toBe(false);
   });
 
+  test("includes raw test output in the rectification prompt when failed tests are unmapped", async () => {
+    const capturedPrompts: string[] = [];
+    const unmappedOutput = `
+test/example.test.ts:
+✓ passing test [0.5ms]
+✗ compile failure 1 [1.2ms]
+✗ compile failure 2 [1.3ms]
+
+src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
+
+3 passed, 2 failed [1.7ms]
+    `.trim();
+
+    _rectificationDeps.createManager = mock((_config: NaxConfig) =>
+      makeMockAgentManager({
+        runFn: mock(async (_agentName: string, opts: AgentRunOptions) => {
+          capturedPrompts.push(opts.prompt);
+          return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        }),
+      }),
+    );
+
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: false,
+      output: unmappedOutput,
+      status: "TEST_FAILURE" as const,
+      countsTowardEscalation: true,
+    }));
+
+    await runRectificationLoop({
+      config: makeConfig({
+        execution: {
+          sessionTimeoutSeconds: 120,
+          rectification: {
+            maxRetries: 1,
+            abortOnRegression: true,
+          },
+          permissionProfile: "cautious",
+        },
+      } as unknown as Partial<NaxConfig>),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-UNMAPPED" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: unmappedOutput,
+    });
+
+    expect(capturedPrompts).toHaveLength(1);
+    expect(capturedPrompts[0]).toContain("Unmapped test failures (2 detected)");
+    expect(capturedPrompts[0]).toContain("Structured test failure parsing returned no failure records");
+    expect(capturedPrompts[0]).toContain("Cannot find name 'missingSymbol'");
+  });
+
   test("passes config into fallback _rectificationDeps.createManager when agentGetFn is omitted", async () => {
     const config = makeConfig({
       agent: {
