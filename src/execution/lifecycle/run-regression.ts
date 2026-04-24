@@ -43,6 +43,12 @@ export interface DeferredRegressionResult {
   passedTests: number;
   rectificationAttempts: number;
   affectedStories: string[];
+  /**
+   * Accumulated rectification agent cost per affected story ID (issue #679).
+   * Populated when at least one story was rectified. Empty for early-pass/disabled/timeout returns.
+   * Optional for backward-compatibility with existing mocks and snapshots.
+   */
+  storyCosts?: Record<string, number>;
 }
 
 /**
@@ -96,6 +102,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
+      storyCosts: {},
     };
   }
 
@@ -108,6 +115,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
+      storyCosts: {},
     };
   }
 
@@ -143,6 +151,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
+      storyCosts: {},
     };
   }
 
@@ -163,6 +172,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: fullSuiteResult.passCount ?? 0,
       rectificationAttempts: 0,
       affectedStories: [],
+      storyCosts: {},
     };
   }
 
@@ -176,6 +186,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
+      storyCosts: {},
     };
   }
 
@@ -188,6 +199,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: fullSuiteResult.passCount ?? 0,
       rectificationAttempts: 0,
       affectedStories: [],
+      storyCosts: {},
     };
   }
 
@@ -210,6 +222,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
+      storyCosts: {},
     };
   }
 
@@ -259,6 +272,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       passedTests: testSummary.passed,
       rectificationAttempts: 0,
       affectedStories: Array.from(affectedStories),
+      storyCosts: {},
     };
   }
 
@@ -267,6 +281,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   let storiesRectified = 0;
   let currentTestOutput = fullSuiteResult.output;
   const affectedStoriesList = Array.from(affectedStoriesObjs.values());
+  // Accumulated rectification cost per story — populated below for metrics back-fill (issue #679).
+  const storyCostAccum: Record<string, number> = {};
 
   for (const story of affectedStoriesList) {
     for (let attempt = 0; attempt < maxRectificationAttempts; attempt++) {
@@ -274,7 +290,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
       logger?.info("regression", `Rectifying story ${story.id} (attempt ${attempt + 1}/${maxRectificationAttempts})`);
 
-      const fixed = await _regressionDeps.runRectificationLoop({
+      const rectResult = await _regressionDeps.runRectificationLoop({
         config,
         workdir,
         story,
@@ -286,7 +302,10 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
         featureName: prd.feature,
       });
 
-      if (fixed) {
+      // Accumulate cost regardless of whether the attempt succeeded (issue #679).
+      storyCostAccum[story.id] = (storyCostAccum[story.id] ?? 0) + rectResult.cost;
+
+      if (rectResult.succeeded) {
         storiesRectified++;
         logger?.info("regression", `Story ${story.id} rectified successfully`);
 
@@ -314,6 +333,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
             passedTests: midResult.passCount ?? 0,
             rectificationAttempts,
             affectedStories: Array.from(affectedStories),
+            storyCosts: storyCostAccum,
           };
         }
 
@@ -350,5 +370,6 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     passedTests: retryResult.passCount ?? 0,
     rectificationAttempts,
     affectedStories: Array.from(affectedStories),
+    storyCosts: storyCostAccum,
   };
 }

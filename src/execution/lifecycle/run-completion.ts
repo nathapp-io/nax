@@ -8,6 +8,7 @@
  * - Update final status
  */
 
+import { resolveDefaultAgent } from "../../agents";
 import type { IAgentManager } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { fireHook } from "../../hooks/runner";
@@ -197,6 +198,41 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
             },
             workdir,
           );
+        }
+      }
+
+      // Back-fill storyMetrics for stories rectified by the regression gate (issue #679).
+      // Stories that completed in a prior run-resume or earlier execution batch may not have an
+      // entry in allStoryMetrics — the aggregator only sees stories that entered the normal
+      // execution loop in this run. Injecting synthetic "rectification" entries here ensures
+      // their cost and outcome are visible in run.complete analytics and saved metrics.
+      const regressionStoryCosts = regressionResult.storyCosts ?? {};
+      if (Object.keys(regressionStoryCosts).length > 0) {
+        const existingStoryIds = new Set(allStoryMetrics.map((m) => m.storyId));
+        const rectCompletedAt = new Date().toISOString();
+        const defaultAgent = options.agentManager?.getDefault() ?? resolveDefaultAgent(config);
+        for (const [storyId, storyCost] of Object.entries(regressionStoryCosts)) {
+          if (!existingStoryIds.has(storyId)) {
+            const regrStory = prd.userStories.find((s) => s.id === storyId);
+            allStoryMetrics.push({
+              storyId,
+              complexity: regrStory?.routing?.complexity ?? "medium",
+              modelTier: "balanced",
+              modelUsed: defaultAgent,
+              attempts: 1,
+              finalTier: "balanced",
+              success: regressionResult.success,
+              cost: storyCost,
+              durationMs: 0,
+              firstPassSuccess: false,
+              startedAt: rectCompletedAt,
+              completedAt: rectCompletedAt,
+              source: "rectification" as const,
+              rectificationCost: storyCost,
+              fullSuiteGatePassed: false,
+              runtimeCrashes: 0,
+            });
+          }
         }
       }
     }

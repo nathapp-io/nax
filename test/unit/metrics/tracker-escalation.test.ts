@@ -454,3 +454,71 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// firstPassSuccess — must be false when autofix or rectify ran (issue #679)
+//
+// Bug: collectStoryMetrics only checked escalationCount and priorFailureCount.
+// A story that went through 3 autofix attempts + fail-open still had
+// attempts:1, escalationCount:0, priorFailureCount:0 → firstPassSuccess:true.
+//
+// Fix: also gate on ctx.autofixAttempt > 0 and ctx.rectifyAttempt > 0.
+// ---------------------------------------------------------------------------
+
+describe("collectStoryMetrics — firstPassSuccess is false when autofix or rectify ran (issue #679)", () => {
+  test.each([
+    {
+      name: "firstPassSuccess is false when autofixAttempt > 0 (autofix cycle ran)",
+      autofixAttempt: 3,
+      rectifyAttempt: 0,
+      expectedFirstPassSuccess: false,
+    },
+    {
+      name: "firstPassSuccess is false when rectifyAttempt > 0 (rectify stage ran)",
+      autofixAttempt: 0,
+      rectifyAttempt: 1,
+      expectedFirstPassSuccess: false,
+    },
+    {
+      name: "firstPassSuccess is false when both autofixAttempt and rectifyAttempt > 0",
+      autofixAttempt: 2,
+      rectifyAttempt: 2,
+      expectedFirstPassSuccess: false,
+    },
+    {
+      name: "firstPassSuccess is true when no cycles ran and no escalation (clean first pass)",
+      autofixAttempt: 0,
+      rectifyAttempt: 0,
+      expectedFirstPassSuccess: true,
+    },
+    {
+      name: "firstPassSuccess is false when autofixAttempt is 1 (single autofix run)",
+      autofixAttempt: 1,
+      rectifyAttempt: 0,
+      expectedFirstPassSuccess: false,
+    },
+  ])(
+    "$name",
+    async ({ autofixAttempt, rectifyAttempt, expectedFirstPassSuccess }) => {
+      const story = makeStory({
+        attempts: 1,
+        escalations: [],
+        priorFailures: [],
+      });
+      const ctx = makeCtx(story, {
+        autofixAttempt,
+        rectifyAttempt,
+        agentResult: {
+          success: true,
+          exitCode: 0,
+          output: "",
+          rateLimited: false,
+          estimatedCost: 0.05,
+          durationMs: 3000,
+        },
+      });
+      const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+      expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
+    },
+  );
+});
