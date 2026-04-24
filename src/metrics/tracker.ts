@@ -104,8 +104,20 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   // Determine final tier (from last escalation or initial routing)
   const finalTier = escalationCount > 0 ? story.escalations[escalationCount - 1].toTier : routing.modelTier;
 
-  // First pass success = succeeded with no prior failures and no escalations (BUG-067)
-  const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
+  // autofixAttempt > 0 means the autofix stage ran at least once (review found blocking issues that
+  // triggered an agent-autofix cycle). rectifyAttempt > 0 means the rectify stage ran at least once
+  // (verify stage failed and triggered rectification). Both disqualify first-pass success (issue #679).
+  const autofixAttemptCount = ctx.autofixAttempt ?? 0;
+  const rectifyAttemptCount = ctx.rectifyAttempt ?? 0;
+
+  // First pass success = succeeded with no tier escalation, no cross-tier failures,
+  // and no autofix or rectify repair cycles (BUG-067 / issue #679)
+  const firstPassSuccess =
+    agentResult?.success === true &&
+    escalationCount === 0 &&
+    priorFailureCount === 0 &&
+    autofixAttemptCount === 0 &&
+    rectifyAttemptCount === 0;
 
   // Extract model name and agent from config
   const agentUsed = routing.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
