@@ -43,5 +43,29 @@ export { deepMergeConfig } from "./merger";
 export { resolveProfileName, loadProfile, loadProfileEnv, listProfiles } from "./profile";
 export { pickSelector, reshapeSelector } from "./selector";
 export type { ConfigSelector } from "./selector";
+export {
+  reviewConfigSelector,
+  planConfigSelector,
+  decomposeConfigSelector,
+  rectifyConfigSelector,
+  acceptanceConfigSelector,
+  tddConfigSelector,
+  debateConfigSelector,
+  routingConfigSelector,
+  verifyConfigSelector,
+  contextConfigSelector,
+  qualityConfigSelector,
+  executionConfigSelector,
+  costConfigSelector,
+  hooksConfigSelector,
+  agentConfigSelector,
+  interactionConfigSelector,
+  projectConfigSelector,
+  precheckConfigSelector,
+  pluginsConfigSelector,
+  optimizerConfigSelector,
+  promptsConfigSelector,
+  generateConfigSelector,
+} from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";
