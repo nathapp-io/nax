@@ -262,6 +262,10 @@ async function recheckReview(ctx: PipelineContext): Promise<boolean> {
   // We cannot use result.action here because review returns "continue" for BOTH
   // pass and built-in-check-failure (to hand off to autofix). Check success directly.
   await reviewStage.execute(ctx);
+  // A fail-open result (LLM could not parse its response) is not a genuine pass in a
+  // recheck context — we already know the review was failing before this call.
+  const hasFailOpen = (ctx.reviewResult?.checks ?? []).some((c) => c.failOpen);
+  if (hasFailOpen) return false;
   return ctx.reviewResult?.success === true;
 }
 

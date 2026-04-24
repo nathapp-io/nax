@@ -426,6 +426,7 @@ export async function runAdversarialReview(
     return {
       check: "adversarial",
       success: true,
+      failOpen: true,
       command: "",
       exitCode: 0,
       output: "adversarial review: could not parse LLM response (fail-open)",
