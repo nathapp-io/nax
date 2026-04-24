@@ -1,5 +1,5 @@
 import type { AgentResult } from "../agents/types";
-import type { ConfigSelector } from "../config";
+import type { ConfigSelector, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ComposeInput } from "../prompts/compose";
@@ -45,6 +45,8 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
 export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "complete";
   readonly jsonMode?: boolean;
+  /** Model tier to use for this call. Defaults to "balanced" when omitted. */
+  readonly modelTier?: ModelTier;
 }
 
 export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;

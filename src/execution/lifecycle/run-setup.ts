@@ -178,7 +178,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // NaxRuntime — single owner of agentManager + sessionManager for this run.
   // Passes through the existing sessionManager and options.agentManager (if any)
   // so callers that pre-create an AgentManager for credential validation continue
-  // to work (Task 10 will migrate those sites).
+  // to work (e.g. run-precheck validates credentials before handing off the manager).
   const runtime = createRuntime(config, workdir, {
     parentSignal: shutdownController.signal,
     sessionManager,

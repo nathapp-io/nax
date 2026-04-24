@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { createRuntime } from "../../../src/runtime";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { makeTestRuntime } from "../../helpers";
 
 describe("createRuntime", () => {
   test("runtime has required fields", () => {
@@ -43,5 +44,19 @@ describe("createRuntime", () => {
     const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { parentSignal: parent.signal });
     parent.abort();
     expect(rt.signal.aborted).toBe(true);
+  });
+});
+
+describe("makeTestRuntime", () => {
+  test("produces a valid NaxRuntime with defaults", () => {
+    const rt = makeTestRuntime();
+    expect(rt.configLoader).toBeDefined();
+    expect(rt.agentManager).toBeDefined();
+    expect(rt.packages.repo().packageDir).toBe("");
+  });
+
+  test("accepts config override", () => {
+    const rt = makeTestRuntime({ workdir: "/tmp/custom" });
+    expect(rt.workdir).toBe("/tmp/custom");
   });
 });

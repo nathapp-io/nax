@@ -60,7 +60,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     const completeOp = op as CompleteOperation<I, O, C>;
     const config = ctx.runtime.configLoader.current();
     const defaultAgent = ctx.runtime.agentManager.getDefault();
-    const modelDef = resolveModelForAgent(config.models, ctx.agentName, "balanced", defaultAgent);
+    const tier = completeOp.modelTier ?? "balanced";
+    const modelDef = resolveModelForAgent(config.models, ctx.agentName, tier, defaultAgent);
     const raw = await ctx.runtime.agentManager.completeAs(ctx.agentName, prompt, {
       model: modelDef.model,
       config,

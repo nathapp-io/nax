@@ -71,7 +71,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   return {
     configLoader,
     workdir,
-    projectDir: workdir,
+    projectDir: workdir, // Wave 1: equal to workdir; Wave 3 will separate worktree paths
     agentManager,
     sessionManager,
     costAggregator,
