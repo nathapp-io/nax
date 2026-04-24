@@ -30,4 +30,18 @@ describe("createRuntime", () => {
     await rt.close();
     expect(rt.signal.aborted).toBe(true);
   });
+
+  test("close() is idempotent", async () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    await rt.close();
+    await rt.close();
+    expect(rt.signal.aborted).toBe(true);
+  });
+
+  test("parentSignal abort propagates to runtime signal", async () => {
+    const parent = new AbortController();
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { parentSignal: parent.signal });
+    parent.abort();
+    expect(rt.signal.aborted).toBe(true);
+  });
 });
