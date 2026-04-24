@@ -22,13 +22,14 @@ diff --git a/src/review/semantic.ts b/src/review/semantic.ts
 
 ## Instructions
 
-For each acceptance criterion, verify the diff implements it correctly.
+For each acceptance criterion, verify the current codebase implements it correctly. Use the diff to identify changed files and code paths, not as the only source of truth.
 
 **Before reporting any finding as "error", you MUST verify it using your tools:**
 - If you suspect a key, function, import, or variable is missing, READ the relevant file to confirm before flagging.
 - If you suspect a code path is not wired in, GREP for its usage to confirm.
 - Do NOT flag something as missing based solely on its absence from the diff — it may already exist in the codebase. Check the actual file first.
 - If you cannot verify a claim even after checking, use "unverifiable" severity instead of "error".
+- Every "error" finding must include verifiedBy evidence from the current codebase. If you cannot provide verifiedBy, downgrade the finding to "unverifiable".
 
 Flag issues only when you have confirmed:
 1. An AC is not implemented or partially implemented (verified by reading the actual files)
@@ -46,7 +47,13 @@ Respond with JSON only — no explanation text before or after:
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
-      "suggestion": "how to fix it"
+      "suggestion": "how to fix it",
+      "verifiedBy": {
+        "command": "command used to inspect the current codebase",
+        "file": "path/to/file",
+        "line": 42,
+        "observed": "specific code fact observed"
+      }
     }
   ]
 }
@@ -82,13 +89,14 @@ diff --git a/src/review/semantic.ts b/src/review/semantic.ts
 
 ## Instructions
 
-For each acceptance criterion, verify the diff implements it correctly.
+For each acceptance criterion, verify the current codebase implements it correctly. Use the diff to identify changed files and code paths, not as the only source of truth.
 
 **Before reporting any finding as "error", you MUST verify it using your tools:**
 - If you suspect a key, function, import, or variable is missing, READ the relevant file to confirm before flagging.
 - If you suspect a code path is not wired in, GREP for its usage to confirm.
 - Do NOT flag something as missing based solely on its absence from the diff — it may already exist in the codebase. Check the actual file first.
 - If you cannot verify a claim even after checking, use "unverifiable" severity instead of "error".
+- Every "error" finding must include verifiedBy evidence from the current codebase. If you cannot provide verifiedBy, downgrade the finding to "unverifiable".
 
 Flag issues only when you have confirmed:
 1. An AC is not implemented or partially implemented (verified by reading the actual files)
@@ -106,7 +114,13 @@ Respond with JSON only — no explanation text before or after:
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
-      "suggestion": "how to fix it"
+      "suggestion": "how to fix it",
+      "verifiedBy": {
+        "command": "command used to inspect the current codebase",
+        "file": "path/to/file",
+        "line": 42,
+        "observed": "specific code fact observed"
+      }
     }
   ]
 }

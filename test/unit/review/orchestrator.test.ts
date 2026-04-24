@@ -440,6 +440,19 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
   });
 
+  test("defaults semantic diffMode to ref in parallel path when semantic config is omitted", async () => {
+    let observedDiffMode: unknown;
+    _orchestratorDeps.runSemanticReview = mock(async (...args: Parameters<typeof _orchestratorDeps.runSemanticReview>) => {
+      observedDiffMode = args[3].diffMode;
+      return makePassedCheck("semantic");
+    });
+    const orchestrator = new ReviewOrchestrator();
+
+    await orchestrator.review(makeParallelConfig(), "/tmp/workdir", minimalExecConfig);
+
+    expect(observedDiffMode).toBe("ref");
+  });
+
   test("runs both reviewers when retrySkipChecks does not include LLM checks", async () => {
     const orchestrator = new ReviewOrchestrator();
     const retrySkipChecks = new Set(["lint", "build"]);

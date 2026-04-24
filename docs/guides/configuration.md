@@ -252,7 +252,7 @@ Controls how the production diff is provided to the semantic reviewer:
 {
   "review": {
     "semantic": {
-      "diffMode": "embedded",
+      "diffMode": "ref",
       "resetRefOnRerun": false
     }
   }
@@ -261,8 +261,8 @@ Controls how the production diff is provided to the semantic reviewer:
 
 | Value | Behaviour |
 |:------|:----------|
-| `"embedded"` (default) | Diff is inlined in the prompt (~50KB cap). Simple, works everywhere. |
-| `"ref"` | Reviewer self-serves via git tools. No diff cap. Better for large changes. |
+| `"ref"` (default) | Reviewer self-serves via git tools. No diff cap. Better for large changes and multi-tier retries. |
+| `"embedded"` | Diff is inlined in the prompt (~50KB cap). Simple, but can lose context in large stories. |
 
 `resetRefOnRerun`: when `true`, clears `storyGitRef` on re-run so it is re-captured fresh. Default: `false`.
 
@@ -445,4 +445,3 @@ exclude: ["**/.nax-acceptance*"]
 ```
 
 **Why this matters:** the acceptance test files import production code with relative paths (e.g. `./src/utils/detect-provider.ts`). They run correctly from their package directory under nax control, but should be excluded from the normal test pipeline to avoid unexpected failures or duplicate runs.
-

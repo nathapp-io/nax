@@ -139,7 +139,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "review.semantic": "Semantic review configuration (code quality analysis)",
   "review.semantic.modelTier": "Model tier for semantic review (default: balanced)",
   "review.semantic.diffMode":
-    "How the semantic reviewer accesses the git diff. 'embedded' (default) includes the diff in the prompt (truncated at 50KB). 'ref' passes only the git ref and file list — the reviewer fetches the full diff via tools. Use 'ref' for large stories or multi-tier escalations where truncation loses context.",
+    "How the semantic reviewer accesses the git diff. 'ref' (default) passes only the git ref and file list — the reviewer fetches the full diff via tools. 'embedded' includes the diff in the prompt (truncated at 50KB).",
   "review.semantic.resetRefOnRerun":
     "When true, clears storyGitRef on failed stories during re-run initialization so the ref is re-captured at the next story start. Prevents cross-story diff pollution when multiple stories exhaust all tiers and are re-run. Default: false.",
   "review.semantic.rules": "Custom semantic review rules to enforce",

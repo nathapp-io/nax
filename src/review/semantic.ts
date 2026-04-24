@@ -44,6 +44,12 @@ interface LLMFinding {
   issue: string;
   suggestion: string;
   acId?: string;
+  verifiedBy?: {
+    command?: string;
+    file: string;
+    line?: number;
+    observed: string;
+  };
 }
 
 interface LLMResponse {
@@ -104,12 +110,52 @@ const SEVERITY_RANK: Record<string, number> = {
   critical: 3,
 };
 
+const UNVERIFIED_FINDING_PATTERNS = [
+  "cannot verify",
+  "can't verify",
+  "from diff alone",
+  "missing from diff",
+  "not found in diff",
+  "not present in diff",
+  "does not appear in diff",
+] as const;
+
 /**
  * Check whether a normalized finding severity meets or exceeds the blocking threshold.
  * threshold defaults to "error" — only error/critical block unless configured stricter.
  */
 function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {
   return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
+}
+
+/** Ref-mode semantic errors must prove they were verified against current files. */
+function sanitizeRefModeFindings(findings: LLMFinding[], diffMode: SemanticReviewConfig["diffMode"]): LLMFinding[] {
+  if (diffMode !== "ref") return findings;
+  return findings.map((finding) =>
+    needsDowngradeForMissingEvidence(finding) ? downgradeToUnverifiable(finding) : finding,
+  );
+}
+
+function needsDowngradeForMissingEvidence(finding: LLMFinding): boolean {
+  if ((SEVERITY_RANK[finding.severity] ?? 0) < SEVERITY_RANK.error) return false;
+  return mentionsUnverifiedSource(finding) || !hasVerifiedEvidence(finding);
+}
+
+function mentionsUnverifiedSource(finding: LLMFinding): boolean {
+  const text = `${finding.issue} ${finding.suggestion}`.toLowerCase();
+  return UNVERIFIED_FINDING_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
+function hasVerifiedEvidence(finding: LLMFinding): boolean {
+  const evidence = finding.verifiedBy;
+  return !!evidence?.file?.trim() && !!evidence.observed?.trim();
+}
+
+function downgradeToUnverifiable(finding: LLMFinding): LLMFinding {
+  return {
+    ...finding,
+    severity: "unverifiable",
+  };
 }
 
 /** Convert LLMFinding[] to ReviewFinding[] with semantic-review metadata. */
@@ -352,9 +398,10 @@ export async function runSemanticReview(
     }
 
     // Split debate findings by blocking threshold
+    const debateFindings = sanitizeRefModeFindings(deduped, diffMode);
     const debateThreshold = blockingThreshold ?? "error";
-    const debateBlocking = deduped.filter((f) => isBlockingSeverity(f.severity, debateThreshold));
-    const debateAdvisory = deduped.filter((f) => !isBlockingSeverity(f.severity, debateThreshold));
+    const debateBlocking = debateFindings.filter((f) => isBlockingSeverity(f.severity, debateThreshold));
+    const debateAdvisory = debateFindings.filter((f) => !isBlockingSeverity(f.severity, debateThreshold));
 
     const durationMs = Date.now() - startTime;
     if (!resolverPassed) {
@@ -572,6 +619,9 @@ export async function runSemanticReview(
     };
   }
 
+  const sanitizedFindings = sanitizeRefModeFindings(parsed.findings, diffMode);
+  const sanitizedParsed: LLMResponse = { ...parsed, findings: sanitizedFindings };
+
   if (naxConfig?.review?.audit?.enabled) {
     void _semanticDeps.writeReviewAudit({
       reviewer: "semantic",
@@ -580,14 +630,14 @@ export async function runSemanticReview(
       storyId: story.id,
       featureName,
       parsed: true,
-      result: { passed: parsed.passed, findings: parsed.findings },
+      result: { passed: sanitizedParsed.passed, findings: sanitizedParsed.findings },
     });
   }
 
   // Split findings by blocking threshold
   const threshold = blockingThreshold ?? "error";
-  const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
-  const advisoryFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  const blockingFindings = sanitizedParsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+  const advisoryFindings = sanitizedParsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
 
   if (advisoryFindings.length > 0) {
     logger?.debug(
@@ -601,7 +651,7 @@ export async function runSemanticReview(
   }
 
   // Format findings and populate structured ReviewFinding[]
-  if (!parsed.passed && blockingFindings.length > 0) {
+  if (!sanitizedParsed.passed && blockingFindings.length > 0) {
     const durationMs = Date.now() - startTime;
     logger?.warn("review", `Semantic review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
@@ -632,7 +682,7 @@ export async function runSemanticReview(
   }
 
   // If LLM said failed but all findings are advisory (below threshold), override to pass
-  if (!parsed.passed && blockingFindings.length === 0) {
+  if (!sanitizedParsed.passed && blockingFindings.length === 0) {
     const durationMs = Date.now() - startTime;
     logger?.info("review", "Semantic review passed (all findings below blocking threshold)", {
       storyId: story.id,
@@ -651,15 +701,15 @@ export async function runSemanticReview(
   }
 
   const durationMs = Date.now() - startTime;
-  if (parsed.passed) {
+  if (sanitizedParsed.passed) {
     logger?.info("review", "Semantic review passed", { storyId: story.id, durationMs });
   }
   return {
     check: "semantic",
-    success: parsed.passed,
+    success: sanitizedParsed.passed,
     command: "",
-    exitCode: parsed.passed ? 0 : 1,
-    output: parsed.passed ? "Semantic review passed" : "Semantic review failed (no findings)",
+    exitCode: sanitizedParsed.passed ? 0 : 1,
+    output: sanitizedParsed.passed ? "Semantic review passed" : "Semantic review failed (no findings)",
     durationMs,
     advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
     cost: llmCost,
