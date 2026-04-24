@@ -5,7 +5,7 @@
 **Author:** William Khoo, Claude
 **Extends:** ADR-013 (SessionManager → AgentManager Hierarchy); ADR-012 (AgentManager Ownership); ADR-011 (SessionManager Ownership); ADR-010 (Context Engine)
 **Related:** #523 (fallback state divergence across orphan AgentManagers — unblocked by this ADR)
-
+**Supersedeed-by:** ADR-014 (RunScope and Middleware), ADR-015 (Operation Contract), ADR-016 (Prompt Composition and PackageView)
 ---
 
 ## Context
