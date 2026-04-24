@@ -13,7 +13,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../../src/config";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import {
   type RunCompletionOptions,
   _runCompletionDeps,
@@ -22,57 +21,38 @@ import {
 import type { DeferredRegressionResult } from "../../../../src/execution/lifecycle/run-regression";
 import type { StoryMetrics } from "../../../../src/metrics";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
-import type { PRD, UserStory } from "../../../../src/prd";
+import type { PRD } from "../../../../src/prd";
+import { makeNaxConfig, makePRD as makePRDHelper, makeStory } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStory(id: string, status: UserStory["status"]): UserStory {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "Test story",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status,
-    passes: status === "passed",
-    escalations: [],
-    attempts: 1,
-  };
-}
-
 function makePRD(ids: string[]): PRD {
-  return {
+  return makePRDHelper({
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    userStories: ids.map((id) => makeStory(id, "passed")),
-  };
+    userStories: ids.map((id) =>
+      makeStory({ id, title: `Story ${id}`, description: "Test story", status: "passed", passes: true, attempts: 1 }),
+    ),
+  });
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    execution: {
-      ...DEFAULT_CONFIG.execution,
-      regressionGate: {
-        enabled: true,
-        timeoutSeconds: 30,
-        acceptOnTimeout: true,
-        mode: "deferred",
-        maxRectificationAttempts: 2,
-      },
+const REGRESSION_CONFIG: NaxConfig = makeNaxConfig({
+  execution: {
+    regressionGate: {
+      enabled: true,
+      timeoutSeconds: 30,
+      acceptOnTimeout: true,
+      mode: "deferred",
+      maxRectificationAttempts: 2,
     },
-    quality: {
-      ...DEFAULT_CONFIG.quality,
-      commands: { ...DEFAULT_CONFIG.quality.commands, test: "bun test" },
-    },
-  };
-}
+  },
+  quality: {
+    commands: { test: "bun test" },
+  },
+});
 
 function makeStatusWriter() {
   return {
@@ -156,7 +136,7 @@ describe("handleRunCompletion — back-fill for stories missing from allStoryMet
       storyOutcomes: { "US-001": true }, // story itself succeeded, but suite still failing
     });
 
-    await handleRunCompletion(makeOpts(makeConfig(), prd, metrics));
+    await handleRunCompletion(makeOpts(REGRESSION_CONFIG, prd, metrics));
 
     expect(metrics).toHaveLength(1);
     const entry = metrics[0];
@@ -185,7 +165,7 @@ describe("handleRunCompletion — back-fill for stories missing from allStoryMet
       // storyOutcomes intentionally omitted (older mock shape)
     });
 
-    await handleRunCompletion(makeOpts(makeConfig(), prd, metrics));
+    await handleRunCompletion(makeOpts(REGRESSION_CONFIG, prd, metrics));
 
     expect(metrics[0].success).toBe(false);
   });
@@ -220,7 +200,7 @@ describe("handleRunCompletion — merge regression cost into existing storyMetri
       storyOutcomes: { "US-001": true },
     });
 
-    await handleRunCompletion(makeOpts(makeConfig(), prd, metrics));
+    await handleRunCompletion(makeOpts(REGRESSION_CONFIG, prd, metrics));
 
     expect(metrics).toHaveLength(1); // still one entry
     const merged = metrics[0];
@@ -250,7 +230,7 @@ describe("handleRunCompletion — merge regression cost into existing storyMetri
       storyOutcomes: { "US-001": false },
     });
 
-    await handleRunCompletion(makeOpts(makeConfig(), prd, metrics));
+    await handleRunCompletion(makeOpts(REGRESSION_CONFIG, prd, metrics));
 
     expect(metrics[0].success).toBe(false);
     expect(metrics[0].firstPassSuccess).toBe(false);
@@ -273,7 +253,7 @@ describe("handleRunCompletion — merge regression cost into existing storyMetri
       storyOutcomes: { "US-001": true },
     });
 
-    await handleRunCompletion(makeOpts(makeConfig(), prd, metrics));
+    await handleRunCompletion(makeOpts(REGRESSION_CONFIG, prd, metrics));
 
     expect(metrics[0].rectificationCost).toBeCloseTo(0.25);
   });
