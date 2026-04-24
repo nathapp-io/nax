@@ -141,6 +141,27 @@ export const reviewStage: PipelineStage = {
     // Sum LLM costs from checks (populated by semantic review)
     const reviewCost = (result.builtIn.checks ?? []).reduce((sum, c) => sum + (c.cost ?? 0), 0) || undefined;
 
+    // Fail-closed when fail-open occurs in a retry context (autofix has already run ≥1 time).
+    // A reviewer that cannot parse its LLM response is ambiguous — it must not count as a
+    // genuine pass when the review was previously failing with real blocking findings.
+    const failOpenChecks =
+      (ctx.reviewResult?.success ?? false)
+        ? (result.builtIn.checks ?? []).filter((c) => c.failOpen).map((c) => c.check)
+        : [];
+    if (failOpenChecks.length > 0 && (ctx.autofixAttempt ?? 0) > 0) {
+      logger.warn("review", "Fail-open on partial-progress retry — treating as failure (fail-closed on ambiguity)", {
+        storyId: ctx.story.id,
+        failOpenChecks,
+        autofixAttempt: ctx.autofixAttempt,
+      });
+      ctx.reviewResult = {
+        ...result.builtIn,
+        success: false,
+        failureReason: `fail-open on retry: ${failOpenChecks.join(", ")}`,
+      };
+      return { action: "continue", cost: reviewCost };
+    }
+
     if (!result.success) {
       // Collect structured findings from plugin reviewers for escalation context
       const pluginFindings = result.builtIn.pluginReviewers?.flatMap((pr) => pr.findings ?? []) ?? [];

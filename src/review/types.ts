@@ -71,6 +71,9 @@ export interface ReviewCheckResult {
   advisoryFindings?: import("../plugins/types").ReviewFinding[];
   /** LLM cost incurred for this check (populated by semantic review) */
   cost?: number;
+  /** True when the LLM reviewer could not parse its response and fell back to success:true (fail-open).
+   * Consumers in a retry context (autofixAttempt > 0) must treat this as a non-genuine pass. */
+  failOpen?: boolean;
 }
 
 /** Plugin reviewer result */
