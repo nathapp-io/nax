@@ -386,7 +386,7 @@ interface OperationBase<I, O, C> {
   readonly stage: PipelineStage;
   readonly config: ConfigSelector<C>;
   readonly build: (input: I, ctx: BuildContext<C>) => ComposeInput;
-  readonly parse: (output: string) => O;
+  readonly parse: (output: string, input: I, ctx: BuildContext<C>) => O;
 }
 
 export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
@@ -424,7 +424,9 @@ export interface CallContext {
 }
 ```
 
-**`parse` contract clarification:** for `kind:"complete"` ops, `parse(output)` is a pure text→domain transform (typical JSON-mode completion result). For `kind:"run"` ops that need session-close post-work (autoCommit, isolation verification, changed-file diff, PID cleanup), that work lives in the domain orchestrator that called `callOp` (for TDD: in `src/tdd/session-op.ts`'s shared helper), not inside `parse`. This keeps `parse` side-effect-free for the common case while accommodating the session-based ops that need session-close bookkeeping.
+**`parse` contract clarification:** `parse(output, input, ctx)` is a pure (side-effect-free) typed parser. It may consult `input` and `ctx` — specifically `ctx.packageView.config` for full-config lookups (e.g. validating a model tier against `config.models`) and `ctx.config` for the selector-sliced view — to perform domain-aware validation and derivation (e.g. computing a derived field from `input` properties before returning the typed output). It must remain free of I/O, agent calls, or runtime mutation. For `kind:"run"` ops that need session-close post-work (autoCommit, isolation verification, changed-file diff, PID cleanup), that work lives in the domain orchestrator that called `callOp` (for TDD: in `src/tdd/session-op.ts`'s shared helper), not inside `parse`.
+
+**Signature symmetry with `build`:** both `build(input, ctx)` and `parse(output, input, ctx)` receive `(payload, input, ctx)`. The original Wave-1 shape was `parse(output) => O`; it was widened post-Wave-1 (PR #705) after Wave 1's `classifyRoute` op required config-aware tier validation and `testStrategy` derivation that the one-argument shape could not support. The widening is purely additive — pre-existing one-argument parsers continue to compile because the new parameters are simply unread. See "Migration Anti-Patterns" → AP-3 for the historical context. Do **not** reintroduce a separate `validate(parsed, ctx)` hook (Open Question #1 remains closed); validation belongs inside `parse` so the type system enforces it.
 
 ### 4.2 `ConfigSelector<C>` — named, reusable, interface-based
 
@@ -605,7 +607,7 @@ export async function callOp<I, O, C>(
       storyId: ctx.storyId,
       packageDir: ctx.packageDir,
     });
-    return op.parse(raw);
+    return op.parse(raw, input, buildCtx);
   }
 
   // kind:"run" → Layer 3 (SingleSessionRunner) → Layer 2 (runInSession) → Layer 1 (runAs + middleware)
@@ -619,7 +621,7 @@ export async function callOp<I, O, C>(
     op,
     sessionOverride: ctx.sessionOverride,
   });
-  return op.parse(outcome.primaryResult.output);
+  return op.parse(outcome.primaryResult.output, input, buildCtx);
 }
 
 // Accepts a ConfigSelector OR the inline keyof-array sugar; returns a proper selector.
@@ -1283,7 +1285,9 @@ parse(output: string): ClassifyRouteOutput {
 
 **Why it matters:** the regex-strip + `JSON.parse` path is single-tier. It silently fails on responses with preamble text before a fence, on bare JSON embedded in narration, and on trailing-comma quirks from cheap models. `parseLLMJson` runs three extraction tiers and is the SSOT — codified in [`forbidden-patterns.md`](../../.claude/rules/forbidden-patterns.md).
 
-**Rule:** any `parse()` reading an LLM response goes through `parseLLMJson`. Validation (shape checks, value enums) happens after; extraction does not.
+**Rule:** any `parse()` reading an LLM response goes through `parseLLMJson`. Validation (shape checks, value enums, config-aware checks like tier validity, plus any derivation like `testStrategy`) happens **inside** `parse` after extraction — `parse` receives `(output, input, ctx)` for exactly this purpose (§4.1).
+
+**Subsequent fix (PR #705 — second-order issue from the Wave 1 retro):** the original Wave 1 `parse: (output) => O` signature had no access to config or input, so `classifyRouteOp` could not run the SSOT `validateRoutingDecision` (which needs `config.models` for tier validity and `input.title/description/tags` to derive `testStrategy`). The op consequently shipped with hand-rolled, weaker validation **and** with `ClassifyRouteOutput` defined as a near-duplicate of `RoutingDecision` minus `testStrategy`. The fix widened §4.1 `parse` to `(output, input, ctx)`, dropped `ClassifyRouteOutput`, and made the op emit `RoutingDecision` directly via `validateRoutingDecision`. Lesson: **a typed-output op whose validator depends on config or input is a signal that the framework signature itself is too narrow** — fix the framework, do not silently weaken the op's validation.
 
 ### AP-4. Cross-subsystem duplication disguised as locality
 

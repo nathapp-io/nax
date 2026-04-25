@@ -14,12 +14,16 @@ import type { RoutingDecision } from "../router";
 /**
  * Validate a parsed routing object and return a clean RoutingDecision.
  *
+ * Signature is intentionally narrow — accepts the minimum fields required.
+ * This lets ops in `src/operations/` pass their input/ctx slices without
+ * widening the operation context type.
+ *
  * @throws Error if required fields are missing or values are invalid
  */
 export function validateRoutingDecision(
   parsed: Record<string, unknown>,
-  config: NaxConfig,
-  story?: UserStory,
+  config: Pick<NaxConfig, "models" | "tdd">,
+  story?: Pick<UserStory, "title" | "description" | "tags">,
 ): RoutingDecision {
   if (!parsed.complexity || !parsed.modelTier || !parsed.reasoning) {
     throw new Error(`Missing required fields in LLM response: ${JSON.stringify(parsed)}`);

@@ -28,7 +28,19 @@ interface OperationBase<I, O, C> {
   readonly stage: PipelineStage;
   readonly config: ConfigSelector<C> | readonly (keyof NaxConfig)[];
   readonly build: (input: I, ctx: BuildContext<C>) => ComposeInput;
-  readonly parse: (output: string) => O;
+  /**
+   * Parse and validate the agent output into a typed domain value.
+   *
+   * Signature mirrors `build(input, ctx)` for symmetry — `parse` may consult
+   * `input` and `ctx` (specifically `ctx.packageView.config` for full-config
+   * lookups, `ctx.config` for the sliced view) to perform domain-aware
+   * validation and derivation. Must remain side-effect-free: no I/O, no
+   * agent calls, no runtime mutation.
+   *
+   * Widened from `(output) => O` post-Wave-1 (ADR-018 §4.1 amended) — see
+   * Migration Anti-Patterns AP-3.
+   */
+  readonly parse: (output: string, input: I, ctx: BuildContext<C>) => O;
 }
 
 export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
