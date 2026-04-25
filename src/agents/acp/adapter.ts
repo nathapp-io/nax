@@ -19,7 +19,10 @@ import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
+import type { ModelDef } from "../../config/schema";
 import type { AdapterFailure } from "../../context/engine";
+import type { ProtocolIds } from "../../session/types";
+import type { TokenUsage } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -29,8 +32,12 @@ import type {
   CompleteResult,
   DecomposeOptions,
   DecomposeResult,
+  OpenSessionOpts,
   PlanOptions,
   PlanResult,
+  SendTurnOpts,
+  SessionHandle,
+  TurnResult,
 } from "../types";
 import { CompleteError } from "../types";
 import { estimateCostFromTokenUsage } from "./cost";
@@ -149,6 +156,48 @@ export const _fallbackDeps = {
   sleep,
 };
 
+function createAbortError(signal?: AbortSignal, fallback = "Run aborted"): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) {
+    return reason;
+  }
+  if (typeof reason === "string" && reason.length > 0) {
+    return new Error(reason);
+  }
+  return new Error(fallback);
+}
+
+function throwIfAborted(signal?: AbortSignal, fallback?: string): void {
+  if (signal?.aborted) {
+    throw createAbortError(signal, fallback);
+  }
+}
+
+async function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal, fallback?: string): Promise<T> {
+  if (!signal) {
+    return promise;
+  }
+  if (signal.aborted) {
+    throw createAbortError(signal, fallback);
+  }
+
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(createAbortError(signal, fallback));
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,21 +283,34 @@ export async function runSessionPrompt(
   session: AcpSession,
   prompt: string,
   timeoutMs: number,
-): Promise<{ response: AcpSessionResponse | null; timedOut: boolean }> {
+  signal?: AbortSignal,
+): Promise<{ response: AcpSessionResponse | null; timedOut: boolean; aborted: boolean }> {
+  throwIfAborted(signal, "Run aborted — shutdown in progress");
   const promptPromise = session.prompt(prompt);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<"timeout">((resolve) => {
     timeoutId = setTimeout(() => resolve("timeout"), timeoutMs);
   });
 
-  let winner: AcpSessionResponse | "timeout";
+  let abortHandler: (() => void) | undefined;
+  const abortPromise = signal
+    ? new Promise<"aborted">((resolve) => {
+        abortHandler = () => resolve("aborted");
+        signal.addEventListener("abort", abortHandler, { once: true });
+      })
+    : null;
+
+  let winner: AcpSessionResponse | "timeout" | "aborted";
   try {
-    winner = await Promise.race([promptPromise, timeoutPromise]);
+    winner = await Promise.race([promptPromise, timeoutPromise, ...(abortPromise ? [abortPromise] : [])]);
   } finally {
     clearTimeout(timeoutId);
+    if (signal && abortHandler) {
+      signal.removeEventListener("abort", abortHandler);
+    }
   }
 
-  if (winner === "timeout") {
+  if (winner === "timeout" || winner === "aborted") {
     // Suppress the pending prompt rejection to prevent unhandled rejection after
     // cancelActivePrompt kills the acpx process (which causes an EPIPE rejection).
     promptPromise.catch(() => {});
@@ -257,10 +319,10 @@ export async function runSessionPrompt(
     } catch {
       await session.close().catch(() => {});
     }
-    return { response: null, timedOut: true };
+    return { response: null, timedOut: winner === "timeout", aborted: winner === "aborted" };
   }
 
-  return { response: winner as AcpSessionResponse, timedOut: false };
+  return { response: winner as AcpSessionResponse, timedOut: false, aborted: false };
 }
 
 /**
@@ -271,6 +333,46 @@ export async function closeAcpSession(session: AcpSession): Promise<void> {
     await session.close();
   } catch (err) {
     getSafeLogger()?.warn("acp-adapter", "Failed to close session", { error: String(err) });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SessionHandle implementation (Phase A — adapter-internal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class AcpSessionHandleImpl implements SessionHandle {
+  readonly id: string;
+  readonly agentName: string;
+  readonly protocolIds: ProtocolIds;
+
+  // ACP-internal fields — opaque to callers above the adapter boundary.
+  readonly _client: AcpClient;
+  readonly _session: AcpSession;
+  readonly _sessionName: string;
+  readonly _resumed: boolean;
+  readonly _timeoutSeconds: number;
+  readonly _modelDef: ModelDef;
+
+  constructor(opts: {
+    id: string;
+    agentName: string;
+    protocolIds: ProtocolIds;
+    client: AcpClient;
+    session: AcpSession;
+    sessionName: string;
+    resumed: boolean;
+    timeoutSeconds: number;
+    modelDef: ModelDef;
+  }) {
+    this.id = opts.id;
+    this.agentName = opts.agentName;
+    this.protocolIds = opts.protocolIds;
+    this._client = opts.client;
+    this._session = opts.session;
+    this._sessionName = opts.sessionName;
+    this._resumed = opts.resumed;
+    this._timeoutSeconds = opts.timeoutSeconds;
+    this._modelDef = opts.modelDef;
   }
 }
 
@@ -434,6 +536,34 @@ export class AcpAgentAdapter implements AgentAdapter {
     return {};
   }
 
+  private _buildInteractionHandler(options: AgentRunOptions): import("../interaction-handler").InteractionHandler {
+    const { contextToolRuntime, contextPullTools, interactionBridge } = options;
+    const hasContextTools = Boolean(contextToolRuntime && (contextPullTools?.length ?? 0) > 0);
+
+    return {
+      async onInteraction(req) {
+        if (req.kind === "context-tool") {
+          if (!hasContextTools || !contextToolRuntime) return null;
+          try {
+            const toolResult = req.error
+              ? buildContextToolResult(req.name, req.error, "error")
+              : buildContextToolResult(req.name, await contextToolRuntime.callTool(req.name, req.input ?? {}));
+            return { answer: toolResult };
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            return { answer: buildContextToolResult(req.name, msg, "error") };
+          }
+        }
+        if (req.kind === "question") {
+          if (!interactionBridge) return null;
+          const answer = await interactionBridge.onQuestionDetected(req.text);
+          return { answer };
+        }
+        return null;
+      },
+    };
+  }
+
   async run(options: AgentRunOptions): Promise<AgentResult> {
     const startTime = Date.now();
 
@@ -470,7 +600,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     try {
-      const result = await this._runWithClient(options, startTime, this.name);
+      const result = await this._runUsingPrimitives(options, startTime);
 
       if (!result.success) {
         getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, {
@@ -570,181 +700,87 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
   }
 
-  private async _runWithClient(
-    options: AgentRunOptions,
-    startTime: number,
-    agentName = this.name,
-  ): Promise<AgentResult> {
-    const cmdStr = `acpx --model ${options.modelDef.model} ${agentName}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds, options.onPidSpawned);
-    await client.start();
-
-    // 1. Resolve session name: descriptor.handle > explicit sessionHandle > derived from options
-    // Phase 3 (#477): crash guard and sidecar lookup removed — SessionManager owns crash recovery
-    // via the CREATED/RUNNING state machine (orphan detection via sweepOrphans()).
+  private async _runUsingPrimitives(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
     const sessionName =
       (options.session ? this.deriveSessionName(options.session) : undefined) ??
       options.sessionHandle ??
       computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
-    // 2. Read pre-resolved permission mode from AgentManager (passed via options.resolvedPermissions).
-    const permissionMode = options.resolvedPermissions?.mode ?? "approve-reads";
-    getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
-      permission: permissionMode,
-      stage: options.pipelineStage ?? "run",
+    const resolvedPermissions = options.resolvedPermissions ?? {
+      mode: "approve-reads" as const,
+      skipPermissions: false,
+    };
+
+    const handle = await this.openSession(sessionName, {
+      agentName: this.name,
+      workdir: options.workdir,
+      resolvedPermissions,
+      modelDef: options.modelDef,
+      timeoutSeconds: options.timeoutSeconds,
+      onSessionEstablished: options.onSessionEstablished,
+      onPidSpawned: options.onPidSpawned,
+      signal: options.abortSignal,
     });
 
-    // 3. Ensure session (resume existing or create new)
-    const { session, resumed: sessionResumed } = await ensureAcpSession(client, sessionName, agentName, permissionMode);
+    const impl = handle as AcpSessionHandleImpl;
+    const interactionHandler = this._buildInteractionHandler(options);
+    const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
+    const maxTurns = options.interactionBridge || hasContextTools ? (options.maxInteractionTurns ?? 10) : 1;
 
-    // Capture protocol IDs immediately after session is established (Phase 1 plumbing).
-    // session.recordId is stable across reconnects; session.id is volatile.
-    const protocolIds = {
-      recordId: (session as { recordId?: string }).recordId ?? null,
-      sessionId: (session as { id?: string }).id ?? null,
-    };
+    const prompt = buildContextToolPreamble(options);
 
-    // #591: fire the established-callback NOW (before any prompt) so the
-    // SessionManager can persist protocolIds eagerly. If the run is
-    // interrupted before return, the on-disk descriptor still carries the
-    // correlation needed to resume.
-    if (options.onSessionEstablished) {
-      try {
-        options.onSessionEstablished(protocolIds, sessionName);
-      } catch (err) {
-        getSafeLogger()?.warn("acp-adapter", "onSessionEstablished callback threw — continuing", {
-          sessionName,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    let lastResponse: AcpSessionResponse | null = null;
-    let timedOut = false;
-    // Tracks whether the run completed successfully — used by finally to decide
-    // whether to close the session (success) or keep it open for retry (failure).
-    const runState = { succeeded: false };
-    const totalTokenUsage = {
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    };
-    let totalExactCostUsd: number | undefined;
-    let turnCount = 0;
+    let turnResult: TurnResult | undefined;
+    let succeeded = false;
+    let isSessionBroken = false;
 
     try {
-      // 5. Multi-turn loop
-      const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
-      let currentPrompt = buildContextToolPreamble(options);
-      const MAX_TURNS = options.interactionBridge || hasContextTools ? (options.maxInteractionTurns ?? 10) : 1;
-
-      while (turnCount < MAX_TURNS) {
-        turnCount++;
-        getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
-
-        const turnResult = await runSessionPrompt(session, currentPrompt, options.timeoutSeconds * 1000);
-
-        if (turnResult.timedOut) {
-          timedOut = true;
-          break;
-        }
-
-        lastResponse = turnResult.response;
-        if (!lastResponse) break;
-
-        // Accumulate token usage and exact cost
-        if (lastResponse.cumulative_token_usage) {
-          totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
-          totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
-          totalTokenUsage.cache_read_input_tokens += lastResponse.cumulative_token_usage.cache_read_input_tokens ?? 0;
-          totalTokenUsage.cache_creation_input_tokens +=
-            lastResponse.cumulative_token_usage.cache_creation_input_tokens ?? 0;
-        }
-        if (lastResponse.exactCostUsd !== undefined) {
-          totalExactCostUsd = (totalExactCostUsd ?? 0) + lastResponse.exactCostUsd;
-        }
-
-        // Check for agent question → route to interaction bridge.
-        // Only attempt question detection when stopReason === "end_turn": the agent
-        // intentionally stopped and may be waiting for input. For max_tokens (truncated
-        // output) or tool_use (mid-tool-call), skip detection to avoid false positives.
-        const outputText = extractOutput(lastResponse);
-        const isEndTurn = lastResponse.stopReason === "end_turn";
-        const toolCall = isEndTurn ? extractContextToolCall(outputText) : null;
-        if (toolCall && options.contextToolRuntime) {
-          try {
-            const toolResult = toolCall.error
-              ? buildContextToolResult(toolCall.name, toolCall.error, "error")
-              : buildContextToolResult(
-                  toolCall.name,
-                  await options.contextToolRuntime.callTool(toolCall.name, toolCall.input ?? {}),
-                );
-            currentPrompt = toolResult;
-            continue;
-          } catch (error) {
-            currentPrompt = buildContextToolResult(
-              toolCall.name,
-              error instanceof Error ? error.message : String(error),
-              "error",
-            );
-            continue;
-          }
-        }
-
-        const question = isEndTurn ? extractQuestion(outputText) : null;
-        if (!question || !options.interactionBridge) break;
-
-        getSafeLogger()?.debug("acp-adapter", "Agent asked question, routing to interactionBridge", { question });
-
-        let interactionTimeoutId: ReturnType<typeof setTimeout> | undefined;
-        try {
-          const answer = await Promise.race([
-            options.interactionBridge.onQuestionDetected(question),
-            new Promise<never>((_, reject) => {
-              interactionTimeoutId = setTimeout(() => reject(new Error("interaction timeout")), INTERACTION_TIMEOUT_MS);
-            }),
-          ]);
-          currentPrompt = answer;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          getSafeLogger()?.warn("acp-adapter", `InteractionBridge failed: ${msg}`);
-          break;
-        } finally {
-          clearTimeout(interactionTimeoutId);
-        }
-      }
-
-      // Only warn if we exhausted turns while still receiving questions (interactive mode).
-      // In non-interactive mode (MAX_TURNS=1) the loop always completes in 1 turn — not a warning.
-      if (turnCount >= MAX_TURNS && (options.interactionBridge || hasContextTools)) {
-        getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
-      }
-
-      // Compute success here so finally can use it for conditional close.
-      runState.succeeded = !timedOut && lastResponse?.stopReason === "end_turn";
+      turnResult = await this.sendTurn(handle, prompt, {
+        interactionHandler,
+        maxTurns,
+        signal: options.abortSignal,
+      });
+      succeeded = !turnResult._timedOut && !turnResult._aborted && turnResult._lastStopReason === "end_turn";
+      isSessionBroken = !succeeded && turnResult._lastStopReason === "error";
     } finally {
-      // 6. Cleanup — close the physical ACP session on success or session-broken.
-      // On failure (any), keep session open so retry can resume with context.
-      // On success with keepOpen=true, keep open so the next turn resumes context.
-      // Phase 3 (#477): sidecar writes removed — SessionManager owns persistence.
-      const isSessionBroken = !runState.succeeded && lastResponse?.stopReason === "error";
-      if ((runState.succeeded && !options.keepOpen) || isSessionBroken) {
+      // If turnResult is undefined, sendTurn threw before completing (or prep code
+      // between openSession and the try block threw). Close the session fully.
+      if (turnResult === undefined) {
+        await this.closeSession(handle).catch(() => {});
+      } else if ((succeeded && !options.keepOpen) || isSessionBroken) {
         if (isSessionBroken) {
           getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         }
-        await closeAcpSession(session);
-      } else if (!runState.succeeded) {
+        await this.closeSession(handle);
+      } else if (!succeeded) {
         getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
+        await impl._client.close().catch(() => {});
       } else {
         getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepOpen=true)", { sessionName });
+        await impl._client.close().catch(() => {});
       }
-      await client.close().catch(() => {});
     }
 
     const durationMs = Date.now() - startTime;
 
-    if (timedOut) {
+    if (turnResult?._aborted) {
+      return {
+        success: false,
+        exitCode: 130,
+        output: "Run aborted — shutdown in progress",
+        rateLimited: false,
+        durationMs,
+        estimatedCost: 0,
+        protocolIds: impl.protocolIds,
+        adapterFailure: {
+          category: "availability",
+          outcome: "fail-aborted",
+          retriable: false,
+          message: "Run aborted — shutdown in progress",
+        },
+      };
+    }
+
+    if (turnResult?._timedOut) {
       return {
         success: false,
         exitCode: 124,
@@ -752,7 +788,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         rateLimited: false,
         durationMs,
         estimatedCost: 0,
-        protocolIds,
+        protocolIds: impl.protocolIds,
         adapterFailure: {
           category: "quality",
           outcome: "fail-timeout",
@@ -762,31 +798,15 @@ export class AcpAgentAdapter implements AgentAdapter {
       };
     }
 
-    const success = lastResponse?.stopReason === "end_turn";
-    const isSessionError = lastResponse?.stopReason === "error";
-    const isSessionErrorRetryable = isSessionError && lastResponse?.retryable === true;
-    const output = extractOutput(lastResponse);
-
-    // Prefer exact cost from acpx usage_update; fall back to token-based estimation
-    const estimatedCost =
-      totalExactCostUsd ??
-      (totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
-        ? estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model)
-        : 0);
-
+    const success = turnResult?._lastStopReason === "end_turn";
+    const isSessionError = turnResult?._lastStopReason === "error";
+    const isSessionErrorRetryable = isSessionError && turnResult?._retryable === true;
+    const output = turnResult?.output ?? "";
+    const estimatedCost = turnResult?.cost?.total ?? 0;
+    const rawTokenUsage = turnResult?.tokenUsage;
     const tokenUsage =
-      totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
-        ? {
-            inputTokens: totalTokenUsage.input_tokens,
-            outputTokens: totalTokenUsage.output_tokens,
-            ...(totalTokenUsage.cache_read_input_tokens > 0 && {
-              cacheReadInputTokens: totalTokenUsage.cache_read_input_tokens,
-            }),
-            ...(totalTokenUsage.cache_creation_input_tokens > 0 && {
-              cacheCreationInputTokens: totalTokenUsage.cache_creation_input_tokens,
-            }),
-          }
-        : undefined;
+      rawTokenUsage && (rawTokenUsage.inputTokens > 0 || rawTokenUsage.outputTokens > 0) ? rawTokenUsage : undefined;
+    const turnCount = turnResult?.internalRoundTrips ?? 1;
 
     const adapterFailure: AdapterFailure | undefined = success
       ? undefined
@@ -801,7 +821,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             category: "quality",
             outcome: "fail-unknown",
             retriable: false,
-            message: `Session ended with stopReason: ${lastResponse?.stopReason ?? "none"}`,
+            message: `Session ended with stopReason: ${turnResult?._lastStopReason ?? "none"}`,
           };
 
     return {
@@ -814,9 +834,9 @@ export class AcpAgentAdapter implements AgentAdapter {
       durationMs,
       estimatedCost,
       tokenUsage,
-      protocolIds,
+      protocolIds: impl.protocolIds,
       adapterFailure,
-      sessionMetadata: { sessionName, turn: turnCount, resumed: sessionResumed },
+      sessionMetadata: { sessionName, turn: turnCount, resumed: impl._resumed },
     };
   }
 
@@ -824,8 +844,6 @@ export class AcpAgentAdapter implements AgentAdapter {
     const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = _options?.resolvedPermissions?.mode ?? "approve-reads";
     const workdir = _options?.workdir;
-    const config = _options?.config;
-
     // Resolve model for a given agent name
     const resolveModel = async (agentName: string): Promise<string> => {
       let model = _options?.model;
@@ -1075,7 +1093,236 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
   }
 
-  async closeSession(sessionName: string, workdir: string): Promise<void> {
-    await this.closePhysicalSession(sessionName, workdir);
+  async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
+    const { agentName, workdir, resolvedPermissions, modelDef, timeoutSeconds, onSessionEstablished, onPidSpawned } =
+      opts;
+    const { signal } = opts;
+
+    throwIfAborted(signal, "Run aborted — shutdown in progress");
+
+    const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
+    const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned);
+    let session: AcpSession | undefined;
+
+    try {
+      await raceWithAbort(client.start(), signal, "Run aborted — shutdown in progress");
+
+      const permissionMode = resolvedPermissions.mode;
+      getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
+        permission: permissionMode,
+        stage: "open-session",
+      });
+
+      const ensured = await raceWithAbort(
+        ensureAcpSession(client, name, agentName, permissionMode),
+        signal,
+        "Run aborted — shutdown in progress",
+      );
+      session = ensured.session;
+
+      const protocolIds: ProtocolIds = {
+        recordId: (session as { recordId?: string }).recordId ?? null,
+        sessionId: (session as { id?: string }).id ?? null,
+      };
+
+      if (onSessionEstablished) {
+        try {
+          onSessionEstablished(protocolIds, name);
+        } catch (err) {
+          getSafeLogger()?.warn("acp-adapter", "onSessionEstablished callback threw — continuing", {
+            sessionName: name,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      throwIfAborted(signal, "Run aborted — shutdown in progress");
+
+      return new AcpSessionHandleImpl({
+        id: name,
+        agentName,
+        protocolIds,
+        client,
+        session,
+        sessionName: name,
+        resumed: ensured.resumed,
+        timeoutSeconds,
+        modelDef,
+      });
+    } catch (error) {
+      if (session) {
+        await closeAcpSession(session).catch(() => {});
+      }
+      await client.close().catch(() => {});
+      throw error;
+    }
+  }
+
+  async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
+    const impl = handle as AcpSessionHandleImpl;
+    const { _session: session, _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
+    const { interactionHandler, signal } = opts;
+    const MAX_TURNS = opts.maxTurns ?? 10;
+
+    const totalTokenUsage = {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    };
+    let totalExactCostUsd: number | undefined;
+    let turnCount = 0;
+    let lastResponse: AcpSessionResponse | null = null;
+    let timedOut = false;
+    let aborted = false;
+    let currentPrompt = prompt;
+
+    if (signal?.aborted) {
+      return {
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        cost: { total: 0 },
+        internalRoundTrips: 0,
+        _aborted: true,
+      };
+    }
+
+    while (turnCount < MAX_TURNS) {
+      turnCount++;
+      getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
+
+      const turnResult = await runSessionPrompt(session, currentPrompt, timeoutSeconds * 1000, signal);
+
+      if (turnResult.timedOut) {
+        timedOut = true;
+        break;
+      }
+      if (turnResult.aborted) {
+        aborted = true;
+        break;
+      }
+
+      lastResponse = turnResult.response;
+      if (!lastResponse) break;
+
+      if (lastResponse.cumulative_token_usage) {
+        totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
+        totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
+        totalTokenUsage.cache_read_input_tokens += lastResponse.cumulative_token_usage.cache_read_input_tokens ?? 0;
+        totalTokenUsage.cache_creation_input_tokens +=
+          lastResponse.cumulative_token_usage.cache_creation_input_tokens ?? 0;
+      }
+      if (lastResponse.exactCostUsd !== undefined) {
+        totalExactCostUsd = (totalExactCostUsd ?? 0) + lastResponse.exactCostUsd;
+      }
+
+      const outputText = extractOutput(lastResponse);
+      const isEndTurn = lastResponse.stopReason === "end_turn";
+      const toolCall = isEndTurn ? extractContextToolCall(outputText) : null;
+
+      if (toolCall) {
+        const interaction: import("../interaction-handler").AdapterInteraction = toolCall.error
+          ? { kind: "context-tool", name: toolCall.name, error: toolCall.error }
+          : { kind: "context-tool", name: toolCall.name, input: toolCall.input };
+
+        try {
+          const response = await raceWithAbort(
+            interactionHandler.onInteraction(interaction),
+            signal,
+            "Run aborted — shutdown in progress",
+          );
+          if (response) {
+            currentPrompt = response.answer;
+            continue;
+          }
+        } catch (err) {
+          if (signal?.aborted) {
+            aborted = true;
+            break;
+          }
+          getSafeLogger()?.warn(
+            "acp-adapter",
+            `InteractionHandler.onInteraction failed for context-tool: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        break;
+      }
+
+      const question = isEndTurn ? extractQuestion(outputText) : null;
+      if (question) {
+        let interactionTimeoutId: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const response = await Promise.race([
+            raceWithAbort(
+              interactionHandler.onInteraction({ kind: "question", text: question }),
+              signal,
+              "Run aborted — shutdown in progress",
+            ),
+            new Promise<null>((resolve) => {
+              interactionTimeoutId = setTimeout(() => resolve(null), INTERACTION_TIMEOUT_MS);
+            }),
+          ]);
+          if (response) {
+            currentPrompt = response.answer;
+            continue;
+          }
+        } catch (err) {
+          if (signal?.aborted) {
+            aborted = true;
+            break;
+          }
+          getSafeLogger()?.warn(
+            "acp-adapter",
+            `InteractionHandler.onInteraction failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        } finally {
+          clearTimeout(interactionTimeoutId);
+        }
+      }
+
+      break;
+    }
+
+    if (turnCount >= MAX_TURNS && !timedOut && !aborted && MAX_TURNS > 1) {
+      getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
+    }
+
+    const output = extractOutput(lastResponse);
+    const tokenUsage: TokenUsage = {
+      inputTokens: totalTokenUsage.input_tokens,
+      outputTokens: totalTokenUsage.output_tokens,
+      ...(totalTokenUsage.cache_read_input_tokens > 0 && {
+        cacheReadInputTokens: totalTokenUsage.cache_read_input_tokens,
+      }),
+      ...(totalTokenUsage.cache_creation_input_tokens > 0 && {
+        cacheCreationInputTokens: totalTokenUsage.cache_creation_input_tokens,
+      }),
+    };
+
+    const estimatedCost =
+      totalExactCostUsd ??
+      (totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
+        ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
+        : 0);
+
+    return {
+      output,
+      tokenUsage,
+      cost: { total: estimatedCost },
+      internalRoundTrips: turnCount,
+      _lastStopReason: lastResponse?.stopReason,
+      _timedOut: timedOut || undefined,
+      _aborted: aborted || undefined,
+      _retryable: lastResponse?.retryable,
+    };
+  }
+
+  async closeSession(handle: SessionHandle): Promise<void> {
+    const impl = handle as AcpSessionHandleImpl;
+    try {
+      await closeAcpSession(impl._session);
+    } finally {
+      await impl._client.close().catch(() => {});
+    }
   }
 }

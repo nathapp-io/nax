@@ -60,4 +60,24 @@ describe("AcpAgentAdapter.run() — abortSignal", () => {
     expect(result.success).toBe(true);
     expect(result.adapterFailure).toBeUndefined();
   });
+
+  test("mid-turn abort returns fail-aborted", async () => {
+    const session = makeSession({
+      promptFn: () => new Promise(() => {}),
+      cancelFn: async () => {},
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 5);
+
+    const result = await new AcpAgentAdapter("claude").run(
+      makeRunOptions({ abortSignal: controller.signal, timeoutSeconds: 30 }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(130);
+    expect(result.adapterFailure?.outcome).toBe("fail-aborted");
+    expect(result.adapterFailure?.retriable).toBe(false);
+  });
 });
