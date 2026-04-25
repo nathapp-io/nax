@@ -631,12 +631,12 @@ export class AcpAgentAdapter implements AgentAdapter {
       cache_creation_input_tokens: 0,
     };
     let totalExactCostUsd: number | undefined;
+    let turnCount = 0;
 
     try {
       // 5. Multi-turn loop
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
       let currentPrompt = buildContextToolPreamble(options);
-      let turnCount = 0;
       const MAX_TURNS = options.interactionBridge || hasContextTools ? (options.maxInteractionTurns ?? 10) : 1;
 
       while (turnCount < MAX_TURNS) {
@@ -816,6 +816,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       tokenUsage,
       protocolIds,
       adapterFailure,
+      sessionMetadata: { sessionName, turn: turnCount, resumed: sessionResumed },
     };
   }
 

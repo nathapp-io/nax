@@ -27,6 +27,52 @@ describe("auditMiddleware", () => {
     expect(recorded[0].durationMs).toBe(150);
   });
 
+  test("after() records callType, workdir, featureName from runOptions", async () => {
+    const recorded: PromptAuditEntry[] = [];
+    const aud = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const mw = auditMiddleware(aud, "r-001");
+    const ctx: MiddlewareContext = {
+      runId: "r-001", agentName: "claude", kind: "run",
+      request: { runOptions: { prompt: "hello", workdir: "/tmp/w", projectDir: "/tmp/p", featureName: "feat-x" } as never },
+      prompt: null,
+      config: DEFAULT_CONFIG,
+      resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+      storyId: "s-1", stage: "run",
+    };
+    await mw.after!(ctx, { output: "ok" }, 100);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].callType).toBe("run");
+    expect(recorded[0].workdir).toBe("/tmp/w");
+    expect(recorded[0].projectDir).toBe("/tmp/p");
+    expect(recorded[0].featureName).toBe("feat-x");
+  });
+
+  test("after() records ACP session correlation from AgentResult", async () => {
+    const recorded: PromptAuditEntry[] = [];
+    const aud = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const mw = auditMiddleware(aud, "r-001");
+    const ctx: MiddlewareContext = {
+      runId: "r-001", agentName: "claude", kind: "run",
+      request: { runOptions: { prompt: "p", workdir: "/tmp" } as never },
+      prompt: null,
+      config: DEFAULT_CONFIG,
+      resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+      storyId: "s-1", stage: "run",
+    };
+    const result = {
+      success: true, output: "done",
+      protocolIds: { recordId: "rec-1", sessionId: "sess-1" },
+      sessionMetadata: { sessionName: "nax-abc-feat-x", turn: 3, resumed: true },
+    };
+    await mw.after!(ctx, result, 200);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].sessionName).toBe("nax-abc-feat-x");
+    expect(recorded[0].recordId).toBe("rec-1");
+    expect(recorded[0].sessionId).toBe("sess-1");
+    expect(recorded[0].turn).toBe(3);
+    expect(recorded[0].resumed).toBe(true);
+  });
+
   test("after() is a no-op when prompt and request are both null", async () => {
     const recorded: PromptAuditEntry[] = [];
     const aud = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };

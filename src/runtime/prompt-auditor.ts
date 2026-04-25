@@ -8,6 +8,17 @@ export interface PromptAuditEntry {
   readonly prompt: string;
   readonly response: string;
   readonly durationMs: number;
+  /** Type of call: "run" | "complete" | "plan". */
+  readonly callType?: string;
+  readonly workdir?: string;
+  readonly projectDir?: string;
+  readonly featureName?: string;
+  /** ACP-specific session correlation fields. */
+  readonly sessionName?: string;
+  readonly recordId?: string | null;
+  readonly sessionId?: string | null;
+  readonly turn?: number;
+  readonly resumed?: boolean;
 }
 
 export interface PromptAuditErrorEntry {
