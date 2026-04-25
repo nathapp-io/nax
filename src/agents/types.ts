@@ -10,7 +10,7 @@ import type { NaxConfig } from "../config";
 import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
-import type { SessionDescriptor } from "../session/types";
+import type { ProtocolIds, SessionDescriptor } from "../session/types";
 import type { TokenUsage } from "./cost";
 
 // Re-export extended types for backward compatibility
@@ -298,7 +298,7 @@ export interface SessionHandle {
   /** Agent name this session was opened for. */
   readonly agentName: string;
   /** Protocol-specific IDs for SessionManager correlation. */
-  readonly protocolIds?: { recordId: string | null; sessionId: string | null };
+  readonly protocolIds?: ProtocolIds;
 }
 
 /** Options for openSession() — protocol-agnostic surface + ACP-specific pass-throughs. */
@@ -312,10 +312,7 @@ export interface OpenSessionOpts {
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
   /** Fired once the session is physically established, before the first prompt. */
-  onSessionEstablished?: (
-    protocolIds: { recordId: string | null; sessionId: string | null },
-    sessionName: string,
-  ) => void;
+  onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /** PID registration callback for crash-recovery bookkeeping. */
   onPidSpawned?: (pid: number) => void;
   /** Abort signal — if already aborted, openSession rejects immediately. */

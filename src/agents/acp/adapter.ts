@@ -19,7 +19,9 @@ import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
+import type { ModelDef } from "../../config/schema";
 import type { AdapterFailure } from "../../context/engine";
+import type { ProtocolIds } from "../../session/types";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -29,8 +31,12 @@ import type {
   CompleteResult,
   DecomposeOptions,
   DecomposeResult,
+  OpenSessionOpts,
   PlanOptions,
   PlanResult,
+  SendTurnOpts,
+  SessionHandle,
+  TurnResult,
 } from "../types";
 import { CompleteError } from "../types";
 import { estimateCostFromTokenUsage } from "./cost";
@@ -271,6 +277,46 @@ export async function closeAcpSession(session: AcpSession): Promise<void> {
     await session.close();
   } catch (err) {
     getSafeLogger()?.warn("acp-adapter", "Failed to close session", { error: String(err) });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SessionHandle implementation (Phase A — adapter-internal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class AcpSessionHandleImpl implements SessionHandle {
+  readonly id: string;
+  readonly agentName: string;
+  readonly protocolIds: ProtocolIds;
+
+  // ACP-internal fields — opaque to callers above the adapter boundary.
+  readonly _client: AcpClient;
+  readonly _session: AcpSession;
+  readonly _sessionName: string;
+  readonly _resumed: boolean;
+  readonly _timeoutSeconds: number;
+  readonly _modelDef: ModelDef;
+
+  constructor(opts: {
+    id: string;
+    agentName: string;
+    protocolIds: ProtocolIds;
+    client: AcpClient;
+    session: AcpSession;
+    sessionName: string;
+    resumed: boolean;
+    timeoutSeconds: number;
+    modelDef: ModelDef;
+  }) {
+    this.id = opts.id;
+    this.agentName = opts.agentName;
+    this.protocolIds = opts.protocolIds;
+    this._client = opts.client;
+    this._session = opts.session;
+    this._sessionName = opts.sessionName;
+    this._resumed = opts.resumed;
+    this._timeoutSeconds = opts.timeoutSeconds;
+    this._modelDef = opts.modelDef;
   }
 }
 
@@ -1075,7 +1121,15 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
   }
 
-  async closeSession(sessionName: string, workdir: string): Promise<void> {
-    await this.closePhysicalSession(sessionName, workdir);
+  async openSession(_name: string, _opts: OpenSessionOpts): Promise<SessionHandle> {
+    throw new Error("openSession: not yet implemented (Phase A stub)");
+  }
+
+  async sendTurn(_handle: SessionHandle, _prompt: string, _opts: SendTurnOpts): Promise<TurnResult> {
+    throw new Error("sendTurn: not yet implemented (Phase A stub)");
+  }
+
+  async closeSession(_handle: SessionHandle): Promise<void> {
+    throw new Error("closeSession(handle): not yet implemented (Phase A stub)");
   }
 }
