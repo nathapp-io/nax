@@ -322,3 +322,53 @@ describe("sendTurn()", () => {
     expect(result.tokenUsage.outputTokens).toBe(100);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// closeSession(handle)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("closeSession(handle)", () => {
+  let origCreateClient: typeof _acpAdapterDeps.createClient;
+  let adapter: AcpAgentAdapter;
+
+  beforeEach(() => {
+    origCreateClient = _acpAdapterDeps.createClient;
+    adapter = new AcpAgentAdapter("claude");
+  });
+
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    mock.restore();
+  });
+
+  test("calls session.close() and client.close()", async () => {
+    const closedSessions: string[] = [];
+    const closedClients: string[] = [];
+
+    const session = makeSession({ closeFn: async () => { closedSessions.push("session"); } });
+    const client = {
+      ...makeClient(session),
+      close: async () => { closedClients.push("client"); },
+    };
+    _acpAdapterDeps.createClient = mock(() => client as any);
+
+    const handle = await adapter.openSession("nax-close-test", makeOpenSessionOpts());
+    await adapter.closeSession(handle);
+
+    expect(closedSessions).toEqual(["session"]);
+    expect(closedClients).toEqual(["client"]);
+  });
+
+  test("swallows client.close() errors (best-effort)", async () => {
+    const session = makeSession();
+    const client = {
+      ...makeClient(session),
+      close: async () => { throw new Error("client close failed"); },
+    };
+    _acpAdapterDeps.createClient = mock(() => client as any);
+
+    const handle = await adapter.openSession("nax-close-err", makeOpenSessionOpts());
+
+    await expect(adapter.closeSession(handle)).resolves.toBeUndefined();
+  });
+});

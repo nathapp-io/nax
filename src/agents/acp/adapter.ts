@@ -1286,7 +1286,9 @@ export class AcpAgentAdapter implements AgentAdapter {
     };
   }
 
-  async closeSession(_handle: SessionHandle): Promise<void> {
-    throw new Error("closeSession(handle): not yet implemented (Phase A stub)");
+  async closeSession(handle: SessionHandle): Promise<void> {
+    const impl = handle as AcpSessionHandleImpl;
+    await closeAcpSession(impl._session);
+    await impl._client.close().catch(() => {});
   }
 }
