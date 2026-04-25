@@ -870,8 +870,6 @@ export class AcpAgentAdapter implements AgentAdapter {
     const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = _options?.resolvedPermissions?.mode ?? "approve-reads";
     const workdir = _options?.workdir;
-    const config = _options?.config;
-
     // Resolve model for a given agent name
     const resolveModel = async (agentName: string): Promise<string> => {
       let model = _options?.model;
