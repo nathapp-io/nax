@@ -80,6 +80,17 @@ export interface AgentRunRequest {
   ) => Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }>;
 }
 
+/** Options for AgentManager.runAsSession — caller-managed session (Phase C). */
+export interface RunAsSessionOpts {
+  storyId?: string;
+  pipelineStage?: import("../config/permissions").PipelineStage;
+  signal?: AbortSignal;
+  /** Context-engine pull tools to expose during this turn. */
+  contextPullTools?: import("../context/engine").ToolDescriptor[];
+  /** Server-side runtime for resolving context-engine pull tool calls. */
+  contextToolRuntime?: { callTool(name: string, input: unknown): Promise<string> };
+}
+
 export interface IAgentManager {
   /** Resolve the default agent name. Reads config.agent.default (falls back to built-in "claude"). */
   getDefault(): string;
@@ -174,6 +185,23 @@ export interface IAgentManager {
    * that intentionally call a specific judge/synthesis model.
    */
   completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult>;
+
+  /**
+   * Send one prompt against a caller-managed session handle (Phase C).
+   * The caller opens the handle via SessionManager.openSession; AgentManager
+   * applies the middleware envelope (audit, cost, cancellation, logging) around
+   * the dispatch. Does NOT iterate the fallback chain — the caller (buildHopCallback)
+   * manages fallback externally via runWithFallback.
+   *
+   * Returns TurnResult (output + tokenUsage + cost + internalRoundTrips).
+   * Throws NaxError SEND_PROMPT_UNAVAILABLE if _sendPrompt is not wired.
+   */
+  runAsSession(
+    agentName: string,
+    handle: import("./types").SessionHandle,
+    prompt: string,
+    opts: RunAsSessionOpts,
+  ): Promise<import("./types").TurnResult>;
 
   /**
    * Plan mode — feature spec generation via default agent with fallback.
