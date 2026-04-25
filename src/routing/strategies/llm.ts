@@ -23,7 +23,7 @@ export { validateRoutingDecision, stripCodeFences, parseRoutingResponse } from "
 
 // ─── Routing prompt constants ─────────────────────────────────────────────────
 
-const ROUTING_INSTRUCTIONS = `Classify the user story's complexity and select the cheapest model tier that will succeed.
+export const ROUTING_INSTRUCTIONS = `Classify the user story's complexity and select the cheapest model tier that will succeed.
 
 ## Complexity Levels
 - simple: Typos, config updates, boilerplate, barrel exports, re-exports. <30 min.

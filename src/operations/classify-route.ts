@@ -1,13 +1,16 @@
+import type { Complexity, ModelTier } from "../config";
 import { routingConfigSelector } from "../config";
 import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
+import { ROUTING_INSTRUCTIONS } from "../routing";
+import { parseLLMJson } from "../utils/llm-json";
 import type { BuildContext, CompleteOperation } from "./types";
 
 export interface ClassifyRouteInput extends Pick<UserStory, "title" | "description" | "acceptanceCriteria" | "tags"> {}
 
 export interface ClassifyRouteOutput {
-  complexity: "simple" | "medium" | "complex" | "expert";
-  modelTier: "fast" | "balanced" | "powerful";
+  complexity: Complexity;
+  modelTier: ModelTier;
   reasoning: string;
 }
 
@@ -18,20 +21,6 @@ const VALID_TIERS = new Set<string>(["fast", "balanced", "powerful"]);
 
 const CLASSIFY_ROLE = `You are a story classifier that assigns complexity and model tier to user stories.
 Respond with JSON only — no explanation text before or after.`;
-
-const ROUTING_INSTRUCTIONS = `Classify the user story's complexity and select the cheapest model tier that will succeed.
-
-## Complexity Levels
-- simple: Typos, config updates, boilerplate, barrel exports, re-exports. <30 min.
-- medium: Standard features, moderate logic, straightforward tests. 30-90 min.
-- complex: Multi-file refactors, new subsystems, integration work. >90 min.
-- expert: Security-critical, novel algorithms, complex architecture decisions.
-
-## Rules
-- Default to the CHEAPEST tier that will succeed.
-- Simple barrel exports, re-exports, or index files → always simple + fast.
-- Many files ≠ complex — copy-paste refactors across files are simple.
-- Pure refactoring/deletion with no new behavior → simple.`;
 
 export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRouteOutput, RoutingConfig> = {
   kind: "complete",
@@ -54,11 +43,7 @@ export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRout
     };
   },
   parse(output: string): ClassifyRouteOutput {
-    const trimmed = output
-      .trim()
-      .replace(/^```json?\s*/i, "")
-      .replace(/\s*```$/, "");
-    const raw = JSON.parse(trimmed) as Record<string, unknown>;
+    const raw = parseLLMJson<Record<string, unknown>>(output);
     if (
       !VALID_COMPLEXITY.has(raw.complexity as string) ||
       !VALID_TIERS.has(raw.modelTier as string) ||
