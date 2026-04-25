@@ -87,7 +87,7 @@ afterEach(() => {
 describe("runTddSession — tokenUsage (#590)", () => {
   test("propagates tokenUsage from AgentResult to TddSessionResult", async () => {
     const agent = makeAgent({
-      tokenUsage: { inputTokens: 1000, outputTokens: 200, cache_read_input_tokens: 500 },
+      tokenUsage: { inputTokens: 1000, outputTokens: 200, cacheReadInputTokens: 500 },
     });
 
     const outcome = await runTddSession(
@@ -103,7 +103,7 @@ describe("runTddSession — tokenUsage (#590)", () => {
     expect(outcome.tokenUsage).toEqual({
       inputTokens: 1000,
       outputTokens: 200,
-      cache_read_input_tokens: 500,
+      cacheReadInputTokens: 500,
     });
   });
 

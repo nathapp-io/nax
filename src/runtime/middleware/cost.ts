@@ -11,8 +11,8 @@ function extractTokens(
   return {
     input: tu.inputTokens ?? 0,
     output: tu.outputTokens ?? 0,
-    cacheRead: tu.cache_read_input_tokens,
-    cacheWrite: tu.cache_creation_input_tokens,
+    cacheRead: tu.cacheReadInputTokens,
+    cacheWrite: tu.cacheCreationInputTokens,
   };
 }
 

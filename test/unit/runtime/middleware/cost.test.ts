@@ -20,7 +20,7 @@ describe("costMiddleware", () => {
     const mw = costMiddleware(agg, "r-001");
     const result = {
       success: true, estimatedCost: 0.005,
-      tokenUsage: { inputTokens: 100, outputTokens: 50, cache_read_input_tokens: 10, cache_creation_input_tokens: 5 },
+      tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10, cacheCreationInputTokens: 5 },
     };
     await mw.after!(makeCtx(), result, 200);
     expect(recorded).toHaveLength(1);

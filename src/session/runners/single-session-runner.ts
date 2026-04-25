@@ -301,11 +301,11 @@ export class SingleSessionRunner implements ISessionRunner {
         ? {
             inputTokens: result.tokenUsage.inputTokens ?? 0,
             outputTokens: result.tokenUsage.outputTokens ?? 0,
-            ...(result.tokenUsage.cache_read_input_tokens !== undefined && {
-              cache_read_input_tokens: result.tokenUsage.cache_read_input_tokens,
+            ...(result.tokenUsage.cacheReadInputTokens !== undefined && {
+              cacheReadInputTokens: result.tokenUsage.cacheReadInputTokens,
             }),
-            ...(result.tokenUsage.cache_creation_input_tokens !== undefined && {
-              cache_creation_input_tokens: result.tokenUsage.cache_creation_input_tokens,
+            ...(result.tokenUsage.cacheCreationInputTokens !== undefined && {
+              cacheCreationInputTokens: result.tokenUsage.cacheCreationInputTokens,
             }),
           }
         : undefined,

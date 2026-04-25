@@ -1,7 +1,7 @@
 /**
  * TokenUsage and Metrics Extensions — US-001
  *
- * AC-1: TokenUsage interface with input_tokens, output_tokens, cache_read_input_tokens?, cache_creation_input_tokens?
+ * AC-1: TokenUsage class with inputTokens, outputTokens, cacheReadInputTokens?, cacheCreationInputTokens?
  * AC-2: StoryMetrics has optional tokens?: TokenUsage
  * AC-3: RunMetrics has optional totalTokens?: TokenUsage
  * AC-4: TokenUsage re-exported from src/metrics/index.ts barrel
@@ -9,63 +9,45 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { RunMetrics, StoryMetrics, TokenUsage } from "../../../src/metrics/types";
+import { TokenUsage } from "../../../src/metrics/types";
+import type { RunMetrics, StoryMetrics } from "../../../src/metrics/types";
 
 // ---------------------------------------------------------------------------
-// AC-1: TokenUsage interface structure
+// AC-1: TokenUsage class structure
 // ---------------------------------------------------------------------------
 
-describe("TokenUsage interface", () => {
-  test("has required input_tokens and output_tokens fields", () => {
-    const usage: TokenUsage = {
-      input_tokens: 1000,
-      output_tokens: 500,
-    };
+describe("TokenUsage class", () => {
+  test("has required inputTokens and outputTokens fields", () => {
+    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500 });
 
-    expect(usage.input_tokens).toBe(1000);
-    expect(usage.output_tokens).toBe(500);
+    expect(usage.inputTokens).toBe(1000);
+    expect(usage.outputTokens).toBe(500);
   });
 
-  test("has optional cache_read_input_tokens field", () => {
-    const usage: TokenUsage = {
-      input_tokens: 1000,
-      output_tokens: 500,
-      cache_read_input_tokens: 300,
-    };
+  test("has optional cacheReadInputTokens field", () => {
+    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500, cacheReadInputTokens: 300 });
 
-    expect(usage.cache_read_input_tokens).toBe(300);
+    expect(usage.cacheReadInputTokens).toBe(300);
   });
 
-  test("has optional cache_creation_input_tokens field", () => {
-    const usage: TokenUsage = {
-      input_tokens: 1000,
-      output_tokens: 500,
-      cache_creation_input_tokens: 150,
-    };
+  test("has optional cacheCreationInputTokens field", () => {
+    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500, cacheCreationInputTokens: 150 });
 
-    expect(usage.cache_creation_input_tokens).toBe(150);
+    expect(usage.cacheCreationInputTokens).toBe(150);
   });
 
   test("cache fields are optional and may be omitted", () => {
-    const usage: TokenUsage = {
-      input_tokens: 1000,
-      output_tokens: 500,
-    };
+    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500 });
 
-    expect(usage.cache_read_input_tokens).toBeUndefined();
-    expect(usage.cache_creation_input_tokens).toBeUndefined();
+    expect(usage.cacheReadInputTokens).toBeUndefined();
+    expect(usage.cacheCreationInputTokens).toBeUndefined();
   });
 
   test("cache fields can be set to numbers including 0", () => {
-    const usage: TokenUsage = {
-      input_tokens: 1000,
-      output_tokens: 500,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    };
+    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 });
 
-    expect(usage.cache_read_input_tokens).toBe(0);
-    expect(usage.cache_creation_input_tokens).toBe(0);
+    expect(usage.cacheReadInputTokens).toBe(0);
+    expect(usage.cacheCreationInputTokens).toBe(0);
   });
 });
 
@@ -107,17 +89,13 @@ describe("StoryMetrics - tokens field", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: {
-        input_tokens: 2000,
-        output_tokens: 1000,
-        cache_read_input_tokens: 500,
-      },
+      tokens: new TokenUsage({ inputTokens: 2000, outputTokens: 1000, cacheReadInputTokens: 500 }),
     };
 
     expect(metrics.tokens).toBeDefined();
-    expect(metrics.tokens?.input_tokens).toBe(2000);
-    expect(metrics.tokens?.output_tokens).toBe(1000);
-    expect(metrics.tokens?.cache_read_input_tokens).toBe(500);
+    expect(metrics.tokens?.inputTokens).toBe(2000);
+    expect(metrics.tokens?.outputTokens).toBe(1000);
+    expect(metrics.tokens?.cacheReadInputTokens).toBe(500);
   });
 });
 
@@ -155,16 +133,12 @@ describe("RunMetrics - totalTokens field", () => {
       storiesFailed: 1,
       totalDurationMs: 30000,
       stories: [],
-      totalTokens: {
-        input_tokens: 5000,
-        output_tokens: 2500,
-        cache_creation_input_tokens: 1000,
-      },
+      totalTokens: new TokenUsage({ inputTokens: 5000, outputTokens: 2500, cacheCreationInputTokens: 1000 }),
     };
 
     expect(metrics.totalTokens).toBeDefined();
-    expect(metrics.totalTokens?.input_tokens).toBe(5000);
-    expect(metrics.totalTokens?.output_tokens).toBe(2500);
-    expect(metrics.totalTokens?.cache_creation_input_tokens).toBe(1000);
+    expect(metrics.totalTokens?.inputTokens).toBe(5000);
+    expect(metrics.totalTokens?.outputTokens).toBe(2500);
+    expect(metrics.totalTokens?.cacheCreationInputTokens).toBe(1000);
   });
 });

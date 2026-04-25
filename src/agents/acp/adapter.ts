@@ -780,10 +780,10 @@ export class AcpAgentAdapter implements AgentAdapter {
             inputTokens: totalTokenUsage.input_tokens,
             outputTokens: totalTokenUsage.output_tokens,
             ...(totalTokenUsage.cache_read_input_tokens > 0 && {
-              cache_read_input_tokens: totalTokenUsage.cache_read_input_tokens,
+              cacheReadInputTokens: totalTokenUsage.cache_read_input_tokens,
             }),
             ...(totalTokenUsage.cache_creation_input_tokens > 0 && {
-              cache_creation_input_tokens: totalTokenUsage.cache_creation_input_tokens,
+              cacheCreationInputTokens: totalTokenUsage.cache_creation_input_tokens,
             }),
           }
         : undefined;

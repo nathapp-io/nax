@@ -67,8 +67,8 @@ export interface StoryRunOutcome {
   totalTokenUsage?: {
     inputTokens: number;
     outputTokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
   };
   /** Agent swap history when the runner delegates to AgentManager. Empty for direct-adapter runners. */
   fallbacks: AgentFallbackRecord[];
