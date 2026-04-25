@@ -17,17 +17,17 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentResult } from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
 import type { AdapterFailure } from "../../../src/context/engine";
 import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
 import { makeMockAgentManager } from "../../../test/helpers";
+import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig {
-  return {
+function makeConfig(overrides: Record<string, unknown> = {}) {
+  return makeNaxConfig({
     execution: {
       sessionTimeoutSeconds: 30,
       verificationTimeoutSeconds: 60,
@@ -35,7 +35,7 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig 
       sessionErrorRetryableMaxRetries: 3,
       ...overrides,
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeRequest(config = makeConfig()): AgentRunRequest {

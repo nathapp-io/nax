@@ -11,17 +11,24 @@
  * See: docs/specs/SPEC-session-manager-integration.md
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { NO_OP_INTERACTION_HANDLER } from "../agents/interaction-handler";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
-import type { AgentResult } from "../agents/types";
+import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../agents/types";
+import type { NaxConfig } from "../config";
+import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type {
   CreateSessionOptions,
   ISessionManager,
+  NameForRequest,
+  OpenSessionRequest,
   ProtocolIds,
+  RunInSessionOpts,
+  SendPromptOpts,
   SessionDescriptor,
   SessionRunOptions,
   SessionState,
@@ -108,6 +115,18 @@ function toProjectRelativePath(projectDir: string, pathValue: string): string {
  */
 export class SessionManager implements ISessionManager {
   private readonly _sessions = new Map<string, SessionDescriptor>();
+  private readonly _busySessions = new Set<string>();
+  private readonly _cancelledSessions = new Set<string>();
+  private readonly _getAdapter: (name: string) => AgentAdapter | undefined;
+  private readonly _config: NaxConfig | undefined;
+
+  constructor(opts?: {
+    getAdapter?: (name: string) => AgentAdapter | undefined;
+    config?: NaxConfig;
+  }) {
+    this._getAdapter = opts?.getAdapter ?? (() => undefined);
+    this._config = opts?.config;
+  }
 
   /**
    * Fire-and-forget disk re-persistence on descriptor mutations.
@@ -347,6 +366,206 @@ export class SessionManager implements ISessionManager {
       .map((s) => ({ ...s }));
   }
 
+  // ─── Phase B: new primitive methods ────────────────────────────────────────
+
+  private _findByName(name: string): SessionDescriptor | undefined {
+    for (const session of this._sessions.values()) {
+      if (session.handle === name) return session;
+    }
+    return undefined;
+  }
+
+  descriptor(name: string): SessionDescriptor | null {
+    const session = this._findByName(name);
+    return session ? { ...session } : null;
+  }
+
+  nameFor(req: NameForRequest): string {
+    const hash = createHash("sha256").update(req.workdir).digest("hex").slice(0, 8);
+    const sanitize = (s: string) =>
+      s
+        .replace(/[^a-z0-9]+/gi, "-")
+        .toLowerCase()
+        .replace(/^-+|-+$/g, "");
+
+    const parts = ["nax", hash];
+    if (req.featureName) parts.push(sanitize(req.featureName));
+    if (req.storyId) parts.push(sanitize(req.storyId));
+    // "run" is the default stage and adds no suffix (keeps names short)
+    if (req.pipelineStage && req.pipelineStage !== "run") parts.push(sanitize(req.pipelineStage));
+    return parts.join("-");
+  }
+
+  async openSession(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
+    const adapter = this._getAdapter(opts.agentName);
+    if (!adapter) {
+      throw new NaxError(
+        `SessionManager.openSession: no adapter found for agent "${opts.agentName}"`,
+        "ADAPTER_NOT_FOUND",
+        { stage: "session", agentName: opts.agentName },
+      );
+    }
+
+    const resolvedPermissions = resolvePermissions(this._config, opts.pipelineStage);
+    const existingDescriptor = this._findByName(name);
+    const resume = existingDescriptor !== undefined;
+
+    const handle = await adapter.openSession(name, {
+      agentName: opts.agentName,
+      workdir: opts.workdir,
+      resolvedPermissions,
+      modelDef: opts.modelDef,
+      timeoutSeconds: opts.timeoutSeconds,
+      onPidSpawned: opts.onPidSpawned,
+      signal: opts.signal,
+      resume,
+    });
+
+    if (!existingDescriptor) {
+      this.create({
+        role: "main",
+        agent: opts.agentName,
+        workdir: opts.workdir,
+        featureName: opts.featureName,
+        storyId: opts.storyId,
+        handle: name,
+      });
+    }
+
+    const desc = this._findByName(name);
+    if (desc && desc.state === "CREATED") {
+      this.transition(desc.id, "RUNNING");
+    }
+
+    getLogger().debug("session", "Session opened via SessionManager", {
+      storyId: opts.storyId,
+      sessionName: name,
+      agentName: opts.agentName,
+      resume,
+    });
+
+    return handle;
+  }
+
+  async closeSession(handle: SessionHandle): Promise<void> {
+    const adapter = this._getAdapter(handle.agentName);
+    if (!adapter) return; // best-effort
+
+    try {
+      await adapter.closeSession(handle);
+    } catch (err) {
+      getLogger().warn("session", "adapter.closeSession failed (swallowed)", {
+        sessionName: handle.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    const desc = this._findByName(handle.id);
+    if (desc && desc.state === "RUNNING") {
+      this.transition(desc.id, "COMPLETED");
+    }
+
+    this._busySessions.delete(handle.id);
+    this._cancelledSessions.delete(handle.id);
+  }
+
+  async sendPrompt(handle: SessionHandle, prompt: string, opts?: SendPromptOpts): Promise<TurnResult> {
+    if (this._cancelledSessions.has(handle.id)) {
+      throw new NaxError(
+        `Session "${handle.id}" was cancelled — close it and open a new session to continue`,
+        "SESSION_CANCELLED",
+        { stage: "session", sessionName: handle.id },
+      );
+    }
+
+    if (this._busySessions.has(handle.id)) {
+      throw new NaxError(
+        `Session "${handle.id}" is already processing a prompt (single-flight invariant)`,
+        "SESSION_BUSY",
+        { stage: "session", sessionName: handle.id },
+      );
+    }
+
+    const adapter = this._getAdapter(handle.agentName);
+    if (!adapter) {
+      throw new NaxError(
+        `SessionManager.sendPrompt: no adapter found for agent "${handle.agentName}"`,
+        "ADAPTER_NOT_FOUND",
+        { stage: "session", agentName: handle.agentName },
+      );
+    }
+
+    this._busySessions.add(handle.id);
+
+    try {
+      return await adapter.sendTurn(handle, prompt, {
+        interactionHandler: opts?.interactionHandler ?? NO_OP_INTERACTION_HANDLER,
+        signal: opts?.signal,
+        maxTurns: opts?.maxTurns,
+      });
+    } catch (err) {
+      if (opts?.signal?.aborted) {
+        this._cancelledSessions.add(handle.id);
+        const desc = this._findByName(handle.id);
+        if (desc && desc.state === "RUNNING") {
+          this.transition(desc.id, "FAILED");
+        }
+      }
+      throw err;
+    } finally {
+      this._busySessions.delete(handle.id);
+    }
+  }
+
+  // ─── runInSession: overloads + legacy dispatch ──────────────────────────────
+
+  /**
+   * ADR-013 Phase 1: legacy form — accepts IAgentManager + AgentRunRequest.
+   * Preserved verbatim for all existing call sites.
+   */
+  async runInSession(
+    id: string,
+    agentManager: IAgentManager,
+    request: AgentRunRequest,
+    options?: SessionRunOptions,
+  ): Promise<AgentResult>;
+  /** Phase B prompt form — open, sendPrompt, close (try/finally). */
+  async runInSession(name: string, prompt: string, opts: RunInSessionOpts): Promise<TurnResult>;
+  /** Phase B callback form — open, run callback with live handle, close (try/finally). */
+  async runInSession<T>(name: string, runFn: (handle: SessionHandle) => Promise<T>, opts: RunInSessionOpts): Promise<T>;
+  async runInSession(
+    idOrName: string,
+    promptOrFnOrManager: string | ((handle: SessionHandle) => Promise<unknown>) | IAgentManager,
+    optsOrRequest: RunInSessionOpts | AgentRunRequest,
+    legacyOptions?: SessionRunOptions,
+  ): Promise<TurnResult | AgentResult | unknown> {
+    if (typeof promptOrFnOrManager === "object" && promptOrFnOrManager !== null && "run" in promptOrFnOrManager) {
+      return this._runInSessionLegacy(
+        idOrName,
+        promptOrFnOrManager as IAgentManager,
+        optsOrRequest as AgentRunRequest,
+        legacyOptions,
+      );
+    }
+
+    const opts = optsOrRequest as RunInSessionOpts;
+    const handle = await this.openSession(idOrName, opts);
+
+    try {
+      if (typeof promptOrFnOrManager === "string") {
+        return await this.sendPrompt(handle, promptOrFnOrManager, {
+          interactionHandler: opts.interactionHandler,
+          signal: opts.signal,
+        });
+      }
+      return await (promptOrFnOrManager as (h: SessionHandle) => Promise<unknown>)(handle);
+    } finally {
+      await this.closeSession(handle);
+    }
+  }
+
+  // ─── Legacy runInSession body ───────────────────────────────────────────────
+
   /**
    * Per-session lifecycle primitive — see ISessionManager for full contract.
    *
@@ -358,13 +577,12 @@ export class SessionManager implements ISessionManager {
    *      bindHandle so the disk descriptor captures the audit correlation.
    *   3. RUNNING → COMPLETED on success, RUNNING → FAILED on failure. If the
    *      runner threw, we transition to FAILED and re-throw.
-   */
-  /**
+   *
    * ADR-013 Phase 1: accepts IAgentManager + AgentRunRequest instead of the
    * raw SessionAgentRunner function. Calls agentManager.run(injectedRequest)
    * after injecting the onSessionEstablished callback for eager handle binding.
    */
-  async runInSession(
+  private async _runInSessionLegacy(
     id: string,
     agentManager: IAgentManager,
     request: AgentRunRequest,

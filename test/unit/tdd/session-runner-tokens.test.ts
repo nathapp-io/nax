@@ -8,10 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { SessionManager } from "../../../src/session/manager";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
+import { makeNaxConfig } from "../../helpers";
 
 function makeStory(): UserStory {
   return {
@@ -23,8 +23,8 @@ function makeStory(): UserStory {
   } as unknown as UserStory;
 }
 
-function makeConfig(): NaxConfig {
-  return {
+function makeConfig() {
+  return makeNaxConfig({
     models: {
       claude: {
         fast: { model: "fast-model" },
@@ -36,7 +36,7 @@ function makeConfig(): NaxConfig {
     execution: { rectification: { enabled: false }, sessionTimeoutSeconds: 300, dangerouslySkipPermissions: true },
     quality: { commands: { test: "bun test" } },
     tdd: { testWriterAllowedPaths: [] },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeAgent(result: Partial<AgentResult>) {

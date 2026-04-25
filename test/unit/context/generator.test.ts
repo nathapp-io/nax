@@ -8,11 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import { _generatorDeps, discoverPackages, generateForPackage } from "../../../src/context/generator";
+import { makeNaxConfig } from "../../helpers";
 import { makeTempDir } from "../../helpers/temp";
-
-function makeConfig(): NaxConfig {
-  return {} as unknown as NaxConfig;
-}
 
 describe("discoverPackages (MW-004)", () => {
   let tmpDir: string;
@@ -81,7 +78,7 @@ describe("generateForPackage (MW-004)", () => {
 
   test("returns error when context.md does not exist", async () => {
     // existsSync already mocked to return false in beforeEach
-    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
+    const results = await generateForPackage("/fake/dir", makeNaxConfig(), true, "/fake/dir");
     expect(results).toHaveLength(1);
     expect(results[0].error).toContain("context.md not found");
     expect(results[0].written).toBe(false);
@@ -93,7 +90,7 @@ describe("generateForPackage (MW-004)", () => {
     const writeMock = mock(() => Promise.resolve(0));
     _generatorDeps.writeFile = writeMock;
 
-    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
+    const results = await generateForPackage("/fake/dir", makeNaxConfig(), true, "/fake/dir");
     const result = results[0];
     expect(result.error).toBeUndefined();
     expect(result.content.length).toBeGreaterThan(0);
@@ -107,7 +104,7 @@ describe("generateForPackage (MW-004)", () => {
     const writeMock = mock(() => Promise.resolve(0));
     _generatorDeps.writeFile = writeMock;
 
-    const results = await generateForPackage("/fake/dir", makeConfig(), false);
+    const results = await generateForPackage("/fake/dir", makeNaxConfig(), false);
     expect(results).toHaveLength(1);
     expect(results[0].error).toBeUndefined();
     expect(results[0].written).toBe(true);
@@ -120,7 +117,7 @@ describe("generateForPackage (MW-004)", () => {
     _generatorDeps.readTextFile = mock(() => Promise.resolve("# Package"));
     _generatorDeps.writeFile = mock(() => Promise.resolve(0));
 
-    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
+    const results = await generateForPackage("/fake/dir", makeNaxConfig(), true, "/fake/dir");
     expect(results[0].packageDir).toBe("/fake/dir");
   });
 
@@ -146,7 +143,7 @@ describe("generateForPackage (MW-004)", () => {
     _generatorDeps.readTextFile = mock(() => Promise.resolve("# Package"));
     _generatorDeps.writeFile = mock(() => Promise.resolve(0));
 
-    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
+    const results = await generateForPackage("/fake/dir", makeNaxConfig(), true, "/fake/dir");
     expect(results).toHaveLength(1);
     expect(results[0].outputFile).toBe("CLAUDE.md");
   });

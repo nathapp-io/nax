@@ -8,7 +8,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryMetrics } from "../../../src/metrics";
 import {
@@ -19,6 +18,7 @@ import {
 import type { DeferredRegressionResult } from "../../../src/execution/lifecycle/run-regression";
 import type { RunCompletedEvent } from "../../../src/pipeline/event-bus";
 import { pipelineEventBus } from "../../../src/pipeline/event-bus";
+import { makeNaxConfig } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -54,10 +54,8 @@ function makeConfig(
   regressionMode?: "deferred" | "per-story" | "disabled",
   testCommand?: string,
 ): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     execution: {
-      ...DEFAULT_CONFIG.execution,
       regressionGate: {
         enabled: true,
         timeoutSeconds: 30,
@@ -67,12 +65,11 @@ function makeConfig(
       },
     },
     quality: {
-      ...DEFAULT_CONFIG.quality,
       commands: {
         ...(testCommand ? { test: testCommand } : {}),
       },
     },
-  };
+  });
 }
 
 function makeStatusWriter() {

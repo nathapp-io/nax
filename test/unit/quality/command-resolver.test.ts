@@ -6,15 +6,15 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { NaxConfig } from "../../../src/config";
 import { _commandResolverDeps, resolveQualityTestCommands } from "../../../src/quality/command-resolver";
+import { makeNaxConfig } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeConfig(overrides?: Partial<NaxConfig>): NaxConfig {
-  return { ...DEFAULT_CONFIG, ...overrides };
+function makeConfig(overrides?: Record<string, unknown>) {
+  return makeNaxConfig(overrides);
 }
 
 // ---------------------------------------------------------------------------

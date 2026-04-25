@@ -8,19 +8,19 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
+import { makeNaxConfig } from "../../helpers";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeConfig(plugin: string): NaxConfig {
-  return {
+function makeConfig(plugin: string) {
+  return makeNaxConfig({
     interaction: {
       plugin,
       config: { botToken: "test-token", chatId: "123456789" },
       defaults: { timeout: 30000, fallback: "escalate" as const },
       triggers: {},
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

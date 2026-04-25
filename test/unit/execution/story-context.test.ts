@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
 import { buildStoryContextFull } from "../../../src/execution/story-context";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeNaxConfig } from "../../helpers";
 import { makeTempDir } from "../../helpers/temp";
 
 function makeStory(id = "US-001"): UserStory {
@@ -37,16 +37,14 @@ function makePrd(story: UserStory): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
+function makeConfig() {
+  return makeNaxConfig({
     autoMode: { defaultAgent: "claude" },
     execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
     models: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
     quality: { requireTests: false, commands: {} },
-    // Disable test coverage scanning — prevents buildContext from scanning the
-    // entire nax repo (286 test files) on every test, which was adding 4–7s each.
     context: { testCoverage: { enabled: false } },
-  } as unknown as NaxConfig;
+  });
 }
 
 describe("buildStoryContextFull — package context loading (MW-003)", () => {

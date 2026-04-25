@@ -12,7 +12,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import {
   _runCompletionDeps,
   handleRunCompletion,
@@ -23,6 +22,7 @@ import type { StoryMetrics } from "../../../../src/metrics";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeNaxConfig } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,10 +58,8 @@ function makeConfig(
   regressionMode: "deferred" | "per-story" | "disabled" = "deferred",
   testCommand = "bun test",
 ): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     execution: {
-      ...DEFAULT_CONFIG.execution,
       regressionGate: {
         enabled: true,
         timeoutSeconds: 30,
@@ -71,13 +69,11 @@ function makeConfig(
       },
     },
     quality: {
-      ...DEFAULT_CONFIG.quality,
       commands: {
-        ...DEFAULT_CONFIG.quality.commands,
         test: testCommand,
       },
     },
-  };
+  });
 }
 
 function makeStatusWriter() {
@@ -204,13 +200,20 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
   test("does NOT call setPostRunPhase for regression when no test command configured", async () => {
     const statusWriter = makeStatusWriter();
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = {
-      ...makeConfig("deferred"),
+    const config = makeNaxConfig({
+      execution: {
+        regressionGate: {
+          enabled: true,
+          timeoutSeconds: 30,
+          acceptOnTimeout: true,
+          mode: "deferred",
+          maxRectificationAttempts: 2,
+        },
+      },
       quality: {
-        ...DEFAULT_CONFIG.quality,
         commands: {},
       },
-    } as unknown as NaxConfig;
+    });
 
     await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
 

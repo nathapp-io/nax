@@ -15,6 +15,7 @@ import { _gitHistoryDeps } from "../../../../src/context/engine/providers/git-hi
 import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../../src/context/engine/providers/test-coverage";
 import type { ContextRequest } from "../../../../src/context/engine/types";
 import type { UserStory } from "../../../../src/prd";
+import { makeNaxConfig } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -40,7 +41,7 @@ function makeConfig(providerOverrides: {
   neighborScope?: "repo" | "package";
   crossPackageDepth?: number;
 } = {}): NaxConfig {
-  return {
+  return makeNaxConfig({
     autoMode: { defaultAgent: "claude" },
     context: {
       v2: {
@@ -61,7 +62,7 @@ function makeConfig(providerOverrides: {
         },
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {

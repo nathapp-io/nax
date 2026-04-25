@@ -20,6 +20,7 @@ import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import { getSafeLogger, initLogger, resetLogger } from "../../../src/logger";
 import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
+import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -50,7 +51,7 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
 }
 
 function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  const baseConfig: NaxConfig = {
+  return makeNaxConfig({
     autoMode: {
       defaultAgent: "claude",
       enabled: true,
@@ -95,8 +96,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
       commands: { test: "bun test" },
     },
     ...overrides,
-  } as any as NaxConfig;
-  return baseConfig;
+  });
 }
 
 

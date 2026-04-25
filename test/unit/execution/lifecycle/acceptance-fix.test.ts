@@ -14,10 +14,9 @@ import type { DiagnoseOptions } from "../../../../src/acceptance/fix-diagnosis";
 import type { DiagnosisResult, SemanticVerdict } from "../../../../src/acceptance/types";
 import type { IAgentManager } from "../../../../src/agents";
 import type { AgentAdapter } from "../../../../src/agents/types";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { NaxConfig } from "../../../../src/config/schema";
 import type { AcceptanceLoopContext } from "../../../../src/execution/lifecycle/acceptance-loop";
-import { makeAgentAdapter, makeMockAgentManager } from "../../../helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig } from "../../../helpers";
 
 function makeMockAgentAdapter(): AgentAdapter {
   return makeAgentAdapter({
@@ -57,11 +56,10 @@ function makeAgentManagerWithAdapter(agent: AgentAdapter): IAgentManager {
 }
 
 function makeConfig(): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
     agent: { protocol: "acp" },
-  } as NaxConfig;
+  });
 }
 
 function makeDiagnosisOpts(): Omit<DiagnoseOptions, "previousFailure" | "semanticVerdicts"> {

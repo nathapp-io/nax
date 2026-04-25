@@ -10,12 +10,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../../src/config";
 import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { makeMockAgentManager } from "../../../helpers";
+import { makeMockAgentManager, makeNaxConfig } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals — restored in afterEach
@@ -66,8 +65,8 @@ function makeConfig(opts: {
   dialogueEnabled: boolean;
   debateEnabled?: boolean;
   debateReviewEnabled?: boolean;
-}): NaxConfig {
-  return {
+}) {
+  return makeNaxConfig({
     review: {
       enabled: true,
       dialogue: {
@@ -91,7 +90,7 @@ function makeConfig(opts: {
       defaults: { timeout: 30000, fallback: "abort" as const },
       triggers: {},
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeStory(overrides?: Partial<UserStory>): UserStory {
@@ -121,7 +120,7 @@ function makePRD(): PRD {
   };
 }
 
-function makeCtx(config: NaxConfig, overrides: Partial<PipelineContext> = {}): PipelineContext {
+function makeCtx(config: ReturnType<typeof makeNaxConfig>, overrides: Partial<PipelineContext> = {}): PipelineContext {
   const mockAgentManager = makeMockAgentManager({
     run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
     runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
@@ -134,7 +133,7 @@ function makeCtx(config: NaxConfig, overrides: Partial<PipelineContext> = {}): P
 
   return {
     config,
-    rootConfig: config,
+    rootConfig: makeNaxConfig(),
     prd: makePRD(),
     story: makeStory(),
     stories: [makeStory()],

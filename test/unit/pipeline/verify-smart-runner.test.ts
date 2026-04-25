@@ -12,11 +12,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _smartRunnerDeps } from "../../../src/verification/smart-runner";
 import { initLogger, resetLogger } from "../../../src/logger";
-import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { DEFAULT_TEST_FILE_PATTERNS, extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../src/test-runners/conventions";
 import type { ResolvedTestPatterns } from "../../../src/test-runners/resolver";
+import { makeNaxConfig } from "../../helpers";
 
 // ---- Module mocks ------------------------------------------------------------
 // We avoid mock.module() for smart-runner entirely --- it leaks across test files
@@ -55,8 +55,8 @@ const mockBuildSmartTestCommand = mock((testFiles: string[], baseCommand: string
 
 // ---- Fixtures ----------------------------------------------------------------
 
-function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig {
-  return {
+function makeConfig(overrides: Partial<ReturnType<typeof makeNaxConfig>["execution"]> = {}) {
+  return makeNaxConfig({
     version: 1,
     models: {
       "nax-agent-claude": {
@@ -122,7 +122,7 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig 
       model: "balanced",
       outputPath: "features",
     },
-  };
+  });
 }
 
 function makeContext(

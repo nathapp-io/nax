@@ -182,6 +182,70 @@ export type SessionAgentRunner = (
 // biome-ignore lint/complexity/noBannedTypes: reserved empty interface for Phase 2 extensions
 export type SessionRunOptions = {};
 
+/**
+ * Input to SessionManager.openSession — the SessionManager-level API.
+ * Takes pipelineStage so SessionManager can resolve permissions before
+ * forwarding to the adapter (the adapter receives ResolvedPermissions).
+ */
+export interface OpenSessionRequest {
+  /** Agent name (e.g. "claude"). */
+  agentName: string;
+  /** Working directory for the session. */
+  workdir: string;
+  /** Pipeline stage — used by SessionManager to call resolvePermissions. */
+  pipelineStage: import("../config/permissions").PipelineStage;
+  /** Resolved model definition for the adapter. */
+  modelDef: import("../config/schema").ModelDef;
+  /** Maximum session duration in seconds. */
+  timeoutSeconds: number;
+  /** Feature name for session naming and log correlation. */
+  featureName?: string;
+  /** Story ID for session naming and log correlation. */
+  storyId?: string;
+  /** Abort signal forwarded to the adapter. */
+  signal?: AbortSignal;
+  /** PID registration callback forwarded to the adapter. */
+  onPidSpawned?: (pid: number) => void;
+}
+
+/**
+ * Options for SessionManager.sendPrompt().
+ * The interactionHandler defaults to NO_OP when omitted.
+ */
+export interface SendPromptOpts {
+  /** Mid-turn interaction callback (context-tool calls, agent questions). */
+  interactionHandler?: import("../agents/interaction-handler").InteractionHandler;
+  /** Abort signal — mid-turn abort transitions the handle to CANCELLED. */
+  signal?: AbortSignal;
+  /** Max interaction round-trips per turn (default: 10). */
+  maxTurns?: number;
+}
+
+/**
+ * Options shared by both runInSession overloads.
+ */
+export interface RunInSessionOpts extends OpenSessionRequest {
+  /** Mid-turn interaction callback forwarded to sendPrompt. */
+  interactionHandler?: import("../agents/interaction-handler").InteractionHandler;
+}
+
+/**
+ * Input for SessionManager.nameFor() — produces an agent-agnostic session name.
+ */
+export interface NameForRequest {
+  /** Working directory (hashed to produce the 8-char prefix). */
+  workdir: string;
+  /** Feature name (sanitised into the name). */
+  featureName?: string;
+  /** Story ID (sanitised into the name). */
+  storyId?: string;
+  /**
+   * Pipeline stage used as the role suffix.
+   * "run" → no suffix (keeps names short for the common case).
+   */
+  pipelineStage?: import("../config/permissions").PipelineStage;
+}
+
 /** Interface the SessionManager implements */
 export interface ISessionManager {
   /** Create a new session descriptor */
@@ -252,4 +316,60 @@ export interface ISessionManager {
   getForStory(storyId: string): SessionDescriptor[];
   /** Remove completed/failed sessions older than ttlMs */
   sweepOrphans(ttlMs?: number): number;
+
+  /**
+   * Open (or resume) a named adapter-level session.
+   * SessionManager resolves permissions from opts.pipelineStage before
+   * forwarding to the adapter. Returns a SessionHandle for use with
+   * sendPrompt / closeSession.
+   *
+   * Throws NaxError ADAPTER_NOT_FOUND if no adapter is configured.
+   */
+  openSession(name: string, opts: OpenSessionRequest): Promise<import("../agents/types").SessionHandle>;
+
+  /**
+   * Close an open session. Idempotent — closing an already-closed handle is a no-op.
+   */
+  closeSession(handle: import("../agents/types").SessionHandle): Promise<void>;
+
+  /**
+   * Send one prompt to an open session. Single-flight per handle —
+   * concurrent calls against the same handle throw NaxError SESSION_BUSY.
+   * If the signal is aborted during the turn, the handle is marked CANCELLED
+   * and subsequent sendPrompt calls against it throw NaxError SESSION_CANCELLED.
+   */
+  sendPrompt(
+    handle: import("../agents/types").SessionHandle,
+    prompt: string,
+    opts?: SendPromptOpts,
+  ): Promise<import("../agents/types").TurnResult>;
+
+  /**
+   * Convenience — open, send one prompt, close (try/finally).
+   * Most ops use this via callOp.
+   */
+  runInSession(name: string, prompt: string, opts: RunInSessionOpts): Promise<import("../agents/types").TurnResult>;
+
+  /**
+   * Transactional multi-prompt form — open, run callback against live handle, close (try/finally).
+   * Orchestrators that send 2+ prompts in one session use this.
+   */
+  runInSession<T>(
+    name: string,
+    runFn: (handle: import("../agents/types").SessionHandle) => Promise<T>,
+    opts: RunInSessionOpts,
+  ): Promise<T>;
+
+  /**
+   * Produce an agent-agnostic session name using the same hash-based formula
+   * as the legacy computeAcpHandle, but owned by SessionManager.
+   * Format: nax-<hash8>-[feature]-[storyId]-[stage]
+   */
+  nameFor(req: NameForRequest): string;
+
+  /**
+   * Look up a SessionDescriptor by session name (the handle string).
+   * Returns null if no descriptor with that handle exists.
+   */
+  descriptor(name: string): SessionDescriptor | null;
 }

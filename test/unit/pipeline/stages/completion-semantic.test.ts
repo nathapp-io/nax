@@ -14,10 +14,9 @@ import { _completionDeps } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewResult } from "../../../../src/review/types";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
 import type { SemanticVerdict } from "../../../../src/acceptance/types";
 import { withTempDir } from "../../../helpers/temp";
+import { makeNaxConfig } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Save originals for restoration
@@ -62,36 +61,17 @@ function makePRD(): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    agent: { default: "test-agent" },
-    models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
-    execution: {
-      sessionTimeoutSeconds: 60,
-      dangerouslySkipPermissions: false,
-      costLimit: 10,
-      maxIterations: 10,
-      rectification: { maxRetries: 3 },
-    },
-    interaction: {
-      plugin: "cli",
-      defaults: { timeout: 30000, fallback: "abort" as const },
-      triggers: {},
-    },
-  } as unknown as NaxConfig;
-}
-
 function makeCtx(
   tempDir: string,
   reviewResult?: ReviewResult,
 ): PipelineContext {
   return {
-    config: makeConfig(),
+    config: makeNaxConfig(),
     prd: makePRD(),
     story: makeStory(),
     stories: [makeStory()],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    rootConfig: DEFAULT_CONFIG,
+    rootConfig: makeNaxConfig(),
     workdir: tempDir,
     projectDir: tempDir,
     featureDir: tempDir,

@@ -10,12 +10,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { _precheckDeps, runPrecheck } from "../../../src/precheck";
 import type { StorySizeGateResult } from "../../../src/precheck/story-size-gate";
 import { _checkCliDeps } from "../../../src/precheck/checks-cli";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Temp repo setup — provides a clean git repo where tier 1 env checks pass
@@ -52,8 +52,8 @@ afterAll(() => {
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeConfig(action: "block" | "warn" | "skip"): NaxConfig {
-  return {
+function makeConfig(action: "block" | "warn" | "skip") {
+  return makeNaxConfig({
     precheck: {
       storySizeGate: {
         enabled: true,
@@ -114,7 +114,7 @@ function makeConfig(action: "block" | "warn" | "skip"): NaxConfig {
       testCoverage: { enabled: false, detail: "names-only", maxTokens: 500, testPattern: "**/*.test.ts", scopeToStory: false },
       autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
     },
-  } as NaxConfig;
+  });
 }
 
 function makeLargeStory(id: string): UserStory {

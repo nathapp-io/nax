@@ -13,7 +13,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import { getSafeLogger, initLogger, resetLogger } from "../../../src/logger";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -36,7 +36,7 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
 }
 
 function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
+  return makeNaxConfig({
     autoMode: {
       defaultAgent: "claude",
       complexityRouting: {
@@ -73,7 +73,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
       drainTimeoutMs: 0,
     },
     ...overrides,
-  } as unknown as NaxConfig;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

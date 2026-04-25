@@ -12,11 +12,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
 import { promptStage } from "../../../../src/pipeline/stages/prompt";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeNaxConfig } from "../../../helpers";
 
 const WORKDIR = `/tmp/nax-test-prompt-${randomUUID()}`;
 
@@ -50,24 +49,7 @@ function makePRD(): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    agent: { default: "test-agent" },
-    models: {
-      "test-agent": {
-        fast: "claude-haiku-4-5",
-        balanced: "claude-sonnet-4-5",
-        powerful: "claude-opus-4-5",
-      },
-    },
-    execution: {
-      sessionTimeoutSeconds: 60,
-      dangerouslySkipPermissions: false,
-      costLimit: 10,
-      maxIterations: 10,
-      rectification: { maxRetries: 3 },
-    },
-  } as unknown as NaxConfig;
+function makeConfig() {
 }
 
 function makeCtx(
@@ -76,7 +58,7 @@ function makeCtx(
 ): PipelineContext {
   const story = makeStory();
   return {
-    config: makeConfig(),
+    config: makeNaxConfig(),
     prd: makePRD(),
     story,
     stories: [story],
@@ -86,7 +68,7 @@ function makeCtx(
       testStrategy,
       reasoning: "",
     },
-    rootConfig: DEFAULT_CONFIG,
+    rootConfig: makeNaxConfig(),
     workdir: WORKDIR,
     projectDir: WORKDIR,
     hooks: {} as PipelineContext["hooks"],
