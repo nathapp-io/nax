@@ -288,6 +288,71 @@ export class CompleteError extends Error {
 }
 
 /**
+ * Opaque handle to an open agent session returned by openSession().
+ * ACP adapter stores protocol state here; callers above the adapter boundary
+ * only see the id, agentName, and optional protocolIds.
+ */
+export interface SessionHandle {
+  /** Protocol-agnostic session identifier (equals the ACP session name). */
+  readonly id: string;
+  /** Agent name this session was opened for. */
+  readonly agentName: string;
+  /** Protocol-specific IDs for SessionManager correlation. */
+  readonly protocolIds?: { recordId: string | null; sessionId: string | null };
+}
+
+/** Options for openSession() — protocol-agnostic surface + ACP-specific pass-throughs. */
+export interface OpenSessionOpts {
+  agentName: string;
+  workdir: string;
+  /** Pre-resolved permissions from AgentManager. */
+  resolvedPermissions: ResolvedPermissions;
+  /** ACP: resolved model definition (required for client cmdStr + cost). */
+  modelDef: ModelDef;
+  /** ACP: maximum session duration in seconds. */
+  timeoutSeconds: number;
+  /** Fired once the session is physically established, before the first prompt. */
+  onSessionEstablished?: (
+    protocolIds: { recordId: string | null; sessionId: string | null },
+    sessionName: string,
+  ) => void;
+  /** PID registration callback for crash-recovery bookkeeping. */
+  onPidSpawned?: (pid: number) => void;
+  /** Abort signal — if already aborted, openSession rejects immediately. */
+  signal?: AbortSignal;
+}
+
+/** Options for sendTurn(). */
+export interface SendTurnOpts {
+  /** Unified callback for context-tool calls and agent questions. */
+  interactionHandler: import("./interaction-handler").InteractionHandler;
+  /** Abort signal for mid-turn cancellation. */
+  signal?: AbortSignal;
+  /** Max turns in multi-turn loop (default: 10). */
+  maxTurns?: number;
+}
+
+/** Result returned by sendTurn(). */
+export interface TurnResult {
+  /** Final assistant output from the last ACP response. */
+  output: string;
+  /** Accumulated token usage across all turns. */
+  tokenUsage: TokenUsage;
+  /** Total cost (exact or estimated) for all turns. */
+  cost?: { total: number };
+  /** Number of session.prompt() calls made. */
+  internalRoundTrips: number;
+  /**
+   * Internal: raw ACP stopReason of the last response.
+   * Used by run() shim to decide whether to close the session.
+   * Phase B callers (SessionManager) should not rely on this field.
+   */
+  _lastStopReason?: string;
+  /** Internal: set to true when the turn timed out. Used by run() shim. */
+  _timedOut?: boolean;
+}
+
+/**
  * Parsed agent error information extracted from stderr.
  *
  * Identifies error types like rate limits, auth failures, timeouts, etc.
@@ -366,15 +431,24 @@ export interface AgentAdapter {
   closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void>;
 
   /**
-   * @deprecated Phase 3 (#477): use closePhysicalSession() instead.
-   * Close a named session that was kept open with keepOpen: true.
-   * Best-effort — errors are swallowed. No-op for adapters that do not support
-   * named sessions (e.g. future non-ACP adapters).
-   *
-   * @param sessionName - The session name returned by computeAcpHandle()
-   * @param workdir - Working directory used when the session was created
+   * Open a new (or resume an existing) physical agent session.
+   * Returns an opaque SessionHandle carrying all state needed for subsequent
+   * sendTurn() and closeSession() calls.
    */
-  closeSession(sessionName: string, workdir: string): Promise<void>;
+  openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle>;
+
+  /**
+   * Send one or more turns to an open session and return the accumulated result.
+   * Handles context-tool and question interactions via opts.interactionHandler.
+   */
+  sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult>;
+
+  /**
+   * Close the physical session and its underlying transport client.
+   * Best-effort — errors are swallowed.
+   * Replaces the deprecated closeSession(sessionName, workdir).
+   */
+  closeSession(handle: SessionHandle): Promise<void>;
 
   /**
    * Run the agent in interactive PTY mode for TUI embedding.
