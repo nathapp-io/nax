@@ -1,3 +1,4 @@
+import type { AgentResult } from "../../agents/types";
 import { NaxError } from "../../errors";
 import type { AgentMiddleware, MiddlewareContext } from "../agent-middleware";
 import type { IPromptAuditor, PromptAuditEntry, PromptAuditErrorEntry } from "../prompt-auditor";
@@ -11,18 +12,12 @@ export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMi
   return {
     name: "audit",
     async after(ctx: MiddlewareContext, result: unknown, durationMs: number): Promise<void> {
-      const runOpts = ctx.request?.runOptions as Record<string, unknown> | undefined;
-      const prompt = ctx.prompt ?? (runOpts?.prompt as string | undefined);
+      const runOpts = ctx.request?.runOptions;
+      const prompt = ctx.prompt ?? runOpts?.prompt;
       if (!prompt) return;
 
-      // Extract ACP session correlation from AgentResult if present.
-      const agentResult = result as Record<string, unknown> | null | undefined;
-      const protocolIds = agentResult?.protocolIds as
-        | { recordId?: string | null; sessionId?: string | null }
-        | undefined;
-      const sessionMeta = agentResult?.sessionMetadata as
-        | { sessionName?: string; turn?: number; resumed?: boolean }
-        | undefined;
+      const agentResult = (result ?? {}) as Partial<AgentResult>;
+      const { protocolIds, sessionMetadata } = agentResult;
 
       const entry: PromptAuditEntry = {
         ts: Date.now(),
@@ -35,18 +30,21 @@ export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMi
         response: extractOutput(result),
         durationMs,
         callType: ctx.kind,
-        workdir: runOpts?.workdir as string | undefined,
-        projectDir: runOpts?.projectDir as string | undefined,
-        featureName: runOpts?.featureName as string | undefined,
-        ...(sessionMeta?.sessionName !== undefined && { sessionName: sessionMeta.sessionName }),
+        workdir: runOpts?.workdir,
+        projectDir: runOpts?.projectDir,
+        featureName: runOpts?.featureName,
+        ...(sessionMetadata?.sessionName !== undefined && { sessionName: sessionMetadata.sessionName }),
         ...(protocolIds?.recordId !== undefined && { recordId: protocolIds.recordId }),
         ...(protocolIds?.sessionId !== undefined && { sessionId: protocolIds.sessionId }),
-        ...(sessionMeta?.turn !== undefined && { turn: sessionMeta.turn }),
-        ...(sessionMeta?.resumed !== undefined && { resumed: sessionMeta.resumed }),
+        ...(sessionMetadata?.turn !== undefined && { turn: sessionMetadata.turn }),
+        ...(sessionMetadata?.resumed !== undefined && { resumed: sessionMetadata.resumed }),
       };
       auditor.record(entry);
     },
     async onError(ctx: MiddlewareContext, err: unknown, durationMs: number): Promise<void> {
+      const runOpts = ctx.request?.runOptions;
+      const prompt = ctx.prompt ?? runOpts?.prompt;
+      const errorMessage = err instanceof Error ? err.message : typeof err === "string" ? err : undefined;
       const entry: PromptAuditErrorEntry = {
         ts: Date.now(),
         runId,
@@ -55,6 +53,13 @@ export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMi
         storyId: ctx.storyId,
         errorCode: err instanceof NaxError ? err.code : "UNKNOWN",
         durationMs,
+        callType: ctx.kind,
+        permissionProfile: ctx.resolvedPermissions.mode,
+        ...(errorMessage !== undefined && { errorMessage }),
+        ...(prompt !== undefined && { prompt }),
+        ...(runOpts?.workdir !== undefined && { workdir: runOpts.workdir }),
+        ...(runOpts?.projectDir !== undefined && { projectDir: runOpts.projectDir }),
+        ...(runOpts?.featureName !== undefined && { featureName: runOpts.featureName }),
       };
       auditor.recordError(entry);
     },

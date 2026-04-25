@@ -28,7 +28,16 @@ export interface PromptAuditErrorEntry {
   readonly stage?: string;
   readonly storyId?: string;
   readonly errorCode: string;
+  readonly errorMessage?: string;
   readonly durationMs: number;
+  /** Type of call that errored: "run" | "complete" | "plan". */
+  readonly callType?: string;
+  /** Prompt that was being attempted when the error occurred — captured from ctx. */
+  readonly prompt?: string;
+  readonly workdir?: string;
+  readonly projectDir?: string;
+  readonly featureName?: string;
+  readonly permissionProfile?: string;
 }
 
 export interface IPromptAuditor {
