@@ -27,7 +27,7 @@ import { makeClient, makeSession } from "./adapter.test";
 // _runWithClient — conditional session close
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("_runWithClient — conditional session close", () => {
+describe("run() — conditional session close", () => {
   const origCreateClient = _acpAdapterDeps.createClient;
   const origSleep = _acpAdapterDeps.sleep;
 

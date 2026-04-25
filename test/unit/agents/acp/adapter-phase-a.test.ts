@@ -343,6 +343,62 @@ describe("sendTurn()", () => {
     expect(result.tokenUsage.inputTokens).toBe(250);
     expect(result.tokenUsage.outputTokens).toBe(100);
   });
+
+  test("max turns exhausted: internalRoundTrips equals maxTurns", async () => {
+    const session = makeSession({
+      promptFn: async () => ({
+        messages: [{ role: "assistant", content: '<nax_tool_call name="t">\n{}\n</nax_tool_call>' }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    });
+    const handle = await openHandle(session);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      maxTurns: 3,
+      interactionHandler: {
+        async onInteraction() {
+          return { answer: "tool result" };
+        },
+      },
+    });
+
+    expect(result.internalRoundTrips).toBe(3);
+  });
+
+  test("exactCostUsd accumulates into cost.total", async () => {
+    let turn = 0;
+    const session = makeSession({
+      promptFn: async () => {
+        turn++;
+        if (turn === 1) {
+          return {
+            messages: [{ role: "assistant", content: '<nax_tool_call name="t">\n{}\n</nax_tool_call>' }],
+            stopReason: "end_turn",
+            cumulative_token_usage: { input_tokens: 0, output_tokens: 0 },
+            exactCostUsd: 0.001,
+          };
+        }
+        return {
+          messages: [{ role: "assistant", content: "Done." }],
+          stopReason: "end_turn",
+          cumulative_token_usage: { input_tokens: 0, output_tokens: 0 },
+          exactCostUsd: 0.002,
+        };
+      },
+    });
+    const handle = await openHandle(session);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: {
+        async onInteraction() {
+          return { answer: "tool result" };
+        },
+      },
+    });
+
+    expect(result.cost?.total).toBeCloseTo(0.003);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

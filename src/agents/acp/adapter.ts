@@ -682,10 +682,11 @@ export class AcpAgentAdapter implements AgentAdapter {
       succeeded = !turnResult._timedOut && turnResult._lastStopReason === "end_turn";
       isSessionBroken = !succeeded && turnResult._lastStopReason === "error";
     } finally {
-      // Close decision mirrors _runWithClient:
-      //   success (no keepOpen) or session-broken → close session + client
-      //   failure (keep for retry) or keepOpen → close client only
-      if ((succeeded && !options.keepOpen) || isSessionBroken) {
+      // If turnResult is undefined, sendTurn threw before completing (or prep code
+      // between openSession and the try block threw). Close the session fully.
+      if (turnResult === undefined) {
+        await this.closeSession(handle).catch(() => {});
+      } else if ((succeeded && !options.keepOpen) || isSessionBroken) {
         if (isSessionBroken) {
           getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
         }

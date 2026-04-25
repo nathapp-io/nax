@@ -23,6 +23,8 @@ export interface AcpSessionResponse {
   messages: Array<{ role: string; content: string }>;
   stopReason: "end_turn" | "cancelled" | "error" | string;
   cumulative_token_usage?: { input_tokens: number; output_tokens: number };
+  exactCostUsd?: number;
+  retryable?: boolean;
 }
 
 export interface MockAcpSession {
