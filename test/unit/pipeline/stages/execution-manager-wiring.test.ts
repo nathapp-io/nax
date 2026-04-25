@@ -55,7 +55,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
     const config = { ...DEFAULT_CONFIG, agent: { default: "claude" } } as NaxConfig;
 
     let runWithFallbackCalled = false;
-    const manager: IAgentManager = {
+    const manager = {
       getDefault: () => "claude",
       isUnavailable: () => false,
       markUnavailable: () => {},
@@ -67,8 +67,14 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
       nextCandidate: () => null,
       runWithFallback: mock(async (request) => {
         runWithFallbackCalled = true;
-        const { result, bundle: b, prompt } = await request.executeHop!("claude", request.bundle, undefined, request.runOptions);
-        return { result, fallbacks: [], finalBundle: b, finalPrompt: prompt };
+        // executeHop is only provided when sessionManager is wired; fall back to
+        // a stub success result when the test omits sessionManager.
+        if (request.executeHop) {
+          const { result, bundle: b, prompt } = await request.executeHop("claude", request.bundle, undefined, request.runOptions);
+          return { result, fallbacks: [], finalBundle: b, finalPrompt: prompt };
+        }
+        const result = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0.01 };
+        return { result, fallbacks: [], finalBundle: request.bundle, finalPrompt: request.runOptions.prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
       run: async (request) => {
@@ -77,7 +83,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
       },
       complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
       getAgent: () => undefined,
-    };
+    } as unknown as IAgentManager;
 
     const successAdapter = makeAgentAdapter({
       name: "claude",
