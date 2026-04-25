@@ -1221,6 +1221,114 @@ Five waves. Each independently shippable and revertible.
 
 ---
 
+## Migration Anti-Patterns — Lessons from Wave 1
+
+> Wave 1's `classifyRoute` op (Task 13) shipped with four migration defects fixed in #704. Future wave authors must avoid these patterns. They share one root cause: **migrations should mostly *reuse* existing primitives, not invent new ones.** When a new op file is mostly self-contained constants and types, that is a red flag — it almost certainly duplicates code from the call site it is supposed to replace.
+
+### AP-1. Redefining types that already exist in the schema SSOT
+
+**Symptom (Wave 1):**
+```typescript
+// src/operations/classify-route.ts — wrong
+export interface ClassifyRouteOutput {
+  complexity: "simple" | "medium" | "complex" | "expert";  // duplicates Complexity
+  modelTier: "fast" | "balanced" | "powerful";              // duplicates ModelTier
+  reasoning: string;
+}
+```
+
+**Fix:** import the canonical type.
+```typescript
+import type { Complexity, ModelTier } from "../config";
+export interface ClassifyRouteOutput {
+  complexity: Complexity;
+  modelTier: ModelTier;
+  reasoning: string;
+}
+```
+
+**Why it matters:** literal-union duplicates drift from `src/config/schema-types.ts`. When the schema gains a new tier, the op silently rejects valid responses.
+
+**Rule:** before declaring an op output type, grep `src/config/schema-types.ts` and `src/*/types.ts` for any union/interface whose values match. Reuse beats redefine.
+
+### AP-2. Copy-pasting prompt constants from the legacy call site
+
+**Symptom (Wave 1):** `ROUTING_INSTRUCTIONS` was a verbatim copy of the constant in `src/routing/strategies/llm.ts`.
+
+**Fix:** export the constant from the legacy module, re-export via the subsystem barrel, import in the op.
+
+**Why it matters:** the live call site (`classifyWithLlm`) and the op (`classifyRouteOp`) coexist during the deprecation window. Two copies of the same instruction string drift the moment one is tuned and the other is not — the op then classifies under different rules than the legacy path it claims to replicate.
+
+**Rule:** when the op is a 1:1 replacement for an existing function, every prompt constant the op uses must be imported from where the legacy function defines it. The `build()` method assembles — it does not redefine.
+
+### AP-3. Hand-rolled LLM JSON parsing instead of `parseLLMJson`
+
+**Symptom (Wave 1):**
+```typescript
+parse(output: string): ClassifyRouteOutput {
+  const trimmed = output.trim().replace(/^```json?\s*/i, "").replace(/\s*```$/, "");
+  const raw = JSON.parse(trimmed) as Record<string, unknown>;
+  // ...
+}
+```
+
+**Fix:**
+```typescript
+import { parseLLMJson } from "../utils/llm-json";
+parse(output: string): ClassifyRouteOutput {
+  const raw = parseLLMJson<Record<string, unknown>>(output);
+  // ...
+}
+```
+
+**Why it matters:** the regex-strip + `JSON.parse` path is single-tier. It silently fails on responses with preamble text before a fence, on bare JSON embedded in narration, and on trailing-comma quirks from cheap models. `parseLLMJson` runs three extraction tiers and is the SSOT — codified in [`forbidden-patterns.md`](../../.claude/rules/forbidden-patterns.md).
+
+**Rule:** any `parse()` reading an LLM response goes through `parseLLMJson`. Validation (shape checks, value enums) happens after; extraction does not.
+
+### AP-4. Cross-subsystem duplication disguised as locality
+
+This is the meta-pattern AP-1, AP-2, and AP-3 share. New op files in `src/operations/` look small and self-contained. That appearance is the trap: a 60-line op that defines its own types, prompt strings, and parsers is almost always duplicating code from its target subsystem (`src/routing/`, `src/review/`, `src/acceptance/`, etc.).
+
+**Heuristic:** an op file should be thin — mostly `build()` shape and `parse()` validation. If it has more than ~10 lines of module-level constants or type aliases, audit each one for an existing source.
+
+### Pre-task checklist (apply for every new op in Waves 2–3)
+
+Before writing the op file:
+
+```bash
+# 1. Find the legacy call site the op replaces (named in the wave plan).
+LEGACY=src/routing/strategies/llm.ts   # adjust per task
+
+# 2. Grep its constants — if any non-trivial string appears, it must be exported.
+grep -n "^const " "$LEGACY"
+
+# 3. Grep its types — if it uses Complexity/ModelTier/etc., import the same.
+grep -n "Complexity\|ModelTier\|TestStrategy\|RoutingDecision" "$LEGACY"
+
+# 4. Confirm the parser uses parseLLMJson.
+grep -n "parseLLMJson\|JSON\.parse" "$LEGACY" src/utils/llm-json.ts
+
+# 5. After implementation, verify zero verbatim copies.
+git diff main -- src/operations/<new-op>.ts \
+  | grep '^+' | grep -v '^+++' \
+  | while read line; do
+      grep -F "${line:1}" "$LEGACY" >/dev/null 2>&1 && echo "DUPLICATE: $line"
+    done
+```
+
+The fifth step turns "did you duplicate anything?" into a mechanical check. Commit the op only when it produces no output.
+
+### Wave-author obligation
+
+Each wave's PR description must include an **AP audit** section listing:
+- Which legacy module the op(s) replace
+- Which constants/types/utilities are imported (not redefined)
+- The output of step 5 above (must be empty)
+
+Reviewers should reject any new-op PR that omits the AP audit or shows duplicates.
+
+---
+
 ## Rejected Alternatives
 
 ### A. ADR-017's rejection of `ISessionRunner` (§E)
