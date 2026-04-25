@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import type { AgentRegistry } from "../../../src/agents/registry";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { makeNaxConfig } from "../../helpers";
 
 const availFailure = {
   category: "availability" as const,
@@ -11,10 +11,8 @@ const availFailure = {
 };
 
 function makeConfig() {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     agent: {
-      ...DEFAULT_CONFIG.agent,
       fallback: {
         enabled: true,
         map: { claude: ["codex"] },
@@ -23,7 +21,7 @@ function makeConfig() {
         rebuildContext: false,
       },
     },
-  } as never;
+  });
 }
 
 function makeRegistry(
@@ -48,7 +46,7 @@ function makeRegistry(
 describe("AgentManager.completeWithFallback (#567)", () => {
   test("returns output on success", async () => {
     const m = new AgentManager(makeConfig(), makeRegistry({ claude: { output: "hello" } }));
-    const outcome = await m.completeWithFallback("prompt", { config: DEFAULT_CONFIG } as never);
+    const outcome = await m.completeWithFallback("prompt", { config: makeNaxConfig() } as never);
     expect(outcome.result.output).toBe("hello");
     expect(outcome.fallbacks).toHaveLength(0);
   });
@@ -59,17 +57,15 @@ describe("AgentManager.completeWithFallback (#567)", () => {
       codex: { output: "from codex" },
     });
     const m = new AgentManager(makeConfig(), registry);
-    const outcome = await m.completeWithFallback("prompt", { config: DEFAULT_CONFIG } as never);
+    const outcome = await m.completeWithFallback("prompt", { config: makeNaxConfig() } as never);
     expect(outcome.result.output).toBe("from codex");
     expect(outcome.fallbacks).toHaveLength(1);
     expect(outcome.fallbacks[0].priorAgent).toBe("claude");
   });
 
   test("returns failure when no swap configured", async () => {
-    const config = {
-      ...DEFAULT_CONFIG,
+    const config = makeNaxConfig({
       agent: {
-        ...DEFAULT_CONFIG.agent,
         fallback: {
           enabled: false,
           map: {},
@@ -78,12 +74,12 @@ describe("AgentManager.completeWithFallback (#567)", () => {
           rebuildContext: false,
         },
       },
-    } as never;
+    });
     const m = new AgentManager(
       config,
       makeRegistry({ claude: { output: "", failure: availFailure } }),
     );
-    const outcome = await m.completeWithFallback("prompt", { config: DEFAULT_CONFIG } as never);
+    const outcome = await m.completeWithFallback("prompt", { config: makeNaxConfig() } as never);
     expect(outcome.result.adapterFailure?.outcome).toBe("fail-auth");
   });
 });

@@ -16,6 +16,7 @@ import { _regressionDeps, runDeferredRegression } from "../../../../src/executio
 import type { DeferredRegressionOptions } from "../../../../src/execution/lifecycle/run-regression";
 import type { PRD } from "../../../../src/prd";
 import type { VerificationResult } from "../../../../src/verification/types";
+import { makeNaxConfig } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -45,7 +46,7 @@ function makePassResult(passCount = 150): VerificationResult {
 }
 
 function makeConfig(): NaxConfig {
-  return {
+  return makeNaxConfig({
     quality: {
       commands: { test: "bun test" },
       forceExit: false,
@@ -64,7 +65,7 @@ function makeConfig(): NaxConfig {
         acceptOnTimeout: true,
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makePrd(storyIds: string[]): PRD {

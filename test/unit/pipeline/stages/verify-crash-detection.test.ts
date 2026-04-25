@@ -11,11 +11,10 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import type { NaxConfig } from "../../../../src/config";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { VerificationResult } from "../../../../src/verification";
+import { makeNaxConfig } from "../../../helpers";
 
 const WORKDIR = `/tmp/nax-test-verify-crash-${randomUUID()}`;
 
@@ -50,25 +49,22 @@ function makePRD(): PRD {
   };
 }
 
-function makeConfig(): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+function makeConfig() {
+  return makeNaxConfig({
     quality: {
-      ...DEFAULT_CONFIG.quality,
       requireTests: true,
       commands: { test: "bun test" },
     },
     execution: {
-      ...DEFAULT_CONFIG.execution,
       verificationTimeoutSeconds: 30,
       regressionGate: {
         enabled: true,
         timeoutSeconds: 30,
         acceptOnTimeout: true,
-        mode: "per-story",
+        mode: "per-story" as const,
       },
     },
-  };
+  });
 }
 
 function makeContext(): PipelineContext {

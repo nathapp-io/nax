@@ -8,7 +8,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryMetrics } from "../../../src/metrics";
 import {
@@ -16,6 +15,7 @@ import {
   runDeferredRegression,
 } from "../../../src/execution/lifecycle/run-regression";
 import type { VerificationResult } from "../../../src/verification";
+import { makeNaxConfig } from "../../helpers";
 
 const WORKDIR_DISABLED = `/tmp/nax-test-disabled-${randomUUID()}`;
 const WORKDIR_PER_STORY = `/tmp/nax-test-per-story-${randomUUID()}`;
@@ -63,10 +63,8 @@ function makeConfig(
   regressionMode?: "deferred" | "per-story" | "disabled",
   testCommand?: string,
 ): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     execution: {
-      ...DEFAULT_CONFIG.execution,
       regressionGate: {
         enabled: true,
         timeoutSeconds: 30,
@@ -76,12 +74,11 @@ function makeConfig(
       },
     },
     quality: {
-      ...DEFAULT_CONFIG.quality,
       commands: {
         ...(testCommand ? { test: testCommand } : {}),
       },
     },
-  };
+  });
 }
 
 // ---------------------------------------------------------------------------

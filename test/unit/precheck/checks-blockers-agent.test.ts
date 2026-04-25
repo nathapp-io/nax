@@ -7,18 +7,18 @@
  */
 
 import { describe, expect, mock, test, afterEach } from "bun:test";
-import type { NaxConfig } from "../../../src/config/types";
 import { checkAgentCLI, _deps } from "../../../src/precheck/checks-blockers";
 import { withDepsRestore } from "../../helpers/deps";
+import { makeNaxConfig } from "../../helpers";
 
 // --- helpers ---
 
-function makeConfig(agent?: string): NaxConfig {
-  return {
+function makeConfig(agent?: string) {
+  return makeNaxConfig({
     execution: {
       agent: agent,
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 withDepsRestore(_deps, ["spawn"]);

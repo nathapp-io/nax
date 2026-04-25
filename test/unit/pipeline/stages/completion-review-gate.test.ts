@@ -9,14 +9,13 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
 import { _completionDeps } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { withTempDir } from "../../../helpers/temp";
+import { makeNaxConfig } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -44,8 +43,8 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   return chain;
 }
 
-function makeConfig(triggers: Record<string, unknown>): NaxConfig {
-  return {
+function makeConfig(triggers: Record<string, unknown>) {
+  return makeNaxConfig({
     agent: { default: "test-agent" },
     models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
     execution: {
@@ -60,7 +59,7 @@ function makeConfig(triggers: Record<string, unknown>): NaxConfig {
       defaults: { timeout: 30000, fallback: "abort" as const },
       triggers,
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeStory(): UserStory {
@@ -89,14 +88,14 @@ function makePRD(): PRD {
   };
 }
 
-function makeCtx(config: NaxConfig, tempDir: string, interaction?: InteractionChain): PipelineContext {
+function makeCtx(config: ReturnType<typeof makeNaxConfig>, tempDir: string, interaction?: InteractionChain): PipelineContext {
   return {
     config,
     prd: makePRD(),
     story: makeStory(),
     stories: [makeStory()],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    rootConfig: DEFAULT_CONFIG,
+    rootConfig: makeNaxConfig(),
     workdir: tempDir,
     projectDir: tempDir,
     featureDir: tempDir,

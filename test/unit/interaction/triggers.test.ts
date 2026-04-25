@@ -7,10 +7,10 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
 import { InteractionChain } from "../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../src/interaction/types";
 import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../../../src/interaction/triggers";
+import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -32,14 +32,14 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   return chain;
 }
 
-function makeConfig(triggers: Record<string, unknown>): NaxConfig {
-  return {
+function makeConfig(triggers: Record<string, unknown>) {
+  return makeNaxConfig({
     interaction: {
       plugin: "cli",
       defaults: { timeout: 30000, fallback: "escalate" as const },
       triggers,
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 afterEach(() => {

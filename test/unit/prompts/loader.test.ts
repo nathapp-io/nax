@@ -8,19 +8,19 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { NaxConfig } from "../../../src/config/types";
 import { loadOverride } from "../../../src/prompts/loader";
 import type { PromptRole } from "../../../src/prompts/types";
 import { fullTest } from "../../helpers/env";
 import { makeTempDir } from "../../helpers/temp";
+import { makeNaxConfig } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /** Minimal NaxConfig with only required fields (omit optional ones) */
-function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
+function makeConfig(overrides: Record<string, unknown> = {}) {
+  return makeNaxConfig({
     version: 1,
     models: {
       fast: { provider: "anthropic", model: "haiku" },
@@ -88,7 +88,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
       autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
     },
     ...overrides,
-  } as NaxConfig;
+  });
 }
 
 // ---------------------------------------------------------------------------

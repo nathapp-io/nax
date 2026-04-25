@@ -311,6 +311,12 @@ export interface OpenSessionOpts {
   onPidSpawned?: (pid: number) => void;
   /** Abort signal — if already aborted, openSession rejects immediately. */
   signal?: AbortSignal;
+  /**
+   * When true, the session name is expected to already exist in the adapter's
+   * store. The adapter should prefer resuming over creating a fresh session.
+   * Set by SessionManager.openSession when a descriptor is found.
+   */
+  resume?: boolean;
 }
 
 /** Options for sendTurn(). */

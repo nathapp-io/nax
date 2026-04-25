@@ -1,19 +1,17 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
 import type { AgentRegistry } from "../../../src/agents/registry";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { makeNaxConfig } from "../../helpers";
 
 const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
 const mockBundle = {} as import("../../../src/context/engine").ContextBundle;
 
 function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     agent: {
-      ...DEFAULT_CONFIG.agent,
       fallback: { enabled: true, map, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false },
     },
-  } as never;
+  });
 }
 
 function makeRegistry(results: Record<string, boolean>) {
@@ -184,7 +182,7 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
     } as unknown as AgentRegistry;
 
     // No fallback map — swap is never attempted, backoff kicks in
-    const config = { ...DEFAULT_CONFIG, agent: { ...DEFAULT_CONFIG.agent, fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false } } } as never;
+    const config = makeNaxConfig({ agent: { fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false } } });
     const m = new AgentManager(config, registry);
     const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
 

@@ -11,7 +11,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { pipelineEventBus } from "../../../src/pipeline/event-bus";
 import {
   _runnerCompletionDeps,
@@ -23,6 +22,7 @@ import type { RunCompletionResult } from "../../../src/execution/lifecycle/run-c
 import type { NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { LoadedHooksConfig } from "../../../src/hooks";
+import { makeNaxConfig } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,18 +55,15 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
 }
 
 function makeConfig(acceptanceEnabled = true): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     acceptance: {
-      ...DEFAULT_CONFIG.acceptance,
       enabled: acceptanceEnabled,
       maxRetries: 3,
     },
     execution: {
-      ...DEFAULT_CONFIG.execution,
-      regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "disabled" },
+      regressionGate: { mode: "disabled" },
     },
-  };
+  });
 }
 
 function makeStatusWriter() {

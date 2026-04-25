@@ -13,7 +13,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { pipelineEventBus } from "../../../src/pipeline/event-bus";
 import type { AcceptanceLoopResult } from "../../../src/execution/lifecycle/acceptance-loop";
 import {
@@ -28,6 +27,7 @@ import type { DeferredRegressionResult } from "../../../src/execution/lifecycle/
 import type { LoadedHooksConfig } from "../../../src/hooks";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { PostRunStatus } from "../../../src/execution/status-file";
+import { makeNaxConfig } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,17 +60,13 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
 }
 
 function makeConfig(acceptanceEnabled = true): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     acceptance: {
-      ...DEFAULT_CONFIG.acceptance,
       enabled: acceptanceEnabled,
       maxRetries: 3,
     },
     execution: {
-      ...DEFAULT_CONFIG.execution,
       regressionGate: {
-        ...DEFAULT_CONFIG.execution.regressionGate,
         enabled: true,
         mode: "deferred",
         timeoutSeconds: 30,
@@ -79,13 +75,11 @@ function makeConfig(acceptanceEnabled = true): NaxConfig {
       },
     },
     quality: {
-      ...DEFAULT_CONFIG.quality,
       commands: {
-        ...DEFAULT_CONFIG.quality.commands,
         test: "bun test",
       },
     },
-  };
+  });
 }
 
 function makePostRunStatus(

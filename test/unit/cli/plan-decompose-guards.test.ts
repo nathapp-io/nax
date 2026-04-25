@@ -10,7 +10,7 @@ import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import { NaxError } from "../../../src/errors";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager, makePRD, makeStory } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: DecomposeOptions) => Promise<{ stories: DecomposedStory[] }>,
@@ -85,8 +85,8 @@ function makeDecomposeResponse(stories: UserStory[]): string {
   return JSON.stringify(stories.map(toDecomposedStory));
 }
 
-function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
+function makeConfig(overrides: Record<string, unknown> = {}) {
+  return makeNaxConfig({
     precheck: {
       storySizeGate: {
         enabled: true,
@@ -99,7 +99,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
     },
     agent: { default: "claude" },
     ...overrides,
-  } as NaxConfig;
+  });
 }
 
 function makeFakeScan() {

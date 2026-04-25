@@ -11,13 +11,12 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../../src/config";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
 import { isAmbiguousOutput, _executionDeps } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
+import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -81,7 +80,7 @@ function makeCtx(config: ReturnType<typeof makeNaxConfig>, interaction?: Interac
     story: makeStory(),
     stories: [makeStory()],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    rootConfig: DEFAULT_CONFIG,
+    rootConfig: makeNaxConfig(),
     workdir: "/tmp/test",
     projectDir: "/tmp/test",
     prompt: "Do something",

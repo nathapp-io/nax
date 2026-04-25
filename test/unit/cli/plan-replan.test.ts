@@ -8,18 +8,18 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _planDeps, runReplanLoop } from "../../../src/cli/plan";
-import type { NaxConfig } from "../../../src/config";
 import type { PrecheckResultWithCode } from "../../../src/precheck";
 import type { FlaggedStory } from "../../../src/precheck/story-size-gate";
 import type { PRD } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeConfig(action: "block" | "warn" | "skip" = "block", maxReplanAttempts = 3): NaxConfig {
-  return {
+function makeConfig(action: "block" | "warn" | "skip" = "block", maxReplanAttempts = 3) {
+  return makeNaxConfig({
     precheck: {
       storySizeGate: {
         enabled: true,
@@ -30,7 +30,7 @@ function makeConfig(action: "block" | "warn" | "skip" = "block", maxReplanAttemp
         maxReplanAttempts,
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makePrd(storyIds: string[] = ["US-001"]): PRD {

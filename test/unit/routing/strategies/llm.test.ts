@@ -8,20 +8,16 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentAdapter, CompleteOptions } from "../../../../src/agents/types";
-import type { NaxConfig } from "../../../../src/config";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../../src/logger";
-import { makeAgentAdapter } from "../../../helpers";
+import { makeAgentAdapter, makeNaxConfig } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeConfig(overrides: Partial<NaxConfig["routing"]["llm"]> = {}): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
+function makeConfig(overrides: Record<string, unknown> = {}) {
+  return makeNaxConfig({
     routing: {
-      ...DEFAULT_CONFIG.routing,
       strategy: "llm",
       llm: {
         mode: "per-story",
@@ -34,7 +30,7 @@ function makeConfig(overrides: Partial<NaxConfig["routing"]["llm"]> = {}): NaxCo
         ...overrides,
       },
     },
-  } as NaxConfig;
+  });
 }
 
 /** Creates a mock adapter that never resolves (simulates a hanging LLM call for timeout testing). */
