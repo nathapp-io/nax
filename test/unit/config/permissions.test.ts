@@ -3,10 +3,9 @@
  *
  * Covers:
  * - resolvePermissions() for all 3 profiles × representative stages
- * - Backward compat: dangerouslySkipPermissions: true → same as permissionProfile: "unrestricted"
- * - Precedence: permissionProfile overrides dangerouslySkipPermissions
+ * - Default behaviour when no config / no permissionProfile is provided
  * - "scoped" profile returns safe defaults (Phase 2 stub)
- * - No local fallbacks remain in src/ (grep check)
+ * - No dangerouslySkipPermissions references remain in src/ (grep check)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -30,7 +29,6 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig 
       regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true, mode: "disabled", maxRectificationAttempts: 1 },
       contextProviderTokenBudget: 2000,
       verificationTimeoutSeconds: 300,
-      dangerouslySkipPermissions: false,
       ...overrides,
     },
   } as NaxConfig;
@@ -81,89 +79,31 @@ describe("resolvePermissions — scoped profile (Phase 2 stub)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Backward compat: dangerouslySkipPermissions boolean
+// Default behaviour (no permissionProfile set)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("resolvePermissions — backward compat (dangerouslySkipPermissions boolean)", () => {
-  test("dangerouslySkipPermissions: true → same as permissionProfile: unrestricted", () => {
-    const legacyConfig = makeConfig({ dangerouslySkipPermissions: true });
-    const profileConfig = makeConfig({ permissionProfile: "unrestricted" });
-
-    const legacyResult = resolvePermissions(legacyConfig, "run");
-    const profileResult = resolvePermissions(profileConfig, "run");
-
-    expect(legacyResult.mode).toBe(profileResult.mode);
-    expect(legacyResult.skipPermissions).toBe(profileResult.skipPermissions);
-    expect(legacyResult.mode).toBe("approve-all");
-    expect(legacyResult.skipPermissions).toBe(true);
-  });
-
-  test("dangerouslySkipPermissions: false → safe mode (approve-reads)", () => {
-    const config = makeConfig({ dangerouslySkipPermissions: false });
-    const result = resolvePermissions(config, "run");
-    expect(result.mode).toBe("approve-reads");
-    expect(result.skipPermissions).toBe(false);
-  });
-
-  test("no config → safe defaults", () => {
-    const result = resolvePermissions(undefined, "run");
-    expect(result.mode).toBe("approve-reads");
-    expect(result.skipPermissions).toBe(false);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Precedence: permissionProfile overrides dangerouslySkipPermissions
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("resolvePermissions — precedence", () => {
-  test("permissionProfile=safe overrides dangerouslySkipPermissions=true", () => {
-    const config = makeConfig({
-      permissionProfile: "safe",
-      dangerouslySkipPermissions: true, // would be "unrestricted" without profile
-    });
-    const result = resolvePermissions(config, "run");
-    expect(result.mode).toBe("approve-reads");
-    expect(result.skipPermissions).toBe(false);
-  });
-
-  test("permissionProfile=unrestricted overrides dangerouslySkipPermissions=false", () => {
-    const config = makeConfig({
-      permissionProfile: "unrestricted",
-      dangerouslySkipPermissions: false, // would be "safe" without profile
-    });
+describe("resolvePermissions — default behaviour", () => {
+  test("no permissionProfile → unrestricted (approve-all)", () => {
+    const config = makeConfig();
     const result = resolvePermissions(config, "run");
     expect(result.mode).toBe("approve-all");
     expect(result.skipPermissions).toBe(true);
   });
 
-  test("permissionProfile=scoped overrides dangerouslySkipPermissions=true → still safe", () => {
-    const config = makeConfig({
-      permissionProfile: "scoped",
-      dangerouslySkipPermissions: true,
-    });
-    const result = resolvePermissions(config, "run");
-    // Phase 2 stub always returns safe defaults
-    expect(result.mode).toBe("approve-reads");
-    expect(result.skipPermissions).toBe(false);
+  test("no config → unrestricted (approve-all)", () => {
+    const result = resolvePermissions(undefined, "run");
+    expect(result.mode).toBe("approve-all");
+    expect(result.skipPermissions).toBe(true);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Grep verify: no local permission fallbacks remain in src/
+// Grep verify: dangerouslySkipPermissions fully removed from src/
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("resolvePermissions — no local fallbacks in src/", () => {
-  test("no ?? true fallback for dangerouslySkipPermissions in src/", async () => {
-    const result = Bun.spawnSync(["grep", "-rn", "dangerouslySkipPermissions.*?? true", "src/"], {
-      cwd: new URL("../../../", import.meta.url).pathname,
-    });
-    const matches = result.stdout.toString().trim();
-    expect(matches).toBe("");
-  });
-
-  test("no ?? false fallback for dangerouslySkipPermissions in src/", async () => {
-    const result = Bun.spawnSync(["grep", "-rn", "dangerouslySkipPermissions.*?? false", "src/"], {
+describe("resolvePermissions — dangerouslySkipPermissions absent from src/", () => {
+  test("no dangerouslySkipPermissions references remain in src/", async () => {
+    const result = Bun.spawnSync(["grep", "-rn", "dangerouslySkipPermissions", "src/"], {
       cwd: new URL("../../../", import.meta.url).pathname,
     });
     const matches = result.stdout.toString().trim();

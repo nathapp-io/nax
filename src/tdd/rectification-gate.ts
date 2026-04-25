@@ -10,7 +10,6 @@ import type { IAgentManager } from "../agents";
 import { computeAcpHandle } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
-import { resolvePermissions } from "../config/permissions";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
@@ -287,7 +286,6 @@ async function runRectificationLoop(
             defaultAgent,
           ),
           timeoutSeconds: config.execution.sessionTimeoutSeconds,
-          dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
           pipelineStage: "rectification",
           config,
           projectDir,

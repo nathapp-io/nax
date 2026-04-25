@@ -83,7 +83,7 @@ describe("run() — session flow", () => {
     expect(closeCalled).toBe(true);
   });
 
-  test("uses approve-all permission mode when permissionProfile is unrestricted", async () => {
+  test("uses approve-all permission mode when resolvedPermissions.mode is approve-all", async () => {
     let capturedMode = "";
     const session = makeSession();
     const client = makeClient(session, {
@@ -96,7 +96,7 @@ describe("run() — session flow", () => {
 
     await new AcpAgentAdapter("claude").run(
       makeRunOptions({
-        config: { execution: { permissionProfile: "unrestricted" } } as import("../../../../src/config").NaxConfig,
+        resolvedPermissions: { mode: "approve-all", skipPermissions: true },
       }),
     );
     expect(capturedMode).toBe("approve-all");
@@ -377,8 +377,8 @@ describe("run() — tokenUsage", () => {
     expect(result.tokenUsage).toBeDefined();
     expect(result.tokenUsage?.inputTokens).toBe(1000);
     expect(result.tokenUsage?.outputTokens).toBe(500);
-    expect((result.tokenUsage as Record<string, unknown>)["cache_read_input_tokens"]).toBe(100);
-    expect((result.tokenUsage as Record<string, unknown>)["cache_creation_input_tokens"]).toBe(50);
+    expect(result.tokenUsage?.cacheReadInputTokens).toBe(100);
+    expect(result.tokenUsage?.cacheCreationInputTokens).toBe(50);
   });
 
   test("omits cache fields from tokenUsage when both are 0", async () => {
@@ -401,8 +401,8 @@ describe("run() — tokenUsage", () => {
     expect(result.tokenUsage).toBeDefined();
     expect(result.tokenUsage?.inputTokens).toBe(1000);
     expect(result.tokenUsage?.outputTokens).toBe(500);
-    expect(Object.prototype.hasOwnProperty.call(result.tokenUsage, "cache_read_input_tokens")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(result.tokenUsage, "cache_creation_input_tokens")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(result.tokenUsage, "cacheReadInputTokens")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(result.tokenUsage, "cacheCreationInputTokens")).toBe(false);
   });
 
   test("returns undefined tokenUsage when cumulative_token_usage is absent", async () => {
@@ -449,7 +449,7 @@ describe("run() — tokenUsage", () => {
     expect(turnCount).toBe(3);
     expect(result.tokenUsage?.inputTokens).toBe(300);
     expect(result.tokenUsage?.outputTokens).toBe(150);
-    expect((result.tokenUsage as Record<string, unknown>)["cache_read_input_tokens"]).toBe(30);
-    expect((result.tokenUsage as Record<string, unknown>)["cache_creation_input_tokens"]).toBe(15);
+    expect(result.tokenUsage?.cacheReadInputTokens).toBe(30);
+    expect(result.tokenUsage?.cacheCreationInputTokens).toBe(15);
   });
 });

@@ -151,13 +151,13 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
       d.id,
       makeAgentManager(
         makeResult({
-          tokenUsage: { inputTokens: 100, outputTokens: 50, cache_read_input_tokens: 10 },
+          tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10 },
         }),
       ),
       makeRequest(),
     );
 
-    expect(result.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 50, cache_read_input_tokens: 10 });
+    expect(result.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10 });
   });
 
   test("injects onSessionEstablished into request.runOptions and fires caller callback", async () => {

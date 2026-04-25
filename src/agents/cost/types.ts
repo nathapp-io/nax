@@ -16,8 +16,8 @@ export interface ModelCostRates {
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
-  cache_read_input_tokens?: number;
-  cache_creation_input_tokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
 }
 
 /** Cost estimate with confidence indicator */

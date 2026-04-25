@@ -7,6 +7,7 @@
  */
 
 import type { NaxConfig } from "../config";
+import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
 import type { SessionDescriptor } from "../session/types";
@@ -75,6 +76,18 @@ export interface AgentResult {
    * with no swaps. Undefined when the result does not go through AgentManager.
    */
   agentFallbacks?: import("./manager-types").AgentFallbackRecord[];
+  /**
+   * ACP session correlation metadata for audit/debug.
+   * Populated by the ACP adapter on every run(); absent for CLI adapter results.
+   */
+  sessionMetadata?: {
+    /** Derived ACP session handle (stable across reconnects). */
+    sessionName?: string;
+    /** Number of interaction turns executed. */
+    turn?: number;
+    /** Whether the run resumed a previously open session. */
+    resumed?: boolean;
+  };
 }
 
 /**
@@ -93,8 +106,8 @@ export interface AgentRunOptions {
   timeoutSeconds: number;
   /** Environment variables to pass */
   env?: Record<string, string>;
-  /** Use --dangerously-skip-permissions flag (default: true) */
-  dangerouslySkipPermissions?: boolean;
+  /** Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions(). */
+  resolvedPermissions?: ResolvedPermissions;
   /** Interaction bridge for mid-session human interaction (ACP) */
   interactionBridge?: {
     detectQuestion: (text: string) => Promise<boolean>;
@@ -203,8 +216,8 @@ export interface CompleteOptions {
   jsonMode?: boolean;
   /** Override the model (adds --model flag) */
   model?: string;
-  /** Whether to skip permission prompts (maps to permissionMode in ACP) */
-  dangerouslySkipPermissions?: boolean;
+  /** Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions(). */
+  resolvedPermissions?: ResolvedPermissions;
   /**
    * Working directory for the completion call.
    * Used by ACP adapter to set --cwd on the spawned acpx session.

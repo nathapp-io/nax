@@ -1,11 +1,11 @@
-export { createNoOpCostAggregator } from "./cost-aggregator";
+export { createNoOpCostAggregator, CostAggregator, _costAggDeps } from "./cost-aggregator";
 export type {
   ICostAggregator,
   CostEvent,
   CostErrorEvent,
   CostSnapshot,
 } from "./cost-aggregator";
-export { createNoOpPromptAuditor } from "./prompt-auditor";
+export { createNoOpPromptAuditor, PromptAuditor, _promptAuditorDeps } from "./prompt-auditor";
 export type {
   IPromptAuditor,
   PromptAuditEntry,
@@ -13,8 +13,12 @@ export type {
 } from "./prompt-auditor";
 export type { PackageView, PackageRegistry } from "./packages";
 export { createPackageRegistry } from "./packages";
+export type { AgentMiddleware, MiddlewareContext } from "./agent-middleware";
+export { MiddlewareChain } from "./agent-middleware";
 
+import { join } from "node:path";
 import type { IAgentManager } from "../agents";
+import type { CreateAgentManagerOpts } from "../agents/factory";
 import type { NaxConfig } from "../config";
 import { createConfigLoader } from "../config";
 import type { ConfigLoader } from "../config";
@@ -22,15 +26,18 @@ import { getLogger } from "../logger";
 import type { Logger } from "../logger";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
-import { createNoOpCostAggregator } from "./cost-aggregator";
+import { MiddlewareChain } from "./agent-middleware";
+import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
 import type { ICostAggregator } from "./cost-aggregator";
 import { createAgentManager } from "./internal/agent-manager-factory";
+import { auditMiddleware, cancellationMiddleware, costMiddleware, loggingMiddleware } from "./middleware";
 import { createPackageRegistry } from "./packages";
 import type { PackageRegistry } from "./packages";
-import { createNoOpPromptAuditor } from "./prompt-auditor";
+import { PromptAuditor, createNoOpPromptAuditor } from "./prompt-auditor";
 import type { IPromptAuditor } from "./prompt-auditor";
 
 export interface NaxRuntime {
+  readonly runId: string;
   readonly configLoader: ConfigLoader;
   readonly workdir: string;
   readonly projectDir: string;
@@ -53,22 +60,40 @@ export interface CreateRuntimeOptions {
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
+  const runId = crypto.randomUUID();
+
   const controller = new AbortController();
   if (opts?.parentSignal) {
     opts.parentSignal.addEventListener("abort", () => controller.abort(opts.parentSignal?.reason), { once: true });
   }
 
   const configLoader = createConfigLoader(config);
-  const agentManager = opts?.agentManager ?? createAgentManager(config);
+
+  const costDir = join(workdir, ".nax", "cost");
+  const costAggregator = opts?.costAggregator ?? new CostAggregator(runId, costDir);
+
+  const auditEnabled = config.agent?.promptAudit?.enabled ?? false;
+  const auditDir = config.agent?.promptAudit?.dir ?? join(workdir, ".nax", "audit");
+  const promptAuditor =
+    opts?.promptAuditor ?? (auditEnabled ? new PromptAuditor(runId, auditDir) : createNoOpPromptAuditor());
+
+  const middleware = MiddlewareChain.from([
+    cancellationMiddleware(),
+    loggingMiddleware(),
+    costMiddleware(costAggregator, runId),
+    auditMiddleware(promptAuditor, runId),
+  ]);
+  const agentManagerOpts: CreateAgentManagerOpts = { middleware, runId };
+  const agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
+
   const sessionManager = opts?.sessionManager ?? new SessionManager();
-  const costAggregator = opts?.costAggregator ?? createNoOpCostAggregator();
-  const promptAuditor = opts?.promptAuditor ?? createNoOpPromptAuditor();
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
 
   let closed = false;
 
   return {
+    runId,
     configLoader,
     workdir,
     projectDir: workdir, // Wave 1: equal to workdir; Wave 3 will separate worktree paths
@@ -90,3 +115,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     },
   };
 }
+
+// Suppress unused import warnings — these are re-exported above for the barrel.
+void createNoOpCostAggregator;
+void createNoOpPromptAuditor;

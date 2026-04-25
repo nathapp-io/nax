@@ -166,16 +166,10 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
     tokens: agentResult?.tokenUsage
       ? new TokenUsage({
-          input_tokens:
-            ((agentResult.tokenUsage as unknown as Record<string, unknown>).input_tokens as number) ??
-            ((agentResult.tokenUsage as unknown as Record<string, unknown>).inputTokens as number),
-          output_tokens:
-            ((agentResult.tokenUsage as unknown as Record<string, unknown>).output_tokens as number) ??
-            ((agentResult.tokenUsage as unknown as Record<string, unknown>).outputTokens as number),
-          cache_read_input_tokens: (agentResult.tokenUsage as unknown as Record<string, unknown>)
-            .cache_read_input_tokens as number | undefined,
-          cache_creation_input_tokens: (agentResult.tokenUsage as unknown as Record<string, unknown>)
-            .cache_creation_input_tokens as number | undefined,
+          inputTokens: agentResult.tokenUsage.inputTokens,
+          outputTokens: agentResult.tokenUsage.outputTokens,
+          cacheReadInputTokens: agentResult.tokenUsage.cacheReadInputTokens,
+          cacheCreationInputTokens: agentResult.tokenUsage.cacheCreationInputTokens,
         })
       : undefined,
     ...(ctx.verifyResult?.scopeTestFallback !== undefined && {
@@ -287,10 +281,10 @@ export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): P
 
   for (const story of runMetrics.stories) {
     if (story.tokens) {
-      totalInputTokens += story.tokens.input_tokens;
-      totalOutputTokens += story.tokens.output_tokens;
-      totalCacheReadInputTokens += story.tokens.cache_read_input_tokens ?? 0;
-      totalCacheCreationInputTokens += story.tokens.cache_creation_input_tokens ?? 0;
+      totalInputTokens += story.tokens.inputTokens;
+      totalOutputTokens += story.tokens.outputTokens;
+      totalCacheReadInputTokens += story.tokens.cacheReadInputTokens ?? 0;
+      totalCacheCreationInputTokens += story.tokens.cacheCreationInputTokens ?? 0;
     }
   }
 
@@ -300,10 +294,10 @@ export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): P
 
   if (hasTokenData) {
     runMetrics.totalTokens = new TokenUsage({
-      input_tokens: totalInputTokens,
-      output_tokens: totalOutputTokens,
-      cache_read_input_tokens: totalCacheReadInputTokens,
-      cache_creation_input_tokens: totalCacheCreationInputTokens,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      cacheReadInputTokens: totalCacheReadInputTokens,
+      cacheCreationInputTokens: totalCacheCreationInputTokens,
     });
   }
 

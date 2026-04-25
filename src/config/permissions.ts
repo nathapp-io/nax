@@ -34,12 +34,9 @@ export interface ResolvedPermissions {
 /**
  * Resolve permissions for a given pipeline stage.
  * Single source of truth — all adapters call this.
- *
- * Precedence: permissionProfile > dangerouslySkipPermissions boolean > safe default.
  */
 export function resolvePermissions(config: NaxConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
-  const profile: PermissionProfile =
-    config?.execution?.permissionProfile ?? (config?.execution?.dangerouslySkipPermissions ? "unrestricted" : "safe");
+  const profile: PermissionProfile = config?.execution?.permissionProfile ?? "unrestricted";
 
   switch (profile) {
     case "unrestricted":

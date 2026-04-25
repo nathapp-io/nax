@@ -41,7 +41,6 @@ export async function runPlan(
     feature: string;
     outputDir: string;
     timeoutSeconds?: number;
-    dangerouslySkipPermissions?: boolean;
     maxInteractionTurns?: number;
     /** Original spec content — anchors synthesis to prevent AC hallucination. */
     specContent?: string;
@@ -98,7 +97,6 @@ export async function runPlan(
         config: ctx.config,
         modelTier,
         modelDef,
-        dangerouslySkipPermissions: opts.dangerouslySkipPermissions,
         maxInteractionTurns: opts.maxInteractionTurns,
         featureName: opts.feature,
         storyId: ctx.storyId,

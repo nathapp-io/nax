@@ -148,9 +148,6 @@ const ExecutionConfigSchema = z.object({
     .default(2000),
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
-  // DEPRECATED — use permissionProfile instead. Kept for backward compat.
-  dangerouslySkipPermissions: z.boolean().default(true),
-  // NEW — takes precedence over dangerouslySkipPermissions
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
   // Phase 2: per-stage permission overrides (only read when profile = "scoped")
   permissions: z
@@ -913,7 +910,6 @@ export const NaxConfigSchema = z
         maxRectificationAttempts: 3,
       },
       contextProviderTokenBudget: 2000,
-      dangerouslySkipPermissions: true,
       permissionProfile: "unrestricted",
       smartTestRunner: true,
       worktreeDependencies: {

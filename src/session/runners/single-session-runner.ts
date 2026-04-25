@@ -259,8 +259,13 @@ export class SingleSessionRunner implements ISessionRunner {
 
     // executeHop: thin wrapper that delegates to executeHopFn and captures the
     // last hop's bundle/prompt for StoryRunOutcome. Called by runWithFallback.
-    const executeHop: AgentRunRequest["executeHop"] = async (agentName, hopBundle, failure) => {
-      const hop = await executeHopFn(hopParams, agentName, hopBundle, failure);
+    const executeHop: AgentRunRequest["executeHop"] = async (agentName, hopBundle, failure, resolvedRunOptions) => {
+      const hop = await executeHopFn(
+        { ...hopParams, primaryOptions: resolvedRunOptions },
+        agentName,
+        hopBundle,
+        failure,
+      );
       finalBundle = hop.bundle ?? finalBundle;
       finalPrompt = hop.prompt;
       return hop;
@@ -296,11 +301,11 @@ export class SingleSessionRunner implements ISessionRunner {
         ? {
             inputTokens: result.tokenUsage.inputTokens ?? 0,
             outputTokens: result.tokenUsage.outputTokens ?? 0,
-            ...(result.tokenUsage.cache_read_input_tokens !== undefined && {
-              cache_read_input_tokens: result.tokenUsage.cache_read_input_tokens,
+            ...(result.tokenUsage.cacheReadInputTokens !== undefined && {
+              cacheReadInputTokens: result.tokenUsage.cacheReadInputTokens,
             }),
-            ...(result.tokenUsage.cache_creation_input_tokens !== undefined && {
-              cache_creation_input_tokens: result.tokenUsage.cache_creation_input_tokens,
+            ...(result.tokenUsage.cacheCreationInputTokens !== undefined && {
+              cacheCreationInputTokens: result.tokenUsage.cacheCreationInputTokens,
             }),
           }
         : undefined,

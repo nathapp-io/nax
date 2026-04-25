@@ -8,7 +8,6 @@
 import type { IAgentManager } from "../agents";
 import type { ModelDef, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
-import { resolvePermissions } from "../config/permissions";
 import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
@@ -59,7 +58,6 @@ export async function runStatefulTurn(
       modelTier,
       modelDef,
       timeoutSeconds: ctx.timeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(ctx.config, pipelineStage).skipPermissions,
       pipelineStage,
       config: ctx.config,
       featureName: ctx.featureName,
@@ -101,7 +99,6 @@ export async function closeStatefulSession(
       modelTier,
       modelDef,
       timeoutSeconds: ctx.timeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(ctx.config, pipelineStage).skipPermissions,
       pipelineStage,
       config: ctx.config,
       featureName: ctx.featureName,

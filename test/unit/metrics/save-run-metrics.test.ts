@@ -2,9 +2,9 @@
  * saveRunMetrics / loadRunMetrics — US-003: Aggregate totalTokens
  *
  * AC-1: saveRunMetrics() computes totalTokens by iterating over runMetrics.stories
- * AC-2: totalTokens.input_tokens equals sum of all story.tokens.input_tokens
- * AC-3: totalTokens.cache_read_input_tokens equals sum (undefined → 0)
- * AC-4: totalTokens.cache_creation_input_tokens equals sum (undefined → 0)
+ * AC-2: totalTokens.inputTokens equals sum of all story.tokens.inputTokens
+ * AC-3: totalTokens.cacheReadInputTokens equals sum (undefined → 0)
+ * AC-4: totalTokens.cacheCreationInputTokens equals sum (undefined → 0)
  * AC-5: When no stories have tokens data, totalTokens is absent from written output
  * AC-6: loadRunMetrics() handles existing metrics.json without totalTokens field
  */
@@ -43,7 +43,7 @@ afterEach(async () => {
 });
 
 describe("saveRunMetrics - totalTokens aggregation", () => {
-  test("AC-1 & AC-2: computes totalTokens.input_tokens as sum of story tokens", async () => {
+  test("AC-1 & AC-2: computes totalTokens.inputTokens as sum of story tokens", async () => {
     const story1: StoryMetrics = {
       storyId: "US-001",
       complexity: "medium",
@@ -57,7 +57,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({ input_tokens: 1000, output_tokens: 500 }),
+      tokens: new TokenUsage({ inputTokens: 1000, outputTokens: 500 }),
     };
 
     const story2: StoryMetrics = {
@@ -73,7 +73,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({ input_tokens: 2000, output_tokens: 800 }),
+      tokens: new TokenUsage({ inputTokens: 2000, outputTokens: 800 }),
     };
 
     const runMetrics: RunMetrics = {
@@ -94,11 +94,11 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
     const saved = await readMetricsFile();
     expect(saved).toHaveLength(1);
     expect(saved[0].totalTokens).toBeDefined();
-    expect(saved[0].totalTokens?.input_tokens).toBe(3000);
-    expect(saved[0].totalTokens?.output_tokens).toBe(1300);
+    expect(saved[0].totalTokens?.inputTokens).toBe(3000);
+    expect(saved[0].totalTokens?.outputTokens).toBe(1300);
   });
 
-  test("AC-3: totalTokens.cache_read_input_tokens sums undefined as 0", async () => {
+  test("AC-3: totalTokens.cacheReadInputTokens sums undefined as 0", async () => {
     const story1: StoryMetrics = {
       storyId: "US-001",
       complexity: "medium",
@@ -113,9 +113,9 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       tokens: new TokenUsage({
-        input_tokens: 1000,
-        output_tokens: 500,
-        cache_read_input_tokens: 100,
+        inputTokens: 1000,
+        outputTokens: 500,
+        cacheReadInputTokens: 100,
       }),
     };
 
@@ -133,9 +133,9 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       tokens: new TokenUsage({
-        input_tokens: 2000,
-        output_tokens: 800,
-        cache_creation_input_tokens: 50,
+        inputTokens: 2000,
+        outputTokens: 800,
+        cacheCreationInputTokens: 50,
       }),
     };
 
@@ -157,8 +157,8 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
     const saved = await readMetricsFile();
     expect(saved).toHaveLength(1);
     expect(saved[0].totalTokens).toBeDefined();
-    expect(saved[0].totalTokens?.cache_read_input_tokens).toBe(100);
-    expect(saved[0].totalTokens?.cache_creation_input_tokens).toBe(50);
+    expect(saved[0].totalTokens?.cacheReadInputTokens).toBe(100);
+    expect(saved[0].totalTokens?.cacheCreationInputTokens).toBe(50);
   });
 
   test("AC-5: when no stories have tokens data, totalTokens is absent", async () => {
@@ -175,7 +175,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({ input_tokens: 0, output_tokens: 0 }),
+      tokens: new TokenUsage({ inputTokens: 0, outputTokens: 0 }),
     };
 
     const story2: StoryMetrics = {

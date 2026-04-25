@@ -9,7 +9,6 @@
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
-import { resolvePermissions } from "../../config/permissions";
 import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
@@ -76,7 +75,6 @@ export const executionStage: PipelineStage = {
             defaultAgent,
           ),
           timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-          dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
           pipelineStage: "run",
           config: ctx.config,
         },
@@ -172,7 +170,6 @@ export const executionStage: PipelineStage = {
         defaultAgent,
       ),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
       pipelineStage: "run",
       config: ctx.config,
       projectDir: ctx.projectDir,

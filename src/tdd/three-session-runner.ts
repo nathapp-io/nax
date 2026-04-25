@@ -76,11 +76,11 @@ export class ThreeSessionRunner implements ISessionRunner {
         ? {
             inputTokens: tddResult.totalTokenUsage.inputTokens,
             outputTokens: tddResult.totalTokenUsage.outputTokens,
-            ...(tddResult.totalTokenUsage.cache_read_input_tokens !== undefined && {
-              cache_read_input_tokens: tddResult.totalTokenUsage.cache_read_input_tokens,
+            ...(tddResult.totalTokenUsage.cacheReadInputTokens !== undefined && {
+              cacheReadInputTokens: tddResult.totalTokenUsage.cacheReadInputTokens,
             }),
-            ...(tddResult.totalTokenUsage.cache_creation_input_tokens !== undefined && {
-              cache_creation_input_tokens: tddResult.totalTokenUsage.cache_creation_input_tokens,
+            ...(tddResult.totalTokenUsage.cacheCreationInputTokens !== undefined && {
+              cacheCreationInputTokens: tddResult.totalTokenUsage.cacheCreationInputTokens,
             }),
           }
         : undefined,

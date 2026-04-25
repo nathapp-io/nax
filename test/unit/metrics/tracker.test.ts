@@ -248,8 +248,8 @@ describe("collectStoryMetrics - tokenUsage field", () => {
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.tokens).toBeDefined();
-    expect(metrics.tokens?.input_tokens).toBe(1000);
-    expect(metrics.tokens?.output_tokens).toBe(500);
+    expect(metrics.tokens?.inputTokens).toBe(1000);
+    expect(metrics.tokens?.outputTokens).toBe(500);
   });
 
   test("sets storyMetrics.tokens with cache fields when present in tokenUsage", async () => {
@@ -265,18 +265,18 @@ describe("collectStoryMetrics - tokenUsage field", () => {
       tokenUsage: {
         inputTokens: 1000,
         outputTokens: 500,
-        cache_read_input_tokens: 100,
-        cache_creation_input_tokens: 50,
-      } as unknown as { inputTokens: number; outputTokens: number },
+        cacheReadInputTokens: 100,
+        cacheCreationInputTokens: 50,
+      },
     };
 
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.tokens).toBeDefined();
-    expect(metrics.tokens?.input_tokens).toBe(1000);
-    expect(metrics.tokens?.output_tokens).toBe(500);
-    expect(metrics.tokens?.cache_read_input_tokens).toBe(100);
-    expect(metrics.tokens?.cache_creation_input_tokens).toBe(50);
+    expect(metrics.tokens?.inputTokens).toBe(1000);
+    expect(metrics.tokens?.outputTokens).toBe(500);
+    expect(metrics.tokens?.cacheReadInputTokens).toBe(100);
+    expect(metrics.tokens?.cacheCreationInputTokens).toBe(50);
   });
 
   test("storyMetrics.tokens is undefined when ctx.agentResult.tokenUsage is undefined", async () => {

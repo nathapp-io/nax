@@ -9,44 +9,44 @@
  */
 export interface TokenUsage {
   /** Number of input tokens consumed */
-  input_tokens: number;
+  inputTokens: number;
   /** Number of output tokens generated */
-  output_tokens: number;
+  outputTokens: number;
   /** Number of input tokens read from cache (optional, omitted when 0) */
-  cache_read_input_tokens?: number;
+  cacheReadInputTokens?: number;
   /** Number of input tokens used for cache creation (optional, omitted when 0) */
-  cache_creation_input_tokens?: number;
+  cacheCreationInputTokens?: number;
 }
 
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: TokenUsage must be both an interface (for type checking) and a class (for runtime construction with toJSON)
 export class TokenUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens?: number;
-  cache_creation_input_tokens?: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
 
   constructor(data: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
   }) {
-    this.input_tokens = data.input_tokens;
-    this.output_tokens = data.output_tokens;
-    this.cache_read_input_tokens = data.cache_read_input_tokens;
-    this.cache_creation_input_tokens = data.cache_creation_input_tokens;
+    this.inputTokens = data.inputTokens;
+    this.outputTokens = data.outputTokens;
+    this.cacheReadInputTokens = data.cacheReadInputTokens;
+    this.cacheCreationInputTokens = data.cacheCreationInputTokens;
   }
 
   toJSON(): Record<string, unknown> {
     const result: Record<string, unknown> = {
-      input_tokens: this.input_tokens,
-      output_tokens: this.output_tokens,
+      inputTokens: this.inputTokens,
+      outputTokens: this.outputTokens,
     };
-    if (this.cache_read_input_tokens !== 0) {
-      result.cache_read_input_tokens = this.cache_read_input_tokens;
+    if (this.cacheReadInputTokens !== 0) {
+      result.cacheReadInputTokens = this.cacheReadInputTokens;
     }
-    if (this.cache_creation_input_tokens !== 0) {
-      result.cache_creation_input_tokens = this.cache_creation_input_tokens;
+    if (this.cacheCreationInputTokens !== 0) {
+      result.cacheCreationInputTokens = this.cacheCreationInputTokens;
     }
     return result;
   }

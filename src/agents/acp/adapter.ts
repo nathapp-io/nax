@@ -12,13 +12,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { resolvePermissions } from "../../config/permissions";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import { parseDecomposeOutput } from "../shared/decompose";
 import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
-import { writePromptAudit } from "./prompt-audit";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type { AdapterFailure } from "../../context/engine";
@@ -589,9 +587,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       options.sessionHandle ??
       computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
-    // 2. Resolve permission mode from config via single source of truth.
-    const resolvedPerm = resolvePermissions(options.config, options.pipelineStage ?? "run");
-    const permissionMode = resolvedPerm.mode;
+    // 2. Read pre-resolved permission mode from AgentManager (passed via options.resolvedPermissions).
+    const permissionMode = options.resolvedPermissions?.mode ?? "approve-reads";
     getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
       permission: permissionMode,
       stage: options.pipelineStage ?? "run",
@@ -634,37 +631,17 @@ export class AcpAgentAdapter implements AgentAdapter {
       cache_creation_input_tokens: 0,
     };
     let totalExactCostUsd: number | undefined;
+    let turnCount = 0;
 
     try {
       // 5. Multi-turn loop
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
       let currentPrompt = buildContextToolPreamble(options);
-      let turnCount = 0;
       const MAX_TURNS = options.interactionBridge || hasContextTools ? (options.maxInteractionTurns ?? 10) : 1;
 
       while (turnCount < MAX_TURNS) {
         turnCount++;
         getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
-
-        // Audit: fire-and-forget prompt write — never blocks or throws
-        const _runAuditConfig = options.config;
-        if (_runAuditConfig?.agent?.promptAudit?.enabled) {
-          void writePromptAudit({
-            prompt: currentPrompt,
-            sessionName,
-            recordId: session.recordId,
-            sessionId: session.id,
-            workdir: options.workdir,
-            projectDir: options.projectDir,
-            auditDir: _runAuditConfig.agent.promptAudit.dir,
-            storyId: options.storyId,
-            featureName: options.featureName,
-            pipelineStage: options.pipelineStage ?? "run",
-            callType: "run",
-            turn: turnCount,
-            resumed: sessionResumed,
-          });
-        }
 
         const turnResult = await runSessionPrompt(session, currentPrompt, options.timeoutSeconds * 1000);
 
@@ -803,10 +780,10 @@ export class AcpAgentAdapter implements AgentAdapter {
             inputTokens: totalTokenUsage.input_tokens,
             outputTokens: totalTokenUsage.output_tokens,
             ...(totalTokenUsage.cache_read_input_tokens > 0 && {
-              cache_read_input_tokens: totalTokenUsage.cache_read_input_tokens,
+              cacheReadInputTokens: totalTokenUsage.cache_read_input_tokens,
             }),
             ...(totalTokenUsage.cache_creation_input_tokens > 0 && {
-              cache_creation_input_tokens: totalTokenUsage.cache_creation_input_tokens,
+              cacheCreationInputTokens: totalTokenUsage.cache_creation_input_tokens,
             }),
           }
         : undefined;
@@ -839,12 +816,13 @@ export class AcpAgentAdapter implements AgentAdapter {
       tokenUsage,
       protocolIds,
       adapterFailure,
+      sessionMetadata: { sessionName, turn: turnCount, resumed: sessionResumed },
     };
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
     const timeoutMs = _options?.timeoutMs ?? 120_000;
-    const permissionMode = resolvePermissions(_options?.config, "complete").mode;
+    const permissionMode = _options?.resolvedPermissions?.mode ?? "approve-reads";
     const workdir = _options?.workdir;
     const config = _options?.config;
 
@@ -883,24 +861,6 @@ export class AcpAgentAdapter implements AgentAdapter {
           _options?.sessionName ??
           computeAcpHandle(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
-
-        // Audit: fire-and-forget prompt write — never blocks or throws
-        const _completeAuditConfig = config ?? this.naxConfig;
-        if (_completeAuditConfig?.agent?.promptAudit?.enabled) {
-          void writePromptAudit({
-            prompt,
-            sessionName: completeSessionName,
-            recordId: session.recordId,
-            sessionId: session.id,
-            workdir: workdir ?? process.cwd(),
-            auditDir: _completeAuditConfig.agent.promptAudit.dir,
-            storyId: _options?.storyId,
-            featureName: _options?.featureName,
-            pipelineStage: _options?.pipelineStage ?? "complete",
-            callType: "complete",
-            resumed: false,
-          });
-        }
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -1033,7 +993,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       modelTier: options.modelTier ?? "balanced",
       modelDef,
       timeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(this.naxConfig, "plan").skipPermissions,
+      resolvedPermissions: options.resolvedPermissions,
       pipelineStage: "plan",
       config: this.naxConfig,
       interactionBridge: options.interactionBridge,

@@ -241,7 +241,7 @@ describe("AcpAgentAdapter — session mode (run)", () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe("permission mode", () => {
-    test("approve-all when permissionProfile is unrestricted", async () => {
+    test("approve-all when resolvedPermissions.mode is approve-all", async () => {
       let capturedMode = "";
       const session = makeSession();
       _acpAdapterDeps.createClient = mock((_cmd: string) =>
@@ -251,12 +251,12 @@ describe("AcpAgentAdapter — session mode (run)", () => {
       );
       await adapter.run({
         ...BASE_OPTIONS,
-        config: { execution: { permissionProfile: "unrestricted" } } as import("../../../../src/config").NaxConfig,
+        resolvedPermissions: { mode: "approve-all", skipPermissions: true },
       });
       expect(capturedMode).toBe("approve-all");
     });
 
-    test("approve-reads when permissionProfile is safe", async () => {
+    test("approve-reads when resolvedPermissions.mode is approve-reads", async () => {
       let capturedMode = "";
       const session = makeSession();
       _acpAdapterDeps.createClient = mock((_cmd: string) =>
@@ -266,7 +266,7 @@ describe("AcpAgentAdapter — session mode (run)", () => {
       );
       await adapter.run({
         ...BASE_OPTIONS,
-        config: { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, permissionProfile: "safe" } } as import("../../../../src/config").NaxConfig,
+        resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
       });
       expect(capturedMode).toBe("approve-reads");
     });

@@ -93,7 +93,7 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
   test("sums tokenUsage from all three sessions", async () => {
     const agent = agentReturning([
       { inputTokens: 100, outputTokens: 50 }, // test-writer
-      { inputTokens: 200, outputTokens: 100, cache_read_input_tokens: 10 }, // implementer
+      { inputTokens: 200, outputTokens: 100, cacheReadInputTokens: 10 }, // implementer
       { inputTokens: 50, outputTokens: 25 }, // verifier
     ]);
 
@@ -108,7 +108,7 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
     expect(result.totalTokenUsage).toEqual({
       inputTokens: 350,
       outputTokens: 175,
-      cache_read_input_tokens: 10,
+      cacheReadInputTokens: 10,
     });
   });
 

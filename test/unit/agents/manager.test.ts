@@ -3,6 +3,7 @@ import { AgentManager } from "../../../src/agents/manager";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
 import { NaxConfigSchema } from "../../../src/config/schemas";
+import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "../../../src/runtime/agent-middleware";
 
 function makeManager(fallback: Record<string, unknown> = {}) {
   return new AgentManager({
@@ -180,5 +181,115 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
     const m = makeManager({ map: { claude: ["codex"] } });
     m.markUnavailable("codex", availFailure);
     expect(m.nextCandidate("claude", 0)).toBeNull();
+  });
+});
+
+describe("AgentManager — middleware envelope", () => {
+  function makeMiddlewareManager(mw?: AgentMiddleware): AgentManager {
+    return new AgentManager(DEFAULT_CONFIG, undefined, {
+      middleware: mw ? MiddlewareChain.from([mw]) : MiddlewareChain.empty(),
+      runId: "r-test",
+    });
+  }
+
+  test("run() delegates to runAs(getDefault(), request)", async () => {
+    const manager = makeMiddlewareManager();
+    let calledRunAs = false;
+    (manager as unknown as { runAs: typeof manager.runAs }).runAs = async (_name, _req) => {
+      calledRunAs = true;
+      return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
+    };
+    try { await manager.run({ runOptions: { prompt: "test" } as never }); } catch {}
+    expect(calledRunAs).toBe(true);
+  });
+
+  test("complete() delegates to completeAs(getDefault(), prompt, options)", async () => {
+    const manager = makeMiddlewareManager();
+    let calledCompleteAs = false;
+    (manager as unknown as { completeAs: typeof manager.completeAs }).completeAs = async (_name, _prompt, _opts) => {
+      calledCompleteAs = true;
+      return { output: "", costUsd: 0, source: "fallback" as const };
+    };
+    try { await manager.complete("prompt", {} as never); } catch {}
+    expect(calledCompleteAs).toBe(true);
+  });
+
+  test("middleware before() is called before the adapter", async () => {
+    const calls: string[] = [];
+    const mw: AgentMiddleware = { name: "spy", before: async () => { calls.push("before"); } };
+    const manager = makeMiddlewareManager(mw);
+    try { await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never }); } catch {}
+    expect(calls).toContain("before");
+  });
+
+  test("runAs() injects resolvedPermissions into request.runOptions", async () => {
+    let capturedPerms: Record<string, unknown> | undefined;
+    const mw: AgentMiddleware = {
+      name: "spy",
+      before: async (ctx: MiddlewareContext) => {
+        capturedPerms = ctx.resolvedPermissions as unknown as Record<string, unknown>;
+      },
+    };
+    const manager = makeMiddlewareManager(mw);
+    try { await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never }); } catch {}
+    expect(capturedPerms).toBeDefined();
+    expect(typeof capturedPerms!["mode"]).toBe("string");
+  });
+
+  test("middleware onError() is called when adapter throws", async () => {
+    const errors: unknown[] = [];
+    const mw: AgentMiddleware = { name: "spy", onError: async (_ctx, err) => { errors.push(err); } };
+    const manager = makeMiddlewareManager(mw);
+    await expect(
+      manager.runAs("nonexistent-agent-xyz", { runOptions: { prompt: "test" } as never })
+    ).rejects.toThrow();
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  test("after() context reflects fallback agent name and prompt after agent swap", async () => {
+    const afterCalls: MiddlewareContext[] = [];
+    const mw: AgentMiddleware = {
+      name: "spy",
+      after: async (ctx) => { afterCalls.push(ctx); },
+    };
+    const config = NaxConfigSchema.parse({
+      agent: {
+        default: "claude",
+        fallback: { enabled: true, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
+      },
+    }) as NaxConfig;
+    const manager = new AgentManager(config, undefined, {
+      middleware: MiddlewareChain.from([mw]),
+      runId: "r-fallback-test",
+    });
+
+    let callCount = 0;
+    await manager.runAs("claude", {
+      runOptions: { prompt: "original-prompt", workdir: "/tmp", modelTier: "fast", modelDef: { provider: "anthropic", model: "m", env: {} }, timeoutSeconds: 10, config } as never,
+      executeHop: async (_agentName, _bundle, _failure) => {
+        callCount += 1;
+        if (callCount === 1) {
+          // Primary hop — claude fails with availability failure; return a bundle so shouldSwap allows the swap
+          return {
+            result: {
+              success: false, exitCode: 1, output: "unavailable", rateLimited: false, durationMs: 10, estimatedCost: 0,
+              adapterFailure: { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" },
+            },
+            bundle: { files: [] } as never,
+            prompt: "original-prompt",
+          };
+        }
+        // Fallback hop — codex succeeds
+        return {
+          result: { success: true, exitCode: 0, output: "fallback-done", rateLimited: false, durationMs: 20, estimatedCost: 0.001 },
+          bundle: undefined,
+          prompt: "swap-handoff-prompt",
+        };
+      },
+    });
+
+    expect(afterCalls).toHaveLength(1);
+    expect(afterCalls[0].agentName).toBe("codex");
+    expect(afterCalls[0].prompt).toBe("swap-handoff-prompt");
   });
 });

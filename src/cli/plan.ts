@@ -194,7 +194,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       packageDetails,
       config?.project,
     );
-    const resolvedPerm = resolvePermissions(config, "plan");
     // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
     const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
     const debateAgentManager = _planDeps.createManager(config);
@@ -218,7 +217,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       feature: options.feature,
       outputDir: outputDir,
       timeoutSeconds,
-      dangerouslySkipPermissions: resolvedPerm.skipPermissions,
       maxInteractionTurns: config?.agent?.maxInteractionTurns,
       specContent,
     });
@@ -268,7 +266,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           config,
           modelTier: resolvedPlanModel.modelTier,
           modelDef: resolvedPlanModel.modelDef,
-          dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
           maxInteractionTurns: config?.agent?.maxInteractionTurns,
           featureName: options.feature,
           onPidSpawned: (pid: number) => pidRegistry.register(pid),
@@ -352,7 +349,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           config,
           modelTier: resolvedPlanModel.modelTier,
           modelDef: resolvedPlanModel.modelDef,
-          dangerouslySkipPermissions: resolvedPerm.skipPermissions,
           maxInteractionTurns: config?.agent?.maxInteractionTurns,
           featureName: options.feature,
           onPidSpawned: (pid: number) => pidRegistry.register(pid),

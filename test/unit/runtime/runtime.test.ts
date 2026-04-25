@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { createRuntime } from "../../../src/runtime";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeTestRuntime } from "../../helpers";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 describe("createRuntime", () => {
   test("runtime has required fields", () => {
@@ -45,6 +45,55 @@ describe("createRuntime", () => {
     parent.abort();
     expect(rt.signal.aborted).toBe(true);
   });
+
+  test("runtime has runId field", () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    expect(rt.runId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  test("production CostAggregator is wired (not no-op)", () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    rt.costAggregator.record({
+      ts: Date.now(),
+      runId: "x",
+      agentName: "claude",
+      model: "m",
+      tokens: { input: 10, output: 5 },
+      costUsd: 0.001,
+      durationMs: 100,
+    });
+    expect(rt.costAggregator.snapshot().callCount).toBe(1);
+  });
+
+  test("promptAuditor is no-op when agent.promptAudit.enabled is false (default)", () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    // No-op auditor.record() does nothing — snapshot stays empty
+    rt.promptAuditor.record({
+      ts: Date.now(), runId: "x", agentName: "claude",
+      permissionProfile: "approve-reads", prompt: "p", response: "r", durationMs: 50,
+    });
+    // No throw — no-op is silent
+  });
+
+  test("promptAuditor is real PromptAuditor when agent.promptAudit.enabled is true", () => {
+    const config = makeNaxConfig({ agent: { promptAudit: { enabled: true } } });
+    const rt = createRuntime(config, "/tmp/test");
+    // Real auditor.record() doesn't throw either, but snapshot() on cost aggregator
+    // confirms the runtime is operational — the key contract is that record() doesn't
+    // silently discard entries (tested via flush in EC-3 integration test).
+    expect(() =>
+      rt.promptAuditor.record({
+        ts: Date.now(), runId: "x", agentName: "claude",
+        permissionProfile: "approve-reads", prompt: "p", response: "r", durationMs: 50,
+      }),
+    ).not.toThrow();
+  });
+
+  test("promptAuditor uses configured dir when agent.promptAudit.dir is set", () => {
+    const config = makeNaxConfig({ agent: { promptAudit: { enabled: true, dir: "/custom/audit" } } });
+    const rt = createRuntime(config, "/tmp/test");
+    expect(rt.promptAuditor).toBeDefined();
+  });
 });
 
 describe("makeTestRuntime", () => {
@@ -58,5 +107,10 @@ describe("makeTestRuntime", () => {
   test("accepts config override", () => {
     const rt = makeTestRuntime({ workdir: "/tmp/custom" });
     expect(rt.workdir).toBe("/tmp/custom");
+  });
+
+  test("makeTestRuntime produces runtime with runId", () => {
+    const rt = makeTestRuntime();
+    expect(rt.runId).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

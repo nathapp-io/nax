@@ -86,20 +86,20 @@ function sumTddTokenUsage(sessions: TddSessionResult[]): import("../agents/cost"
   const total = {
     inputTokens: 0,
     outputTokens: 0,
-    cache_read_input_tokens: 0,
-    cache_creation_input_tokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
   };
   for (const u of usages) {
     total.inputTokens += u.inputTokens ?? 0;
     total.outputTokens += u.outputTokens ?? 0;
-    total.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
-    total.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
+    total.cacheReadInputTokens += u.cacheReadInputTokens ?? 0;
+    total.cacheCreationInputTokens += u.cacheCreationInputTokens ?? 0;
   }
   return {
     inputTokens: total.inputTokens,
     outputTokens: total.outputTokens,
-    ...(total.cache_read_input_tokens > 0 && { cache_read_input_tokens: total.cache_read_input_tokens }),
-    ...(total.cache_creation_input_tokens > 0 && { cache_creation_input_tokens: total.cache_creation_input_tokens }),
+    ...(total.cacheReadInputTokens > 0 && { cacheReadInputTokens: total.cacheReadInputTokens }),
+    ...(total.cacheCreationInputTokens > 0 && { cacheCreationInputTokens: total.cacheCreationInputTokens }),
   };
 }
 

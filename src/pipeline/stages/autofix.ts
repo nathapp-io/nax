@@ -21,7 +21,6 @@
 
 import { computeAcpHandle } from "../../agents/acp/adapter";
 import { resolveModelForAgent } from "../../config";
-import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
@@ -520,7 +519,6 @@ async function runAgentRectification(
             modelTier,
             modelDef,
             timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-            dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
             pipelineStage: "rectification",
             config: ctx.config,
             projectDir: ctx.projectDir,
