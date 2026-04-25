@@ -22,6 +22,7 @@ import { createSpawnAcpClient } from "./spawn-client";
 import type { ModelDef } from "../../config/schema";
 import type { AdapterFailure } from "../../context/engine";
 import type { ProtocolIds } from "../../session/types";
+import type { TokenUsage } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -1165,8 +1166,124 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
   }
 
-  async sendTurn(_handle: SessionHandle, _prompt: string, _opts: SendTurnOpts): Promise<TurnResult> {
-    throw new Error("sendTurn: not yet implemented (Phase A stub)");
+  async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
+    const impl = handle as AcpSessionHandleImpl;
+    const { _session: session, _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
+    const { interactionHandler } = opts;
+    const MAX_TURNS = opts.maxTurns ?? 10;
+    // TODO(adr-019-b): wire opts.signal for mid-turn abort support
+
+    const totalTokenUsage = {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    };
+    let totalExactCostUsd: number | undefined;
+    let turnCount = 0;
+    let lastResponse: AcpSessionResponse | null = null;
+    let timedOut = false;
+    let currentPrompt = prompt;
+
+    while (turnCount < MAX_TURNS) {
+      turnCount++;
+      getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
+
+      const turnResult = await runSessionPrompt(session, currentPrompt, timeoutSeconds * 1000);
+
+      if (turnResult.timedOut) {
+        timedOut = true;
+        break;
+      }
+
+      lastResponse = turnResult.response;
+      if (!lastResponse) break;
+
+      if (lastResponse.cumulative_token_usage) {
+        totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
+        totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
+        totalTokenUsage.cache_read_input_tokens += lastResponse.cumulative_token_usage.cache_read_input_tokens ?? 0;
+        totalTokenUsage.cache_creation_input_tokens +=
+          lastResponse.cumulative_token_usage.cache_creation_input_tokens ?? 0;
+      }
+      if (lastResponse.exactCostUsd !== undefined) {
+        totalExactCostUsd = (totalExactCostUsd ?? 0) + lastResponse.exactCostUsd;
+      }
+
+      const outputText = extractOutput(lastResponse);
+      const isEndTurn = lastResponse.stopReason === "end_turn";
+      const toolCall = isEndTurn ? extractContextToolCall(outputText) : null;
+
+      if (toolCall) {
+        const interaction: import("../interaction-handler").AdapterInteraction = toolCall.error
+          ? { kind: "context-tool", name: toolCall.name, error: toolCall.error }
+          : { kind: "context-tool", name: toolCall.name, input: toolCall.input };
+
+        const response = await interactionHandler.onInteraction(interaction);
+        if (response) {
+          currentPrompt = response.answer;
+          continue;
+        }
+        break;
+      }
+
+      const question = isEndTurn ? extractQuestion(outputText) : null;
+      if (question) {
+        let interactionTimeoutId: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const response = await Promise.race([
+            interactionHandler.onInteraction({ kind: "question", text: question }),
+            new Promise<null>((resolve) => {
+              interactionTimeoutId = setTimeout(() => resolve(null), INTERACTION_TIMEOUT_MS);
+            }),
+          ]);
+          if (response) {
+            currentPrompt = response.answer;
+            continue;
+          }
+        } catch (err) {
+          getSafeLogger()?.warn(
+            "acp-adapter",
+            `InteractionHandler.onInteraction failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        } finally {
+          clearTimeout(interactionTimeoutId);
+        }
+      }
+
+      break;
+    }
+
+    if (turnCount >= MAX_TURNS) {
+      getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
+    }
+
+    const output = extractOutput(lastResponse);
+    const tokenUsage: TokenUsage = {
+      inputTokens: totalTokenUsage.input_tokens,
+      outputTokens: totalTokenUsage.output_tokens,
+      ...(totalTokenUsage.cache_read_input_tokens > 0 && {
+        cacheReadInputTokens: totalTokenUsage.cache_read_input_tokens,
+      }),
+      ...(totalTokenUsage.cache_creation_input_tokens > 0 && {
+        cacheCreationInputTokens: totalTokenUsage.cache_creation_input_tokens,
+      }),
+    };
+
+    const estimatedCost =
+      totalExactCostUsd ??
+      (totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
+        ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
+        : 0);
+
+    return {
+      output,
+      tokenUsage,
+      cost: { total: estimatedCost },
+      internalRoundTrips: turnCount,
+      _lastStopReason: lastResponse?.stopReason,
+      _timedOut: timedOut || undefined,
+    };
   }
 
   async closeSession(_handle: SessionHandle): Promise<void> {
