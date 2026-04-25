@@ -133,10 +133,8 @@ export interface ExecutionConfig {
   lintCommand?: string | null;
   /** Typecheck command override (null = disabled, undefined = auto-detect from package.json) */
   typecheckCommand?: string | null;
-  /** Use --dangerously-skip-permissions flag for agent (default: true for backward compat, SEC-1 fix) */
-  dangerouslySkipPermissions?: boolean;
-  /** Permission profile — takes precedence over dangerouslySkipPermissions (Phase 1) */
-  permissionProfile?: "unrestricted" | "safe" | "scoped"; // default: "unrestricted"
+  /** Permission profile for the agent (default: "unrestricted") */
+  permissionProfile?: "unrestricted" | "safe" | "scoped";
   /** Per-stage permission overrides — only read when permissionProfile = "scoped" (Phase 2) */
   permissions?: Record<
     string,

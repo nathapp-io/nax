@@ -152,7 +152,6 @@ export class DebateSession {
       feature: string;
       outputDir: string;
       timeoutSeconds?: number;
-      dangerouslySkipPermissions?: boolean;
       maxInteractionTurns?: number;
       /** Original spec content — anchors synthesis to prevent AC hallucination. */
       specContent?: string;

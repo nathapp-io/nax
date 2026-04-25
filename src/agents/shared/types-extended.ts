@@ -53,8 +53,6 @@ export interface PlanOptions {
   sessionRole?: string;
   /** Timeout in seconds — inherited from config.execution.sessionTimeoutSeconds */
   timeoutSeconds?: number;
-  /** Whether to skip permission prompts (maps to permissionMode in ACP) */
-  dangerouslySkipPermissions?: boolean;
   /** Pre-resolved permissions from AgentManager.planAs() — adapter reads this instead of calling resolvePermissions(). */
   resolvedPermissions?: ResolvedPermissions;
   /** Max interaction turns when interactionBridge is active (default: 10) */

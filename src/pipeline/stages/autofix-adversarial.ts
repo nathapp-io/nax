@@ -12,7 +12,6 @@
 
 import type { IAgentManager } from "../../agents";
 import { resolveModelForAgent } from "../../config";
-import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
@@ -157,7 +156,6 @@ export async function runTestWriterRectification(
         modelTier,
         modelDef,
         timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-        dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config: ctx.config,
         projectDir: ctx.projectDir,

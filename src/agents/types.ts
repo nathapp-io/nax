@@ -94,8 +94,6 @@ export interface AgentRunOptions {
   timeoutSeconds: number;
   /** Environment variables to pass */
   env?: Record<string, string>;
-  /** Use --dangerously-skip-permissions flag (default: true) */
-  dangerouslySkipPermissions?: boolean;
   /** Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions(). */
   resolvedPermissions?: ResolvedPermissions;
   /** Interaction bridge for mid-session human interaction (ACP) */
@@ -206,8 +204,6 @@ export interface CompleteOptions {
   jsonMode?: boolean;
   /** Override the model (adds --model flag) */
   model?: string;
-  /** Whether to skip permission prompts (maps to permissionMode in ACP) */
-  dangerouslySkipPermissions?: boolean;
   /** Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions(). */
   resolvedPermissions?: ResolvedPermissions;
   /**

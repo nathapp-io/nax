@@ -8,7 +8,6 @@ import type { AgentAdapter } from "../agents";
 import { resolveDefaultAgent, wrapAdapterAsManager } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
-import { resolvePermissions } from "../config/permissions";
 import { createContextToolRuntime } from "../context/engine";
 import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
@@ -222,7 +221,6 @@ export async function runTddSession(
       resolveDefaultAgent(config),
     ),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
-    dangerouslySkipPermissions: resolvePermissions(config, "run").skipPermissions,
     pipelineStage: "run" as const,
     config,
     projectDir,

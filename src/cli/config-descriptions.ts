@@ -69,7 +69,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.contextProviderTokenBudget": "Token budget for plugin context providers",
   "execution.lintCommand": "Lint command override (null=disabled, undefined=auto-detect)",
   "execution.typecheckCommand": "Typecheck command override (null=disabled, undefined=auto-detect)",
-  "execution.dangerouslySkipPermissions": "Skip permissions for agent (use with caution)",
   "execution.rectification": "Rectification loop settings (retry failed tests)",
   "execution.rectification.enabled": "Enable rectification loop",
   "execution.rectification.maxRetries": "Max retry attempts per story",

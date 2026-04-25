@@ -67,7 +67,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
       nextCandidate: () => null,
       runWithFallback: mock(async (request) => {
         runWithFallbackCalled = true;
-        const { result, bundle: b, prompt } = await request.executeHop!("claude", request.bundle, undefined);
+        const { result, bundle: b, prompt } = await request.executeHop!("claude", request.bundle, undefined, request.runOptions);
         return { result, fallbacks: [], finalBundle: b, finalPrompt: prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),

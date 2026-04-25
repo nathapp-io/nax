@@ -588,8 +588,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
     // 2. Read pre-resolved permission mode from AgentManager (passed via options.resolvedPermissions).
-    const permissionMode =
-      options.resolvedPermissions?.mode ?? (options.dangerouslySkipPermissions ? "approve-all" : "approve-reads");
+    const permissionMode = options.resolvedPermissions?.mode ?? "approve-reads";
     getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
       permission: permissionMode,
       stage: options.pipelineStage ?? "run",
@@ -822,8 +821,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
     const timeoutMs = _options?.timeoutMs ?? 120_000;
-    const permissionMode =
-      _options?.resolvedPermissions?.mode ?? (_options?.dangerouslySkipPermissions ? "approve-all" : "approve-reads");
+    const permissionMode = _options?.resolvedPermissions?.mode ?? "approve-reads";
     const workdir = _options?.workdir;
     const config = _options?.config;
 

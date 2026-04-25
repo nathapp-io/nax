@@ -12,7 +12,6 @@ import { computeAcpHandle } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
-import { resolvePermissions } from "../config/permissions";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { getSafeLogger } from "../logger";
@@ -268,7 +267,6 @@ export async function runRectificationLoop(
           modelTier,
           modelDef,
           timeoutSeconds: config.execution.sessionTimeoutSeconds,
-          dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
           pipelineStage: "rectification",
           config,
           projectDir,
@@ -443,7 +441,6 @@ export async function runRectificationLoop(
           modelTier: escalatedTier,
           modelDef: escalatedModelDef,
           timeoutSeconds: config.execution.sessionTimeoutSeconds,
-          dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
           pipelineStage: "rectification",
           config,
           projectDir,

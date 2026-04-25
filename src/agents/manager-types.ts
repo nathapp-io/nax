@@ -74,6 +74,7 @@ export interface AgentRunRequest {
     agentName: string,
     bundle: ContextBundle | undefined,
     failure: AdapterFailure | undefined,
+    resolvedRunOptions: AgentRunOptions,
   ) => Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }>;
 }
 

@@ -173,7 +173,7 @@ export class AgentManager implements IAgentManager {
       let updatedBundle = currentBundle;
 
       if (request.executeHop) {
-        const hopOut = await request.executeHop(currentAgent, currentBundle, currentFailure);
+        const hopOut = await request.executeHop(currentAgent, currentBundle, currentFailure, request.runOptions);
         result = hopOut.result;
         updatedBundle = hopOut.bundle ?? currentBundle;
         finalPrompt = hopOut.prompt ?? finalPrompt;

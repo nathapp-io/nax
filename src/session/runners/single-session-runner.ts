@@ -259,8 +259,13 @@ export class SingleSessionRunner implements ISessionRunner {
 
     // executeHop: thin wrapper that delegates to executeHopFn and captures the
     // last hop's bundle/prompt for StoryRunOutcome. Called by runWithFallback.
-    const executeHop: AgentRunRequest["executeHop"] = async (agentName, hopBundle, failure) => {
-      const hop = await executeHopFn(hopParams, agentName, hopBundle, failure);
+    const executeHop: AgentRunRequest["executeHop"] = async (agentName, hopBundle, failure, resolvedRunOptions) => {
+      const hop = await executeHopFn(
+        { ...hopParams, primaryOptions: resolvedRunOptions },
+        agentName,
+        hopBundle,
+        failure,
+      );
       finalBundle = hop.bundle ?? finalBundle;
       finalPrompt = hop.prompt;
       return hop;
