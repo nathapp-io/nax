@@ -1119,8 +1119,50 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
   }
 
-  async openSession(_name: string, _opts: OpenSessionOpts): Promise<SessionHandle> {
-    throw new Error("openSession: not yet implemented (Phase A stub)");
+  async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
+    const { agentName, workdir, resolvedPermissions, modelDef, timeoutSeconds, onSessionEstablished, onPidSpawned } =
+      opts;
+    // TODO(adr-019-b): wire opts.signal for abort support
+
+    const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
+    const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned);
+    await client.start();
+
+    const permissionMode = resolvedPermissions.mode;
+    getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
+      permission: permissionMode,
+      stage: "open-session",
+    });
+
+    const { session, resumed } = await ensureAcpSession(client, name, agentName, permissionMode);
+
+    const protocolIds: ProtocolIds = {
+      recordId: (session as { recordId?: string }).recordId ?? null,
+      sessionId: (session as { id?: string }).id ?? null,
+    };
+
+    if (onSessionEstablished) {
+      try {
+        onSessionEstablished(protocolIds, name);
+      } catch (err) {
+        getSafeLogger()?.warn("acp-adapter", "onSessionEstablished callback threw — continuing", {
+          sessionName: name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return new AcpSessionHandleImpl({
+      id: name,
+      agentName,
+      protocolIds,
+      client,
+      session,
+      sessionName: name,
+      resumed,
+      timeoutSeconds,
+      modelDef,
+    });
   }
 
   async sendTurn(_handle: SessionHandle, _prompt: string, _opts: SendTurnOpts): Promise<TurnResult> {
