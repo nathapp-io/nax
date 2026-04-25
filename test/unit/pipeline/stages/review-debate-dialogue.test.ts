@@ -133,7 +133,7 @@ function makeCtx(config: ReturnType<typeof makeNaxConfig>, overrides: Partial<Pi
 
   return {
     config,
-    rootConfig: makeNaxConfig(),
+    rootConfig: config,
     prd: makePRD(),
     story: makeStory(),
     stories: [makeStory()],
