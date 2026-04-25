@@ -35,6 +35,8 @@ export interface AgentRunOutcome {
   finalBundle?: ContextBundle;
   /** The prompt used by the final (successful or last failed) hop. */
   finalPrompt?: string;
+  /** The agent that actually executed the final hop (may differ from the initial agent after a swap). */
+  finalAgent?: string;
 }
 
 export interface AgentCompleteOutcome {

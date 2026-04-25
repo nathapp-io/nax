@@ -214,7 +214,8 @@ export class AgentManager implements IAgentManager {
         }
       }
 
-      if (result.success) return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+      if (result.success)
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
 
       const bundleForSwapCheck = updatedBundle ?? request.bundle;
 
@@ -227,7 +228,7 @@ export class AgentManager implements IAgentManager {
             logger?.info("agent-manager", "Rate-limited backoff aborted — shutdown in progress", {
               storyId: request.runOptions.storyId,
             });
-            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
           }
           rateLimitRetry += 1;
           const backoffMs = 2 ** rateLimitRetry * 1000;
@@ -238,14 +239,14 @@ export class AgentManager implements IAgentManager {
           });
           await _agentManagerDeps.sleep(backoffMs, request.signal);
           if (request.signal?.aborted) {
-            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
           }
           continue;
         }
         if (hopsSoFar > 0) {
           this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
         }
-        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
       }
 
       const adapterFailure = result.adapterFailure ?? {
@@ -263,7 +264,7 @@ export class AgentManager implements IAgentManager {
       const next = this.nextCandidate(primaryAgent, hopsSoFar);
       if (!next) {
         this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
-        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt };
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
       }
       hopsSoFar += 1;
       // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
@@ -414,7 +415,14 @@ export class AgentManager implements IAgentManager {
       }
       const outcome = await this.runWithFallback(augmented, agentName);
       const result = { ...outcome.result, agentFallbacks: outcome.fallbacks };
-      await this._middleware.runAfter(ctx, result, Date.now() - start);
+      // Update context to reflect the actual final hop's agent and prompt so that
+      // cost/audit middleware attributes the result to the agent that produced it,
+      // not the initial agent that may have been swapped out by the fallback chain.
+      const hopCtx: MiddlewareContext =
+        outcome.finalAgent !== undefined || outcome.finalPrompt !== undefined
+          ? { ...ctx, agentName: outcome.finalAgent ?? agentName, prompt: outcome.finalPrompt ?? ctx.prompt }
+          : ctx;
+      await this._middleware.runAfter(hopCtx, result, Date.now() - start);
       return result;
     } catch (err) {
       await this._middleware.runOnError(ctx, err, Date.now() - start);
