@@ -129,6 +129,7 @@ These two files are the **adapter wiring layer**: they translate `IAgentManager`
 |:------|:------|
 | `src/agents/manager.ts` | `IAgentManager` implementation — delegates to adapter |
 | `src/agents/utils.ts` | `wrapAdapterAsManager()` — wraps a bare adapter as `IAgentManager` for session bootstrap |
+| `src/session/manager.ts` | `SessionManager.openSession/closeSession/sendPrompt` — direct adapter calls for Phase B session primitives (ADR-019) |
 
 **Allowed call patterns (always through IAgentManager):**
 ```typescript

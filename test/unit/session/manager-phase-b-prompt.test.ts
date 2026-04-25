@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { NO_OP_INTERACTION_HANDLER } from "../../../src/agents/interaction-handler";
+import { NO_OP_INTERACTION_HANDLER } from "../../../src/agents";
 import type { SendTurnOpts, SessionHandle, TurnResult } from "../../../src/agents/types";
 import { SessionManager } from "../../../src/session/manager";
 import type { OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";

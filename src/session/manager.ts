@@ -437,6 +437,9 @@ export class SessionManager implements ISessionManager {
     } else if (existingDescriptor.state === "COMPLETED" || existingDescriptor.state === "FAILED") {
       // Terminal → RUNNING is not a valid state-machine transition, so bypass
       // transition() and update directly (same pattern as closeStory).
+      // Also clear the cancelled flag in case this session was previously cancelled
+      // before reaching terminal state, so sendPrompt does not immediately throw.
+      this._cancelledSessions.delete(name);
       const updated: SessionDescriptor = {
         ...existingDescriptor,
         state: "RUNNING",
@@ -444,6 +447,13 @@ export class SessionManager implements ISessionManager {
       };
       this._sessions.set(existingDescriptor.id, updated);
       this._persistDescriptor(updated);
+    } else {
+      // RUNNING: session is already active — no-op for the descriptor, but warn
+      // so callers can detect missing closeSession calls (single-flight invariant).
+      getLogger().warn("session", "openSession called on already-RUNNING session", {
+        storyId: opts.storyId,
+        sessionName: name,
+      });
     }
 
     getLogger().debug("session", "Session opened via SessionManager", {
@@ -515,7 +525,10 @@ export class SessionManager implements ISessionManager {
         maxTurns: opts?.maxTurns,
       });
     } catch (err) {
-      if (opts?.signal?.aborted) {
+      // Check signal.aborted OR an AbortError thrown by the adapter to avoid
+      // false-positive cancellation when a non-abort error races with an
+      // incidentally-aborted signal from an unrelated controller.
+      if (opts?.signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
         this._cancelledSessions.add(handle.id);
         const desc = this._findByName(handle.id);
         if (desc && desc.state === "RUNNING") {
@@ -550,7 +563,14 @@ export class SessionManager implements ISessionManager {
     optsOrRequest: RunInSessionOpts | AgentRunRequest,
     legacyOptions?: SessionRunOptions,
   ): Promise<TurnResult | AgentResult | unknown> {
-    if (typeof promptOrFnOrManager === "object" && promptOrFnOrManager !== null && "run" in promptOrFnOrManager) {
+    // "getDefault" is present on every IAgentManager (including lean proxies that
+    // only expose { getDefault, run }), but absent on strings and callback functions.
+    // Stronger discriminant than "run" (which any object could have).
+    if (
+      typeof promptOrFnOrManager === "object" &&
+      promptOrFnOrManager !== null &&
+      "getDefault" in promptOrFnOrManager
+    ) {
       return this._runInSessionLegacy(
         idOrName,
         promptOrFnOrManager as IAgentManager,
