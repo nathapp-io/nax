@@ -422,7 +422,7 @@ export class SessionManager implements ISessionManager {
     });
 
     if (!existingDescriptor) {
-      this.create({
+      const created = this.create({
         role: "main",
         agent: opts.agentName,
         workdir: opts.workdir,
@@ -430,11 +430,9 @@ export class SessionManager implements ISessionManager {
         storyId: opts.storyId,
         handle: name,
       });
-    }
-
-    const desc = this._findByName(name);
-    if (desc && desc.state === "CREATED") {
-      this.transition(desc.id, "RUNNING");
+      this.transition(created.id, "RUNNING");
+    } else if (existingDescriptor.state === "CREATED") {
+      this.transition(existingDescriptor.id, "RUNNING");
     }
 
     getLogger().debug("session", "Session opened via SessionManager", {
@@ -448,19 +446,21 @@ export class SessionManager implements ISessionManager {
   }
 
   async closeSession(handle: SessionHandle): Promise<void> {
+    const desc = this._findByName(handle.id);
     const adapter = this._getAdapter(handle.agentName);
-    if (!adapter) return; // best-effort
 
-    try {
-      await adapter.closeSession(handle);
-    } catch (err) {
-      getLogger().warn("session", "adapter.closeSession failed (swallowed)", {
-        sessionName: handle.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    if (adapter) {
+      try {
+        await adapter.closeSession(handle);
+      } catch (err) {
+        getLogger().warn("session", "adapter.closeSession failed (swallowed)", {
+          storyId: desc?.storyId,
+          sessionName: handle.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
-    const desc = this._findByName(handle.id);
     if (desc && desc.state === "RUNNING") {
       this.transition(desc.id, "COMPLETED");
     }
