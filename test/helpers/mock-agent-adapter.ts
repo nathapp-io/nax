@@ -1,5 +1,5 @@
 import { mock } from "bun:test";
-import type { AgentAdapter, AgentResult, CompleteResult } from "../../src/agents/types";
+import type { AgentAdapter, AgentResult, CompleteResult, SessionHandle, TurnResult } from "../../src/agents/types";
 
 const DEFAULT_RUN_RESULT: AgentResult = {
   success: true,
@@ -14,6 +14,17 @@ const DEFAULT_COMPLETE_RESULT: CompleteResult = {
   output: "",
   costUsd: 0,
   source: "fallback" as const,
+};
+
+const DEFAULT_SESSION_HANDLE: SessionHandle = {
+  id: "mock-session",
+  agentName: "mock",
+};
+
+const DEFAULT_TURN_RESULT: TurnResult = {
+  output: "",
+  tokenUsage: { inputTokens: 0, outputTokens: 0 },
+  internalRoundTrips: 1,
 };
 
 export function makeAgentAdapter(overrides: Partial<AgentAdapter> = {}): AgentAdapter {
@@ -34,6 +45,8 @@ export function makeAgentAdapter(overrides: Partial<AgentAdapter> = {}): AgentAd
     complete: mock(() => Promise.resolve(DEFAULT_COMPLETE_RESULT)),
     deriveSessionName: mock(() => ""),
     closePhysicalSession: mock(() => Promise.resolve()),
+    openSession: mock(() => Promise.resolve(DEFAULT_SESSION_HANDLE)),
+    sendTurn: mock(() => Promise.resolve(DEFAULT_TURN_RESULT)),
     closeSession: mock(() => Promise.resolve()),
     ...overrides,
   } as AgentAdapter;
