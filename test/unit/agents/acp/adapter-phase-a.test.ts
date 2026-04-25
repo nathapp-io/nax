@@ -113,6 +113,29 @@ describe("openSession()", () => {
     const impl = handle as AcpSessionHandleImpl;
     expect(impl._resumed).toBe(true);
   });
+
+  test("pre-aborted signal rejects before spawning a client", async () => {
+    let createClientCalls = 0;
+    const session = makeSession();
+    const client = makeClient(session);
+    _acpAdapterDeps.createClient = mock(() => {
+      createClientCalls += 1;
+      return client as any;
+    });
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      adapter.openSession(
+        "nax-aborted",
+        makeOpenSessionOpts({
+          signal: controller.signal,
+        }),
+      ),
+    ).rejects.toThrow(/aborted|shutdown in progress/i);
+    expect(createClientCalls).toBe(0);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,6 +199,49 @@ describe("sendTurn()", () => {
 
     expect(result._timedOut).toBe(true);
     expect(result.output).toBe("");
+    expect(result.internalRoundTrips).toBe(1);
+  });
+
+  test("pre-aborted signal returns _aborted without issuing a prompt", async () => {
+    let promptCalls = 0;
+    const session = makeSession({
+      promptFn: async () => {
+        promptCalls++;
+        return {
+          messages: [{ role: "assistant", content: "should not run" }],
+          stopReason: "end_turn",
+        };
+      },
+    });
+    const handle = await openHandle(session);
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: NO_OP_INTERACTION_HANDLER,
+      signal: controller.signal,
+    });
+
+    expect(result._aborted).toBe(true);
+    expect(result.internalRoundTrips).toBe(0);
+    expect(promptCalls).toBe(0);
+  });
+
+  test("mid-turn abort returns _aborted=true", async () => {
+    const session = makeSession({
+      promptFn: () => new Promise(() => {}),
+      cancelFn: async () => {},
+    });
+    const handle = await openHandle(session);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 5);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: NO_OP_INTERACTION_HANDLER,
+      signal: controller.signal,
+    });
+
+    expect(result._aborted).toBe(true);
     expect(result.internalRoundTrips).toBe(1);
   });
 

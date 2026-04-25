@@ -341,6 +341,10 @@ export interface TurnResult {
   _lastStopReason?: string;
   /** Internal: set to true when the turn timed out. Used by run() shim. */
   _timedOut?: boolean;
+  /** Internal: set to true when the turn was aborted via signal. Used by run() shim. */
+  _aborted?: boolean;
+  /** Internal: ACP retryable hint for stopReason=error. Used by run() shim. */
+  _retryable?: boolean;
 }
 
 /**

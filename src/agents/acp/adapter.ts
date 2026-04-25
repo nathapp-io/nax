@@ -156,6 +156,48 @@ export const _fallbackDeps = {
   sleep,
 };
 
+function createAbortError(signal?: AbortSignal, fallback = "Run aborted"): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) {
+    return reason;
+  }
+  if (typeof reason === "string" && reason.length > 0) {
+    return new Error(reason);
+  }
+  return new Error(fallback);
+}
+
+function throwIfAborted(signal?: AbortSignal, fallback?: string): void {
+  if (signal?.aborted) {
+    throw createAbortError(signal, fallback);
+  }
+}
+
+async function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal, fallback?: string): Promise<T> {
+  if (!signal) {
+    return promise;
+  }
+  if (signal.aborted) {
+    throw createAbortError(signal, fallback);
+  }
+
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(createAbortError(signal, fallback));
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,21 +283,34 @@ export async function runSessionPrompt(
   session: AcpSession,
   prompt: string,
   timeoutMs: number,
-): Promise<{ response: AcpSessionResponse | null; timedOut: boolean }> {
+  signal?: AbortSignal,
+): Promise<{ response: AcpSessionResponse | null; timedOut: boolean; aborted: boolean }> {
+  throwIfAborted(signal, "Run aborted — shutdown in progress");
   const promptPromise = session.prompt(prompt);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<"timeout">((resolve) => {
     timeoutId = setTimeout(() => resolve("timeout"), timeoutMs);
   });
 
-  let winner: AcpSessionResponse | "timeout";
+  let abortHandler: (() => void) | undefined;
+  const abortPromise = signal
+    ? new Promise<"aborted">((resolve) => {
+        abortHandler = () => resolve("aborted");
+        signal.addEventListener("abort", abortHandler, { once: true });
+      })
+    : null;
+
+  let winner: AcpSessionResponse | "timeout" | "aborted";
   try {
-    winner = await Promise.race([promptPromise, timeoutPromise]);
+    winner = await Promise.race([promptPromise, timeoutPromise, ...(abortPromise ? [abortPromise] : [])]);
   } finally {
     clearTimeout(timeoutId);
+    if (signal && abortHandler) {
+      signal.removeEventListener("abort", abortHandler);
+    }
   }
 
-  if (winner === "timeout") {
+  if (winner === "timeout" || winner === "aborted") {
     // Suppress the pending prompt rejection to prevent unhandled rejection after
     // cancelActivePrompt kills the acpx process (which causes an EPIPE rejection).
     promptPromise.catch(() => {});
@@ -264,10 +319,10 @@ export async function runSessionPrompt(
     } catch {
       await session.close().catch(() => {});
     }
-    return { response: null, timedOut: true };
+    return { response: null, timedOut: winner === "timeout", aborted: winner === "aborted" };
   }
 
-  return { response: winner as AcpSessionResponse, timedOut: false };
+  return { response: winner as AcpSessionResponse, timedOut: false, aborted: false };
 }
 
 /**
@@ -664,6 +719,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       timeoutSeconds: options.timeoutSeconds,
       onSessionEstablished: options.onSessionEstablished,
       onPidSpawned: options.onPidSpawned,
+      signal: options.abortSignal,
     });
 
     const impl = handle as AcpSessionHandleImpl;
@@ -678,8 +734,12 @@ export class AcpAgentAdapter implements AgentAdapter {
     let isSessionBroken = false;
 
     try {
-      turnResult = await this.sendTurn(handle, prompt, { interactionHandler, maxTurns });
-      succeeded = !turnResult._timedOut && turnResult._lastStopReason === "end_turn";
+      turnResult = await this.sendTurn(handle, prompt, {
+        interactionHandler,
+        maxTurns,
+        signal: options.abortSignal,
+      });
+      succeeded = !turnResult._timedOut && !turnResult._aborted && turnResult._lastStopReason === "end_turn";
       isSessionBroken = !succeeded && turnResult._lastStopReason === "error";
     } finally {
       // If turnResult is undefined, sendTurn threw before completing (or prep code
@@ -702,6 +762,24 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     const durationMs = Date.now() - startTime;
 
+    if (turnResult?._aborted) {
+      return {
+        success: false,
+        exitCode: 130,
+        output: "Run aborted — shutdown in progress",
+        rateLimited: false,
+        durationMs,
+        estimatedCost: 0,
+        protocolIds: impl.protocolIds,
+        adapterFailure: {
+          category: "availability",
+          outcome: "fail-aborted",
+          retriable: false,
+          message: "Run aborted — shutdown in progress",
+        },
+      };
+    }
+
     if (turnResult?._timedOut) {
       return {
         success: false,
@@ -722,7 +800,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     const success = turnResult?._lastStopReason === "end_turn";
     const isSessionError = turnResult?._lastStopReason === "error";
-    const isSessionErrorRetryable = isSessionError && false; // acpx retryable field not yet threaded through TurnResult (Phase B)
+    const isSessionErrorRetryable = isSessionError && turnResult?._retryable === true;
     const output = turnResult?.output ?? "";
     const estimatedCost = turnResult?.cost?.total ?? 0;
     const rawTokenUsage = turnResult?.tokenUsage;
@@ -1018,55 +1096,73 @@ export class AcpAgentAdapter implements AgentAdapter {
   async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
     const { agentName, workdir, resolvedPermissions, modelDef, timeoutSeconds, onSessionEstablished, onPidSpawned } =
       opts;
-    // TODO(adr-019-b): wire opts.signal for abort support
+    const { signal } = opts;
+
+    throwIfAborted(signal, "Run aborted — shutdown in progress");
 
     const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
     const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned);
-    await client.start();
+    let session: AcpSession | undefined;
 
-    const permissionMode = resolvedPermissions.mode;
-    getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
-      permission: permissionMode,
-      stage: "open-session",
-    });
+    try {
+      await raceWithAbort(client.start(), signal, "Run aborted — shutdown in progress");
 
-    const { session, resumed } = await ensureAcpSession(client, name, agentName, permissionMode);
+      const permissionMode = resolvedPermissions.mode;
+      getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
+        permission: permissionMode,
+        stage: "open-session",
+      });
 
-    const protocolIds: ProtocolIds = {
-      recordId: (session as { recordId?: string }).recordId ?? null,
-      sessionId: (session as { id?: string }).id ?? null,
-    };
+      const ensured = await raceWithAbort(
+        ensureAcpSession(client, name, agentName, permissionMode),
+        signal,
+        "Run aborted — shutdown in progress",
+      );
+      session = ensured.session;
 
-    if (onSessionEstablished) {
-      try {
-        onSessionEstablished(protocolIds, name);
-      } catch (err) {
-        getSafeLogger()?.warn("acp-adapter", "onSessionEstablished callback threw — continuing", {
-          sessionName: name,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      const protocolIds: ProtocolIds = {
+        recordId: (session as { recordId?: string }).recordId ?? null,
+        sessionId: (session as { id?: string }).id ?? null,
+      };
+
+      if (onSessionEstablished) {
+        try {
+          onSessionEstablished(protocolIds, name);
+        } catch (err) {
+          getSafeLogger()?.warn("acp-adapter", "onSessionEstablished callback threw — continuing", {
+            sessionName: name,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
-    }
 
-    return new AcpSessionHandleImpl({
-      id: name,
-      agentName,
-      protocolIds,
-      client,
-      session,
-      sessionName: name,
-      resumed,
-      timeoutSeconds,
-      modelDef,
-    });
+      throwIfAborted(signal, "Run aborted — shutdown in progress");
+
+      return new AcpSessionHandleImpl({
+        id: name,
+        agentName,
+        protocolIds,
+        client,
+        session,
+        sessionName: name,
+        resumed: ensured.resumed,
+        timeoutSeconds,
+        modelDef,
+      });
+    } catch (error) {
+      if (session) {
+        await closeAcpSession(session).catch(() => {});
+      }
+      await client.close().catch(() => {});
+      throw error;
+    }
   }
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const impl = handle as AcpSessionHandleImpl;
     const { _session: session, _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
-    const { interactionHandler } = opts;
+    const { interactionHandler, signal } = opts;
     const MAX_TURNS = opts.maxTurns ?? 10;
-    // TODO(adr-019-b): wire opts.signal for mid-turn abort support
 
     const totalTokenUsage = {
       input_tokens: 0,
@@ -1078,16 +1174,31 @@ export class AcpAgentAdapter implements AgentAdapter {
     let turnCount = 0;
     let lastResponse: AcpSessionResponse | null = null;
     let timedOut = false;
+    let aborted = false;
     let currentPrompt = prompt;
+
+    if (signal?.aborted) {
+      return {
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        cost: { total: 0 },
+        internalRoundTrips: 0,
+        _aborted: true,
+      };
+    }
 
     while (turnCount < MAX_TURNS) {
       turnCount++;
       getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
-      const turnResult = await runSessionPrompt(session, currentPrompt, timeoutSeconds * 1000);
+      const turnResult = await runSessionPrompt(session, currentPrompt, timeoutSeconds * 1000, signal);
 
       if (turnResult.timedOut) {
         timedOut = true;
+        break;
+      }
+      if (turnResult.aborted) {
+        aborted = true;
         break;
       }
 
@@ -1115,12 +1226,20 @@ export class AcpAgentAdapter implements AgentAdapter {
           : { kind: "context-tool", name: toolCall.name, input: toolCall.input };
 
         try {
-          const response = await interactionHandler.onInteraction(interaction);
+          const response = await raceWithAbort(
+            interactionHandler.onInteraction(interaction),
+            signal,
+            "Run aborted — shutdown in progress",
+          );
           if (response) {
             currentPrompt = response.answer;
             continue;
           }
         } catch (err) {
+          if (signal?.aborted) {
+            aborted = true;
+            break;
+          }
           getSafeLogger()?.warn(
             "acp-adapter",
             `InteractionHandler.onInteraction failed for context-tool: ${err instanceof Error ? err.message : String(err)}`,
@@ -1134,7 +1253,11 @@ export class AcpAgentAdapter implements AgentAdapter {
         let interactionTimeoutId: ReturnType<typeof setTimeout> | undefined;
         try {
           const response = await Promise.race([
-            interactionHandler.onInteraction({ kind: "question", text: question }),
+            raceWithAbort(
+              interactionHandler.onInteraction({ kind: "question", text: question }),
+              signal,
+              "Run aborted — shutdown in progress",
+            ),
             new Promise<null>((resolve) => {
               interactionTimeoutId = setTimeout(() => resolve(null), INTERACTION_TIMEOUT_MS);
             }),
@@ -1144,6 +1267,10 @@ export class AcpAgentAdapter implements AgentAdapter {
             continue;
           }
         } catch (err) {
+          if (signal?.aborted) {
+            aborted = true;
+            break;
+          }
           getSafeLogger()?.warn(
             "acp-adapter",
             `InteractionHandler.onInteraction failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -1156,7 +1283,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       break;
     }
 
-    if (turnCount >= MAX_TURNS) {
+    if (turnCount >= MAX_TURNS && !timedOut && !aborted && MAX_TURNS > 1) {
       getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
     }
 
@@ -1185,6 +1312,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       internalRoundTrips: turnCount,
       _lastStopReason: lastResponse?.stopReason,
       _timedOut: timedOut || undefined,
+      _aborted: aborted || undefined,
+      _retryable: lastResponse?.retryable,
     };
   }
 
