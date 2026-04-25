@@ -4,8 +4,10 @@ import { createRuntime } from "../../../src/runtime";
 import { _promptAuditorDeps } from "../../../src/runtime/prompt-auditor";
 import { _costAggDeps } from "../../../src/runtime/cost-aggregator";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeMockAgentManager, makeTestRuntime } from "../../helpers";
+import { makeNaxConfig, makeMockAgentManager, makeTestRuntime } from "../../helpers";
 import { withTempDir } from "../../helpers/temp";
+
+const auditEnabledConfig = makeNaxConfig({ agent: { promptAudit: { enabled: true } } });
 
 describe("Wave 2 exit criteria", () => {
   test("EC-1: createRuntime() produces a NaxRuntime with a UUID runId", () => {
@@ -41,7 +43,7 @@ describe("Wave 2 exit criteria", () => {
       };
 
       try {
-        const rt = createRuntime(DEFAULT_CONFIG, dir);
+        const rt = createRuntime(auditEnabledConfig, dir);
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,
@@ -116,7 +118,7 @@ describe("Wave 2 exit criteria", () => {
       };
 
       try {
-        const rt = createRuntime(DEFAULT_CONFIG, dir);
+        const rt = createRuntime(auditEnabledConfig, dir);
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,

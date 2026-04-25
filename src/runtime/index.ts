@@ -70,9 +70,12 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const configLoader = createConfigLoader(config);
 
   const costDir = join(workdir, ".nax", "cost");
-  const auditDir = join(workdir, ".nax", "audit");
   const costAggregator = opts?.costAggregator ?? new CostAggregator(runId, costDir);
-  const promptAuditor = opts?.promptAuditor ?? new PromptAuditor(runId, auditDir);
+
+  const auditEnabled = config.agent?.promptAudit?.enabled ?? false;
+  const auditDir = config.agent?.promptAudit?.dir ?? join(workdir, ".nax", "audit");
+  const promptAuditor =
+    opts?.promptAuditor ?? (auditEnabled ? new PromptAuditor(runId, auditDir) : createNoOpPromptAuditor());
 
   const middleware = MiddlewareChain.from([
     cancellationMiddleware(),
