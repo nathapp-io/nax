@@ -2,7 +2,7 @@
  * Tests for AcpAgentAdapter — adapterFailure taxonomy (Issue #476)
  *
  * Verifies that AgentResult.adapterFailure is populated correctly for all
- * failure paths in run() and _runWithClient():
+ * failure paths in run():
  *   - success → adapterFailure undefined
  *   - timeout (exitCode 124) → fail-timeout
  *   - session error non-retryable → fail-adapter-error, retriable: false

@@ -2,9 +2,9 @@
  * Tests for ACP session lifecycle — conditional close on success/failure.
  *
  * Covers:
- * - _runWithClient keeps session open on failure (close NOT called when stopReason != "end_turn")
- * - _runWithClient closes session on success (close IS called when stopReason == "end_turn")
- * - _runWithClient closes broken session (stopReason == "error")
+ * - run() keeps session open on failure (close NOT called when stopReason != "end_turn")
+ * - run() closes session on success (close IS called when stopReason == "end_turn")
+ * - run() closes broken session (stopReason == "error")
  * - runSessionPrompt timer cleanup (timer cleared when prompt wins the race)
  *
  * Note: sidecar tests (saveAcpSession, sweepFeatureSessions, clearAcpSession, readAcpSession,

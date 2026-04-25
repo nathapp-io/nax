@@ -220,6 +220,28 @@ describe("sendTurn()", () => {
     expect(result.internalRoundTrips).toBe(2);
   });
 
+  test("context-tool handler throws: sendTurn resolves and breaks loop", async () => {
+    const session = makeSession({
+      promptFn: async () => ({
+        messages: [{ role: "assistant", content: '<nax_tool_call name="get_context">\n{}\n</nax_tool_call>' }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 50, output_tokens: 20 },
+      }),
+    });
+    const handle = await openHandle(session);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: {
+        async onInteraction() {
+          throw new Error("handler failed");
+        },
+      },
+    });
+
+    // Handler throw is swallowed; sendTurn resolves after breaking the loop
+    expect(result.internalRoundTrips).toBe(1);
+  });
+
   test("question interaction: calls handler and continues with answer", async () => {
     let turnIndex = 0;
     const session = makeSession({

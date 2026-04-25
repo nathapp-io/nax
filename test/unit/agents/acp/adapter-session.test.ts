@@ -1,5 +1,5 @@
 /**
- * Tests for AcpAgentAdapter — session mode (_runWithClient)
+ * Tests for AcpAgentAdapter — session mode
  *
  * Tests the acpx session-based run() flow via createClient injectable dep:
  * - Single turn, no question → correct AgentResult
