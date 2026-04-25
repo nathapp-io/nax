@@ -57,10 +57,7 @@ export interface AgentResult {
    *
    * ACP: recordId is stable across reconnects; sessionId is volatile.
    */
-  protocolIds?: {
-    recordId: string | null;
-    sessionId: string | null;
-  };
+  protocolIds?: ProtocolIds;
   /**
    * Structured failure classification (Phase 2 plumbing — additive, callers may ignore).
    * Populated on all non-success return paths. Undefined on success.
@@ -188,10 +185,7 @@ export interface AgentRunOptions {
    * Synchronous — the callback must not block the run loop. Implementations
    * that need async work should fire-and-forget.
    */
-  onSessionEstablished?: (
-    protocolIds: { recordId: string | null; sessionId: string | null },
-    sessionName: string,
-  ) => void;
+  onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
 }
 
 /**
