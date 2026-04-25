@@ -371,4 +371,19 @@ describe("closeSession(handle)", () => {
 
     await expect(adapter.closeSession(handle)).resolves.toBeUndefined();
   });
+
+  test("session.close() error does not prevent client.close()", async () => {
+    const closedClients: string[] = [];
+    const session = makeSession({ closeFn: async () => { throw new Error("session close failed"); } });
+    const client = {
+      ...makeClient(session),
+      close: async () => { closedClients.push("client"); },
+    };
+    _acpAdapterDeps.createClient = mock(() => client as any);
+
+    const handle = await adapter.openSession("nax-close-session-err", makeOpenSessionOpts());
+    await expect(adapter.closeSession(handle)).resolves.toBeUndefined();
+
+    expect(closedClients).toEqual(["client"]);
+  });
 });

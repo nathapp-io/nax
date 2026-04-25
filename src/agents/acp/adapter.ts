@@ -1113,10 +1113,17 @@ export class AcpAgentAdapter implements AgentAdapter {
           ? { kind: "context-tool", name: toolCall.name, error: toolCall.error }
           : { kind: "context-tool", name: toolCall.name, input: toolCall.input };
 
-        const response = await interactionHandler.onInteraction(interaction);
-        if (response) {
-          currentPrompt = response.answer;
-          continue;
+        try {
+          const response = await interactionHandler.onInteraction(interaction);
+          if (response) {
+            currentPrompt = response.answer;
+            continue;
+          }
+        } catch (err) {
+          getSafeLogger()?.warn(
+            "acp-adapter",
+            `InteractionHandler.onInteraction failed for context-tool: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
         break;
       }
@@ -1182,7 +1189,10 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async closeSession(handle: SessionHandle): Promise<void> {
     const impl = handle as AcpSessionHandleImpl;
-    await closeAcpSession(impl._session);
-    await impl._client.close().catch(() => {});
+    try {
+      await closeAcpSession(impl._session);
+    } finally {
+      await impl._client.close().catch(() => {});
+    }
   }
 }
