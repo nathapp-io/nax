@@ -94,7 +94,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       storyId: ctx.storyId,
       workdir: ctx.packageDir,
     });
-    return op.parse(raw.output);
+    return op.parse(raw.output, input, buildCtx);
   }
 
   const runOp = op as RunOperation<I, O, C>;
@@ -117,5 +117,5 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       agentName: ctx.agentName,
     });
   }
-  return op.parse(rawOutput);
+  return op.parse(rawOutput, input, buildCtx);
 }

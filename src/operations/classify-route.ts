@@ -1,23 +1,21 @@
-import type { Complexity, ModelTier } from "../config";
 import { routingConfigSelector } from "../config";
-import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
-import { ROUTING_INSTRUCTIONS } from "../routing";
+import type { RoutingDecision } from "../routing";
+import { ROUTING_INSTRUCTIONS, validateRoutingDecision } from "../routing";
 import { parseLLMJson } from "../utils/llm-json";
 import type { BuildContext, CompleteOperation } from "./types";
 
 export interface ClassifyRouteInput extends Pick<UserStory, "title" | "description" | "acceptanceCriteria" | "tags"> {}
 
-export interface ClassifyRouteOutput {
-  complexity: Complexity;
-  modelTier: ModelTier;
-  reasoning: string;
-}
+/**
+ * The op outputs a full `RoutingDecision` — the same shape the legacy
+ * `classifyWithLlm` returns. There is no separate output type: the op IS a
+ * RoutingDecision producer. `parse` runs the SSOT validator
+ * `validateRoutingDecision` (config-aware tier check + `testStrategy` derivation).
+ */
+export type ClassifyRouteOutput = RoutingDecision;
 
 type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
-
-const VALID_COMPLEXITY = new Set<string>(["simple", "medium", "complex", "expert"]);
-const VALID_TIERS = new Set<string>(["fast", "balanced", "powerful"]);
 
 const CLASSIFY_ROLE = `You are a story classifier that assigns complexity and model tier to user stories.
 Respond with JSON only — no explanation text before or after.`;
@@ -42,19 +40,8 @@ export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRout
       task: { id: "task", content: `${ROUTING_INSTRUCTIONS}\n\n## Story\n\n${storyBody}`, overridable: false },
     };
   },
-  parse(output: string): ClassifyRouteOutput {
+  parse(output: string, input: ClassifyRouteInput, ctx: BuildContext<RoutingConfig>): ClassifyRouteOutput {
     const raw = parseLLMJson<Record<string, unknown>>(output);
-    if (
-      !VALID_COMPLEXITY.has(raw.complexity as string) ||
-      !VALID_TIERS.has(raw.modelTier as string) ||
-      typeof raw.reasoning !== "string"
-    ) {
-      throw new NaxError(
-        `classify-route: invalid response — ${JSON.stringify(raw)}`,
-        "CLASSIFY_ROUTE_INVALID_RESPONSE",
-        { stage: "run", parsed: raw },
-      );
-    }
-    return raw as unknown as ClassifyRouteOutput;
+    return validateRoutingDecision(raw, ctx.packageView.config, input);
   },
 };
