@@ -87,7 +87,10 @@ describe("AcpAgentAdapter — adapterFailure taxonomy", () => {
     expect(result.adapterFailure?.retriable).toBe(false);
   });
 
-  test("session error (stopReason=error, retryable=true) — fail-adapter-error, retriable: true", async () => {
+  // ADR-019 Phase A: retryable field is not yet threaded through TurnResult.
+  // sessionErrorRetryable and adapterFailure.retriable are always false for session errors.
+  // Phase B will add _retryable to TurnResult and restore per-response retryable propagation.
+  test("session error (stopReason=error, retryable=true) — fail-adapter-error, retriable: false (Phase A limitation)", async () => {
     const session = makeSession({
       promptFn: async () => ({
         messages: [],
@@ -101,10 +104,10 @@ describe("AcpAgentAdapter — adapterFailure taxonomy", () => {
 
     expect(result.success).toBe(false);
     expect(result.sessionError).toBe(true);
-    expect(result.sessionErrorRetryable).toBe(true);
+    expect(result.sessionErrorRetryable).toBe(false);
     expect(result.adapterFailure).toBeDefined();
     expect(result.adapterFailure?.outcome).toBe("fail-adapter-error");
-    expect(result.adapterFailure?.retriable).toBe(true);
+    expect(result.adapterFailure?.retriable).toBe(false);
   });
 
   test("cancelled (stopReason=cancelled) — fail-unknown, retriable: false", async () => {
