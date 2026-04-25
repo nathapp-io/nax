@@ -9,8 +9,8 @@ function extractTokens(
   const tu = (result as Record<string, unknown>).tokenUsage as Record<string, number> | undefined;
   if (!tu) return null;
   return {
-    input: tu.input_tokens ?? 0,
-    output: tu.output_tokens ?? 0,
+    input: tu.inputTokens ?? 0,
+    output: tu.outputTokens ?? 0,
     cacheRead: tu.cache_read_input_tokens,
     cacheWrite: tu.cache_creation_input_tokens,
   };
@@ -27,7 +27,8 @@ export function costMiddleware(aggregator: ICostAggregator, runId: string): Agen
     name: "cost",
     async after(ctx: MiddlewareContext, result: unknown, durationMs: number): Promise<void> {
       const tokens = extractTokens(result);
-      if (!tokens) return;
+      const costUsd = extractCostUsd(result);
+      if (!tokens && costUsd === 0) return;
       const event: CostEvent = {
         ts: Date.now(),
         runId,
@@ -35,8 +36,8 @@ export function costMiddleware(aggregator: ICostAggregator, runId: string): Agen
         model: ((result as Record<string, unknown>).model as string | undefined) ?? "unknown",
         stage: ctx.stage,
         storyId: ctx.storyId,
-        tokens,
-        costUsd: extractCostUsd(result),
+        tokens: tokens ?? { input: 0, output: 0 },
+        costUsd,
         durationMs,
       };
       aggregator.record(event);
