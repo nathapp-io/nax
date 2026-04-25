@@ -4,6 +4,7 @@ import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from ".
 import { SessionManager } from "../../../src/session/manager";
 import type { NameForRequest, OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";
 import { makeAgentAdapter } from "../../helpers/mock-agent-adapter";
+import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
 import { makeNaxConfig } from "../../helpers/mock-nax-config";
 
 const WORKDIR = "/tmp/nax-phase-b-test";
@@ -215,15 +216,33 @@ describe("closeSession()", () => {
     expect(sm.descriptor(name)?.state).toBe("COMPLETED");
   });
 
-  test("cleans up busy and cancelled sets even without adapter", async () => {
-    // Inject adapter only for sendPrompt, not for closeSession (simulate no-adapter close)
-    const sm = new SessionManager();
-    const handle: SessionHandle = { id: "nax-cleanup-test", agentName: "claude" };
-    // Manually mark as busy to simulate a mid-turn close call
-    // (internal test: close should remove from _busySessions regardless)
-    await sm.closeSession(handle); // should not throw
-    // If we reach here, the no-adapter path ran without error
-    expect(true).toBe(true);
+  test("clears busy flag so a post-close sendPrompt does not throw SESSION_BUSY", async () => {
+    let resolveFirst!: () => void;
+    let callCount = 0;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
+      sendTurn: mock(async () => {
+        callCount++;
+        if (callCount === 1) {
+          await new Promise<void>((res) => {
+            resolveFirst = res;
+          });
+        }
+        return MOCK_TURN;
+      }),
+      closeSession: mock(async () => {}),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const handle = await sm.openSession("nax-cleanup-test", makeOpenRequest());
+
+    const firstTurn = sm.sendPrompt(handle, "first");
+    await sm.closeSession(handle); // must clear the busy flag
+    resolveFirst();
+    await firstTurn;
+
+    // Busy guard cleared — second sendPrompt must not throw SESSION_BUSY
+    const second = await sm.sendPrompt(handle, "second");
+    expect(second.output).toBe("hello world");
   });
 });
 
@@ -404,7 +423,6 @@ describe("runInSession() — legacy form preserved", () => {
     expect(active.length).toBeGreaterThan(0);
     const sessionId = active[0].id;
 
-    const { makeMockAgentManager } = await import("../../helpers/mock-agent-manager");
     const agentManager = makeMockAgentManager();
 
     // The legacy path routes through _runInSessionLegacy — it throws SESSION_NOT_FOUND

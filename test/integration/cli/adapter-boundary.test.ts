@@ -154,10 +154,4 @@ describe("ADR-013 Phase 5 — adapter boundary enforcement", () => {
     }
     expect(violations).toEqual([]);
   });
-
-  test("IAgentManager methods are the only allowed adapter call path", () => {
-    // This test documents the expected pattern
-    // If the first test passes, this is a documentation test
-    expect(violations.length).toBe(0);
-  });
 });
