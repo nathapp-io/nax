@@ -13,20 +13,22 @@ import { join } from "path";
 const SRC_DIR = join(process.cwd(), "src");
 
 // Files that are allowed to call adapter methods directly — the adapter wiring layer.
-// These translate IAgentManager method calls into direct adapter calls. All other
-// source files must go through IAgentManager. Keep in sync with .claude/rules/adapter-wiring.md §"Phase 5 Constraint".
+// These translate IAgentManager/ISessionManager calls into direct adapter calls. All other
+// source files must go through IAgentManager or ISessionManager. Keep in sync with
+// .claude/rules/adapter-wiring.md §"Phase 5 Constraint".
 const ALLOWED_FILES = new Set([
-  "agents/manager.ts", // IAgentManager implementation
-  "agents/utils.ts",   // wrapAdapterAsManager() — wraps bare adapter as IAgentManager
+  "agents/manager.ts",  // IAgentManager implementation
+  "agents/utils.ts",    // wrapAdapterAsManager() — wraps bare adapter as IAgentManager
+  "session/manager.ts", // ADR-019 Phase B: openSession/sendTurn/closeSession wiring layer
 ]);
 
-// Patterns that indicate direct adapter method calls
+// Patterns that indicate direct adapter method calls.
 // (?!\))  — negative lookahead: do NOT match if ( is immediately followed by )
 // This skips decorative mentions in log messages like "adapter.complete() failed"
 // while matching actual calls like adapter.complete(prompt) or adapter.complete ()
 const FORBIDDEN_PATTERNS = [
-  /\badapter\.(run|complete|plan|decompose)\s*\((?!\))/,
-  /\bagent\.(run|complete|plan|decompose)\s*\((?!\))/,
+  /\badapter\.(run|complete|plan|decompose|openSession|sendTurn|closeSession)\s*\((?!\))/,
+  /\bagent\.(run|complete|plan|decompose|openSession|sendTurn|closeSession)\s*\((?!\))/,
 ];
 
 // Patterns that are allowed (IAgentManager methods via the manager)
@@ -143,7 +145,7 @@ describe("ADR-013 Phase 5 — adapter boundary enforcement", () => {
     }
   });
 
-  test("no direct adapter.run/complete/plan/decompose calls outside agents/manager.ts", () => {
+  test("no direct adapter.run/complete/plan/decompose/openSession/sendTurn/closeSession calls outside permitted wiring layer", () => {
     if (violations.length > 0) {
       const msg = violations
         .map((v) => `  ${v.file}:${v.line}: ${v.code}`)
