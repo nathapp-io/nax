@@ -18,6 +18,7 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | Test files > 800 lines | Split by concern | Violates the hard limit in `docs/guides/testing-rules.md` / `docs/guides/testing-conventions.md` |
 | Prompt-building functions outside `src/prompts/builders/` | Add a method to the appropriate builder class | Orphan prompts scatter LLM instruction logic across subsystems, making them impossible to audit, test, or optimise centrally (see Prompt Builder Convention below) |
 | Inline test-file classification outside `src/test-runners/` | `resolveTestFilePatterns(config, workdir, packageDir)` SSOT | ADR-009 — nax is language-agnostic and monorepo-aware. Hardcoded `test/unit/`, `.test.ts`, `_test.go`, `\.spec\.` regexes fragment the truth and break under polyglot monorepos (see Test-File Classification Convention below) |
+| Hand-rolled LLM JSON extraction (`output.trim().replace(/\`\`\`json.../)`, bare `JSON.parse(output)`) | `parseLLMJson<T>(output)` from `src/utils/llm-json` | Single-tier parsing silently fails on fence-wrapped, preamble-padded, or trailing-comma responses. `parseLLMJson` runs three extraction tiers and is the SSOT for all LLM response parsing. |
 
 ## Prompt Builder Convention
 
