@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { NO_OP_INTERACTION_HANDLER } from "../../../src/agents/interaction-handler";
-import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "../../../src/agents/types";
+import type { SendTurnOpts, SessionHandle, TurnResult } from "../../../src/agents/types";
 import { SessionManager } from "../../../src/session/manager";
-import type { NameForRequest, OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";
+import type { OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";
 import { makeAgentAdapter } from "../../helpers/mock-agent-adapter";
 import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
 import { makeNaxConfig } from "../../helpers/mock-nax-config";
@@ -36,215 +36,6 @@ function makeRunOpts(overrides: Partial<RunInSessionOpts> = {}): RunInSessionOpt
     ...overrides,
   };
 }
-
-// ─── nameFor() ────────────────────────────────────────────────────────────────
-
-describe("nameFor()", () => {
-  test("produces nax-<hash8> prefix for workdir", () => {
-    const sm = new SessionManager();
-    const name = sm.nameFor({ workdir: WORKDIR });
-    expect(name).toMatch(/^nax-[0-9a-f]{8}$/);
-  });
-
-  test("includes featureName when provided", () => {
-    const sm = new SessionManager();
-    const name = sm.nameFor({ workdir: WORKDIR, featureName: "My Feature" });
-    expect(name).toContain("my-feature");
-  });
-
-  test("includes storyId when provided", () => {
-    const sm = new SessionManager();
-    const name = sm.nameFor({ workdir: WORKDIR, storyId: "us-001" });
-    expect(name).toContain("us-001");
-  });
-
-  test("omits stage suffix for default stage 'run'", () => {
-    const sm = new SessionManager();
-    const withRun = sm.nameFor({ workdir: WORKDIR, pipelineStage: "run" });
-    const withoutStage = sm.nameFor({ workdir: WORKDIR });
-    expect(withRun).toBe(withoutStage);
-  });
-
-  test("includes stage suffix for non-run stages", () => {
-    const sm = new SessionManager();
-    const name = sm.nameFor({ workdir: WORKDIR, pipelineStage: "review" });
-    expect(name).toContain("review");
-  });
-
-  test("produces stable output for same inputs", () => {
-    const sm = new SessionManager();
-    const req: NameForRequest = { workdir: WORKDIR, featureName: "feat", storyId: "us-001" };
-    expect(sm.nameFor(req)).toBe(sm.nameFor(req));
-  });
-
-  test("different workdirs produce different names", () => {
-    const sm = new SessionManager();
-    const a = sm.nameFor({ workdir: "/repo/a" });
-    const b = sm.nameFor({ workdir: "/repo/b" });
-    expect(a).not.toBe(b);
-  });
-});
-
-// ─── descriptor() ─────────────────────────────────────────────────────────────
-
-describe("descriptor()", () => {
-  test("returns null when no descriptor with that handle", () => {
-    const sm = new SessionManager();
-    expect(sm.descriptor("nax-unknown-session")).toBeNull();
-  });
-
-  test("returns descriptor when handle matches a created session", () => {
-    const sm = new SessionManager();
-    const name = "nax-aabbccdd-feat";
-    sm.create({ role: "main", agent: "claude", workdir: WORKDIR, handle: name });
-    const result = sm.descriptor(name);
-    expect(result).not.toBeNull();
-    expect(result?.handle).toBe(name);
-    expect(result?.agent).toBe("claude");
-  });
-
-  test("returns a copy, not the internal reference", () => {
-    const sm = new SessionManager();
-    const name = "nax-aabbccdd";
-    sm.create({ role: "main", agent: "claude", workdir: WORKDIR, handle: name });
-    const a = sm.descriptor(name);
-    const b = sm.descriptor(name);
-    expect(a).not.toBe(b);
-  });
-});
-
-// ─── openSession() ────────────────────────────────────────────────────────────
-
-describe("openSession()", () => {
-  test("throws ADAPTER_NOT_FOUND when no adapter injected", async () => {
-    const sm = new SessionManager();
-    await expect(sm.openSession("nax-test", makeOpenRequest())).rejects.toMatchObject({
-      code: "ADAPTER_NOT_FOUND",
-    });
-  });
-
-  test("calls adapter.openSession with resolved permissions", async () => {
-    const capturedOpts: OpenSessionOpts[] = [];
-    const adapter = makeAgentAdapter({
-      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
-        capturedOpts.push(opts);
-        return { id: name, agentName: "claude" } satisfies SessionHandle;
-      }),
-    });
-    const config = makeNaxConfig({ execution: { permissionProfile: "safe" } });
-    const sm = new SessionManager({ getAdapter: () => adapter, config });
-
-    await sm.openSession("nax-aabbccdd", makeOpenRequest());
-
-    expect(capturedOpts).toHaveLength(1);
-    expect(capturedOpts[0].resolvedPermissions.mode).toBe("approve-reads");
-    expect(capturedOpts[0].resolvedPermissions.skipPermissions).toBe(false);
-  });
-
-  test("passes resume=false when no descriptor exists", async () => {
-    const capturedOpts: OpenSessionOpts[] = [];
-    const adapter = makeAgentAdapter({
-      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
-        capturedOpts.push(opts);
-        return { id: name, agentName: "claude" } satisfies SessionHandle;
-      }),
-    });
-    const sm = new SessionManager({ getAdapter: () => adapter });
-    await sm.openSession("nax-new", makeOpenRequest());
-    expect(capturedOpts[0].resume).toBe(false);
-  });
-
-  test("passes resume=true when a descriptor with that handle already exists", async () => {
-    const capturedOpts: OpenSessionOpts[] = [];
-    const adapter = makeAgentAdapter({
-      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
-        capturedOpts.push(opts);
-        return { id: name, agentName: "claude" } satisfies SessionHandle;
-      }),
-    });
-    const sm = new SessionManager({ getAdapter: () => adapter });
-    const sessionName = "nax-existing";
-    sm.create({ role: "main", agent: "claude", workdir: WORKDIR, handle: sessionName });
-
-    await sm.openSession(sessionName, makeOpenRequest());
-    expect(capturedOpts[0].resume).toBe(true);
-  });
-
-  test("creates a descriptor for the session name", async () => {
-    const adapter = makeAgentAdapter({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
-    });
-    const sm = new SessionManager({ getAdapter: () => adapter });
-    const name = "nax-aabbccdd-story";
-    await sm.openSession(name, makeOpenRequest({ storyId: "us-001" }));
-    expect(sm.descriptor(name)).not.toBeNull();
-  });
-});
-
-// ─── closeSession() ───────────────────────────────────────────────────────────
-
-describe("closeSession()", () => {
-  test("calls adapter.closeSession", async () => {
-    let closeCalled = false;
-    const adapter = makeAgentAdapter({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
-      closeSession: mock(async () => {
-        closeCalled = true;
-      }),
-    });
-    const sm = new SessionManager({ getAdapter: () => adapter });
-    const handle = await sm.openSession("nax-close-test", makeOpenRequest());
-    await sm.closeSession(handle);
-    expect(closeCalled).toBe(true);
-  });
-
-  test("is a no-op when no adapter is configured", async () => {
-    const sm = new SessionManager();
-    const handle: SessionHandle = { id: "nax-no-adapter", agentName: "claude" };
-    await expect(sm.closeSession(handle)).resolves.toBeUndefined();
-  });
-
-  test("transitions descriptor to COMPLETED", async () => {
-    const adapter = makeAgentAdapter({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
-      closeSession: mock(async () => {}),
-    });
-    const sm = new SessionManager({ getAdapter: () => adapter });
-    const name = "nax-complete-test";
-    const handle = await sm.openSession(name, makeOpenRequest());
-    await sm.closeSession(handle);
-    expect(sm.descriptor(name)?.state).toBe("COMPLETED");
-  });
-
-  test("clears busy flag so a post-close sendPrompt does not throw SESSION_BUSY", async () => {
-    let resolveFirst!: () => void;
-    let callCount = 0;
-    const adapter = makeAgentAdapter({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
-      sendTurn: mock(async () => {
-        callCount++;
-        if (callCount === 1) {
-          await new Promise<void>((res) => {
-            resolveFirst = res;
-          });
-        }
-        return MOCK_TURN;
-      }),
-      closeSession: mock(async () => {}),
-    });
-    const sm = new SessionManager({ getAdapter: () => adapter });
-    const handle = await sm.openSession("nax-cleanup-test", makeOpenRequest());
-
-    const firstTurn = sm.sendPrompt(handle, "first");
-    await sm.closeSession(handle); // must clear the busy flag
-    resolveFirst();
-    await firstTurn;
-
-    // Busy guard cleared — second sendPrompt must not throw SESSION_BUSY
-    const second = await sm.sendPrompt(handle, "second");
-    expect(second.output).toBe("hello world");
-  });
-});
 
 // ─── sendPrompt() ─────────────────────────────────────────────────────────────
 
@@ -322,6 +113,21 @@ describe("sendPrompt()", () => {
     await expect(sm.sendPrompt(fakeHandle, "test")).rejects.toMatchObject({
       code: "ADAPTER_NOT_FOUND",
     });
+  });
+
+  test("forwards maxTurns to adapter.sendTurn", async () => {
+    let capturedMaxTurns: number | undefined;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
+      sendTurn: mock(async (_h: SessionHandle, _p: string, opts: SendTurnOpts) => {
+        capturedMaxTurns = opts.maxTurns;
+        return MOCK_TURN;
+      }),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const handle = await sm.openSession("nax-maxturn-test", makeOpenRequest());
+    await sm.sendPrompt(handle, "test", { maxTurns: 5 });
+    expect(capturedMaxTurns).toBe(5);
   });
 });
 

@@ -328,7 +328,10 @@ export interface ISessionManager {
   openSession(name: string, opts: OpenSessionRequest): Promise<import("../agents/types").SessionHandle>;
 
   /**
-   * Close an open session. Idempotent — closing an already-closed handle is a no-op.
+   * Close an open session. Safe to call multiple times — the adapter call is
+   * always attempted (errors are swallowed) and terminal-state descriptors are
+   * not re-transitioned. The busy and cancelled flags for the handle are always
+   * cleared regardless of adapter or descriptor state.
    */
   closeSession(handle: import("../agents/types").SessionHandle): Promise<void>;
 

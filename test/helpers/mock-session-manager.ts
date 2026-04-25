@@ -20,6 +20,8 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
     transition: mock(() => stubDescriptor),
     bindHandle: mock(() => stubDescriptor),
     resume: mock(() => null),
+    // Returns legacy AgentResult shape. Phase B callers (prompt/callback overloads)
+    // expect TurnResult — override this stub when testing Phase B runInSession usage.
     runInSession: mock(async () => ({
       success: true,
       exitCode: 0,

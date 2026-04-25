@@ -1094,6 +1094,8 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
+    // opts.resume is a hint — the ACP adapter always attempts loadSession first
+    // via ensureAcpSession, so it is inherently self-resuming regardless of this flag.
     const { agentName, workdir, resolvedPermissions, modelDef, timeoutSeconds, onSessionEstablished, onPidSpawned } =
       opts;
     const { signal } = opts;

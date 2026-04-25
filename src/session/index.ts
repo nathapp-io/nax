@@ -11,5 +11,9 @@ export type {
   CreateSessionOptions,
   TransitionOptions,
   ISessionManager,
+  OpenSessionRequest,
+  SendPromptOpts,
+  RunInSessionOpts,
+  NameForRequest,
 } from "./types";
 export { SESSION_TRANSITIONS } from "./types";
