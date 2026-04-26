@@ -348,7 +348,7 @@ export interface TurnResult {
  */
 export interface AgentError {
   /** Error type classification */
-  type: "rate-limit" | "auth" | "timeout" | "crash" | "unknown";
+  type: "rate-limit" | "auth" | "timeout" | "crash" | "unknown" | "model-not-available";
   /** Optional retry delay in seconds (for rate-limit errors) */
   retryAfterSeconds?: number;
 }

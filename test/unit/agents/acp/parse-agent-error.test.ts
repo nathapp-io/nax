@@ -123,4 +123,67 @@ describe("parseAgentError", () => {
       expect(parseAgentError("Internal error: Failed to authenticate. API Error: 401").type).toBe("unknown");
     });
   });
+
+  // acpx 0.6.1 strict --model validation (two signal paths)
+  describe("model-not-available errors", () => {
+    // Codex-style: acpx rejects the model at sessions ensure time and emits a
+    // JSON-RPC error on stdout. After the spawn-client fix, the error message
+    // embeds that JSON. Message prefix is stable — from acpx model-support.ts.
+    test("detects model-not-available from embedded JSON-RPC error (Codex ensure path)", () => {
+      const stdout =
+        '[acp-adapter] Failed to create session: {"jsonrpc":"2.0","id":null,"error":{"code":-32603,' +
+        '"message":"Cannot apply --model \\"bad-model-xyz\\": the ACP agent did not advertise that model.' +
+        ' Available models: gpt-5.5/low, gpt-5.5/medium.","data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}';
+      const result = parseAgentError(stdout);
+      expect(result.type).toBe("model-not-available");
+    });
+
+    test("detects model-not-available for the advertise-model-support variant (Codex no ACP models)", () => {
+      const stdout =
+        '[acp-adapter] Failed to create session: {"jsonrpc":"2.0","id":null,"error":{"code":-32603,' +
+        '"message":"Cannot apply --model \\"sonnet\\": the ACP agent did not advertise model support.",' +
+        '"data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}';
+      const result = parseAgentError(stdout);
+      expect(result.type).toBe("model-not-available");
+    });
+
+    // Claude-style: Claude Code accepts the model at session/new but rejects it
+    // when the prompt is sent. The error arrives as a flat string (no JSON).
+    test("detects model-not-available from Claude Code flat error string", () => {
+      const errorMsg =
+        "Internal error: There's an issue with the selected model (bad-model-xyz)." +
+        " It may not exist or you may not have access to it. Run --model to pick a different model.";
+      const result = parseAgentError(errorMsg);
+      expect(result.type).toBe("model-not-available");
+    });
+
+    test("detects model-not-available for the replay-saved-model variant", () => {
+      const result = parseAgentError(
+        'Cannot replay saved model "claude-sonnet-4-5": the ACP agent did not advertise that model.',
+      );
+      expect(result.type).toBe("model-not-available");
+    });
+
+    test("model-not-available has no retryAfterSeconds", () => {
+      const result = parseAgentError(
+        'Cannot apply --model "x": the ACP agent did not advertise that model. Available models: none advertised.',
+      );
+      expect(result.type).toBe("model-not-available");
+      expect((result as { retryAfterSeconds?: number }).retryAfterSeconds).toBeUndefined();
+    });
+
+    test("does not classify generic RUNTIME acpxCode as model-not-available", () => {
+      // RUNTIME is used for many errors — must not classify without the message prefix.
+      const result = parseAgentError(
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Some other runtime error",' +
+          '"data":{"acpxCode":"RUNTIME","origin":"cli"}}}',
+      );
+      expect(result.type).toBe("unknown");
+    });
+
+    test("does not classify invalid_request_error Anthropic envelope as model-not-available", () => {
+      const result = parseAgentError('boom {"type":"error","error":{"type":"invalid_request_error"}}');
+      expect(result.type).toBe("unknown");
+    });
+  });
 });

@@ -642,6 +642,22 @@ export class AcpAgentAdapter implements AgentAdapter {
             },
           };
         }
+        if (parsed.type === "model-not-available") {
+          return {
+            success: false,
+            exitCode: result.exitCode ?? 1,
+            output: result.output ?? "",
+            rateLimited: false,
+            durationMs: Date.now() - startTime,
+            estimatedCost: result.estimatedCost ?? 0,
+            adapterFailure: {
+              category: "quality",
+              outcome: "fail-adapter-error",
+              retriable: false,
+              message: (result.output ?? "").slice(0, 500),
+            },
+          };
+        }
       }
 
       return result;
@@ -679,6 +695,22 @@ export class AcpAgentAdapter implements AgentAdapter {
             retriable: true,
             message: error.message.slice(0, 500),
             ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
+          },
+        };
+      }
+      if (parsed.type === "model-not-available") {
+        return {
+          success: false,
+          exitCode: 1,
+          output: error.message,
+          rateLimited: false,
+          durationMs: Date.now() - startTime,
+          estimatedCost: 0,
+          adapterFailure: {
+            category: "quality",
+            outcome: "fail-adapter-error",
+            retriable: false,
+            message: error.message.slice(0, 500),
           },
         };
       }
@@ -976,6 +1008,19 @@ export class AcpAgentAdapter implements AgentAdapter {
             retriable: true,
             message: error.message.slice(0, 500),
             ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
+          },
+        };
+      }
+      if (parsed.type === "model-not-available") {
+        return {
+          output: error.message,
+          costUsd: 0,
+          source: "fallback",
+          adapterFailure: {
+            category: "quality",
+            outcome: "fail-adapter-error",
+            retriable: false,
+            message: error.message.slice(0, 500),
           },
         };
       }
