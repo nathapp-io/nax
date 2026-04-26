@@ -1,18 +1,20 @@
 /**
  * Reviewer-Implementer Dialogue
  *
- * Maintains a persistent reviewer session via agent.run() with keepOpen: true.
- * The reviewer holds full conversation context across multiple review() calls.
+ * Maintains a persistent reviewer session via the ADR-019 caller-managed pattern:
+ * sessionManager.openSession → agentManager.runAsSession × N → sessionManager.closeSession.
  */
 
 import type { SemanticVerdict } from "../acceptance/types";
 import type { IAgentManager } from "../agents";
+import type { SessionHandle } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { DebateResolverContext } from "../debate/types";
 import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
 import { DebatePromptBuilder } from "../prompts";
+import type { ISessionManager } from "../session/types";
 import { parseLLMJson, tryParseLLMJson } from "../utils/llm-json";
 import type { SemanticStory } from "./semantic";
 import type { DiffContext, SemanticReviewConfig } from "./types";
@@ -211,6 +213,7 @@ function parseReviewResponse(output: string): ReviewDialogueResult {
  */
 export function createReviewerSession(
   agentManager: IAgentManager,
+  sessionManager: ISessionManager,
   storyId: string,
   workdir: string,
   featureName: string,
@@ -225,17 +228,12 @@ export function createReviewerSession(
   // reReviewDebate() requires a prior resolveDebate() to avoid using findings
   // from a non-debate review() call as the delta baseline.
   let lastWasDebateResolve = false;
-  /**
-   * Tracks session lifecycle for compaction-triggered resets.
-   * - generation: incremented each time history overflow causes a session reset.
-   * - pendingCompactionContext: when non-null, the next agent.run() call must
-   *   inject this compacted context as initial context and use a new sessionHandle
-   *   to start a fresh session (satisfying AC4 session destruction + recreation).
-   */
-  const sessionState = {
-    generation: 1,
-    pendingCompactionContext: null as string | null,
-  };
+  // Caller-managed session handle — opened lazily on first call, reused on subsequent
+  // calls. Closed and nulled after compaction (new session opened on next call).
+  let _handle: SessionHandle | null = null;
+  // When compaction occurs, the summary is stored here so the next agent call
+  // prepends it as initial context for the fresh session.
+  let pendingCompactionContext: string | null = null;
   // Shared builder instance — review-specific methods are self-contained and don't use stageContext/options.
   const promptBuilder = new DebatePromptBuilder(
     { taskContext: "", outputFormat: "", stage: "review" },
@@ -252,27 +250,30 @@ export function createReviewerSession(
     return { modelTier, modelDef, timeoutSeconds };
   }
 
-  /**
-   * Builds the effective prompt and sessionHandle for an agent.run() call.
-   *
-   * When a compaction reset occurred (pendingCompactionContext is set), the
-   * compacted context is prepended to the prompt so the fresh session receives
-   * the full prior conversation summary as initial context (AC4).
-   * sessionHandle is set to a generation-scoped name so the adapter creates
-   * a new session rather than reusing the previous one.
-   */
-  function buildEffectiveRunArgs(prompt: string): { effectivePrompt: string; sessionHandle: string | undefined } {
-    if (sessionState.pendingCompactionContext !== null) {
-      const context = sessionState.pendingCompactionContext;
-      sessionState.pendingCompactionContext = null;
-      return {
-        effectivePrompt: `${context}\n\n---\n\n${prompt}`,
-        sessionHandle: `nax-reviewer-${storyId}-gen${sessionState.generation}`,
-      };
+  function buildEffectivePrompt(prompt: string): string {
+    if (pendingCompactionContext !== null) {
+      const context = pendingCompactionContext;
+      pendingCompactionContext = null;
+      return `${context}\n\n---\n\n${prompt}`;
     }
-    const sessionHandle =
-      sessionState.generation > 1 ? `nax-reviewer-${storyId}-gen${sessionState.generation}` : undefined;
-    return { effectivePrompt: prompt, sessionHandle };
+    return prompt;
+  }
+
+  async function getOrOpenHandle(semanticConfig: SemanticReviewConfig): Promise<SessionHandle> {
+    if (_handle !== null) return _handle;
+    const { modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
+    const sessionName = sessionManager.nameFor({ workdir, featureName, storyId, role: "reviewer" });
+    _handle = await sessionManager.openSession(sessionName, {
+      agentName: agentManager.getDefault(),
+      role: "reviewer",
+      workdir,
+      pipelineStage: "review",
+      modelDef,
+      timeoutSeconds,
+      featureName,
+      storyId,
+    });
+    return _handle;
   }
 
   return {
@@ -296,31 +297,18 @@ export function createReviewerSession(
       }
 
       const prompt = promptBuilder.buildReviewPrompt(diff, story);
-      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
-      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
-
-      const result = await agentManager.run({
-        runOptions: {
-          prompt: effectivePrompt,
-          workdir,
-          modelTier,
-          modelDef,
-          timeoutSeconds,
-          sessionRole: "reviewer",
-          keepOpen: true,
-          pipelineStage: "review",
-          config: _config,
-          storyId,
-          featureName,
-          sessionHandle,
-        },
+      const effectivePrompt = buildEffectivePrompt(prompt);
+      const handle = await getOrOpenHandle(semanticConfig);
+      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+        storyId,
+        pipelineStage: "review",
       });
 
       history.push({ role: "implementer", content: prompt });
-      history.push({ role: "reviewer", content: result.output });
+      history.push({ role: "reviewer", content: turnResult.output });
 
-      const parsed = parseReviewResponse(result.output);
-      const reviewResult: ReviewDialogueResult = { ...parsed, cost: result.estimatedCost ?? 0 };
+      const parsed = parseReviewResponse(turnResult.output);
+      const reviewResult: ReviewDialogueResult = { ...parsed, cost: turnResult.cost?.total ?? 0 };
       lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
@@ -344,45 +332,29 @@ export function createReviewerSession(
 
       const previousFindings = lastCheckResult.checkResult.findings;
       const prompt = promptBuilder.buildReReviewPrompt(updatedDiff, previousFindings);
-      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
-      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
-
-      const result = await agentManager.run({
-        runOptions: {
-          prompt: effectivePrompt,
-          workdir,
-          modelTier,
-          modelDef,
-          timeoutSeconds,
-          sessionRole: "reviewer",
-          keepOpen: true,
-          pipelineStage: "review",
-          config: _config,
-          storyId,
-          featureName,
-          sessionHandle,
-        },
+      const effectivePrompt = buildEffectivePrompt(prompt);
+      const handle = await getOrOpenHandle(lastSemanticConfig);
+      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+        storyId,
+        pipelineStage: "review",
       });
 
       history.push({ role: "implementer", content: prompt });
-      history.push({ role: "reviewer", content: result.output });
+      history.push({ role: "reviewer", content: turnResult.output });
 
-      const parsed = parseReviewResponse(result.output);
-      const deltaSummary = extractDeltaSummary(result.output, previousFindings, parsed.checkResult.findings);
-      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: result.estimatedCost ?? 0 };
+      const parsed = parseReviewResponse(turnResult.output);
+      const deltaSummary = extractDeltaSummary(turnResult.output, previousFindings, parsed.checkResult.findings);
+      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: turnResult.cost?.total ?? 0 };
       lastCheckResult = dialogueResult;
 
       const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;
       if (history.length > maxMessages) {
-        // AC4: destroy the current session and prepare a fresh one.
-        // compactHistory() returns the summary string; store it so the next
-        // agent.run() call injects it as initial context for the new session.
-        // Incrementing sessionState.generation causes buildEffectiveRunArgs()
-        // to use a new sessionHandle, which forces the adapter to create a
-        // fresh session rather than resuming the previous one.
         const compactedSummary = compactHistory(history);
-        sessionState.generation++;
-        sessionState.pendingCompactionContext = compactedSummary;
+        pendingCompactionContext = compactedSummary;
+        if (_handle !== null) {
+          await sessionManager.closeSession(_handle);
+          _handle = null;
+        }
       }
 
       return dialogueResult;
@@ -406,30 +378,17 @@ export function createReviewerSession(
           timeoutMs: 60_000,
           excludePatterns: [],
         } as SemanticReviewConfig);
-      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(effectiveSemanticConfig);
-      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(question);
-
-      const result = await agentManager.run({
-        runOptions: {
-          prompt: effectivePrompt,
-          workdir,
-          modelTier,
-          modelDef,
-          timeoutSeconds,
-          sessionRole: "reviewer",
-          keepOpen: true,
-          pipelineStage: "review",
-          config: _config,
-          storyId,
-          featureName,
-          sessionHandle,
-        },
+      const effectivePrompt = buildEffectivePrompt(question);
+      const handle = await getOrOpenHandle(effectiveSemanticConfig);
+      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+        storyId,
+        pipelineStage: "review",
       });
 
       history.push({ role: "implementer", content: question });
-      history.push({ role: "reviewer", content: result.output });
+      history.push({ role: "reviewer", content: turnResult.output });
 
-      return result.output;
+      return turnResult.output;
     },
     async resolveDebate(
       proposals: Array<{ debater: string; output: string }>,
@@ -448,31 +407,18 @@ export function createReviewerSession(
       }
 
       const prompt = promptBuilder.buildResolverPrompt(proposals, critiques, diffContext, story, resolverContext);
-      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
-      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
-
-      const result = await agentManager.run({
-        runOptions: {
-          prompt: effectivePrompt,
-          workdir,
-          modelTier,
-          modelDef,
-          timeoutSeconds,
-          sessionRole: "reviewer",
-          keepOpen: true,
-          pipelineStage: "review",
-          config: _config,
-          storyId,
-          featureName,
-          sessionHandle,
-        },
+      const effectivePrompt = buildEffectivePrompt(prompt);
+      const handle = await getOrOpenHandle(semanticConfig);
+      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+        storyId,
+        pipelineStage: "review",
       });
 
       history.push({ role: "implementer", content: prompt });
-      history.push({ role: "reviewer", content: result.output });
+      history.push({ role: "reviewer", content: turnResult.output });
 
-      const parsed = parseReviewResponse(result.output);
-      const reviewResult: ReviewDialogueResult = { ...parsed, cost: result.estimatedCost ?? 0 };
+      const parsed = parseReviewResponse(turnResult.output);
+      const reviewResult: ReviewDialogueResult = { ...parsed, cost: turnResult.cost?.total ?? 0 };
       lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
@@ -508,39 +454,29 @@ export function createReviewerSession(
         previousFindings,
         resolverContext,
       );
-      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
-      const { effectivePrompt, sessionHandle } = buildEffectiveRunArgs(prompt);
-
-      const result = await agentManager.run({
-        runOptions: {
-          prompt: effectivePrompt,
-          workdir,
-          modelTier,
-          modelDef,
-          timeoutSeconds,
-          sessionRole: "reviewer",
-          keepOpen: true,
-          pipelineStage: "review",
-          config: _config,
-          storyId,
-          featureName,
-          sessionHandle,
-        },
+      const effectivePrompt = buildEffectivePrompt(prompt);
+      const handle = await getOrOpenHandle(lastSemanticConfig);
+      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+        storyId,
+        pipelineStage: "review",
       });
 
       history.push({ role: "implementer", content: prompt });
-      history.push({ role: "reviewer", content: result.output });
+      history.push({ role: "reviewer", content: turnResult.output });
 
-      const parsed = parseReviewResponse(result.output);
-      const deltaSummary = extractDeltaSummary(result.output, previousFindings, parsed.checkResult.findings);
-      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: result.estimatedCost ?? 0 };
+      const parsed = parseReviewResponse(turnResult.output);
+      const deltaSummary = extractDeltaSummary(turnResult.output, previousFindings, parsed.checkResult.findings);
+      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: turnResult.cost?.total ?? 0 };
       lastCheckResult = dialogueResult;
 
       const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;
       if (history.length > maxMessages) {
         const compactedSummary = compactHistory(history);
-        sessionState.generation++;
-        sessionState.pendingCompactionContext = compactedSummary;
+        pendingCompactionContext = compactedSummary;
+        if (_handle !== null) {
+          await sessionManager.closeSession(_handle);
+          _handle = null;
+        }
       }
 
       return dialogueResult;
@@ -564,6 +500,10 @@ export function createReviewerSession(
     async destroy(): Promise<void> {
       if (!active) return;
       active = false;
+      if (_handle !== null) {
+        await sessionManager.closeSession(_handle);
+        _handle = null;
+      }
       history.length = 0;
     },
   };
