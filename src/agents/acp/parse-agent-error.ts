@@ -44,6 +44,13 @@ export function parseAgentError(stderr: string): AgentError {
   const fromKeyValue = classifyFromCodeTokens(extractKeyValueCodes(stderr));
   if (fromKeyValue) return fromKeyValue;
 
+  // 3. acpx 0.6.1: flat-string model-not-available (Claude Code path).
+  //    Claude accepts unknown models at session/new but rejects at prompt time
+  //    via a plain error string with no machine-readable code — only this
+  //    specific acpx-controlled message can be matched.
+  const flatModel = classifyModelErrorMessage(stderr);
+  if (flatModel) return flatModel;
+
   return { type: "unknown" };
 }
 
@@ -57,6 +64,12 @@ function classifyJsonPayload(payload: Record<string, unknown>): AgentError | nul
 
   const nested = classifyNestedAnthropicError(payload);
   if (nested) return nested;
+
+  // acpx 0.6.1: model-not-available from JSON-RPC error envelope.
+  // The error.message is checked for stable acpx strings before the generic
+  // code-token path, which would only see the too-broad "RUNTIME" acpxCode.
+  const jsonRpcModel = classifyJsonRpcModelError(payload);
+  if (jsonRpcModel) return jsonRpcModel;
 
   const structured = classifyFromCodeTokens(extractJsonCodeTokens(payload), payload);
   if (structured) return structured;
@@ -177,6 +190,47 @@ function parseJsonObject(stderr: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Detect model-not-available from a JSON-RPC error envelope.
+ *
+ * acpx 0.6.1 throws RequestedModelUnsupportedError (src/acp/model-support.ts)
+ * which is serialised to a JSON-RPC -32603 with these stable message prefixes:
+ *   "Cannot apply --model \"...\": the ACP agent did not advertise that model."
+ *   "Cannot apply --model \"...\": the ACP agent did not advertise model support."
+ * The acpxCode is "RUNTIME" (too generic) so we check the message instead.
+ */
+function classifyJsonRpcModelError(payload: Record<string, unknown>): AgentError | null {
+  const errObj = payload.error;
+  if (!errObj || typeof errObj !== "object") return null;
+  const message = (errObj as Record<string, unknown>).message;
+  if (typeof message !== "string") return null;
+  return classifyModelErrorMessage(message);
+}
+
+/**
+ * Shared check for acpx model-support.ts and Claude Code error strings.
+ *
+ * Used both by the JSON-RPC envelope path (checking error.message) and the
+ * flat-string path (checking the raw input directly).
+ *
+ * Pattern 1 — acpx src/acp/model-support.ts (assertRequestedModelSupported):
+ *   stable prefixes from two throw sites in that file.
+ * Pattern 2 — Claude Code prompt rejection: no machine-readable codes;
+ *   two co-occurring substrings narrow the match to avoid false positives.
+ */
+function classifyModelErrorMessage(message: string): AgentError | null {
+  // acpx src/acp/model-support.ts (assertRequestedModelSupported) — stable prefixes.
+  if (message.startsWith("Cannot apply --model") || message.startsWith("Cannot replay saved model")) {
+    return { type: "model-not-available" };
+  }
+  // Claude Code prompt rejection — no machine-readable code; two co-occurring
+  // substrings narrow the match to avoid false positives.
+  if (message.includes("There's an issue with the selected model") && message.includes("Run --model")) {
+    return { type: "model-not-available" };
+  }
+  return null;
 }
 
 function classifyDirectType(payload: Record<string, unknown>): AgentError | null {

@@ -2,7 +2,7 @@ import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { getLogger } from "../logger";
-import { computeAcpHandle } from "./acp/adapter";
+import { buildContextToolPreamble, buildRunInteractionHandler, computeAcpHandle } from "./acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 import type { IAgentManager } from "./manager-types";
 import type { AgentAdapter, AgentResult } from "./types";
@@ -65,10 +65,15 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
           signal: opts.abortSignal,
         });
         try {
-          const turnResult = await adapter.sendTurn(handle, opts.prompt, {
-            interactionHandler: NO_OP_INTERACTION_HANDLER,
+          const hasContextTools = Boolean(opts.contextToolRuntime && (opts.contextPullTools?.length ?? 0) > 0);
+          const maxTurns =
+            opts.interactionBridge || hasContextTools
+              ? (opts.maxInteractionTurns ?? 10)
+              : (opts.maxInteractionTurns ?? 1);
+          const turnResult = await adapter.sendTurn(handle, buildContextToolPreamble(opts), {
+            interactionHandler: buildRunInteractionHandler(opts),
             signal: opts.abortSignal,
-            maxTurns: opts.maxInteractionTurns ?? 1,
+            maxTurns,
           });
           result = {
             success: true,

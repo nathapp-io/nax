@@ -16,6 +16,7 @@ import { DEFAULT_CONFIG } from "../../config";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import { NO_OP_INTERACTION_HANDLER } from "../interaction-handler";
+import type { InteractionHandler } from "../interaction-handler";
 import { parseDecomposeOutput } from "../shared/decompose";
 import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
@@ -136,8 +137,14 @@ export const _acpAdapterDeps = {
    * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
    */
-  createClient(cmdStr: string, cwd?: string, timeoutSeconds?: number, onPidSpawned?: (pid: number) => void): AcpClient {
-    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned);
+  createClient(
+    cmdStr: string,
+    cwd?: string,
+    timeoutSeconds?: number,
+    onPidSpawned?: (pid: number) => void,
+    promptRetries?: number,
+  ): AcpClient {
+    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries);
   },
 };
 
@@ -459,6 +466,66 @@ function extractContextToolCall(output: string): { name: string; input?: unknown
   }
 }
 
+export function buildContextToolPreamble(options: AgentRunOptions): string {
+  const tools = options.contextPullTools;
+  if (!tools || tools.length === 0 || !options.contextToolRuntime) {
+    return options.prompt;
+  }
+
+  const toolList = tools
+    .map((tool) => `- ${tool.name}: ${tool.description} (max ${tool.maxCallsPerSession} calls/session)`)
+    .join("\n");
+
+  return `${options.prompt}
+
+## Context Pull Tools
+When you need more repo context, you may request one tool call by replying with exactly:
+<nax_tool_call name="tool_name">
+{"key":"value"}
+</nax_tool_call>
+
+Available tools:
+${toolList}
+
+After you receive a <nax_tool_result ...> block, continue the task normally.`;
+}
+
+function buildContextToolResult(name: string, result: string, status: "ok" | "error" = "ok"): string {
+  return `<nax_tool_result name="${name}" status="${status}">
+${result.trim()}
+</nax_tool_result>
+
+Continue the task.`;
+}
+
+export function buildRunInteractionHandler(options: AgentRunOptions): InteractionHandler {
+  const { contextToolRuntime, contextPullTools, interactionBridge } = options;
+  const hasContextTools = Boolean(contextToolRuntime && (contextPullTools?.length ?? 0) > 0);
+
+  return {
+    async onInteraction(req) {
+      if (req.kind === "context-tool") {
+        if (!hasContextTools || !contextToolRuntime) return null;
+        try {
+          const toolResult = req.error
+            ? buildContextToolResult(req.name, req.error, "error")
+            : buildContextToolResult(req.name, await contextToolRuntime.callTool(req.name, req.input ?? {}));
+          return { answer: toolResult };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { answer: buildContextToolResult(req.name, msg, "error") };
+        }
+      }
+      if (req.kind === "question") {
+        if (!interactionBridge) return null;
+        const answer = await interactionBridge.onQuestionDetected(req.text);
+        return { answer };
+      }
+      return null;
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AcpAgentAdapter
 // ─────────────────────────────────────────────────────────────────────────────
@@ -533,7 +600,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       const model = await resolveModel(agentName);
       const cmdStr = `acpx --model ${model} ${agentName}`;
       const timeoutSeconds = Math.ceil(timeoutMs / 1000);
-      const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds);
+      const promptRetries = _options?.config?.agent?.acp?.promptRetries;
+      const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, undefined, promptRetries);
       await client.start();
 
       let session: AcpSession | null = null;
@@ -643,6 +711,19 @@ export class AcpAgentAdapter implements AgentAdapter {
             retriable: true,
             message: error.message.slice(0, 500),
             ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
+          },
+        };
+      }
+      if (parsed.type === "model-not-available") {
+        return {
+          output: error.message,
+          costUsd: 0,
+          source: "fallback",
+          adapterFailure: {
+            category: "quality",
+            outcome: "fail-adapter-error",
+            retriable: false,
+            message: error.message.slice(0, 500),
           },
         };
       }
@@ -782,14 +863,22 @@ export class AcpAgentAdapter implements AgentAdapter {
   async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
     // opts.resume is a hint — the ACP adapter always attempts loadSession first
     // via ensureAcpSession, so it is inherently self-resuming regardless of this flag.
-    const { agentName, workdir, resolvedPermissions, modelDef, timeoutSeconds, onSessionEstablished, onPidSpawned } =
-      opts;
+    const {
+      agentName,
+      workdir,
+      resolvedPermissions,
+      modelDef,
+      timeoutSeconds,
+      promptRetries,
+      onSessionEstablished,
+      onPidSpawned,
+    } = opts;
     const { signal } = opts;
 
     throwIfAborted(signal, "Run aborted — shutdown in progress");
 
     const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned);
+    const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned, promptRetries);
     let session: AcpSession | undefined;
 
     try {

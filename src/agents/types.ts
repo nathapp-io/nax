@@ -308,6 +308,8 @@ export interface OpenSessionOpts {
   modelDef: ModelDef;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
+  /** ACP: acpx --prompt-retries value (default 0 — opt-in). */
+  promptRetries?: number;
   /** Fired once the session is physically established, before the first prompt. */
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /** PID registration callback for crash-recovery bookkeeping. */
@@ -351,7 +353,7 @@ export interface TurnResult {
  */
 export interface AgentError {
   /** Error type classification */
-  type: "rate-limit" | "auth" | "timeout" | "crash" | "unknown";
+  type: "rate-limit" | "auth" | "timeout" | "crash" | "unknown" | "model-not-available";
   /** Optional retry delay in seconds (for rate-limit errors) */
   retryAfterSeconds?: number;
 }

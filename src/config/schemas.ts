@@ -509,6 +509,11 @@ const ContextPluginProviderConfigSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+const ContextV2StageOverrideSchema = z.object({
+  budgetTokens: z.number().int().positive().optional(),
+  extraProviderIds: z.array(z.string().min(1)).default([]),
+});
+
 // Context Engine config (Phase 6: selective on; operators opt in per project)
 export const ContextV2ConfigSchema = z
   .object({
@@ -542,7 +547,7 @@ export const ContextV2ConfigSchema = z
      *
      * Example: { "execution": { "budgetTokens": 15000 } }
      */
-    stages: z.record(z.string().min(1), z.object({ budgetTokens: z.number().int().positive().optional() })).default({}),
+    stages: z.record(z.string().min(1), ContextV2StageOverrideSchema).default({}),
     /**
      * Determinism mode (AC-24).
      * When true, providers that declare `deterministic: false` are excluded from assembly.
@@ -717,6 +722,10 @@ const AgentFallbackConfigSchema = z.object({
   rebuildContext: z.boolean().default(true),
 });
 
+const AgentAcpConfigSchema = z.object({
+  promptRetries: z.number().int().min(0).max(5).default(0),
+});
+
 const AgentConfigSchema = z.object({
   protocol: z.literal("acp").default("acp"),
   default: z.string().trim().min(1, "agent.default must be non-empty").default("claude"),
@@ -729,6 +738,7 @@ const AgentConfigSchema = z.object({
     onQualityFailure: false,
     rebuildContext: true,
   }),
+  acp: AgentAcpConfigSchema.default({ promptRetries: 0 }),
 });
 
 const PrecheckConfigSchema = z.object({
@@ -1091,6 +1101,7 @@ export const NaxConfigSchema = z
       maxInteractionTurns: 20,
       promptAudit: { enabled: false },
       fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
+      acp: { promptRetries: 0 },
     }),
     precheck: PrecheckConfigSchema.optional().default({
       storySizeGate: {

@@ -178,6 +178,7 @@ export async function assembleForStage(
     // do not re-join story.workdir here or the path will be doubled in monorepo mode.
     const targetAgentId = ctx.routing.agent ?? ctx.agentManager?.getDefault() ?? "claude";
 
+    const stageOverrides = ctx.config.context?.v2?.stages?.[stage];
     const request: ContextRequest = {
       storyId: ctx.story.id,
       featureId: ctx.prd.feature,
@@ -187,7 +188,8 @@ export async function assembleForStage(
       role: stageConfig.role,
       // AC-59: per-package stage budget — reads from ctx.config which is already the
       // merged config (root + <repoRoot>/.nax/mono/<packageDir>/config.json overlay).
-      budgetTokens: ctx.config.context?.v2?.stages?.[stage]?.budgetTokens ?? stageConfig.budgetTokens,
+      budgetTokens: stageOverrides?.budgetTokens ?? stageConfig.budgetTokens,
+      extraProviderIds: stageOverrides?.extraProviderIds ?? [],
       touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
       storyScratchDirs,
       priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,
