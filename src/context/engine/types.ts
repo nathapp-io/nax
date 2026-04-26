@@ -196,6 +196,11 @@ export interface ContextManifest {
     providerId: string;
     /** "ok" = returned ≥1 chunk; "empty" = succeeded but returned no chunks; "failed" = threw; "timeout" = timed out */
     status: "ok" | "empty" | "failed" | "timeout";
+    /**
+     * How this provider was activated for the stage.
+     * Omitted for synthetic entries such as "plan-digest".
+     */
+    source?: "stage-config" | "extra";
     chunkCount: number;
     durationMs: number;
     /** Total tokens across all chunks returned by this provider */
@@ -367,6 +372,11 @@ export interface ContextRequest {
   priorStageDigest?: string;
   /** Restrict fetch to only these provider IDs (optional, for testing). */
   providerIds?: string[];
+  /**
+   * Additional provider IDs configured for this stage via context.v2.stages.
+   * Merged additively with the built-in stage allowlist.
+   */
+  extraProviderIds?: string[];
   /**
    * Minimum score threshold for noise filtering.
    * Chunks whose adjusted score falls below this are excluded from packing.

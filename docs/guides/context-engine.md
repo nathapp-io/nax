@@ -327,23 +327,24 @@ export const provider: IContextProvider = {
 
 **Pattern C — combine A + B.** Use chunk `role` for coarse audience scoping and `request.stage` inside `fetch()` for fine per-stage variation (e.g. different framings for `tdd-test-writer` vs. `tdd-implementer`, both `tdd`-role).
 
-#### The catch — getting your plugin to fire at all
+#### Wire the plugin to specific stages
 
-Plugin providers load and register with the orchestrator, but the orchestrator then filters by each stage's `providerIds`. None of the built-in stages include plugin IDs today, so a freshly registered plugin **runs on zero stages** until someone adds its ID to `STAGE_CONTEXT_MAP`.
+Plugin providers register globally, but they only run on stages that opt into their provider ID. Use `stages.<name>.extraProviderIds` for that:
 
-**Until [#662](https://github.com/nathapp-io/nax/issues/662) lands**, the only way to wire a plugin into a stage is a source edit:
-
-```typescript
-// src/context/engine/stage-config.ts
-"tdd-test-writer": {
-  role: "tdd",
-  budgetTokens: 8_000,
-  providerIds: [...PHASE_3_TDD_TEST_WRITER, "my-symbol-graph"],  // <-- add plugin ID
-  pullToolNames: ["query_neighbor"],
-},
+```json
+{
+  "context": {
+    "v2": {
+      "stages": {
+        "tdd-test-writer": { "extraProviderIds": ["my-symbol-graph"] },
+        "review-semantic": { "extraProviderIds": ["my-symbol-graph"] }
+      }
+    }
+  }
+}
 ```
 
-Unknown IDs in a stage's `providerIds` throw `CONTEXT_UNKNOWN_PROVIDER_IDS` at assembly time, so typos surface immediately.
+This is additive: built-in `providerIds` from `stage-config.ts` still run, and your plugin gets appended to that stage's allowlist. Unknown IDs in either the built-in list or `extraProviderIds` throw `CONTEXT_UNKNOWN_PROVIDER_IDS` at assembly time, so typos surface immediately.
 
 ---
 

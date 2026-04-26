@@ -509,6 +509,11 @@ const ContextPluginProviderConfigSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+const ContextV2StageOverrideSchema = z.object({
+  budgetTokens: z.number().int().positive().optional(),
+  extraProviderIds: z.array(z.string().min(1)).default([]),
+});
+
 // Context Engine config (Phase 6: selective on; operators opt in per project)
 export const ContextV2ConfigSchema = z
   .object({
@@ -542,7 +547,7 @@ export const ContextV2ConfigSchema = z
      *
      * Example: { "execution": { "budgetTokens": 15000 } }
      */
-    stages: z.record(z.string().min(1), z.object({ budgetTokens: z.number().int().positive().optional() })).default({}),
+    stages: z.record(z.string().min(1), ContextV2StageOverrideSchema).default({}),
     /**
      * Determinism mode (AC-24).
      * When true, providers that declare `deterministic: false` are excluded from assembly.
