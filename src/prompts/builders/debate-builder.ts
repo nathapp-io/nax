@@ -15,6 +15,7 @@ import { PERSONA_FRAGMENTS } from "../../debate/personas";
 import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "../../debate/types";
 import type { ReviewFinding } from "../../plugins/types";
 import type { DiffContext } from "../../review/types";
+import type { ComposeInput } from "../compose";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -157,6 +158,29 @@ ${this.stageContext.outputFormat}`;
   /** Termination signal sent to close a stateful debate session. */
   buildClosePrompt(): string {
     return "Close this debate session.";
+  }
+
+  // ─── Op slot methods (return ComposeInput for use in op build() functions) ──────
+
+  proposeSlot(debaterIndex: number): ComposeInput {
+    return {
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: this.buildProposalPrompt(debaterIndex), overridable: false },
+    };
+  }
+
+  rebutSlot(debaterIndex: number, proposals: Proposal[]): ComposeInput {
+    return {
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: this.buildCritiquePrompt(debaterIndex, proposals), overridable: false },
+    };
+  }
+
+  rankSlot(proposals: Proposal[], critiques: Rebuttal[], promptSuffix?: string): ComposeInput {
+    return {
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: this.buildSynthesisPrompt(proposals, critiques, promptSuffix), overridable: false },
+    };
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────

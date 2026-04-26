@@ -14,6 +14,7 @@ import { describe, expect, test } from "bun:test";
 import { DebatePromptBuilder } from "../../../src/prompts";
 import { PERSONA_FRAGMENTS } from "../../../src/debate/personas";
 import type { Debater, Proposal, Rebuttal } from "../../../src/debate/types";
+import type { ComposeInput } from "../../../src/prompts/compose";
 
 // ─── Shared fixtures ─────────────────────────────────────────────────────────
 
@@ -41,6 +42,50 @@ function makeBuilder(
     { debaters, sessionMode },
   );
 }
+
+// ─── DebatePromptBuilder slot methods ────────────────────────────────────────
+
+describe("DebatePromptBuilder slot methods", () => {
+  test("proposeSlot returns ComposeInput with task section", () => {
+    const builder = new DebatePromptBuilder(
+      { taskContext: "task", outputFormat: "json", stage: "review" },
+      { debaters: [{ agent: "claude" }, { agent: "opencode" }], sessionMode: "one-shot" },
+    );
+    const result: ComposeInput = builder.proposeSlot(0);
+    expect(result.task.content).toContain("task");
+    expect(result.task.id).toBe("task");
+    expect(result.role.id).toBe("role");
+  });
+
+  test("rebutSlot returns ComposeInput wrapping buildCritiquePrompt output", () => {
+    const builder = new DebatePromptBuilder(
+      { taskContext: "task", outputFormat: "", stage: "review" },
+      { debaters: [{ agent: "claude" }, { agent: "opencode" }], sessionMode: "one-shot" },
+    );
+    const proposals = [
+      { debater: { agent: "claude" }, output: "prop-a" },
+      { debater: { agent: "opencode" }, output: "prop-b" },
+    ];
+    const result: ComposeInput = builder.rebutSlot(0, proposals);
+    expect(result.task.content).toContain("prop-b"); // other proposal
+    expect(result.task.id).toBe("task");
+  });
+
+  test("rankSlot returns ComposeInput for synthesis resolver", () => {
+    const builder = new DebatePromptBuilder(
+      { taskContext: "task", outputFormat: "json", stage: "review" },
+      { debaters: [{ agent: "claude" }, { agent: "opencode" }], sessionMode: "one-shot" },
+    );
+    const proposals = [
+      { debater: { agent: "claude" }, output: "prop-a" },
+      { debater: { agent: "opencode" }, output: "prop-b" },
+    ];
+    const result: ComposeInput = builder.rankSlot(proposals, []);
+    expect(result.task.content).toContain("prop-a");
+    expect(result.task.content).toContain("prop-b");
+    expect(result.task.id).toBe("task");
+  });
+});
 
 // ─── buildProposalPrompt ─────────────────────────────────────────────────────
 
