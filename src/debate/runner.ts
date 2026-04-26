@@ -285,6 +285,7 @@ export class DebateRunner {
       sessionManager: this.sessionManager,
       reviewerSession: this.reviewerSession,
       resolverContextInput: this.resolverContextInput,
+      signal: this.ctx.runtime?.signal,
     };
   }
 

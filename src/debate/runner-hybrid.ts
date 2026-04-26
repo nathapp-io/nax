@@ -42,6 +42,7 @@ export interface HybridCtx {
   readonly sessionManager?: import("../session/types").ISessionManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -93,6 +94,7 @@ export async function runRebuttalLoop(
         timeoutSeconds: ctx.timeoutSeconds,
         featureName: ctx.featureName,
         storyId: ctx.storyId,
+        signal: ctx.signal,
       });
       internalHandles.push(handle);
     } else {
@@ -201,6 +203,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
           timeoutSeconds: ctx.timeoutSeconds,
           featureName: ctx.featureName,
           storyId: ctx.storyId,
+          signal: ctx.signal,
         });
         openHandles.push(handle);
       } else {
@@ -336,7 +339,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     return {
       storyId: ctx.storyId,
       stage: ctx.stage,
-      outcome: "passed",
+      outcome: resolveResult.outcome,
       rounds: config.rounds,
       debaters: successfulProposals.map((s) => s.debater.agent),
       resolverType: config.resolver.type,

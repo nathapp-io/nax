@@ -36,6 +36,7 @@ interface StatefulCtx {
   readonly sessionManager?: import("../session/types").ISessionManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
+  readonly signal?: AbortSignal;
 }
 
 export async function runStatefulTurn(
@@ -122,6 +123,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
           timeoutSeconds: ctx.timeoutSeconds,
           featureName: ctx.featureName,
           storyId: ctx.storyId,
+          signal: ctx.signal,
         });
         openHandles.push(handle);
       } else {

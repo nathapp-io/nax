@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import type { ModelDef } from "../config";
+import { NaxError } from "../errors";
 import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
@@ -93,7 +94,11 @@ export async function runPlan(
 
       const sessionManager = ctx.sessionManager;
       if (!sessionManager) {
-        throw new Error("[debate] plan mode requires sessionManager; got undefined");
+        throw new NaxError(
+          "[debate] plan mode requires sessionManager; got undefined",
+          "DEBATE_MISSING_SESSION_MANAGER",
+          { stage: "plan", storyId: ctx.storyId },
+        );
       }
       const sessionName = sessionManager.nameFor({
         workdir: opts.workdir,
