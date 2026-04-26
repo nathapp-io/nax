@@ -208,7 +208,14 @@ export interface PipelineContext {
     redFailCount: number;
   };
   /** Per-package acceptance test paths (set by acceptanceSetupStage for US-001/002) */
-  acceptanceTestPaths?: Array<{ testPath: string; packageDir: string }>;
+  acceptanceTestPaths?: Array<{
+    testPath: string;
+    packageDir: string;
+    /** Resolved test framework for this package (e.g. "jest", "vitest"). Undefined = bun default. */
+    testFramework?: string;
+    /** Per-package acceptance.command override. Undefined = use framework default. */
+    commandOverride?: string;
+  }>;
   /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
   tddFailureCategory?: FailureCategory;
   /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */
