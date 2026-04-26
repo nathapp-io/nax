@@ -7,6 +7,9 @@ import type { CallContext } from "../operations/types";
 import type { ISessionManager } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
+import { runHybrid } from "./runner-hybrid";
+import { runPlan } from "./runner-plan";
+import { runStateful } from "./runner-stateful";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -16,9 +19,6 @@ import {
   buildFailedResult,
   resolveOutcome,
 } from "./session-helpers";
-import { runHybrid } from "./session-hybrid";
-import { runPlan } from "./session-plan";
-import { runStateful } from "./session-stateful";
 import type { DebateResult, DebateStageConfig, Proposal } from "./types";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
@@ -296,6 +296,7 @@ export class DebateRunner {
       config: this.config,
       agentManager: this.ctx.runtime.agentManager,
       sessionManager: this.sessionManager,
+      signal: this.ctx.runtime?.signal,
     };
   }
 }
