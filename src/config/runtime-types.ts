@@ -453,7 +453,7 @@ export interface ContextV2Config {
    * Set via per-package config (<repoRoot>/.nax/mono/<packageDir>/config.json).
    * Keys are stage names; value overrides the default stage budgetTokens.
    */
-  stages: Record<string, { budgetTokens?: number }>;
+  stages: Record<string, { budgetTokens?: number; extraProviderIds?: string[] }>;
   /**
    * Determinism mode (AC-24).
    * When true, providers declaring `deterministic: false` are excluded from assembly.

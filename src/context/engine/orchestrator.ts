@@ -72,6 +72,8 @@ export const _orchestratorDeps = {
   uuid: () => randomUUID(),
 };
 
+type ProviderActivationSource = NonNullable<NonNullable<ContextManifest["providerResults"]>[number]["source"]>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider fetch timeout
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,6 +122,18 @@ function toContextChunk(packed: PackedChunk): ContextChunk {
 /** Stamp providerId onto a raw chunk from the provider. */
 function enrichRaw(chunk: RawChunk, providerId: string): RawChunk {
   return { ...chunk, providerId };
+}
+
+function buildProviderSourceMap(
+  stageProviderIds: string[],
+  extraProviderIds: string[],
+): Map<string, ProviderActivationSource> {
+  const sourceMap = new Map<string, ProviderActivationSource>();
+  for (const id of stageProviderIds) sourceMap.set(id, "stage-config");
+  for (const id of extraProviderIds) {
+    if (!sourceMap.has(id)) sourceMap.set(id, "extra");
+  }
+  return sourceMap;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,10 +242,15 @@ export class ContextOrchestrator {
 
     // Step 1: filter providers to those applicable for this stage.
     // request.providerIds (test-only override) takes precedence; otherwise stageConfig.providerIds.
-    const allowedIds = request.providerIds ?? stageConfig.providerIds;
+    const providerSourceMap =
+      request.providerIds === undefined
+        ? buildProviderSourceMap(stageConfig.providerIds, request.extraProviderIds ?? [])
+        : new Map<string, ProviderActivationSource>();
+    const allowedIds = request.providerIds ?? [...providerSourceMap.keys()];
+    const allowedIdSet = new Set(allowedIds);
     // AC-24: determinism mode — skip providers that declare deterministic: false.
     const activeProviders = this.providers.filter(
-      (p) => allowedIds.includes(p.id) && !(request.deterministic === true && p.deterministic === false),
+      (p) => allowedIdSet.has(p.id) && !(request.deterministic === true && p.deterministic === false),
     );
 
     // AC-16: detect providerIds configured by the user that matched no registered provider.
@@ -240,12 +259,13 @@ export class ContextOrchestrator {
     // tests can assert "unknown ID filters to empty" semantics without registering stubs.
     if (request.providerIds === undefined) {
       const registeredIds = new Set(this.providers.map((p) => p.id));
-      const unknownProviderIds = stageConfig.providerIds.filter((id) => !registeredIds.has(id));
+      const unknownProviderIds = [...providerSourceMap.keys()].filter((id) => !registeredIds.has(id));
       if (unknownProviderIds.length > 0) {
         logger.error("context-v2", "Unknown provider IDs in stage config", {
           storyId: request.storyId,
           stage: request.stage,
           unknownProviderIds,
+          extraProviderIds: request.extraProviderIds ?? [],
           availableProviderIds: [...registeredIds].sort(),
         });
         throw new NaxError(
@@ -254,6 +274,8 @@ export class ContextOrchestrator {
           {
             stage: "context-v2",
             storyId: request.storyId,
+            requestStage: request.stage,
+            unknownProviderIds,
           },
         );
       }
@@ -276,6 +298,7 @@ export class ContextOrchestrator {
             providerStatus: {
               providerId: provider.id,
               status,
+              source: providerSourceMap.get(provider.id),
               chunkCount: result.chunks.length,
               durationMs,
               tokensProduced,
@@ -296,6 +319,7 @@ export class ContextOrchestrator {
             providerStatus: {
               providerId: provider.id,
               status,
+              source: providerSourceMap.get(provider.id),
               chunkCount: 0,
               durationMs,
               tokensProduced: 0,
@@ -330,6 +354,7 @@ export class ContextOrchestrator {
       providerResults.push({
         providerId: "plan-digest",
         status: "ok",
+        source: undefined,
         chunkCount: 1,
         durationMs: 0,
         tokensProduced: tokens,
