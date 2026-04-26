@@ -20,10 +20,12 @@ function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
-    decomposeAsFn: decomposeFn
-      ? async (name: string, opts: any) => decomposeFn(name, opts)
-      : undefined,
-    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
+    completeAsFn: decomposeFn
+      ? async (name: string, _prompt: string, opts?: any) => {
+          const result = await decomposeFn(name, opts ?? {});
+          return { output: JSON.stringify(result.stories), costUsd: 0, source: "exact" as const };
+        }
+      : async () => ({ output: JSON.stringify([]), costUsd: 0, source: "exact" as const }),
   });
 }
 
@@ -248,7 +250,7 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     expect(storyB?.routing?.testStrategy).toBe("three-session-tdd");
   });
 
-  test("throws DECOMPOSE_VALIDATION_FAILED with entry index when DecomposedStory has empty id", async () => {
+  test("throws when DecomposedStory has empty id (caught by parseDecomposeOutput)", async () => {
     const prd = makePrd();
     const decomposed = [
       makeDecomposedStory({ id: "US-001-A" }),
@@ -256,16 +258,9 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     ];
     setupDepsWithDecompose(prd, decomposed);
 
-    let caught: unknown;
-    try {
-      await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
-    // biome-ignore lint: test accesses dynamic property
-    expect((caught as any)?.context?.entryIndex).toBeDefined();
+    await expect(
+      planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" }),
+    ).rejects.toThrow(/index 1/);
   });
 
   test("throws DECOMPOSE_VALIDATION_FAILED with entry index when DecomposedStory has empty contextFiles", async () => {

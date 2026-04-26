@@ -1,4 +1,8 @@
 export { callOp } from "./call";
+export { planOp } from "./plan";
+export type { PlanOpInput } from "./plan";
+export { decomposeOp } from "./decompose";
+export type { DecomposeOpInput, DecomposeOpOutput } from "./decompose";
 export { buildHopCallback, _buildHopCallbackDeps } from "./build-hop-callback";
 export type { BuildHopCallbackContext } from "./build-hop-callback";
 export { classifyRouteOp } from "./classify-route";

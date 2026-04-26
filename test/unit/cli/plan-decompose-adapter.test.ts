@@ -22,10 +22,12 @@ function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
-    decomposeAsFn: decomposeFn
-      ? async (name: string, opts: any) => decomposeFn(name, opts)
-      : undefined,
-    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
+    completeAsFn: decomposeFn
+      ? async (name: string, _prompt: string, opts?: any) => {
+          const result = await decomposeFn(name, opts ?? {});
+          return { output: JSON.stringify(result.stories), costUsd: 0, source: "exact" as const };
+        }
+      : async () => ({ output: JSON.stringify([]), costUsd: 0, source: "exact" as const }),
   });
 }
 
@@ -249,13 +251,6 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
 
     expect(capturedDecomposeOpts.length).toBe(1);
     expect(capturedDecomposeOpts[0].workdir).toBe(tmpDir);
-  });
-
-  test("adapter.decompose() receives featureName matching the feature option", async () => {
-    const config = makeConfig();
-    await planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" });
-
-    expect(capturedDecomposeOpts[0].featureName).toBe(FEATURE);
   });
 
   test("adapter.decompose() receives storyId matching the requested story", async () => {

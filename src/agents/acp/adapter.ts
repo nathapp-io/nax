@@ -12,13 +12,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../config";
+import { NaxError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
-import { NO_OP_INTERACTION_HANDLER } from "../interaction-handler";
 import type { InteractionHandler } from "../interaction-handler";
-import { parseDecomposeOutput } from "../shared/decompose";
-import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
@@ -536,10 +533,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
 
-  constructor(
-    agentName: string,
-    private readonly naxConfig?: import("../../config").NaxConfig,
-  ) {
+  constructor(agentName: string, _naxConfig?: import("../../config").NaxConfig) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
     this.displayName = entry.displayName;
@@ -731,107 +725,20 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
   }
 
-  async plan(options: PlanOptions): Promise<PlanResult> {
-    // Resolve model: explicit > resolveModelForAgent(tier) > fallback
-    let modelDef = options.modelDef;
-    if (!modelDef && options.config?.models) {
-      const tier = options.modelTier ?? "balanced";
-      const config = options.config;
-      const { resolveModelForAgent } = await import("../../config/schema");
-      try {
-        const defaultAgent = config.agent?.default ?? "claude";
-        modelDef = resolveModelForAgent(config.models ?? {}, defaultAgent, tier, defaultAgent);
-      } catch {
-        // resolveModelForAgent can throw on malformed entries
-      }
-    }
-    modelDef ??= { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
-    // Timeout: from options, or config, or fallback to 600s
-    const timeoutSeconds =
-      options.timeoutSeconds ?? (options.config?.execution?.sessionTimeoutSeconds as number | undefined) ?? 600;
-
-    const resolvedPermissions = options.resolvedPermissions ?? {
-      mode: "approve-reads" as const,
-      skipPermissions: false,
-    };
-    const sessionName = computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
-    const handle = await this.openSession(sessionName, {
-      agentName: this.name,
-      workdir: options.workdir,
-      resolvedPermissions,
-      modelDef,
-      timeoutSeconds,
-      onPidSpawned: options.onPidSpawned,
-    });
-
-    const bridge = options.interactionBridge;
-    const planInteractionHandler = bridge
-      ? {
-          onInteraction: async (req: import("../interaction-handler").AdapterInteraction) => {
-            if (req.kind === "question") {
-              const answer = await bridge.onQuestionDetected(req.text);
-              return { answer };
-            }
-            return null;
-          },
-        }
-      : NO_OP_INTERACTION_HANDLER;
-
-    let specContent: string;
-    let costUsd: number;
-    try {
-      const turnResult = await this.sendTurn(handle, options.prompt, {
-        interactionHandler: planInteractionHandler,
-        maxTurns: options.maxInteractionTurns ?? 1,
-      });
-      specContent = turnResult.output.trim();
-      costUsd = turnResult.cost?.total ?? 0;
-    } catch (err) {
-      throw new Error(`[acp-adapter] plan() failed: ${err instanceof Error ? err.message : String(err)}`, {
-        cause: err,
-      });
-    } finally {
-      await this.closeSession(handle).catch(() => {});
-    }
-
-    if (!specContent) {
-      throw new Error("[acp-adapter] plan() returned empty spec content");
-    }
-
-    return { specContent, costUsd };
+  async plan(_options: PlanOptions): Promise<PlanResult> {
+    throw new NaxError(
+      "AgentAdapter.plan() is deprecated. Use callOp(ctx, planOp, input) instead.",
+      "ADAPTER_METHOD_DEPRECATED",
+      { stage: "plan", migration: "src/operations/plan.ts" },
+    );
   }
 
-  async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
-    const model = options.modelDef?.model;
-    const prompt = await buildDecomposePromptAsync(options);
-
-    let output: string;
-    try {
-      const completeResult = await this.complete(prompt, {
-        model,
-        jsonMode: true,
-        config: this.naxConfig ?? DEFAULT_CONFIG,
-        workdir: options.workdir,
-        featureName: options.featureName,
-        storyId: options.storyId,
-        sessionRole: options.sessionRole ?? "decompose",
-        timeoutMs:
-          (this.naxConfig?.plan?.decomposeTimeoutSeconds ?? this.naxConfig?.plan?.timeoutSeconds ?? 300) * 1_000,
-      });
-      output = completeResult.output;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`[acp-adapter] decompose() failed: ${msg}`, { cause: err });
-    }
-
-    let stories: ReturnType<typeof parseDecomposeOutput>;
-    try {
-      stories = parseDecomposeOutput(output);
-    } catch (err) {
-      throw new Error(`[acp-adapter] decompose() failed to parse stories: ${(err as Error).message}`, { cause: err });
-    }
-
-    return { stories };
+  async decompose(_options: DecomposeOptions): Promise<DecomposeResult> {
+    throw new NaxError(
+      "AgentAdapter.decompose() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
+      "ADAPTER_METHOD_DEPRECATED",
+      { stage: "plan", migration: "src/operations/decompose.ts" },
+    );
   }
 
   async closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void> {

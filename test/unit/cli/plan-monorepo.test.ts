@@ -14,20 +14,16 @@ import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMockPlanManager(
-  planFn?: (agentName: string, opts: any) => Promise<{ specContent: string }>,
+  completeFn?: (name: string, prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: "exact" | "estimated" | "fallback" }>,
 ) {
-  return makeMockAgentManager({
-    planAsFn: planFn
-      ? async (name: string, opts: any) => planFn(name, opts)
-      : undefined,
-  });
+  return makeMockAgentManager({ completeAsFn: completeFn });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,9 +103,9 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.existsSync = mock(() => true);
     _planDeps.createManager = mock(() =>
-      makeMockPlanManager(async (_name: string, opts: any) => {
-        capturedPrompts.push(opts.prompt);
-        return { specContent: "" };
+      makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
       }),
     );
   });
@@ -132,7 +128,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   test("injects monorepo hint when packages are discovered", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`, `${tmpDir}/packages/web`]);
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
       feature: "test-feature",
       auto: true,
@@ -147,7 +143,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   test("includes workdir field in schema when monorepo detected", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`]);
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
       feature: "test-feature",
       auto: true,
@@ -160,7 +156,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   test("monorepo hint includes instruction to set workdir per story", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`]);
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
       feature: "test-feature",
       auto: true,
@@ -174,7 +170,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   test("no monorepo hint when no packages discovered", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => []);
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
       feature: "test-feature",
       auto: true,
@@ -187,7 +183,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   test("no workdir field in schema when no packages discovered", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => []);
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
       feature: "test-feature",
       auto: true,
@@ -201,7 +197,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   test("package paths in prompt are relative to repo root", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`, `${tmpDir}/apps/web`]);
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
       feature: "test-feature",
       auto: true,
@@ -270,9 +266,9 @@ describe("planCommand — per-package tech stack in prompt", () => {
       return "# Spec\nDo something.\n";
     });
     _planDeps.createManager = mock(() =>
-      makeMockPlanManager(async (_name: string, opts: any) => {
-        capturedPrompts.push(opts.prompt);
-        return { specContent: "" };
+      makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: JSON.stringify(minimalPrd), costUsd: 0, source: "exact" as const };
       }),
     );
   });
@@ -311,7 +307,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
       return null;
     });
 
-    await planCommand(tmpDir, {} as never, { from: "/spec.md", feature: "test", auto: true });
+    await planCommand(tmpDir, makeNaxConfig(), { from: "/spec.md", feature: "test", auto: true });
 
     const prompt = capturedPrompts[0];
     expect(prompt).toContain("Package Tech Stacks");
@@ -325,7 +321,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
   test("omits Package Tech Stacks section for single-package repos", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => []);
 
-    await planCommand(tmpDir, {} as never, { from: "/spec.md", feature: "test", auto: true });
+    await planCommand(tmpDir, makeNaxConfig(), { from: "/spec.md", feature: "test", auto: true });
 
     const prompt = capturedPrompts[0];
     expect(prompt).not.toContain("Package Tech Stacks");

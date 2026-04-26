@@ -9,10 +9,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
-import { PlanPromptBuilder } from "../../../src/prompts";
-import { makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager } from "../../helpers";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import type { PRD } from "../../../src/prd/types";
+import { PlanPromptBuilder } from "../../../src/prompts";
+import { makeMockAgentManager } from "../../helpers";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -67,23 +68,6 @@ const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
 const origExistsSync = _planDeps.existsSync;
 
-function makeFakeAdapter(prdContent: object = SAMPLE_PRD) {
-  return {
-    plan: mock(async (_opts: { prompt?: string }) => {}),
-    _prdContent: prdContent,
-  };
-}
-
-function makeMockPlanManager(
-  planFn?: (agentName: string, opts: any) => Promise<void>,
-) {
-  return makeMockAgentManager({
-    planAsFn: planFn
-      ? async (agentName: string, opts: any) => { await planFn(agentName, opts); return { specContent: "" }; }
-      : undefined,
-  });
-}
-
 function makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
@@ -135,8 +119,11 @@ describe("planCommand", () => {
 
     _planDeps.createManager = mock((_cfg: any) => {
       capturedPlanArgs = [];
-      return makeMockPlanManager(async (_name: string, opts: { prompt?: string }) => {
-        if (opts.prompt) capturedPlanArgs.push(opts.prompt);
+      return makeMockAgentManager({
+        completeAsFn: async (_name: string, prompt: string, _opts?: any) => {
+          if (prompt) capturedPlanArgs.push(prompt);
+          return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+        },
       });
     });
   });
@@ -162,11 +149,10 @@ describe("planCommand", () => {
     const specPath = join(tmpDir, "spec.md");
     _planDeps.readFile = mock(async (path: string) => {
       if (path === specPath) return SAMPLE_SPEC;
-      if (path.endsWith("prd.json")) return JSON.stringify(SAMPLE_PRD);
       throw new Error(`Unexpected readFile call: ${path}`);
     });
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: specPath,
       feature: "url-shortener",
       auto: true,
@@ -182,7 +168,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-2: prompt includes codebase context", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -197,8 +183,11 @@ describe("planCommand", () => {
     let receivedAgentName: string | undefined;
 
     _planDeps.createManager = mock((_cfg: any) =>
-      makeMockPlanManager(async (name: string) => {
-        receivedAgentName = name;
+      makeMockAgentManager({
+        completeAsFn: async (name: string, _prompt: string, _opts?: any) => {
+          receivedAgentName = name;
+          return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+        },
       }),
     );
 
@@ -228,7 +217,7 @@ describe("planCommand", () => {
   });
 
   test("AC-2: prompt includes output schema with prd.json structure", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -241,7 +230,7 @@ describe("planCommand", () => {
   });
 
   test("AC-2: prompt includes complexity classification guide", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -255,7 +244,7 @@ describe("planCommand", () => {
   });
 
   test("AC-2: prompt includes test strategy guide", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -268,96 +257,26 @@ describe("planCommand", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AC-3: adapter.plan() is called with the full planning prompt
+  // AC-3: interactive mode (non-auto path still uses planAs)
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-3: adapter.plan() is called in --auto mode", async () => {
-    const fakeAdapter = makeFakeAdapter();
-    _planDeps.createManager = mock((_cfg: any) =>
-      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
-    );
-
-    await planCommand(tmpDir, {} as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    expect(fakeAdapter.plan).toHaveBeenCalledTimes(1);
-  });
-
   test("AC-3: interactive mode is now supported when --auto not set", async () => {
-    const fakeAdapter = {
-      plan: mock(async (_options: any) => ({ specContent: "" })),
-      complete: mock(async (_prompt: string) => JSON.stringify(SAMPLE_PRD)),
-    };
+    const planSpy = mock(async (_options: any) => ({ specContent: "" }));
     _planDeps.createManager = mock((_cfg: any) =>
-      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
+      makeMockAgentManager({
+        planAsFn: async (_name: string, opts: any) => { await planSpy(opts); return { specContent: "" }; },
+      }),
     );
     // Simulate agent having written the PRD file to disk
     _planDeps.existsSync = mock((_path: string) => true);
     _planDeps.readFile = mock(async (_path: string) => JSON.stringify(SAMPLE_PRD));
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
 
-    expect(fakeAdapter.plan).toHaveBeenCalled();
-  });
-
-  test("ACP auto: continues when plan() errors but prd.json exists", async () => {
-    const fakeAdapter = {
-      plan: mock(async (_options: any) => {
-        throw new Error("missing end_turn");
-      }),
-    };
-    _planDeps.createManager = mock((_cfg: any) =>
-      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
-    );
-    _planDeps.existsSync = mock((path: string) => path.endsWith("prd.json"));
-    _planDeps.readFile = mock(async (path: string) => (path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC));
-
-    const result = await planCommand(
-      tmpDir,
-      {
-        agent: { protocol: "acp" },
-      } as any,
-      {
-        from: "/spec.md",
-        feature: "url-shortener",
-        auto: true,
-      },
-    );
-
-    expect(result).toContain("prd.json");
-    expect(fakeAdapter.plan).toHaveBeenCalled();
-  });
-
-  test("ACP auto: throws when plan() errors and prd.json is missing", async () => {
-    const fakeAdapter = {
-      plan: mock(async (_options: any) => {
-        throw new Error("missing end_turn");
-      }),
-    };
-    _planDeps.createManager = mock((_cfg: any) =>
-      makeMockPlanManager(async (_name: string, opts: any) => { await fakeAdapter.plan(opts); }),
-    );
-    _planDeps.existsSync = mock((_path: string) => false);
-
-    await expect(
-      planCommand(
-        tmpDir,
-        {
-          agent: { protocol: "acp" },
-        } as any,
-        {
-          from: "/spec.md",
-          feature: "url-shortener",
-          auto: true,
-        },
-      ),
-    ).rejects.toThrow("no PRD was written");
+    expect(planSpy).toHaveBeenCalled();
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -365,13 +284,14 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-4: throws on invalid JSON response from adapter", async () => {
-    _planDeps.readFile = mock(async (path: string) => {
-      if (path.endsWith("prd.json")) return "not valid json {{";
-      return SAMPLE_SPEC;
-    });
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockAgentManager({
+        completeAsFn: async () => ({ output: "not valid json {{", costUsd: 0, source: "exact" as const }),
+      }),
+    );
 
     await expect(
-      planCommand(tmpDir, {} as never, {
+      planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
@@ -384,19 +304,24 @@ describe("planCommand", () => {
     const prdWithoutProject = { ...SAMPLE_PRD } as Partial<PRD>;
     prdWithoutProject.project = undefined;
 
-    _planDeps.readFile = mock(async (path: string) => {
-      if (path.endsWith("prd.json")) return JSON.stringify(prdWithoutProject);
-      return SAMPLE_SPEC;
-    });
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockAgentManager({
+        completeAsFn: async () => ({
+          output: JSON.stringify(prdWithoutProject),
+          costUsd: 0,
+          source: "exact" as const,
+        }),
+      }),
+    );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
     });
-    // Verify written PRD has project auto-filled (from package.json mock → "my-project")
-    expect(capturedWriteArgs.length).toBeGreaterThan(0);
-    const written = JSON.parse(capturedWriteArgs[0]?.[1]);
+    // capturedWriteArgs[1] = validated PRD (project filled by detectProjectName)
+    expect(capturedWriteArgs.length).toBeGreaterThan(1);
+    const written = JSON.parse(capturedWriteArgs[1]?.[1]);
     expect(written.project).toBeDefined();
     expect(typeof written.project).toBe("string");
   });
@@ -405,13 +330,18 @@ describe("planCommand", () => {
     const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
     badPrd.userStories = undefined;
 
-    _planDeps.readFile = mock(async (path: string) => {
-      if (path.endsWith("prd.json")) return JSON.stringify(badPrd);
-      return SAMPLE_SPEC;
-    });
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockAgentManager({
+        completeAsFn: async () => ({
+          output: JSON.stringify(badPrd),
+          costUsd: 0,
+          source: "exact" as const,
+        }),
+      }),
+    );
 
     expect(
-      planCommand(tmpDir, {} as never, {
+      planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
@@ -424,7 +354,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-5: output path is nax/features/<feature>/prd.json", async () => {
-    const result = await planCommand(tmpDir, {} as never, {
+    const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -436,13 +366,13 @@ describe("planCommand", () => {
   });
 
   test("AC-5: written content is valid JSON with PRD structure", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[0];
+    const [_path, content] = capturedWriteArgs[1];
     const written = JSON.parse(content) as PRD;
     expect(written.userStories).toBeDefined();
     expect(Array.isArray(written.userStories)).toBe(true);
@@ -461,18 +391,23 @@ describe("planCommand", () => {
       ],
     };
 
-    _planDeps.readFile = mock(async (path: string) => {
-      if (path.endsWith("prd.json")) return JSON.stringify(prdWithBadStatuses);
-      return SAMPLE_SPEC;
-    });
+    _planDeps.createManager = mock((_cfg: any) =>
+      makeMockAgentManager({
+        completeAsFn: async () => ({
+          output: JSON.stringify(prdWithBadStatuses),
+          costUsd: 0,
+          source: "exact" as const,
+        }),
+      }),
+    );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[0];
+    const [_path, content] = capturedWriteArgs[1];
     const written = JSON.parse(content) as PRD;
     for (const story of written.userStories) {
       expect(story.status).toBe("pending");
@@ -486,13 +421,13 @@ describe("planCommand", () => {
   test("AC-7: project field comes from package.json name", async () => {
     _planDeps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-awesome-pkg" }));
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[0];
+    const [_path, content] = capturedWriteArgs[1];
     const written = JSON.parse(content) as PRD;
     expect(written.project).toBe("my-awesome-pkg");
   });
@@ -504,13 +439,13 @@ describe("planCommand", () => {
       exitCode: 0,
     }));
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[0];
+    const [_path, content] = capturedWriteArgs[1];
     const written = JSON.parse(content) as PRD;
     expect(written.project).toBe("repo-name");
   });
@@ -520,26 +455,26 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-8: branchName defaults to feat/<feature>", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "my-feat",
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[0];
+    const [_path, content] = capturedWriteArgs[1];
     const written = JSON.parse(content) as PRD;
     expect(written.branchName).toBe("feat/my-feat");
   });
 
   test("AC-8: branchName can be overridden via branch option", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "my-feat",
       auto: true,
       branch: "custom/branch-name",
     });
 
-    const [_path, content] = capturedWriteArgs[0];
+    const [_path, content] = capturedWriteArgs[1];
     const written = JSON.parse(content) as PRD;
     expect(written.branchName).toBe("custom/branch-name");
   });
@@ -568,13 +503,13 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("output PRD has createdAt and updatedAt ISO timestamps", async () => {
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[0];
+    const [_path, content] = capturedWriteArgs[1];
     const written = JSON.parse(content) as PRD;
     expect(written.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(written.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);

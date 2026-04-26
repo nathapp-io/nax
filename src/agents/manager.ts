@@ -508,26 +508,36 @@ export class AgentManager implements IAgentManager {
     }
   }
 
-  async plan(options: PlanOptions): Promise<PlanResult> {
-    return this.planAs(this.getDefault(), options);
+  async plan(_options: PlanOptions): Promise<PlanResult> {
+    throw new NaxError(
+      "AgentManager.plan() is deprecated. Use callOp(ctx, planOp, input) instead.",
+      "ADAPTER_METHOD_DEPRECATED",
+      { stage: "plan", migration: "src/operations/plan.ts" },
+    );
   }
 
-  async planAs(agentName: string, options: PlanOptions): Promise<PlanResult> {
-    const resolvedPermissions = resolvePermissions((options.config as NaxConfig | undefined) ?? this._config, "plan");
-    const augmented: PlanOptions = { ...options, resolvedPermissions };
-    const adapter = this._resolveRegistry().getAgent(agentName);
-    if (!adapter) return { specContent: `Agent "${agentName}" not found` };
-    return adapter.plan(augmented);
+  async planAs(_agentName: string, _options: PlanOptions): Promise<PlanResult> {
+    throw new NaxError(
+      "AgentManager.planAs() is deprecated. Use callOp(ctx, planOp, input) instead.",
+      "ADAPTER_METHOD_DEPRECATED",
+      { stage: "plan", migration: "src/operations/plan.ts" },
+    );
   }
 
-  async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
-    return this.decomposeAs(this.getDefault(), options);
+  async decompose(_options: DecomposeOptions): Promise<DecomposeResult> {
+    throw new NaxError(
+      "AgentManager.decompose() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
+      "ADAPTER_METHOD_DEPRECATED",
+      { stage: "plan", migration: "src/operations/decompose.ts" },
+    );
   }
 
-  async decomposeAs(agentName: string, options: DecomposeOptions): Promise<DecomposeResult> {
-    const adapter = this._resolveRegistry().getAgent(agentName);
-    if (!adapter) return { stories: [] };
-    return adapter.decompose(options);
+  async decomposeAs(_agentName: string, _options: DecomposeOptions): Promise<DecomposeResult> {
+    throw new NaxError(
+      "AgentManager.decomposeAs() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
+      "ADAPTER_METHOD_DEPRECATED",
+      { stage: "plan", migration: "src/operations/decompose.ts" },
+    );
   }
 
   private _resolveRegistry(): AgentRegistry {

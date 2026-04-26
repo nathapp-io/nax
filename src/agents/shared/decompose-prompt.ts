@@ -99,6 +99,28 @@ ${TEST_STRATEGY_GUIDE}
 ${GROUPING_RULES}${acConstraint}`;
 }
 
+/** Narrowed input for synchronous decompose prompt building (used by decomposeOp). */
+export interface DecomposePromptInput {
+  specContent: string;
+  codebaseContext: string;
+  targetStory?: import("../../prd/types").UserStory;
+  siblings?: import("../../prd/types").UserStory[];
+  maxAcCount?: number | null;
+}
+
+/**
+ * Build a decompose prompt synchronously (used by decomposeOp.build()).
+ *
+ * Functionally identical to buildDecomposePromptAsync — all inner operations
+ * are synchronous (OneShotPromptBuilder.build() returns a string, no I/O).
+ */
+export function buildDecomposePromptSync(input: DecomposePromptInput): string {
+  if (input.targetStory) {
+    return buildPlanModePromptSync(input);
+  }
+  return buildSpecModePromptSync(input);
+}
+
 /**
  * Build a decompose prompt using OneShotPromptBuilder.
  *
@@ -109,6 +131,34 @@ export async function buildDecomposePromptAsync(options: DecomposeOptions): Prom
     return buildPlanModePrompt(options);
   }
   return buildSpecModePrompt(options);
+}
+
+function buildPlanModePromptSync(input: DecomposePromptInput): string {
+  // biome-ignore lint/style/noNonNullAssertion: guarded by caller (input.targetStory is defined)
+  const targetStory = input.targetStory!;
+  const siblings = input.siblings ?? [];
+  const instructions = buildPlanModeInstructions(targetStory.id, input.maxAcCount ?? null);
+
+  let builder = OneShotPromptBuilder.for("decomposer")
+    .instructions(instructions)
+    .inputData("Target Story", JSON.stringify(targetStory, null, 2))
+    .inputData("Codebase Context", input.codebaseContext);
+
+  if (siblings.length > 0) {
+    const siblingsSummary = siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n");
+    builder = builder.inputData("Sibling Stories", siblingsSummary);
+  }
+
+  return builder.jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
+}
+
+function buildSpecModePromptSync(input: DecomposePromptInput): string {
+  return OneShotPromptBuilder.for("decomposer")
+    .instructions(SPEC_DECOMPOSE_INSTRUCTIONS)
+    .inputData("Codebase Context", input.codebaseContext)
+    .inputData("Feature Specification", input.specContent)
+    .jsonSchema(DECOMPOSE_SPEC_SCHEMA)
+    .build();
 }
 
 async function buildPlanModePrompt(options: DecomposeOptions): Promise<string> {
