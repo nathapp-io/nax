@@ -1,0 +1,93 @@
+import { describe, expect, test } from "bun:test";
+import { makeTestRuntime } from "../../helpers";
+import type { AcceptanceDiagnoseInput } from "../../../src/operations/acceptance-diagnose";
+import { acceptanceDiagnoseOp } from "../../../src/operations/acceptance-diagnose";
+
+const SAMPLE_INPUT: AcceptanceDiagnoseInput = {
+  testOutput: "FAIL: expected 1 but got 2",
+  testFileContent: "test('x', () => expect(fn()).toBe(1))",
+  sourceFiles: [{ path: "src/fn.ts", content: "export function fn() { return 2; }" }],
+};
+
+function makeBuildCtx() {
+  const runtime = makeTestRuntime();
+  const view = runtime.packages.repo();
+  return { packageView: view, config: view.select(acceptanceDiagnoseOp.config) };
+}
+
+describe("acceptanceDiagnoseOp shape", () => {
+  test("kind is run", () => {
+    expect(acceptanceDiagnoseOp.kind).toBe("run");
+  });
+  test("name is acceptance-diagnose", () => {
+    expect(acceptanceDiagnoseOp.name).toBe("acceptance-diagnose");
+  });
+  test("session.role is diagnose", () => {
+    expect(acceptanceDiagnoseOp.session.role).toBe("diagnose");
+  });
+  test("session.lifetime is fresh", () => {
+    expect(acceptanceDiagnoseOp.session.lifetime).toBe("fresh");
+  });
+  test("stage is acceptance", () => {
+    expect(acceptanceDiagnoseOp.stage).toBe("acceptance");
+  });
+});
+
+describe("acceptanceDiagnoseOp.build()", () => {
+  test("returns ComposeInput with task section", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
+    expect(result).toHaveProperty("task");
+  });
+  test("task section content contains test output", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).toContain("FAIL: expected 1 but got 2");
+  });
+  test("task section content contains source file content", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).toContain("fn()");
+  });
+});
+
+describe("acceptanceDiagnoseOp.parse()", () => {
+  test("parses valid JSON diagnosis result", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({ verdict: "source_bug", reasoning: "fn returns wrong value", confidence: 0.9 });
+    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.verdict).toBe("source_bug");
+    expect(result.reasoning).toBe("fn returns wrong value");
+    expect(result.confidence).toBe(0.9);
+  });
+  test("falls back to source_bug on malformed JSON", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.parse("could not diagnose", SAMPLE_INPUT, ctx);
+    expect(result.verdict).toBe("source_bug");
+    expect(result.confidence).toBe(0);
+  });
+  test("falls back to source_bug on missing fields", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.parse(JSON.stringify({ verdict: "test_bug" }), SAMPLE_INPUT, ctx);
+    expect(result.verdict).toBe("source_bug");
+  });
+  test("parses test_bug verdict", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({ verdict: "test_bug", reasoning: "bad test", confidence: 0.8 });
+    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.verdict).toBe("test_bug");
+  });
+  test("parses optional testIssues and sourceIssues arrays", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({
+      verdict: "both",
+      reasoning: "both sides",
+      confidence: 0.5,
+      testIssues: ["wrong assertion"],
+      sourceIssues: ["off by one"],
+    });
+    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.testIssues).toEqual(["wrong assertion"]);
+    expect(result.sourceIssues).toEqual(["off by one"]);
+  });
+});
