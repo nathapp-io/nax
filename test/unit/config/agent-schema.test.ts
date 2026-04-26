@@ -47,4 +47,21 @@ describe("AgentConfigSchema", () => {
       NaxConfigSchema.parse({ agent: { fallback: { maxHopsPerStory: 11 } } }),
     ).toThrow();
   });
+
+  test("agent.acp.promptRetries defaults to 0", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.agent?.acp?.promptRetries).toBe(0);
+  });
+
+  test("agent.acp.promptRetries accepts values 0–5", () => {
+    for (const n of [0, 1, 3, 5]) {
+      const result = NaxConfigSchema.parse({ agent: { acp: { promptRetries: n } } });
+      expect(result.agent?.acp?.promptRetries).toBe(n);
+    }
+  });
+
+  test("agent.acp.promptRetries rejects values out of range", () => {
+    expect(() => NaxConfigSchema.parse({ agent: { acp: { promptRetries: -1 } } })).toThrow();
+    expect(() => NaxConfigSchema.parse({ agent: { acp: { promptRetries: 6 } } })).toThrow();
+  });
 });

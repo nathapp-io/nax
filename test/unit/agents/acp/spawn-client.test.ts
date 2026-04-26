@@ -340,3 +340,50 @@ describe("SpawnAcpClient — loadSession (SEC-3)", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// --prompt-retries flag passthrough
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SpawnAcpClient — --prompt-retries flag passthrough", () => {
+  withDepsRestore(_spawnClientDeps, ["spawn"]);
+
+  function capturePromptCmd(promptRetries?: number): {
+    capturedCmd: () => string[];
+    client: SpawnAcpClient;
+  } {
+    let captured: string[] = [];
+    _spawnClientDeps.spawn = (cmd, _opts) => {
+      captured = [...cmd];
+      return makeSpawnResult(0, JSON.stringify({ result: "ok" }));
+    };
+    const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp", 30, undefined, promptRetries);
+    return { capturedCmd: () => captured, client };
+  }
+
+  test("prompt cmd includes --prompt-retries when promptRetries > 0", async () => {
+    const { capturedCmd, client } = capturePromptCmd(2);
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    expect(session).not.toBeNull();
+    await session!.prompt("hello");
+    expect(capturedCmd()).toContain("--prompt-retries");
+    const idx = capturedCmd().indexOf("--prompt-retries");
+    expect(capturedCmd()[idx + 1]).toBe("2");
+  });
+
+  test("prompt cmd omits --prompt-retries when promptRetries is 0 (default)", async () => {
+    const { capturedCmd, client } = capturePromptCmd(0);
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    expect(session).not.toBeNull();
+    await session!.prompt("hello");
+    expect(capturedCmd()).not.toContain("--prompt-retries");
+  });
+
+  test("prompt cmd omits --prompt-retries when promptRetries is unset", async () => {
+    const { capturedCmd, client } = capturePromptCmd(undefined);
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    expect(session).not.toBeNull();
+    await session!.prompt("hello");
+    expect(capturedCmd()).not.toContain("--prompt-retries");
+  });
+});

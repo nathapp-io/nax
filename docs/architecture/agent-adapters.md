@@ -205,6 +205,20 @@ The ACP adapter uses tiered retry logic for session errors, configurable via `ex
 
 The adapter detects retryable errors via the `retryable?: boolean` flag in the ACP response. Error logs include the first 500 chars of output for diagnostics.
 
+### Layered Retry Semantics (acpx 0.4.0+)
+
+nax has three independent retry layers, each targeting a different failure class:
+
+| Layer | Config | Triggers on | Behaviour |
+|:------|:-------|:------------|:----------|
+| `agent.acp.promptRetries` (acpx) | `agent.acp.promptRetries` (default `0`) | Transient ACP-layer errors before side effects | acpx retries the same prompt with exponential backoff; JSON output stays stable; skipped if side effects already occurred |
+| Rectification loop (nax) | `execution.rectificationMaxAttempts` | Review or test failures after a complete turn | New prompt synthesised from failure details |
+| Tier escalation (nax) | `execution.escalation.*` | Repeated rectification failures | Bumps model tier (fast → balanced → powerful) |
+
+**Key rule:** `promptRetries` is the cheapest layer — it fires inside acpx before nax even sees the result. Set it to `2` for transient-rate-limit tolerance without overlapping the escalation logic. The failure classes are disjoint: prompt-level transients vs. quality failures vs. repeated quality failures.
+
+`promptRetries` is ACP-only (`agent.acp` sub-key); the CLI adapter (`protocol: "cli"`) has no equivalent.
+
 ### Async Decompose Prompts
 
 `src/agents/shared/decompose-prompt.ts`:

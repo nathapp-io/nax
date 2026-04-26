@@ -293,6 +293,8 @@ export interface OpenSessionOpts {
   modelDef: ModelDef;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
+  /** ACP: acpx --prompt-retries value (default 0 — opt-in). */
+  promptRetries?: number;
   /** Fired once the session is physically established, before the first prompt. */
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /** PID registration callback for crash-recovery bookkeeping. */

@@ -136,8 +136,14 @@ export const _acpAdapterDeps = {
    * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
    */
-  createClient(cmdStr: string, cwd?: string, timeoutSeconds?: number, onPidSpawned?: (pid: number) => void): AcpClient {
-    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned);
+  createClient(
+    cmdStr: string,
+    cwd?: string,
+    timeoutSeconds?: number,
+    onPidSpawned?: (pid: number) => void,
+    promptRetries?: number,
+  ): AcpClient {
+    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries);
   },
 };
 
@@ -749,6 +755,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       resolvedPermissions,
       modelDef: options.modelDef,
       timeoutSeconds: options.timeoutSeconds,
+      promptRetries: options.config?.agent?.acp?.promptRetries,
       onSessionEstablished: options.onSessionEstablished,
       onPidSpawned: options.onPidSpawned,
       signal: options.abortSignal,
@@ -898,7 +905,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       const model = await resolveModel(agentName);
       const cmdStr = `acpx --model ${model} ${agentName}`;
       const timeoutSeconds = Math.ceil(timeoutMs / 1000);
-      const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds);
+      const promptRetries = _options?.config?.agent?.acp?.promptRetries;
+      const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, undefined, promptRetries);
       await client.start();
 
       let session: AcpSession | null = null;
@@ -1138,14 +1146,22 @@ export class AcpAgentAdapter implements AgentAdapter {
   async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
     // opts.resume is a hint — the ACP adapter always attempts loadSession first
     // via ensureAcpSession, so it is inherently self-resuming regardless of this flag.
-    const { agentName, workdir, resolvedPermissions, modelDef, timeoutSeconds, onSessionEstablished, onPidSpawned } =
-      opts;
+    const {
+      agentName,
+      workdir,
+      resolvedPermissions,
+      modelDef,
+      timeoutSeconds,
+      promptRetries,
+      onSessionEstablished,
+      onPidSpawned,
+    } = opts;
     const { signal } = opts;
 
     throwIfAborted(signal, "Run aborted — shutdown in progress");
 
     const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned);
+    const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned, promptRetries);
     let session: AcpSession | undefined;
 
     try {
