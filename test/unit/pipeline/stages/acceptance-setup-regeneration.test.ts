@@ -140,10 +140,16 @@ describe("acceptance-setup: regenerates when meta is missing (P2-A)", () => {
     _acceptanceSetupDeps.readMeta = async () => null; // no meta
     _acceptanceSetupDeps.copyFile = async () => { copyFileCalled = true; };
     _acceptanceSetupDeps.deleteFile = async () => { deleteFileCalled = true; };
-    _acceptanceSetupDeps.refine = async (c) => c.map((x) => ({ original: x, refined: x, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: 'test("AC-1", () => {})', criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-generate") {
+        generateCalled = true;
+        return { testCode: 'test("AC-1", () => {})' };
+      }
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
@@ -167,8 +173,14 @@ describe("acceptance-setup: regenerates when meta is missing (P2-A)", () => {
       copyDest.push(dest);
     };
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.refine = async (c) => c.map((x) => ({ original: x, refined: x, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({ testCode: 'test("AC-1", () => {})', criteria: [] });
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-generate") return { testCode: 'test("AC-1", () => {})' };
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -198,10 +210,16 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
     });
     _acceptanceSetupDeps.copyFile = async () => {};
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.refine = async (c) => c.map((x) => ({ original: x, refined: x, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: 'test("AC-1", () => {})', criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-generate") {
+        generateCalled = true;
+        return { testCode: 'test("AC-1", () => {})' };
+      }
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
@@ -228,10 +246,16 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
     });
     _acceptanceSetupDeps.copyFile = async () => {};
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.refine = async (c) => c.map((x) => ({ original: x, refined: x, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: 'test("AC-1", () => {})', criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-generate") {
+        generateCalled = true;
+        return { testCode: 'test("AC-1", () => {})' };
+      }
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
@@ -264,10 +288,16 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
     });
     _acceptanceSetupDeps.copyFile = async () => {};
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.refine = async (c) => c.map((x) => ({ original: x, refined: x, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: 'test("AC-1", () => {})', criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-generate") {
+        generateCalled = true;
+        return { testCode: 'test("AC-1", () => {})' };
+      }
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
@@ -303,10 +333,12 @@ describe("acceptance-setup: US-FIX-* stories excluded from fingerprint", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => [];
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: "", criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, _input) => {
+      if (op.name === "acceptance-generate") {
+        generateCalled = true;
+        return { testCode: "" };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -342,10 +374,12 @@ describe("acceptance-setup: no regeneration when fingerprint unchanged (AC-16)",
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => [];
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: "", criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, _input) => {
+      if (op.name === "acceptance-generate") {
+        generateCalled = true;
+        return { testCode: "" };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -366,8 +400,14 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
     let writtenMeta: object | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (c) => c.map((x) => ({ original: x, refined: x, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({ testCode: 'test("AC-1", () => {})', criteria: [] });
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-generate") return { testCode: 'test("AC-1", () => {})' };
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async (metaPath, meta) => {
       writtenMetaPath = metaPath;
@@ -385,8 +425,14 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
     let writtenMeta: AcceptanceMeta | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (c) => c.map((x) => ({ original: x, refined: x, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({ testCode: 'test("AC-1", () => {})', criteria: [] });
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-generate") return { testCode: 'test("AC-1", () => {})' };
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async (_path, meta) => { writtenMeta = meta; };
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });

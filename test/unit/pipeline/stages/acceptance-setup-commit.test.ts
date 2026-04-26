@@ -65,9 +65,14 @@ function setupGenerationDeps(commitCalls: Array<{ workdir: string; stage: string
   _acceptanceSetupDeps.copyFile = async () => {};
   _acceptanceSetupDeps.deleteFile = async () => {};
   _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {};
-  _acceptanceSetupDeps.refine = async (criteria) =>
-    criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-  _acceptanceSetupDeps.generate = async () => ({ testCode: "// generated", criteria: [] });
+  _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+    if (op.name === "acceptance-generate") return { testCode: "// generated" };
+    if (op.name === "acceptance-refine") {
+      const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+      return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+    }
+    throw new Error(`unexpected op: ${op.name}`);
+  };
   _acceptanceSetupDeps.writeFile = async () => {};
   _acceptanceSetupDeps.writeMeta = async () => {};
   _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "RED" });

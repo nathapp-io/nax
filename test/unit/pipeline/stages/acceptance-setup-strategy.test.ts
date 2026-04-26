@@ -1,19 +1,16 @@
 /**
- * ACS-005: acceptance-setup stage — testStrategy wiring
+ * ACS-005: acceptance-setup stage — testStrategy / testFramework wiring
  *
- * Tests that acceptance-setup reads testStrategy from config.acceptance.testStrategy
- * and passes it through to both the refinement module and the generator.
- *
- * These tests should FAIL until the implementer wires testStrategy through
- * the acceptance-setup stage.
+ * testStrategy is now internalized inside the callOp implementation and not
+ * visible in the mock input. Tests verify:
+ *   - callOp is invoked when testStrategy is set (stage completes without error)
+ *   - testFramework appears as frameworkOverrideLine in the generate callOp input
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "../../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { RefinementContext } from "../../../../src/acceptance/types";
-import type { GenerateFromPRDOptions } from "../../../../src/acceptance/types";
 import type { UserStory } from "../../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +71,19 @@ function makeCtx(acceptanceOverrides: Record<string, unknown> = {}): PipelineCon
   };
 }
 
+function makeDefaultCallOp() {
+  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+    if (op.name === "acceptance-refine") {
+      const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+      return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+    }
+    if (op.name === "acceptance-generate") {
+      return { testCode: 'import { test } from "bun:test"; test("AC-1", () => {})' };
+    }
+    throw new Error(`unexpected op: ${op.name}`);
+  };
+}
+
 let savedDeps: typeof _acceptanceSetupDeps;
 
 beforeEach(() => {
@@ -86,233 +96,129 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC-6: acceptance-setup stage reads testStrategy from config.acceptance.testStrategy
+// AC-6: testStrategy is internalized — callOp is invoked for all testStrategy values
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("acceptance-setup: reads testStrategy from config.acceptance.testStrategy", () => {
-  test("passes testStrategy='component' from config to the refinement context", async () => {
-    let capturedContext: RefinementContext | null = null;
-
+describe("acceptance-setup: testStrategy config is consumed (callOp invoked)", () => {
+  function wireBasicDeps() {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria, context) => {
-      capturedContext = context;
-      return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    };
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+  }
+
+  test("stage runs and calls callOp when testStrategy='component'", async () => {
+    wireBasicDeps();
+    let callOpCalled = false;
+    const inner = _acceptanceSetupDeps.callOp;
+    _acceptanceSetupDeps.callOp = async (ctx, pkg, op, input, storyId) => {
+      callOpCalled = true;
+      return inner(ctx, pkg, op, input, storyId);
+    };
 
     const ctx = makeCtx({ testStrategy: "component", testFramework: "ink-testing-library" });
     await acceptanceSetupStage.execute(ctx);
 
-    expect(capturedContext).not.toBeNull();
-    expect((capturedContext as unknown as RefinementContext).testStrategy).toBe("component");
+    expect(callOpCalled).toBe(true);
   });
 
-  test("passes testStrategy='cli' from config to the refinement context", async () => {
-    let capturedContext: RefinementContext | null = null;
-
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria, context) => {
-      capturedContext = context;
-      return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+  test("stage runs and calls callOp when testStrategy='cli'", async () => {
+    wireBasicDeps();
+    let callOpCalled = false;
+    const inner = _acceptanceSetupDeps.callOp;
+    _acceptanceSetupDeps.callOp = async (ctx, pkg, op, input, storyId) => {
+      callOpCalled = true;
+      return inner(ctx, pkg, op, input, storyId);
     };
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-      criteria: [],
-    });
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx({ testStrategy: "cli" });
     await acceptanceSetupStage.execute(ctx);
 
-    expect(capturedContext).not.toBeNull();
-    expect((capturedContext as unknown as RefinementContext).testStrategy).toBe("cli");
+    expect(callOpCalled).toBe(true);
   });
 
-  test("passes testStrategy=undefined to refinement context when not set in config", async () => {
-    let capturedContext: RefinementContext | null = null;
-
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria, context) => {
-      capturedContext = context;
-      return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+  test("stage runs and calls callOp when testStrategy is not set in config", async () => {
+    wireBasicDeps();
+    let callOpCalled = false;
+    const inner = _acceptanceSetupDeps.callOp;
+    _acceptanceSetupDeps.callOp = async (ctx, pkg, op, input, storyId) => {
+      callOpCalled = true;
+      return inner(ctx, pkg, op, input, storyId);
     };
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-      criteria: [],
-    });
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
-
-    const ctx = makeCtx(); // no testStrategy in acceptance config
-    await acceptanceSetupStage.execute(ctx);
-
-    expect(capturedContext).not.toBeNull();
-    expect((capturedContext as unknown as RefinementContext).testStrategy).toBeUndefined();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-7: acceptance-setup stage passes testStrategy to the generator
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("acceptance-setup: passes testStrategy to generator", () => {
-  test("passes testStrategy='component' to generate options", async () => {
-    let capturedOptions: GenerateFromPRDOptions | null = null;
-
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria) =>
-      _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
-      capturedOptions = options;
-      return {
-        testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-        criteria: [],
-      };
-    };
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
-
-    const ctx = makeCtx({ testStrategy: "component", testFramework: "ink-testing-library" });
-    await acceptanceSetupStage.execute(ctx);
-
-    expect(capturedOptions).not.toBeNull();
-    expect((capturedOptions as unknown as GenerateFromPRDOptions).testStrategy).toBe("component");
-  });
-
-  test("passes testFramework='ink-testing-library' to generate options when set in config", async () => {
-    let capturedOptions: GenerateFromPRDOptions | null = null;
-
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria) =>
-      _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
-      capturedOptions = options;
-      return {
-        testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-        criteria: [],
-      };
-    };
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
-
-    const ctx = makeCtx({ testStrategy: "component", testFramework: "ink-testing-library" });
-    await acceptanceSetupStage.execute(ctx);
-
-    expect(capturedOptions).not.toBeNull();
-    expect((capturedOptions as unknown as GenerateFromPRDOptions).testFramework).toBe("ink-testing-library");
-  });
-
-  test("passes testStrategy='cli' to generate options", async () => {
-    let capturedOptions: GenerateFromPRDOptions | null = null;
-
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria) =>
-      _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
-      capturedOptions = options;
-      return {
-        testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-        criteria: [],
-      };
-    };
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
-
-    const ctx = makeCtx({ testStrategy: "cli" });
-    await acceptanceSetupStage.execute(ctx);
-
-    expect(capturedOptions).not.toBeNull();
-    expect((capturedOptions as unknown as GenerateFromPRDOptions).testStrategy).toBe("cli");
-  });
-
-  test("testStrategy is undefined in generate options when not set in config", async () => {
-    let capturedOptions: GenerateFromPRDOptions | null = null;
-
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria) =>
-      _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
-      capturedOptions = options;
-      return {
-        testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-        criteria: [],
-      };
-    };
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx(); // no testStrategy
     await acceptanceSetupStage.execute(ctx);
 
-    expect(capturedOptions).not.toBeNull();
-    expect((capturedOptions as unknown as GenerateFromPRDOptions).testStrategy).toBeUndefined();
+    expect(callOpCalled).toBe(true);
   });
+});
 
-  test("passes testStrategy to both refine and generate in the same execution", async () => {
-    let refineStrategy: string | undefined = "not-called";
-    let generateStrategy: string | undefined = "not-called";
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-7: testFramework is passed as frameworkOverrideLine to the generate callOp
+// ─────────────────────────────────────────────────────────────────────────────
 
+describe("acceptance-setup: testFramework appears in generate callOp input", () => {
+  function wireBasicDeps() {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria, context) => {
-      refineStrategy = context.testStrategy;
-      return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    };
-    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
-      generateStrategy = options.testStrategy;
-      return {
-        testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-        criteria: [],
-      };
-    };
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+  }
+
+  test("frameworkOverrideLine in generate input contains 'ink-testing-library' when set in config", async () => {
+    let capturedFrameworkOverrideLine: string | undefined;
+    wireBasicDeps();
+
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        capturedFrameworkOverrideLine = (input as { frameworkOverrideLine: string }).frameworkOverrideLine;
+        return { testCode: 'import { test } from "bun:test"; test("AC-1", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
 
     const ctx = makeCtx({ testStrategy: "component", testFramework: "ink-testing-library" });
     await acceptanceSetupStage.execute(ctx);
 
-    // Both refine and generate must receive the same testStrategy
-    expect(refineStrategy).toBe("component");
-    expect(generateStrategy).toBe("component");
+    expect(capturedFrameworkOverrideLine).toBeDefined();
+    expect(capturedFrameworkOverrideLine!).toContain("ink-testing-library");
   });
 
-  test("passes testFramework to both refine and generate in the same execution", async () => {
-    let refineFramework: string | undefined = "not-called";
-    let generateFramework: string | undefined = "not-called";
+  test("frameworkOverrideLine is empty string when testFramework is not set", async () => {
+    let capturedFrameworkOverrideLine: string | undefined;
+    wireBasicDeps();
 
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (_criteria, context) => {
-      refineFramework = context.testFramework;
-      return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        capturedFrameworkOverrideLine = (input as { frameworkOverrideLine: string }).frameworkOverrideLine;
+        return { testCode: 'import { test } from "bun:test"; test("AC-1", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
-    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
-      generateFramework = options.testFramework;
-      return {
-        testCode: 'import { test } from "bun:test"; test("AC-1", () => {})',
-        criteria: [],
-      };
-    };
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    const ctx = makeCtx(); // no testFramework
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(capturedFrameworkOverrideLine).toBe("");
+  });
+
+  test("stage runs without error when both testStrategy and testFramework are set", async () => {
+    wireBasicDeps();
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
 
     const ctx = makeCtx({ testStrategy: "component", testFramework: "ink-testing-library" });
     await acceptanceSetupStage.execute(ctx);
-
-    expect(refineFramework).toBe("ink-testing-library");
-    expect(generateFramework).toBe("ink-testing-library");
+    expect((ctx as any).acceptanceSetup).toBeDefined();
   });
 });

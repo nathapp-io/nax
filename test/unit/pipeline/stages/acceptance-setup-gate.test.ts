@@ -67,6 +67,20 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   };
 }
 
+/** Standard callOp mock for tests that just need generation to work. */
+function makeDefaultCallOp(testCode = 'test("AC-1", () => { throw new Error("red") })') {
+  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+    if (op.name === "acceptance-refine") {
+      const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+      return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+    }
+    if (op.name === "acceptance-generate") {
+      return { testCode };
+    }
+    throw new Error(`unexpected op: ${op.name}`);
+  };
+}
+
 let savedDeps: typeof _acceptanceSetupDeps;
 
 beforeEach(() => {
@@ -89,11 +103,9 @@ describe("acceptance-setup: writes test file", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({ testCode, criteria: [] });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp(testCode);
     _acceptanceSetupDeps.writeFile = async (path) => {
-      writtenPaths.push(path);
+      if (path.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(path);
     };
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
@@ -111,11 +123,16 @@ describe("acceptance-setup: writes test file", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({ testCode, criteria: [] });
-    _acceptanceSetupDeps.writeFile = async (_path, content) => {
-      writtenContent = content;
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") return { testCode };
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+    _acceptanceSetupDeps.writeFile = async (path, content) => {
+      if (path.endsWith(".nax-acceptance.test.ts")) writtenContent = content;
     };
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
@@ -139,12 +156,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
   test("returns continue when bun test exits with code 1", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail\n0 pass" });
 
@@ -157,12 +169,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
   test("stores redFailCount in ctx.acceptanceSetup when tests fail", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "3 fail\n0 pass" });
 
@@ -178,12 +185,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => {
       testRunCalled = true;
@@ -211,12 +213,7 @@ describe("acceptance-setup: RED gate — passing tests (invalid RED)", () => {
   test("returns skip when bun test exits with code 0", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { /* already passes */ })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp('test("AC-1", () => { /* already passes */ })');
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 0, output: "3 pass" });
 
@@ -229,12 +226,7 @@ describe("acceptance-setup: RED gate — passing tests (invalid RED)", () => {
   test("skip result includes a human-readable reason", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => {})',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp('test("AC-1", () => {})');
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 0, output: "3 pass" });
 
@@ -259,9 +251,8 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
     return computeACFingerprint(criteria);
   }
 
-  test("does not call refine or generate when acceptance.test.ts already exists and fingerprint matches", async () => {
-    let refineCalled = false;
-    let generateCalled = false;
+  test("does not call callOp when acceptance.test.ts already exists and fingerprint matches", async () => {
+    let callOpCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => true;
     _acceptanceSetupDeps.readMeta = async () => ({
@@ -271,21 +262,17 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => {
-      refineCalled = true;
-      return [];
-    };
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: "", criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, _input) => {
+      callOpCalled = true;
+      if (op.name === "acceptance-generate") return { testCode: "" };
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
-    expect(refineCalled).toBe(false);
-    expect(generateCalled).toBe(false);
+    expect(callOpCalled).toBe(false);
   });
 
   test("proceeds directly to RED gate when test file exists and fingerprint matches", async () => {
@@ -299,8 +286,10 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => [];
-    _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, _input) => {
+      if (op.name === "acceptance-generate") return { testCode: "" };
+      throw new Error(`unexpected op: ${op.name}`);
+    };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => {
       testRunCalled = true;
@@ -325,8 +314,10 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => [];
-    _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, _input) => {
+      if (op.name === "acceptance-generate") return { testCode: "" };
+      throw new Error(`unexpected op: ${op.name}`);
+    };
     _acceptanceSetupDeps.writeFile = async () => {
       writeFileCalled = true;
     };
@@ -447,17 +438,21 @@ describe("acceptanceSetup context: testableCount", () => {
   test("testableCount counts only testable criteria", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria, context) =>
-      criteria.map((c) => ({
-        original: c,
-        refined: c,
-        testable: context.storyId === "US-001",
-        storyId: context.storyId,
-      }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({
+          original: c,
+          refined: c,
+          testable: storyId === "US-001",
+          storyId,
+        }));
+      }
+      if (op.name === "acceptance-generate") {
+        return { testCode: 'test("AC-1", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "2 fail" });
 

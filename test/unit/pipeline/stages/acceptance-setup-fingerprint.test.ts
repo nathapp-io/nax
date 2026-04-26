@@ -6,7 +6,6 @@ import {
 } from "../../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
-import { makeMockAgentManager } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,6 +66,19 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   };
 }
 
+function makeDefaultCallOp() {
+  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+    if (op.name === "acceptance-refine") {
+      const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+      return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+    }
+    if (op.name === "acceptance-generate") {
+      return { testCode: 'test("AC-1", () => { throw new Error("red") })' };
+    }
+    throw new Error(`unexpected op: ${op.name}`);
+  };
+}
+
 let savedDeps: typeof _acceptanceSetupDeps;
 
 beforeEach(() => {
@@ -79,41 +91,34 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// US-004: agentManager.getDefault() is used when ctx.agentManager is set
+// US-004: callOp is invoked during acceptance setup
 // ---------------------------------------------------------------------------
 
-describe("US-004: agentManager.getDefault() is called when ctx.agentManager is set", () => {
-  test("ctx.agentManager.getDefault() is used for model resolution", async () => {
-    let getDefaultCalled = false;
+describe("US-004: callOp is invoked during acceptance setup", () => {
+  test("callOp is called during acceptance generation", async () => {
+    let callOpCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      callOpCalled = true;
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return { testCode: 'test("AC-1", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
-    const mockAgentManager = makeMockAgentManager({
-      run: mock(async () => ({ output: "", costUsd: 0 })),
-      complete: mock(async () => ({ output: "", costUsd: 0 })),
-    });
-    (mockAgentManager as any).getDefault = () => {
-      getDefaultCalled = true;
-      return "claude";
-    };
-
-    const ctx = makeCtx({
-      agentManager: mockAgentManager,
-    });
-
+    const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect(getDefaultCalled).toBe(true);
+    expect(callOpCalled).toBe(true);
   });
 });
 
@@ -128,7 +133,7 @@ describe("US-004: fingerprint reuse logging (staleness detection)", () => {
   }
 
   test("does not regenerate when fingerprint matches — reuse path taken", async () => {
-    let refineCalled = false;
+    let callOpCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => true;
     _acceptanceSetupDeps.readMeta = async () => ({
@@ -138,17 +143,16 @@ describe("US-004: fingerprint reuse logging (staleness detection)", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => {
-      refineCalled = true;
-      return [];
+    _acceptanceSetupDeps.callOp = async () => {
+      callOpCalled = true;
+      return {};
     };
-    _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
-    expect(refineCalled).toBe(false);
+    expect(callOpCalled).toBe(false);
   });
 
   test("regenerates and backs up when fingerprint mismatches", async () => {
@@ -163,18 +167,9 @@ describe("US-004: fingerprint reuse logging (staleness detection)", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.copyFile = async () => {
-      copyFileCalled = true;
-    };
-    _acceptanceSetupDeps.deleteFile = async () => {
-      deleteFileCalled = true;
-    };
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.copyFile = async () => { copyFileCalled = true; };
+    _acceptanceSetupDeps.deleteFile = async () => { deleteFileCalled = true; };
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -229,15 +224,8 @@ describe("US-001: per-package test file generation by workdir", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria, context) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
-    _acceptanceSetupDeps.writeFile = async (p) => {
-      writtenPaths.push(p);
-    };
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
+    _acceptanceSetupDeps.writeFile = async (p) => { if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p); };
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
@@ -253,15 +241,8 @@ describe("US-001: per-package test file generation by workdir", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria, context) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
-    _acceptanceSetupDeps.writeFile = async (p) => {
-      writtenPaths.push(p);
-    };
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
+    _acceptanceSetupDeps.writeFile = async (p) => { if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p); };
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
@@ -294,12 +275,7 @@ describe("US-001: per-package test file generation by workdir", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria, context) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async (testPath, packageDir, _cmd) => {
@@ -334,12 +310,7 @@ describe("US-001: per-package test file generation by workdir", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria, context) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -372,15 +343,8 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
     });
     _acceptanceSetupDeps.copyFile = async () => {};
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
-      deleteSemanticVerdictsCalled = true;
-    };
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => { deleteSemanticVerdictsCalled = true; };
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -403,15 +367,8 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
     });
     _acceptanceSetupDeps.copyFile = async () => {};
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async (featureDir) => {
-      capturedFeatureDir = featureDir;
-    };
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => {})',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async (featureDir) => { capturedFeatureDir = featureDir; };
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -419,7 +376,7 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect(capturedFeatureDir).toBe(ctx.featureDir);
+    expect(capturedFeatureDir).toBe(ctx.featureDir!);
   });
 
   test("does not call deleteSemanticVerdicts when fingerprint matches", async () => {
@@ -436,11 +393,10 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
-      deleteSemanticVerdictsCalled = true;
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => { deleteSemanticVerdictsCalled = true; };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op) => {
+      throw new Error(`callOp should not be called on fingerprint match: ${op.name}`);
     };
-    _acceptanceSetupDeps.refine = async () => [];
-    _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
