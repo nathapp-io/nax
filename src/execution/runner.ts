@@ -186,6 +186,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         sessionManager,
         agentManager,
         pluginProviderCache,
+        runtime,
       },
       prd,
       pluginRegistry,
