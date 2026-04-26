@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../config";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
+import { NO_OP_INTERACTION_HANDLER } from "../interaction-handler";
 import { parseDecomposeOutput } from "../shared/decompose";
 import { buildDecomposePromptAsync } from "../shared/decompose-prompt";
 import { parseAgentError } from "./parse-agent-error";
@@ -682,11 +683,24 @@ export class AcpAgentAdapter implements AgentAdapter {
       onPidSpawned: options.onPidSpawned,
     });
 
+    const bridge = options.interactionBridge;
+    const planInteractionHandler = bridge
+      ? {
+          onInteraction: async (req: import("../interaction-handler").AdapterInteraction) => {
+            if (req.kind === "question") {
+              const answer = await bridge.onQuestionDetected(req.text);
+              return { answer };
+            }
+            return null;
+          },
+        }
+      : NO_OP_INTERACTION_HANDLER;
+
     let specContent: string;
     let costUsd: number;
     try {
       const turnResult = await this.sendTurn(handle, options.prompt, {
-        interactionHandler: { onInteraction: async () => null },
+        interactionHandler: planInteractionHandler,
         maxTurns: options.maxInteractionTurns ?? 1,
       });
       specContent = turnResult.output.trim();

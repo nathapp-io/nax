@@ -16,6 +16,8 @@ import { getSafeLogger } from "../logger";
 import { MiddlewareChain } from "../runtime/agent-middleware";
 import type { MiddlewareContext } from "../runtime/agent-middleware";
 import { cancellableDelay } from "../utils/bun-deps";
+import { computeAcpHandle } from "./acp/adapter";
+import { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -207,8 +209,12 @@ export class AgentManager implements IAgentManager {
         const startMs = Date.now();
         try {
           const opts = request.runOptions;
-          const resolvedPerm = opts.resolvedPermissions ?? { mode: "approve-reads" as const, skipPermissions: false };
-          const sessionName = `nax-mgr-${Date.now()}`;
+          const resolvedPerm =
+            opts.resolvedPermissions ??
+            resolvePermissions((opts.config as NaxConfig | undefined) ?? this._config, opts.pipelineStage ?? "run");
+          const sessionName =
+            opts.sessionHandle ??
+            computeAcpHandle(opts.workdir ?? ".", opts.featureName, opts.storyId, opts.sessionRole);
           const handle = await adapter.openSession(sessionName, {
             agentName: adapter.name,
             workdir: opts.workdir,
@@ -220,7 +226,6 @@ export class AgentManager implements IAgentManager {
             signal: opts.abortSignal,
           });
           try {
-            const { NO_OP_INTERACTION_HANDLER } = await import("./interaction-handler");
             const turnResult = await adapter.sendTurn(handle, opts.prompt, {
               interactionHandler: NO_OP_INTERACTION_HANDLER,
               signal: opts.abortSignal,

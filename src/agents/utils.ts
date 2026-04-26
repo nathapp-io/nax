@@ -1,5 +1,8 @@
+import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
+import { resolvePermissions } from "../config/permissions";
 import { getLogger } from "../logger";
+import { computeAcpHandle } from "./acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 import type { IAgentManager } from "./manager-types";
 import type { AgentAdapter, AgentResult } from "./types";
@@ -44,11 +47,11 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
     runWithFallback: async (req) => {
       const opts = req.runOptions;
       const startTime = Date.now();
-      const resolvedPermissions = opts.resolvedPermissions ?? {
-        mode: "approve-reads" as const,
-        skipPermissions: false,
-      };
-      const sessionName = `nax-wrap-${Date.now()}`;
+      const resolvedPermissions =
+        opts.resolvedPermissions ??
+        resolvePermissions((opts.config as NaxConfig | undefined) ?? DEFAULT_CONFIG, opts.pipelineStage ?? "run");
+      const sessionName =
+        opts.sessionHandle ?? computeAcpHandle(opts.workdir ?? ".", opts.featureName, opts.storyId, opts.sessionRole);
       let result: AgentResult;
       try {
         const handle = await adapter.openSession(sessionName, {
