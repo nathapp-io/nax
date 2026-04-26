@@ -77,7 +77,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
         return { result, fallbacks: [], finalBundle: request.bundle, finalPrompt: request.runOptions.prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
-      run: async (request) => {
+      run: async (request: import("../../../../src/agents/manager-types").AgentRunRequest) => {
         const outcome = await manager.runWithFallback(request);
         return { ...outcome.result, agentFallbacks: outcome.fallbacks };
       },
