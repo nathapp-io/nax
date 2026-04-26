@@ -2,51 +2,32 @@
  * Tests for executeTestFix() and buildTestFixPrompt() in src/acceptance/fix-executor.ts
  */
 
-import { describe, expect, mock, test } from "bun:test";
-import type { DiagnosisResult } from "../../../src/acceptance/types";
+import { describe, expect, test } from "bun:test";
 import { type ExecuteTestFixOptions, executeTestFix } from "../../../src/acceptance/fix-executor";
-import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import type { AgentResult } from "../../../src/agents/types";
+import type { DiagnosisResult } from "../../../src/acceptance/types";
 import type { IAgentManager } from "../../../src/agents";
+import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/schema";
 import { AcceptancePromptBuilder } from "../../../src/prompts";
+import { makeMockAgentManager } from "../../../test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMockAgentManager(result?: Partial<AgentResult>): IAgentManager {
-  const defaultResult: AgentResult = {
-    success: true,
-    exitCode: 0,
-    output: "console.log('fix applied');",
-    rateLimited: false,
-    durationMs: 1000,
-    estimatedCost: 0.05,
-  };
-  return {
-    getDefault: () => "claude",
-    isUnavailable: () => false,
-    markUnavailable: () => {},
-    reset: () => {},
-    validateCredentials: async () => {},
-    events: { on: () => {} } as any,
-    resolveFallbackChain: () => [],
-    shouldSwap: () => false,
-    nextCandidate: () => null,
-    runWithFallback: async (req) => ({ result: { ...defaultResult, ...result }, fallbacks: [] }),
-    completeWithFallback: async () => ({ result: { output: "{}", costUsd: 0, source: "fallback" }, fallbacks: [] }),
-    run: mock(async (req: any) => ({ ...defaultResult, ...result })),
-    complete: async () => ({ output: "{}", costUsd: 0, source: "fallback" }),
-    completeAs: async () => ({ output: "{}", costUsd: 0, source: "fallback" }),
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    plan: async () => ({ specContent: "" }),
-    planAs: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
-    getAgent: () => ({ run: mock(async () => defaultResult) } as any),
-  } as unknown as IAgentManager;
+function makeAgentManager(result?: Partial<{ success: boolean; estimatedCost: number }>): IAgentManager {
+  return makeMockAgentManager({
+    runFn: async () => ({
+      success: result?.success ?? true,
+      exitCode: 0,
+      output: "console.log('fix applied');",
+      rateLimited: false,
+      durationMs: 1000,
+      estimatedCost: result?.estimatedCost ?? 0.05,
+      agentFallbacks: [],
+    }),
+  });
 }
 
 function makeMinimalConfig(overrides: Partial<NaxConfig["acceptance"]> = {}): NaxConfig {
@@ -86,7 +67,8 @@ function makeDiagnosis(
 function makeTestFixOptions(overrides: Partial<ExecuteTestFixOptions> = {}): ExecuteTestFixOptions {
   return {
     testOutput: "(fail) AC-6: stdout indentation\n  expected '  \"id\"' got '  {'",
-    testFileContent: 'import { test, expect } from "bun:test";\ntest("AC-6", () => { expect(lines[1]).toMatch(/^  "id"/); });',
+    testFileContent:
+      'import { test, expect } from "bun:test";\ntest("AC-6", () => { expect(lines[1]).toMatch(/^  "id"/); });',
     failedACs: ["AC-6", "AC-7"],
     diagnosis: makeDiagnosis("test expects wrong line index", "test_bug"),
     config: makeMinimalConfig(),
@@ -121,26 +103,26 @@ describe("executeTestFix()", () => {
   });
 
   test("calls agent.run() with sessionRole 'test-fix'", async () => {
-    const agent = makeMockAgentManager();
+    const agent = makeAgentManager();
     await executeTestFix(agent, makeTestFixOptions());
     expect(agent.run).toHaveBeenCalled();
   });
 
   test("returns { success: boolean, cost: number }", async () => {
-    const agent = makeMockAgentManager();
+    const agent = makeAgentManager();
     const result = await executeTestFix(agent, makeTestFixOptions());
     expect(typeof result.success).toBe("boolean");
     expect(typeof result.cost).toBe("number");
   });
 
   test("success is true when agent.run() succeeds", async () => {
-    const agent = makeMockAgentManager({ success: true, estimatedCost: 0.05 });
+    const agent = makeAgentManager({ success: true, estimatedCost: 0.05 });
     const result = await executeTestFix(agent, makeTestFixOptions());
     expect(result.success).toBe(true);
   });
 
   test("success is false when agent.run() fails", async () => {
-    const agent = makeMockAgentManager({ success: false, estimatedCost: 0.05 });
+    const agent = makeAgentManager({ success: false, estimatedCost: 0.05 });
     const result = await executeTestFix(agent, makeTestFixOptions());
     expect(result.success).toBe(false);
   });
@@ -152,51 +134,65 @@ describe("executeTestFix()", () => {
 
 describe("buildTestFixPrompt()", () => {
   test("includes test output in the prompt", () => {
-    const prompt = callBuildTestFixPrompt(makeTestFixOptions({
-      testOutput: "FAIL: expected 3 got 4",
-    }));
+    const prompt = callBuildTestFixPrompt(
+      makeTestFixOptions({
+        testOutput: "FAIL: expected 3 got 4",
+      }),
+    );
     expect(prompt).toContain("FAIL: expected 3 got 4");
   });
 
   test("includes diagnosis reasoning", () => {
-    const prompt = callBuildTestFixPrompt(makeTestFixOptions({
-      diagnosis: makeDiagnosis("off-by-one in loop counter"),
-    }));
+    const prompt = callBuildTestFixPrompt(
+      makeTestFixOptions({
+        diagnosis: makeDiagnosis("off-by-one in loop counter"),
+      }),
+    );
     expect(prompt).toContain("off-by-one in loop counter");
   });
 
   test("includes failedACs as comma-separated list", () => {
-    const prompt = callBuildTestFixPrompt(makeTestFixOptions({
-      failedACs: ["AC-1", "AC-2", "AC-3"],
-    }));
+    const prompt = callBuildTestFixPrompt(
+      makeTestFixOptions({
+        failedACs: ["AC-1", "AC-2", "AC-3"],
+      }),
+    );
     expect(prompt).toContain("AC-1, AC-2, AC-3");
   });
 
   test("includes acceptance test path", () => {
-    const prompt = callBuildTestFixPrompt(makeTestFixOptions({
-      acceptanceTestPath: "/tmp/test/.nax/features/my-feature/.nax-acceptance.test.ts",
-    }));
+    const prompt = callBuildTestFixPrompt(
+      makeTestFixOptions({
+        acceptanceTestPath: "/tmp/test/.nax/features/my-feature/.nax-acceptance.test.ts",
+      }),
+    );
     expect(prompt).toContain("/tmp/test/.nax/features/my-feature/.nax-acceptance.test.ts");
   });
 
   test("includes test file content when provided", () => {
-    const prompt = callBuildTestFixPrompt(makeTestFixOptions({
-      testFileContent: "import { test } from 'bun:test';",
-    }));
+    const prompt = callBuildTestFixPrompt(
+      makeTestFixOptions({
+        testFileContent: "import { test } from 'bun:test';",
+      }),
+    );
     expect(prompt).toContain("import { test } from 'bun:test';");
   });
 
   test("omits test file content section when testFileContent is empty", () => {
-    const prompt = callBuildTestFixPrompt(makeTestFixOptions({
-      testFileContent: "",
-    }));
+    const prompt = callBuildTestFixPrompt(
+      makeTestFixOptions({
+        testFileContent: "",
+      }),
+    );
     expect(prompt).not.toContain("CURRENT TEST FILE");
   });
 
   test("includes previousFailure context when provided", () => {
-    const prompt = callBuildTestFixPrompt(makeTestFixOptions({
-      previousFailure: "Previous attempt: wrong index used",
-    }));
+    const prompt = callBuildTestFixPrompt(
+      makeTestFixOptions({
+        previousFailure: "Previous attempt: wrong index used",
+      }),
+    );
     expect(prompt).toContain("Previous attempt: wrong index used");
   });
 });

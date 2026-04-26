@@ -13,63 +13,38 @@
  * 9. ACP sessions visible in acpx list
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { diagnoseAcceptanceFailure } from "../../../src/acceptance/fix-diagnosis";
 import type { DiagnosisResult } from "../../../src/acceptance/types";
-import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import type { AgentAdapter } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents";
-import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig } from "../../../test/helpers";
-import { wrapAdapterAsManager } from "../../../src/agents/utils";
+import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import { resolveModelForAgent } from "../../../src/config/schema-types";
+import { makeMockAgentManager, makeNaxConfig } from "../../../test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const wrappedAdapterMap = new WeakMap<IAgentManager, AgentAdapter>();
-
 function makeMockAgent(overrides?: Partial<{ output: string }>): IAgentManager {
-  const runMock = mock(async () => ({
-    success: true,
-    exitCode: 0,
-    output: overrides?.output ?? '{"verdict":"source_bug","reasoning":"test reasoning","confidence":0.9}',
-    rateLimited: false,
-    durationMs: 1000,
-    estimatedCost: 0.05,
-    agentFallbacks: [] as unknown[],
-  }));
-  const adapter = makeAgentAdapter({
-    name: "claude" as const,
-    displayName: "Mock Agent",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: ["fast", "balanced", "powerful"] as const,
-      maxContextTokens: 200000,
-      features: new Set(["tdd", "review", "refactor"]),
-    },
-    isInstalled: mock(async () => true),
-    run: runMock,
-    buildCommand: mock(() => ["mock", "cmd"]),
-    plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
-    decompose: mock(async () => ({ stories: [], output: "" })),
-    complete: mock(async () => ({ output: "{}", costUsd: 0.01, source: "exact" as const })),
+  return makeMockAgentManager({
+    runFn: async () => ({
+      success: true,
+      exitCode: 0,
+      output: overrides?.output ?? '{"verdict":"source_bug","reasoning":"test reasoning","confidence":0.9}',
+      rateLimited: false,
+      durationMs: 1000,
+      estimatedCost: 0.05,
+      agentFallbacks: [],
+    }),
   });
-  const mgr = wrapAdapterAsManager(adapter);
-  wrappedAdapterMap.set(mgr, adapter);
-  return mgr;
 }
 
-function getRunMockCalls(agent: IAgentManager): Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> {
-  const adapter = wrappedAdapterMap.get(agent as any) as AgentAdapter;
-  return (adapter.run as unknown as { mock: { calls: Array<{ runOptions: Parameters<IAgentManager["run"]>[0]["runOptions"] }> } }).mock.calls;
-}
+type RunOptions = Parameters<IAgentManager["run"]>[0]["runOptions"];
 
-function toManagerTracked(agent: AgentAdapter): IAgentManager {
-  const mgr = wrapAdapterAsManager(agent);
-  wrappedAdapterMap.set(mgr, agent);
-  return mgr;
+function getRunOptions(agent: IAgentManager): RunOptions[] {
+  type RunCall = [Parameters<IAgentManager["run"]>[0]];
+  return (agent.run as unknown as { mock: { calls: RunCall[] } }).mock.calls.map(([req]) => req.runOptions);
 }
 
 // ---------------------------------------------------------------------------
@@ -88,8 +63,7 @@ describe("AC-1: diagnoseAcceptanceFailure receives agent adapter via parameter",
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const adapter = wrappedAdapterMap.get(mockAgent);
-    expect(adapter?.run).toHaveBeenCalled();
+    expect(mockAgent.run).toHaveBeenCalled();
   });
 
   test("throws when agent is undefined", async () => {
@@ -123,9 +97,8 @@ describe("AC-2: diagnoseAcceptanceFailure calls agent.run() with sessionRole dia
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const adapter = wrappedAdapterMap.get(mockAgent);
-    expect(adapter?.run).toHaveBeenCalled();
-    expect(adapter?.complete).not.toHaveBeenCalled();
+    expect(mockAgent.run).toHaveBeenCalled();
+    expect(mockAgent.complete).not.toHaveBeenCalled();
   });
 
   test("passes sessionRole 'diagnose' to agent.run()", async () => {
@@ -139,8 +112,8 @@ describe("AC-2: diagnoseAcceptanceFailure calls agent.run() with sessionRole dia
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.sessionRole).toBe("diagnose");
+    const runOpts = getRunOptions(mockAgent)[0];
+    expect(runOpts.sessionRole).toBe("diagnose");
   });
 });
 
@@ -167,11 +140,11 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pat
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const runOpts = getRunOptions(mockAgent)[0];
     // The adapter auto-derives the session handle from featureName + storyId + sessionRole.
-    expect(runCall.sessionRole).toBe("diagnose");
-    expect(runCall.featureName).toBe("test-feature");
-    expect(runCall.storyId).toBe("US-001");
+    expect(runOpts.sessionRole).toBe("diagnose");
+    expect(runOpts.featureName).toBe("test-feature");
+    expect(runOpts.storyId).toBe("US-001");
   });
 
   test("session name is visible in acpx list when protocol is ACP (adapter derives handle)", async () => {
@@ -186,11 +159,11 @@ describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pat
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const runOpts = getRunOptions(mockAgent)[0];
     const expectedHandle = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
     expect(expectedHandle).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
-    expect(runCall.featureName).toBe("test-feature");
-    expect(runCall.sessionRole).toBe("diagnose");
+    expect(runOpts.featureName).toBe("test-feature");
+    expect(runOpts.sessionRole).toBe("diagnose");
   });
 });
 
@@ -211,14 +184,14 @@ describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveMode
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const runOpts = getRunOptions(mockAgent)[0];
     const expectedModelDef = resolveModelForAgent(
       config.models,
       config.agent?.default ?? "claude",
       config.acceptance.fix.diagnoseModel as "fast",
       config.agent?.default ?? "claude",
     );
-    expect(runCall.modelDef).toEqual(expectedModelDef);
+    expect(runOpts.modelDef).toEqual(expectedModelDef);
   });
 
   test("passes resolved model metadata to adapter rather than a raw unresolved tier string", async () => {
@@ -232,10 +205,10 @@ describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveMode
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.modelTier).toBe("fast");
-    expect(runCall.modelDef.provider).toBeDefined();
-    expect(runCall.modelDef.model).toBeDefined();
+    const runOpts = getRunOptions(mockAgent)[0];
+    expect(runOpts.modelTier).toBe("fast");
+    expect(runOpts.modelDef.provider).toBeDefined();
+    expect(runOpts.modelDef.model).toBeDefined();
   });
 });
 
@@ -260,8 +233,7 @@ test("AC-1", () => { expect(add(1,2)).toBe(3); });
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const adapter = wrappedAdapterMap.get(mockAgent);
-    expect(adapter?.run).toHaveBeenCalled();
+    expect(mockAgent.run).toHaveBeenCalled();
   });
 
   test("limits to 5 files maximum", async () => {
@@ -284,8 +256,8 @@ test("AC-1", () => { expect(a()).toBe(1); });
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.prompt).toBeDefined();
+    const runOpts = getRunOptions(mockAgent)[0];
+    expect(runOpts.prompt).toBeDefined();
   });
 
   test("limits each file to 500 lines maximum", async () => {
@@ -303,8 +275,7 @@ test("AC-1", () => { expect(bigFunc()).toBeDefined(); });
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const adapter = wrappedAdapterMap.get(mockAgent);
-    expect(adapter?.run).toHaveBeenCalled();
+    expect(mockAgent.run).toHaveBeenCalled();
   });
 });
 
@@ -436,26 +407,13 @@ describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", ()
 
 describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
   test("returns fallback DiagnosisResult when adapter.run() throws", async () => {
-    const errorAgent = makeAgentAdapter({
-      name: "claude",
-      displayName: "Error Agent",
-      binary: "error",
-      capabilities: {
-        supportedTiers: ["fast", "balanced", "powerful"] as const,
-        maxContextTokens: 200000,
-        features: new Set(["tdd", "review", "refactor"]),
-      },
-      isInstalled: mock(async () => true),
-      run: mock(async () => {
+    const errorAgent = makeMockAgentManager({
+      runFn: async () => {
         throw new Error("Connection refused");
-      }),
-      buildCommand: mock(() => ["error", "cmd"]),
-      plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
-      decompose: mock(async () => ({ stories: [], output: "" })),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "exact" as const })),
+      },
     });
     const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(toManagerTracked(errorAgent), {
+    const result = await diagnoseAcceptanceFailure(errorAgent, {
       testOutput: "FAIL",
       testFileContent: "test content",
       config,
@@ -469,27 +427,14 @@ describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
   });
 
   test("does not throw when adapter.run() throws", async () => {
-    const errorAgent = makeAgentAdapter({
-      name: "claude",
-      displayName: "Error Agent",
-      binary: "error",
-      capabilities: {
-        supportedTiers: ["fast", "balanced", "powerful"] as const,
-        maxContextTokens: 200000,
-        features: new Set(["tdd", "review", "refactor"]),
-      },
-      isInstalled: mock(async () => true),
-      run: mock(async () => {
+    const errorAgent = makeMockAgentManager({
+      runFn: async () => {
         throw new Error("Network error");
-      }),
-      buildCommand: mock(() => ["error", "cmd"]),
-      plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
-      decompose: mock(async () => ({ stories: [], output: "" })),
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "exact" as const })),
+      },
     });
     const config = makeNaxConfig();
     await expect(
-      diagnoseAcceptanceFailure(toManagerTracked(errorAgent), {
+      diagnoseAcceptanceFailure(errorAgent, {
         testOutput: "FAIL",
         testFileContent: "test content",
         config,
@@ -519,8 +464,8 @@ describe("AC-9: Test output truncated to 2000 characters", () => {
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.prompt.length).toBeLessThanOrEqual(longOutput.length + 1000);
+    const runOpts = getRunOptions(mockAgent)[0];
+    expect(runOpts.prompt.length).toBeLessThanOrEqual(longOutput.length + 1000);
   });
 });
 
@@ -541,13 +486,13 @@ describe("AC-10: ACP session visible in acpx list with correct session name", ()
       featureName: "my-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const runOpts = getRunOptions(mockAgent)[0];
     const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
     // Adapter auto-derives handle; verify the formula is correct
     const expectedHandle = computeAcpHandle("/tmp/test-workdir", "my-feature", "US-001", "diagnose");
     expect(expectedHandle).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
-    expect(runCall.featureName).toBe("my-feature");
-    expect(runCall.sessionRole).toBe("diagnose");
+    expect(runOpts.featureName).toBe("my-feature");
+    expect(runOpts.sessionRole).toBe("diagnose");
   });
 
   test("ACP protocol ensures session appears in acpx list (adapter derives handle)", async () => {
@@ -562,11 +507,11 @@ describe("AC-10: ACP session visible in acpx list with correct session name", ()
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const runOpts = getRunOptions(mockAgent)[0];
     const expectedHandle = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
     expect(expectedHandle).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
-    expect(runCall.featureName).toBe("test-feature");
-    expect(runCall.sessionRole).toBe("diagnose");
+    expect(runOpts.featureName).toBe("test-feature");
+    expect(runOpts.sessionRole).toBe("diagnose");
   });
 });
 
@@ -655,8 +600,7 @@ describe("Edge cases", () => {
       workdir: "/tmp/test",
       storyId: "US-001",
     });
-    const adapter = wrappedAdapterMap.get(mockAgent);
-    expect(adapter?.run).toHaveBeenCalled();
+    expect(mockAgent.run).toHaveBeenCalled();
   });
 
   test("works without optional storyId", async () => {
@@ -669,8 +613,7 @@ describe("Edge cases", () => {
       workdir: "/tmp/test",
       featureName: "test-feature",
     });
-    const adapter = wrappedAdapterMap.get(mockAgent);
-    expect(adapter?.run).toHaveBeenCalled();
+    expect(mockAgent.run).toHaveBeenCalled();
   });
 
   test("handles missing source files gracefully", async () => {
@@ -688,7 +631,6 @@ test("AC-1", () => { expect(nonexistent()).toBe(1); });
       featureName: "test-feature",
       storyId: "US-001",
     });
-    const adapter = wrappedAdapterMap.get(mockAgent);
-    expect(adapter?.run).toHaveBeenCalled();
+    expect(mockAgent.run).toHaveBeenCalled();
   });
 });
