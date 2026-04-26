@@ -4,7 +4,7 @@ import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { AgentRunRequest } from "../../../src/agents";
 import type { AgentRunOptions, CompleteOptions, CompleteResult, PlanOptions, PlanResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 async function waitForStartedPlans(
   startedOrder: number[],
@@ -113,24 +113,25 @@ describe("DebateSession.runPlan()", () => {
   });
 
   test("runs hybrid rebuttal loop when mode=hybrid and sessionMode=stateful", async () => {
-    const runCalls: Array<{ prompt: string; sessionRole?: string; keepOpen?: boolean }> = [];
+    const rebuttalCalls: Array<{ prompt: string; handleId: string }> = [];
+    const closedHandleIds: string[] = [];
+
+    const mockSM = makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "opencode" })),
+      closeSession: mock(async (handle) => { closedHandleIds.push(handle.id); }),
+      nameFor: mock((req) => req.role ?? ""),
+    });
 
     _debateSessionDeps.agentManager = makeMockAgentManager({
       planFn: async () => ({ specContent: "ok" }),
-      runFn: async (_agentName, options) => {
-        runCalls.push({
-          prompt: options.prompt ?? "",
-          sessionRole: options.sessionRole,
-          keepOpen: options.keepOpen,
-        });
+      runAsSessionFn: async (_agentName, handle, prompt) => {
+        if (prompt.includes("You are debater") && prompt.includes("## Your Task")) {
+          rebuttalCalls.push({ prompt, handleId: handle.id });
+        }
         return {
-          success: true,
-          exitCode: 0,
-          output: `run-output-${options.sessionRole}`,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0.05,
-          agentFallbacks: [],
+          output: `run-output-${handle.id}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
         };
       },
     });
@@ -146,6 +147,7 @@ describe("DebateSession.runPlan()", () => {
         rounds: 1,
       }),
       config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig,
+      sessionManager: mockSM,
     });
 
     const result = await session.runPlan("task context", "output format", {
@@ -154,17 +156,13 @@ describe("DebateSession.runPlan()", () => {
       outputDir: "/tmp/out",
     });
 
-    // Rebuttal calls should use manager.runAs() with plan-hybrid-{idx} session roles
-    const rebuttalCalls = runCalls.filter(
-      (c) => c.prompt.includes("You are debater") && c.prompt.includes("## Your Task"),
-    );
+    // Rebuttal calls should use runAsSession with plan-hybrid-{idx} handle IDs
     expect(rebuttalCalls).toHaveLength(2);
-    expect(rebuttalCalls[0]?.sessionRole).toBe("plan-hybrid-0");
-    expect(rebuttalCalls[1]?.sessionRole).toBe("plan-hybrid-1");
+    expect(rebuttalCalls[0]?.handleId).toBe("plan-hybrid-0");
+    expect(rebuttalCalls[1]?.handleId).toBe("plan-hybrid-1");
 
-    // Session close calls
-    const closeCalls = runCalls.filter((c) => c.prompt === "Close this debate session.");
-    expect(closeCalls).toHaveLength(2);
+    // Session close calls via sessionManager.closeSession
+    expect(closedHandleIds).toHaveLength(2);
 
     // Result should include rebuttals and correct round count
     expect(result.rebuttals).toBeDefined();

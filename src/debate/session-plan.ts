@@ -30,6 +30,7 @@ interface PlanCtx {
   readonly stageConfig: DebateStageConfig;
   readonly config: NaxConfig;
   readonly agentManager?: IAgentManager;
+  readonly sessionManager?: import("../session/types").ISessionManager;
 }
 
 export async function runPlan(
@@ -188,6 +189,7 @@ export async function runPlan(
       workdir: opts.workdir,
       featureName: opts.feature,
       timeoutSeconds: opts.timeoutSeconds ?? 600,
+      sessionManager: ctx.sessionManager,
     };
     const rebuttalBuilder = new DebatePromptBuilder(
       { taskContext, outputFormat: "", stage: "plan" },
