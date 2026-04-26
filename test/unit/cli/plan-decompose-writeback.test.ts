@@ -9,19 +9,20 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
-import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
+import type { DecomposedStory } from "../../../src/agents/shared/types-extended";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 function makeMockDecomposeManager(
-  decomposeFn?: (agentName: string, opts: DecomposeOptions) => Promise<{ stories: DecomposedStory[] }>,
+  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
-    decomposeAsFn: decomposeFn
-      ? async (name: string, opts: DecomposeOptions) => decomposeFn(name, opts)
-      : undefined,
-    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
+    completeAsFn: decomposeFn
+      ? async (name: string, _prompt: string, opts?: any) => {
+          const result = await decomposeFn(name, opts ?? {});
+          return { output: JSON.stringify(result.stories), costUsd: 0, source: "exact" as const };
+        }
+      : async () => ({ output: JSON.stringify([]), costUsd: 0, source: "exact" as const }),
   });
 }
 
@@ -101,7 +102,6 @@ const origMkdirp = _planDeps.mkdirp;
 describe("planDecomposeCommand — PRD write-back", () => {
   let tmpDir: string;
   let capturedWriteArgs: Array<[string, string]>;
-  let capturedCompleteArgs: string[];
 
   function setupDeps(
     prd: PRD,
@@ -128,17 +128,15 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.mkdirp = mock(async () => {});
 
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, options: DecomposeOptions) => {
-        capturedCompleteArgs.push(await buildDecomposePromptAsync(options));
-        return { stories: stories.map(toDecomposedStory) };
-      }),
+      makeMockDecomposeManager(async () => ({
+        stories: stories.map(toDecomposedStory),
+      })),
     );
   }
 
   beforeEach(async () => {
     tmpDir = makeTempDir("nax-decompose-test-");
     capturedWriteArgs = [];
-    capturedCompleteArgs = [];
     await mkdir(join(tmpDir, ".nax", "features", FEATURE), { recursive: true });
   });
 

@@ -209,21 +209,27 @@ export interface IAgentManager {
   ): Promise<import("./types").TurnResult>;
 
   /**
-   * Plan mode — feature spec generation via default agent with fallback.
-   * Routes through the fallback chain; availability failures swap agents.
+   * @deprecated Use `callOp(ctx, planOp, input)` from `src/operations/plan.ts` instead.
+   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
    */
   plan(options: PlanOptions): Promise<PlanResult>;
 
-  /** Plan mode pinned to a specific agent (debate plan debaters). */
+  /**
+   * @deprecated Use `callOp(ctx, planOp, input)` from `src/operations/plan.ts` instead.
+   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
+   */
   planAs(agentName: string, options: PlanOptions): Promise<PlanResult>;
 
   /**
-   * Decompose mode — story splitting via default agent with fallback.
-   * Routes through the fallback chain; availability failures swap agents.
+   * @deprecated Use `callOp(ctx, decomposeOp, input)` from `src/operations/decompose.ts` instead.
+   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
    */
   decompose(options: DecomposeOptions): Promise<DecomposeResult>;
 
-  /** Decompose mode pinned to a specific agent. */
+  /**
+   * @deprecated Use `callOp(ctx, decomposeOp, input)` from `src/operations/decompose.ts` instead.
+   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
+   */
   decomposeAs(agentName: string, options: DecomposeOptions): Promise<DecomposeResult>;
 }
 

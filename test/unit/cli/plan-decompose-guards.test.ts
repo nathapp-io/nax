@@ -6,22 +6,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
-import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import { NaxError } from "../../../src/errors";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
-
-function makeMockDecomposeManager(
-  decomposeFn?: (agentName: string, opts: DecomposeOptions) => Promise<{ stories: DecomposedStory[] }>,
-) {
-  return makeMockAgentManager({
-    decomposeAsFn: decomposeFn
-      ? async (name: string, opts: DecomposeOptions) => decomposeFn(name, opts)
-      : undefined,
-    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
-  });
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -148,9 +135,11 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, options: DecomposeOptions) => {
-        capturedCompleteArgs.push(await buildDecomposePromptAsync(options));
-        return { stories: stories.map(toDecomposedStory) };
+      makeMockAgentManager({
+        completeAsFn: async (_name: string, prompt: string) => {
+          capturedCompleteArgs.push(prompt);
+          return { output: JSON.stringify(stories.map(toDecomposedStory)), costUsd: 0, source: "exact" as const };
+        },
       }),
     );
   }
@@ -258,7 +247,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     expect(prompt).toContain("zod");
   });
 
-  test("AC-5: adapter.decompose() receives decompose context options", async () => {
+  test("AC-5: completeAs() receives workdir and storyId context options", async () => {
     const prd = makePrd();
     const capturedDecomposeOpts: unknown[] = [];
     _planDeps.existsSync = mock((path: string) =>
@@ -275,13 +264,15 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-        capturedDecomposeOpts.push(opts);
-        return { stories: [makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory) };
+      makeMockAgentManager({
+        completeAsFn: async (_name: string, _prompt: string, opts?: any) => {
+          capturedDecomposeOpts.push(opts ?? {});
+          return { output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)), costUsd: 0, source: "exact" as const };
+        },
       }),
     );
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
-    expect(capturedDecomposeOpts[0]).toMatchObject({ workdir: tmpDir, featureName: FEATURE, storyId: "US-001" });
+    expect(capturedDecomposeOpts[0]).toMatchObject({ workdir: tmpDir, storyId: "US-001" });
   });
 
   test("AC-6: throws DECOMPOSE_VALIDATION_FAILED when sub-story has empty contextFiles array", async () => {
@@ -312,14 +303,14 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     ).resolves.not.toThrow();
   });
 
-  test("AC-7: throws DECOMPOSE_VALIDATION_FAILED when sub-story missing routing.testStrategy", async () => {
+  test("AC-7: missing routing.testStrategy is coerced to test-after (no error)", async () => {
     const prd = makePrd();
     const badStory = makeSubStory("US-001-A");
     if (badStory.routing) delete (badStory.routing as Partial<typeof badStory.routing>).testStrategy;
     setupDeps(prd, [badStory]);
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
-    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    ).resolves.not.toThrow();
   });
 
   test("AC-7: missing routing.modelTier in legacy input is tolerated (mapper default)", async () => {
@@ -332,14 +323,14 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     ).resolves.not.toThrow();
   });
 
-  test("AC-7: throws DECOMPOSE_VALIDATION_FAILED when sub-story has no routing field", async () => {
+  test("AC-7: missing routing field is coerced (complexity→medium, testStrategy→test-after, no error)", async () => {
     const prd = makePrd();
     const badStory = makeSubStory("US-001-A");
     delete (badStory as Partial<UserStory>).routing;
     setupDeps(prd, [badStory]);
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
-    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    ).resolves.not.toThrow();
   });
 
   test("AC-8: throws DECOMPOSE_VALIDATION_FAILED when sub-story exceeds maxAcCount", async () => {

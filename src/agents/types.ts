@@ -387,10 +387,16 @@ export interface AgentAdapter {
   /** Build the CLI command for a given run (for dry-run display). */
   buildCommand(options: AgentRunOptions): string[];
 
-  /** Run the agent in plan mode to generate a feature specification. */
+  /**
+   * @deprecated Use `callOp(ctx, planOp, input)` from `src/operations/plan.ts` instead.
+   * Implementations throw `NaxError ADAPTER_METHOD_DEPRECATED`. Deleted in Wave 3.5.
+   */
   plan(options: import("./shared/types-extended").PlanOptions): Promise<import("./shared/types-extended").PlanResult>;
 
-  /** Run the agent in decompose mode to break spec into classified stories. */
+  /**
+   * @deprecated Use `callOp(ctx, decomposeOp, input)` from `src/operations/decompose.ts` instead.
+   * Implementations throw `NaxError ADAPTER_METHOD_DEPRECATED`. Deleted in Wave 3.5.
+   */
   decompose(
     options: import("./shared/types-extended").DecomposeOptions,
   ): Promise<import("./shared/types-extended").DecomposeResult>;

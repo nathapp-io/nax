@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { formatSessionName } from "../session/naming";
 import { buildContextToolPreamble, buildRunInteractionHandler } from "./acp/adapter";
@@ -133,15 +134,33 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
       warnMismatch("completeAs", agentName);
       return adapter.complete(prompt, opts);
     },
-    plan: async (opts) => adapter.plan(opts),
-    planAs: async (agentName, opts) => {
-      warnMismatch("planAs", agentName);
-      return adapter.plan(opts);
+    plan: async (_opts) => {
+      throw new NaxError(
+        "AgentManager.plan() is deprecated. Use callOp(ctx, planOp, input) instead.",
+        "ADAPTER_METHOD_DEPRECATED",
+        { stage: "plan", migration: "src/operations/plan.ts" },
+      );
     },
-    decompose: async (opts) => adapter.decompose(opts),
-    decomposeAs: async (agentName, opts) => {
-      warnMismatch("decomposeAs", agentName);
-      return adapter.decompose(opts);
+    planAs: async (_agentName, _opts) => {
+      throw new NaxError(
+        "AgentManager.planAs() is deprecated. Use callOp(ctx, planOp, input) instead.",
+        "ADAPTER_METHOD_DEPRECATED",
+        { stage: "plan", migration: "src/operations/plan.ts" },
+      );
+    },
+    decompose: async (_opts) => {
+      throw new NaxError(
+        "AgentManager.decompose() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
+        "ADAPTER_METHOD_DEPRECATED",
+        { stage: "plan", migration: "src/operations/decompose.ts" },
+      );
+    },
+    decomposeAs: async (_agentName, _opts) => {
+      throw new NaxError(
+        "AgentManager.decomposeAs() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
+        "ADAPTER_METHOD_DEPRECATED",
+        { stage: "plan", migration: "src/operations/decompose.ts" },
+      );
     },
     runAsSession: async (_agentName, handle, prompt, _opts) => {
       return adapter.sendTurn(handle, prompt, { interactionHandler: NO_OP_INTERACTION_HANDLER });

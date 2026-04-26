@@ -28,12 +28,14 @@ import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
+import { callOp, decomposeOp, planOp } from "../operations";
 import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
+import { createRuntime } from "../runtime";
 import { createAgentManager } from "../runtime/internal/agent-manager-factory";
 import { errorMessage } from "../utils/errors";
 
@@ -231,70 +233,47 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       rawResponse = await runInteractivePlan();
     }
   } else if (options.auto) {
-    // Auto (one-shot) path — no debate; ACP protocol uses adapter.plan() (session-based)
-    const { taskContext: autoTaskCtx, outputFormat: autoOutputFmt } = new PlanPromptBuilder().build(
-      specContent,
-      codebaseContext,
-      outputPath,
-      relativePackages,
-      packageDetails,
-      config?.project,
-    );
-    const prompt = `${autoTaskCtx}\n\n${autoOutputFmt}`;
-
+    // Auto (one-shot) path — callOp routes via completeAs, returns JSON directly
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
     const agentManager = _planDeps.createManager(config);
     if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
 
-    logger?.info("plan", "Starting ACP auto planning session", {
+    logger?.info("plan", "Starting auto planning via callOp", {
       agent: agentName,
       model: resolvedPlanModel.modelDef.model,
       workdir,
       feature: options.feature,
-      timeoutSeconds,
     });
-    const pidRegistry = new PidRegistry(workdir);
-    let planError: Error | null = null;
+
+    const rt = createRuntime(config, workdir, { agentManager });
+    let autoPrd: PRD;
     try {
-      try {
-        await agentManager.planAs(agentName, {
-          prompt,
-          workdir,
-          interactive: false,
-          timeoutSeconds,
-          config,
-          modelTier: resolvedPlanModel.modelTier,
-          modelDef: resolvedPlanModel.modelDef,
-          maxInteractionTurns: config?.agent?.maxInteractionTurns,
+      autoPrd = await callOp(
+        {
+          runtime: rt,
+          packageView: rt.packages.resolve(),
+          packageDir: workdir,
+          agentName,
           featureName: options.feature,
-          onPidSpawned: (pid: number) => pidRegistry.register(pid),
-          sessionRole: "plan",
-        });
-      } catch (err) {
-        planError = err instanceof Error ? err : new Error(String(err));
-        logger?.warn("plan", "ACP auto planning did not complete cleanly; checking for written PRD", {
-          error: planError.message,
-          outputPath,
-        });
-      }
+        },
+        planOp,
+        {
+          specContent,
+          codebaseContext,
+          featureName: options.feature,
+          branchName,
+          packages: relativePackages,
+          packageDetails,
+          projectProfile: config?.project,
+        },
+      );
     } finally {
-      await pidRegistry.killAll().catch(() => {});
+      await rt.close().catch(() => {});
     }
-    if (!_planDeps.existsSync(outputPath)) {
-      if (planError) {
-        throw new Error(`[plan] ACP planning failed and no PRD was written: ${planError.message}`, {
-          cause: planError,
-        });
-      }
-      throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
-    }
-    if (planError) {
-      logger?.warn("plan", "Proceeding with PRD written by ACP despite incomplete terminal response", {
-        outputPath,
-      });
-    }
-    rawResponse = await _planDeps.readFile(outputPath);
+    await _planDeps.writeFile(outputPath, JSON.stringify({ ...autoPrd, project: projectName }, null, 2));
+    logger?.info("plan", "[OK] PRD written", { outputPath });
+    return outputPath;
   } else {
     rawResponse = await runInteractivePlan();
   }
@@ -385,11 +364,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // complexity normalization, dependency cross-ref, and forces status → pending.
   const finalPrd = validatePlanOutput(rawResponse, options.feature, branchName);
 
-  // Override project with auto-detected name (validatePlanOutput fills feature/branchName already)
-  finalPrd.project = projectName;
-
-  // Write normalized PRD (overwrites agent-written file with validated/normalized version)
-  await _planDeps.writeFile(outputPath, JSON.stringify(finalPrd, null, 2));
+  // Write normalized PRD — spread to avoid mutating the validated object
+  await _planDeps.writeFile(outputPath, JSON.stringify({ ...finalPrd, project: projectName }, null, 2));
 
   logger?.info("plan", "[OK] PRD written", { outputPath });
 
@@ -608,97 +584,102 @@ export async function planDecomposeCommand(
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
   const maxReplanAttempts = config?.precheck?.storySizeGate?.maxReplanAttempts ?? 3;
 
-  const decomposeModelDef: import("../config").ModelDef | undefined = resolvedPlanModel.modelDef;
-
-  if (typeof (adapterForCapCheck as { decompose?: unknown }).decompose !== "function") {
-    throw new NaxError(
-      `Agent "${agentName}" does not support decompose() required by plan --decompose`,
-      "DECOMPOSE_NOT_SUPPORTED",
-      { stage: "decompose", agent: agentName, storyId: options.storyId },
-    );
-  }
-
   const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
   const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
 
   let decompStories: DecomposedStory[] | undefined;
   let repairHint = "";
 
-  for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
-    if (attempt === 0 && debateDecompEnabled) {
-      const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
-      const prompt = await buildDecomposePromptAsync({
-        specContent: "",
-        codebaseContext,
-        workdir,
-        targetStory,
-        siblings,
-        featureName: options.feature,
-        storyId: options.storyId,
-        config,
-      });
-      const debateSession = _planDeps.createDebateSession({
-        storyId: options.storyId,
-        stage: "decompose",
-        stageConfig: decomposeStageConfig,
-        config,
-        workdir,
-        featureName: options.feature,
-        timeoutSeconds,
-        agentManager,
-      });
-      const debateResult = await debateSession.run(prompt);
-      if (debateResult.outcome !== "failed" && debateResult.output) {
-        decompStories = parseDecomposeOutput(debateResult.output);
-      }
-    }
-
-    if (!decompStories) {
-      const effectiveContext = repairHint ? `${codebaseContext}\n\n${repairHint}` : codebaseContext;
-      const result = await agentManager.decomposeAs(agentName, {
-        specContent: "",
-        codebaseContext: effectiveContext,
-        workdir,
-        targetStory,
-        siblings,
-        featureName: options.feature,
-        storyId: options.storyId,
-        config,
-        modelDef: decomposeModelDef,
-      });
-      decompStories = result.stories;
-    }
-
-    // Structural validation: throw immediately — no retry benefit
-    for (const sub of decompStories) {
-      if (!sub.complexity || !sub.testStrategy) {
-        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
+  const rt = createRuntime(config, workdir, { agentManager });
+  try {
+    for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
+      if (attempt === 0 && debateDecompEnabled) {
+        const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
+        const prompt = await buildDecomposePromptAsync({
+          specContent: "",
+          codebaseContext,
+          workdir,
+          targetStory,
+          siblings,
+          featureName: options.feature,
+          storyId: options.storyId,
+          config,
         });
+        const debateSession = _planDeps.createDebateSession({
+          storyId: options.storyId,
+          stage: "decompose",
+          stageConfig: decomposeStageConfig,
+          config,
+          workdir,
+          featureName: options.feature,
+          timeoutSeconds,
+          agentManager,
+        });
+        const debateResult = await debateSession.run(prompt);
+        if (debateResult.outcome !== "failed" && debateResult.output) {
+          decompStories = parseDecomposeOutput(debateResult.output);
+        }
       }
-    }
 
-    // AC-count check: retryable within shared maxReplanAttempts budget
-    const violations = decompStories.filter(
-      (sub) => sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount,
-    );
-    if (violations.length === 0) break;
+      if (!decompStories) {
+        const effectiveContext = repairHint ? `${codebaseContext}\n\n${repairHint}` : codebaseContext;
+        decompStories = await callOp(
+          {
+            runtime: rt,
+            packageView: rt.packages.resolve(),
+            packageDir: workdir,
+            agentName,
+            featureName: options.feature,
+            storyId: options.storyId,
+          },
+          decomposeOp,
+          {
+            specContent: "",
+            codebaseContext: effectiveContext,
+            targetStory,
+            siblings,
+            maxAcCount: config?.precheck?.storySizeGate?.maxAcCount ?? null,
+          },
+        );
+      }
 
-    const violationSummary = violations
-      .map((v) => `"${v.id}" (${v.acceptanceCriteria.length} ACs, max ${maxAcCount})`)
-      .join(", ");
+      // Structural validation: throw immediately — no retry benefit
+      for (const sub of decompStories) {
+        if (!sub.complexity || !sub.testStrategy) {
+          throw new NaxError(
+            `Sub-story "${sub.id}" is missing required routing fields`,
+            "DECOMPOSE_VALIDATION_FAILED",
+            {
+              stage: "decompose",
+              storyId: sub.id,
+            },
+          );
+        }
+      }
 
-    if (attempt + 1 >= maxReplanAttempts) {
-      throw new NaxError(
-        `Decompose AC repair failed after ${maxReplanAttempts} attempts. Oversized sub-stories: ${violationSummary}`,
-        "DECOMPOSE_VALIDATION_FAILED",
-        { stage: "decompose", storyId: options.storyId },
+      // AC-count check: retryable within shared maxReplanAttempts budget
+      const violations = decompStories.filter(
+        (sub) => sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount,
       );
-    }
+      if (violations.length === 0) break;
 
-    repairHint = `REPAIR REQUIRED (attempt ${attempt + 1}/${maxReplanAttempts}): The following sub-stories exceeded maxAcCount of ${maxAcCount}: ${violationSummary}. Split each offending story further so every sub-story has at most ${maxAcCount} acceptance criteria.`;
-    decompStories = undefined;
+      const violationSummary = violations
+        .map((v) => `"${v.id}" (${v.acceptanceCriteria.length} ACs, max ${maxAcCount})`)
+        .join(", ");
+
+      if (attempt + 1 >= maxReplanAttempts) {
+        throw new NaxError(
+          `Decompose AC repair failed after ${maxReplanAttempts} attempts. Oversized sub-stories: ${violationSummary}`,
+          "DECOMPOSE_VALIDATION_FAILED",
+          { stage: "decompose", storyId: options.storyId },
+        );
+      }
+
+      repairHint = `REPAIR REQUIRED (attempt ${attempt + 1}/${maxReplanAttempts}): The following sub-stories exceeded maxAcCount of ${maxAcCount}: ${violationSummary}. Split each offending story further so every sub-story has at most ${maxAcCount} acceptance criteria.`;
+      decompStories = undefined;
+    }
+  } finally {
+    await rt.close().catch(() => {});
   }
 
   const subStoriesWithParent: UserStory[] = mapDecomposedStoriesToUserStories(

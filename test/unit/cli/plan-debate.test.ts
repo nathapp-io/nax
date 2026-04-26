@@ -16,9 +16,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
+import type { NaxConfig } from "../../../src/config";
 import type { DebateResult } from "../../../src/debate/types";
+import type { PRD } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -26,11 +28,11 @@ import { makeMockAgentManager } from "../../helpers";
 
 function makeMockPlanManager(
   planFn?: (agentName: string, opts: any) => Promise<{ specContent: string }>,
+  completeFn?: (name: string, prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: "exact" | "estimated" | "fallback" }>,
 ) {
   return makeMockAgentManager({
-    planAsFn: planFn
-      ? async (name: string, opts: any) => planFn(name, opts)
-      : undefined,
+    planAsFn: planFn ? async (name: string, opts: any) => planFn(name, opts) : undefined,
+    completeAsFn: completeFn,
   });
 }
 
@@ -233,7 +235,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.createManager = mock(() =>
       makeMockPlanManager(
         undefined,
-        async (_name: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "claude" }),
+        async (_name: string, _prompt: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const }),
       ),
     );
     _planDeps.createDebateSession = origCreateDebateSession;
@@ -314,7 +316,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.createManager = mock(() =>
       makeMockPlanManager(
         undefined,
-        async (_name: string, _opts: any) => { adapterComplete(); return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "claude" }; },
+        async (_name: string, _prompt: string, _opts: any) => { adapterComplete(); return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const }; },
       ),
     );
 
@@ -347,10 +349,13 @@ describe("planCommand — debate integration (US-004)", () => {
   // AC2: debate disabled → adapter.plan() called exactly once (ACP auto path), no debate
   // ─────────────────────────────────────────────────────────────────────────
 
-  test("AC2: adapter.plan() called exactly once when debate.enabled=false", async () => {
-    const adapterPlan = mock(async () => {});
+  test("AC2: adapter.complete() called exactly once when debate.enabled=false", async () => {
+    const completeCalls: string[] = [];
     _planDeps.createManager = mock(() =>
-      makeMockPlanManager(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; }),
+      makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
+        completeCalls.push("called");
+        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+      }),
     );
     _planDeps.existsSync = mock(() => true);
     _planDeps.readFile = mock(async (p: string) =>
@@ -362,18 +367,21 @@ describe("planCommand — debate integration (US-004)", () => {
 
     await planCommand(
       tmpDir,
-      { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
+      makeNaxConfig({ debate: { enabled: false } } as any),
       { from: "/spec.md", feature: "debate-plan", auto: true },
     );
 
-    expect(adapterPlan).toHaveBeenCalledTimes(1);
+    expect(completeCalls).toHaveLength(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
-  test("AC2: adapter.plan() called exactly once when debate config is absent", async () => {
-    const adapterPlan = mock(async () => {});
+  test("AC2: adapter.complete() called exactly once when debate config is absent", async () => {
+    const completeCalls: string[] = [];
     _planDeps.createManager = mock(() =>
-      makeMockPlanManager(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; }),
+      makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
+        completeCalls.push("called");
+        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+      }),
     );
     _planDeps.existsSync = mock(() => true);
     _planDeps.readFile = mock(async (p: string) =>
@@ -383,20 +391,23 @@ describe("planCommand — debate integration (US-004)", () => {
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
 
-    await planCommand(tmpDir, {} as NaxConfig, {
+    await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
       feature: "debate-plan",
       auto: true,
     });
 
-    expect(adapterPlan).toHaveBeenCalledTimes(1);
+    expect(completeCalls).toHaveLength(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
-  test("AC2: adapter.plan() called when debate.stages.plan.enabled=false", async () => {
-    const adapterPlan = mock(async () => {});
+  test("AC2: adapter.complete() called when debate.stages.plan.enabled=false", async () => {
+    const completeCalls: string[] = [];
     _planDeps.createManager = mock(() =>
-      makeMockPlanManager(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; }),
+      makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
+        completeCalls.push("called");
+        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+      }),
     );
     _planDeps.existsSync = mock(() => true);
     _planDeps.readFile = mock(async (p: string) =>
@@ -406,13 +417,13 @@ describe("planCommand — debate integration (US-004)", () => {
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
 
-    await planCommand(tmpDir, DEBATE_PLAN_STAGE_DISABLED_CONFIG, {
-      from: "/spec.md",
-      feature: "debate-plan",
-      auto: true,
-    });
+    await planCommand(
+      tmpDir,
+      { ...makeNaxConfig(), ...DEBATE_PLAN_STAGE_DISABLED_CONFIG },
+      { from: "/spec.md", feature: "debate-plan", auto: true },
+    );
 
-    expect(adapterPlan).toHaveBeenCalledTimes(1);
+    expect(completeCalls).toHaveLength(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 

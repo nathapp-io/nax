@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import { parseDecomposeOutput } from "../../../src/agents/shared/decompose";
 import { mapDecomposedStoriesToUserStories } from "../../../src/prd/decompose-mapper";
 import type { DecomposedStory } from "../../../src/agents/shared/types-extended";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
@@ -21,10 +20,12 @@ function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
-    decomposeAsFn: decomposeFn
-      ? async (name: string, opts: any) => decomposeFn(name, opts)
-      : undefined,
-    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
+    completeAsFn: decomposeFn
+      ? async (name: string, _prompt: string, opts?: any) => {
+          const result = await decomposeFn(name, opts ?? {});
+          return { output: JSON.stringify(result.stories), costUsd: 0, source: "exact" as const };
+        }
+      : async () => ({ output: JSON.stringify([]), costUsd: 0, source: "exact" as const }),
   });
 }
 
@@ -167,9 +168,9 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async () => ({
-        stories: parseDecomposeOutput(fencedJson),
-      })),
+      makeMockAgentManager({
+        completeAsFn: async () => ({ output: fencedJson, costUsd: 0, source: "exact" as const }),
+      }),
     );
 
     await expect(
@@ -184,9 +185,9 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async () => ({
-        stories: parseDecomposeOutput(fencedJson),
-      })),
+      makeMockAgentManager({
+        completeAsFn: async () => ({ output: fencedJson, costUsd: 0, source: "exact" as const }),
+      }),
     );
 
     await expect(
@@ -201,9 +202,9 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async () => ({
-        stories: parseDecomposeOutput(fencedJson),
-      })),
+      makeMockAgentManager({
+        completeAsFn: async () => ({ output: fencedJson, costUsd: 0, source: "exact" as const }),
+      }),
     );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });

@@ -19,13 +19,15 @@ import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 function makeMockDecomposeManager(
-  decomposeFn?: (agentName: string, opts: DecomposeOptions) => Promise<{ stories: DecomposedStory[] }>,
+  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
-    decomposeAsFn: decomposeFn
-      ? async (name: string, opts: DecomposeOptions) => decomposeFn(name, opts)
-      : undefined,
-    getAgentFn: () => ({ decompose: async () => ({ stories: [] }) } as any),
+    completeAsFn: decomposeFn
+      ? async (name: string, _prompt: string, opts?: any) => {
+          const result = await decomposeFn(name, opts ?? {});
+          return { output: JSON.stringify(result.stories), costUsd: 0, source: "exact" as const };
+        }
+      : async () => ({ output: JSON.stringify([]), costUsd: 0, source: "exact" as const }),
   });
 }
 
@@ -140,7 +142,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let callCount = 0;
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => {
+      makeMockDecomposeManager(async () => {
         callCount++;
         if (callCount === 1) {
           return { stories: [makeOversizedSubStory("US-001-A", 6), makeValidSubStory("US-001-B")] };
@@ -167,7 +169,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let callCount = 0;
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => {
+      makeMockDecomposeManager(async () => {
         callCount++;
         return { stories: [makeOversizedSubStory("US-001-A", 8)] };
       }),
@@ -187,7 +189,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let callCount = 0;
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => {
+      makeMockDecomposeManager(async () => {
         callCount++;
         return { stories: [makeOversizedSubStory("US-001-A", 8)] };
       }),
@@ -211,7 +213,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => ({
+      makeMockDecomposeManager(async () => ({
         stories: [
           makeOversizedSubStory("US-001-A", 8),
           makeOversizedSubStory("US-001-B", 7),
@@ -242,7 +244,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, _opts: DecomposeOptions) => ({
+      makeMockDecomposeManager(async () => ({
         stories: [makeOversizedSubStory("US-001-A", 9)],
       })),
     );
@@ -262,33 +264,35 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
   // Test 4: Repair hint is passed in subsequent decompose calls
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("repair hint containing violation info is appended to codebaseContext on retry", async () => {
+  test("repair hint containing violation info is embedded in prompt on retry", async () => {
     const prd = makePrd();
     setupBaseDeps(prd);
 
-    const capturedContexts: string[] = [];
+    const capturedPrompts: string[] = [];
     let callCount = 0;
 
     _planDeps.createManager = mock(() =>
-      makeMockDecomposeManager(async (_name: string, opts: DecomposeOptions) => {
-        capturedContexts.push(opts.codebaseContext);
-        callCount++;
-        if (callCount === 1) {
-          return { stories: [makeOversizedSubStory("US-001-A", 6)] };
-        }
-        return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
+      makeMockAgentManager({
+        completeAsFn: async (_name: string, prompt: string) => {
+          capturedPrompts.push(prompt);
+          callCount++;
+          const stories = callCount === 1
+            ? [makeOversizedSubStory("US-001-A", 6)]
+            : [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")];
+          return { output: JSON.stringify(stories), costUsd: 0, source: "exact" as const };
+        },
       }),
     );
 
     await planDecomposeCommand(tmpDir, makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }), { feature: FEATURE, storyId: "US-001" });
 
-    expect(capturedContexts).toHaveLength(2);
+    expect(capturedPrompts).toHaveLength(2);
     // First call: no repair hint
-    expect(capturedContexts[0]).not.toContain("REPAIR REQUIRED");
+    expect(capturedPrompts[0]).not.toContain("REPAIR REQUIRED");
     // Second call: contains repair hint with violation info
-    expect(capturedContexts[1]).toContain("REPAIR REQUIRED");
-    expect(capturedContexts[1]).toContain("US-001-A");
-    expect(capturedContexts[1]).toContain("maxAcCount of 5");
+    expect(capturedPrompts[1]).toContain("REPAIR REQUIRED");
+    expect(capturedPrompts[1]).toContain("US-001-A");
+    expect(capturedPrompts[1]).toContain("maxAcCount of 5");
   });
 });
 

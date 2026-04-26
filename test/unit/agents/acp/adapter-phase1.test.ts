@@ -10,7 +10,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { AcpAgentAdapter, computeAcpHandle } from "../../../../src/agents/acp/adapter";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { SessionDescriptor } from "../../../../src/session/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +17,7 @@ import type { SessionDescriptor } from "../../../../src/session/types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AcpAgentAdapter.deriveSessionName", () => {
-  const adapter = new AcpAgentAdapter("claude", DEFAULT_CONFIG);
+  const adapter = new AcpAgentAdapter("claude");
   const workdir = "/tmp/test-project";
 
   function makeDescriptor(overrides: Partial<SessionDescriptor>): SessionDescriptor {
