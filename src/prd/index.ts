@@ -71,6 +71,22 @@ export async function savePRD(prd: PRD, path: string): Promise<void> {
   await saveJsonFile(path, prd, "prd");
 }
 
+function hasSatisfiedDependencies(story: UserStory, storyIds: Set<string>, completedIds: Set<string>): boolean {
+  return story.dependencies.every((dep) => !storyIds.has(dep) || completedIds.has(dep));
+}
+
+function isResumableCurrentStory(story: UserStory, maxRetries: number): boolean {
+  if (story.status === "failed") {
+    return (story.attempts ?? 0) <= maxRetries;
+  }
+
+  if (story.status !== "pending") {
+    return false;
+  }
+
+  return (story.attempts ?? 0) > 0 || (story.escalations?.length ?? 0) > 0 || (story.priorFailures?.length ?? 0) > 0;
+}
+
 /**
  * Get the next story to work on.
  *
@@ -85,23 +101,22 @@ export async function savePRD(prd: PRD, path: string): Promise<void> {
  * @param maxRetries - Max retry attempts per story before giving up (optional)
  */
 export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetries?: number): UserStory | null {
-  // Priority 1: Retry current story if failed but has attempts remaining
-  if (currentStoryId != null && maxRetries != null && maxRetries > 0) {
-    const currentStory = prd.userStories.find((s) => s.id === currentStoryId);
-    if (currentStory && currentStory.status === "failed" && (currentStory.attempts ?? 0) <= maxRetries) {
-      return currentStory;
-    }
-    // BUG-029: After tier escalation, story is set to "pending" (not "failed").
-    // Prioritize current story if it was escalated (pending + has prior attempts).
-    if (currentStory && currentStory.status === "pending" && (currentStory.attempts ?? 0) > 0) {
-      return currentStory;
-    }
-  }
-
   const storyIds = new Set(prd.userStories.map((s) => s.id));
   const completedIds = new Set(
     prd.userStories.filter((s) => s.passes || s.status === "passed" || s.status === "skipped").map((s) => s.id),
   );
+
+  // Priority 1: Retry current story if failed but has attempts remaining
+  if (currentStoryId != null && maxRetries != null && maxRetries > 0) {
+    const currentStory = prd.userStories.find((s) => s.id === currentStoryId);
+    if (
+      currentStory &&
+      isResumableCurrentStory(currentStory, maxRetries) &&
+      hasSatisfiedDependencies(currentStory, storyIds, completedIds)
+    ) {
+      return currentStory;
+    }
+  }
 
   return (
     prd.userStories.find(
@@ -113,8 +128,7 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
         s.status !== "failed" &&
         s.status !== "paused" &&
         s.status !== "decomposed" &&
-        // A dep is fulfilled if it is not in this PRD (external/prior-phase) or it is completed.
-        s.dependencies.every((dep) => !storyIds.has(dep) || completedIds.has(dep)),
+        hasSatisfiedDependencies(s, storyIds, completedIds),
     ) ?? null
   );
 }

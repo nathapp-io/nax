@@ -42,6 +42,19 @@ function buildEscalationFailure(
   };
 }
 
+function buildEscalationRecord(
+  currentTier: string,
+  nextTier: string,
+  reason: string,
+): UserStory["escalations"][number] {
+  return {
+    fromTier: currentTier,
+    toTier: nextTier,
+    reason,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 /**
  * Determine the outcome when max attempts are reached for an escalation.
  *
@@ -115,12 +128,14 @@ export async function preIterationTierCheck(
   const routingMode = config.routing.llm?.mode ?? "hybrid";
 
   if (escalationResult && config.autoMode.escalation.enabled) {
+    const escalatedTier = escalationResult.tier;
+
     logger?.warn("escalation", "Story exceeded tier budget, escalating", {
       storyId: story.id,
       attempts: story.attempts,
       tierAttempts: tierCfg.attempts,
       currentTier,
-      nextTier,
+      nextTier: escalatedTier,
     });
 
     // Update story routing in PRD and reset attempts for new tier
@@ -131,9 +146,25 @@ export async function preIterationTierCheck(
           ? {
               ...s,
               attempts: 0, // Reset attempts for new tier
+              escalations: [
+                ...(s.escalations || []),
+                buildEscalationRecord(
+                  currentTier,
+                  escalatedTier,
+                  `Exceeded tier budget for ${currentTier} (${story.attempts}/${tierCfg.attempts})`,
+                ),
+              ],
               routing: s.routing
-                ? { ...s.routing, modelTier: nextTier, ...(nextAgent !== undefined ? { agent: nextAgent } : {}) }
-                : { ...routing, modelTier: nextTier, ...(nextAgent !== undefined ? { agent: nextAgent } : {}) },
+                ? {
+                    ...s.routing,
+                    modelTier: escalatedTier,
+                    ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
+                  }
+                : {
+                    ...routing,
+                    modelTier: escalatedTier,
+                    ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
+                  },
             }
           : s,
       ) as PRD["userStories"],
@@ -282,6 +313,8 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     return await handleMaxAttemptsReached(ctx, escalateFailureCategory);
   }
 
+  const escalatedTier = escalationResult.tier;
+
   // Can escalate — log and update stories
   for (const s of storiesToEscalate) {
     const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
@@ -299,7 +332,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     } else {
       logger?.warn("escalation", "Escalating story to next tier", {
         storyId: s.id,
-        nextTier,
+        nextTier: escalatedTier,
         retryAsLite: escalateRetryAsLite,
       });
     }
@@ -323,7 +356,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const baseRouting = s.routing ?? { ...ctx.routing };
       const updatedRouting = {
         ...baseRouting,
-        modelTier: shouldSwitchToTestAfter ? baseRouting.modelTier : nextTier,
+        modelTier: shouldSwitchToTestAfter ? baseRouting.modelTier : escalatedTier,
         ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
         ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
         ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
@@ -331,8 +364,16 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
 
       // BUG-011: Reset attempt counter on tier escalation
       const currentStoryTier = s.routing?.modelTier ?? ctx.routing.modelTier;
-      const isChangingTier = currentStoryTier !== nextTier;
+      const isChangingTier = currentStoryTier !== escalatedTier;
       const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
+      const escalationRecord =
+        isChangingTier || shouldSwitchToTestAfter
+          ? buildEscalationRecord(
+              currentStoryTier,
+              shouldSwitchToTestAfter ? currentStoryTier : escalatedTier,
+              ctx.pipelineResult.reason ?? "Escalated to next retry path",
+            )
+          : undefined;
 
       // Build escalation failure (BUG-067: include cost for accumulatedAttemptCost in metrics)
       const escalationFailure = buildEscalationFailure(s, currentStoryTier, escalateReviewFindings, ctx.attemptCost);
@@ -340,6 +381,11 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       return {
         ...s,
         attempts: shouldResetAttempts ? 0 : (s.attempts ?? 0) + 1,
+        ...(escalationRecord
+          ? {
+              escalations: [...(s.escalations || []), escalationRecord],
+            }
+          : {}),
         routing: updatedRouting,
         priorErrors: [...(s.priorErrors || []), errorMessage],
         // Cap at 3 entries — only the most recent failures are useful for the next tier.

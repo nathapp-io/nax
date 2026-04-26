@@ -388,6 +388,18 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
         expect(updatedStory!.routing?.modelTier).toBe("balanced");
       },
     },
+    {
+      name: "escalated story records escalation history for retry prioritization",
+      checkKey: "escalations",
+      assertion: (updatedStory: any) => {
+        expect(updatedStory!.escalations).toBeDefined();
+        expect(updatedStory!.escalations.length).toBe(1);
+        expect(updatedStory!.escalations[0]).toMatchObject({
+          fromTier: "fast",
+          toTier: "balanced",
+        });
+      },
+    },
   ])(
     "$name",
     async ({ checkKey, assertion }) => {
