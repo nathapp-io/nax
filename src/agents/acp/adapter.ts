@@ -12,6 +12,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { DEFAULT_CONFIG } from "../../config";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import { parseDecomposeOutput } from "../shared/decompose";
@@ -20,7 +21,6 @@ import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type { ModelDef } from "../../config/schema";
-import type { AdapterFailure } from "../../context/engine";
 import type { ProtocolIds } from "../../session/types";
 import type { TokenUsage } from "../cost";
 import type {
@@ -458,14 +458,6 @@ function extractContextToolCall(output: string): { name: string; input?: unknown
   }
 }
 
-function buildContextToolResult(name: string, result: string, status: "ok" | "error" = "ok"): string {
-  return `<nax_tool_result name="${name}" status="${status}">
-${result.trim()}
-</nax_tool_result>
-
-Continue the task.`;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // AcpAgentAdapter
 // ─────────────────────────────────────────────────────────────────────────────
@@ -478,7 +470,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   constructor(
     agentName: string,
-    private readonly naxConfig: import("../../config").NaxConfig,
+    private readonly naxConfig?: import("../../config").NaxConfig,
   ) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
@@ -723,7 +715,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       const completeResult = await this.complete(prompt, {
         model,
         jsonMode: true,
-        config: this.naxConfig,
+        config: this.naxConfig ?? DEFAULT_CONFIG,
         workdir: options.workdir,
         featureName: options.featureName,
         storyId: options.storyId,
