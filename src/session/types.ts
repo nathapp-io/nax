@@ -67,7 +67,12 @@ export type SessionRole =
   | "diagnose" // Acceptance failure diagnosis (run())
   | "source-fix" // Acceptance source fix (run())
   | "reviewer-semantic" // Semantic review — keepOpen: true
-  | "reviewer-adversarial"; // Adversarial review — keepOpen: true
+  | "reviewer-adversarial" // Adversarial review — keepOpen: true
+  | "reviewer" // Dialogue reviewer session
+  | "synthesis" // Debate synthesis resolver
+  | "judge" // Debate custom judge resolver
+  | `debate-${string}` // Debate stateful debater roles
+  | `plan-hybrid-${number}`; // Plan-stage hybrid rebuttal roles
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Protocol IDs
@@ -101,7 +106,7 @@ export interface SessionDescriptor {
   /** nax-internal session ID: `sess-<uuid>` */
   id: string;
   /** Purpose of this session */
-  role: SessionRole;
+  role: string;
   /** Current lifecycle state */
   state: SessionState;
   /** Agent name (e.g. "claude", "codex") */
@@ -149,7 +154,7 @@ export interface SessionDescriptor {
 
 /** Options for creating a new session */
 export interface CreateSessionOptions {
-  role: SessionRole;
+  role: string;
   agent: string;
   workdir: string;
   projectDir?: string;
@@ -175,6 +180,15 @@ export type SessionAgentRunner = (
   options: import("../agents/types").AgentRunOptions,
 ) => Promise<import("../agents/types").AgentResult>;
 
+export interface SessionManagedRunRequest {
+  runOptions: import("../agents/types").AgentRunOptions;
+  signal?: AbortSignal;
+}
+
+export interface SessionRunClient {
+  run(request: SessionManagedRunRequest): Promise<import("../agents/types").AgentResult>;
+}
+
 /**
  * Options for SessionManager.runInSession (ADR-013 Phase 1).
  * Reserved for Phase 2 retry limits and abort signal overrides. Currently unused.
@@ -190,6 +204,8 @@ export type SessionRunOptions = {};
 export interface OpenSessionRequest {
   /** Agent name (e.g. "claude"). */
   agentName: string;
+  /** Logical role of the session for naming/descriptor correlation. */
+  role?: string;
   /** Working directory for the session. */
   workdir: string;
   /** Pipeline stage — used by SessionManager to call resolvePermissions. */
@@ -206,6 +222,8 @@ export interface OpenSessionRequest {
   signal?: AbortSignal;
   /** PID registration callback forwarded to the adapter. */
   onPidSpawned?: (pid: number) => void;
+  /** Eager protocol-id callback forwarded to the adapter. */
+  onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
 }
 
 /**
@@ -227,6 +245,8 @@ export interface SendPromptOpts {
 export interface RunInSessionOpts extends OpenSessionRequest {
   /** Mid-turn interaction callback forwarded to sendPrompt. */
   interactionHandler?: import("../agents/interaction-handler").InteractionHandler;
+  /** Max interaction round-trips per prompt. */
+  maxTurns?: number;
 }
 
 /**
@@ -239,9 +259,11 @@ export interface NameForRequest {
   featureName?: string;
   /** Story ID (sanitised into the name). */
   storyId?: string;
+  /** Session role suffix. Preferred when available. */
+  role?: string;
   /**
    * Pipeline stage used as the role suffix.
-   * "run" → no suffix (keeps names short for the common case).
+   * Used only when role is absent. "run" → no suffix.
    */
   pipelineStage?: import("../config/permissions").PipelineStage;
 }
@@ -278,28 +300,16 @@ export interface ISessionManager {
    */
   resume(storyId: string, role: SessionRole): SessionDescriptor | null;
   /**
-   * Run an agent within a tracked session — the per-session lifecycle primitive.
-   * (ADR-013 Phase 1: signature changed from SessionAgentRunner to IAgentManager.)
-   *
-   * Owns: CREATED→RUNNING transition before agentManager.run(), handle/protocolIds
-   * binding from the result, and RUNNING→COMPLETED/FAILED transition after.
-   * Callers don't need to touch transition/bindHandle for sessions that go
-   * through this path.
-   *
-   * Every caller MUST use this for each session it touches — that is how
-   * cross-cutting concerns (state transitions, token pass-through, audit
-   * correlation) stay in one place instead of being re-implemented per call
-   * site.
-   *
-   * Throws NaxError SESSION_NOT_FOUND if id is unknown. Propagates runner
-   * errors verbatim AFTER transitioning the session to FAILED.
+   * Run a tracked session through a caller-provided run client.
+   * Preserves the pre-ADR-019 bookkeeping behavior without importing AgentManager.
    */
   runInSession(
     id: string,
-    agentManager: import("../agents/manager-types").IAgentManager,
-    request: import("../agents/manager-types").AgentRunRequest,
+    runner: SessionRunClient,
+    request: SessionManagedRunRequest,
     options?: SessionRunOptions,
   ): Promise<import("../agents/types").AgentResult>;
+
   /**
    * Force-close all non-terminal sessions for a story (Phase 3).
    * Transitions each matching session to COMPLETED regardless of current state.
@@ -366,7 +376,6 @@ export interface ISessionManager {
   /**
    * Produce an agent-agnostic session name using the same hash-based formula
    * as the legacy computeAcpHandle, but owned by SessionManager.
-   * Format: nax-<hash8>-[feature]-[storyId]-[stage]
    */
   nameFor(req: NameForRequest): string;
 

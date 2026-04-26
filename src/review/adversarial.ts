@@ -14,7 +14,6 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { computeAcpHandle } from "../agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
@@ -25,6 +24,7 @@ import type { ReviewFinding } from "../plugins/types";
 import type { UserStory } from "../prd";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
 import { ReviewPromptBuilder } from "../prompts/builders/review-builder";
+import { formatSessionName } from "../session/naming";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
@@ -267,7 +267,12 @@ export async function runAdversarialReview(
   }
 
   // Adversarial review uses its own session (NOT the implementer session).
-  const adversarialSessionName = computeAcpHandle(workdir, featureName, story.id, "reviewer-adversarial");
+  const adversarialSessionName = formatSessionName({
+    workdir,
+    featureName,
+    storyId: story.id,
+    role: "reviewer-adversarial",
+  });
   const contextToolStory: UserStory = {
     id: story.id,
     title: story.title,

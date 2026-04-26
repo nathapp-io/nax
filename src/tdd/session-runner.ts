@@ -111,7 +111,7 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
  * Binding used to tie a TDD session's ACP protocolIds back to a pre-created
  * session descriptor so the audit trail includes recordId/sessionId (#541).
  * ADR-013 Phase 1: agentManager added so runTddSession can go through
- * IAgentManager.run() → runWithFallback instead of adapter.run() directly.
+ * the shared IAgentManager surface instead of calling adapter primitives directly.
  */
 export interface TddSessionBinding {
   sessionManager: ISessionManager;

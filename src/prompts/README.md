@@ -1,8 +1,7 @@
 # src/prompts/
 
-Single home for all prompt construction in nax. Every prompt sent to an agent
-adapter (`adapter.run()`, `adapter.complete()`, `adapter.plan()`, `adapter.decompose()`)
-is built here.
+Single home for all prompt construction in nax. Every prompt sent through the
+agent/session surfaces is built here.
 
 ## Layout
 

@@ -1,12 +1,12 @@
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import { computeAcpHandle } from "../agents/acp/adapter";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
 import type { ModelTier, NaxConfig, ResolvedConfiguredModel } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelDef } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
+import { formatSessionName } from "../session/naming";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
 import type { DebateResult, DebateStageConfig, Debater } from "./types";
@@ -300,7 +300,7 @@ export async function resolveOutcome(
       const configModels = config?.models ?? DEFAULT_CONFIG.models;
       const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
       const synthesisSessionName =
-        workdir !== undefined ? computeAcpHandle(workdir, featureName, storyId, "synthesis") : undefined;
+        workdir !== undefined ? formatSessionName({ workdir, featureName, storyId, role: "synthesis" }) : undefined;
       const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
       const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
       let resolvedResolverModel: ResolvedConfiguredModel;
@@ -349,7 +349,7 @@ export async function resolveOutcome(
     const configModels = config?.models ?? DEFAULT_CONFIG.models;
     const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
     const judgeSessionName =
-      workdir !== undefined ? computeAcpHandle(workdir, featureName, storyId, "judge") : undefined;
+      workdir !== undefined ? formatSessionName({ workdir, featureName, storyId, role: "judge" }) : undefined;
     const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
     const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
     let resolvedResolverModel: ResolvedConfiguredModel;

@@ -8,9 +8,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
-import type { AgentRegistry } from "../../../src/agents/registry";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { SessionFailureError } from "../../../src/agents/types";
 
 const rateLimitFailure = {
   category: "availability" as const,
@@ -32,16 +30,19 @@ function makeConfigNoFallback() {
   } as never;
 }
 
-function makeRateLimitedRegistry() {
-  return {
-    getAgent: () => ({
-      openSession: mock(async () => ({ id: "session", agentName: "mock" })),
-      sendTurn: mock(async (): Promise<never> => {
-        throw new SessionFailureError("rate limit", rateLimitFailure);
-      }),
-      closeSession: mock(async () => {}),
-    }),
-  } as unknown as AgentRegistry;
+function makeRateLimitedRunHop() {
+  return async () => ({
+    prompt: "prompt-mock",
+    result: {
+      success: false,
+      exitCode: 1,
+      output: "rate limit",
+      rateLimited: true,
+      durationMs: 1,
+      estimatedCost: 0,
+      adapterFailure: rateLimitFailure,
+    },
+  });
 }
 
 describe("AgentManager.runWithFallback — abort signal (#585)", () => {
@@ -59,7 +60,7 @@ describe("AgentManager.runWithFallback — abort signal (#585)", () => {
     const controller = new AbortController();
     controller.abort();
 
-    const m = new AgentManager(makeConfigNoFallback(), makeRateLimitedRegistry());
+    const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
     const outcome = await m.runWithFallback({
       runOptions: { storyId: "s1" } as never,
       bundle: mockBundle,
@@ -79,7 +80,7 @@ describe("AgentManager.runWithFallback — abort signal (#585)", () => {
     };
 
     const controller = new AbortController();
-    const m = new AgentManager(makeConfigNoFallback(), makeRateLimitedRegistry());
+    const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
     await m.runWithFallback({
       runOptions: { storyId: "s1" } as never,
       bundle: mockBundle,
@@ -103,7 +104,7 @@ describe("AgentManager.runWithFallback — abort signal (#585)", () => {
     // before the backoff loop checks again.
     queueMicrotask(() => controller.abort());
 
-    const m = new AgentManager(makeConfigNoFallback(), makeRateLimitedRegistry());
+    const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
     const startHops = performance.now();
     const outcome = await m.runWithFallback({
       runOptions: { storyId: "s1" } as never,

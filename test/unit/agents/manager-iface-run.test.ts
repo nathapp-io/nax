@@ -12,40 +12,29 @@ import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
 import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentAdapter } from "../../../src/agents/types";
 import { SessionFailureError } from "../../../src/agents/types";
-import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
-
-function makeAdapter(name: string, success = true): AgentAdapter {
-  return makeAgentAdapter({
-    name,
-    displayName: name,
-    binary: name,
-    capabilities: { supportedTiers: ["fast"], maxContextTokens: 100000, features: new Set() },
-    openSession: mock(async () => ({ id: `session-${name}`, agentName: name })),
-    sendTurn: mock(async () => ({
-      output: success ? "ok" : "",
-      tokenUsage: { inputTokens: 0, outputTokens: 0 },
-      internalRoundTrips: 1,
-    })),
-    complete: mock(async () => ({ output: "complete-out", costUsd: 0.001, source: "exact" as const })),
-    closeSession: mock(async () => {}),
-    closePhysicalSession: async () => {},
-    deriveSessionName: () => `nax-test-${name}`,
-    isInstalled: async () => true,
-    buildCommand: () => [],
-    plan: async () => ({ specContent: "" }),
-    decompose: async () => ({ stories: [] }),
-  });
-}
-
-function makeRegistry(adapters: AgentAdapter[]) {
-  const map = new Map(adapters.map((a) => [a.name, a]));
-  return { getAgent: (name: string) => map.get(name) };
-}
+import { makeNaxConfig } from "../../../test/helpers";
 
 describe("IAgentManager.run()", () => {
   test("delegates to runWithFallback and returns AgentResult", async () => {
-    const adapter = makeAdapter("claude");
-    const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }), makeRegistry([adapter]) as never);
+    const mgr = new AgentManager(
+      makeNaxConfig({
+        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+      }),
+      undefined,
+      {
+        runHop: async () => ({
+          prompt: "test",
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCost: 0.001,
+          },
+        }),
+      },
+    );
 
     const request: AgentRunRequest = {
       runOptions: {
@@ -65,8 +54,25 @@ describe("IAgentManager.run()", () => {
   });
 
   test("copies fallback records into result.agentFallbacks on success", async () => {
-    const adapter = makeAdapter("claude");
-    const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }), makeRegistry([adapter]) as never);
+    const mgr = new AgentManager(
+      makeNaxConfig({
+        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+      }),
+      undefined,
+      {
+        runHop: async () => ({
+          prompt: "test",
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCost: 0.001,
+          },
+        }),
+      },
+    );
 
     const result = await mgr.run({
       runOptions: {
@@ -90,15 +96,37 @@ describe("IAgentManager.run() — agent swap", () => {
   afterEach(() => { _agentManagerDeps.sleep = origSleep; });
 
   test("result.agentFallbacks has hop records when agent swap occurred", async () => {
-    const claudeAdapter = makeAdapter("claude", false);
-    const codexAdapter = makeAdapter("codex", true);
-
     const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
-    (claudeAdapter.openSession as ReturnType<typeof mock>).mockImplementation(async () => {
-      throw new SessionFailureError("auth failure", availFailure);
-    });
-
-    const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: true, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }), makeRegistry([claudeAdapter, codexAdapter]) as never);
+    const mgr = new AgentManager(
+      makeNaxConfig({
+        agent: { default: "claude", fallback: { enabled: true, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+      }),
+      undefined,
+      {
+        runHop: async (agentName) => ({
+          prompt: "test",
+          result:
+            agentName === "claude"
+              ? {
+                  success: false,
+                  exitCode: 1,
+                  output: "auth failure",
+                  rateLimited: false,
+                  durationMs: 1,
+                  estimatedCost: 0,
+                  adapterFailure: availFailure,
+                }
+              : {
+                  success: true,
+                  exitCode: 0,
+                  output: "ok",
+                  rateLimited: false,
+                  durationMs: 1,
+                  estimatedCost: 0.001,
+                },
+        }),
+      },
+    );
     _agentManagerDeps.sleep = mock(async () => {});
 
     const result = await mgr.run({
@@ -122,8 +150,15 @@ describe("IAgentManager.run() — agent swap", () => {
 
 describe("IAgentManager.complete()", () => {
   test("delegates to completeWithFallback and returns CompleteResult", async () => {
-    const adapter = makeAdapter("claude");
-    const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }), makeRegistry([adapter]) as never);
+    const adapter = {
+      complete: mock(async () => ({ output: "complete-out", costUsd: 0.001, source: "exact" as const })),
+    } as AgentAdapter;
+    const mgr = new AgentManager(
+      makeNaxConfig({
+        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+      }),
+      { getAgent: () => adapter } as never,
+    );
 
     const result = await mgr.complete("hello", {
       model: "claude-haiku",
@@ -137,20 +172,34 @@ describe("IAgentManager.complete()", () => {
 
 describe("IAgentManager.getAgent()", () => {
   test("returns the adapter for a known agent name", () => {
-    const adapter = makeAdapter("claude");
-    const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }), makeRegistry([adapter]) as never);
+    const adapter = {} as AgentAdapter;
+    const mgr = new AgentManager(
+      makeNaxConfig({
+        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+      }),
+      { getAgent: () => adapter } as never,
+    );
 
     expect(mgr.getAgent("claude")).toBe(adapter);
   });
 
   test("returns undefined for an unknown agent name", () => {
-    const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }), makeRegistry([]) as never);
+    const mgr = new AgentManager(
+      makeNaxConfig({
+        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+      }),
+      { getAgent: () => undefined } as never,
+    );
 
     expect(mgr.getAgent("nonexistent")).toBeUndefined();
   });
 
   test("lazily creates registry and returns adapter when no explicit registry is provided (Phase 4)", () => {
-    const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }));
+    const mgr = new AgentManager(
+      makeNaxConfig({
+        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+      }),
+    );
     expect(mgr.getAgent("claude")).not.toBeUndefined();
   });
 });

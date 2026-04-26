@@ -79,8 +79,7 @@ describe("AgentManager — Phase 1 pass-through", () => {
   });
 
   test("runWithFallback() with stub registry returning undefined returns failure result and empty fallbacks", async () => {
-    const stubRegistry = { getAgent: () => undefined };
-    const manager = new AgentManager(DEFAULT_CONFIG, stubRegistry as never);
+    const manager = new AgentManager(DEFAULT_CONFIG);
     const outcome = await manager.runWithFallback({
       runOptions: {
         prompt: "test",
@@ -96,17 +95,24 @@ describe("AgentManager — Phase 1 pass-through", () => {
     expect(outcome.fallbacks).toEqual([]);
   });
 
-  test("runWithFallback() with registry delegates to adapter primitives once", async () => {
-    const mockHandle = { id: "mock-session", agentName: "claude" };
-    const mockTurnResult = { output: "done", tokenUsage: { inputTokens: 10, outputTokens: 20 }, cost: { total: 0.001 }, internalRoundTrips: 1 };
-    const mockAdapter = {
-      name: "claude",
-      openSession: async () => mockHandle as never,
-      sendTurn: async () => mockTurnResult,
-      closeSession: async () => {},
-    };
-    const mockRegistry = { getAgent: (_: string) => mockAdapter as never };
-    const manager = new AgentManager(DEFAULT_CONFIG, mockRegistry as never);
+  test("runWithFallback() delegates plain run hops through injected runHop", async () => {
+    let capturedAgent = "";
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      runHop: async (agentName) => {
+        capturedAgent = agentName;
+        return {
+          prompt: "test",
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "done",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCost: 0.001,
+          },
+        };
+      },
+    });
     const outcome = await manager.runWithFallback({
       runOptions: {
         prompt: "test",
@@ -120,6 +126,7 @@ describe("AgentManager — Phase 1 pass-through", () => {
     });
     expect(outcome.result.success).toBe(true);
     expect(outcome.fallbacks).toEqual([]);
+    expect(capturedAgent).toBe("claude");
   });
 
   test("getDefault() prefers agent.default when both are set", () => {

@@ -19,13 +19,13 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
-import { computeAcpHandle } from "../../agents/acp/adapter";
 import { resolveModelForAgent } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
+import { formatSessionName } from "../../session/naming";
 import { captureGitRef } from "../../utils/git";
 import {
   buildProgressivePromptPreamble,
@@ -423,7 +423,12 @@ async function runAgentRectification(
   // Session continuity: the implementer session is open only on the very first autofix call
   // (consumed === 0). On subsequent cycles (after a review retry), the previous loop's last
   // runAttempt used keepOpen: false, so the session was closed before we re-enter.
-  const implementerSession = computeAcpHandle(ctx.workdir, ctx.prd.feature, ctx.story.id, "implementer");
+  const implementerSession = formatSessionName({
+    workdir: ctx.workdir,
+    featureName: ctx.prd.feature,
+    storyId: ctx.story.id,
+    role: "implementer",
+  });
   let sessionConfirmedOpen = consumed === 0;
 
   const succeeded = await runSharedRectificationLoop({

@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
-import type { AgentRegistry } from "../../../src/agents/registry";
-import { SessionFailureError } from "../../../src/agents/types";
 import { makeNaxConfig } from "../../helpers";
 
 const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
@@ -15,28 +13,33 @@ function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
   });
 }
 
-function makeRegistry(results: Record<string, boolean>) {
-  return {
-    getAgent: (name: string) => ({
-      openSession: mock(async () => {
-        if (!(results[name] ?? false)) {
-          throw new SessionFailureError("auth failure", availFailure);
+function makeRunHop(results: Record<string, boolean>) {
+  return async (name: string) => ({
+    prompt: `prompt-${name}`,
+    result: (results[name] ?? false)
+      ? {
+          success: true,
+          exitCode: 0,
+          output: "ok",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0,
         }
-        return { id: "session", agentName: name };
-      }),
-      sendTurn: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 1,
-      })),
-      closeSession: mock(async () => {}),
-    }),
-  } as unknown as AgentRegistry;
+      : {
+          success: false,
+          exitCode: 1,
+          output: "auth failure",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0,
+          adapterFailure: availFailure,
+        },
+  });
 }
 
 describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   test("returns success on first attempt", async () => {
-    const m = new AgentManager(makeConfig(), makeRegistry({ claude: true }));
+    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: true }) });
     const outcome = await m.runWithFallback({
       runOptions: { storyId: "s1" } as never,
       bundle: mockBundle,
@@ -46,7 +49,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   });
 
   test("swaps to codex on auth failure and succeeds", async () => {
-    const m = new AgentManager(makeConfig(), makeRegistry({ claude: false, codex: true }));
+    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: true }) });
     const outcome = await m.runWithFallback({
       runOptions: { storyId: "s1" } as never,
       bundle: mockBundle,
@@ -59,7 +62,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   });
 
   test("returns failure when all candidates exhausted", async () => {
-    const m = new AgentManager(makeConfig(), makeRegistry({ claude: false, codex: false }));
+    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: false }) });
     const outcome = await m.runWithFallback({
       runOptions: { storyId: "s1" } as never,
       bundle: mockBundle,
@@ -69,7 +72,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   });
 
   test("emits onSwapAttempt event", async () => {
-    const m = new AgentManager(makeConfig(), makeRegistry({ claude: false, codex: true }));
+    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: true }) });
     const events: unknown[] = [];
     m.events.on("onSwapAttempt", (e) => events.push(e));
     await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
@@ -77,7 +80,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   });
 
   test("emits onSwapExhausted when no more candidates", async () => {
-    const m = new AgentManager(makeConfig(), makeRegistry({ claude: false, codex: false }));
+    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: false }) });
     const exhausted: unknown[] = [];
     m.events.on("onSwapExhausted", (e) => exhausted.push(e));
     await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
@@ -85,7 +88,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   });
 
   test("skips swap when no bundle (bundle required for shouldSwap)", async () => {
-    const m = new AgentManager(makeConfig(), makeRegistry({ claude: false }));
+    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false }) });
     const outcome = await m.runWithFallback({
       runOptions: { storyId: "s1" } as never,
       bundle: undefined,
@@ -173,23 +176,35 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
       retriable: true,
       message: "",
     };
-    const registry = {
-      getAgent: () => ({
-        openSession: mock(async () => ({ id: "session", agentName: "mock" })),
-        sendTurn: mock(async () => {
-          attempts++;
-          if (attempts < 3) {
-            throw new SessionFailureError("rate limited", rateLimitFailure);
-          }
-          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 };
-        }),
-        closeSession: mock(async () => {}),
-      }),
-    } as unknown as AgentRegistry;
-
     // No fallback map — swap is never attempted, backoff kicks in
     const config = makeNaxConfig({ agent: { fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false } } });
-    const m = new AgentManager(config, registry);
+    const m = new AgentManager(config, undefined, {
+      runHop: async () => {
+        attempts++;
+        return {
+          prompt: "prompt-mock",
+          result:
+            attempts < 3
+              ? {
+                  success: false,
+                  exitCode: 1,
+                  output: "rate limited",
+                  rateLimited: true,
+                  durationMs: 1,
+                  estimatedCost: 0,
+                  adapterFailure: rateLimitFailure,
+                }
+              : {
+                  success: true,
+                  exitCode: 0,
+                  output: "ok",
+                  rateLimited: false,
+                  durationMs: 1,
+                  estimatedCost: 0,
+                },
+        };
+      },
+    });
     const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
 
     expect(outcome.result.success).toBe(true);

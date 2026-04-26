@@ -205,19 +205,44 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
 
   test("swaps agent and returns continue when swap agent succeeds", async () => {
     const primaryAgent = makeFailingAgent("claude");
-    const swapAgent = makeSucceedingAgent("codex");
     const config = makeConfig(true);
     const ctx = makeCtx(config, bundle);
+    const hopAgents: string[] = [];
 
-    _executionDeps.getAgent = mock((name: string) => (name === "codex" ? swapAgent : primaryAgent));
-    ctx.agentGetFn = (name: string) => (name === "codex" ? swapAgent : primaryAgent) as AgentAdapter;
+    ctx.sessionManager = makeSessionManager();
+    ctx.agentManager = makeMockAgentManager({
+      runAsSessionFn: async (agentName) => {
+        hopAgents.push(agentName);
+        return {
+          output: "done",
+          tokenUsage: { inputTokens: 10, outputTokens: 20 },
+          cost: { total: 0.02 },
+          internalRoundTrips: 1,
+        };
+      },
+      runWithFallbackFn: async (req) => {
+        if (!req.executeHop) {
+          return {
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            fallbacks: [],
+          };
+        }
+        const swapped = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        return {
+          result: { ...swapped.result, agentFallbacks: [] },
+          fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
+        };
+      },
+    });
+
+    _executionDeps.getAgent = mock((name: string) => (name === "codex" ? makeSucceedingAgent("codex") : primaryAgent));
+    ctx.agentGetFn = (name: string) => (name === "codex" ? makeSucceedingAgent("codex") : primaryAgent) as AgentAdapter;
 
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "continue" });
     expect(ctx.agentSwapCount).toBe(1);
-    // Swap agent ran
-    expect((swapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect(hopAgents).toEqual(["codex"]);
   });
 
   test("rebuilt bundle carries rebuildInfo with correct agents and failure", async () => {
@@ -313,18 +338,39 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
 
   test("escalates when swap agent also fails", async () => {
     const primaryAgent = makeFailingAgent("claude");
-    const swapAgent = makeFailingAgent("codex");
     const config = makeConfig(true);
     const ctx = makeCtx(config, bundle);
+    const hopAgents: string[] = [];
 
-    _executionDeps.getAgent = mock((name: string) => (name === "codex" ? swapAgent : primaryAgent));
-    ctx.agentGetFn = (name: string) => (name === "codex" ? swapAgent : primaryAgent) as AgentAdapter;
+    ctx.sessionManager = makeSessionManager();
+    ctx.agentManager = makeMockAgentManager({
+      runAsSessionFn: async (agentName) => {
+        hopAgents.push(agentName);
+        throw new Error(`quota exceeded for ${agentName}`);
+      },
+      runWithFallbackFn: async (req) => {
+        if (!req.executeHop) {
+          return {
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            fallbacks: [],
+          };
+        }
+        const swapped = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        return {
+          result: { ...swapped.result, agentFallbacks: [] },
+          fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
+        };
+      },
+    });
+
+    _executionDeps.getAgent = mock((name: string) => (name === "codex" ? makeFailingAgent("codex") : primaryAgent));
+    ctx.agentGetFn = (name: string) => (name === "codex" ? makeFailingAgent("codex") : primaryAgent) as AgentAdapter;
 
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "escalate" });
     expect(ctx.agentSwapCount).toBe(1);
-    expect((swapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect(hopAgents).toEqual(["codex"]);
   });
 
   test("does not swap when no context bundle exists", async () => {
@@ -360,57 +406,111 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
 
   test("tries the next fallback candidate when the first swap candidate fails", async () => {
     const primaryAgent = makeFailingAgent("claude");
-    const firstSwapAgent = makeFailingAgent("codex");
-    const secondSwapAgent = makeSucceedingAgent("gemini");
     const config = makeConfig(true);
     config.agent!.fallback!.map = { claude: ["codex", "gemini"] };
     config.agent!.fallback!.maxHopsPerStory = 2;
     const ctx = makeCtx(config, bundle);
+    const hopAgents: string[] = [];
+
+    ctx.sessionManager = makeSessionManager();
+    ctx.agentManager = makeMockAgentManager({
+      runAsSessionFn: async (agentName) => {
+        hopAgents.push(agentName);
+        if (agentName === "codex") throw new Error("quota exceeded for codex");
+        return {
+          output: "done",
+          tokenUsage: { inputTokens: 10, outputTokens: 20 },
+          cost: { total: 0.02 },
+          internalRoundTrips: 1,
+        };
+      },
+      runWithFallbackFn: async (req) => {
+        if (!req.executeHop) {
+          return {
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            fallbacks: [],
+          };
+        }
+        const firstSwap = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        const secondFailure = firstSwap.result.adapterFailure ?? QUOTA_FAILURE;
+        const secondSwap = await req.executeHop("gemini", firstSwap.bundle, secondFailure, req.runOptions);
+        return {
+          result: { ...secondSwap.result, agentFallbacks: [] },
+          fallbacks: [
+            { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 },
+            { storyId: "US-001", priorAgent: "codex", newAgent: "gemini", outcome: "fail-adapter-error", category: "availability", hop: 2, timestamp: new Date().toISOString(), costUsd: 0 },
+          ],
+        };
+      },
+    });
 
     _executionDeps.getAgent = mock((name: string) => {
-      if (name === "codex") return firstSwapAgent;
-      if (name === "gemini") return secondSwapAgent;
+      if (name === "codex") return makeFailingAgent("codex");
+      if (name === "gemini") return makeSucceedingAgent("gemini");
       return primaryAgent;
     });
     ctx.agentGetFn = (name: string) => {
-      if (name === "codex") return firstSwapAgent as AgentAdapter;
-      if (name === "gemini") return secondSwapAgent as AgentAdapter;
+      if (name === "codex") return makeFailingAgent("codex") as AgentAdapter;
+      if (name === "gemini") return makeSucceedingAgent("gemini") as AgentAdapter;
       return primaryAgent as AgentAdapter;
     };
 
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "continue" });
-    expect((firstSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-    expect((secondSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect(hopAgents).toEqual(["codex", "gemini"]);
     expect(ctx.agentSwapCount).toBe(2);
   });
 
   test("all fallback candidates fail — returns escalate (H-4 exhaustion)", async () => {
     const primaryAgent = makeFailingAgent("claude");
-    const firstSwapAgent = makeFailingAgent("codex");
-    const secondSwapAgent = makeFailingAgent("gemini");
     const config = makeConfig(true);
     config.agent!.fallback!.map = { claude: ["codex", "gemini"] };
     config.agent!.fallback!.maxHopsPerStory = 3;
     const ctx = makeCtx(config, bundle);
+    const hopAgents: string[] = [];
+
+    ctx.sessionManager = makeSessionManager();
+    ctx.agentManager = makeMockAgentManager({
+      runAsSessionFn: async (agentName) => {
+        hopAgents.push(agentName);
+        throw new Error(`quota exceeded for ${agentName}`);
+      },
+      runWithFallbackFn: async (req) => {
+        if (!req.executeHop) {
+          return {
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            fallbacks: [],
+          };
+        }
+        const firstSwap = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        const secondFailure = firstSwap.result.adapterFailure ?? QUOTA_FAILURE;
+        const secondSwap = await req.executeHop("gemini", firstSwap.bundle, secondFailure, req.runOptions);
+        return {
+          result: { ...secondSwap.result, agentFallbacks: [] },
+          fallbacks: [
+            { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 },
+            { storyId: "US-001", priorAgent: "codex", newAgent: "gemini", outcome: "fail-adapter-error", category: "availability", hop: 2, timestamp: new Date().toISOString(), costUsd: 0 },
+          ],
+        };
+      },
+    });
 
     _executionDeps.getAgent = mock((name: string) => {
-      if (name === "codex") return firstSwapAgent;
-      if (name === "gemini") return secondSwapAgent;
+      if (name === "codex") return makeFailingAgent("codex");
+      if (name === "gemini") return makeFailingAgent("gemini");
       return primaryAgent;
     });
     ctx.agentGetFn = (name: string) => {
-      if (name === "codex") return firstSwapAgent as AgentAdapter;
-      if (name === "gemini") return secondSwapAgent as AgentAdapter;
+      if (name === "codex") return makeFailingAgent("codex") as AgentAdapter;
+      if (name === "gemini") return makeFailingAgent("gemini") as AgentAdapter;
       return primaryAgent as AgentAdapter;
     };
 
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "escalate" });
-    expect((firstSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-    expect((secondSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect(hopAgents).toEqual(["codex", "gemini"]);
     // agentSwapCount reflects all hops attempted
     expect(ctx.agentSwapCount).toBe(2);
   });

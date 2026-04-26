@@ -19,6 +19,7 @@ export { MiddlewareChain } from "./agent-middleware";
 import { join } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
+import { AgentManager } from "../agents/manager";
 import type { NaxConfig } from "../config";
 import { createConfigLoader } from "../config";
 import type { ConfigLoader } from "../config";
@@ -35,6 +36,7 @@ import { createPackageRegistry } from "./packages";
 import type { PackageRegistry } from "./packages";
 import { PromptAuditor, createNoOpPromptAuditor } from "./prompt-auditor";
 import type { IPromptAuditor } from "./prompt-auditor";
+import { createSessionRunHop } from "./session-run-hop";
 
 export interface NaxRuntime {
   readonly runId: string;
@@ -77,6 +79,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const promptAuditor =
     opts?.promptAuditor ?? (auditEnabled ? new PromptAuditor(runId, auditDir) : createNoOpPromptAuditor());
 
+  let agentManager: IAgentManager | undefined;
   const middleware = MiddlewareChain.from([
     cancellationMiddleware(),
     loggingMiddleware(),
@@ -84,12 +87,24 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     auditMiddleware(promptAuditor, runId),
   ]);
   const sessionManager = opts?.sessionManager ?? new SessionManager();
+  if (sessionManager instanceof SessionManager) {
+    sessionManager.configureRuntime({
+      config,
+      getAdapter: (name) => agentManager?.getAgent(name),
+    });
+  }
   const agentManagerOpts: CreateAgentManagerOpts = {
     middleware,
     runId,
     sendPrompt: (handle, prompt, sendOpts) => sessionManager.sendPrompt(handle, prompt, sendOpts),
+    runHop: createSessionRunHop(sessionManager),
   };
-  const agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
+  if (opts?.agentManager instanceof AgentManager) {
+    opts.agentManager.configureRuntime(agentManagerOpts);
+    agentManager = opts.agentManager;
+  } else {
+    agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
+  }
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
 

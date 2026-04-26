@@ -234,10 +234,7 @@ export const executionStage: PipelineStage = {
       ...(executeHop && { executeHop }),
     };
 
-    const result =
-      ctx.sessionManager && ctx.sessionId
-        ? await ctx.sessionManager.runInSession(ctx.sessionId, effectiveManager, request)
-        : await effectiveManager.run(request);
+    const result = await effectiveManager.run(request);
 
     ctx.agentResult = result;
     const fallbacks = result.agentFallbacks ?? [];

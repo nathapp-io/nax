@@ -41,11 +41,13 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     workdir: ctx.packageDir,
     storyId: ctx.storyId,
     featureName: ctx.featureName,
+    role: op.session.role,
     pipelineStage: op.stage,
   });
 
   const turnResult = await ctx.runtime.sessionManager.runInSession(sessionName, prompt, {
     agentName: ctx.agentName,
+    role: op.session.role,
     workdir: ctx.packageDir,
     pipelineStage: op.stage,
     signal: ctx.runtime.signal,

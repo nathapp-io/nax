@@ -1,8 +1,8 @@
 /**
  * buildHopCallback — per-hop bundle-rebuild + session-dispatch factory (Phase C).
  *
- * Replaces SingleSessionRunner.executeHopFn. Returned closure matches
- * AgentRunRequest["executeHop"] and is passed directly to runWithFallback.
+ * Returned closure matches AgentRunRequest["executeHop"] and is passed
+ * directly to runWithFallback.
  */
 
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
@@ -132,6 +132,7 @@ export function buildHopCallback(
       workdir,
       featureName,
       storyId: story.id,
+      role: resolvedRunOptions.sessionRole ?? "implementer",
       pipelineStage: stage,
     });
     const modelDef = resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
@@ -140,6 +141,7 @@ export function buildHopCallback(
     // openSession errors propagate naturally — no handle, no closeSession needed
     const handle = await sessionManager.openSession(sessionName, {
       agentName,
+      role: resolvedRunOptions.sessionRole ?? "implementer",
       workdir,
       pipelineStage: stage,
       modelDef,

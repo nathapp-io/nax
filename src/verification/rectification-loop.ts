@@ -8,7 +8,6 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { computeAcpHandle } from "../agents/acp/adapter";
 import { estimateCostByDuration } from "../agents/cost";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
@@ -20,6 +19,7 @@ import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
+import { formatSessionName } from "../session/naming";
 import { buildFailureRecords } from "./failure-records";
 import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
@@ -174,7 +174,12 @@ export async function runRectificationLoop(
   };
 
   let costAccum = 0;
-  const rectificationSessionName = computeAcpHandle(workdir, featureName, story.id, "implementer");
+  const rectificationSessionName = formatSessionName({
+    workdir,
+    featureName,
+    storyId: story.id,
+    role: "implementer",
+  });
 
   const succeeded = await runSharedRectificationLoop({
     stage: "rectification",

@@ -5,11 +5,13 @@ import type { MiddlewareChain } from "../runtime/agent-middleware";
 import { AgentManager } from "./manager";
 import type { SendPromptFn } from "./manager";
 import type { IAgentManager } from "./manager-types";
+import type { SessionRunHopFn } from "./manager-types";
 
 export interface CreateAgentManagerOpts {
   middleware?: MiddlewareChain;
   runId?: string;
   sendPrompt?: SendPromptFn;
+  runHop?: SessionRunHopFn;
 }
 
 /**

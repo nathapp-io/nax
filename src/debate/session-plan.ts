@@ -50,7 +50,7 @@ export async function runPlan(
   const config = ctx.stageConfig;
   const rawDebaters = config.debaters ?? [];
   const debaters = resolvePersonas(rawDebaters, "plan", config.autoPersona ?? false);
-  // Mutable: plan debater costs accumulated below; hybrid rebuttal loop adds cost via adapter.run().
+  // Mutable: plan debater costs accumulated below; hybrid rebuttal loop adds cost via session-backed run hops.
   let totalCostUsd = 0;
 
   const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;

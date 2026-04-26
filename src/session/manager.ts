@@ -1,27 +1,22 @@
 /**
  * SessionManager — centralized session lifecycle for nax agent sessions.
  *
- * Phase 0: skeleton with create/get/transition. Runs in dual-write mode
- * alongside the legacy ACP adapter sidecar — the manager is NOT yet
- * authoritative for session naming or physical session lifecycle.
- *
- * Phase 5.5: manager becomes sole owner; adapter sidecar and legacy
- * fallback walk are removed (~315 lines deleted from adapter.ts).
+ * Owns session descriptors, naming, open/close orchestration, and single-flight
+ * prompt dispatch for adapter-backed sessions.
  *
  * See: docs/specs/SPEC-session-manager-integration.md
  */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { NO_OP_INTERACTION_HANDLER } from "../agents";
-import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { runInSessionLegacy } from "./manager-legacy";
+import { formatSessionName } from "./naming";
 import type {
   CreateSessionOptions,
   ISessionManager,
@@ -31,6 +26,8 @@ import type {
   RunInSessionOpts,
   SendPromptOpts,
   SessionDescriptor,
+  SessionManagedRunRequest,
+  SessionRunClient,
   SessionRunOptions,
   SessionState,
   TransitionOptions,
@@ -105,21 +102,17 @@ function toProjectRelativePath(projectDir: string, pathValue: string): string {
  * operates on its own SessionManager instance — sessions do NOT persist
  * across separate nax invocations in Phase 0.
  *
- * Phase 0 dual-write protocol:
- *   1. pipeline stage calls manager.create() to get a SessionDescriptor
- *   2. adapter still creates its own ACP session (legacy sidecar)
- *   3. when adapter completes, caller calls manager.transition() with
- *      protocolIds extracted from AgentResult (Phase 0: best-effort)
- *
- * This means the manager tracks sessions but is not yet the authority
- * for session naming — the adapter still uses computeAcpHandle() internally.
+ * The manager is the framework authority for session naming and lifecycle.
+ * The adapter still keeps the protocol-specific handle formula internally
+ * so non-session adapter APIs can derive matching ACP names when needed.
  */
 export class SessionManager implements ISessionManager {
   private readonly _sessions = new Map<string, SessionDescriptor>();
   private readonly _busySessions = new Set<string>();
   private readonly _cancelledSessions = new Set<string>();
-  private readonly _getAdapter: (name: string) => AgentAdapter | undefined;
-  private readonly _config: NaxConfig | undefined;
+  private readonly _liveHandles = new Map<string, SessionHandle>();
+  private _getAdapter: (name: string) => AgentAdapter | undefined;
+  private _config: NaxConfig | undefined;
 
   constructor(opts?: {
     getAdapter?: (name: string) => AgentAdapter | undefined;
@@ -127,6 +120,14 @@ export class SessionManager implements ISessionManager {
   }) {
     this._getAdapter = opts?.getAdapter ?? (() => undefined);
     this._config = opts?.config;
+  }
+
+  configureRuntime(opts: {
+    getAdapter?: (name: string) => AgentAdapter | undefined;
+    config?: NaxConfig;
+  }): void {
+    if (opts.getAdapter) this._getAdapter = opts.getAdapter;
+    if (opts.config) this._config = opts.config;
   }
 
   /**
@@ -382,22 +383,15 @@ export class SessionManager implements ISessionManager {
   }
 
   nameFor(req: NameForRequest): string {
-    const hash = createHash("sha256").update(req.workdir).digest("hex").slice(0, 8);
-    const sanitize = (s: string) =>
-      s
-        .replace(/[^a-z0-9]+/gi, "-")
-        .toLowerCase()
-        .replace(/^-+|-+$/g, "");
-
-    const parts = ["nax", hash];
-    if (req.featureName) parts.push(sanitize(req.featureName));
-    if (req.storyId) parts.push(sanitize(req.storyId));
-    // "run" is the default stage and adds no suffix (keeps names short)
-    if (req.pipelineStage && req.pipelineStage !== "run") parts.push(sanitize(req.pipelineStage));
-    return parts.join("-");
+    return formatSessionName(req);
   }
 
   async openSession(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
+    const liveHandle = this._liveHandles.get(name);
+    if (liveHandle && liveHandle.agentName === opts.agentName) {
+      return liveHandle;
+    }
+
     const adapter = this._getAdapter(opts.agentName);
     if (!adapter) {
       throw new NaxError(
@@ -418,22 +412,26 @@ export class SessionManager implements ISessionManager {
       modelDef: opts.modelDef,
       timeoutSeconds: opts.timeoutSeconds,
       onPidSpawned: opts.onPidSpawned,
+      onSessionEstablished: opts.onSessionEstablished,
       signal: opts.signal,
       resume,
     });
+    this._liveHandles.set(name, handle);
+
+    const protocolIds = handle.protocolIds ?? NULL_PROTOCOL_IDS;
 
     if (!existingDescriptor) {
       const created = this.create({
-        role: "main",
+        role: opts.role ?? "main",
         agent: opts.agentName,
         workdir: opts.workdir,
         featureName: opts.featureName,
         storyId: opts.storyId,
         handle: name,
       });
-      this.transition(created.id, "RUNNING");
+      this.transition(created.id, "RUNNING", { protocolIds });
     } else if (existingDescriptor.state === "CREATED") {
-      this.transition(existingDescriptor.id, "RUNNING");
+      this.transition(existingDescriptor.id, "RUNNING", { protocolIds });
     } else if (existingDescriptor.state === "COMPLETED" || existingDescriptor.state === "FAILED") {
       // Terminal → RUNNING is not a valid state-machine transition, so bypass
       // transition() and update directly (same pattern as closeStory).
@@ -443,6 +441,7 @@ export class SessionManager implements ISessionManager {
       const updated: SessionDescriptor = {
         ...existingDescriptor,
         state: "RUNNING",
+        protocolIds,
         lastActivityAt: _sessionManagerDeps.now(),
       };
       this._sessions.set(existingDescriptor.id, updated);
@@ -469,6 +468,7 @@ export class SessionManager implements ISessionManager {
   async closeSession(handle: SessionHandle): Promise<void> {
     const desc = this._findByName(handle.id);
     const adapter = this._getAdapter(handle.agentName);
+    this._liveHandles.delete(handle.id);
 
     if (adapter) {
       try {
@@ -541,16 +541,18 @@ export class SessionManager implements ISessionManager {
     }
   }
 
-  // ─── runInSession: overloads + legacy dispatch ──────────────────────────────
+  // ─── runInSession: prompt + callback overloads ──────────────────────────────
 
   /**
-   * ADR-013 Phase 1: legacy form — accepts IAgentManager + AgentRunRequest.
-   * Preserved verbatim for all existing call sites.
+   * Tracked-session form — preserves descriptor lifecycle bookkeeping for
+   * callers that still provide a run client rather than direct prompt/callback
+   * usage. The session layer stays peer-oriented by depending only on the
+   * structural `run(request)` surface.
    */
   async runInSession(
     id: string,
-    agentManager: IAgentManager,
-    request: AgentRunRequest,
+    runner: SessionRunClient,
+    request: SessionManagedRunRequest,
     options?: SessionRunOptions,
   ): Promise<AgentResult>;
   /** Phase B prompt form — open, sendPrompt, close (try/finally). */
@@ -559,23 +561,20 @@ export class SessionManager implements ISessionManager {
   async runInSession<T>(name: string, runFn: (handle: SessionHandle) => Promise<T>, opts: RunInSessionOpts): Promise<T>;
   async runInSession(
     idOrName: string,
-    promptOrFnOrManager: string | ((handle: SessionHandle) => Promise<unknown>) | IAgentManager,
-    optsOrRequest: RunInSessionOpts | AgentRunRequest,
-    legacyOptions?: SessionRunOptions,
+    promptOrFnOrRunner: string | ((handle: SessionHandle) => Promise<unknown>) | SessionRunClient,
+    optsOrRequest: RunInSessionOpts | SessionManagedRunRequest,
+    _legacyOptions?: SessionRunOptions,
   ): Promise<TurnResult | AgentResult | unknown> {
-    // "getDefault" is present on every IAgentManager (including lean proxies that
-    // only expose { getDefault, run }), but absent on strings and callback functions.
-    // Stronger discriminant than "run" (which any object could have).
     if (
-      typeof promptOrFnOrManager === "object" &&
-      promptOrFnOrManager !== null &&
-      "getDefault" in promptOrFnOrManager
+      typeof promptOrFnOrRunner === "object" &&
+      promptOrFnOrRunner !== null &&
+      "run" in promptOrFnOrRunner &&
+      typeof promptOrFnOrRunner.run === "function"
     ) {
-      return this._runInSessionLegacy(
+      return this._runTrackedSession(
         idOrName,
-        promptOrFnOrManager as IAgentManager,
-        optsOrRequest as AgentRunRequest,
-        legacyOptions,
+        promptOrFnOrRunner as SessionRunClient,
+        optsOrRequest as SessionManagedRunRequest,
       );
     }
 
@@ -583,38 +582,119 @@ export class SessionManager implements ISessionManager {
     const handle = await this.openSession(idOrName, opts);
 
     try {
-      if (typeof promptOrFnOrManager === "string") {
-        return await this.sendPrompt(handle, promptOrFnOrManager, {
+      if (typeof promptOrFnOrRunner === "string") {
+        return await this.sendPrompt(handle, promptOrFnOrRunner, {
           interactionHandler: opts.interactionHandler,
           signal: opts.signal,
+          maxTurns: opts.maxTurns,
         });
       }
-      return await (promptOrFnOrManager as (h: SessionHandle) => Promise<unknown>)(handle);
+      return await (promptOrFnOrRunner as (h: SessionHandle) => Promise<unknown>)(handle);
     } finally {
       await this.closeSession(handle);
     }
   }
 
-  private async _runInSessionLegacy(
+  private async _runTrackedSession(
     id: string,
-    agentManager: IAgentManager,
-    request: AgentRunRequest,
-    _options?: SessionRunOptions,
+    runner: SessionRunClient,
+    request: SessionManagedRunRequest,
   ): Promise<AgentResult> {
-    return runInSessionLegacy(
-      id,
-      agentManager,
-      request,
-      {
-        sessions: this._sessions,
-        transition: this.transition.bind(this),
-        bindHandle: this.bindHandle.bind(this),
-        handoff: this.handoff.bind(this),
-        persistDescriptor: this._persistDescriptor.bind(this),
-        now: _sessionManagerDeps.now,
+    const pre = this._sessions.get(id);
+    if (!pre) {
+      throw new NaxError(`Session "${id}" not found in registry`, "SESSION_NOT_FOUND", {
+        stage: "session",
+        sessionId: id,
+      });
+    }
+
+    if (pre.state === "CREATED") {
+      this.transition(id, "RUNNING");
+    }
+
+    const callerCallback = request.runOptions.onSessionEstablished;
+    const injectedRequest: SessionManagedRunRequest = {
+      ...request,
+      runOptions: {
+        ...request.runOptions,
+        onSessionEstablished: (protocolIds, sessionName) => {
+          try {
+            this.bindHandle(id, sessionName, protocolIds);
+          } catch (err) {
+            getLogger().warn("session", "bindHandle via onSessionEstablished failed", {
+              storyId: this._sessions.get(id)?.storyId,
+              sessionId: id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          callerCallback?.(protocolIds, sessionName);
+        },
       },
-      _options,
-    );
+    };
+
+    const config = request.runOptions.config;
+    const maxRetriable = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
+    const maxNonRetriable = config?.execution?.sessionErrorMaxRetries ?? 1;
+    let sessionRetries = 0;
+
+    let result: AgentResult;
+    while (true) {
+      try {
+        result = await runner.run(injectedRequest);
+      } catch (err) {
+        if (this._sessions.get(id)?.state === "RUNNING") {
+          this.transition(id, "FAILED");
+        }
+        throw err;
+      }
+
+      if (result.adapterFailure?.outcome === "fail-adapter-error") {
+        const max = result.adapterFailure.retriable ? maxRetriable : maxNonRetriable;
+        if (sessionRetries < max && !request.signal?.aborted) {
+          sessionRetries++;
+          getLogger().warn("session", "Session transport error — retrying with fresh session", {
+            sessionId: id,
+            storyId: this._sessions.get(id)?.storyId,
+            retriable: result.adapterFailure.retriable,
+            attempt: sessionRetries,
+            maxAttempts: max,
+          });
+          continue;
+        }
+      }
+      break;
+    }
+
+    if (result.protocolIds) {
+      const current = this._sessions.get(id);
+      const handle = current?.handle;
+      if (handle) {
+        this.bindHandle(id, handle, result.protocolIds);
+      } else if (current) {
+        const updated: SessionDescriptor = {
+          ...current,
+          protocolIds: result.protocolIds,
+          lastActivityAt: _sessionManagerDeps.now(),
+        };
+        this._sessions.set(id, updated);
+        this._persistDescriptor(updated);
+      }
+    }
+
+    const finalAgent = result.agentFallbacks?.at(-1)?.newAgent;
+    if (finalAgent) {
+      const current = this._sessions.get(id);
+      if (current && finalAgent !== current.agent) {
+        this.handoff(id, finalAgent, "post-run-reconcile");
+      }
+    }
+
+    const current = this._sessions.get(id);
+    if (current?.state === "RUNNING") {
+      this.transition(id, result.success ? "COMPLETED" : "FAILED");
+    }
+
+    return result;
   }
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {
