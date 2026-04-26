@@ -107,8 +107,13 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     // computeAcpHandle hashes the workdir path — same worktree path = same session name.
     // The old Claude process may still be registered in acpx, causing prompt() to exit
     // with code 4 immediately. Close it explicitly so ensureAcpSession creates fresh.
-    const { computeAcpHandle } = await import("../agents/acp/adapter");
-    const staleSessionName = computeAcpHandle(worktreePath, prd.feature, storyId);
+    const { formatSessionName } = await import("../session/naming");
+    const staleSessionName = formatSessionName({
+      workdir: worktreePath,
+      featureName: prd.feature,
+      storyId,
+      role: "main",
+    });
     await closeStaleAcpSession(worktreePath, staleSessionName);
 
     // Step 3: Re-run the story pipeline

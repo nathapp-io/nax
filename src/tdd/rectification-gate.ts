@@ -7,7 +7,6 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { computeAcpHandle } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { getLogger } from "../logger";
@@ -15,6 +14,7 @@ import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
+import { formatSessionName } from "../session/naming";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
   type RectificationState,
@@ -227,7 +227,12 @@ async function runRectificationLoop(
 
   // Build session name once so all rectification attempts share the same ACP session.
   // This preserves full conversation context across retries (the agent knows what it already tried).
-  const rectificationSessionName = computeAcpHandle(workdir, featureName, story.id, "implementer");
+  const rectificationSessionName = formatSessionName({
+    workdir,
+    featureName,
+    storyId: story.id,
+    role: "implementer",
+  });
   logger.debug("tdd", "Rectification session name (shared across all attempts)", {
     storyId: story.id,
     sessionName: rectificationSessionName,

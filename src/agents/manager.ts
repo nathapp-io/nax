@@ -16,7 +16,6 @@ import { getSafeLogger } from "../logger";
 import { MiddlewareChain } from "../runtime/agent-middleware";
 import type { MiddlewareContext } from "../runtime/agent-middleware";
 import { cancellableDelay } from "../utils/bun-deps";
-import { buildContextToolPreamble, buildRunInteractionHandler, computeAcpHandle } from "./acp/adapter";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -26,6 +25,7 @@ import type {
   AgentRunRequest,
   IAgentManager,
   RunAsSessionOpts,
+  SessionRunHopFn,
 } from "./manager-types";
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
@@ -38,7 +38,6 @@ import type {
   PlanOptions,
   PlanResult,
 } from "./types";
-import { SessionFailureError } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -68,15 +67,22 @@ export class AgentManager implements IAgentManager {
   private readonly _prunedFallback = new Set<string>();
   private readonly _emitter = new EventEmitter();
   private readonly _logger: LoggerLike;
-  private readonly _middleware: MiddlewareChain;
-  private readonly _runId: string;
-  private readonly _sendPrompt: SendPromptFn | undefined;
+  private _middleware: MiddlewareChain;
+  private _runId: string;
+  private _sendPrompt: SendPromptFn | undefined;
+  private _runHop: SessionRunHopFn | undefined;
   readonly events: AgentManagerEvents;
 
   constructor(
     config: NaxConfig,
     registry?: AgentRegistry,
-    opts?: { logger?: LoggerLike; middleware?: MiddlewareChain; runId?: string; sendPrompt?: SendPromptFn },
+    opts?: {
+      logger?: LoggerLike;
+      middleware?: MiddlewareChain;
+      runId?: string;
+      sendPrompt?: SendPromptFn;
+      runHop?: SessionRunHopFn;
+    },
   ) {
     this._config = config;
     this._registry = registry;
@@ -84,11 +90,24 @@ export class AgentManager implements IAgentManager {
     this._middleware = opts?.middleware ?? MiddlewareChain.empty();
     this._runId = opts?.runId ?? crypto.randomUUID();
     this._sendPrompt = opts?.sendPrompt;
+    this._runHop = opts?.runHop;
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
       },
     };
+  }
+
+  configureRuntime(opts: {
+    middleware?: MiddlewareChain;
+    runId?: string;
+    sendPrompt?: SendPromptFn;
+    runHop?: SessionRunHopFn;
+  }): void {
+    if (opts.middleware) this._middleware = opts.middleware;
+    if (opts.runId) this._runId = opts.runId;
+    if (opts.sendPrompt) this._sendPrompt = opts.sendPrompt;
+    if (opts.runHop) this._runHop = opts.runHop;
   }
 
   getDefault(): string {
@@ -189,81 +208,20 @@ export class AgentManager implements IAgentManager {
         updatedBundle = hopOut.bundle ?? currentBundle;
         finalPrompt = hopOut.prompt ?? finalPrompt;
       } else {
-        const adapter = this._resolveRegistry().getAgent(currentAgent);
-        if (!adapter) {
-          logger?.warn("agent-manager", "No adapter available", {
-            storyId: request.runOptions.storyId,
-            agent: currentAgent,
-          });
-          const noAdapterResult: AgentResult = {
+        if (!this._runHop) {
+          const unboundResult: AgentResult = {
             success: false,
             exitCode: 1,
-            output: `Agent "${currentAgent}" not found in registry`,
+            output: `AgentManager run hop is not wired for agent "${currentAgent}"`,
             rateLimited: false,
             durationMs: 0,
             estimatedCost: 0,
           };
-          return { result: noAdapterResult, fallbacks, finalBundle: currentBundle, finalPrompt };
+          return { result: unboundResult, fallbacks, finalBundle: currentBundle, finalPrompt };
         }
-        const startMs = Date.now();
-        try {
-          const opts = request.runOptions;
-          const resolvedPerm =
-            opts.resolvedPermissions ??
-            resolvePermissions((opts.config as NaxConfig | undefined) ?? this._config, opts.pipelineStage ?? "run");
-          const sessionName =
-            opts.sessionHandle ??
-            computeAcpHandle(opts.workdir ?? ".", opts.featureName, opts.storyId, opts.sessionRole);
-          const handle = await adapter.openSession(sessionName, {
-            agentName: adapter.name,
-            workdir: opts.workdir,
-            resolvedPermissions: resolvedPerm,
-            modelDef: opts.modelDef,
-            timeoutSeconds: opts.timeoutSeconds,
-            onPidSpawned: opts.onPidSpawned,
-            onSessionEstablished: opts.onSessionEstablished,
-            signal: opts.abortSignal,
-          });
-          try {
-            const hasContextTools = Boolean(opts.contextToolRuntime && (opts.contextPullTools?.length ?? 0) > 0);
-            const maxTurns =
-              opts.interactionBridge || hasContextTools
-                ? (opts.maxInteractionTurns ?? 10)
-                : (opts.maxInteractionTurns ?? 1);
-            const turnResult = await adapter.sendTurn(handle, buildContextToolPreamble(opts), {
-              interactionHandler: buildRunInteractionHandler(opts),
-              signal: opts.abortSignal,
-              maxTurns,
-            });
-            result = {
-              success: true,
-              exitCode: 0,
-              output: turnResult.output,
-              rateLimited: false,
-              durationMs: Date.now() - startMs,
-              estimatedCost: turnResult.cost?.total ?? 0,
-              tokenUsage: turnResult.tokenUsage,
-            };
-          } finally {
-            await adapter.closeSession(handle).catch(() => {});
-          }
-        } catch (err) {
-          const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
-          result = {
-            success: false,
-            exitCode: 1,
-            output: err instanceof Error ? err.message : String(err),
-            rateLimited: sessionFailure?.outcome === "fail-rate-limit",
-            durationMs: Date.now() - startMs,
-            estimatedCost: 0,
-            adapterFailure: sessionFailure ?? {
-              category: "quality",
-              outcome: "fail-unknown",
-              retriable: false,
-              message: String(err).slice(0, 500),
-            },
-          };
-        }
+        const hopOut = await this._runHop(currentAgent, request.runOptions);
+        result = hopOut.result;
+        finalPrompt = hopOut.prompt ?? finalPrompt;
       }
 
       if (result.success)
@@ -459,7 +417,7 @@ export class AgentManager implements IAgentManager {
     const start = Date.now();
     await this._middleware.runBefore(ctx);
     try {
-      if (!request.executeHop && !this._resolveRegistry().getAgent(agentName)) {
+      if (!request.executeHop && !this._runHop && !this._resolveRegistry().getAgent(agentName)) {
         throw new NaxError(`Agent "${agentName}" not found in registry`, "AGENT_NOT_FOUND", {
           stage: "run",
           agentName,

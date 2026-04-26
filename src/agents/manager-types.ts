@@ -5,6 +5,7 @@
 
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
+import type { SessionRunHopFn } from "../runtime/session-run-hop";
 import type {
   AgentAdapter,
   AgentResult,
@@ -225,3 +226,5 @@ export interface IAgentManager {
   /** Decompose mode pinned to a specific agent. */
   decomposeAs(agentName: string, options: DecomposeOptions): Promise<DecomposeResult>;
 }
+
+export type { SessionRunHopFn };

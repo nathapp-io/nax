@@ -3,6 +3,7 @@
  */
 
 export { SessionManager, _sessionManagerDeps } from "./manager";
+export { formatSessionName } from "./naming";
 export type {
   SessionDescriptor,
   SessionState,

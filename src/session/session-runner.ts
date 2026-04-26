@@ -2,9 +2,8 @@
  * Session Runner — shared types for per-story agent execution.
  *
  * `StoryRunOutcome` and `SessionRunnerContext` are consumed by
- * `ThreeSessionRunner` (TDD three-session strategy). The `ISessionRunner`
- * interface was removed in ADR-019 Phase C — ThreeSessionRunner is always
- * instantiated directly and no longer requires a common interface.
+ * `ThreeSessionRunner` (TDD three-session strategy). This file only keeps
+ * the shared types used by the concrete runner implementation.
  */
 
 import type { AgentAdapter } from "../agents";

@@ -8,7 +8,6 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { computeAcpHandle } from "../agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
@@ -20,6 +19,7 @@ import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import type { UserStory } from "../prd";
 import { ReviewPromptBuilder } from "../prompts";
+import { formatSessionName } from "../session/naming";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
@@ -454,7 +454,12 @@ export async function runSemanticReview(
   // Call LLM via agent.run() with own reviewer session (not the implementer session).
   // The reviewer works from diff + tools, not from implementer conversation history.
   // See #414: supersedes #262 US-003 session-sharing design.
-  const reviewerSessionName = computeAcpHandle(workdir, featureName, story.id, "reviewer-semantic");
+  const reviewerSessionName = formatSessionName({
+    workdir,
+    featureName,
+    storyId: story.id,
+    role: "reviewer-semantic",
+  });
   const contextToolStory: UserStory = {
     id: story.id,
     title: story.title,

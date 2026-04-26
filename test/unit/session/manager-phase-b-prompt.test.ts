@@ -4,8 +4,6 @@ import type { SendTurnOpts, SessionHandle, TurnResult } from "../../../src/agent
 import { SessionManager } from "../../../src/session/manager";
 import type { OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";
 import { makeAgentAdapter } from "../../helpers/mock-agent-adapter";
-import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
-import { makeNaxConfig } from "../../helpers/mock-nax-config";
 
 const WORKDIR = "/tmp/nax-phase-b-test";
 
@@ -216,35 +214,5 @@ describe("runInSession() — callback form", () => {
       ),
     ).rejects.toThrow("callback failed");
     expect(closeCalled).toBe(true);
-  });
-});
-
-// ─── runInSession() — legacy dispatch preserved ───────────────────────────────
-
-describe("runInSession() — legacy form preserved", () => {
-  test("IAgentManager second-arg dispatches to legacy path (no ADAPTER_NOT_FOUND)", async () => {
-    const sm = new SessionManager();
-    sm.create({ role: "main", agent: "claude", workdir: WORKDIR });
-    const active = sm.listActive();
-    expect(active.length).toBeGreaterThan(0);
-    const sessionId = active[0].id;
-
-    const agentManager = makeMockAgentManager();
-
-    // The legacy path routes through _runInSessionLegacy — it throws SESSION_NOT_FOUND
-    // only if the session id is wrong, not ADAPTER_NOT_FOUND (which is Phase B only).
-    // Use a real id so the dispatch gate passes — agentManager.run() is called.
-    await expect(
-      sm.runInSession(sessionId, agentManager, {
-        runOptions: {
-          prompt: "test",
-          workdir: WORKDIR,
-          modelTier: "balanced",
-          modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
-          timeoutSeconds: 30,
-          config: makeNaxConfig(),
-        },
-      }),
-    ).resolves.toBeDefined();
   });
 });
