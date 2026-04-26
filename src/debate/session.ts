@@ -30,6 +30,7 @@ export class DebateSession {
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
   private readonly agentManager: IAgentManager | undefined;
+  private readonly sessionManager: import("./session-helpers").DebateSessionOptions["sessionManager"];
   private readonly reviewerSession: import("./session-helpers").DebateSessionOptions["reviewerSession"];
   private readonly resolverContextInput: import("./session-helpers").DebateSessionOptions["resolverContextInput"];
   private get timeoutMs(): number {
@@ -45,6 +46,7 @@ export class DebateSession {
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
     this.agentManager = opts.agentManager;
+    this.sessionManager = opts.sessionManager;
     this.reviewerSession = opts.reviewerSession;
     this.resolverContextInput = opts.resolverContextInput;
   }
@@ -66,6 +68,7 @@ export class DebateSession {
             featureName: this.featureName,
             timeoutSeconds: this.timeoutSeconds,
             agentManager: this.agentManager,
+            sessionManager: this.sessionManager,
             reviewerSession: this.reviewerSession,
             resolverContextInput: this.resolverContextInput,
           },
@@ -109,6 +112,7 @@ export class DebateSession {
           featureName: this.featureName,
           timeoutSeconds: this.timeoutSeconds,
           agentManager: this.agentManager,
+          sessionManager: this.sessionManager,
           reviewerSession: this.reviewerSession,
           resolverContextInput: this.resolverContextInput,
         },
@@ -164,6 +168,7 @@ export class DebateSession {
         stageConfig: this.stageConfig,
         config: this.config,
         agentManager: this.agentManager,
+        sessionManager: this.sessionManager,
       },
       taskContext,
       outputFormat,

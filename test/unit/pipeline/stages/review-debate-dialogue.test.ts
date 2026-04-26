@@ -14,7 +14,7 @@ import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { makeMockAgentManager, makeNaxConfig } from "../../../helpers";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals — restored in afterEach
@@ -141,6 +141,7 @@ function makeCtx(config: ReturnType<typeof makeNaxConfig>, overrides: Partial<Pi
     workdir: "/tmp/test",
     hooks: {} as PipelineContext["hooks"],
     agentManager: mockAgentManager,
+    sessionManager: makeSessionManager(),
     ...overrides,
   } as unknown as PipelineContext;
 }

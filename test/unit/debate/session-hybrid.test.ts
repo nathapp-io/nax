@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentRunRequest } from "../../../src/agents";
-import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import { _debateSessionDeps } from "../../../src/debate/session";
+import type { HybridCtx } from "../../../src/debate/session-hybrid";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -21,7 +20,29 @@ function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): Deba
   };
 }
 
-// ─── Setup / Teardown ─────────────────────────────────────────────────────────
+function makeHybridCtx(overrides: Partial<HybridCtx> = {}): HybridCtx {
+  return {
+    storyId: "US-test",
+    stage: "run",
+    stageConfig: makeHybridStageConfig(),
+    config: {} as any,
+    workdir: "/tmp/work",
+    featureName: "feat-hybrid",
+    timeoutSeconds: 60,
+    agentManager: makeMockAgentManager({
+      runAsSessionFn: async (agentName) => ({
+        output: `proposal-${agentName}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      }),
+    }),
+    sessionManager: makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async () => {}),
+    }),
+    ...overrides,
+  };
+}
 
 let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
@@ -38,66 +59,28 @@ afterEach(() => {
   mock.restore();
 });
 
-// ─── AC1: sessionRole is 'debate-hybrid-{debaterIndex}' (0-based) ────────────
+// ─── AC1: sessionRole is 'debate-hybrid-{debaterIndex}' ──────────────────────
 
-describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
-  test("debater 0 gets sessionRole 'debate-hybrid-0' and debater 1 gets 'debate-hybrid-1'", async () => {
-    const runCalls: AgentRunOptions[] = [];
-
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.01,
-            agentFallbacks: [],
-          };
-        },
+describe("runHybrid() — handle IDs correspond to sessionRole (AC1)", () => {
+  test("debater 0 gets handle 'debate-hybrid-0' and debater 1 gets 'debate-hybrid-1'", async () => {
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const openedNames: string[] = [];
+    const ctx = makeHybridCtx({
+      sessionManager: makeSessionManager({
+        openSession: mock(async (name: string) => { openedNames.push(name); return { id: name, agentName: "claude" }; }),
+        closeSession: mock(async () => {}),
+        nameFor: mock((req) => req.role ?? ""),
+      }),
     });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-role",
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
-    });
-
-    await session.run("test prompt");
-
-    const proposalCalls = runCalls.filter((c) => c.prompt === "test prompt");
-    expect(proposalCalls.length).toBe(2);
-    const roles = proposalCalls.map((c) => c.sessionRole).sort();
-    expect(roles).toContain("debate-hybrid-0");
-    expect(roles).toContain("debate-hybrid-1");
+    await runHybrid(ctx, "test prompt");
+    expect(openedNames).toContain("debate-hybrid-0");
+    expect(openedNames).toContain("debate-hybrid-1");
   });
 
   test("sessionRole index matches debater position in the debaters array (3 debaters)", async () => {
-    const runCalls: AgentRunOptions[] = [];
-
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.01,
-            agentFallbacks: [],
-          };
-        },
-    });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-role-3",
-      stage: "run",
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const openedNames: string[] = [];
+    const ctx = makeHybridCtx({
       stageConfig: makeHybridStageConfig({
         debaters: [
           { agent: "claude", model: "fast" },
@@ -105,86 +88,32 @@ describe("runHybrid() — sessionRole for proposal calls (AC1)", () => {
           { agent: "gemini", model: "fast" },
         ],
       }),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
+      sessionManager: makeSessionManager({
+        openSession: mock(async (name: string) => { openedNames.push(name); return { id: name, agentName: "claude" }; }),
+        closeSession: mock(async () => {}),
+        nameFor: mock((req) => req.role ?? ""),
+      }),
     });
-
-    await session.run("test prompt");
-
-    const proposalCalls = runCalls.filter((c) => c.prompt === "test prompt");
-    expect(proposalCalls.length).toBe(3);
-    const roles = proposalCalls.map((c) => c.sessionRole).sort();
-    expect(roles).toContain("debate-hybrid-0");
-    expect(roles).toContain("debate-hybrid-1");
-    expect(roles).toContain("debate-hybrid-2");
+    await runHybrid(ctx, "test prompt");
+    expect(openedNames).toContain("debate-hybrid-0");
+    expect(openedNames).toContain("debate-hybrid-1");
+    expect(openedNames).toContain("debate-hybrid-2");
   });
 });
 
-// ─── AC3: every proposal call uses keepOpen: true ─────────────────────
-
-describe("runHybrid() — keepOpen for proposal calls (AC3)", () => {
-  test("all proposal run() calls have keepOpen: true", async () => {
-    const runCalls: AgentRunOptions[] = [];
-
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.01,
-            agentFallbacks: [],
-          };
-        },
-    });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-ksopen",
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
-    });
-
-    await session.run("test prompt");
-
-    const proposalCalls = runCalls.filter((c) => c.prompt === "test prompt");
-    expect(proposalCalls.length).toBeGreaterThanOrEqual(2);
-    for (const call of proposalCalls) {
-      expect(call.keepOpen).toBe(true);
-    }
-  });
-});
-
-// ─── AC2: parallel via allSettledBounded respecting maxConcurrentDebaters ────
+// ─── AC2: parallel via allSettledBounded ─────────────────────────────────────
 
 describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () => {
   test("all debaters are invoked in the proposal round", async () => {
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
     const invoked: string[] = [];
-
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName) => {
+    const ctx = makeHybridCtx({
+      agentManager: makeMockAgentManager({
+        runAsSessionFn: async (agentName) => {
           invoked.push(agentName);
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.01,
-            agentFallbacks: [],
-          };
+          return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
         },
-    });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-parallel",
-      stage: "run",
+      }),
       stageConfig: makeHybridStageConfig({
         debaters: [
           { agent: "claude", model: "fast" },
@@ -192,50 +121,61 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
           { agent: "gemini", model: "fast" },
         ],
       }),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
     });
-
-    await session.run("test prompt");
-
+    await runHybrid(ctx, "test prompt");
     expect(invoked).toContain("claude");
     expect(invoked).toContain("opencode");
     expect(invoked).toContain("gemini");
   });
 
   test("maxConcurrentDebaters: 1 still runs all proposals (sequentially)", async () => {
-    const runCalls: AgentRunOptions[] = [];
-
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.01,
-            agentFallbacks: [],
-          };
-        },
-    });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-concurrency",
-      stage: "run",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const proposalInvoked: string[] = [];
+    const ctx = makeHybridCtx({
       config: { debate: { maxConcurrentDebaters: 1 } } as any,
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
+      agentManager: makeMockAgentManager({
+        runAsSessionFn: async (agentName, _handle, prompt) => {
+          // Only count proposal calls (not rebuttals)
+          if (!prompt.includes("## Your Task")) proposalInvoked.push(agentName);
+          return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        },
+      }),
+    });
+    await runHybrid(ctx, "test prompt");
+    expect(proposalInvoked.length).toBe(2);
+  });
+});
+
+// ─── AC3: pre-opened sessions per debater ────────────────────────────────────
+
+describe("runHybrid() — pre-opened sessions per debater (AC3)", () => {
+  test("opens one session per debater before proposal round", async () => {
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const openCalls: string[] = [];
+    const runAsSessionCalls: number[] = [];
+    const closeCalls: number[] = [];
+
+    const ctx = makeHybridCtx({
+      sessionManager: makeSessionManager({
+        openSession: mock(async (name: string) => { openCalls.push(name); return { id: "h-" + openCalls.length, agentName: "claude" }; }),
+        closeSession: mock(async () => { closeCalls.push(1); }),
+        nameFor: mock((req) => req.role ?? ""),
+      }),
+      agentManager: makeMockAgentManager({
+        runAsSessionFn: async () => {
+          runAsSessionCalls.push(1);
+          return { output: "proposal", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        },
+      }),
     });
 
-    await session.run("test prompt");
+    await runHybrid(ctx, "prompt");
 
-    expect(runCalls.filter((c) => c.prompt === "test prompt").length).toBe(2);
+    // 2 debaters → 2 open, 2 close
+    expect(openCalls.length).toBe(2);
+    expect(closeCalls.length).toBe(2);
+    // runAsSession is called for both proposals AND rebuttals (rounds=1 → 2+2=4 total)
+    expect(runAsSessionCalls.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -243,42 +183,16 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
 
 describe("runHybrid() — single-agent fallback when fewer than 2 proposals succeed (AC4)", () => {
   test("returns outcome=passed with single debater when exactly 1 proposal succeeds", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName) => {
-          if (agentName === "opencode") {
-            return {
-              success: false,
-              exitCode: 1,
-              output: "failed",
-              rateLimited: false,
-              durationMs: 1,
-              estimatedCost: 0,
-              agentFallbacks: [],
-            };
-          }
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.01,
-            agentFallbacks: [],
-          };
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const ctx = makeHybridCtx({
+      agentManager: makeMockAgentManager({
+        runAsSessionFn: async (agentName) => {
+          if (agentName === "opencode") throw new Error("opencode failed");
+          return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
         },
+      }),
     });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-fallback-1",
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
-    });
-
-    const result = await session.run("test prompt");
-
+    const result = await runHybrid(ctx, "test prompt");
     expect(result.outcome).toBe("passed");
     expect(result.debaters).toEqual(["claude"]);
     expect(result.rounds).toBe(1);
@@ -287,29 +201,13 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
   });
 
   test("returns outcome=failed when 0 proposals succeed and fallback retry also fails", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async () => ({
-          success: false,
-          exitCode: 1,
-          output: "error",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0,
-          agentFallbacks: [],
-        }),
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const ctx = makeHybridCtx({
+      agentManager: makeMockAgentManager({
+        runAsSessionFn: async () => { throw new Error("all failed"); },
+      }),
     });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-fallback-0",
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
-    });
-
-    const result = await session.run("test prompt");
-
+    const result = await runHybrid(ctx, "test prompt");
     expect(result.outcome).toBe("failed");
     expect(result.debaters).toEqual([]);
   });
@@ -319,29 +217,17 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
 
 describe("runHybrid() — successful proposal outputs collected (AC5)", () => {
   test("both proposal outputs appear in result.proposals when 2 proposals succeed", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName) => ({
-          success: true,
-          exitCode: 0,
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const ctx = makeHybridCtx({
+      agentManager: makeMockAgentManager({
+        runAsSessionFn: async (agentName) => ({
           output: `proposal-from-${agentName}`,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0.01,
-          agentFallbacks: [],
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
         }),
+      }),
     });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-proposals",
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
-    });
-
-    const result = await session.run("test prompt");
-
+    const result = await runHybrid(ctx, "test prompt");
     expect(result.proposals).toHaveLength(2);
     const outputs = result.proposals.map((p) => p.output);
     expect(outputs).toContain("proposal-from-claude");
@@ -349,60 +235,43 @@ describe("runHybrid() — successful proposal outputs collected (AC5)", () => {
   });
 });
 
-// ─── AC6: adapters resolved via _debateSessionDeps.createManager ──────────────────
+// ─── AC6: adapters resolved via getAgent ─────────────────────────────────────
 
-describe("runHybrid() — adapter resolution via shared helper (AC6)", () => {
+describe("runHybrid() — adapter resolution via getAgent (AC6)", () => {
   test("manager.getAgent is called for each debater to resolve adapters", async () => {
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
     const agentCalls: string[] = [];
-
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      getAgentFn: (name: string) => {
-        agentCalls.push(name);
-        return {} as any;
-      },
+    const ctx = makeHybridCtx({
+      agentManager: makeMockAgentManager({
+        getAgentFn: (name: string) => {
+          agentCalls.push(name);
+          return {} as any;
+        },
+        runAsSessionFn: async (agentName) => ({
+          output: `proposal-${agentName}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        }),
+      }),
     });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-dep-calls",
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
-    });
-
-    await session.run("test prompt");
-
+    await runHybrid(ctx, "test prompt");
     expect(agentCalls).toContain("claude");
     expect(agentCalls).toContain("opencode");
   });
 
   test("debater is skipped when manager.getAgent returns undefined — triggers single-agent fallback", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
+    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const ctx = makeHybridCtx({
+      agentManager: makeMockAgentManager({
         unavailableAgents: new Set(["opencode"]),
-        runFn: async (agentName) => ({
-          success: true,
-          exitCode: 0,
+        runAsSessionFn: async (agentName) => ({
           output: `proposal-${agentName}`,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0.01,
-          agentFallbacks: [],
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
         }),
+      }),
     });
-
-    const session = new DebateSession({
-      storyId: "US-004-A-helper-skip",
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      workdir: "/tmp/work",
-      featureName: "feat-hybrid",
-      timeoutSeconds: 60,
-    });
-
-    const result = await session.run("test prompt");
-
-    // Only 1 adapter resolved → falls back to single-agent
+    const result = await runHybrid(ctx, "test prompt");
     expect(result.outcome).toBe("passed");
     expect(result.debaters).toEqual(["claude"]);
   });

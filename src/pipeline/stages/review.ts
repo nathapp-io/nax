@@ -71,9 +71,10 @@ export const reviewStage: PipelineStage = {
     }
 
     // AC2: When dialogue is enabled and no session exists (first run), create one
-    if (dialogueEnabled && !ctx.reviewerSession && ctx.agentManager) {
+    if (dialogueEnabled && !ctx.reviewerSession && ctx.agentManager && ctx.sessionManager) {
       ctx.reviewerSession = _reviewDeps.createReviewerSession(
         ctx.agentManager,
+        ctx.sessionManager,
         ctx.story.id,
         ctx.workdir,
         ctx.prd.feature ?? "",
