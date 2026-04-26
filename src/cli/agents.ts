@@ -25,7 +25,7 @@ export const _cliAgentsDeps = { getAgentVersion };
  */
 export async function agentsListCommand(config: NaxConfig, _workdir: string): Promise<void> {
   // Create ACP adapters for all known agents and collect version info
-  const adapters = KNOWN_AGENT_NAMES.map((name) => new AcpAgentAdapter(name, config));
+  const adapters = KNOWN_AGENT_NAMES.map((name) => new AcpAgentAdapter(name));
   const agentVersions = await Promise.all(
     adapters.map(async (agent) => ({
       name: agent.name,

@@ -68,7 +68,7 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
     if (_registryTestAdapters.has(name)) return _registryTestAdapters.get(name);
     if (!KNOWN_AGENT_NAMES.includes(name)) return undefined;
     if (!acpCache.has(name)) {
-      acpCache.set(name, new AcpAgentAdapter(name, config));
+      acpCache.set(name, new AcpAgentAdapter(name));
       logger?.debug("agents", `Created AcpAgentAdapter for ${name}`, { name });
     }
     return acpCache.get(name);
@@ -78,7 +78,7 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
     const testAdapters = Array.from(_registryTestAdapters.values());
     const acpAdapters = KNOWN_AGENT_NAMES.map((name) => {
       if (!acpCache.has(name)) {
-        acpCache.set(name, new AcpAgentAdapter(name, config));
+        acpCache.set(name, new AcpAgentAdapter(name));
       }
       return acpCache.get(name) as AcpAgentAdapter;
     });
@@ -93,7 +93,7 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
     const testAdapters = Array.from(_registryTestAdapters.values());
     const acpAdapters = KNOWN_AGENT_NAMES.map((name) => {
       if (!acpCache.has(name)) {
-        acpCache.set(name, new AcpAgentAdapter(name, config));
+        acpCache.set(name, new AcpAgentAdapter(name));
       }
       return acpCache.get(name) as AcpAgentAdapter;
     });

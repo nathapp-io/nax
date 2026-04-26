@@ -14,11 +14,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { AcpAgentAdapter } from "../../../../src/agents/acp/adapter";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 
 describe("AcpAgentAdapter.plan() — onPidSpawned threading", () => {
   test("plan() throws ADAPTER_METHOD_DEPRECATED (onPidSpawned threading removed with deprecation)", async () => {
-    const adapter = new AcpAgentAdapter("claude", DEFAULT_CONFIG);
+    const adapter = new AcpAgentAdapter("claude");
     await expect(
       adapter.plan({
         prompt: "plan this feature",

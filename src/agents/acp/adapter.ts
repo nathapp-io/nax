@@ -533,7 +533,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
 
-  constructor(agentName: string, _naxConfig?: import("../../config").NaxConfig) {
+  constructor(agentName: string) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
     this.displayName = entry.displayName;
