@@ -45,20 +45,33 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
     name: "mock",
     displayName: "Mock Agent",
     binary: "mock",
+    capabilities: {
+      supportedTiers: ["fast", "balanced", "powerful"],
+      maxContextTokens: 200_000,
+      features: new Set<"tdd" | "review" | "refactor" | "batch">(),
+    },
     isInstalled: async () => true,
     buildCommand: () => ["mock"],
-    run: mock(async () => {
+    complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
+    plan: mock(async () => ({ specContent: "" })),
+    decompose: mock(async () => ({ stories: [] })),
+    deriveSessionName: mock(() => ""),
+    closePhysicalSession: mock(async () => {}),
+    openSession: mock(async () => ({ id: "mock-session", agentName: "mock" })),
+    sendTurn: mock(async () => {
       const r = results[callCount] || {};
       callCount++;
+      if (r.success === false) {
+        throw new Error(r.output ?? "Agent failed");
+      }
       return {
-        success: r.success ?? true,
-        exitCode: r.exitCode ?? 0,
         output: r.output ?? "",
-        rateLimited: r.rateLimited ?? false,
-        durationMs: r.durationMs ?? 100,
-        estimatedCost: r.estimatedCost ?? 0.01,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 1,
+        cost: { total: r.estimatedCost ?? 0 },
       };
     }),
+    closeSession: mock(async () => {}),
   };
 }
 

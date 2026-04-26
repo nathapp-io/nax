@@ -960,6 +960,10 @@ export class AcpAgentAdapter implements AgentAdapter {
       getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
     }
 
+    if (lastResponse?.stopReason === "error") {
+      throw new Error("Agent session ended with stop reason: error");
+    }
+
     const output = extractOutput(lastResponse);
     const tokenUsage: TokenUsage = {
       inputTokens: totalTokenUsage.input_tokens,

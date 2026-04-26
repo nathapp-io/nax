@@ -354,7 +354,7 @@ describe("sendTurn()", () => {
     expect(result.internalRoundTrips).toBe(1);
   });
 
-  test("session-broken stopReason: output is empty string", async () => {
+  test("session-broken stopReason: throws error", async () => {
     const session = makeSession({
       promptFn: async () => ({
         messages: [{ role: "assistant", content: "" }],
@@ -364,11 +364,9 @@ describe("sendTurn()", () => {
     });
     const handle = await openHandle(session);
 
-    const result = await adapter.sendTurn(handle, "prompt", {
-      interactionHandler: NO_OP_INTERACTION_HANDLER,
-    });
-
-    expect(result.output).toBe("");
+    await expect(
+      adapter.sendTurn(handle, "prompt", { interactionHandler: NO_OP_INTERACTION_HANDLER }),
+    ).rejects.toThrow("stop reason: error");
   });
 
   test("accumulates token usage across multiple turns", async () => {

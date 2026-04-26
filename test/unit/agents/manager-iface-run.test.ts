@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
 import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentAdapter } from "../../../src/agents/types";
+import { SessionFailureError } from "../../../src/agents/types";
 import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
 
 function makeAdapter(name: string, success = true): AgentAdapter {
@@ -19,22 +20,20 @@ function makeAdapter(name: string, success = true): AgentAdapter {
     displayName: name,
     binary: name,
     capabilities: { supportedTiers: ["fast"], maxContextTokens: 100000, features: new Set() },
-    run: mock(async () => ({
-      success,
-      exitCode: success ? 0 : 1,
+    openSession: mock(async () => ({ id: `session-${name}`, agentName: name })),
+    sendTurn: mock(async () => ({
       output: success ? "ok" : "",
-      rateLimited: false,
-      durationMs: 10,
-      estimatedCost: 0.001,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      internalRoundTrips: 1,
     })),
-    complete: mock(async () => ({ output: "complete-out", costUsd: 0.001, source: "cache" as const })),
-    closeSession: async () => {},
+    complete: mock(async () => ({ output: "complete-out", costUsd: 0.001, source: "exact" as const })),
+    closeSession: mock(async () => {}),
     closePhysicalSession: async () => {},
     deriveSessionName: () => `nax-test-${name}`,
     isInstalled: async () => true,
     buildCommand: () => [],
-    plan: async () => ({ success: true, spec: "" }),
-    decompose: async () => ({ success: true, stories: [] }),
+    plan: async () => ({ specContent: "" }),
+    decompose: async () => ({ stories: [] }),
   });
 }
 
@@ -94,15 +93,10 @@ describe("IAgentManager.run() — agent swap", () => {
     const claudeAdapter = makeAdapter("claude", false);
     const codexAdapter = makeAdapter("codex", true);
 
-    (claudeAdapter.run as ReturnType<typeof mock>).mockImplementation(async () => ({
-      success: false,
-      exitCode: 1,
-      output: "",
-      rateLimited: false,
-      durationMs: 10,
-      estimatedCost: 0,
-      adapterFailure: { category: "availability", outcome: "fail-auth", retriable: false, message: "" },
-    }));
+    const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
+    (claudeAdapter.openSession as ReturnType<typeof mock>).mockImplementation(async () => {
+      throw new SessionFailureError("auth failure", availFailure);
+    });
 
     const mgr = new AgentManager(makeNaxConfig({ agent: { default: "claude", fallback: { enabled: true, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }), makeRegistry([claudeAdapter, codexAdapter]) as never);
     _agentManagerDeps.sleep = mock(async () => {});

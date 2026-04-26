@@ -3,13 +3,19 @@
  *
  * Uses injectable _sessionRunnerDeps instead of mock.module() to avoid
  * permanent module replacement that contaminates other test files.
+ *
+ * keepOpen is captured via sessionBinding.agentManager since Phase D removed
+ * AgentAdapter.run() — the flag lives in AgentRunOptions (req.runOptions.keepOpen).
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
+import type { IAgentManager } from "../../../src/agents/manager-types";
+import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { UserStory } from "../../../src/prd";
+import type { TddSessionBinding } from "../../../src/tdd/session-runner";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
-import { makeNaxConfig } from "../../helpers";
+import type { TddSessionRole } from "../../../src/tdd/types";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -22,16 +28,16 @@ function makeStory(): UserStory {
     description: "Do the thing",
     acceptanceCriteria: ["AC-1"],
     status: "pending",
-  };
+  } as unknown as UserStory;
 }
 
 function makeConfig(rectificationEnabled: boolean) {
   return makeNaxConfig({
     models: {
       claude: {
-        fast: { model: "fast-model" },
-        balanced: { model: "balanced-model" },
-        powerful: { model: "powerful-model" },
+        fast: "fast-model",
+        balanced: "balanced-model",
+        powerful: "powerful-model",
       },
     },
     agent: { default: "claude" },
@@ -40,28 +46,73 @@ function makeConfig(rectificationEnabled: boolean) {
         ? { enabled: true, maxRetries: 2, fullSuiteTimeoutSeconds: 60, maxFailureSummaryChars: 1000 }
         : { enabled: false },
       sessionTimeoutSeconds: 300,
-      dangerouslySkipPermissions: true,
     },
     quality: { commands: { test: "bun test" } },
     tdd: { testWriterAllowedPaths: [] },
   });
 }
 
-function makeAgent() {
-  let capturedOpts: AgentRunOptions | null = null;
-  const run = mock(async (opts: AgentRunOptions): Promise<AgentResult> => {
-    capturedOpts = { ...opts };
-    return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0 };
+/**
+ * Creates a sessionBinding whose agentManager captures the keepOpen flag from
+ * req.runOptions so tests can assert the value computed by session-runner.ts.
+ */
+function makeCapturingBinding(): {
+  sessionBinding: TddSessionBinding;
+  capturedKeepOpen: () => boolean | undefined;
+} {
+  let capturedKeepOpen: boolean | undefined;
+  const agentManager = makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      capturedKeepOpen = req.runOptions.keepOpen;
+      return {
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "",
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCost: 0,
+          agentFallbacks: [] as unknown[],
+        },
+        fallbacks: [],
+      };
+    },
+  });
+  const sessionMgr = makeSessionManager({
+    runInSession: mock(async (_id: string, agentMgr: IAgentManager, request: AgentRunRequest) => {
+      return agentMgr.run(request);
+    }) as never,
   });
   return {
-    run,
-    get capturedOpts() {
-      return capturedOpts;
-    },
-    isInstalled: mock(async () => true),
-    complete: mock(async () => ""),
-    buildCommand: mock(() => []),
+    sessionBinding: { sessionManager: sessionMgr, sessionId: "mock-session", agentManager },
+    capturedKeepOpen: () => capturedKeepOpen,
   };
+}
+
+async function runSession(
+  role: TddSessionRole,
+  config: ReturnType<typeof makeNaxConfig>,
+  sessionBinding: TddSessionBinding,
+): Promise<void> {
+  await runTddSession(
+    role,
+    makeAgentAdapter({ name: "claude" }) as never,
+    makeStory(),
+    config,
+    "/tmp/fake",
+    "balanced",
+    "HEAD",
+    undefined,
+    false,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    sessionBinding,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,7 +132,6 @@ beforeEach(() => {
     buildPrompt: _sessionRunnerDeps.buildPrompt,
   };
 
-  // Mock all deps to no-ops
   _sessionRunnerDeps.autoCommitIfDirty = mock(async () => {});
   _sessionRunnerDeps.getChangedFiles = mock(async () => []);
   _sessionRunnerDeps.verifyTestWriterIsolation = mock(async () => ({ passed: true, violations: [], softViolations: [], description: "" }));
@@ -101,38 +151,26 @@ afterEach(() => {
 
 describe("session-runner implementer keepOpen", () => {
   test("implementer sets keepOpen=true when rectification is enabled", async () => {
-    const agent = makeAgent();
-    const config = makeConfig(true);
-
-    await runTddSession("implementer", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
-
-    expect(agent.capturedOpts?.keepOpen).toBe(true);
+    const { sessionBinding, capturedKeepOpen } = makeCapturingBinding();
+    await runSession("implementer", makeConfig(true), sessionBinding);
+    expect(capturedKeepOpen()).toBe(true);
   });
 
   test("implementer sets keepOpen=false when rectification is disabled", async () => {
-    const agent = makeAgent();
-    const config = makeConfig(false);
-
-    await runTddSession("implementer", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
-
-    expect(agent.capturedOpts?.keepOpen).toBe(false);
+    const { sessionBinding, capturedKeepOpen } = makeCapturingBinding();
+    await runSession("implementer", makeConfig(false), sessionBinding);
+    expect(capturedKeepOpen()).toBe(false);
   });
 
   test("test-writer never sets keepOpen regardless of rectification config", async () => {
-    const agent = makeAgent();
-    const config = makeConfig(true);
-
-    await runTddSession("test-writer", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
-
-    expect(agent.capturedOpts?.keepOpen).toBeFalsy();
+    const { sessionBinding, capturedKeepOpen } = makeCapturingBinding();
+    await runSession("test-writer", makeConfig(true), sessionBinding);
+    expect(capturedKeepOpen()).toBeFalsy();
   });
 
   test("verifier never sets keepOpen regardless of rectification config", async () => {
-    const agent = makeAgent();
-    const config = makeConfig(true);
-
-    await runTddSession("verifier", agent as any, makeStory(), config, "/tmp/fake", "balanced", "HEAD");
-
-    expect(agent.capturedOpts?.keepOpen).toBeFalsy();
+    const { sessionBinding, capturedKeepOpen } = makeCapturingBinding();
+    await runSession("verifier", makeConfig(true), sessionBinding);
+    expect(capturedKeepOpen()).toBeFalsy();
   });
 });

@@ -70,11 +70,13 @@ describe("execution stage — routing.agent unset uses defaultAgent", () => {
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "claude",
-        capabilities: { supportedTiers: ["fast"] },
-        run: async (opts: { modelDef?: { model: string; provider: string } }) => {
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+        openSession: mock(async (_name: string, opts: { modelDef?: { model: string; provider: string } }) => {
           capturedModelDef = opts.modelDef;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
-        },
+          return { id: "session", agentName: "claude" };
+        }),
+        sendTurn: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 })),
+        closeSession: mock(async () => {}),
       });
 
     _executionDeps.validateAgentForTier = () => true;
@@ -105,11 +107,13 @@ describe("execution stage — routing.agent overrides default agent for model re
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "codex",
-        capabilities: { supportedTiers: ["fast"] },
-        run: async (opts: { modelDef?: { model: string; provider: string } }) => {
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+        openSession: mock(async (_name: string, opts: { modelDef?: { model: string; provider: string } }) => {
           capturedModelDef = opts.modelDef;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
-        },
+          return { id: "session", agentName: "codex" };
+        }),
+        sendTurn: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 })),
+        closeSession: mock(async () => {}),
       });
 
     _executionDeps.validateAgentForTier = () => true;
@@ -138,11 +142,13 @@ describe("execution stage — routing.agent overrides default agent for model re
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "codex",
-        capabilities: { supportedTiers: ["powerful"] },
-        run: async (opts: { modelDef?: { model: string; provider: string } }) => {
+        capabilities: { supportedTiers: ["powerful"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+        openSession: mock(async (_name: string, opts: { modelDef?: { model: string; provider: string } }) => {
           capturedModelDef = opts.modelDef;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
-        },
+          return { id: "session", agentName: "codex" };
+        }),
+        sendTurn: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 })),
+        closeSession: mock(async () => {}),
       });
 
     _executionDeps.validateAgentForTier = () => true;
@@ -165,16 +171,18 @@ describe("execution stage — routing.agent overrides default agent for model re
 
 describe("execution stage — tier mismatch clamps to first supported tier", () => {
   test("passes first supported tier to agent.run() when requested tier is unsupported", async () => {
-    let capturedTier: string | undefined;
+    let capturedModelDef: { model: string; provider: string } | undefined;
 
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "opencode",
-        capabilities: { supportedTiers: ["balanced"] },
-        run: async (opts: { modelTier?: string }) => {
-          capturedTier = opts.modelTier;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
-        },
+        capabilities: { supportedTiers: ["balanced"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+        openSession: mock(async (_name: string, opts: { modelDef?: { model: string; provider: string } }) => {
+          capturedModelDef = opts.modelDef;
+          return { id: "session", agentName: "opencode" };
+        }),
+        sendTurn: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 })),
+        closeSession: mock(async () => {}),
       });
 
     _executionDeps.validateAgentForTier = () => false;
@@ -183,20 +191,23 @@ describe("execution stage — tier mismatch clamps to first supported tier", () 
     const ctx = makeCtx({}, { modelTier: "fast" });
     await executionStage.execute(ctx);
 
-    expect(capturedTier).toBe("balanced");
+    // Tier clamped to "balanced" → modelDef resolves to the balanced model for claude (default fallback)
+    expect(capturedModelDef?.model).toBe("claude-sonnet");
   });
 
   test("no clamping occurs when tier is supported", async () => {
-    let capturedTier: string | undefined;
+    let capturedModelDef: { model: string; provider: string } | undefined;
 
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "claude",
-        capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
-        run: async (opts: { modelTier?: string }) => {
-          capturedTier = opts.modelTier;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
-        },
+        capabilities: { supportedTiers: ["fast", "balanced", "powerful"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+        openSession: mock(async (_name: string, opts: { modelDef?: { model: string; provider: string } }) => {
+          capturedModelDef = opts.modelDef;
+          return { id: "session", agentName: "claude" };
+        }),
+        sendTurn: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 })),
+        closeSession: mock(async () => {}),
       });
 
     _executionDeps.validateAgentForTier = () => true;
@@ -205,6 +216,7 @@ describe("execution stage — tier mismatch clamps to first supported tier", () 
     const ctx = makeCtx({}, { modelTier: "fast" });
     await executionStage.execute(ctx);
 
-    expect(capturedTier).toBe("fast");
+    // No clamping — tier stays "fast" → modelDef resolves to the fast model for claude
+    expect(capturedModelDef?.model).toBe("claude-haiku");
   });
 });

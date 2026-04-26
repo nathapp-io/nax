@@ -13,7 +13,7 @@ import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "../../../../test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -25,19 +25,15 @@ function makeCtx(
   configOverride?: NaxConfig,
 ): PipelineContext {
   const story = makeStory(storyOverrides);
+  const config = configOverride ?? makeNaxConfig({
+    agent: { default: "claude" },
+    models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
+    quality: { requireTests: false, commands: { test: "bun test" } },
+    review: { enabled: false },
+  });
   return {
-    config: configOverride ?? makeNaxConfig({
-      agent: { default: "claude" },
-      models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
-      quality: { requireTests: false, commands: { test: "bun test" } },
-      review: { enabled: false },
-    }),
-    rootConfig: configOverride ?? makeNaxConfig({
-      agent: { default: "claude" },
-      models: { claude: { fast: "claude-haiku", balanced: "claude-sonnet", powerful: "claude-opus" } },
-      quality: { requireTests: false, commands: { test: "bun test" } },
-      review: { enabled: false },
-    }),
+    config,
+    rootConfig: config,
     prd: { project: "p", feature: "test-feature", branchName: "b", createdAt: "", updatedAt: "", userStories: [story] } as PRD,
     story,
     stories: [story],
@@ -76,17 +72,18 @@ describe("execution stage — session role normalization (AC-1)", () => {
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "claude",
-        capabilities: { supportedTiers: ["fast"] },
-        run: async (opts: { sessionRole?: string }) => {
-          capturedSessionRole = opts.sessionRole;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
-        },
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
       });
-
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
     const ctx = makeCtx({}, { testStrategy: "test-after" });
+    (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        capturedSessionRole = req.runOptions.sessionRole;
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
     await executionStage.execute(ctx);
 
     expect(capturedSessionRole).toBe("implementer");
@@ -98,17 +95,18 @@ describe("execution stage — session role normalization (AC-1)", () => {
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "claude",
-        capabilities: { supportedTiers: ["fast"] },
-        run: async (opts: { sessionRole?: string }) => {
-          capturedSessionRole = opts.sessionRole;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
-        },
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
       });
-
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
     const ctx = makeCtx({}, { testStrategy: "no-test" });
+    (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        capturedSessionRole = req.runOptions.sessionRole;
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
     await executionStage.execute(ctx);
 
     expect(capturedSessionRole).toBe("implementer");
@@ -126,18 +124,19 @@ describe("execution stage — keepOpen when review enabled (AC-2)", () => {
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "claude",
-        capabilities: { supportedTiers: ["fast"] },
-        run: async (opts: { keepOpen?: boolean }) => {
-          capturedKeepSessionOpen = opts.keepOpen;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
-        },
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
       });
-
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
     const configWithReview = makeNaxConfig({ review: { enabled: true } });
     const ctx = makeCtx({}, { testStrategy: "test-after" }, configWithReview);
+    (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        capturedKeepSessionOpen = req.runOptions.keepOpen;
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
     await executionStage.execute(ctx);
 
     expect(capturedKeepSessionOpen).toBe(true);
@@ -151,13 +150,8 @@ describe("execution stage — keepOpen when rectification enabled (AC-3)", () =>
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "claude",
-        capabilities: { supportedTiers: ["fast"] },
-        run: async (opts: { keepOpen?: boolean }) => {
-          capturedKeepSessionOpen = opts.keepOpen;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
-        },
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
       });
-
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
@@ -165,6 +159,12 @@ describe("execution stage — keepOpen when rectification enabled (AC-3)", () =>
       execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60, rectification: { enabled: true } },
     });
     const ctx = makeCtx({}, { testStrategy: "test-after" }, configWithRectification);
+    (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        capturedKeepSessionOpen = req.runOptions.keepOpen;
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
     await executionStage.execute(ctx);
 
     expect(capturedKeepSessionOpen).toBe(true);
@@ -178,13 +178,8 @@ describe("execution stage — keepOpen when review and rectification disabled (A
     _executionDeps.getAgent = () =>
       makeAgentAdapter({
         name: "claude",
-        capabilities: { supportedTiers: ["fast"] },
-        run: async (opts: { keepOpen?: boolean }) => {
-          capturedKeepSessionOpen = opts.keepOpen;
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
-        },
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
       });
-
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
 
@@ -193,6 +188,12 @@ describe("execution stage — keepOpen when review and rectification disabled (A
       execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60, rectification: { enabled: false } },
     });
     const ctx = makeCtx({}, { testStrategy: "test-after" }, configWithoutReviewOrRectification);
+    (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        capturedKeepSessionOpen = req.runOptions.keepOpen;
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
     await executionStage.execute(ctx);
 
     expect(capturedKeepSessionOpen).toBe(false);
