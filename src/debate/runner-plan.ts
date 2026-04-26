@@ -1,7 +1,7 @@
 /**
- * session-plan.ts
+ * runner-plan.ts
  *
- * Extracted runPlan() implementation for DebateSession.
+ * runPlan() implementation for DebateRunner.
  */
 
 import { join } from "node:path";

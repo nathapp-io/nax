@@ -1,7 +1,7 @@
 /**
- * session-stateful.ts
+ * runner-stateful.ts
  *
- * Extracted runStateful(), runStatefulTurn() implementations for DebateSession.
+ * runStateful(), runStatefulTurn() implementations for DebateRunner.
  */
 
 import type { IAgentManager } from "../agents";

@@ -1,7 +1,7 @@
 /**
- * session-hybrid.ts
+ * runner-hybrid.ts
  *
- * runHybrid() implementation for hybrid-mode debate sessions.
+ * runHybrid() implementation for DebateRunner.
  */
 
 import type { IAgentManager } from "../agents";
