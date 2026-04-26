@@ -46,6 +46,16 @@ function resolveImportPaths(imports: string[], _workdir: string): string[] {
   return resolved.slice(0, MAX_SOURCE_FILES);
 }
 
+export async function loadSourceFilesForDiagnosis(
+  testFileContent: string,
+  workdir: string,
+): Promise<Array<{ path: string; content: string }>> {
+  const imports = parseImportStatements(testFileContent);
+  const relativeImports = resolveImportPaths(imports, workdir);
+  const results = await Promise.all(relativeImports.map((imp) => readSourceFileContent(imp, workdir)));
+  return results.filter((f): f is { path: string; content: string } => f !== null);
+}
+
 async function readSourceFileContent(
   filePath: string,
   workdir: string,

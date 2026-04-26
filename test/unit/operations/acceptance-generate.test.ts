@@ -52,9 +52,9 @@ describe("acceptanceGenerateOp.build()", () => {
 describe("acceptanceGenerateOp.parse()", () => {
   test("extracts code from typescript fenced block", () => {
     const ctx = makeBuildCtx();
-    const output = "Here is the test:\n```typescript\nconst x = 1;\n```";
+    const output = "Here is the test:\n```typescript\ndescribe('x', () => {\n  test('y', () => expect(1).toBe(1));\n});\n```";
     const result = acceptanceGenerateOp.parse(output, SAMPLE_INPUT, ctx);
-    expect(result.testCode).toContain("const x = 1");
+    expect(result.testCode).toContain("describe");
   });
   test("returns null testCode when no code block present", () => {
     const ctx = makeBuildCtx();
@@ -63,7 +63,7 @@ describe("acceptanceGenerateOp.parse()", () => {
   });
   test("extracts code from generic fenced block", () => {
     const ctx = makeBuildCtx();
-    const output = "```\nimport { test } from 'bun:test';\n```";
+    const output = "```\nimport { describe } from 'bun:test';\ndescribe('feature', () => {});\n```";
     const result = acceptanceGenerateOp.parse(output, SAMPLE_INPUT, ctx);
     expect(result.testCode).toContain("import");
   });

@@ -223,7 +223,7 @@ export async function generateFromPRD(
     outputPreview: rawOutput.slice(0, 300),
   });
 
-  // BUG-076: ACP adapters write files to disk directly and return a conversational
+  // ACP adapters write files to disk directly and return a conversational
   // summary rather than raw code. If extractTestCode() fails on the response text,
   // check whether the adapter already wrote the file to the package-local feature directory.
   if (!testCode) {
@@ -239,7 +239,7 @@ export async function generateFromPRD(
     const backupPath = `${targetPath}.llm-recovery.bak`;
     let recoveryFailed = false;
 
-    logger.debug("acceptance", "BUG-076 recovery: checking for agent-written file", {
+    logger.debug("acceptance", "Checking for agent-written file", {
       targetPath,
       backupPath,
       featureName: options.featureName,
@@ -251,7 +251,7 @@ export async function generateFromPRD(
       const recovered = extractTestCode(existing);
       const likelyTestContent = hasLikelyTestContent(existing);
 
-      logger.debug("acceptance", "BUG-076 recovery: file check result", {
+      logger.debug("acceptance", "Agent-written file check result", {
         fileSize: existing.length,
         extractedCode: recovered !== null,
         likelyTestContent,
@@ -267,13 +267,13 @@ export async function generateFromPRD(
           await _generatorPRDDeps.backupFile(backupPath, existing);
           backupCreated = true;
         } catch (backupError) {
-          logger.warn("acceptance", "BUG-076: failed to create recovery backup; preserving file anyway", {
+          logger.warn("acceptance", "Failed to create recovery backup; preserving file anyway", {
             targetPath,
             backupPath,
             backupError: backupError instanceof Error ? backupError.message : String(backupError),
           });
         }
-        logger.warn("acceptance", "BUG-076: preserving agent-written file with backup (heuristic recovery)", {
+        logger.warn("acceptance", "Preserving agent-written file with backup (heuristic recovery)", {
           targetPath,
           backupPath,
           backupCreated,
@@ -286,7 +286,7 @@ export async function generateFromPRD(
           try {
             await _generatorPRDDeps.backupFile(backupPath, existing);
           } catch (backupError) {
-            logger.warn("acceptance", "BUG-076: failed to create fallback backup for unrecognized file", {
+            logger.warn("acceptance", "Failed to create fallback backup for unrecognized file", {
               targetPath,
               backupPath,
               backupError: backupError instanceof Error ? backupError.message : String(backupError),
@@ -294,21 +294,17 @@ export async function generateFromPRD(
           }
         }
         recoveryFailed = true;
-        logger.error(
-          "acceptance",
-          "BUG-076: agent-written file not recognized as test code — falling back to skeleton",
-          {
-            targetPath,
-            backupPath,
-            fileSize: existing.length,
-            filePreview: existing.slice(0, 300),
-          },
-        );
+        logger.error("acceptance", "Agent-written file not recognized as test code — falling back to skeleton", {
+          targetPath,
+          backupPath,
+          fileSize: existing.length,
+          filePreview: existing.slice(0, 300),
+        });
       }
     } catch (error) {
       // File read failed — recovery not possible
       recoveryFailed = true;
-      logger.debug("acceptance", "BUG-076 recovery: failed to read agent-written file, falling back to skeleton", {
+      logger.debug("acceptance", "Failed to read agent-written file, falling back to skeleton", {
         targetPath,
         backupPath,
         error: error instanceof Error ? error.message : String(error),
@@ -319,7 +315,7 @@ export async function generateFromPRD(
     if (recoveryFailed) {
       logger.error(
         "acceptance",
-        "BUG-076: LLM returned non-code output and recovery could not produce runnable tests — falling back to skeleton",
+        "LLM returned non-code output and recovery could not produce runnable tests — falling back to skeleton",
         {
           rawOutputPreview: rawOutput.slice(0, 500),
           targetPath,

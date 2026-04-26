@@ -66,6 +66,7 @@ export type SessionRole =
   | "auto" // Auto-approve interaction (complete())
   | "diagnose" // Acceptance failure diagnosis (run())
   | "source-fix" // Acceptance source fix (run())
+  | "test-fix" // Acceptance test fix (run())
   | "reviewer-semantic" // Semantic review — keepOpen: true
   | "reviewer-adversarial" // Adversarial review — keepOpen: true
   | "reviewer" // Dialogue reviewer session
