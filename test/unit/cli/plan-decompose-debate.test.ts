@@ -165,7 +165,7 @@ const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
 const origCreateManager = _planDeps.createManager;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateSession = _planDeps.createDebateSession;
+const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -220,7 +220,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     _planDeps.scanCodebase = origScanCodebase;
     _planDeps.createManager = origCreateManager;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateSession = origCreateDebateSession;
+    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -240,7 +240,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const createDebateMock = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult()),
     }));
-    _planDeps.createDebateSession = createDebateMock as never;
+    _planDeps.createDebateRunner = createDebateMock as never;
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -255,7 +255,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     setupDeps(prd);
 
     const capturedOpts: unknown[] = [];
-    _planDeps.createDebateSession = mock((opts: unknown) => {
+    _planDeps.createDebateRunner = mock((opts: unknown) => {
       capturedOpts.push(opts);
       return { run: mock(async () => makePassedDebateResult()) };
     }) as never;
@@ -282,7 +282,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       }),
     );
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult()),
     })) as never;
 
@@ -298,7 +298,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON)),
     })) as never;
 
@@ -332,7 +332,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       }),
     );
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makeFailedDebateResult()),
     })) as never;
 
@@ -348,7 +348,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makeFailedDebateResult()),
     })) as never;
 
@@ -373,7 +373,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const createDebateMock = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult()),
     }));
-    _planDeps.createDebateSession = createDebateMock as never;
+    _planDeps.createDebateRunner = createDebateMock as never;
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(false), {
       feature: FEATURE,
@@ -397,7 +397,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       }),
     );
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult()),
     })) as never;
 
@@ -426,7 +426,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const createDebateMock = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult()),
     }));
-    _planDeps.createDebateSession = createDebateMock as never;
+    _planDeps.createDebateRunner = createDebateMock as never;
 
     await planDecomposeCommand(
       tmpDir,
@@ -446,7 +446,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON_FENCED)),
     })) as never;
 
@@ -465,7 +465,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_PLAIN_FENCED)),
     })) as never;
 
@@ -482,7 +482,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateSession = mock((_opts: unknown) => ({
+    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
       run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON_FENCED)),
     })) as never;
 
