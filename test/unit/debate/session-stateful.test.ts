@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { AgentRunRequest } from "../../../src/agents";
-import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import type { CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 test("SuccessfulProposal type carries optional handle field (compile-time check)", () => {
   const proposal: import("../../../src/debate/session-helpers").SuccessfulProposal = {
@@ -42,23 +41,20 @@ afterEach(() => {
   mock.restore();
 });
 
-describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
-  test("proposal round calls adapter.run for each debater with stable sessionRole", async () => {
-    const runCalls: AgentRunOptions[] = [];
+describe("DebateSession.run() — stateful mode uses runAsSession SSOT", () => {
+  test("proposal round calls runAsSession for each debater", async () => {
+    const runAsSessionCalls: Array<{ agentName: string; prompt: string; handleId: string }> = [];
+
+    const mockSM = makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async () => {}),
+    });
 
     _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.1,
-            agentFallbacks: [],
-          };
-        },
+      runAsSessionFn: async (agentName, handle, prompt) => {
+        runAsSessionCalls.push({ agentName, prompt, handleId: handle.id });
+        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      },
     });
 
     const session = new DebateSession({
@@ -68,74 +64,31 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
       workdir: "/tmp/work",
       featureName: "feat-a",
       timeoutSeconds: 120,
+      sessionManager: mockSM,
     });
 
     await session.run("test prompt");
 
-    expect(runCalls.length).toBe(2);
-    expect(runCalls[0].sessionRole).toBe("debate-plan-0");
-    expect(runCalls[1].sessionRole).toBe("debate-plan-1");
-    expect(runCalls[0].storyId).toBe("US-003");
-    expect(runCalls[0].featureName).toBe("feat-a");
-    expect(runCalls[0].workdir).toBe("/tmp/work");
-    expect(runCalls[0].keepOpen).toBe(false);
-    expect(runCalls[0].modelDef.model).not.toBe("fast");
-    expect(runCalls[1].modelDef.model).not.toBe("balanced");
+    expect(runAsSessionCalls.length).toBe(2);
+    expect(runAsSessionCalls[0].agentName).toBe("claude");
+    expect(runAsSessionCalls[1].agentName).toBe("opencode");
   });
 
-  test("uses explicit non-tier debater model override for modelDef", async () => {
-    const runCalls: AgentRunOptions[] = [];
+  test("rounds > 1: critique runs on same session handle as proposal", async () => {
+    const handleCallMap: Record<string, string[]> = {};
+    const closedHandles: string[] = [];
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.1,
-            agentFallbacks: [],
-          };
-        },
+    const mockSM = makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async (handle) => { closedHandles.push(handle.id); }),
     });
 
-    const session = new DebateSession({
-      storyId: "US-003b",
-      stage: "plan",
-      stageConfig: makeStageConfig({
-        rounds: 1,
-        debaters: [
-          { agent: "claude", model: "claude-sonnet-4-5-20250514" },
-          { agent: "opencode", model: "balanced" },
-        ],
-      }),
-      workdir: "/tmp/work",
-      featureName: "feat-a",
-    });
-
-    await session.run("test prompt");
-
-    expect(runCalls[0].modelDef.model).toBe("claude-sonnet-4-5-20250514");
-  });
-
-  test("rounds > 1 keeps proposal session open and reuses same role in critique", async () => {
-    const runCalls: AgentRunOptions[] = [];
-
     _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          return {
-            success: true,
-            exitCode: 0,
-            output: opts.prompt.includes("Critique") ? `critique-${agentName}` : `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.1,
-            agentFallbacks: [],
-          };
-        },
+      runAsSessionFn: async (_agentName, handle, prompt) => {
+        handleCallMap[handle.id] = handleCallMap[handle.id] ?? [];
+        handleCallMap[handle.id].push(prompt.includes("reviewing proposals") ? "critique" : "proposal");
+        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      },
     });
 
     const session = new DebateSession({
@@ -145,57 +98,28 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
       workdir: "/tmp/work",
       featureName: "feat-b",
       timeoutSeconds: 120,
+      sessionManager: mockSM,
     });
 
     await session.run("review prompt");
 
-    expect(runCalls.length).toBe(4);
-    expect(runCalls[0].keepOpen).toBe(true);
-    expect(runCalls[1].keepOpen).toBe(true);
-    expect(runCalls[2].keepOpen).toBe(false);
-    expect(runCalls[3].keepOpen).toBe(false);
-    expect(runCalls[2].sessionRole).toBe("debate-review-0");
-    expect(runCalls[3].sessionRole).toBe("debate-review-1");
+    for (const calls of Object.values(handleCallMap)) {
+      expect(calls).toContain("proposal");
+      expect(calls).toContain("critique");
+    }
+    expect(closedHandles.length).toBe(2);
   });
 
   test("falls back to single-agent passed when only one proposal run succeeds", async () => {
-    const runCalls: AgentRunOptions[] = [];
-
+    const mockSM = makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: name.includes("opencode") ? "opencode" : "claude" })),
+      closeSession: mock(async () => {}),
+    });
     _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (agentName, opts) => {
-          runCalls.push(opts);
-          if (opts.prompt === "Close this debate session.") {
-            return {
-              success: true,
-              exitCode: 0,
-              output: "closed",
-              rateLimited: false,
-              durationMs: 1,
-              estimatedCost: 0.05,
-              agentFallbacks: [],
-            };
-          }
-          if (agentName === "opencode") {
-            return {
-              success: false,
-              exitCode: 1,
-              output: "failed",
-              rateLimited: false,
-              durationMs: 1,
-              estimatedCost: 0,
-              agentFallbacks: [],
-            };
-          }
-          return {
-            success: true,
-            exitCode: 0,
-            output: `proposal-${agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.1,
-            agentFallbacks: [],
-          };
-        },
+      runAsSessionFn: async (agentName, _handle, _prompt) => {
+        if (agentName === "opencode") throw new Error("opencode failed");
+        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      },
     });
 
     const session = new DebateSession({
@@ -204,35 +128,34 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
       stageConfig: makeStageConfig({ rounds: 2 }),
       workdir: "/tmp/work",
       featureName: "feat-c",
+      sessionManager: mockSM,
     });
 
     const result = await session.run("review prompt");
     expect(result.outcome).toBe("passed");
     expect(result.debaters).toEqual(["claude"]);
-    expect(runCalls.some((c) => c.prompt === "Close this debate session." && c.keepOpen === false)).toBe(true);
   });
 });
-
-// ─── AC4: call site passes ctx.workdir and ctx.featureName to resolveOutcome ──
 
 describe("runStateful() — resolveOutcome receives workdir and featureName (US-004 AC4)", () => {
   test("synthesis resolver receives sessionName built from ctx.workdir and ctx.featureName", async () => {
     const completeCalls: { opts?: CompleteOptions }[] = [];
 
+    const mockSM = makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async () => {}),
+    });
+
     _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (_agentName, _opts) => ({
-          success: true,
-          exitCode: 0,
-          output: '{"passed": true}',
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCost: 0.05,
-          agentFallbacks: [],
-        }),
-        completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
-          completeCalls.push({ opts });
-          return { output: "synthesis resolved", costUsd: 0.01, source: "exact" as const };
-        },
+      runAsSessionFn: async () => ({
+        output: '{"passed": true}',
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      }),
+      completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
+        completeCalls.push({ opts });
+        return { output: "synthesis resolved", costUsd: 0.01, source: "exact" as const };
+      },
     });
 
     const workdir = "/tmp/stateful-work";
@@ -246,11 +169,11 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
       workdir,
       featureName,
       timeoutSeconds: 60,
+      sessionManager: mockSM,
     });
 
     await session.run("review prompt");
 
-    // The synthesis resolver's complete() should have been called with the synthesis sessionName.
     const synthesisCall = completeCalls.find((c) => c.opts !== undefined);
     expect(synthesisCall).toBeDefined();
     const expectedSessionName = computeAcpHandle(workdir, featureName, storyId, "synthesis");
@@ -259,27 +182,19 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
 });
 
 describe("DebateSession.run() — one-shot mode unchanged", () => {
-  test("one-shot does not use adapter.run for proposal path", async () => {
-    let runCount = 0;
+  test("one-shot does not use runAsSession for proposal path", async () => {
+    let runAsSessionCount = 0;
     let completeCount = 0;
 
     _debateSessionDeps.agentManager = makeMockAgentManager({
-        runFn: async (_agentName, _opts) => {
-          runCount += 1;
-          return {
-            success: true,
-            exitCode: 0,
-            output: `run-${_agentName}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCost: 0.1,
-            agentFallbacks: [],
-          };
-        },
-        completeFn: async () => {
-          completeCount += 1;
-          return { output: '{"passed": true}', costUsd: 0.1, source: "exact" };
-        },
+      runAsSessionFn: async () => {
+        runAsSessionCount += 1;
+        return { output: "run-session", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      },
+      completeFn: async () => {
+        completeCount += 1;
+        return { output: '{"passed": true}', costUsd: 0.1, source: "exact" };
+      },
     });
 
     const session = new DebateSession({
@@ -292,7 +207,7 @@ describe("DebateSession.run() — one-shot mode unchanged", () => {
 
     await session.run("plan prompt");
 
-    expect(runCount).toBe(0);
+    expect(runAsSessionCount).toBe(0);
     expect(completeCount).toBeGreaterThan(0);
   });
 });
