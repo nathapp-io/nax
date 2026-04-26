@@ -154,6 +154,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         statusWriter: options.statusWriter,
         agentGetFn: options.agentGetFn,
         agentManager: options.agentManager,
+        runtime: options.runtime,
         acceptanceTestPaths,
       });
 

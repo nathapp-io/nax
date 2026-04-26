@@ -147,6 +147,7 @@ export async function executeUnified(
         hooks: ctx.hooks,
         agentGetFn: ctx.agentGetFn,
         agentManager: ctx.agentManager,
+        runtime: ctx.runtime,
       };
       await runPipeline(preRunPipeline, preRunCtx, ctx.eventEmitter);
     }

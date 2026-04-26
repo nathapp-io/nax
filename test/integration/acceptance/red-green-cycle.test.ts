@@ -10,9 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
 import fs from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { initLogger, resetLogger } from "../../../src/logger";
@@ -95,6 +93,21 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
   };
 }
 
+function makeDefaultCallOp(testCode?: string) {
+  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+    if (op.name === "acceptance-refine") {
+      const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+      return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+    }
+    if (op.name === "acceptance-generate") {
+      return {
+        testCode: testCode ?? 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("RED") });',
+      };
+    }
+    throw new Error(`unexpected op: ${op.name}`);
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Test lifecycle
 // ---------------------------------------------------------------------------
@@ -132,18 +145,17 @@ describe("RED to GREEN acceptance cycle", () => {
       'test("AC-1: third feature works", () => { throw new Error("NOT_IMPLEMENTED") });',
     ].join("\n");
 
-    // Mock LLM calls — no real Claude invocations
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({ testCode: generatedTestCode, criteria: [] });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp(generatedTestCode);
 
     let writtenPath = "";
     let writtenContent = "";
     _acceptanceSetupDeps.writeFile = async (p, content) => {
-      writtenPath = p;
-      writtenContent = content;
       await Bun.write(p, content);
+      if (p.endsWith(".nax-acceptance.test.ts")) {
+        writtenPath = p;
+        writtenContent = content;
+      }
     };
 
     // RED gate: tests fail before implementation
@@ -198,12 +210,9 @@ describe("RED to GREEN acceptance cycle", () => {
 
     // --- RED phase ---
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("placeholder", () => { throw new Error("RED") });',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp(
+      'import { test } from "bun:test"; test("placeholder", () => { throw new Error("RED") });',
+    );
     _acceptanceSetupDeps.writeFile = async (p, content) => {
       await Bun.write(p, content);
     };
@@ -247,8 +256,7 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
     // Pre-write a test file as if from a previous nax analyze run
     await Bun.write(testPath, 'import { test } from "bun:test"; test("existing", () => {});');
 
-    let refineCalled = false;
-    let generateCalled = false;
+    let callOpInvoked = false;
 
     // Compute matching fingerprint for the ACs in makeCtx
     const matchingFingerprint = computeACFingerprint([
@@ -268,13 +276,9 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => {
-      refineCalled = true;
-      return [];
-    };
-    _acceptanceSetupDeps.generate = async () => {
-      generateCalled = true;
-      return { testCode: "", criteria: [] };
+    _acceptanceSetupDeps.callOp = async () => {
+      callOpInvoked = true;
+      return {};
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     // RED gate still runs even with pre-existing file
@@ -284,8 +288,7 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
     const result = await acceptanceSetupStage.execute(ctx);
 
     // Generation skipped — file already exists with matching fingerprint
-    expect(refineCalled).toBe(false);
-    expect(generateCalled).toBe(false);
+    expect(callOpInvoked).toBe(false);
 
     // RED gate still runs and detects failures → continue
     expect(result.action).toBe("continue");
@@ -315,8 +318,9 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.refine = async () => [];
-    _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
+    _acceptanceSetupDeps.callOp = async () => {
+      return {};
+    };
     _acceptanceSetupDeps.writeFile = async () => {
       writeFileCalled = true;
     };
@@ -339,12 +343,9 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
 describe("edge case: already-passing tests trigger skip", () => {
   test("returns skip when RED gate finds all tests passing before implementation", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => { /* passes */ });',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp(
+      'import { test } from "bun:test"; test("AC-1", () => { /* passes */ });',
+    );
     _acceptanceSetupDeps.writeFile = async () => {};
     // All tests pass even before implementation — invalid RED
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 0, output: "3 passed" });
@@ -358,12 +359,9 @@ describe("edge case: already-passing tests trigger skip", () => {
 
   test("skip result includes a human-readable reason explaining the warning", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => {});',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp(
+      'import { test } from "bun:test"; test("AC-1", () => {});',
+    );
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 0, output: "1 passed" });
 
@@ -383,57 +381,61 @@ describe("edge case: already-passing tests trigger skip", () => {
 
 describe("_deps injection: no real LLM calls", () => {
   test("refine dep is called instead of making real LLM calls", async () => {
-    let refineDepsInvoked = false;
+    let callOpInvoked = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) => {
-      refineDepsInvoked = true;
-      return criteria.map((c) => ({ original: c, refined: `[mocked] ${c}`, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        callOpInvoked = true;
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: `[mocked] ${c}`, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return {
+          testCode: 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("RED") });',
+        };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("RED") });',
-      criteria: [],
-    });
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 failed" });
 
     await acceptanceSetupStage.execute(makeCtx(tmpDir));
 
-    // Confirms the injected dep was called (not the real LLM adapter)
-    expect(refineDepsInvoked).toBe(true);
+    // Confirms the injected callOp was called for refine (not the real LLM adapter)
+    expect(callOpInvoked).toBe(true);
   });
 
   test("generate dep is called instead of making real LLM calls", async () => {
-    let generateDepsInvoked = false;
+    let generateOpInvoked = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => {
-      generateDepsInvoked = true;
-      return {
-        testCode: 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("RED") });',
-        criteria: [],
-      };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        generateOpInvoked = true;
+        return {
+          testCode: 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("RED") });',
+        };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 failed" });
 
     await acceptanceSetupStage.execute(makeCtx(tmpDir));
 
-    expect(generateDepsInvoked).toBe(true);
+    expect(generateOpInvoked).toBe(true);
   });
 
   test("runTest dep controls RED gate without spawning a real process", async () => {
     let runTestDepsInvoked = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("RED") });',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async (_testPath, _workdir) => {
       runTestDepsInvoked = true;

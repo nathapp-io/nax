@@ -21,13 +21,17 @@
  */
 
 import path from "node:path";
-import { buildAcceptanceRunCommand } from "../../acceptance/generator";
+import { buildAcceptanceRunCommand, generateSkeletonTests } from "../../acceptance/generator";
 import { groupStoriesByPackage } from "../../acceptance/test-path";
-import type { RefinedCriterion } from "../../acceptance/types";
+import type { AcceptanceCriterion, RefinedCriterion } from "../../acceptance/types";
 import type { AgentAdapter } from "../../agents/types";
-import { type ModelDef, type NaxConfig, type ResolvedConfiguredModel, resolveConfiguredModel } from "../../config";
+import type { NaxConfig } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
+import { NaxError } from "../../errors";
 import { getSafeLogger } from "../../logger";
+import { acceptanceGenerateOp } from "../../operations/acceptance-generate";
+import { acceptanceRefineOp } from "../../operations/acceptance-refine";
+import { callOp as _callOp } from "../../operations/call";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -137,20 +141,33 @@ export const _acceptanceSetupDeps = {
     ]);
     return { exitCode, output: `${stdout}\n${stderr}` };
   },
-  refine: async (
-    _criteria: string[],
-    _context: import("../../acceptance/types").RefinementContext,
-  ): Promise<RefinedCriterion[]> => {
-    const { refineAcceptanceCriteria } = await import("../../acceptance/refinement");
-    return (await refineAcceptanceCriteria(_criteria, _context)).criteria;
-  },
-  generate: async (
-    _stories: import("../../prd/types").UserStory[],
-    _refined: RefinedCriterion[],
-    _options: import("../../acceptance/types").GenerateFromPRDOptions,
-  ): Promise<import("../../acceptance/types").AcceptanceTestResult> => {
-    const { generateFromPRD } = await import("../../acceptance/generator");
-    return generateFromPRD(_stories, _refined, _options);
+  callOp: async (
+    pipelineCtx: PipelineContext,
+    packageDir: string,
+    // biome-ignore lint/suspicious/noExplicitAny: generic operation dispatcher
+    op: import("../../operations/types").Operation<any, any, any>,
+    // biome-ignore lint/suspicious/noExplicitAny: generic operation dispatcher
+    input: any,
+    storyId?: string,
+    // biome-ignore lint/suspicious/noExplicitAny: generic operation dispatcher
+  ): Promise<any> => {
+    if (!pipelineCtx.runtime) {
+      throw new NaxError("runtime required for acceptance-setup callOp", "CALL_OP_NO_RUNTIME", {
+        stage: "acceptance-setup",
+      });
+    }
+    return _callOp(
+      {
+        runtime: pipelineCtx.runtime,
+        packageView: pipelineCtx.runtime.packages.resolve(packageDir),
+        packageDir,
+        featureName: pipelineCtx.prd.feature,
+        storyId,
+        agentName: pipelineCtx.agentManager?.getDefault() ?? "claude",
+      },
+      op,
+      input,
+    );
   },
 };
 
@@ -231,19 +248,7 @@ export const acceptanceSetupStage: PipelineStage = {
     if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
-      const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
-      let resolvedAcceptanceModel: ResolvedConfiguredModel | undefined;
-      try {
-        resolvedAcceptanceModel = resolveConfiguredModel(
-          ctx.rootConfig.models,
-          ctx.routing.agent ?? defaultAgent,
-          ctx.config.acceptance.model ?? "fast",
-          defaultAgent,
-        );
-      } catch {
-        resolvedAcceptanceModel = undefined;
-      }
-      // Refine criteria per-story (preserves storyId association for per-group filtering)
+      // Refine criteria per-story via callOp (preserves storyId association for per-group filtering)
       let allRefinedCriteria: RefinedCriterion[];
 
       if (ctx.config.acceptance.refinement) {
@@ -253,17 +258,15 @@ export const acceptanceSetupStage: PipelineStage = {
 
         for (let i = 0; i < nonFixStories.length; i++) {
           const story = nonFixStories[i];
-          const task = _acceptanceSetupDeps
-            .refine(story.acceptanceCriteria, {
-              storyId: story.id,
-              featureName: ctx.prd.feature,
-              workdir: ctx.workdir,
-              codebaseContext: "",
-              config: ctx.config,
-              testStrategy: ctx.config.acceptance.testStrategy,
-              testFramework: ctx.config.acceptance.testFramework,
-              agentManager: ctx.agentManager,
-            })
+          const task = (
+            _acceptanceSetupDeps.callOp(
+              ctx,
+              ctx.workdir,
+              acceptanceRefineOp,
+              { criteria: story.acceptanceCriteria, codebaseContext: "", storyId: story.id },
+              story.id,
+            ) as Promise<RefinedCriterion[]>
+          )
             .then((refined) => {
               results[i] = refined;
             })
@@ -292,7 +295,7 @@ export const acceptanceSetupStage: PipelineStage = {
 
       testableCount = allRefinedCriteria.filter((r) => r.testable).length;
 
-      // Generate one acceptance test file per workdir group
+      // Generate one acceptance test file per workdir group via callOp
       for (const group of groups) {
         const { testPath, packageDir } = group;
 
@@ -300,37 +303,55 @@ export const acceptanceSetupStage: PipelineStage = {
         const groupStoryIds = new Set(group.stories.map((s) => s.id));
         const groupRefined = allRefinedCriteria.filter((r) => groupStoryIds.has(r.storyId));
 
-        let modelDef: ModelDef;
-        if (resolvedAcceptanceModel) {
-          modelDef = resolvedAcceptanceModel.modelDef;
-        } else {
-          const selection = ctx.config.acceptance.model ?? "fast";
-          modelDef = {
-            provider: "unknown",
-            model: typeof selection === "string" ? selection : selection.model,
-          } as ModelDef;
-        }
+        const criteriaList = groupRefined.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
+        const frameworkOverrideLine = ctx.config.acceptance.testFramework
+          ? `\n[FRAMEWORK OVERRIDE: Use ${ctx.config.acceptance.testFramework} as the test framework regardless of what you detect.]`
+          : "";
 
-        const result = await _acceptanceSetupDeps.generate(group.stories, groupRefined, {
-          featureName: ctx.prd.feature,
-          workdir: packageDir,
-          featureDir: ctx.featureDir,
-          codebaseContext: "",
-          modelTier: resolvedAcceptanceModel?.modelTier ?? "fast",
-          modelDef,
-          config: ctx.config,
-          testStrategy: ctx.config.acceptance.testStrategy,
-          testFramework: ctx.config.acceptance.testFramework,
-          agentManager: ctx.agentManager ?? undefined,
+        const genResult = (await _acceptanceSetupDeps.callOp(ctx, packageDir, acceptanceGenerateOp, {
+          featureName: featureName ?? "",
+          criteriaList,
+          frameworkOverrideLine,
+          targetTestFilePath: testPath,
           ...("implementationContext" in ctx && ctx.implementationContext
             ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
             : {}),
           ...("previousFailure" in ctx && ctx.previousFailure
             ? { previousFailure: ctx.previousFailure as string }
             : {}),
-        });
+        })) as { testCode: string | null };
 
-        await _acceptanceSetupDeps.writeFile(testPath, result.testCode);
+        let testCode = genResult.testCode;
+        if (!testCode) {
+          const skeletonCriteria: AcceptanceCriterion[] = groupRefined.map((c, i) => ({
+            id: `AC-${i + 1}`,
+            text: c.refined,
+            lineNumber: i + 1,
+          }));
+          testCode = generateSkeletonTests(
+            featureName,
+            skeletonCriteria,
+            ctx.config.acceptance.testFramework,
+            language,
+          );
+        }
+        await _acceptanceSetupDeps.writeFile(testPath, testCode);
+      }
+
+      // Write acceptance-refined.json with the final criteria mapping (used by acceptance loop)
+      if (allRefinedCriteria.length > 0) {
+        const refinedJsonContent = JSON.stringify(
+          allRefinedCriteria.map((c, i) => ({
+            acId: `AC-${i + 1}`,
+            original: c.original,
+            refined: c.refined,
+            testable: c.testable,
+            storyId: c.storyId,
+          })),
+          null,
+          2,
+        );
+        await _acceptanceSetupDeps.writeFile(path.join(ctx.featureDir, "acceptance-refined.json"), refinedJsonContent);
       }
 
       // P2-B: Store acceptance metadata (centralized in featureDir)

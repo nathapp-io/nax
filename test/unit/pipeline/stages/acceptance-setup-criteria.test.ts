@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   acceptanceSetupStage,
   _acceptanceSetupDeps,
-  computeACFingerprint,
 } from "../../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
@@ -67,6 +66,17 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   };
 }
 
+function makeDefaultCallOp(testCode = 'test("AC-1", () => { throw new Error("red") })') {
+  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+    if (op.name === "acceptance-refine") {
+      const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+      return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+    }
+    if (op.name === "acceptance-generate") return { testCode };
+    throw new Error(`unexpected op: ${op.name}`);
+  };
+}
+
 let savedDeps: typeof _acceptanceSetupDeps;
 
 beforeEach(() => {
@@ -88,20 +98,19 @@ describe("acceptance-setup: criteria collection", () => {
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria, _ctx) => {
-      collectedCriteria.push(...criteria);
-      return criteria.map((c, i) => ({
-        original: c,
-        refined: `refined: ${c}`,
-        testable: true,
-        storyId: `US-00${i + 1}`,
-      }));
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        collectedCriteria.push(...criteria);
+        return criteria.map((c: string) => ({ original: c, refined: `refined: ${c}`, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return { testCode: 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx();
@@ -116,13 +125,9 @@ describe("acceptance-setup: criteria collection", () => {
   test("stores totalCriteria count in ctx.acceptanceSetup", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c, i) => ({ original: c, refined: c, testable: true, storyId: `US-00${i + 1}` }));
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx();
@@ -134,47 +139,55 @@ describe("acceptance-setup: criteria collection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-2: acceptance-setup calls refinement and generation modules
+// AC-2: acceptance-setup stage calls refinement and generation via callOp
 // ---------------------------------------------------------------------------
 
 describe("acceptance-setup: calls refinement and generation", () => {
-  test("calls refine with collected criteria when acceptance.refinement is true", async () => {
-    let refineCalled = false;
+  test("calls refine op with collected criteria when acceptance.refinement is true", async () => {
+    let refineOpCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) => {
-      refineCalled = true;
-      return criteria.map((c) => ({ original: c, refined: `refined: ${c}`, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        refineOpCalled = true;
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: `refined: ${c}`, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return { testCode: 'test("AC-1", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC-1", () => { throw new Error("red") })',
-      criteria: [],
-    });
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
-    expect(refineCalled).toBe(true);
+    expect(refineOpCalled).toBe(true);
   });
 
-  test("skips refine and uses raw criteria when acceptance.refinement is false", async () => {
+  test("skips refine op and uses raw criteria when acceptance.refinement is false", async () => {
     let refineCalled = false;
     let generateCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) => {
-      refineCalled = true;
-      return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    };
-    _acceptanceSetupDeps.generate = async (_stories, refined) => {
-      generateCalled = true;
-      expect(refined[0].refined).toBe(refined[0].original);
-      return { testCode: 'test("AC-1", () => {})', criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        refineCalled = true;
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        generateCalled = true;
+        return { testCode: 'test("AC-1", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx({
@@ -189,41 +202,41 @@ describe("acceptance-setup: calls refinement and generation", () => {
     expect(generateCalled).toBe(true);
   });
 
-  test("calls generate with PRD stories and refined criteria", async () => {
-    let generateArgs: { stories: unknown[]; refined: unknown[] } | null = null;
+  test("calls generate op with refined criteria (criteriaList contains R:-prefixed entries)", async () => {
+    let capturedCriteriaList: string | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: `R:${c}`, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async (stories, refined) => {
-      generateArgs = { stories, refined };
-      return { testCode: 'test("AC-1", () => { throw new Error("") })', criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: `R:${c}`, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        capturedCriteriaList = (input as { criteriaList: string }).criteriaList;
+        return { testCode: 'test("AC-1", () => { throw new Error("") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect(generateArgs).not.toBeNull();
-    expect(generateArgs!.stories.length).toBe(2);
-    expect(generateArgs!.refined.length).toBe(3);
-    expect((generateArgs!.refined[0] as any).refined).toStartWith("R:");
+    expect(capturedCriteriaList).not.toBeNull();
+    const lines = capturedCriteriaList!.split("\n");
+    expect(lines.length).toBe(3);
+    expect(lines.every((line) => line.includes("R:"))).toBe(true);
   });
 
-  test("passes acceptance.model tier into generator options", async () => {
-    let receivedModelTier: string | undefined;
-
+  test("stage runs successfully with 'balanced' model tier (model is internalized to callOp)", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
-    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
-      receivedModelTier = options?.modelTier;
-      return { testCode: 'test("AC-1", () => { throw new Error("") })', criteria: [] };
-    };
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx({
@@ -233,8 +246,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
       } as any,
     });
     await acceptanceSetupStage.execute(ctx);
-
-    expect(receivedModelTier).toBe("balanced");
+    expect((ctx as any).acceptanceSetup).toBeDefined();
   });
 });
 
@@ -257,16 +269,21 @@ describe("acceptance-setup: decomposed story exclusion", () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
   });
 
-  test("decomposed story is not passed to refine", async () => {
+  test("decomposed story is not passed to refine op", async () => {
     const refinedStoryIds: string[] = [];
-    _acceptanceSetupDeps.refine = async (criteria, context) => {
-      refinedStoryIds.push(context.storyId);
-      return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        refinedStoryIds.push(storyId);
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") return { testCode: 'test("x", () => {})' };
+      throw new Error(`unexpected op: ${op.name}`);
     };
-    _acceptanceSetupDeps.generate = async () => ({ testCode: 'test("x", () => {})', criteria: [] });
 
     await acceptanceSetupStage.execute(makeDecomposedCtx());
 
@@ -276,10 +293,14 @@ describe("acceptance-setup: decomposed story exclusion", () => {
   });
 
   test("decomposed story ACs are excluded from the fingerprint", async () => {
-    _acceptanceSetupDeps.refine = async (criteria, context) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
-    _acceptanceSetupDeps.generate = async () => ({ testCode: 'test("x", () => {})', criteria: [] });
-    _acceptanceSetupDeps.writeMeta = async (_path, _meta) => {};
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") return { testCode: 'test("x", () => {})' };
+      throw new Error(`unexpected op: ${op.name}`);
+    };
 
     await acceptanceSetupStage.execute(makeDecomposedCtx());
 
@@ -290,20 +311,26 @@ describe("acceptance-setup: decomposed story exclusion", () => {
     expect(childOnlyCount).toBe(2);
   });
 
-  test("decomposed story is not passed to generate", async () => {
-    let generatedStories: { id: string }[] = [];
-    _acceptanceSetupDeps.refine = async (criteria, context) =>
-      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
-    _acceptanceSetupDeps.generate = async (stories) => {
-      generatedStories = stories as { id: string }[];
-      return { testCode: 'test("x", () => {})', criteria: [] };
+  test("decomposed story criteria are not included in the generate criteriaList", async () => {
+    let capturedCriteriaList: string | null = null;
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        capturedCriteriaList = (input as { criteriaList: string }).criteriaList;
+        return { testCode: 'test("x", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
 
     await acceptanceSetupStage.execute(makeDecomposedCtx());
 
-    expect(generatedStories.map((s) => s.id)).not.toContain("US-PARENT");
-    expect(generatedStories.map((s) => s.id)).toContain("US-CHILD-A");
-    expect(generatedStories.map((s) => s.id)).toContain("US-CHILD-B");
+    expect(capturedCriteriaList).not.toBeNull();
+    expect(capturedCriteriaList!).not.toContain("parent AC-1");
+    expect(capturedCriteriaList!).toContain("child AC-1");
+    expect(capturedCriteriaList!).toContain("child AC-2");
   });
 });
 
@@ -336,10 +363,6 @@ describe("acceptance-setup: refinement concurrency", () => {
   function stubDeps() {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.generate = async () => ({
-      testCode: 'test("AC", () => { throw new Error("red") })',
-      criteria: [],
-    });
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
@@ -349,12 +372,19 @@ describe("acceptance-setup: refinement concurrency", () => {
     let concurrent = 0;
     let peakConcurrent = 0;
     stubDeps();
-    _acceptanceSetupDeps.refine = async (criteria, opts) => {
-      concurrent++;
-      peakConcurrent = Math.max(peakConcurrent, concurrent);
-      await Promise.resolve();
-      concurrent--;
-      return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: opts.storyId }));
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        concurrent++;
+        peakConcurrent = Math.max(peakConcurrent, concurrent);
+        await Promise.resolve();
+        concurrent--;
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return { testCode: 'test("AC", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
 
     await acceptanceSetupStage.execute(makeMultiStoryCtx(5, 2));
@@ -366,17 +396,21 @@ describe("acceptance-setup: refinement concurrency", () => {
   test("preserves story order regardless of completion order", async () => {
     stubDeps();
     const resolvers = new Map<string, () => void>();
-    _acceptanceSetupDeps.refine = async (criteria, opts) => {
-      await new Promise<void>((resolve) => {
-        resolvers.set(opts.storyId, resolve);
-      });
-      return criteria.map((c) => ({ original: c, refined: `R:${c}`, testable: true, storyId: opts.storyId }));
-    };
+    let capturedCriteriaList: string | null = null;
 
-    let capturedRefined: any[] = [];
-    _acceptanceSetupDeps.generate = async (_stories, refined) => {
-      capturedRefined = refined;
-      return { testCode: 'test("AC", () => { throw new Error("red") })', criteria: [] };
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        await new Promise<void>((resolve) => {
+          resolvers.set(storyId, resolve);
+        });
+        return criteria.map((c: string) => ({ original: c, refined: `R:${c}`, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        capturedCriteriaList = (input as { criteriaList: string }).criteriaList;
+        return { testCode: 'test("AC", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
 
     const runPromise = acceptanceSetupStage.execute(makeMultiStoryCtx(3, 3));
@@ -386,7 +420,13 @@ describe("acceptance-setup: refinement concurrency", () => {
     resolvers.get("US-001")?.();
     await runPromise;
 
-    expect(capturedRefined.map((r: any) => r.storyId)).toEqual(["US-001", "US-002", "US-003"]);
+    expect(capturedCriteriaList).not.toBeNull();
+    const lines = capturedCriteriaList!.split("\n");
+    // Order must match story order (US-001, US-002, US-003) despite resolving in reverse.
+    // Each story's unique criterion number appears in the R: prefix.
+    expect(lines[0]).toContain("R:AC-1:");
+    expect(lines[1]).toContain("R:AC-2:");
+    expect(lines[2]).toContain("R:AC-3:");
   });
 
   test("DEFAULT_CONFIG.acceptance.refinementConcurrency is 3", () => {
@@ -394,15 +434,22 @@ describe("acceptance-setup: refinement concurrency", () => {
   });
 
   test("single story works without concurrency edge case", async () => {
-    let refineCalled = false;
+    let refineOpCalled = false;
     stubDeps();
-    _acceptanceSetupDeps.refine = async (criteria, opts) => {
-      refineCalled = true;
-      return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: opts.storyId }));
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        refineOpCalled = true;
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return { testCode: 'test("AC", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
     };
 
     await acceptanceSetupStage.execute(makeMultiStoryCtx(1, 2));
 
-    expect(refineCalled).toBe(true);
+    expect(refineOpCalled).toBe(true);
   });
 });

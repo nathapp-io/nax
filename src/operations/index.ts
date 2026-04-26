@@ -3,6 +3,14 @@ export { buildHopCallback, _buildHopCallbackDeps } from "./build-hop-callback";
 export type { BuildHopCallbackContext } from "./build-hop-callback";
 export { classifyRouteOp } from "./classify-route";
 export type { ClassifyRouteInput, ClassifyRouteOutput } from "./classify-route";
+export { acceptanceGenerateOp } from "./acceptance-generate";
+export type { AcceptanceGenerateInput, AcceptanceGenerateOutput } from "./acceptance-generate";
+export { acceptanceRefineOp } from "./acceptance-refine";
+export type { AcceptanceRefineInput, AcceptanceRefineOutput } from "./acceptance-refine";
+export { acceptanceDiagnoseOp } from "./acceptance-diagnose";
+export type { AcceptanceDiagnoseInput, AcceptanceDiagnoseOutput } from "./acceptance-diagnose";
+export { acceptanceFixSourceOp, acceptanceFixTestOp } from "./acceptance-fix";
+export type { AcceptanceFixSourceInput, AcceptanceFixTestInput, AcceptanceFixOutput } from "./acceptance-fix";
 export type {
   BuildContext,
   CallContext,

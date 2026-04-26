@@ -59,6 +59,8 @@ export interface RunnerExecutionOptions {
   agentManager?: import("../agents").IAgentManager;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
+  /** NaxRuntime created in setup phase — threaded into preRunCtx for callOp support. */
+  runtime?: import("../runtime").NaxRuntime;
 }
 
 /**
@@ -173,6 +175,7 @@ export async function runExecutionPhase(
       interactionChain: options.interactionChain,
       agentManager: options.agentManager,
       pluginProviderCache: options.pluginProviderCache,
+      runtime: options.runtime,
       batchPlan,
     },
     prd,
