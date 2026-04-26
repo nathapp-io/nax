@@ -286,10 +286,10 @@ export interface ISessionManager {
    * Callers don't need to touch transition/bindHandle for sessions that go
    * through this path.
    *
-   * Every ISessionRunner implementation MUST use this for each session it
-   * touches — that is how cross-cutting concerns (state transitions, token
-   * pass-through, audit correlation) stay in one place instead of being
-   * re-implemented per call site.
+   * Every caller MUST use this for each session it touches — that is how
+   * cross-cutting concerns (state transitions, token pass-through, audit
+   * correlation) stay in one place instead of being re-implemented per call
+   * site.
    *
    * Throws NaxError SESSION_NOT_FOUND if id is unknown. Propagates runner
    * errors verbatim AFTER transitioning the session to FAILED.

@@ -52,7 +52,7 @@ describe("auditMiddleware", () => {
     expect(recorded[0].featureName).toBe("feat-x");
   });
 
-  test("after() records ACP session correlation from AgentResult", async () => {
+  test("after() records ACP session correlation from MiddlewareContext.sessionHandle", async () => {
     const recorded: PromptAuditEntry[] = [];
     const aud = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
     const mw = auditMiddleware(aud, "r-001");
@@ -63,11 +63,12 @@ describe("auditMiddleware", () => {
       config: DEFAULT_CONFIG,
       resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
       storyId: "s-1", stage: "run",
+      sessionHandle: { id: "nax-abc-feat-x", agentName: "claude" },
     };
     const result = {
       success: true, output: "done",
       protocolIds: { recordId: "rec-1", sessionId: "sess-1" },
-      sessionMetadata: { sessionName: "nax-abc-feat-x", turn: 3, resumed: true },
+      internalRoundTrips: 3,
     };
     await mw.after!(ctx, result, 200);
     expect(recorded).toHaveLength(1);
@@ -75,7 +76,6 @@ describe("auditMiddleware", () => {
     expect(recorded[0].recordId).toBe("rec-1");
     expect(recorded[0].sessionId).toBe("sess-1");
     expect(recorded[0].turn).toBe(3);
-    expect(recorded[0].resumed).toBe(true);
   });
 
   test("after() is a no-op when prompt and request are both null", async () => {

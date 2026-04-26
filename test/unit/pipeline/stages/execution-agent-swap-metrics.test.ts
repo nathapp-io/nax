@@ -10,14 +10,14 @@
  * rather than the inline Phase 5.5 loop. Tests use a mock agentManager.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/execution";
-import { _singleSessionRunnerDeps } from "../../../../src/session/runners/single-session-runner";
+import { _buildHopCallbackDeps } from "../../../../src/operations/build-hop-callback";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { ContextBundle } from "../../../../src/context/engine/types";
 import type { IAgentManager, AgentRunRequest, AgentRunOutcome } from "../../../../src/agents/manager-types";
-import { makeSparseNaxConfig } from "../../../helpers";
+import { makeSparseNaxConfig, makeSessionManager } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -120,13 +120,15 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 const origGetAgent = _executionDeps.getAgent;
 const origValidate = _executionDeps.validateAgentForTier;
 const origDetect = _executionDeps.detectMergeConflict;
-const origWriteRebuildManifest = _singleSessionRunnerDeps.writeRebuildManifest;
+const origWriteRebuildManifest = _buildHopCallbackDeps.writeRebuildManifest;
+const origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
 
 afterEach(() => {
   _executionDeps.getAgent = origGetAgent;
   _executionDeps.validateAgentForTier = origValidate;
   _executionDeps.detectMergeConflict = origDetect;
-  _singleSessionRunnerDeps.writeRebuildManifest = origWriteRebuildManifest;
+  _buildHopCallbackDeps.writeRebuildManifest = origWriteRebuildManifest;
+  _buildHopCallbackDeps.rebuildForAgent = origRebuildForAgent;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,7 +283,7 @@ describe("execution stage — AC-41 fallback observability", () => {
     _executionDeps.detectMergeConflict = () => false;
 
     const writes: Array<Record<string, unknown>> = [];
-    _singleSessionRunnerDeps.writeRebuildManifest = async (_projectDir, _featureId, _storyId, entry) => {
+    _buildHopCallbackDeps.writeRebuildManifest = async (_projectDir, _featureId, _storyId, entry) => {
       writes.push(entry as unknown as Record<string, unknown>);
     };
 
@@ -303,7 +305,10 @@ describe("execution stage — AC-41 fallback observability", () => {
     } as ContextBundle;
 
     // Override rebuildForAgent to return the bundle with rebuildInfo
-    _singleSessionRunnerDeps.rebuildForAgent = () => rebuildBundle;
+    _buildHopCallbackDeps.rebuildForAgent = () => rebuildBundle;
+
+    // sessionManager provides openSession/closeSession for buildHopCallback
+    const sessionManager = makeSessionManager();
 
     // Manager delegates to executeHop for a swap hop (failure is set)
     const swapFallbacks = [
@@ -318,7 +323,13 @@ describe("execution stage — AC-41 fallback observability", () => {
         costUsd: 0,
       },
     ];
-    const manager = makeAgentManager({ fallbacks: swapFallbacks });
+    const manager = Object.assign(makeAgentManager({ fallbacks: swapFallbacks }), {
+      runAsSession: mock(async () => ({
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })),
+    });
     manager.runWithFallback = async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
       if (req.executeHop) {
         const failure = { category: "availability" as const, outcome: "fail-quota" as const, message: "quota", retriable: false };
@@ -336,7 +347,7 @@ describe("execution stage — AC-41 fallback observability", () => {
         deriveSessionName: () => "nax-test-session",
       }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
 
-    const ctx = makeCtx({ projectDir: "/repo", agentManager: manager });
+    const ctx = makeCtx({ projectDir: "/repo", agentManager: manager, sessionManager });
     await executionStage.execute(ctx);
     expect(writes).toHaveLength(1);
     expect(writes[0]?.requestId).toBe("req-rebuild");

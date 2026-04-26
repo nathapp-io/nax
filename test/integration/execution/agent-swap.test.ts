@@ -17,24 +17,29 @@ import type { AdapterFailure, ContextBundle, ContextProviderResult, IContextProv
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import { AgentManager } from "../../../src/agents/manager";
+
+import { _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
 import { executionStage, _executionDeps } from "../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { AgentAdapter } from "../../../src/agents/types";
 import type { AgentRegistry } from "../../../src/agents/registry";
 import { _gitDeps } from "../../../src/utils/git";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 // Saved deps for restoration
 const origGetAgent = _executionDeps.getAgent;
 const origValidateAgent = _executionDeps.validateAgentForTier;
 const origDetectMerge = _executionDeps.detectMergeConflict;
 const origGitSpawn = _gitDeps.spawn;
+const origWriteRebuildManifest = _buildHopCallbackDeps.writeRebuildManifest;
 
 afterEach(() => {
   _executionDeps.getAgent = origGetAgent;
   _executionDeps.validateAgentForTier = origValidateAgent;
   _executionDeps.detectMergeConflict = origDetectMerge;
   _gitDeps.spawn = origGitSpawn;
+  _buildHopCallbackDeps.writeRebuildManifest = origWriteRebuildManifest;
 });
 
 // Helpers
@@ -222,12 +227,33 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
 
   test("rebuilt bundle carries rebuildInfo with correct agents and failure", async () => {
     const primaryAgent = makeFailingAgent("claude");
-    const swapAgent = makeSucceedingAgent("codex");
     const config = makeConfig(true);
     const ctx = makeCtx(config, bundle);
 
-    _executionDeps.getAgent = mock((name: string) => (name === "codex" ? swapAgent : primaryAgent));
-    ctx.agentGetFn = (name: string) => (name === "codex" ? swapAgent : primaryAgent) as AgentAdapter;
+    // Phase C: bundle rebuild runs inside buildHopCallback which requires sessionManager +
+    // runAsSession. Mock runWithFallback to drive executeHop directly with QUOTA_FAILURE.
+    ctx.sessionManager = makeSessionManager();
+    _buildHopCallbackDeps.writeRebuildManifest = mock(async () => {});
+    ctx.agentManager = makeMockAgentManager({
+      runAsSessionFn: async () => ({
+        output: "done",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 1,
+      }),
+      runWithFallbackFn: async (req) => {
+        if (req.executeHop) {
+          const { result } = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+          return {
+            result: { ...result, agentFallbacks: [] },
+            fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
+          };
+        }
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
+
+    _executionDeps.getAgent = mock((_name: string) => primaryAgent);
+    ctx.agentGetFn = (_name: string) => primaryAgent as AgentAdapter;
 
     await executionStage.execute(ctx);
 
@@ -241,12 +267,32 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
 
   test("rebuilt bundle contains a failure-note chunk", async () => {
     const primaryAgent = makeFailingAgent("claude");
-    const swapAgent = makeSucceedingAgent("codex");
     const config = makeConfig(true);
     const ctx = makeCtx(config, bundle);
 
-    _executionDeps.getAgent = mock((name: string) => (name === "codex" ? swapAgent : primaryAgent));
-    ctx.agentGetFn = (name: string) => (name === "codex" ? swapAgent : primaryAgent) as AgentAdapter;
+    // Phase C: bundle rebuild runs inside buildHopCallback — same setup as the rebuildInfo test.
+    ctx.sessionManager = makeSessionManager();
+    _buildHopCallbackDeps.writeRebuildManifest = mock(async () => {});
+    ctx.agentManager = makeMockAgentManager({
+      runAsSessionFn: async () => ({
+        output: "done",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 1,
+      }),
+      runWithFallbackFn: async (req) => {
+        if (req.executeHop) {
+          const { result } = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+          return {
+            result: { ...result, agentFallbacks: [] },
+            fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
+          };
+        }
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
+
+    _executionDeps.getAgent = mock((_name: string) => primaryAgent);
+    ctx.agentGetFn = (_name: string) => primaryAgent as AgentAdapter;
 
     await executionStage.execute(ctx);
 
@@ -376,18 +422,36 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
 
   test("swap retry prompt includes rebuilt fallback context", async () => {
     const primaryAgent = makeFailingAgent("claude");
-    const swapAgent = makeSucceedingAgent("codex");
     const config = makeConfig(true);
     const ctx = makeCtx(config, bundle);
 
-    _executionDeps.getAgent = mock((name: string) => (name === "codex" ? swapAgent : primaryAgent));
-    ctx.agentGetFn = (name: string) => (name === "codex" ? swapAgent : primaryAgent) as AgentAdapter;
+    // Phase C: prompt is rebuilt inside buildHopCallback and written to ctx.prompt on success.
+    // The swap agent runs via runAsSession, not adapter.run(), so check ctx.prompt instead.
+    ctx.sessionManager = makeSessionManager();
+    _buildHopCallbackDeps.writeRebuildManifest = mock(async () => {});
+    ctx.agentManager = makeMockAgentManager({
+      runAsSessionFn: async () => ({
+        output: "done",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 1,
+      }),
+      runWithFallbackFn: async (req) => {
+        if (req.executeHop) {
+          const { result } = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+          return {
+            result: { ...result, agentFallbacks: [] },
+            fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
+          };
+        }
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
+
+    _executionDeps.getAgent = mock((_name: string) => primaryAgent);
+    ctx.agentGetFn = (_name: string) => primaryAgent as AgentAdapter;
 
     await executionStage.execute(ctx);
 
-    const swapRunCall = (swapAgent.run as ReturnType<typeof mock>).mock.calls[0]?.[0] as
-      | { prompt?: string }
-      | undefined;
-    expect(swapRunCall?.prompt).toContain("Agent swap (availability fallback)");
+    expect(ctx.prompt).toContain("Agent swap (availability fallback)");
   });
 });

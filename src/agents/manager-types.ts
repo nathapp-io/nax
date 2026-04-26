@@ -85,6 +85,10 @@ export interface RunAsSessionOpts {
   storyId?: string;
   pipelineStage?: import("../config/permissions").PipelineStage;
   signal?: AbortSignal;
+  /** Mid-turn interaction callback (context-tool calls, agent questions). */
+  interactionHandler?: import("./interaction-handler").InteractionHandler;
+  /** Max interaction round-trips per turn (default: 10). */
+  maxTurns?: number;
   /** Context-engine pull tools to expose during this turn. */
   contextPullTools?: import("../context/engine").ToolDescriptor[];
   /** Server-side runtime for resolving context-engine pull tool calls. */
@@ -152,7 +156,7 @@ export interface IAgentManager {
    * Long-running session call with automatic agent-swap fallback.
    * Delegates to runWithFallback and surfaces AgentFallbackRecord[] via
    * result.agentFallbacks. This is the method SessionManager.runInSession
-   * and ISessionRunner implementations call — never adapter.run() directly.
+   * This is the method SessionManager.runInSession calls — never adapter.run() directly.
    */
   run(request: AgentRunRequest): Promise<AgentResult>;
 

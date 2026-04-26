@@ -57,7 +57,7 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
 export function buildHopCallback(
   ctx: BuildHopCallbackContext,
   sessionId: string | undefined,
-  initialOptions: AgentRunOptions,
+  _initialOptions: AgentRunOptions,
 ): NonNullable<AgentRunRequest["executeHop"]> {
   const {
     sessionManager,
@@ -74,8 +74,6 @@ export function buildHopCallback(
   } = ctx;
 
   const stage = pipelineStage ?? "run";
-  // initialOptions carries primary hop fields; reserved for Phase D expansion.
-  void initialOptions;
 
   return async (
     agentName,
@@ -169,6 +167,12 @@ export function buildHopCallback(
           rateLimited: false,
           durationMs: 0,
           estimatedCost: 0,
+          adapterFailure: {
+            category: "availability",
+            outcome: "fail-adapter-error",
+            retriable: false,
+            message: String(err).slice(0, 500),
+          },
         },
         bundle: workingBundle,
         prompt,

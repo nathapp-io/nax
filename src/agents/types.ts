@@ -73,18 +73,6 @@ export interface AgentResult {
    * with no swaps. Undefined when the result does not go through AgentManager.
    */
   agentFallbacks?: import("./manager-types").AgentFallbackRecord[];
-  /**
-   * ACP session correlation metadata for audit/debug.
-   * Populated by the ACP adapter on every run(); absent for CLI adapter results.
-   */
-  sessionMetadata?: {
-    /** Derived ACP session handle (stable across reconnects). */
-    sessionName?: string;
-    /** Number of interaction turns executed. */
-    turn?: number;
-    /** Whether the run resumed a previously open session. */
-    resumed?: boolean;
-  };
 }
 
 /**

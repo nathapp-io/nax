@@ -806,8 +806,6 @@ export class AcpAgentAdapter implements AgentAdapter {
     const rawTokenUsage = turnResult?.tokenUsage;
     const tokenUsage =
       rawTokenUsage && (rawTokenUsage.inputTokens > 0 || rawTokenUsage.outputTokens > 0) ? rawTokenUsage : undefined;
-    const turnCount = turnResult?.internalRoundTrips ?? 1;
-
     const adapterFailure: AdapterFailure | undefined = success
       ? undefined
       : isSessionError
@@ -836,7 +834,6 @@ export class AcpAgentAdapter implements AgentAdapter {
       tokenUsage,
       protocolIds: impl.protocolIds,
       adapterFailure,
-      sessionMetadata: { sessionName, turn: turnCount, resumed: impl._resumed },
     };
   }
 

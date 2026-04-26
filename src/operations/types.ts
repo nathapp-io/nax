@@ -1,4 +1,3 @@
-import type { AgentResult } from "../agents/types";
 import type { ConfigSelector, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import type { PipelineStage } from "../config/permissions";
@@ -16,6 +15,7 @@ export interface CallContext {
   readonly packageView: PackageView;
   readonly packageDir: string;
   readonly storyId?: string;
+  readonly featureName?: string;
   readonly agentName: string;
   readonly sessionOverride?: {
     readonly role?: SessionRole;
@@ -62,19 +62,3 @@ export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
 }
 
 export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;
-
-export interface SessionRunnerContext {
-  readonly runtime: NaxRuntime;
-  readonly agentName: string;
-  readonly packageDir: string;
-  readonly storyId?: string;
-  readonly prompt: string;
-  readonly op: RunOperation<unknown, unknown, unknown>;
-  readonly sessionOverride?: CallContext["sessionOverride"];
-  readonly noFallback?: boolean;
-}
-
-export interface SessionRunnerOutcome {
-  readonly primaryResult: AgentResult;
-  readonly fallbacks: readonly AgentResult[];
-}

@@ -2,9 +2,9 @@ import { describe, test, expect, mock } from "bun:test";
 import { callOp } from "../../../src/operations/call";
 import type { CompleteOperation, RunOperation } from "../../../src/operations/types";
 import { pickSelector } from "../../../src/config";
-import { makeAgentAdapter, makeTestRuntime, makeMockAgentManager } from "../../helpers";
+import { makeTestRuntime, makeMockAgentManager, makeSessionManager } from "../../helpers";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import type { AgentResult, CompleteResult } from "../../../src/agents/types";
+import type { CompleteResult } from "../../../src/agents/types";
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -54,17 +54,17 @@ describe("callOp — kind:complete", () => {
 });
 
 describe("callOp — kind:run", () => {
-  test("pins the session run to ctx.agentName via agentManager.runAs", async () => {
-    const runResult: AgentResult = {
-      success: true,
-      exitCode: 0,
+  test("calls sessionManager.runInSession (phase-B form) with session name and ctx.agentName", async () => {
+    const runInSessionMock = mock(async () => ({
       output: "ran pinned",
-      rateLimited: false,
-      durationMs: 1,
-      estimatedCost: 0,
-    };
-    const agentManager = makeMockAgentManager({ runAsFn: async () => runResult });
-    const runtime = makeTestRuntime({ agentManager });
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      internalRoundTrips: 0,
+    }));
+    // Object.assign mutates the base mock and overrides runInSession without
+    // hitting the overloaded-type incompatibility at the Partial<ISessionManager> boundary.
+    const sessionManager = Object.assign(makeSessionManager(), { runInSession: runInSessionMock });
+    const agentManager = makeMockAgentManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const result = await callOp(
       {
@@ -78,38 +78,40 @@ describe("callOp — kind:run", () => {
       { text: "hello world" },
     );
 
-    expect(agentManager.runAs).toHaveBeenCalledTimes(1);
-    expect(agentManager.runAs).toHaveBeenCalledWith("opencode", expect.any(Object));
+    expect(runInSessionMock).toHaveBeenCalledTimes(1);
+    expect(runInSessionMock).toHaveBeenCalledWith(
+      "nax-00000000",
+      expect.any(String),
+      expect.objectContaining({ agentName: "opencode" }),
+    );
     expect(result).toBe("ran pinned");
   });
 
-  test("noFallback runs the requested adapter directly instead of agentManager.runAs", async () => {
-    const adapterRun = mock(async () => ({
-      success: true,
-      exitCode: 0,
-      output: "direct adapter",
-      rateLimited: false,
-      durationMs: 1,
-      estimatedCost: 0,
-    }));
-    const adapter = makeAgentAdapter({ name: "opencode", run: adapterRun });
-    const agentManager = makeMockAgentManager({ getAgentFn: (name) => (name === "opencode" ? adapter : undefined) });
-    const runtime = makeTestRuntime({ agentManager });
+  test("throws CALL_OP_NO_OUTPUT when session returns no output", async () => {
+    // Default makeSessionManager() stub returns output: "" — the empty string
+    // triggers callOp's no-output guard.
+    const sessionManager = makeSessionManager();
+    const agentManager = makeMockAgentManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
 
-    const result = await callOp(
-      {
-        runtime,
-        packageView: runtime.packages.repo(),
-        packageDir: "/tmp",
-        agentName: "opencode",
-        storyId: "US-001",
-      },
-      { ...runEchoOp, noFallback: true },
-      { text: "hello world" },
-    );
+    let thrown: Error | null = null;
+    try {
+      await callOp(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp",
+          agentName: "opencode",
+          storyId: "US-001",
+        },
+        runEchoOp,
+        { text: "hello world" },
+      );
+    } catch (err) {
+      thrown = err as Error;
+    }
 
-    expect(agentManager.runAs).not.toHaveBeenCalled();
-    expect(adapterRun).toHaveBeenCalledTimes(1);
-    expect(result).toBe("direct adapter");
+    expect(thrown).not.toBeNull();
+    expect(thrown?.message).toContain("agent returned no output");
   });
 });

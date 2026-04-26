@@ -9,6 +9,4 @@ export type {
   CompleteOperation,
   Operation,
   RunOperation,
-  SessionRunnerContext,
-  SessionRunnerOutcome,
 } from "./types";

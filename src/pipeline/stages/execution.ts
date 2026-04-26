@@ -195,6 +195,8 @@ export const executionStage: PipelineStage = {
     let finalBundle: ContextBundle | undefined = ctx.contextBundle;
     let finalPrompt: string | undefined = baseRunOptions.prompt;
 
+    // Both must be present: sessionManager provides the session handle;
+    // agentManager.runAsSession dispatches prompts into it. Neither alone is sufficient.
     const hopCallback =
       ctx.sessionManager && ctx.agentManager
         ? buildHopCallback(
