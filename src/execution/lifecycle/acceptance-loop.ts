@@ -59,6 +59,8 @@ export interface AcceptanceLoopContext {
   agentGetFn?: AgentGetFn;
   /** Per-run AgentManager — used for diagnosis and fix execution */
   agentManager?: import("../../agents").IAgentManager;
+  /** NaxRuntime — used by callOp in acceptance fix/diagnose operations */
+  runtime?: import("../../runtime").NaxRuntime;
   /** Pre-resolved .naxignore matcher cache shared across run stages */
   naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
@@ -241,9 +243,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       .filter((s) => !s.id.startsWith("US-FIX-"))
       .flatMap((s) => s.acceptanceCriteria).length;
 
-    const agentManager = ctx.agentManager;
-    if (!agentManager) {
-      logger?.error("acceptance", "AgentManager not found for diagnosis", { storyId: firstStory?.id });
+    if (!ctx.runtime) {
+      logger?.error("acceptance", "Runtime not found for diagnosis", { storyId: firstStory?.id });
       return buildResult(
         false,
         prd,
@@ -264,7 +265,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
     const diagnosis = await resolveAcceptanceDiagnosis({
-      agentManager,
+      ctx,
       failures,
       totalACs,
       strategy,
@@ -272,9 +273,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       diagnosisOpts: {
         testOutput: failures.testOutput,
         testFileContent,
-        config: ctx.config,
         workdir: ctx.workdir,
-        featureName: ctx.feature,
         storyId: firstStory?.id,
       },
       previousFailure,
