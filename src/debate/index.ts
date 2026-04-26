@@ -3,6 +3,8 @@
  */
 
 export { DebateSession } from "./session";
+export { DebateRunner } from "./runner";
+export type { DebateRunnerOptions } from "./runner";
 export { _debateSessionDeps, resolveDebaterModel } from "./session-helpers";
 export type { DebateSessionOptions, ResolverContextInput, ResolveOutcome } from "./session-helpers";
 export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";

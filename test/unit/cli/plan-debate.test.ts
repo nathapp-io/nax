@@ -188,7 +188,7 @@ const origMkdirp = _planDeps.mkdirp;
 const origExistsSync = _planDeps.existsSync;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
-const origCreateDebateSession = _planDeps.createDebateSession;
+const origCreateDebateSession = _planDeps.createDebateRunner;
 const origInitInteractionChain = _planDeps.initInteractionChain;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ describe("planCommand — debate integration (US-004)", () => {
         async (_name: string, _prompt: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const }),
       ),
     );
-    _planDeps.createDebateSession = origCreateDebateSession;
+    _planDeps.createDebateRunner = origCreateDebateSession;
   });
 
   afterEach(() => {
@@ -253,7 +253,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.existsSync = origExistsSync;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
-    _planDeps.createDebateSession = origCreateDebateSession;
+    _planDeps.createDebateRunner = origCreateDebateSession;
     _planDeps.initInteractionChain = origInitInteractionChain;
     cleanupTempDir(tmpDir);
   });
@@ -262,9 +262,9 @@ describe("planCommand — debate integration (US-004)", () => {
   // AC1: debate.enabled=true + stages.plan.enabled=true → DebateSession.runPlan() used
   // ─────────────────────────────────────────────────────────────────────────
 
-  test("AC1: createDebateSession is called when debate.enabled=true and stages.plan.enabled=true", async () => {
+  test("AC1: createDebateRunner is called when debate.enabled=true and stages.plan.enabled=true", async () => {
     const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateSession = mock(() => ({ runPlan: runPlanMock }));
+    _planDeps.createDebateRunner = mock(() => ({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -272,12 +272,12 @@ describe("planCommand — debate integration (US-004)", () => {
       auto: true,
     });
 
-    expect(_planDeps.createDebateSession).toHaveBeenCalled();
+    expect(_planDeps.createDebateRunner).toHaveBeenCalled();
   });
 
   test("AC1: DebateSession.runPlan() is called with the planning prompt and options", async () => {
     const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateSession = mock(() => ({ runPlan: runPlanMock }));
+    _planDeps.createDebateRunner = mock(() => ({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -295,10 +295,10 @@ describe("planCommand — debate integration (US-004)", () => {
     expect(optsArg.workdir).toBe(tmpDir);
   });
 
-  test("AC1: createDebateSession receives the plan stage config", async () => {
+  test("AC1: createDebateRunner receives the plan stage config", async () => {
     const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
     const createMock = mock(() => ({ runPlan: runPlanMock }));
-    _planDeps.createDebateSession = createMock;
+    _planDeps.createDebateRunner = createMock;
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -320,7 +320,7 @@ describe("planCommand — debate integration (US-004)", () => {
       ),
     );
 
-    _planDeps.createDebateSession = mock(() => ({
+    _planDeps.createDebateRunner = mock(() => ({
       runPlan: mock(async () => DEBATE_PASSED_RESULT),
     }));
 
@@ -335,7 +335,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC1: debate fires in interactive mode (no --auto flag) when debate.enabled=true", async () => {
     const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateSession = mock(() => ({ runPlan: runPlanMock }));
+    _planDeps.createDebateRunner = mock(() => ({ runPlan: runPlanMock }));
     // No auto: true — interactive mode
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -363,7 +363,7 @@ describe("planCommand — debate integration (US-004)", () => {
     );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
-    _planDeps.createDebateSession = createDebateMock;
+    _planDeps.createDebateRunner = createDebateMock;
 
     await planCommand(
       tmpDir,
@@ -389,7 +389,7 @@ describe("planCommand — debate integration (US-004)", () => {
     );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
-    _planDeps.createDebateSession = createDebateMock;
+    _planDeps.createDebateRunner = createDebateMock;
 
     await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
@@ -415,7 +415,7 @@ describe("planCommand — debate integration (US-004)", () => {
     );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
-    _planDeps.createDebateSession = createDebateMock;
+    _planDeps.createDebateRunner = createDebateMock;
 
     await planCommand(
       tmpDir,
@@ -435,7 +435,7 @@ describe("planCommand — debate integration (US-004)", () => {
     const adapterPlan = mock(async () => {});
     setupInteractivePlanMocks(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; });
 
-    _planDeps.createDebateSession = mock(() => ({
+    _planDeps.createDebateRunner = mock(() => ({
       runPlan: mock(async () => DEBATE_FAILED_RESULT),
     }));
 
@@ -451,7 +451,7 @@ describe("planCommand — debate integration (US-004)", () => {
     const adapterPlan = mock(async () => {});
     setupInteractivePlanMocks(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; });
 
-    _planDeps.createDebateSession = mock(() => ({
+    _planDeps.createDebateRunner = mock(() => ({
       runPlan: mock(async () => DEBATE_FAILED_RESULT),
     }));
 
