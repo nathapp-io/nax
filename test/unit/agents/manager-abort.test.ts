@@ -10,7 +10,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
 import type { AgentRegistry } from "../../../src/agents/registry";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { AgentResult } from "../../../src/agents/types";
+import { SessionFailureError } from "../../../src/agents/types";
 
 const rateLimitFailure = {
   category: "availability" as const,
@@ -35,17 +35,11 @@ function makeConfigNoFallback() {
 function makeRateLimitedRegistry() {
   return {
     getAgent: () => ({
-      run: mock(
-        async (): Promise<AgentResult> => ({
-          success: false,
-          exitCode: 1,
-          output: "",
-          rateLimited: true,
-          durationMs: 0,
-          estimatedCost: 0,
-          adapterFailure: rateLimitFailure,
-        }),
-      ),
+      openSession: mock(async () => ({ id: "session", agentName: "mock" })),
+      sendTurn: mock(async (): Promise<never> => {
+        throw new SessionFailureError("rate limit", rateLimitFailure);
+      }),
+      closeSession: mock(async () => {}),
     }),
   } as unknown as AgentRegistry;
 }

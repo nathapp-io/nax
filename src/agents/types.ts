@@ -270,6 +270,21 @@ export class CompleteError extends Error {
 }
 
 /**
+ * Typed error thrown when openSession() or sendTurn() fails with a known AdapterFailure.
+ * The manager catch block extracts the embedded adapterFailure so swap policy works correctly
+ * for availability failures (e.g. quota exhausted, auth error).
+ */
+export class SessionFailureError extends Error {
+  constructor(
+    message: string,
+    public readonly adapterFailure: AdapterFailure,
+  ) {
+    super(message);
+    this.name = "SessionFailureError";
+  }
+}
+
+/**
  * Opaque handle to an open agent session returned by openSession().
  * ACP adapter stores protocol state here; callers above the adapter boundary
  * only see the id, agentName, and optional protocolIds.
@@ -329,18 +344,6 @@ export interface TurnResult {
   cost?: { total: number };
   /** Number of session.prompt() calls made. */
   internalRoundTrips: number;
-  /**
-   * Internal: raw ACP stopReason of the last response.
-   * Used by run() shim to decide whether to close the session.
-   * Phase B callers (SessionManager) should not rely on this field.
-   */
-  _lastStopReason?: string;
-  /** Internal: set to true when the turn timed out. Used by run() shim. */
-  _timedOut?: boolean;
-  /** Internal: set to true when the turn was aborted via signal. Used by run() shim. */
-  _aborted?: boolean;
-  /** Internal: ACP retryable hint for stopReason=error. Used by run() shim. */
-  _retryable?: boolean;
 }
 
 /**
@@ -380,9 +383,6 @@ export interface AgentAdapter {
    * Used by AgentManager.validateCredentials() at run start.
    */
   hasCredentials?(): Promise<boolean>;
-
-  /** Run the agent with a prompt and return the result. */
-  run(options: AgentRunOptions): Promise<AgentResult>;
 
   /** Build the CLI command for a given run (for dry-run display). */
   buildCommand(options: AgentRunOptions): string[];

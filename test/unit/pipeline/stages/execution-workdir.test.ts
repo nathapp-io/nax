@@ -76,11 +76,13 @@ test("execution stage passes repoRoot workdir when story.workdir is undefined", 
   _executionDeps.getAgent = () =>
     makeAgentAdapter({
       name: "claude",
-      capabilities: { supportedTiers: ["fast"] },
-      run: async (opts: { workdir: string }) => {
+      capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+      openSession: mock(async (_name: string, opts: { workdir: string }) => {
         capturedWorkdir = opts.workdir;
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
-      },
+        return { id: "session", agentName: "claude" };
+      }),
+      sendTurn: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 })),
+      closeSession: mock(async () => {}),
     });
 
   _executionDeps.validateAgentForTier = () => true;
@@ -98,11 +100,13 @@ test("execution stage passes resolved package workdir when story.workdir is set"
   _executionDeps.getAgent = () =>
     makeAgentAdapter({
       name: "claude",
-      capabilities: { supportedTiers: ["fast"] },
-      run: async (opts: { workdir: string }) => {
+      capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+      openSession: mock(async (_name: string, opts: { workdir: string }) => {
         capturedWorkdir = opts.workdir;
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 };
-      },
+        return { id: "session", agentName: "claude" };
+      }),
+      sendTurn: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 })),
+      closeSession: mock(async () => {}),
     });
 
   _executionDeps.validateAgentForTier = () => true;

@@ -17,6 +17,7 @@ import type { AdapterFailure, ContextBundle, ContextProviderResult, IContextProv
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import { AgentManager } from "../../../src/agents/manager";
+import { SessionFailureError } from "../../../src/agents/types";
 
 import { _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
 import { executionStage, _executionDeps } from "../../../src/pipeline/stages/execution";
@@ -157,19 +158,14 @@ function makeCtx(config: NaxConfig, bundle: ContextBundle): PipelineContext {
 }
 
 function makeFailingAgent(name: string): AgentAdapter {
+  const handle = { id: `mock-session-${name}`, agentName: name };
   return {
     name,
     capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
-    run: mock(async () => ({
-      success: false,
-      exitCode: 1,
-      output: "",
-      stderr: "quota exceeded",
-      rateLimited: false,
-      durationMs: 100,
-      estimatedCost: 0.0,
-      adapterFailure: QUOTA_FAILURE,
-    })),
+    openSession: mock(async () => handle),
+    sendTurn: mock(async () => {
+      throw new SessionFailureError("quota exceeded", QUOTA_FAILURE);
+    }),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
     deriveSessionName: mock(() => `nax-session-${name}`),
@@ -177,17 +173,16 @@ function makeFailingAgent(name: string): AgentAdapter {
 }
 
 function makeSucceedingAgent(name: string): AgentAdapter {
+  const handle = { id: `mock-session-${name}`, agentName: name };
   return {
     name,
     capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
-    run: mock(async () => ({
-      success: true,
-      exitCode: 0,
+    openSession: mock(async () => handle),
+    sendTurn: mock(async () => ({
       output: "done",
-      stderr: "",
-      rateLimited: false,
-      durationMs: 200,
-      estimatedCost: 0.02,
+      tokenUsage: { inputTokens: 10, outputTokens: 20 },
+      cost: { total: 0.02 },
+      internalRoundTrips: 1,
     })),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
@@ -222,7 +217,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     expect(result).toEqual({ action: "continue" });
     expect(ctx.agentSwapCount).toBe(1);
     // Swap agent ran
-    expect((swapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((swapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("rebuilt bundle carries rebuildInfo with correct agents and failure", async () => {
@@ -329,7 +324,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
 
     expect(result).toEqual({ action: "escalate" });
     expect(ctx.agentSwapCount).toBe(1);
-    expect((swapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((swapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
   test("does not swap when no context bundle exists", async () => {
@@ -386,8 +381,8 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "continue" });
-    expect((firstSwapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-    expect((secondSwapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((firstSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((secondSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
     expect(ctx.agentSwapCount).toBe(2);
   });
 
@@ -414,8 +409,8 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
     const result = await executionStage.execute(ctx);
 
     expect(result).toEqual({ action: "escalate" });
-    expect((firstSwapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-    expect((secondSwapAgent.run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((firstSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    expect((secondSwapAgent.sendTurn as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
     // agentSwapCount reflects all hops attempted
     expect(ctx.agentSwapCount).toBe(2);
   });

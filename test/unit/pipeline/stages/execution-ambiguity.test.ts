@@ -61,14 +61,11 @@ function makeAgent(output: string) {
   return makeAgentAdapter({
     name: "test-agent",
     capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
-    run: mock(async () => ({
-      success: true,
-      exitCode: 0,
+    sendTurn: mock(async () => ({
       output,
-      stderr: "",
-      rateLimited: false,
-      durationMs: 100,
-      estimatedCost: 0.01,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      internalRoundTrips: 1,
+      cost: { total: 0.01 },
     })),
   });
 }
@@ -313,15 +310,9 @@ describe("executionStage — story-ambiguity trigger", () => {
       makeAgentAdapter({
         name: "test-agent",
         capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
-        run: mock(async () => ({
-          success: false,
-          exitCode: 1,
-          output: "This is unclear",
-          stderr: "Error occurred",
-          rateLimited: false,
-          durationMs: 100,
-          estimatedCost: 0.01,
-        })),
+        sendTurn: mock(async () => {
+          throw new Error("Error occurred");
+        }),
       }),
     );
     _executionDeps.checkStoryAmbiguity = mock(async () => false);

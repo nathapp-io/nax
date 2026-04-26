@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
+import type { AgentResult } from "../../../src/agents/types";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
 import { _sessionRunnerDeps } from "../../../src/tdd/session-runner";
@@ -29,9 +29,9 @@ function makeConfig() {
   return makeNaxConfig({
     models: {
       claude: {
-        fast: { model: "fast" },
-        balanced: { model: "balanced" },
-        powerful: { model: "powerful" },
+        fast: "fast",
+        balanced: "balanced",
+        powerful: "powerful",
       },
     },
     agent: { default: "claude" },
@@ -44,24 +44,32 @@ function makeConfig() {
 function agentReturning(tokens: Array<AgentResult["tokenUsage"] | undefined>) {
   let call = 0;
   return {
-    run: mock(
-      async (_opts: AgentRunOptions): Promise<AgentResult> => {
-        const tokenUsage = tokens[call++];
-        return {
-          success: true,
-          exitCode: 0,
-          output: "ok",
-          rateLimited: false,
-          durationMs: 50,
-          estimatedCost: 0.01,
-          ...(tokenUsage ? { tokenUsage } : {}),
-        };
-      },
-    ),
+    name: "mock",
+    displayName: "Mock Agent",
+    binary: "mock",
+    capabilities: {
+      supportedTiers: ["fast", "balanced", "powerful"] as ("fast" | "balanced" | "powerful")[],
+      maxContextTokens: 200_000,
+      features: new Set<"tdd" | "review" | "refactor" | "batch">(),
+    },
     isInstalled: mock(async () => true),
-    complete: mock(async () => ""),
-    buildCommand: mock(() => []),
+    buildCommand: mock(() => [] as string[]),
+    complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
+    plan: mock(async () => ({ specContent: "" })),
+    decompose: mock(async () => ({ stories: [] })),
     deriveSessionName: mock(() => "nax-test"),
+    closePhysicalSession: mock(async () => {}),
+    openSession: mock(async () => ({ id: "mock-session", agentName: "mock" })),
+    sendTurn: mock(async () => {
+      const tokenUsage = tokens[call++];
+      return {
+        output: "ok",
+        tokenUsage,
+        internalRoundTrips: 1,
+        cost: { total: 0.01 },
+      };
+    }),
+    closeSession: mock(async () => {}),
   };
 }
 

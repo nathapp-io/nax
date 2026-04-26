@@ -2,75 +2,16 @@
  * Tests for AcpAgentAdapter — Phase 1 plumbing
  *
  * Covers:
- * - protocolIds (recordId + sessionId) surfaced on AgentResult
  * - deriveSessionName() produces correct ACP session handle from SessionDescriptor
  *
- * Note: sessionRetries removed in ADR-013 Phase 2 — retry loop moved to
- * SessionManager.runInSession; adapter now executes once per call.
+ * Note: protocolIds tests (adapter.run() calls) removed in ADR-019 Phase D —
+ * AgentAdapter.run() was deleted from the interface.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AcpAgentAdapter, _acpAdapterDeps, computeAcpHandle } from "../../../../src/agents/acp/adapter";
-import { withDepsRestore } from "../../../helpers/deps";
-import type { AgentRunOptions } from "../../../../src/agents/types";
+import { describe, expect, test } from "bun:test";
+import { AcpAgentAdapter, computeAcpHandle } from "../../../../src/agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { SessionDescriptor } from "../../../../src/session/types";
-import { makeClient, makeSession } from "./adapter.test";
-
-const BASE_OPTIONS: AgentRunOptions = {
-  prompt: "implement the feature",
-  workdir: "/tmp/test-project",
-  modelTier: "balanced",
-  modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
-  timeoutSeconds: 30,
-  dangerouslySkipPermissions: true,
-  featureName: "string-toolkit",
-  storyId: "ST-001",
-  config: DEFAULT_CONFIG,
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Phase 1 plumbing — protocolIds on AgentResult
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("AcpAgentAdapter — Phase 1: protocolIds surfaced on AgentResult", () => {
-  let adapter: AcpAgentAdapter;
-
-  withDepsRestore(_acpAdapterDeps, ["createClient", "sleep"]);
-
-  beforeEach(() => {
-    adapter = new AcpAgentAdapter("claude", DEFAULT_CONFIG);
-    _acpAdapterDeps.sleep = async () => {};
-  });
-
-  afterEach(() => {
-    mock.restore();
-  });
-
-  test("protocolIds.recordId and protocolIds.sessionId are populated from the ACP session", async () => {
-    const session = makeSession();
-    (session as unknown as { recordId: string; id: string }).recordId = "rec-stable-001";
-    (session as unknown as { recordId: string; id: string }).id = "sid-volatile-002";
-
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await adapter.run(BASE_OPTIONS);
-    expect(result.protocolIds).toBeDefined();
-    expect(result.protocolIds?.recordId).toBe("rec-stable-001");
-    expect(result.protocolIds?.sessionId).toBe("sid-volatile-002");
-  });
-
-  test("protocolIds.recordId is null when session has no recordId", async () => {
-    const session = makeSession();
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await adapter.run(BASE_OPTIONS);
-    expect(result.protocolIds).toBeDefined();
-    expect(result.protocolIds?.recordId).toBeNull();
-  });
-
-
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // deriveSessionName — handle matches physical ACP session name

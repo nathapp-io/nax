@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
 import type { AgentRegistry } from "../../../src/agents/registry";
+import { SessionFailureError } from "../../../src/agents/types";
 import { makeNaxConfig } from "../../helpers";
 
 const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
@@ -17,15 +18,18 @@ function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
 function makeRegistry(results: Record<string, boolean>) {
   return {
     getAgent: (name: string) => ({
-      run: mock(async () => ({
-        success: results[name] ?? false,
-        exitCode: results[name] ? 0 : 1,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCost: 5.0,
-        adapterFailure: results[name] ? undefined : availFailure,
+      openSession: mock(async () => {
+        if (!(results[name] ?? false)) {
+          throw new SessionFailureError("auth failure", availFailure);
+        }
+        return { id: "session", agentName: name };
+      }),
+      sendTurn: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 1,
       })),
+      closeSession: mock(async () => {}),
     }),
   } as unknown as AgentRegistry;
 }
@@ -51,7 +55,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
     expect(outcome.fallbacks).toHaveLength(1);
     expect(outcome.fallbacks[0].priorAgent).toBe("claude");
     expect(outcome.fallbacks[0].newAgent).toBe("codex");
-    expect(outcome.fallbacks[0].costUsd).toBe(5.0);
+    expect(outcome.fallbacks[0].costUsd).toBe(0);
   });
 
   test("returns failure when all candidates exhausted", async () => {
@@ -171,13 +175,15 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
     };
     const registry = {
       getAgent: () => ({
-        run: mock(async () => {
+        openSession: mock(async () => ({ id: "session", agentName: "mock" })),
+        sendTurn: mock(async () => {
           attempts++;
           if (attempts < 3) {
-            return { success: false, exitCode: 1, output: "", rateLimited: true, durationMs: 0, estimatedCost: 0, adapterFailure: rateLimitFailure };
+            throw new SessionFailureError("rate limited", rateLimitFailure);
           }
-          return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCost: 0 };
+          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 };
         }),
+        closeSession: mock(async () => {}),
       }),
     } as unknown as AgentRegistry;
 

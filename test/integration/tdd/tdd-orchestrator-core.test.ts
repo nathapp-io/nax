@@ -213,7 +213,7 @@ describe("runThreeSessionTdd", () => {
     expect(result.needsHumanReview).toBe(false);
     expect(result.totalCost).toBe(0);
     // Agent should not have been called
-    expect(agent.run).not.toHaveBeenCalled();
+    expect(agent.sendTurn).not.toHaveBeenCalled();
   });
 
   test("dry-run mode works with context markdown", async () => {
@@ -234,7 +234,7 @@ describe("runThreeSessionTdd", () => {
     expect(result.sessions).toHaveLength(0);
     expect(result.totalCost).toBe(0);
     // Agent should not have been called
-    expect(agent.run).not.toHaveBeenCalled();
+    expect(agent.sendTurn).not.toHaveBeenCalled();
   });
 
   test("BUG-22: post-TDD verification overrides session failures when tests pass", async () => {
@@ -538,8 +538,8 @@ describe("test-writer skip on review escalation", () => {
     expect(result.sessions).toHaveLength(2);
     expect(result.sessions[0].role).toBe("implementer");
     expect(result.sessions[1].role).toBe("verifier");
-    // agent.run was called exactly twice (no test-writer session)
-    expect(agent.run).toHaveBeenCalledTimes(2);
+    // agent.sendTurn was called exactly twice (no test-writer session)
+    expect(agent.sendTurn).toHaveBeenCalledTimes(2);
   });
 
   test("does not skip test-writer when priorFailures is empty (first attempt)", async () => {
@@ -580,7 +580,7 @@ describe("test-writer skip on review escalation", () => {
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(3);
     expect(result.sessions[0].role).toBe("test-writer");
-    expect(agent.run).toHaveBeenCalledTimes(3);
+    expect(agent.sendTurn).toHaveBeenCalledTimes(3);
   });
 
   test("does not skip test-writer when priorFailures only have stage=escalation", async () => {
@@ -630,7 +630,7 @@ describe("test-writer skip on review escalation", () => {
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(3);
     expect(result.sessions[0].role).toBe("test-writer");
-    expect(agent.run).toHaveBeenCalledTimes(3);
+    expect(agent.sendTurn).toHaveBeenCalledTimes(3);
   });
 });
 

@@ -16,6 +16,7 @@ import { getSafeLogger } from "../logger";
 import { MiddlewareChain } from "../runtime/agent-middleware";
 import type { MiddlewareContext } from "../runtime/agent-middleware";
 import { cancellableDelay } from "../utils/bun-deps";
+import { buildContextToolPreamble, buildRunInteractionHandler, computeAcpHandle } from "./acp/adapter";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -37,6 +38,7 @@ import type {
   PlanOptions,
   PlanResult,
 } from "./types";
+import { SessionFailureError } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -203,17 +205,58 @@ export class AgentManager implements IAgentManager {
           };
           return { result: noAdapterResult, fallbacks, finalBundle: currentBundle, finalPrompt };
         }
+        const startMs = Date.now();
         try {
-          result = await adapter.run(request.runOptions);
+          const opts = request.runOptions;
+          const resolvedPerm =
+            opts.resolvedPermissions ??
+            resolvePermissions((opts.config as NaxConfig | undefined) ?? this._config, opts.pipelineStage ?? "run");
+          const sessionName =
+            opts.sessionHandle ??
+            computeAcpHandle(opts.workdir ?? ".", opts.featureName, opts.storyId, opts.sessionRole);
+          const handle = await adapter.openSession(sessionName, {
+            agentName: adapter.name,
+            workdir: opts.workdir,
+            resolvedPermissions: resolvedPerm,
+            modelDef: opts.modelDef,
+            timeoutSeconds: opts.timeoutSeconds,
+            onPidSpawned: opts.onPidSpawned,
+            onSessionEstablished: opts.onSessionEstablished,
+            signal: opts.abortSignal,
+          });
+          try {
+            const hasContextTools = Boolean(opts.contextToolRuntime && (opts.contextPullTools?.length ?? 0) > 0);
+            const maxTurns =
+              opts.interactionBridge || hasContextTools
+                ? (opts.maxInteractionTurns ?? 10)
+                : (opts.maxInteractionTurns ?? 1);
+            const turnResult = await adapter.sendTurn(handle, buildContextToolPreamble(opts), {
+              interactionHandler: buildRunInteractionHandler(opts),
+              signal: opts.abortSignal,
+              maxTurns,
+            });
+            result = {
+              success: true,
+              exitCode: 0,
+              output: turnResult.output,
+              rateLimited: false,
+              durationMs: Date.now() - startMs,
+              estimatedCost: turnResult.cost?.total ?? 0,
+              tokenUsage: turnResult.tokenUsage,
+            };
+          } finally {
+            await adapter.closeSession(handle).catch(() => {});
+          }
         } catch (err) {
+          const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
           result = {
             success: false,
             exitCode: 1,
             output: err instanceof Error ? err.message : String(err),
-            rateLimited: false,
-            durationMs: 0,
+            rateLimited: sessionFailure?.outcome === "fail-rate-limit",
+            durationMs: Date.now() - startMs,
             estimatedCost: 0,
-            adapterFailure: {
+            adapterFailure: sessionFailure ?? {
               category: "quality",
               outcome: "fail-unknown",
               retriable: false,

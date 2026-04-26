@@ -77,7 +77,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
         return { result, fallbacks: [], finalBundle: request.bundle, finalPrompt: request.runOptions.prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
-      run: async (request) => {
+      run: async (request: import("../../../../src/agents/manager-types").AgentRunRequest) => {
         const outcome = await manager.runWithFallback(request);
         return { ...outcome.result, agentFallbacks: outcome.fallbacks };
       },
@@ -90,7 +90,6 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
       displayName: "Claude",
       binary: "claude",
       capabilities: { supportedTiers: ["fast", "balanced", "powerful"], maxContextTokens: 100000, features: new Set() },
-      run: mock(async () => ({ success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0.01 })),
     });
 
     _executionDeps.getAgent = mock(() => successAdapter);

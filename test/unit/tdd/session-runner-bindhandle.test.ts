@@ -5,11 +5,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentRunRequest, IAgentManager } from "../../../src/agents/manager-types";
-import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
 import type { UserStory } from "../../../src/prd";
 import type { ISessionManager, SessionDescriptor } from "../../../src/session/types";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
-import { makeNaxConfig } from "../../helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 function makeStory(): UserStory {
   return {
@@ -25,41 +24,33 @@ function makeConfig() {
   return makeNaxConfig({
     models: {
       claude: {
-        fast: { model: "fast-model" },
-        balanced: { model: "balanced-model" },
-        powerful: { model: "powerful-model" },
+        fast: "fast-model",
+        balanced: "balanced-model",
+        powerful: "powerful-model",
       },
     },
     agent: { default: "claude" },
     execution: {
       rectification: { enabled: false },
       sessionTimeoutSeconds: 300,
-      dangerouslySkipPermissions: true,
     },
     quality: { commands: { test: "bun test" } },
     tdd: { testWriterAllowedPaths: [] },
   });
 }
 
-function makeAgent(protocolIds: { recordId: string | null; sessionId: string | null } | undefined) {
-  const run = mock(
-    async (_opts: AgentRunOptions): Promise<AgentResult> => ({
-      success: true,
-      exitCode: 0,
+function makeAgent() {
+  return makeAgentAdapter({
+    name: "claude",
+    openSession: mock(async () => ({ id: "mock-session", agentName: "claude" })),
+    sendTurn: mock(async () => ({
       output: "done",
-      rateLimited: false,
-      durationMs: 100,
-      estimatedCost: 0,
-      ...(protocolIds ? { protocolIds } : {}),
-    }),
-  );
-  return {
-    run,
-    isInstalled: mock(async () => true),
-    complete: mock(async () => ""),
-    buildCommand: mock(() => []),
-    deriveSessionName: mock((_d: SessionDescriptor) => "nax-abc12345-feat-US-001-implementer"),
-  };
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      internalRoundTrips: 1,
+    })),
+    closeSession: mock(async () => {}),
+    deriveSessionName: mock(() => "nax-abc12345-feat-US-001-implementer"),
+  });
 }
 
 function makeSessionManager() {
@@ -142,8 +133,20 @@ afterEach(() => {
 
 describe("session-runner bindHandle (#541)", () => {
   test("calls sessionManager.bindHandle with protocolIds when binding is provided", async () => {
-    const agent = makeAgent({ recordId: "rec-abc", sessionId: "acp-xyz" });
+    const agent = makeAgent();
     const { manager, bindHandle, descriptor } = makeSessionManager();
+    const protocolIds = { recordId: "rec-abc", sessionId: "acp-xyz" };
+    // Assign to variable first to avoid excess-property-check on the typed function param.
+    const resultWithProtocolIds = {
+      success: true,
+      exitCode: 0,
+      output: "done",
+      rateLimited: false,
+      durationMs: 100,
+      estimatedCost: 0,
+      agentFallbacks: [] as unknown[],
+      protocolIds,
+    };
 
     await runTddSession(
       "implementer",
@@ -162,7 +165,13 @@ describe("session-runner bindHandle (#541)", () => {
       undefined,
       undefined,
       undefined,
-      { sessionManager: manager, sessionId: "sess-test" },
+      {
+        sessionManager: manager,
+        sessionId: "sess-test",
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({ result: resultWithProtocolIds, fallbacks: [] }),
+        }),
+      },
     );
 
     expect(bindHandle).toHaveBeenCalledTimes(1);
@@ -172,7 +181,7 @@ describe("session-runner bindHandle (#541)", () => {
   });
 
   test("skips bindHandle when agent returns no protocolIds", async () => {
-    const agent = makeAgent(undefined);
+    const agent = makeAgent();
     const { manager, bindHandle } = makeSessionManager();
 
     await runTddSession(
@@ -192,14 +201,18 @@ describe("session-runner bindHandle (#541)", () => {
       undefined,
       undefined,
       undefined,
-      { sessionManager: manager, sessionId: "sess-test" },
+      {
+        sessionManager: manager,
+        sessionId: "sess-test",
+        agentManager: makeMockAgentManager(),
+      },
     );
 
     expect(bindHandle).not.toHaveBeenCalled();
   });
 
   test("skips bindHandle when no binding is provided (backward compat)", async () => {
-    const agent = makeAgent({ recordId: "rec-abc", sessionId: "acp-xyz" });
+    const agent = makeAgent();
 
     // No throw — sessionBinding defaults to undefined.
     const result = await runTddSession(

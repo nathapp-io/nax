@@ -355,7 +355,7 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
 
 /**
  * Creates a mock IAgentManager that forwards run() to a mock agent.
- * Mirrors how AgentManager.run() extracts runOptions and passes them to adapter.run().
+ * Captures run() calls on IAgentManager for assertion on runOptions.
  */
 function makeMockAgentManager(mockRun: ReturnType<typeof mock>): ReturnType<typeof mock> {
   const mockManager = mock(async (request: { runOptions: Record<string, unknown> }) => {

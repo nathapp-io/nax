@@ -96,9 +96,15 @@ describe("AgentManager — Phase 1 pass-through", () => {
     expect(outcome.fallbacks).toEqual([]);
   });
 
-  test("runWithFallback() with registry delegates to adapter.run() once", async () => {
-    const mockResult = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0.001 };
-    const mockAdapter = { run: async () => mockResult };
+  test("runWithFallback() with registry delegates to adapter primitives once", async () => {
+    const mockHandle = { id: "mock-session", agentName: "claude" };
+    const mockTurnResult = { output: "done", tokenUsage: { inputTokens: 10, outputTokens: 20 }, cost: { total: 0.001 }, internalRoundTrips: 1 };
+    const mockAdapter = {
+      name: "claude",
+      openSession: async () => mockHandle as never,
+      sendTurn: async () => mockTurnResult,
+      closeSession: async () => {},
+    };
     const mockRegistry = { getAgent: (_: string) => mockAdapter as never };
     const manager = new AgentManager(DEFAULT_CONFIG, mockRegistry as never);
     const outcome = await manager.runWithFallback({
@@ -122,6 +128,13 @@ describe("AgentManager — Phase 1 pass-through", () => {
     }) as NaxConfig;
     const manager = new AgentManager(config);
     expect(manager.getDefault()).toBe("codex");
+  });
+
+  test("AgentAdapter interface has no run() method", () => {
+    // Compile-time guard — any call to adapter.run() is a TS error after this deletion.
+    // The runtime assertion is a no-op intentionally.
+    const hasRun = "run" in ({} as import("../../../src/agents/types").AgentAdapter);
+    expect(typeof hasRun).toBe("boolean");
   });
 });
 

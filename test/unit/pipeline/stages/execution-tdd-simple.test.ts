@@ -16,8 +16,8 @@ import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import { makeAgentAdapter, makeNaxConfig, makeSparseNaxConfig, makeStory } from "../../../../test/helpers";
+import type { PRD } from "../../../../src/prd";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "../../../../test/helpers";
 
 const WORKDIR = `/tmp/nax-test-exec-${randomUUID()}`;
 
@@ -55,70 +55,6 @@ function makeCtx(
       models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
       execution: {
         sessionTimeoutSeconds: 60,
-        dangerouslySkipPermissions: false,
-        costLimit: 10,
-        maxIterations: 10,
-        rectification: { maxRetries: 3 },
-      },
-      interaction: { plugin: "cli", defaults: { timeout: 30000, fallback: "abort" as const }, triggers: {} },
-    }),
-    prd: makePRD(),
-    story,
-    stories: [story],
-    routing: {
-      complexity: "simple",
-      modelTier: "fast",
-      testStrategy,
-      reasoning: "",
-    },
-    rootConfig: DEFAULT_CONFIG,
-    workdir: WORKDIR,
-    projectDir: WORKDIR,
-    prompt: "Your tdd-simple task: write tests first, then implement.",
-    hooks: {} as PipelineContext["hooks"],
-    ...overrides,
-  } as unknown as PipelineContext;
-}
-
-function makePRD(): PRD {
-  return {
-    project: "test",
-    feature: "my-feature",
-    branchName: "test-branch",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    userStories: [makeStory()],
-  };
-}
-
-function makeAgent(success = true) {
-  return makeAgentAdapter({
-    name: "test-agent",
-    capabilities: { supportedTiers: ["fast", "balanced", "powerful"] },
-    run: mock(async () => ({
-      success,
-      exitCode: success ? 0 : 1,
-      output: success ? "All tests passed" : "Tests failed",
-      stderr: success ? "" : "Error output",
-      rateLimited: false,
-      durationMs: 100,
-      estimatedCost: 0.01,
-    })),
-  });
-}
-
-function makeCtx(
-  testStrategy: "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite",
-  overrides: Partial<PipelineContext> = {},
-): PipelineContext {
-  const story = makeStory();
-  return {
-    config: makeSparseNaxConfig({
-      agent: { default: "test-agent" },
-      models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
-      execution: {
-        sessionTimeoutSeconds: 60,
-        dangerouslySkipPermissions: false,
         costLimit: 10,
         maxIterations: 10,
         rectification: { maxRetries: 3 },
@@ -147,6 +83,21 @@ function makeCtx(
   } as unknown as PipelineContext;
 }
 
+function makeAgent(success = true) {
+  return makeAgentAdapter({
+    name: "test-agent",
+    capabilities: { supportedTiers: ["fast", "balanced", "powerful"], maxContextTokens: 100_000, features: new Set<"tdd" | "review" | "refactor" | "batch">() },
+    openSession: mock(async () => ({ id: "mock-session", agentName: "test-agent" })),
+    sendTurn: mock(async () => {
+      if (!success) {
+        throw new Error("Tests failed");
+      }
+      return { output: "All tests passed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 1 };
+    }),
+    closeSession: mock(async () => {}),
+  });
+}
+
 afterEach(() => {
   mock.restore();
   _executionDeps.getAgent = originalGetAgent;
@@ -169,7 +120,7 @@ describe("executionStage — tdd-simple strategy", () => {
     const result = await executionStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(agent.openSession).toHaveBeenCalledTimes(1);
   });
 
   test("sets agentResult on success", async () => {
@@ -195,19 +146,19 @@ describe("executionStage — tdd-simple strategy", () => {
     const result = await executionStage.execute(ctx);
 
     expect(result.action).toBe("escalate");
-    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(agent.openSession).toHaveBeenCalledTimes(1);
   });
 
   test("missing prompt returns fail (pipeline misconfiguration)", async () => {
     const agent = makeAgent(true);
     _executionDeps.getAgent = mock(() => agent as unknown as ReturnType<typeof _executionDeps.getAgent>);
 
-    const ctx = makeCtx("tdd-simple", { prompt: undefined });
+    const ctx = makeCtx("tdd-simple", { prompt: undefined as unknown as string });
     const result = await executionStage.execute(ctx);
 
     expect(result.action).toBe("fail");
     expect((result as { reason?: string }).reason).toContain("Prompt not built");
-    expect(agent.run).not.toHaveBeenCalled();
+    expect(agent.openSession).not.toHaveBeenCalled();
   });
 
   test("missing agent returns fail", async () => {
@@ -220,7 +171,7 @@ describe("executionStage — tdd-simple strategy", () => {
     expect((result as { reason?: string }).reason).toContain("not found");
   });
 
-  test("passes prompt from ctx to agent.run()", async () => {
+  test("passes prompt from ctx to agent sendTurn()", async () => {
     const agent = makeAgent(true);
     _executionDeps.getAgent = mock(() => agent as unknown as ReturnType<typeof _executionDeps.getAgent>);
     _executionDeps.validateAgentForTier = mock(() => true);
@@ -230,8 +181,9 @@ describe("executionStage — tdd-simple strategy", () => {
     const ctx = makeCtx("tdd-simple", { prompt: expectedPrompt });
     await executionStage.execute(ctx);
 
-    const callArgs = (agent.run as ReturnType<typeof mock>).mock.calls[0];
-    expect(callArgs[0].prompt).toBe(expectedPrompt);
+    // sendTurn(handle, prompt, opts) — prompt is the second argument
+    const callArgs = (agent.sendTurn as ReturnType<typeof mock>).mock.calls[0];
+    expect(callArgs[1]).toBe(expectedPrompt);
   });
 
   test("does NOT call three-session TDD orchestrator", async () => {
@@ -243,8 +195,8 @@ describe("executionStage — tdd-simple strategy", () => {
     const ctx = makeCtx("tdd-simple");
     const result = await executionStage.execute(ctx);
 
-    // Single-session path was used: agent.run() called directly
-    expect(agent.run).toHaveBeenCalledTimes(1);
+    // Single-session path was used: openSession called directly
+    expect(agent.openSession).toHaveBeenCalledTimes(1);
     // No tddFailureCategory set (only set by TDD orchestrator on failure)
     expect(ctx.tddFailureCategory).toBeUndefined();
     expect(result.action).toBe("continue");
@@ -266,7 +218,7 @@ describe("executionStage — test-after strategy (no regression)", () => {
     const result = await executionStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(agent.openSession).toHaveBeenCalledTimes(1);
   });
 
   test("failed session returns escalate", async () => {
@@ -283,23 +235,31 @@ describe("executionStage — test-after strategy (no regression)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// No regression: three-session-tdd still calls TDD orchestrator (not agent.run)
+// No regression: three-session-tdd still calls TDD orchestrator (not single-session path)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("executionStage — three-session-tdd strategy (no regression)", () => {
-  test("does NOT call agent.run() directly for three-session-tdd", async () => {
+  test("does NOT route through agentManager.run() for three-session-tdd", async () => {
     const agent = makeAgent(true);
     _executionDeps.getAgent = mock(() => agent as unknown as ReturnType<typeof _executionDeps.getAgent>);
 
-    // The TDD orchestrator will fail (no real agent), but we just check agent.run() wasn't called
     const ctx = makeCtx("three-session-tdd");
+    // Inject a mock manager to detect if the single-session path is taken
+    let managerRunCalled = false;
+    (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
+      runWithFallbackFn: async () => {
+        managerRunCalled = true;
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    });
+
     try {
       await executionStage.execute(ctx);
     } catch {
       // TDD orchestrator may throw without real infrastructure
     }
 
-    // agent.run() should NOT have been called (TDD orchestrator handles sessions internally)
-    expect(agent.run).not.toHaveBeenCalled();
+    // The single-session effectiveManager.run() must NOT be called for three-session-tdd
+    expect(managerRunCalled).toBe(false);
   });
 });

@@ -2,12 +2,12 @@
  * runTddSession — token usage propagation (#590) and state transitions (#589).
  *
  * Phase 2: TDD sessions now route through SessionManager.runInSession so:
- *   - tokenUsage from AgentResult is returned on TddSessionResult.tokenUsage
+ *   - tokenUsage from TurnResult is returned on TddSessionResult.tokenUsage
  *   - descriptor state advances CREATED → RUNNING → COMPLETED automatically
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
+import type { TokenUsage } from "../../../src/agents/cost/types";
 import type { UserStory } from "../../../src/prd";
 import { SessionManager } from "../../../src/session/manager";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
@@ -27,31 +27,34 @@ function makeConfig() {
   return makeNaxConfig({
     models: {
       claude: {
-        fast: { model: "fast-model" },
-        balanced: { model: "balanced-model" },
-        powerful: { model: "powerful-model" },
+        fast: "fast-model",
+        balanced: "balanced-model",
+        powerful: "powerful-model",
       },
     },
     agent: { default: "claude" },
-    execution: { rectification: { enabled: false }, sessionTimeoutSeconds: 300, dangerouslySkipPermissions: true },
+    execution: { rectification: { enabled: false }, sessionTimeoutSeconds: 300 },
     quality: { commands: { test: "bun test" } },
     tdd: { testWriterAllowedPaths: [] },
   });
 }
 
-function makeAgent(result: Partial<AgentResult>) {
+function makeAgent(overrides: { tokenUsage?: TokenUsage; success?: boolean; output?: string } = {}) {
+  const success = overrides.success !== false;
   return {
-    run: mock(
-      async (_opts: AgentRunOptions): Promise<AgentResult> => ({
-        success: true,
-        exitCode: 0,
-        output: "done",
-        rateLimited: false,
-        durationMs: 100,
-        estimatedCost: 0.05,
-        ...result,
-      }),
-    ),
+    name: "claude",
+    openSession: mock(async () => ({ id: "mock-session", agentName: "claude" })),
+    sendTurn: mock(async () => {
+      if (!success) {
+        throw new Error(overrides.output ?? "Agent failed");
+      }
+      return {
+        output: overrides.output ?? "done",
+        tokenUsage: overrides.tokenUsage,
+        internalRoundTrips: 1,
+      };
+    }),
+    closeSession: mock(async () => {}),
     isInstalled: mock(async () => true),
     complete: mock(async () => ""),
     buildCommand: mock(() => []),
@@ -85,7 +88,7 @@ afterEach(() => {
 });
 
 describe("runTddSession — tokenUsage (#590)", () => {
-  test("propagates tokenUsage from AgentResult to TddSessionResult", async () => {
+  test("propagates tokenUsage from TurnResult to TddSessionResult", async () => {
     const agent = makeAgent({
       tokenUsage: { inputTokens: 1000, outputTokens: 200, cacheReadInputTokens: 500 },
     });
@@ -158,7 +161,7 @@ describe("runTddSession — state transitions via runInSession (#589)", () => {
     const mgr = new SessionManager();
     const descriptor = mgr.create({ role: "implementer", agent: "claude", workdir: "/tmp/fake", handle: "nax-test" });
 
-    const agent = makeAgent({ success: false, exitCode: 1 });
+    const agent = makeAgent({ success: false });
     await runTddSession(
       "implementer",
       agent as never,

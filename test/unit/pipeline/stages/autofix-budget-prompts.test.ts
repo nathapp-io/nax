@@ -20,8 +20,7 @@ function makeFailedReviewResult(checks: Partial<ReviewCheckResult>[]) {
 
 /**
  * Creates a mock IAgentManager that captures run() calls.
- * AgentManager.run() takes AgentRunRequest and passes request.runOptions to adapter.run(),
- * so the mock extracts runOptions and forwards them to the inner mock.
+ * Extracts runOptions from each AgentRunRequest and forwards to the inner mock.
  */
 function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
   return {
