@@ -429,7 +429,8 @@ export class SpawnAcpClient implements AcpClient {
     const { exitCode, stdout, stderr } = await this.trackedSpawn(cmd);
 
     if (exitCode !== 0) {
-      throw new Error(`[acp-adapter] Failed to create session: ${stderr || `exit code ${exitCode}`}`);
+      // Use stdout first — acpx puts the JSON-RPC error there when --format json is set.
+      throw new Error(`[acp-adapter] Failed to create session: ${stdout || stderr || `exit code ${exitCode}`}`);
     }
 
     const { sessionId, recordId } = parseSessionIds(stdout);
