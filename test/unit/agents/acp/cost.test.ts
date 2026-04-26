@@ -7,14 +7,13 @@
  * - Known models have accurate per-token pricing
  * - Unknown models fall back to a reasonable average rate
  * - Zero token usage returns $0.00
- * - AcpAgentAdapter.toAgentResult() uses estimateCostFromTokenUsage
+ *
+ * Note: AcpAgentAdapter.run() integration tests removed in ADR-019 Phase D.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { estimateCostFromTokenUsage } from "../../../../src/agents/acp/cost";
 import type { SessionTokenUsage } from "../../../../src/agents/acp/cost";
-import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
-import { makeClient, makeRunOptions, makeSession } from "./adapter.test";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // estimateCostFromTokenUsage — basic input/output tokens
@@ -182,98 +181,6 @@ describe("estimateCostFromTokenUsage — cache tokens", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AcpAgentAdapter integration — toAgentResult() uses estimateCostFromTokenUsage
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("AcpAgentAdapter — cost via estimateCostFromTokenUsage", () => {
-  const origCreateClient = _acpAdapterDeps.createClient;
-  const origSleep = _acpAdapterDeps.sleep;
-
-  beforeEach(() => {
-    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
-  });
-
-  afterEach(() => {
-    _acpAdapterDeps.createClient = origCreateClient;
-    _acpAdapterDeps.sleep = origSleep;
-    mock.restore();
-  });
-
-  test("run() estimatedCost reflects model-specific pricing for claude-haiku", async () => {
-    // claude-haiku pricing is ~$0.80 input / $4.00 output per 1M tokens
-    // 1M input + 1M output = ~$4.80
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [{ role: "assistant", content: "Done." }],
-        stopReason: "end_turn",
-        cumulative_token_usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const adapter = new AcpAgentAdapter("claude");
-    const result = await adapter.run(
-      makeRunOptions({ modelDef: { provider: "anthropic", model: "claude-haiku", env: {} } }),
-    );
-
-    // Haiku: $0.80 input + $4.00 output = $4.80 for 1M+1M tokens
-    expect(result.estimatedCost).toBeCloseTo(4.8, 1);
-  });
-
-  test("run() estimatedCost reflects model-specific pricing for claude-sonnet-4", async () => {
-    // claude-sonnet-4 pricing: $3/1M input, $15/1M output
-    // 1M input + 1M output = $18.00
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [{ role: "assistant", content: "Done." }],
-        stopReason: "end_turn",
-        cumulative_token_usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const adapter = new AcpAgentAdapter("claude");
-    const result = await adapter.run(
-      makeRunOptions({ modelDef: { provider: "anthropic", model: "claude-sonnet-4", env: {} } }),
-    );
-
-    expect(result.estimatedCost).toBeCloseTo(18.0, 1);
-  });
-
-  test("run() estimatedCost is $0.00 when cumulative_token_usage is absent", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [{ role: "assistant", content: "Done." }],
-        stopReason: "end_turn",
-        cumulative_token_usage: undefined,
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
-    expect(result.estimatedCost).toBe(0);
-  });
-
-  test("run() estimatedCost uses haiku rate different from old sonnet-class inline formula", async () => {
-    // Old formula: $3/1M input + $15/1M output (generic sonnet-class, same for all models)
-    // New formula with haiku: $0.80/1M input + $4.00/1M output
-    // For 1M + 1M tokens: old = $18, new haiku = $4.80 — must be different
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [{ role: "assistant", content: "Done." }],
-        stopReason: "end_turn",
-        cumulative_token_usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const adapter = new AcpAgentAdapter("claude");
-    const result = await adapter.run(
-      makeRunOptions({ modelDef: { provider: "anthropic", model: "claude-haiku", env: {} } }),
-    );
-
-    // Must NOT be $18.00 (the old inline formula for sonnet-class)
-    expect(result.estimatedCost).not.toBeCloseTo(18.0, 0);
-  });
-});
+// Note: AcpAgentAdapter.run() integration tests removed in ADR-019 Phase D —
+// AgentAdapter.run() was deleted from the interface. Cost estimation is fully
+// covered by the estimateCostFromTokenUsage unit tests above.
