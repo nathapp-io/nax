@@ -699,6 +699,10 @@ export class AcpAgentAdapter implements AgentAdapter {
       });
       specContent = turnResult.output.trim();
       costUsd = turnResult.cost?.total ?? 0;
+    } catch (err) {
+      throw new Error(`[acp-adapter] plan() failed: ${err instanceof Error ? err.message : String(err)}`, {
+        cause: err,
+      });
     } finally {
       await this.closeSession(handle).catch(() => {});
     }

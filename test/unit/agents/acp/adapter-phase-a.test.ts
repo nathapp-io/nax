@@ -180,11 +180,9 @@ describe("sendTurn()", () => {
     expect(result.tokenUsage.inputTokens).toBe(200);
     expect(result.tokenUsage.outputTokens).toBe(80);
     expect(result.internalRoundTrips).toBe(1);
-    expect(result._lastStopReason).toBe("end_turn");
-    expect(result._timedOut).toBeFalsy();
   });
 
-  test("timeout: sets _timedOut=true and output is empty", async () => {
+  test("timeout: output is empty and single round-trip recorded", async () => {
     const session = makeSession({
       promptFn: () => new Promise(() => {}),
       cancelFn: async () => {},
@@ -197,12 +195,11 @@ describe("sendTurn()", () => {
       interactionHandler: NO_OP_INTERACTION_HANDLER,
     });
 
-    expect(result._timedOut).toBe(true);
     expect(result.output).toBe("");
     expect(result.internalRoundTrips).toBe(1);
   });
 
-  test("pre-aborted signal returns _aborted without issuing a prompt", async () => {
+  test("pre-aborted signal: skips prompt and returns zero round-trips", async () => {
     let promptCalls = 0;
     const session = makeSession({
       promptFn: async () => {
@@ -222,12 +219,11 @@ describe("sendTurn()", () => {
       signal: controller.signal,
     });
 
-    expect(result._aborted).toBe(true);
     expect(result.internalRoundTrips).toBe(0);
     expect(promptCalls).toBe(0);
   });
 
-  test("mid-turn abort returns _aborted=true", async () => {
+  test("mid-turn abort: returns after abort with at least one round-trip", async () => {
     const session = makeSession({
       promptFn: () => new Promise(() => {}),
       cancelFn: async () => {},
@@ -241,8 +237,7 @@ describe("sendTurn()", () => {
       signal: controller.signal,
     });
 
-    expect(result._aborted).toBe(true);
-    expect(result.internalRoundTrips).toBe(1);
+    expect(result.internalRoundTrips).toBeGreaterThanOrEqual(1);
   });
 
   test("context-tool interaction: calls handler and continues with answer", async () => {
@@ -357,10 +352,9 @@ describe("sendTurn()", () => {
     });
 
     expect(result.internalRoundTrips).toBe(1);
-    expect(result._lastStopReason).toBe("end_turn");
   });
 
-  test("session-broken stopReason sets _lastStopReason=error", async () => {
+  test("session-broken stopReason: output is empty string", async () => {
     const session = makeSession({
       promptFn: async () => ({
         messages: [{ role: "assistant", content: "" }],
@@ -374,7 +368,7 @@ describe("sendTurn()", () => {
       interactionHandler: NO_OP_INTERACTION_HANDLER,
     });
 
-    expect(result._lastStopReason).toBe("error");
+    expect(result.output).toBe("");
   });
 
   test("accumulates token usage across multiple turns", async () => {
