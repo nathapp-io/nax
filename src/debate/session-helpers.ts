@@ -30,6 +30,8 @@ export interface SuccessfulProposal {
   /** Cost for this complete() call in USD. */
   cost: number;
   roleKey?: string;
+  /** Caller-managed session handle for stateful turns (ADR-019 §4). */
+  handle?: import("../agents/types").SessionHandle;
 }
 
 export interface ResolveOutcome {
@@ -72,6 +74,8 @@ export interface DebateSessionOptions {
   timeoutSeconds?: number;
   /** AgentManager threaded from the pipeline stage — ensures unavailability state survives across debate calls. */
   agentManager?: IAgentManager;
+  /** Session manager for caller-managed session lifecycle (ADR-019 §4). */
+  sessionManager?: import("../session/types").ISessionManager;
   /** Optional ReviewerSession for debate+dialogue mode (US-001/US-002) */
   reviewerSession?: import("../review/dialogue").ReviewerSession;
   /** Outer resolver context (without labeledProposals) — sub-modules complete it */

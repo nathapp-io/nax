@@ -6,6 +6,17 @@ import type { DebateStageConfig } from "../../../src/debate/types";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import { makeMockAgentManager } from "../../helpers";
 
+test("SuccessfulProposal type carries optional handle field (compile-time check)", () => {
+  const proposal: import("../../../src/debate/session-helpers").SuccessfulProposal = {
+    debater: { agent: "claude", model: "fast" },
+    agentName: "claude",
+    output: "test",
+    cost: 0,
+    handle: { id: "sess-001", agentName: "claude" },
+  };
+  expect(proposal.handle?.id).toBe("sess-001");
+});
+
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
     enabled: true,
