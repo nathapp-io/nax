@@ -93,6 +93,7 @@ export class SpawnAcpSession implements AcpSession {
   private readonly cwd: string;
   private readonly model: string;
   private readonly timeoutSeconds: number;
+  private readonly promptRetries: number;
   private readonly permissionMode: string;
   private readonly env: Record<string, string | undefined>;
   private readonly onPidSpawned?: (pid: number) => void;
@@ -108,6 +109,7 @@ export class SpawnAcpSession implements AcpSession {
     cwd: string;
     model: string;
     timeoutSeconds: number;
+    promptRetries: number;
     permissionMode: string;
     env: Record<string, string | undefined>;
     onPidSpawned?: (pid: number) => void;
@@ -119,6 +121,7 @@ export class SpawnAcpSession implements AcpSession {
     this.cwd = opts.cwd;
     this.model = opts.model;
     this.timeoutSeconds = opts.timeoutSeconds;
+    this.promptRetries = opts.promptRetries;
     this.permissionMode = opts.permissionMode;
     this.env = opts.env;
     this.onPidSpawned = opts.onPidSpawned;
@@ -138,6 +141,7 @@ export class SpawnAcpSession implements AcpSession {
       this.model,
       "--timeout",
       String(this.timeoutSeconds),
+      ...(this.promptRetries > 0 ? ["--prompt-retries", String(this.promptRetries)] : []),
       this.agentName,
       "prompt",
       "-s",
@@ -368,10 +372,17 @@ export class SpawnAcpClient implements AcpClient {
   private readonly model: string;
   private readonly cwd: string;
   private readonly timeoutSeconds: number;
+  private readonly promptRetries: number;
   private readonly env: Record<string, string | undefined>;
   private readonly onPidSpawned?: (pid: number) => void;
 
-  constructor(cmdStr: string, cwd?: string, timeoutSeconds?: number, onPidSpawned?: (pid: number) => void) {
+  constructor(
+    cmdStr: string,
+    cwd?: string,
+    timeoutSeconds?: number,
+    onPidSpawned?: (pid: number) => void,
+    promptRetries?: number,
+  ) {
     // Parse: "acpx --model <model> <agentName>"
     const parts = cmdStr.split(/\s+/);
     const modelIdx = parts.indexOf("--model");
@@ -383,6 +394,7 @@ export class SpawnAcpClient implements AcpClient {
     }
     this.cwd = cwd || process.cwd();
     this.timeoutSeconds = timeoutSeconds || 1800;
+    this.promptRetries = promptRetries ?? 0;
     this.env = buildAllowedEnv();
     this.onPidSpawned = onPidSpawned;
   }
@@ -440,6 +452,7 @@ export class SpawnAcpClient implements AcpClient {
       cwd: this.cwd,
       model: this.model,
       timeoutSeconds: this.timeoutSeconds,
+      promptRetries: this.promptRetries,
       permissionMode: opts.permissionMode,
       env: this.env,
       onPidSpawned: this.onPidSpawned,
@@ -465,6 +478,7 @@ export class SpawnAcpClient implements AcpClient {
       cwd: this.cwd,
       model: this.model,
       timeoutSeconds: this.timeoutSeconds,
+      promptRetries: this.promptRetries,
       permissionMode,
       env: this.env,
       onPidSpawned: this.onPidSpawned,
@@ -504,6 +518,7 @@ export function createSpawnAcpClient(
   cwd?: string,
   timeoutSeconds?: number,
   onPidSpawned?: (pid: number) => void,
+  promptRetries?: number,
 ): AcpClient {
-  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned);
+  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries);
 }

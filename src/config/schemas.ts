@@ -717,6 +717,10 @@ const AgentFallbackConfigSchema = z.object({
   rebuildContext: z.boolean().default(true),
 });
 
+const AgentAcpConfigSchema = z.object({
+  promptRetries: z.number().int().min(0).max(5).default(0),
+});
+
 const AgentConfigSchema = z.object({
   protocol: z.literal("acp").default("acp"),
   default: z.string().trim().min(1, "agent.default must be non-empty").default("claude"),
@@ -729,6 +733,7 @@ const AgentConfigSchema = z.object({
     onQualityFailure: false,
     rebuildContext: true,
   }),
+  acp: AgentAcpConfigSchema.default({ promptRetries: 0 }),
 });
 
 const PrecheckConfigSchema = z.object({
@@ -1091,6 +1096,7 @@ export const NaxConfigSchema = z
       maxInteractionTurns: 20,
       promptAudit: { enabled: false },
       fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
+      acp: { promptRetries: 0 },
     }),
     precheck: PrecheckConfigSchema.optional().default({
       storySizeGate: {
