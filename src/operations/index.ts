@@ -12,7 +12,7 @@ export type { AcceptanceDiagnoseInput, AcceptanceDiagnoseOutput } from "./accept
 export { acceptanceFixSourceOp, acceptanceFixTestOp } from "./acceptance-fix";
 export type { AcceptanceFixSourceInput, AcceptanceFixTestInput, AcceptanceFixOutput } from "./acceptance-fix";
 export { semanticReviewOp } from "./semantic-review";
-export type { SemanticReviewInput, SemanticReviewOutput, LlmReviewFinding } from "./semantic-review";
+export type { SemanticReviewInput, SemanticReviewOutput } from "./semantic-review";
 export { adversarialReviewOp } from "./adversarial-review";
 export type { AdversarialReviewInput, AdversarialReviewOutput } from "./adversarial-review";
 export { rectifyOp } from "./rectify";
@@ -21,6 +21,7 @@ export type {
   BuildContext,
   CallContext,
   CompleteOperation,
+  LlmReviewFinding,
   Operation,
   RunOperation,
 } from "./types";

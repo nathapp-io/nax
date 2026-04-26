@@ -62,3 +62,12 @@ export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
 }
 
 export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;
+
+/** Parsed finding shape returned by LLM reviewer ops (semantic-review, adversarial-review). */
+export interface LlmReviewFinding {
+  severity: string;
+  file: string;
+  line?: number;
+  issue: string;
+  suggestion?: string;
+}

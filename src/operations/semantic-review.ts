@@ -1,20 +1,11 @@
 import { reviewConfigSelector } from "../config";
 import { ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure } from "../prompts";
-import type { AdversarialReviewConfig, SemanticReviewConfig, SemanticStory } from "../review/types";
+import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { RunOperation } from "./types";
+import type { LlmReviewFinding, RunOperation } from "./types";
 
-export type { PriorFailure };
-export type { AdversarialReviewConfig, SemanticReviewConfig, SemanticStory };
-
-export interface LlmReviewFinding {
-  severity: string;
-  file: string;
-  line?: number;
-  issue: string;
-  suggestion?: string;
-}
+export type { PriorFailure, SemanticReviewConfig, SemanticStory };
 
 export interface SemanticReviewInput {
   story: SemanticStory;
