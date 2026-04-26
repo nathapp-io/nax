@@ -6,7 +6,6 @@ import { describe, expect, test } from "bun:test";
 import { type ExecuteTestFixOptions, executeTestFix } from "../../../src/acceptance/fix-executor";
 import type { DiagnosisResult } from "../../../src/acceptance/types";
 import type { IAgentManager } from "../../../src/agents";
-import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/schema";
 import { AcceptancePromptBuilder } from "../../../src/prompts";
