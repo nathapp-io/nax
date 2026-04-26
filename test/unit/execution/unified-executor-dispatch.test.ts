@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { precomputeBatchPlan } from "../../../src/execution/batching";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
@@ -315,3 +316,74 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
   });
 });
 
+describe("useBatch scheduling refresh", () => {
+  let deps: Record<string, unknown>;
+  let origRunIteration: unknown;
+
+  beforeEach(async () => {
+    const mod = await import("../../../src/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunIteration = deps.runIteration;
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runIteration = origRunIteration;
+    }
+    mock.restore();
+  });
+
+  test("recomputes the batch plan after a story completes so newly unblocked stories run next", async () => {
+    const us000 = {
+      ...makePendingStory("US-000"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const us001 = {
+      ...makePendingStory("US-001"),
+      dependencies: ["US-000"],
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+    const us006 = {
+      ...makePendingStory("US-006"),
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+
+    const initialPrd = makePrd([us000, us001, us006]);
+    const staleBatchPlan = precomputeBatchPlan([us000, us006], 4);
+    const selectedStoryIds: string[] = [];
+
+    deps.runIteration = mock(async (_ctx: unknown, prdArg: typeof initialPrd, selection: { story: { id: string } }) => {
+      selectedStoryIds.push(selection.story.id);
+      const nextPrd = {
+        ...prdArg,
+        userStories: prdArg.userStories.map((story) =>
+          story.id === selection.story.id ? { ...story, status: "passed" as const, passes: true } : story,
+        ),
+      };
+      return {
+        prd: nextPrd,
+        storiesCompletedDelta: 1,
+        costDelta: 0,
+        prdDirty: false,
+      };
+    });
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const ctx = {
+      ...makeCtx(),
+      config: {
+        ...makeCtx().config,
+        execution: {
+          ...makeCtx().config.execution,
+          maxIterations: 2,
+        },
+      },
+      useBatch: true,
+      batchPlan: staleBatchPlan,
+    };
+
+    await executeUnified(ctx as never, initialPrd as never);
+
+    expect(selectedStoryIds).toEqual(["US-000", "US-001"]);
+  });
+});

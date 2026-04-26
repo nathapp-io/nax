@@ -186,7 +186,7 @@ describe("getNextStory() — run order S1-I1 -> S1-I2 (retry) -> S2-I1", () => {
     expect(pick2?.id).toBe("US-002");
   });
 
-  test("BUG-029: prioritizes escalated story (pending + attempts > 0) over other pending stories", () => {
+  test("BUG-029: prioritizes escalated story when attempt counter still reflects prior work", () => {
     const prd = makePrd([makeStory("US-001"), makeStory("US-002"), makeStory("US-003")]);
     const maxRetries = 2;
 
@@ -198,6 +198,40 @@ describe("getNextStory() — run order S1-I1 -> S1-I2 (retry) -> S2-I1", () => {
     // getNextStory should prioritize US-001 (escalated, pending with attempts)
     const pick = getNextStory(prd, "US-001", maxRetries);
     expect(pick?.id).toBe("US-001");
+  });
+
+  test("BUG-029: prioritizes escalated story after tier bump resets attempts to 0", () => {
+    const prd = makePrd([makeStory("US-006"), makeStory("US-001")]);
+    const maxRetries = 2;
+
+    prd.userStories[0].status = "pending";
+    prd.userStories[0].attempts = 0;
+    prd.userStories[0].routing = {
+      complexity: "complex",
+      modelTier: "balanced",
+      testStrategy: "three-session-tdd",
+      reasoning: "Escalated after fast-tier failure",
+    };
+    prd.userStories[0].escalations = [
+      {
+        fromTier: "fast",
+        toTier: "balanced",
+        reason: "Autofix exhausted",
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    prd.userStories[0].priorFailures = [
+      {
+        attempt: 1,
+        modelTier: "fast",
+        stage: "review",
+        summary: "Failed with tier fast, escalating to balanced",
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const pick = getNextStory(prd, "US-006", maxRetries);
+    expect(pick?.id).toBe("US-006");
   });
 
   test("BUG-029: does not reprioritize story with 0 attempts (fresh pending)", () => {

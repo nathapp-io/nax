@@ -16,6 +16,7 @@ import type { PipelineContext } from "../pipeline/types";
 import { countStories, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
+import { precomputeBatchPlan } from "./batching";
 import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
 import type { DeferredReviewResult } from "./deferred-review";
@@ -54,7 +55,6 @@ export async function executeUnified(
   let storiesCompleted = 0;
   let totalCost = 0;
   let lastStoryId: string | null = null;
-  let currentBatchIndex = 0;
   const allStoryMetrics: StoryMetrics[] = [];
   let warningSent = false;
   let deferredReview: DeferredReviewResult | undefined;
@@ -457,13 +457,9 @@ export async function executeUnified(
       }
 
       // Sequential single-story dispatch
-      const selected = selectNextStories(prd, ctx.config, ctx.batchPlan, currentBatchIndex, lastStoryId, ctx.useBatch);
+      const currentBatchPlan = ctx.useBatch ? precomputeBatchPlan(getAllReadyStories(prd), 4) : ctx.batchPlan;
+      const selected = selectNextStories(prd, ctx.config, currentBatchPlan, 0, lastStoryId, ctx.useBatch);
       if (!selected) return buildResult("no-stories");
-      if (!selected.selection) {
-        currentBatchIndex = selected.nextBatchIndex;
-        continue;
-      }
-      currentBatchIndex = selected.nextBatchIndex;
       const { selection } = selected;
       if (!ctx.useBatch) lastStoryId = selection.story.id;
 
