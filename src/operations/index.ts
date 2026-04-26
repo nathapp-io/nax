@@ -21,6 +21,12 @@ export { adversarialReviewOp } from "./adversarial-review";
 export type { AdversarialReviewInput, AdversarialReviewOutput } from "./adversarial-review";
 export { rectifyOp } from "./rectify";
 export type { RectifyInput, RectifyOutput } from "./rectify";
+export { debateProposeOp } from "./debate-propose";
+export type { DebateProposeInput } from "./debate-propose";
+export { debateRebutOp } from "./debate-rebut";
+export type { DebateRebutInput } from "./debate-rebut";
+export { debateRankOp } from "./debate-rank";
+export type { DebateRankInput } from "./debate-rank";
 export type {
   BuildContext,
   CallContext,
