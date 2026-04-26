@@ -52,20 +52,20 @@ describe("src/debate/ file size constraint (AC1)", () => {
     expect(await file.exists()).toBe(true);
   });
 
-  test("session-one-shot.ts exists as a separate file in src/debate/", async () => {
-    const oneShotPath = join(process.cwd(), "src", "debate", "session-one-shot.ts");
-    const file = Bun.file(oneShotPath);
+  test("runner-hybrid.ts exists as a separate file in src/debate/", async () => {
+    const hybridPath = join(process.cwd(), "src", "debate", "runner-hybrid.ts");
+    const file = Bun.file(hybridPath);
     expect(await file.exists()).toBe(true);
   });
 
-  test("session-stateful.ts exists as a separate file in src/debate/", async () => {
-    const statefulPath = join(process.cwd(), "src", "debate", "session-stateful.ts");
+  test("runner-stateful.ts exists as a separate file in src/debate/", async () => {
+    const statefulPath = join(process.cwd(), "src", "debate", "runner-stateful.ts");
     const file = Bun.file(statefulPath);
     expect(await file.exists()).toBe(true);
   });
 
-  test("session-plan.ts exists as a separate file in src/debate/", async () => {
-    const planPath = join(process.cwd(), "src", "debate", "session-plan.ts");
+  test("runner-plan.ts exists as a separate file in src/debate/", async () => {
+    const planPath = join(process.cwd(), "src", "debate", "runner-plan.ts");
     const file = Bun.file(planPath);
     expect(await file.exists()).toBe(true);
   });

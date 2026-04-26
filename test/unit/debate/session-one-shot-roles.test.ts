@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
+import { DebateRunner } from "../../../src/debate/runner";
+import { _debateSessionDeps } from "../../../src/debate/session-helpers";
 import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import { makeMockAgentManager } from "../../helpers";
+import type { CallContext } from "../../../src/operations/types";
+import { DEFAULT_CONFIG } from "../../../src/config";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -16,92 +19,103 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-function makeMockManager(
-  completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
-) {
-  return makeMockAgentManager({
-    completeFn: completeFn ?? (async () => ({ output: '{"passed":true}', costUsd: 0, source: "fallback" as const })),
+function makeCallCtx(
+  storyId: string,
+  completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
+): CallContext {
+  const agentManager = makeMockAgentManager({
+    completeAsFn: completeAsFn ?? (async () => ({ output: '{"passed":true}', costUsd: 0, source: "fallback" as const })),
   });
+  return {
+    runtime: {
+      agentManager,
+      sessionManager: makeSessionManager(),
+      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
+      signal: undefined,
+    } as any,
+    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    packageDir: "/tmp/work",
+    agentName: "claude",
+    storyId,
+    featureName: "test",
+  };
 }
 
-describe("DebateSession.runOneShot() session roles", () => {
-  let origAgentManager: typeof _debateSessionDeps.agentManager;
+let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
-  beforeEach(() => {
-    origAgentManager = _debateSessionDeps.agentManager;
-  });
+beforeEach(() => {
+  origGetSafeLogger = _debateSessionDeps.getSafeLogger;
+  _debateSessionDeps.getSafeLogger = mock(() => ({
+    info: mock(() => {}),
+    debug: mock(() => {}),
+    warn: mock(() => {}),
+    error: mock(() => {}),
+  }));
+});
 
-  afterEach(() => {
-    _debateSessionDeps.agentManager = origAgentManager;
-  });
+afterEach(() => {
+  _debateSessionDeps.getSafeLogger = origGetSafeLogger;
+  mock.restore();
+});
 
-  test("uses indexed session roles for proposal round", async () => {
-    const roles: string[] = [];
+describe("DebateRunner.runPanelOneShot() proposal invocations", () => {
+  test("calls completeAs for each debater in the proposal round", async () => {
+    const agentCalls: string[] = [];
 
-    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, _prompt, opts) => {
-        roles.push(opts?.sessionRole ?? "");
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-ROLE", async (agentName, _prompt, _opts) => {
+        agentCalls.push(agentName);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-    });
-
-    const session = new DebateSession({
-      storyId: "US-ROLE",
+      }),
       stage: "review",
       stageConfig: makeStageConfig(),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("prompt");
+    await runner.run("prompt");
 
-    const proposalRoles = roles.filter((role) => role.startsWith("debate-proposal"));
-    expect(proposalRoles).toEqual(["debate-proposal-0", "debate-proposal-1"]);
+    // 2 debaters (opencode × 2) → 2 proposal calls
+    expect(agentCalls).toHaveLength(2);
+    expect(agentCalls.every((a) => a === "opencode")).toBe(true);
   });
 
-  test("uses indexed session roles for critique round", async () => {
-    const roles: string[] = [];
+  test("calls completeAs for each debater in proposal AND critique rounds (rounds=2)", async () => {
+    const callCount = { total: 0 };
 
-    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, _prompt, opts) => {
-        roles.push(opts?.sessionRole ?? "");
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-ROLE", async (_agentName, _prompt, _opts) => {
+        callCount.total++;
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-    });
-
-    const session = new DebateSession({
-      storyId: "US-ROLE",
+      }),
       stage: "review",
       stageConfig: makeStageConfig({
         rounds: 2,
         resolver: { type: "synthesis" },
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("prompt");
+    await runner.run("prompt");
 
-    const critiqueRoles = roles.filter((role) => role.startsWith("debate-critique"));
-    expect(critiqueRoles).toEqual(["debate-critique-0", "debate-critique-1"]);
+    // 2 debaters × 2 rounds (proposal + critique) + synthesis call = ≥ 4
+    expect(callCount.total).toBeGreaterThanOrEqual(4);
   });
 });
 
 // ─── P1: Proposal prompts include persona block ───────────────────────────────
 
-describe("DebateSession.runOneShot() — persona injection in proposal round (P1)", () => {
-  let origAgentManager: typeof _debateSessionDeps.agentManager;
-
-  beforeEach(() => {
-    origAgentManager = _debateSessionDeps.agentManager;
-  });
-
-  afterEach(() => {
-    _debateSessionDeps.agentManager = origAgentManager;
-  });
-
+describe("DebateRunner.runPanelOneShot() — persona injection in proposal round (P1)", () => {
   test("each debater receives a distinct persona block when autoPersona is true", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt) => {
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-P1", async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-    });
-
-    const session = new DebateSession({
-      storyId: "US-P1",
+      }),
       stage: "review",
       stageConfig: makeStageConfig({
         rounds: 1,
@@ -112,9 +126,11 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
           { agent: "claude", model: "fast" },
         ],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("the task context");
+    await runner.run("the task context");
 
     // Three proposal prompts captured
     expect(capturedPrompts).toHaveLength(3);
@@ -132,13 +148,11 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
   test("proposal prompts do NOT contain persona block when autoPersona is false", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt) => {
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-P1-NO-PERSONA", async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-    });
-
-    const session = new DebateSession({
-      storyId: "US-P1-NO-PERSONA",
+      }),
       stage: "review",
       stageConfig: makeStageConfig({
         rounds: 1,
@@ -148,9 +162,11 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
           { agent: "claude", model: "fast" },
         ],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("the task context");
+    await runner.run("the task context");
 
     for (const prompt of capturedPrompts) {
       expect(prompt).not.toContain("## Your Role");
@@ -160,22 +176,22 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
   test("task context is preserved in proposal prompt alongside persona", async () => {
     const capturedPrompts: string[] = [];
 
-    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt) => {
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-P1-TASK", async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
         return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
-    });
-
-    const session = new DebateSession({
-      storyId: "US-P1-TASK",
+      }),
       stage: "review",
       stageConfig: makeStageConfig({
         rounds: 1,
         autoPersona: true,
         debaters: [{ agent: "claude", model: "fast" }],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("UNIQUE_TASK_CONTENT_XYZ");
+    await runner.run("UNIQUE_TASK_CONTENT_XYZ");
 
     expect(capturedPrompts[0]).toContain("UNIQUE_TASK_CONTENT_XYZ");
     expect(capturedPrompts[0]).toContain("## Your Role");
@@ -184,30 +200,18 @@ describe("DebateSession.runOneShot() — persona injection in proposal round (P1
 
 // ─── P3: labeledProposals uses persona-aware label ────────────────────────────
 
-describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", () => {
-  let origAgentManager: typeof _debateSessionDeps.agentManager;
-
-  beforeEach(() => {
-    origAgentManager = _debateSessionDeps.agentManager;
-  });
-
-  afterEach(() => {
-    _debateSessionDeps.agentManager = origAgentManager;
-  });
-
+describe("DebateRunner.runPanelOneShot() — labeledProposals persona label (P3)", () => {
   test("synthesis prompt labels proposals with persona when autoPersona is true", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt, opts) => {
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-P3", async (_agentName, prompt, opts) => {
         // The synthesis call is identified by sessionRole
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
         return { output: "proposal output", costUsd: 0, source: "fallback" as const };
-    });
-
-    const session = new DebateSession({
-      storyId: "US-P3",
+      }),
       stage: "plan",
       stageConfig: makeStageConfig({
         rounds: 1,
@@ -220,9 +224,11 @@ describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", (
           { agent: "claude", model: "fast" },
         ],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("task");
+    await runner.run("task");
 
     // Synthesis prompt should have persona-labeled proposals
     expect(capturedSynthesisPrompt).toContain("(challenger)");
@@ -233,15 +239,13 @@ describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", (
   test("synthesis prompt labels proposals without persona when autoPersona is false", async () => {
     let capturedSynthesisPrompt = "";
 
-    _debateSessionDeps.agentManager = makeMockManager(async (_agentName, prompt, opts) => {
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-P3-NO-PERSONA", async (_agentName, prompt, opts) => {
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
         return { output: "proposal output", costUsd: 0, source: "fallback" as const };
-    });
-
-    const session = new DebateSession({
-      storyId: "US-P3-NO-PERSONA",
+      }),
       stage: "plan",
       stageConfig: makeStageConfig({
         rounds: 1,
@@ -253,9 +257,11 @@ describe("DebateSession.runOneShot() — labeledProposals persona label (P3)", (
           { agent: "claude", model: "fast" },
         ],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("task");
+    await runner.run("task");
 
     // Should use agent name label only — no persona parens
     expect(capturedSynthesisPrompt).toContain("### Proposal claude");

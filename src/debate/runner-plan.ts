@@ -202,6 +202,7 @@ export async function runPlan(
       workdir: opts.workdir,
       featureName: opts.feature,
       timeoutSeconds: opts.timeoutSeconds ?? 600,
+      agentManager,
       sessionManager: ctx.sessionManager,
     };
     const rebuttalBuilder = new DebatePromptBuilder(

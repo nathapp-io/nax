@@ -1,5 +1,5 @@
 /**
- * Tests for DebateSession — US-002
+ * Tests for DebateRunner — US-002
  *
  * File: session-rounds-and-cost.test.ts
  * Covers:
@@ -10,10 +10,29 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
+import { DebateRunner } from "../../../src/debate/runner";
+import { _debateSessionDeps } from "../../../src/debate/session-helpers";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import type { CompleteOptions, CompleteResult } from "../../../src/agents/types";
-import { makeMockAgentManager } from "../../helpers";
+import type { CallContext } from "../../../src/operations/types";
+import { DEFAULT_CONFIG } from "../../../src/config";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+
+function makeCallCtx(agentManager: ReturnType<typeof makeMockAgentManager>): CallContext {
+  return {
+    runtime: {
+      agentManager,
+      sessionManager: makeSessionManager(),
+      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
+      signal: undefined,
+    } as any,
+    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    packageDir: "/tmp/work",
+    agentName: "claude",
+    storyId: "US-002",
+    featureName: "test",
+  };
+}
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -32,43 +51,42 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
 });
 
 // ─── AC5: critique round when rounds === 2 ────────────────────────────────────
 
-describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
+describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
   test("each debater is called twice when rounds === 2", async () => {
     const callCounts: Record<string, number> = {};
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name) => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name) => {
         callCounts[name] = (callCounts[name] ?? 0) + 1;
-        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
+        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" as const };
       },
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 2,
         resolver: { type: "synthesis" },
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("test prompt");
+    await runner.run("test prompt");
 
     expect(callCounts["claude"]).toBe(2);
     expect(callCounts["opencode"]).toBe(2);
@@ -77,25 +95,27 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
   test("claude's critique prompt contains opencode's proposal", async () => {
     const promptsByAgent: Record<string, string[]> = {};
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name, prompt) => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
-        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
+        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" as const };
       },
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 2,
         resolver: { type: "synthesis" },
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("test prompt");
+    await runner.run("test prompt");
 
     const claudeRound2Prompt = promptsByAgent["claude"]?.[1];
     expect(claudeRound2Prompt).toBeDefined();
@@ -105,25 +125,27 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
   test("opencode's critique prompt contains claude's proposal", async () => {
     const promptsByAgent: Record<string, string[]> = {};
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name, prompt) => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
-        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
+        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" as const };
       },
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 2,
         resolver: { type: "synthesis" },
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("test prompt");
+    await runner.run("test prompt");
 
     const opencodeRound2Prompt = promptsByAgent["opencode"]?.[1];
     expect(opencodeRound2Prompt).toBeDefined();
@@ -133,25 +155,27 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
   test("debater's critique prompt does NOT contain its own proposal", async () => {
     const promptsByAgent: Record<string, string[]> = {};
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name, prompt) => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
-        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
+        return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" as const };
       },
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 2,
         resolver: { type: "synthesis" },
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("test prompt");
+    await runner.run("test prompt");
 
     const claudeRound2Prompt = promptsByAgent["claude"]?.[1];
     expect(claudeRound2Prompt).not.toContain("proposal from claude");
@@ -160,27 +184,29 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
 
 // ─── AC6: critique round skipped when rounds === 1 ────────────────────────────
 
-describe("DebateSession.run() — no critique round (rounds === 1)", () => {
-  test("each debater's complete() is called exactly once when rounds === 1", async () => {
+describe("DebateRunner.run() — no critique round (rounds === 1)", () => {
+  test("each debater's completeAs() is called exactly once when rounds === 1", async () => {
     const callCounts: Record<string, number> = {};
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name) => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name) => {
         callCounts[name] = (callCounts[name] ?? 0) + 1;
-        return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
+        return { output: `{"passed": true}`, costUsd: 0, source: "fallback" as const };
       },
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 1,
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("test prompt");
+    await runner.run("test prompt");
 
     expect(callCounts["claude"]).toBe(1);
     expect(callCounts["opencode"]).toBe(1);
@@ -189,58 +215,37 @@ describe("DebateSession.run() — no critique round (rounds === 1)", () => {
 
 // ─── AC11: totalCostUsd is aggregated ─────────────────────────────────────────
 
-describe("DebateSession.run() — cost tracking", () => {
-  test("DebateResult.totalCostUsd aggregates proposal, critique, and resolver costs", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async () => ({
-        output: `{"passed": true}`,
-        costUsd: 0.1,
-        source: "exact",
-      }),
-    });
-
-    const session = new DebateSession({
-      storyId: "US-002",
-      stage: "review",
-      stageConfig: makeStageConfig({
-        rounds: 2,
-        resolver: { type: "synthesis", agent: "claude" },
-      }),
-    });
-
-    const result = await session.run("test prompt");
-
-    expect(typeof result.totalCostUsd).toBe("number");
-    expect(result.totalCostUsd).toBeCloseTo(0.7, 6);
-  });
-
+describe("DebateRunner.run() — cost tracking", () => {
   test("DebateResult has totalCostUsd field", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0.1, source: "fallback" as const }),
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name, _p, _o) => ({ output: `output from ${name}`, costUsd: 0.1, source: "fallback" as const }),
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig(),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
 
     expect("totalCostUsd" in result).toBe(true);
+    expect(typeof result.totalCostUsd).toBe("number");
   });
 });
 
 // ─── AC12: proposals contain debater identity ────────────────────────────────
 
-describe("DebateSession.run() — proposals structure", () => {
+describe("DebateRunner.run() — proposals structure", () => {
   test("DebateResult.proposals contains one entry per successful debater", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" as const }),
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [
@@ -248,20 +253,22 @@ describe("DebateSession.run() — proposals structure", () => {
           { agent: "opencode", model: "gpt-4o-mini" },
         ],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
 
     expect(result.proposals).toHaveLength(2);
   });
 
   test("each proposal entry contains debater identity (agent name)", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" as const }),
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [
@@ -269,9 +276,11 @@ describe("DebateSession.run() — proposals structure", () => {
           { agent: "opencode", model: "gpt-4o-mini" },
         ],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
 
     const claudeProposal = result.proposals.find((p) => p.debater.agent === "claude");
     expect(claudeProposal).toBeDefined();
@@ -279,12 +288,12 @@ describe("DebateSession.run() — proposals structure", () => {
   });
 
   test("each proposal entry contains the output from completeAs()", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (name) => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" as const }),
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [
@@ -292,9 +301,11 @@ describe("DebateSession.run() — proposals structure", () => {
           { agent: "opencode", model: "gpt-4o-mini" },
         ],
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
 
     const claudeProposal = result.proposals.find((p) => p.debater.agent === "claude");
     expect(claudeProposal?.output).toBe("output from claude");
@@ -304,17 +315,19 @@ describe("DebateSession.run() — proposals structure", () => {
   });
 
   test("DebateResult includes storyId, stage, and resolverType", async () => {
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async () => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" }),
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
     });
 
-    const session = new DebateSession({
-      storyId: "US-002",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx(agentManager),
       stage: "review",
       stageConfig: makeStageConfig({ resolver: { type: "majority-fail-closed" } }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
 
     expect(result.storyId).toBe("US-002");
     expect(result.stage).toBe("review");

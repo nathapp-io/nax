@@ -2,7 +2,6 @@
  * Debate module barrel export
  */
 
-export { DebateSession } from "./session";
 export { DebateRunner } from "./runner";
 export type { DebateRunnerOptions } from "./runner";
 export { _debateSessionDeps, resolveDebaterModel } from "./session-helpers";

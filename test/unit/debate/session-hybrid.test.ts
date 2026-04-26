@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _debateSessionDeps } from "../../../src/debate/session";
-import type { HybridCtx } from "../../../src/debate/session-hybrid";
+import { _debateSessionDeps } from "../../../src/debate/session-helpers";
+import type { HybridCtx } from "../../../src/debate/runner-hybrid";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
@@ -63,7 +63,7 @@ afterEach(() => {
 
 describe("runHybrid() — handle IDs correspond to sessionRole (AC1)", () => {
   test("debater 0 gets handle 'debate-hybrid-0' and debater 1 gets 'debate-hybrid-1'", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const openedNames: string[] = [];
     const ctx = makeHybridCtx({
       sessionManager: makeSessionManager({
@@ -78,7 +78,7 @@ describe("runHybrid() — handle IDs correspond to sessionRole (AC1)", () => {
   });
 
   test("sessionRole index matches debater position in the debaters array (3 debaters)", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const openedNames: string[] = [];
     const ctx = makeHybridCtx({
       stageConfig: makeHybridStageConfig({
@@ -105,7 +105,7 @@ describe("runHybrid() — handle IDs correspond to sessionRole (AC1)", () => {
 
 describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () => {
   test("all debaters are invoked in the proposal round", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const invoked: string[] = [];
     const ctx = makeHybridCtx({
       agentManager: makeMockAgentManager({
@@ -129,7 +129,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
   });
 
   test("maxConcurrentDebaters: 1 still runs all proposals (sequentially)", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const proposalInvoked: string[] = [];
     const ctx = makeHybridCtx({
       config: { debate: { maxConcurrentDebaters: 1 } } as any,
@@ -150,7 +150,7 @@ describe("runHybrid() — parallel proposals via allSettledBounded (AC2)", () =>
 
 describe("runHybrid() — pre-opened sessions per debater (AC3)", () => {
   test("opens one session per debater before proposal round", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const openCalls: string[] = [];
     const runAsSessionCalls: number[] = [];
     const closeCalls: number[] = [];
@@ -183,7 +183,7 @@ describe("runHybrid() — pre-opened sessions per debater (AC3)", () => {
 
 describe("runHybrid() — single-agent fallback when fewer than 2 proposals succeed (AC4)", () => {
   test("returns outcome=passed with single debater when exactly 1 proposal succeeds", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const ctx = makeHybridCtx({
       agentManager: makeMockAgentManager({
         runAsSessionFn: async (agentName) => {
@@ -201,7 +201,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
   });
 
   test("returns outcome=failed when 0 proposals succeed and fallback retry also fails", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const ctx = makeHybridCtx({
       agentManager: makeMockAgentManager({
         runAsSessionFn: async () => { throw new Error("all failed"); },
@@ -217,7 +217,7 @@ describe("runHybrid() — single-agent fallback when fewer than 2 proposals succ
 
 describe("runHybrid() — successful proposal outputs collected (AC5)", () => {
   test("both proposal outputs appear in result.proposals when 2 proposals succeed", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const ctx = makeHybridCtx({
       agentManager: makeMockAgentManager({
         runAsSessionFn: async (agentName) => ({
@@ -239,7 +239,7 @@ describe("runHybrid() — successful proposal outputs collected (AC5)", () => {
 
 describe("runHybrid() — adapter resolution via getAgent (AC6)", () => {
   test("manager.getAgent is called for each debater to resolve adapters", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const agentCalls: string[] = [];
     const ctx = makeHybridCtx({
       agentManager: makeMockAgentManager({
@@ -260,7 +260,7 @@ describe("runHybrid() — adapter resolution via getAgent (AC6)", () => {
   });
 
   test("debater is skipped when manager.getAgent returns undefined — triggers single-agent fallback", async () => {
-    const { runHybrid } = await import("../../../src/debate/session-hybrid");
+    const { runHybrid } = await import("../../../src/debate/runner-hybrid");
     const ctx = makeHybridCtx({
       agentManager: makeMockAgentManager({
         unavailableAgents: new Set(["opencode"]),
