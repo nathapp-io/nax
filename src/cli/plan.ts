@@ -247,8 +247,9 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     });
 
     const rt = createRuntime(config, workdir, { agentManager });
+    let autoPrd: PRD;
     try {
-      rawResponse = await callOp(
+      autoPrd = await callOp(
         {
           runtime: rt,
           packageView: rt.packages.resolve(),
@@ -260,6 +261,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         {
           specContent,
           codebaseContext,
+          featureName: options.feature,
+          branchName,
           packages: relativePackages,
           packageDetails,
           projectProfile: config?.project,
@@ -268,7 +271,9 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     } finally {
       await rt.close().catch(() => {});
     }
-    await _planDeps.writeFile(outputPath, rawResponse);
+    await _planDeps.writeFile(outputPath, JSON.stringify({ ...autoPrd, project: projectName }, null, 2));
+    logger?.info("plan", "[OK] PRD written", { outputPath });
+    return outputPath;
   } else {
     rawResponse = await runInteractivePlan();
   }
@@ -359,11 +364,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // complexity normalization, dependency cross-ref, and forces status → pending.
   const finalPrd = validatePlanOutput(rawResponse, options.feature, branchName);
 
-  // Override project with auto-detected name (validatePlanOutput fills feature/branchName already)
-  finalPrd.project = projectName;
-
-  // Write normalized PRD (overwrites agent-written file with validated/normalized version)
-  await _planDeps.writeFile(outputPath, JSON.stringify(finalPrd, null, 2));
+  // Write normalized PRD — spread to avoid mutating the validated object
+  await _planDeps.writeFile(outputPath, JSON.stringify({ ...finalPrd, project: projectName }, null, 2));
 
   logger?.info("plan", "[OK] PRD written", { outputPath });
 

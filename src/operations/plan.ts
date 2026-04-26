@@ -1,5 +1,7 @@
 import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
+import { validatePlanOutput } from "../prd/schema";
+import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { CompleteOperation } from "./types";
@@ -7,6 +9,8 @@ import type { CompleteOperation } from "./types";
 export interface PlanOpInput {
   specContent: string;
   codebaseContext: string;
+  featureName: string;
+  branchName: string;
   packages?: string[];
   packageDetails?: PackageSummary[];
   projectProfile?: ProjectProfile;
@@ -14,7 +18,7 @@ export interface PlanOpInput {
 
 type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 
-export const planOp: CompleteOperation<PlanOpInput, string, PlanConfig> = {
+export const planOp: CompleteOperation<PlanOpInput, PRD, PlanConfig> = {
   kind: "complete",
   name: "plan",
   stage: "plan",
@@ -34,7 +38,7 @@ export const planOp: CompleteOperation<PlanOpInput, string, PlanConfig> = {
       task: { id: "task", content: `${taskContext}\n\n${outputFormat}`, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
-    return output;
+  parse(output, input, _ctx) {
+    return validatePlanOutput(output, input.featureName, input.branchName);
   },
 };

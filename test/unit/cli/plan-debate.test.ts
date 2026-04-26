@@ -16,7 +16,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
+import type { NaxConfig } from "../../../src/config";
 import type { DebateResult } from "../../../src/debate/types";
+import type { PRD } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 

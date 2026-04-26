@@ -319,9 +319,9 @@ describe("planCommand", () => {
       feature: "url-shortener",
       auto: true,
     });
-    // capturedWriteArgs[1] = validated PRD (project filled by detectProjectName)
-    expect(capturedWriteArgs.length).toBeGreaterThan(1);
-    const written = JSON.parse(capturedWriteArgs[1]?.[1]);
+    // capturedWriteArgs[0] = validated PRD (planOp.parse now calls validatePlanOutput internally)
+    expect(capturedWriteArgs.length).toBeGreaterThan(0);
+    const written = JSON.parse(capturedWriteArgs[0]?.[1]);
     expect(written.project).toBeDefined();
     expect(typeof written.project).toBe("string");
   });
@@ -372,7 +372,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[1];
+    const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.userStories).toBeDefined();
     expect(Array.isArray(written.userStories)).toBe(true);
@@ -407,7 +407,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[1];
+    const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     for (const story of written.userStories) {
       expect(story.status).toBe("pending");
@@ -427,7 +427,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[1];
+    const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.project).toBe("my-awesome-pkg");
   });
@@ -445,7 +445,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[1];
+    const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.project).toBe("repo-name");
   });
@@ -461,7 +461,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[1];
+    const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.branchName).toBe("feat/my-feat");
   });
@@ -474,7 +474,7 @@ describe("planCommand", () => {
       branch: "custom/branch-name",
     });
 
-    const [_path, content] = capturedWriteArgs[1];
+    const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.branchName).toBe("custom/branch-name");
   });
@@ -509,7 +509,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const [_path, content] = capturedWriteArgs[1];
+    const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(written.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
