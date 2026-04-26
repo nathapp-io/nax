@@ -203,15 +203,47 @@ export class AgentManager implements IAgentManager {
           };
           return { result: noAdapterResult, fallbacks, finalBundle: currentBundle, finalPrompt };
         }
+        const startMs = Date.now();
         try {
-          result = await adapter.run(request.runOptions);
+          const opts = request.runOptions;
+          const resolvedPerm = opts.resolvedPermissions ?? { mode: "approve-reads" as const, skipPermissions: false };
+          const sessionName = `nax-mgr-${Date.now()}`;
+          const handle = await adapter.openSession(sessionName, {
+            agentName: adapter.name,
+            workdir: opts.workdir,
+            resolvedPermissions: resolvedPerm,
+            modelDef: opts.modelDef,
+            timeoutSeconds: opts.timeoutSeconds,
+            onPidSpawned: opts.onPidSpawned,
+            onSessionEstablished: opts.onSessionEstablished,
+            signal: opts.abortSignal,
+          });
+          try {
+            const { NO_OP_INTERACTION_HANDLER } = await import("./interaction-handler");
+            const turnResult = await adapter.sendTurn(handle, opts.prompt, {
+              interactionHandler: NO_OP_INTERACTION_HANDLER,
+              signal: opts.abortSignal,
+              maxTurns: opts.maxInteractionTurns ?? 1,
+            });
+            result = {
+              success: true,
+              exitCode: 0,
+              output: turnResult.output,
+              rateLimited: false,
+              durationMs: Date.now() - startMs,
+              estimatedCost: turnResult.cost?.total ?? 0,
+              tokenUsage: turnResult.tokenUsage,
+            };
+          } finally {
+            await adapter.closeSession(handle).catch(() => {});
+          }
         } catch (err) {
           result = {
             success: false,
             exitCode: 1,
             output: err instanceof Error ? err.message : String(err),
             rateLimited: false,
-            durationMs: 0,
+            durationMs: Date.now() - startMs,
             estimatedCost: 0,
             adapterFailure: {
               category: "quality",

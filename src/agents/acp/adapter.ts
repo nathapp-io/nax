@@ -26,7 +26,6 @@ import type { TokenUsage } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
-  AgentResult,
   AgentRunOptions,
   CompleteOptions,
   CompleteResult,
@@ -439,30 +438,6 @@ function extractQuestion(output: string): string | null {
   return contextPara ? `${contextPara}\n\n${questionPara}` : questionPara;
 }
 
-function buildContextToolPreamble(options: AgentRunOptions): string {
-  const tools = options.contextPullTools;
-  if (!tools || tools.length === 0 || !options.contextToolRuntime) {
-    return options.prompt;
-  }
-
-  const toolList = tools
-    .map((tool) => `- ${tool.name}: ${tool.description} (max ${tool.maxCallsPerSession} calls/session)`)
-    .join("\n");
-
-  return `${options.prompt}
-
-## Context Pull Tools
-When you need more repo context, you may request one tool call by replying with exactly:
-<nax_tool_call name="tool_name">
-{"key":"value"}
-</nax_tool_call>
-
-Available tools:
-${toolList}
-
-After you receive a <nax_tool_result ...> block, continue the task normally.`;
-}
-
 function extractContextToolCall(output: string): { name: string; input?: unknown; error?: string } | null {
   const match = output.match(CONTEXT_TOOL_CALL_PATTERN);
   if (!match) return null;
@@ -534,307 +509,6 @@ export class AcpAgentAdapter implements AgentAdapter {
   buildAllowedEnv(_options?: AgentRunOptions): Record<string, string | undefined> {
     // createClient manages its own env; no separate env building needed.
     return {};
-  }
-
-  private _buildInteractionHandler(options: AgentRunOptions): import("../interaction-handler").InteractionHandler {
-    const { contextToolRuntime, contextPullTools, interactionBridge } = options;
-    const hasContextTools = Boolean(contextToolRuntime && (contextPullTools?.length ?? 0) > 0);
-
-    return {
-      async onInteraction(req) {
-        if (req.kind === "context-tool") {
-          if (!hasContextTools || !contextToolRuntime) return null;
-          try {
-            const toolResult = req.error
-              ? buildContextToolResult(req.name, req.error, "error")
-              : buildContextToolResult(req.name, await contextToolRuntime.callTool(req.name, req.input ?? {}));
-            return { answer: toolResult };
-          } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            return { answer: buildContextToolResult(req.name, msg, "error") };
-          }
-        }
-        if (req.kind === "question") {
-          if (!interactionBridge) return null;
-          const answer = await interactionBridge.onQuestionDetected(req.text);
-          return { answer };
-        }
-        return null;
-      },
-    };
-  }
-
-  async run(options: AgentRunOptions): Promise<AgentResult> {
-    const startTime = Date.now();
-
-    getSafeLogger()?.debug("acp-adapter", `Starting run for ${this.name}`, {
-      model: options.modelDef.model,
-      workdir: options.workdir,
-      featureName: options.featureName,
-      storyId: options.storyId,
-      sessionRole: options.sessionRole,
-    });
-
-    // Honour the shutdown abort signal before issuing any new work.
-    // Without this, hitting Ctrl+C could spawn a fresh acpx session during
-    // shutdown and race with teardown.
-    if (options.abortSignal?.aborted) {
-      getSafeLogger()?.warn("acp-adapter", `Run aborted for ${this.name} (shutdown in progress)`, {
-        storyId: options.storyId,
-        featureName: options.featureName,
-      });
-      return {
-        success: false,
-        exitCode: 130,
-        output: "Run aborted — shutdown in progress",
-        rateLimited: false,
-        durationMs: Date.now() - startTime,
-        estimatedCost: 0,
-        adapterFailure: {
-          category: "availability",
-          outcome: "fail-aborted",
-          retriable: false,
-          message: "Run aborted — shutdown in progress",
-        },
-      };
-    }
-
-    try {
-      const result = await this._runUsingPrimitives(options, startTime);
-
-      if (!result.success) {
-        getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, {
-          exitCode: result.exitCode,
-          ...(result.output ? { output: result.output.slice(0, 500) } : {}),
-        });
-
-        const parsed = _fallbackDeps.parseAgentError(result.output ?? "");
-        if (parsed.type === "auth") {
-          return {
-            success: false,
-            exitCode: result.exitCode ?? 1,
-            output: result.output ?? "",
-            rateLimited: false,
-            durationMs: Date.now() - startTime,
-            estimatedCost: result.estimatedCost ?? 0,
-            adapterFailure: {
-              category: "availability",
-              outcome: "fail-auth",
-              retriable: false,
-              message: (result.output ?? "").slice(0, 500),
-            },
-          };
-        }
-        if (parsed.type === "rate-limit") {
-          return {
-            success: false,
-            exitCode: result.exitCode ?? 1,
-            output: result.output ?? "",
-            rateLimited: true,
-            durationMs: Date.now() - startTime,
-            estimatedCost: result.estimatedCost ?? 0,
-            adapterFailure: {
-              category: "availability",
-              outcome: "fail-rate-limit",
-              retriable: true,
-              message: (result.output ?? "").slice(0, 500),
-              ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
-            },
-          };
-        }
-      }
-
-      return result;
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      const parsed = _fallbackDeps.parseAgentError(error.message);
-
-      if (parsed.type === "auth") {
-        return {
-          success: false,
-          exitCode: 1,
-          output: error.message,
-          rateLimited: false,
-          durationMs: Date.now() - startTime,
-          estimatedCost: 0,
-          adapterFailure: {
-            category: "availability",
-            outcome: "fail-auth",
-            retriable: false,
-            message: error.message.slice(0, 500),
-          },
-        };
-      }
-      if (parsed.type === "rate-limit") {
-        return {
-          success: false,
-          exitCode: 1,
-          output: error.message,
-          rateLimited: true,
-          durationMs: Date.now() - startTime,
-          estimatedCost: 0,
-          adapterFailure: {
-            category: "availability",
-            outcome: "fail-rate-limit",
-            retriable: true,
-            message: error.message.slice(0, 500),
-            ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
-          },
-        };
-      }
-      // Unknown error — return as failure result
-      return {
-        success: false,
-        exitCode: 1,
-        output: error.message,
-        rateLimited: false,
-        durationMs: Date.now() - startTime,
-        estimatedCost: 0,
-        adapterFailure: {
-          category: "quality",
-          outcome: "fail-unknown",
-          retriable: false,
-          message: error.message.slice(0, 500),
-        },
-      };
-    }
-  }
-
-  private async _runUsingPrimitives(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
-    const sessionName =
-      (options.session ? this.deriveSessionName(options.session) : undefined) ??
-      options.sessionHandle ??
-      computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
-
-    const resolvedPermissions = options.resolvedPermissions ?? {
-      mode: "approve-reads" as const,
-      skipPermissions: false,
-    };
-
-    const handle = await this.openSession(sessionName, {
-      agentName: this.name,
-      workdir: options.workdir,
-      resolvedPermissions,
-      modelDef: options.modelDef,
-      timeoutSeconds: options.timeoutSeconds,
-      onSessionEstablished: options.onSessionEstablished,
-      onPidSpawned: options.onPidSpawned,
-      signal: options.abortSignal,
-    });
-
-    const impl = handle as AcpSessionHandleImpl;
-    const interactionHandler = this._buildInteractionHandler(options);
-    const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
-    const maxTurns = options.interactionBridge || hasContextTools ? (options.maxInteractionTurns ?? 10) : 1;
-
-    const prompt = buildContextToolPreamble(options);
-
-    let turnResult: TurnResult | undefined;
-    let succeeded = false;
-    let isSessionBroken = false;
-
-    try {
-      turnResult = await this.sendTurn(handle, prompt, {
-        interactionHandler,
-        maxTurns,
-        signal: options.abortSignal,
-      });
-      succeeded = !turnResult._timedOut && !turnResult._aborted && turnResult._lastStopReason === "end_turn";
-      isSessionBroken = !succeeded && turnResult._lastStopReason === "error";
-    } finally {
-      // If turnResult is undefined, sendTurn threw before completing (or prep code
-      // between openSession and the try block threw). Close the session fully.
-      if (turnResult === undefined) {
-        await this.closeSession(handle).catch(() => {});
-      } else if ((succeeded && !options.keepOpen) || isSessionBroken) {
-        if (isSessionBroken) {
-          getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
-        }
-        await this.closeSession(handle);
-      } else if (!succeeded) {
-        getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
-        await impl._client.close().catch(() => {});
-      } else {
-        getSafeLogger()?.debug("acp-adapter", "Keeping session open (keepOpen=true)", { sessionName });
-        await impl._client.close().catch(() => {});
-      }
-    }
-
-    const durationMs = Date.now() - startTime;
-
-    if (turnResult?._aborted) {
-      return {
-        success: false,
-        exitCode: 130,
-        output: "Run aborted — shutdown in progress",
-        rateLimited: false,
-        durationMs,
-        estimatedCost: 0,
-        protocolIds: impl.protocolIds,
-        adapterFailure: {
-          category: "availability",
-          outcome: "fail-aborted",
-          retriable: false,
-          message: "Run aborted — shutdown in progress",
-        },
-      };
-    }
-
-    if (turnResult?._timedOut) {
-      return {
-        success: false,
-        exitCode: 124,
-        output: `Session timed out after ${options.timeoutSeconds}s`,
-        rateLimited: false,
-        durationMs,
-        estimatedCost: 0,
-        protocolIds: impl.protocolIds,
-        adapterFailure: {
-          category: "quality",
-          outcome: "fail-timeout",
-          retriable: true,
-          message: `Session timed out after ${options.timeoutSeconds}s`,
-        },
-      };
-    }
-
-    const success = turnResult?._lastStopReason === "end_turn";
-    const isSessionError = turnResult?._lastStopReason === "error";
-    const isSessionErrorRetryable = isSessionError && turnResult?._retryable === true;
-    const output = turnResult?.output ?? "";
-    const estimatedCost = turnResult?.cost?.total ?? 0;
-    const rawTokenUsage = turnResult?.tokenUsage;
-    const tokenUsage =
-      rawTokenUsage && (rawTokenUsage.inputTokens > 0 || rawTokenUsage.outputTokens > 0) ? rawTokenUsage : undefined;
-    const adapterFailure: AdapterFailure | undefined = success
-      ? undefined
-      : isSessionError
-        ? {
-            category: "quality",
-            outcome: "fail-adapter-error",
-            retriable: isSessionErrorRetryable,
-            message: "ACP session ended with error stopReason",
-          }
-        : {
-            category: "quality",
-            outcome: "fail-unknown",
-            retriable: false,
-            message: `Session ended with stopReason: ${turnResult?._lastStopReason ?? "none"}`,
-          };
-
-    return {
-      success,
-      exitCode: success ? 0 : 1,
-      output: output.slice(-MAX_AGENT_OUTPUT_CHARS),
-      rateLimited: false,
-      sessionError: isSessionError,
-      sessionErrorRetryable: isSessionErrorRetryable,
-      durationMs,
-      estimatedCost,
-      tokenUsage,
-      protocolIds: impl.protocolIds,
-      adapterFailure,
-    };
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
@@ -1002,33 +676,38 @@ export class AcpAgentAdapter implements AgentAdapter {
     const timeoutSeconds =
       options.timeoutSeconds ?? (options.config?.execution?.sessionTimeoutSeconds as number | undefined) ?? 600;
 
-    const result = await this.run({
-      prompt: options.prompt,
+    const resolvedPermissions = options.resolvedPermissions ?? {
+      mode: "approve-reads" as const,
+      skipPermissions: false,
+    };
+    const sessionName = computeAcpHandle(options.workdir, options.featureName, options.storyId, options.sessionRole);
+    const handle = await this.openSession(sessionName, {
+      agentName: this.name,
       workdir: options.workdir,
-      modelTier: options.modelTier ?? "balanced",
+      resolvedPermissions,
       modelDef,
       timeoutSeconds,
-      resolvedPermissions: options.resolvedPermissions,
-      pipelineStage: "plan",
-      config: this.naxConfig,
-      interactionBridge: options.interactionBridge,
-      maxInteractionTurns: options.maxInteractionTurns,
-      featureName: options.featureName,
-      storyId: options.storyId,
-      sessionRole: options.sessionRole,
       onPidSpawned: options.onPidSpawned,
     });
 
-    if (!result.success) {
-      throw new Error(`[acp-adapter] plan() failed: ${result.output}`);
+    let specContent: string;
+    let costUsd: number;
+    try {
+      const turnResult = await this.sendTurn(handle, options.prompt, {
+        interactionHandler: { onInteraction: async () => null },
+        maxTurns: options.maxInteractionTurns ?? 1,
+      });
+      specContent = turnResult.output.trim();
+      costUsd = turnResult.cost?.total ?? 0;
+    } finally {
+      await this.closeSession(handle).catch(() => {});
     }
 
-    const specContent = result.output.trim();
     if (!specContent) {
       throw new Error("[acp-adapter] plan() returned empty spec content");
     }
 
-    return { specContent, costUsd: result.estimatedCost };
+    return { specContent, costUsd };
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
@@ -1182,7 +861,6 @@ export class AcpAgentAdapter implements AgentAdapter {
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
         cost: { total: 0 },
         internalRoundTrips: 0,
-        _aborted: true,
       };
     }
 
@@ -1309,10 +987,6 @@ export class AcpAgentAdapter implements AgentAdapter {
       tokenUsage,
       cost: { total: estimatedCost },
       internalRoundTrips: turnCount,
-      _lastStopReason: lastResponse?.stopReason,
-      _timedOut: timedOut || undefined,
-      _aborted: aborted || undefined,
-      _retryable: lastResponse?.retryable,
     };
   }
 
