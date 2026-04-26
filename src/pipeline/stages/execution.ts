@@ -6,14 +6,16 @@
  * On availability failure, delegates swap policy to AgentManager.runWithFallback().
  */
 
-import { validateAgentForTier } from "../../agents";
+import { validateAgentForTier, wrapAdapterAsManager } from "../../agents";
+import type { AgentRunRequest, IAgentManager } from "../../agents/manager-types";
 import type { AgentAdapter } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
+import type { ContextBundle } from "../../context/engine";
 import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
-import { SingleSessionRunner } from "../../session/runners/single-session-runner";
+import { buildHopCallback } from "../../operations/build-hop-callback";
 import { ThreeSessionRunner } from "../../tdd/three-session-runner";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -187,37 +189,58 @@ export const executionStage: PipelineStage = {
       }),
     };
 
-    // Delegate to SingleSessionRunner. It owns:
-    //   - SessionManager.runInSession bookkeeping (CREATED → RUNNING → COMPLETED/FAILED)
-    //   - per-hop AgentManager.runWithFallback when fallback is enabled
-    //   - bundle rebuild + swap-handoff prompt rewrite on agent swap
-    //   - protocolIds bindHandle at both hop and final boundaries
-    // sessionManager/sessionId are optional — runner falls back to a direct
-    // adapter call when absent (test paths that skip the session stage).
-    const runner = new SingleSessionRunner();
-    const outcome = await runner.run({
-      sessionId: ctx.sessionId,
-      sessionManager: ctx.sessionManager,
-      agentManager: ctx.agentManager,
-      agent,
-      defaultAgent,
+    const effectiveManager: IAgentManager = ctx.agentManager ?? wrapAdapterAsManager(agent);
+
+    // finalBundle/finalPrompt track the last hop's values via closure side-effects.
+    let finalBundle: ContextBundle | undefined = ctx.contextBundle;
+    let finalPrompt: string | undefined = baseRunOptions.prompt;
+
+    // Both must be present: sessionManager provides the session handle;
+    // agentManager.runAsSession dispatches prompts into it. Neither alone is sufficient.
+    const hopCallback =
+      ctx.sessionManager && ctx.agentManager
+        ? buildHopCallback(
+            {
+              sessionManager: ctx.sessionManager,
+              agentManager: ctx.agentManager,
+              story: ctx.story,
+              config: ctx.config,
+              projectDir: ctx.projectDir,
+              featureName: ctx.prd.feature,
+              workdir: ctx.workdir,
+              effectiveTier,
+              defaultAgent,
+              contextToolRunCounter: ctx.contextToolRunCounter,
+              pipelineStage: "run",
+            },
+            ctx.sessionId,
+            baseRunOptions,
+          )
+        : undefined;
+
+    const executeHop: AgentRunRequest["executeHop"] | undefined = hopCallback
+      ? async (agentName, hopBundle, failure, resolvedRunOptions) => {
+          const hop = await hopCallback(agentName, hopBundle, failure, resolvedRunOptions);
+          finalBundle = hop.bundle ?? finalBundle;
+          finalPrompt = hop.prompt;
+          return hop;
+        }
+      : undefined;
+
+    const request: AgentRunRequest = {
       runOptions: baseRunOptions,
       bundle: ctx.contextBundle,
-      config: ctx.config,
-      effectiveTier,
-      story: ctx.story,
-      featureName: ctx.prd.feature,
-      projectDir: ctx.projectDir,
-      workdir: ctx.workdir,
-      contextToolRunCounter: ctx.contextToolRunCounter,
-      agentGetFn: ctx.agentGetFn ?? _executionDeps.getAgent,
-    });
+      signal: ctx.abortSignal,
+      ...(executeHop && { executeHop }),
+    };
 
-    ctx.agentResult = outcome.primaryResult;
-    const result = outcome.primaryResult;
-    const fallbacks = outcome.fallbacks;
-    const finalBundle = outcome.finalBundle;
-    const finalPrompt = outcome.finalPrompt;
+    const result =
+      ctx.sessionManager && ctx.sessionId
+        ? await ctx.sessionManager.runInSession(ctx.sessionId, effectiveManager, request)
+        : await effectiveManager.run(request);
+
+    ctx.agentResult = result;
+    const fallbacks = result.agentFallbacks ?? [];
 
     ctx.agentSwapCount = fallbacks.length;
     if (fallbacks.length > 0) {
@@ -301,12 +324,7 @@ export const executionStage: PipelineStage = {
   },
 };
 
-/**
- * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
- *
- * Bundle-rebuild / swap-handoff helpers moved into SingleSessionRunner
- * (`src/session/runners/single-session-runner.ts` → `_singleSessionRunnerDeps`).
- */
+/** Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x). */
 export const _executionDeps = {
   getAgent: (_name: string): AgentAdapter | undefined => undefined,
   validateAgentForTier,

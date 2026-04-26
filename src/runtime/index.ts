@@ -83,10 +83,13 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     costMiddleware(costAggregator, runId),
     auditMiddleware(promptAuditor, runId),
   ]);
-  const agentManagerOpts: CreateAgentManagerOpts = { middleware, runId };
-  const agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
-
   const sessionManager = opts?.sessionManager ?? new SessionManager();
+  const agentManagerOpts: CreateAgentManagerOpts = {
+    middleware,
+    runId,
+    sendPrompt: (handle, prompt, sendOpts) => sessionManager.sendPrompt(handle, prompt, sendOpts),
+  };
+  const agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
 

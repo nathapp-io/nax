@@ -1,5 +1,6 @@
 import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
+import { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 import type { IAgentManager } from "./manager-types";
 import type { AgentAdapter } from "./types";
 
@@ -70,6 +71,9 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
     decomposeAs: async (agentName, opts) => {
       warnMismatch("decomposeAs", agentName);
       return adapter.decompose(opts);
+    },
+    runAsSession: async (_agentName, handle, prompt, _opts) => {
+      return adapter.sendTurn(handle, prompt, { interactionHandler: NO_OP_INTERACTION_HANDLER });
     },
   };
   return mgr;

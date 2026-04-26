@@ -3,11 +3,13 @@ import type { NaxConfig } from "../config";
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
 import type { MiddlewareChain } from "../runtime/agent-middleware";
 import { AgentManager } from "./manager";
+import type { SendPromptFn } from "./manager";
 import type { IAgentManager } from "./manager-types";
 
 export interface CreateAgentManagerOpts {
   middleware?: MiddlewareChain;
   runId?: string;
+  sendPrompt?: SendPromptFn;
 }
 
 /**

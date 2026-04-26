@@ -1,35 +1,16 @@
 /**
- * Session Runner — Strategy pattern for per-story agent execution.
+ * Session Runner — shared types for per-story agent execution.
  *
- * Motivation:
- *   execution.ts (single-session) and tdd/session-runner.ts (three-session)
- *   have diverged repeatedly on cross-cutting concerns:
- *     - state transitions (#589)
- *     - token propagation (#590)
- *     - protocolIds capture (#591)
- *     - bindHandle wiring (#541)
- *     - descriptor persistence (#522)
- *     - abort signal plumbing (#585, #593)
- *   Each new concern has to be added twice. The fix is to consolidate the
- *   bookkeeping into one place.
- *
- * Architecture (two layers):
- *   1. `SessionManager.runInSession(id, runFn, options)` — per-session
- *      primitive. Owns state transitions, handle binding, token passthrough
- *      for ONE session. Both runners use this internally.
- *   2. `ISessionRunner.run(ctx)` — per-story strategy. `SingleSessionRunner`
- *      uses one session + runWithFallback; `ThreeSessionRunner` (Phase 2)
- *      creates and sequences three sessions (test-writer, implementer,
- *      verifier).
- *
- * Callers (execution.ts) pick the runner based on routing strategy and
- * delegate. No knowledge of session bookkeeping leaves the runner module.
+ * `StoryRunOutcome` and `SessionRunnerContext` are consumed by
+ * `ThreeSessionRunner` (TDD three-session strategy). The `ISessionRunner`
+ * interface was removed in ADR-019 Phase C — ThreeSessionRunner is always
+ * instantiated directly and no longer requires a common interface.
  */
 
 import type { AgentAdapter } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { AgentFallbackRecord } from "../agents/manager-types";
-import type { AgentResult, AgentRunOptions } from "../agents/types";
+import type { AgentResult } from "../agents/types";
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
 
@@ -38,23 +19,10 @@ import type { AdapterFailure } from "../context/engine/types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Low-level runner function — one invocation of an agent for one session.
- * Returns the agent's result verbatim (protocolIds / tokenUsage / failure
- * pass through untouched).
+ * Outcome of one ThreeSessionRunner.run() call — one user story.
  *
- * Two concrete shapes in production:
- *   - `(opts) => adapter.run(opts)` — direct adapter call (TDD per-role)
- *   - `(opts) => agentManager.runWithFallback({ runOptions: opts, bundle })`
- *     — with swap-on-availability-failure (single-session main)
- */
-export type AgentRunner = (options: AgentRunOptions) => Promise<AgentResult>;
-
-/**
- * Outcome of one `ISessionRunner.run()` call — one user story.
- *
- * Aggregates cost/tokens across however many sessions the runner needed
- * (one for SingleSessionRunner, three for ThreeSessionRunner) and the
- * final pass/fail decision.
+ * Aggregates cost/tokens across the three sessions (test-writer, implementer,
+ * verifier) and the final pass/fail decision.
  */
 export interface StoryRunOutcome {
   /** Whether the story's agent work succeeded overall. */
@@ -81,7 +49,7 @@ export interface StoryRunOutcome {
 }
 
 /**
- * Everything a session runner needs from the pipeline. Kept intentionally
+ * Everything ThreeSessionRunner needs from the pipeline. Kept intentionally
  * narrow — runners should not depend on the full PipelineContext.
  */
 export interface SessionRunnerContext {
@@ -101,26 +69,7 @@ export interface SessionRunnerContext {
   /** Default agent name (for model resolution across hops). */
   defaultAgent: string;
   /** Base run options — runner augments with prompt / contextTools / keepOpen per session. */
-  runOptions: AgentRunOptions;
+  runOptions: import("../agents/types").AgentRunOptions;
   /** Context bundle used by the runner (may be rebuilt between swap hops). */
   bundle?: ContextBundle;
-}
-
-/**
- * Strategy interface — one implementation per per-story execution shape.
- *
- * Implementations live next to their domain:
- *   - SingleSessionRunner — src/session/runners/single-session-runner.ts
- *   - ThreeSessionRunner  — src/tdd/three-session-runner.ts (Phase 2)
- *
- * Invariant: every `run()` path must leave every session it touched in a
- * terminal state (COMPLETED or FAILED) before returning. Implementations
- * MUST go through `sessionManager.runInSession` for each session — that
- * wrapper provides the guarantee.
- */
-export interface ISessionRunner {
-  /** Stable identifier used for logging/metrics only. */
-  readonly name: string;
-  /** Execute one user story. Contract: on return, all sessions are terminal. */
-  run(context: SessionRunnerContext): Promise<StoryRunOutcome>;
 }

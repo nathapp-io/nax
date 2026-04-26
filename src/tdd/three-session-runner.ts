@@ -1,19 +1,17 @@
 /**
- * ThreeSessionRunner — ISessionRunner implementation for TDD (three-session
- * test-writer → implementer → verifier). Thin adapter over
- * runThreeSessionTddFromCtx, returning the generic StoryRunOutcome that
- * execution.ts consumes the same way it consumes SingleSessionRunner output.
+ * ThreeSessionRunner — TDD three-session strategy (test-writer → implementer
+ * → verifier). Thin adapter over runThreeSessionTddFromCtx, returning
+ * StoryRunOutcome that execution.ts reads for branch decisions.
  *
- * Every TDD session now goes through SessionManager.runInSession (via
+ * Every TDD session goes through SessionManager.runInSession (via
  * runTddSession's sessionBinding path), so state transitions (#589) and
- * tokenUsage propagation (#590) happen automatically for each of the three
- * roles — no per-role plumbing needed.
+ * tokenUsage propagation (#590) happen automatically for each role.
  */
 
 import type { AgentAdapter } from "../agents";
 import type { AgentResult } from "../agents/types";
 import type { PipelineContext } from "../pipeline/types";
-import type { ISessionRunner, SessionRunnerContext, StoryRunOutcome } from "../session/session-runner";
+import type { SessionRunnerContext, StoryRunOutcome } from "../session/session-runner";
 import { runThreeSessionTddFromCtx } from "./orchestrator";
 import type { FailureCategory, ThreeSessionTddResult } from "./types";
 
@@ -31,8 +29,7 @@ export interface ThreeSessionRunnerContext extends SessionRunnerContext {
 /**
  * Extended StoryRunOutcome for TDD — surfaces fields that the pipeline needs
  * for branch decisions (human review, failure category, full-suite gate,
- * lite flag). SingleSessionRunner doesn't produce these, so they live on
- * the subtype rather than the generic interface.
+ * lite flag).
  */
 export interface ThreeSessionStoryRunOutcome extends StoryRunOutcome {
   needsHumanReview: boolean;
@@ -42,7 +39,7 @@ export interface ThreeSessionStoryRunOutcome extends StoryRunOutcome {
   lite: boolean;
 }
 
-export class ThreeSessionRunner implements ISessionRunner {
+export class ThreeSessionRunner {
   readonly name = "three-session-tdd";
 
   async run(context: ThreeSessionRunnerContext): Promise<ThreeSessionStoryRunOutcome> {

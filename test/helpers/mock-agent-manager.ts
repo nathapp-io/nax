@@ -1,6 +1,7 @@
 import { mock } from "bun:test";
 import type { AgentAdapter, IAgentManager } from "../../src/agents";
-import type { AgentRunRequest } from "../../src/agents/manager-types";
+import type { AgentRunRequest, RunAsSessionOpts } from "../../src/agents/manager-types";
+import type { SessionHandle, TurnResult } from "../../src/agents/types";
 import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../src/agents/types";
 import type { PlanOptions, PlanResult, DecomposeOptions, DecomposeResult } from "../../src/agents/shared/types-extended";
 import { makeAgentAdapter } from "./mock-agent-adapter";
@@ -34,6 +35,7 @@ export interface MockAgentManagerOptions {
   decomposeAsFn?: (agentName: string, opts: DecomposeOptions) => Promise<DecomposeResult>;
   runAsFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: unknown[] }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
+  runAsSessionFn?: (agentName: string, handle: SessionHandle, prompt: string, opts: RunAsSessionOpts) => Promise<TurnResult>;
 }
 
 /**
@@ -50,9 +52,14 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
   const unavailable = opts.unavailableAgents ?? new Set<string>();
   const defaultAdapter = makeAgentAdapter();
 
-  const runFn = opts.runFn
-    ? mock((req: AgentRunRequest) => opts.runFn!(req.runOptions.agent, req.runOptions))
-    : mock(() => Promise.resolve({ ...DEFAULT_RESULT, agentFallbacks: [] }));
+  const runFn = opts.runWithFallbackFn
+    ? mock(async (req: AgentRunRequest) => {
+        const outcome = await opts.runWithFallbackFn!(req);
+        return { ...outcome.result, agentFallbacks: outcome.fallbacks };
+      })
+    : opts.runFn
+      ? mock((req: AgentRunRequest) => opts.runFn!(req.runOptions.agent, req.runOptions))
+      : mock(() => Promise.resolve({ ...DEFAULT_RESULT, agentFallbacks: [] }));
 
   const completeFn = opts.completeFn
     ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!("claude", prompt, completeOpts))
@@ -101,6 +108,17 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
         : mock(() => Promise.resolve({ specContent: "" })),
     decompose: opts.decomposeFn ? mock((planOpts: DecomposeOptions) => opts.decomposeFn!(planOpts)) : mock(() => Promise.resolve({ stories: [] })),
     decomposeAs: opts.decomposeAsFn ? mock((agentName: string, planOpts: DecomposeOptions) => opts.decomposeAsFn!(agentName, planOpts)) : mock(() => Promise.resolve({ stories: [] })),
+    runAsSession: opts.runAsSessionFn
+      ? mock((agentName: string, handle: SessionHandle, prompt: string, sessionOpts: RunAsSessionOpts) =>
+          opts.runAsSessionFn!(agentName, handle, prompt, sessionOpts),
+        )
+      : mock((_agentName: string, _handle: SessionHandle, _prompt: string, _sessionOpts: RunAsSessionOpts) =>
+          Promise.resolve({
+            output: "",
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            internalRoundTrips: 0,
+          } satisfies TurnResult),
+        ),
   } as IAgentManager;
 }
 

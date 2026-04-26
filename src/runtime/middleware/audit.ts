@@ -17,7 +17,12 @@ export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMi
       if (!prompt) return;
 
       const agentResult = (result ?? {}) as Partial<AgentResult>;
-      const { protocolIds, sessionMetadata } = agentResult;
+      const { protocolIds } = agentResult;
+      const sessionName = ctx.sessionHandle?.id;
+      const internalRoundTrips =
+        result && typeof result === "object" && "internalRoundTrips" in result
+          ? (result as { internalRoundTrips: number }).internalRoundTrips
+          : undefined;
 
       const entry: PromptAuditEntry = {
         ts: Date.now(),
@@ -33,11 +38,10 @@ export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMi
         workdir: runOpts?.workdir,
         projectDir: runOpts?.projectDir,
         featureName: runOpts?.featureName,
-        ...(sessionMetadata?.sessionName !== undefined && { sessionName: sessionMetadata.sessionName }),
+        ...(sessionName !== undefined && { sessionName }),
         ...(protocolIds?.recordId !== undefined && { recordId: protocolIds.recordId }),
         ...(protocolIds?.sessionId !== undefined && { sessionId: protocolIds.sessionId }),
-        ...(sessionMetadata?.turn !== undefined && { turn: sessionMetadata.turn }),
-        ...(sessionMetadata?.resumed !== undefined && { resumed: sessionMetadata.resumed }),
+        ...(internalRoundTrips !== undefined && { turn: internalRoundTrips }),
       };
       auditor.record(entry);
     },

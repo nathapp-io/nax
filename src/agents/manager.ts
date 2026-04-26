@@ -24,6 +24,7 @@ import type {
   AgentRunOutcome,
   AgentRunRequest,
   IAgentManager,
+  RunAsSessionOpts,
 } from "./manager-types";
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
@@ -41,6 +42,12 @@ type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
 };
+
+export type SendPromptFn = (
+  handle: import("./types").SessionHandle,
+  prompt: string,
+  opts: RunAsSessionOpts,
+) => Promise<import("./types").TurnResult>;
 
 /** Injectable deps for testability. */
 export const _agentManagerDeps = {
@@ -61,18 +68,20 @@ export class AgentManager implements IAgentManager {
   private readonly _logger: LoggerLike;
   private readonly _middleware: MiddlewareChain;
   private readonly _runId: string;
+  private readonly _sendPrompt: SendPromptFn | undefined;
   readonly events: AgentManagerEvents;
 
   constructor(
     config: NaxConfig,
     registry?: AgentRegistry,
-    opts?: { logger?: LoggerLike; middleware?: MiddlewareChain; runId?: string },
+    opts?: { logger?: LoggerLike; middleware?: MiddlewareChain; runId?: string; sendPrompt?: SendPromptFn },
   ) {
     this._config = config;
     this._registry = registry;
     this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {}, info: () => {} };
     this._middleware = opts?.middleware ?? MiddlewareChain.empty();
     this._runId = opts?.runId ?? crypto.randomUUID();
+    this._sendPrompt = opts?.sendPrompt;
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
@@ -423,6 +432,45 @@ export class AgentManager implements IAgentManager {
           ? { ...ctx, agentName: outcome.finalAgent ?? agentName, prompt: outcome.finalPrompt ?? ctx.prompt }
           : ctx;
       await this._middleware.runAfter(hopCtx, result, Date.now() - start);
+      return result;
+    } catch (err) {
+      await this._middleware.runOnError(ctx, err, Date.now() - start);
+      throw err;
+    }
+  }
+
+  async runAsSession(
+    agentName: string,
+    handle: import("./types").SessionHandle,
+    prompt: string,
+    opts: RunAsSessionOpts,
+  ): Promise<import("./types").TurnResult> {
+    if (!this._sendPrompt) {
+      throw new NaxError(
+        "AgentManager.runAsSession: _sendPrompt is not wired — pass sendPrompt at construction via NaxRuntime",
+        "SEND_PROMPT_UNAVAILABLE",
+        { stage: opts.pipelineStage ?? "run", agentName },
+      );
+    }
+    const resolvedPermissions = resolvePermissions(this._config, opts.pipelineStage ?? "run");
+    const ctx: MiddlewareContext = {
+      runId: this._runId,
+      agentName,
+      kind: "run",
+      request: null,
+      prompt,
+      config: this._config,
+      signal: opts.signal,
+      resolvedPermissions,
+      storyId: opts.storyId,
+      stage: opts.pipelineStage,
+      sessionHandle: handle,
+    };
+    const start = Date.now();
+    await this._middleware.runBefore(ctx);
+    try {
+      const result = await this._sendPrompt(handle, prompt, opts);
+      await this._middleware.runAfter(ctx, result, Date.now() - start);
       return result;
     } catch (err) {
       await this._middleware.runOnError(ctx, err, Date.now() - start);

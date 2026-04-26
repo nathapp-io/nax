@@ -18,7 +18,6 @@ export interface PromptAuditEntry {
   readonly recordId?: string | null;
   readonly sessionId?: string | null;
   readonly turn?: number;
-  readonly resumed?: boolean;
 }
 
 export interface PromptAuditErrorEntry {

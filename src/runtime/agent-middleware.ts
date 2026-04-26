@@ -13,6 +13,8 @@ export interface MiddlewareContext {
   readonly resolvedPermissions: ResolvedPermissions;
   readonly storyId?: string;
   readonly stage?: string;
+  /** Session handle when this is a caller-managed-session call (runAsSession). Absent for runAs/completeAs. */
+  readonly sessionHandle?: import("../agents/types").SessionHandle;
 }
 
 export interface AgentMiddleware {
