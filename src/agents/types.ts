@@ -270,6 +270,21 @@ export class CompleteError extends Error {
 }
 
 /**
+ * Typed error thrown when openSession() or sendTurn() fails with a known AdapterFailure.
+ * The manager catch block extracts the embedded adapterFailure so swap policy works correctly
+ * for availability failures (e.g. quota exhausted, auth error).
+ */
+export class SessionFailureError extends Error {
+  constructor(
+    message: string,
+    public readonly adapterFailure: AdapterFailure,
+  ) {
+    super(message);
+    this.name = "SessionFailureError";
+  }
+}
+
+/**
  * Opaque handle to an open agent session returned by openSession().
  * ACP adapter stores protocol state here; callers above the adapter boundary
  * only see the id, agentName, and optional protocolIds.

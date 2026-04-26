@@ -1,14 +1,5 @@
 import { mock } from "bun:test";
-import type { AgentAdapter, AgentResult, CompleteResult, SessionHandle, TurnResult } from "../../src/agents/types";
-
-const DEFAULT_RUN_RESULT: AgentResult = {
-  success: true,
-  exitCode: 0,
-  output: "",
-  rateLimited: false,
-  durationMs: 0,
-  estimatedCost: 0,
-};
+import type { AgentAdapter, CompleteResult, SessionHandle, TurnResult } from "../../src/agents/types";
 
 const DEFAULT_COMPLETE_RESULT: CompleteResult = {
   output: "",
@@ -38,7 +29,6 @@ export function makeAgentAdapter(overrides: Partial<AgentAdapter> = {}): AgentAd
       features: new Set(["tdd", "review", "refactor", "batch"]),
     },
     isInstalled: mock(() => Promise.resolve(true)),
-    run: mock(() => Promise.resolve(DEFAULT_RUN_RESULT)),
     buildCommand: mock(() => []),
     plan: mock(() => Promise.resolve({ specContent: "", estimatedCost: 0 })),
     decompose: mock(() => Promise.resolve({ stories: [] })),

@@ -37,6 +37,7 @@ import type {
   PlanOptions,
   PlanResult,
 } from "./types";
+import { SessionFailureError } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -238,14 +239,15 @@ export class AgentManager implements IAgentManager {
             await adapter.closeSession(handle).catch(() => {});
           }
         } catch (err) {
+          const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
           result = {
             success: false,
             exitCode: 1,
             output: err instanceof Error ? err.message : String(err),
-            rateLimited: false,
+            rateLimited: sessionFailure?.outcome === "fail-rate-limit",
             durationMs: Date.now() - startMs,
             estimatedCost: 0,
-            adapterFailure: {
+            adapterFailure: sessionFailure ?? {
               category: "quality",
               outcome: "fail-unknown",
               retriable: false,

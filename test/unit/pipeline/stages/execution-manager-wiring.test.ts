@@ -90,7 +90,6 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
       displayName: "Claude",
       binary: "claude",
       capabilities: { supportedTiers: ["fast", "balanced", "powerful"], maxContextTokens: 100000, features: new Set() },
-      run: mock(async () => ({ success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0.01 })),
     });
 
     _executionDeps.getAgent = mock(() => successAdapter);
