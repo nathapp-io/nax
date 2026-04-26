@@ -64,8 +64,8 @@ export interface AgentRunRequest {
    */
   signal?: AbortSignal;
   /**
-   * Per-hop executor. When provided, replaces the internal adapter.run() call for every hop
-   * (primary AND fallback). Called with:
+   * Per-hop executor. When provided, replaces the internal openSession+sendTurn+closeSession
+   * sequence for every hop (primary AND fallback). Called with:
    *   - agentName: which agent to use for this hop
    *   - bundle: the context bundle at the start of this hop (rebuilt between hops)
    *   - failure: the AdapterFailure that triggered this hop; undefined for the primary hop
@@ -155,8 +155,8 @@ export interface IAgentManager {
   /**
    * Long-running session call with automatic agent-swap fallback.
    * Delegates to runWithFallback and surfaces AgentFallbackRecord[] via
-   * result.agentFallbacks. This is the method SessionManager.runInSession
-   * This is the method SessionManager.runInSession calls — never adapter.run() directly.
+   * result.agentFallbacks. This is the method SessionManager.runInSession calls —
+   * internally uses openSession+sendTurn+closeSession primitives.
    */
   run(request: AgentRunRequest): Promise<AgentResult>;
 
