@@ -148,6 +148,62 @@ describe("US-002: per-package acceptance runner", () => {
       (Bun as any).file = origFile;
     }
   });
+
+  test("AC-5: per-package testFramework is used when building run command", async () => {
+    const spawnCalls: Array<{ cmd: string[]; cwd: string }> = [];
+
+    const origSpawn = Bun.spawn;
+    (Bun as any).spawn = (cmd: string[], opts: any) => {
+      spawnCalls.push({ cmd, cwd: opts.cwd });
+      return {
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 pass\n")); c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+      };
+    };
+
+    const origFile = Bun.file;
+    (Bun as any).file = (_p: string) => ({
+      exists: () => Promise.resolve(true),
+      text: () => Promise.resolve(""),
+    });
+
+    // apps/api has jest, apps/web has bun (undefined = default)
+    const ctx = makeCtx({
+      acceptanceTestPaths: [
+        {
+          testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/api",
+          testFramework: "jest",
+          commandOverride: undefined,
+        },
+        {
+          testPath: "/tmp/test-workdir/apps/web/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/web",
+          testFramework: undefined,
+          commandOverride: undefined,
+        },
+      ],
+    });
+
+    try {
+      await acceptanceStage.execute(ctx);
+
+      const apiCall = spawnCalls.find((c) => c.cwd === "/tmp/test-workdir/apps/api");
+      const webCall = spawnCalls.find((c) => c.cwd === "/tmp/test-workdir/apps/web");
+
+      // apps/api should use npx jest
+      expect(apiCall?.cmd[0]).toBe("npx");
+      expect(apiCall?.cmd[1]).toBe("jest");
+
+      // apps/web should fall back to bun test (no testFramework)
+      expect(webCall?.cmd[0]).toBe("bun");
+      expect(webCall?.cmd[1]).toBe("test");
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      (Bun as any).file = origFile;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

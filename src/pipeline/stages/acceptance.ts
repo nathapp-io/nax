@@ -123,7 +123,12 @@ export const acceptanceStage: PipelineStage = {
 
     // US-002: Use per-package test paths from acceptance-setup when available.
     // Fall back to single-file behavior (pre-ACC-002 or disabled acceptance-setup).
-    const testGroups: Array<{ testPath: string; packageDir: string }> = ctx.acceptanceTestPaths ?? [
+    const testGroups: Array<{
+      testPath: string;
+      packageDir: string;
+      testFramework?: string;
+      commandOverride?: string;
+    }> = ctx.acceptanceTestPaths ?? [
       {
         testPath: resolveAcceptanceFeatureTestPath(
           ctx.featureDir,
@@ -140,7 +145,7 @@ export const acceptanceStage: PipelineStage = {
     let anyError = false;
     let errorExitCode = 0;
 
-    for (const { testPath, packageDir } of testGroups) {
+    for (const { testPath, packageDir, testFramework, commandOverride } of testGroups) {
       // Check if test file exists
       const testFile = Bun.file(testPath);
       const exists = await testFile.exists();
@@ -151,12 +156,12 @@ export const acceptanceStage: PipelineStage = {
       }
 
       // BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
-      // Resolution order: acceptance.command override → testFramework-aware command → bun test fallback
-      const testCmdParts = buildAcceptanceRunCommand(
-        testPath,
-        ctx.config.project?.testFramework,
-        ctx.config.acceptance.command,
-      );
+      // Resolution order: per-package commandOverride → per-package testFramework → bun test fallback.
+      // In monorepo mode, testFramework and commandOverride come from the per-package config
+      // resolved by acceptance-setup. In fallback (single-package) mode they fall back to ctx.config.
+      const resolvedFramework = testFramework ?? ctx.config.project?.testFramework;
+      const resolvedCommand = commandOverride ?? ctx.config.acceptance.command;
+      const testCmdParts = buildAcceptanceRunCommand(testPath, resolvedFramework, resolvedCommand);
       logger.info("acceptance", "Running acceptance command", {
         storyId: ctx.story.id,
         cmd: testCmdParts.join(" "),

@@ -25,7 +25,8 @@ import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import { groupStoriesByPackage } from "../../acceptance/test-path";
 import type { RefinedCriterion } from "../../acceptance/types";
 import type { AgentAdapter } from "../../agents/types";
-import { type ModelDef, type ResolvedConfiguredModel, resolveConfiguredModel } from "../../config";
+import { type ModelDef, type NaxConfig, type ResolvedConfiguredModel, resolveConfiguredModel } from "../../config";
+import { loadConfigForWorkdir } from "../../config/loader";
 import { getSafeLogger } from "../../logger";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -115,6 +116,9 @@ export const _acceptanceSetupDeps = {
     await Bun.write(metaPath, JSON.stringify(meta, null, 2));
   },
   autoCommitIfDirty: _autoCommitIfDirty,
+  loadGroupConfig: async (projectDir: string, relativeWorkdir: string): Promise<NaxConfig> => {
+    return loadConfigForWorkdir(path.join(projectDir, ".nax", "config.json"), relativeWorkdir || undefined);
+  },
   runTest: async (
     _testPath: string,
     _workdir: string,
@@ -352,8 +356,28 @@ export const acceptanceSetupStage: PipelineStage = {
       );
     }
 
-    // Store per-package test paths in context for the acceptance runner (US-002)
-    ctx.acceptanceTestPaths = groups.map((g) => ({ testPath: g.testPath, packageDir: g.packageDir }));
+    // Store per-package test paths in context for the acceptance runner (US-002).
+    // Resolve per-package testFramework and commandOverride so the runner uses the
+    // correct test framework for each package in a monorepo.
+    const acceptanceTestPaths: NonNullable<typeof ctx.acceptanceTestPaths> = [];
+    for (const g of groups) {
+      const relativeWorkdir = path.relative(ctx.projectDir, g.packageDir);
+      let groupConfig = ctx.config;
+      if (relativeWorkdir && relativeWorkdir !== ".") {
+        try {
+          groupConfig = await _acceptanceSetupDeps.loadGroupConfig(ctx.projectDir, relativeWorkdir);
+        } catch {
+          groupConfig = ctx.config;
+        }
+      }
+      acceptanceTestPaths.push({
+        testPath: g.testPath,
+        packageDir: g.packageDir,
+        testFramework: groupConfig.project?.testFramework,
+        commandOverride: groupConfig.acceptance.command,
+      });
+    }
+    ctx.acceptanceTestPaths = acceptanceTestPaths;
 
     if (ctx.config.acceptance.redGate === false) {
       ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
@@ -361,14 +385,11 @@ export const acceptanceSetupStage: PipelineStage = {
     }
 
     // BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
-    // Run RED gate for each per-package test file from its package directory
+    // Run RED gate for each per-package test file from its package directory.
+    // Use per-package testFramework/commandOverride resolved above.
     let redFailCount = 0;
-    for (const { testPath, packageDir } of groups) {
-      const runCmd = buildAcceptanceRunCommand(
-        testPath,
-        ctx.config.project?.testFramework,
-        ctx.config.acceptance.command,
-      );
+    for (const { testPath, packageDir, testFramework, commandOverride } of acceptanceTestPaths) {
+      const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride);
       getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
         cmd: runCmd.join(" "),
         packageDir,
