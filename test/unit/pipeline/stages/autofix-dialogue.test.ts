@@ -261,7 +261,11 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
-    _autofixDeps.captureGitRef = mock(async () => "ref-changed");
+    let captureCallCount = 0;
+    _autofixDeps.captureGitRef = mock(async () => {
+      captureCallCount++;
+      return captureCallCount === 1 ? "ref-before" : "ref-after";
+    });
 
     const ctx = makeCtx({
       agentManager,
@@ -366,7 +370,11 @@ describe("autofixStage — clarify() error resilience (AC10)", () => {
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
-    _autofixDeps.captureGitRef = mock(async () => "ref-changed");
+    let captureCallCount = 0;
+    _autofixDeps.captureGitRef = mock(async () => {
+      captureCallCount++;
+      return captureCallCount === 1 ? "ref-before" : "ref-after";
+    });
 
     const ctx = makeCtx({
       agentManager,
