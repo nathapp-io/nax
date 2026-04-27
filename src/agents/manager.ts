@@ -29,15 +29,7 @@ import type {
 } from "./manager-types";
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
-import type {
-  AgentResult,
-  CompleteOptions,
-  CompleteResult,
-  DecomposeOptions,
-  DecomposeResult,
-  PlanOptions,
-  PlanResult,
-} from "./types";
+import type { AgentResult, CompleteOptions, CompleteResult } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -506,38 +498,6 @@ export class AgentManager implements IAgentManager {
       await this._middleware.runOnError(ctx, err, Date.now() - start);
       throw err;
     }
-  }
-
-  async plan(_options: PlanOptions): Promise<PlanResult> {
-    throw new NaxError(
-      "AgentManager.plan() is deprecated. Use callOp(ctx, planOp, input) instead.",
-      "ADAPTER_METHOD_DEPRECATED",
-      { stage: "plan", migration: "src/operations/plan.ts" },
-    );
-  }
-
-  async planAs(_agentName: string, _options: PlanOptions): Promise<PlanResult> {
-    throw new NaxError(
-      "AgentManager.planAs() is deprecated. Use callOp(ctx, planOp, input) instead.",
-      "ADAPTER_METHOD_DEPRECATED",
-      { stage: "plan", migration: "src/operations/plan.ts" },
-    );
-  }
-
-  async decompose(_options: DecomposeOptions): Promise<DecomposeResult> {
-    throw new NaxError(
-      "AgentManager.decompose() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
-      "ADAPTER_METHOD_DEPRECATED",
-      { stage: "plan", migration: "src/operations/decompose.ts" },
-    );
-  }
-
-  async decomposeAs(_agentName: string, _options: DecomposeOptions): Promise<DecomposeResult> {
-    throw new NaxError(
-      "AgentManager.decomposeAs() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
-      "ADAPTER_METHOD_DEPRECATED",
-      { stage: "plan", migration: "src/operations/decompose.ts" },
-    );
   }
 
   private _resolveRegistry(): AgentRegistry {

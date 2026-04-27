@@ -121,8 +121,6 @@ describe("runRectificationLoop — session context params", () => {
         return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
       completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockAgentManager;

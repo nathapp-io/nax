@@ -16,10 +16,6 @@ import type {
   AgentCapabilities,
   AgentResult,
   AgentRunOptions,
-  DecomposeOptions,
-  DecomposeResult,
-  PlanOptions,
-  PlanResult,
 } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import { run } from "../../../src/execution/runner";
@@ -47,12 +43,6 @@ class MockAgentAdapter implements AgentAdapter {
   }
   async run(_o: AgentRunOptions): Promise<AgentResult> {
     return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCost: 0 };
-  }
-  async plan(_o: PlanOptions): Promise<PlanResult> {
-    return { specContent: "# Feature\n" };
-  }
-  async decompose(_o: DecomposeOptions): Promise<DecomposeResult> {
-    return { stories: [] };
   }
   async complete(_prompt: string): Promise<import("../../../src/agents/types").CompleteResult> {
     return { output: "", costUsd: 0, source: "exact" };

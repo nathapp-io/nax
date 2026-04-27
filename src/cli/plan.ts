@@ -328,19 +328,21 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     let planError: Error | null = null;
     try {
       try {
-        await agentManager.planAs(agentName, {
-          prompt,
-          workdir,
-          interactive: true,
-          timeoutSeconds,
-          interactionBridge,
-          config,
-          modelTier: resolvedPlanModel.modelTier,
-          modelDef: resolvedPlanModel.modelDef,
-          maxInteractionTurns: config?.agent?.maxInteractionTurns,
-          featureName: options.feature,
-          onPidSpawned: (pid: number) => pidRegistry.register(pid),
-          sessionRole: "plan",
+        await agentManager.runAs(agentName, {
+          runOptions: {
+            prompt,
+            workdir,
+            timeoutSeconds,
+            interactionBridge,
+            config,
+            modelTier: resolvedPlanModel.modelTier ?? "balanced",
+            modelDef: resolvedPlanModel.modelDef,
+            maxInteractionTurns: config?.agent?.maxInteractionTurns,
+            featureName: options.feature,
+            onPidSpawned: (pid: number) => pidRegistry.register(pid),
+            sessionRole: "plan",
+            pipelineStage: "plan",
+          },
         });
       } catch (err) {
         planError = err instanceof Error ? err : new Error(String(err));

@@ -6,17 +6,7 @@
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
-import type {
-  AgentAdapter,
-  AgentResult,
-  AgentRunOptions,
-  CompleteOptions,
-  CompleteResult,
-  DecomposeOptions,
-  DecomposeResult,
-  PlanOptions,
-  PlanResult,
-} from "./types";
+import type { AgentAdapter, AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
 
 export interface AgentFallbackRecord {
   storyId?: string;
@@ -207,30 +197,6 @@ export interface IAgentManager {
     prompt: string,
     opts: RunAsSessionOpts,
   ): Promise<import("./types").TurnResult>;
-
-  /**
-   * @deprecated Use `callOp(ctx, planOp, input)` from `src/operations/plan.ts` instead.
-   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
-   */
-  plan(options: PlanOptions): Promise<PlanResult>;
-
-  /**
-   * @deprecated Use `callOp(ctx, planOp, input)` from `src/operations/plan.ts` instead.
-   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
-   */
-  planAs(agentName: string, options: PlanOptions): Promise<PlanResult>;
-
-  /**
-   * @deprecated Use `callOp(ctx, decomposeOp, input)` from `src/operations/decompose.ts` instead.
-   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
-   */
-  decompose(options: DecomposeOptions): Promise<DecomposeResult>;
-
-  /**
-   * @deprecated Use `callOp(ctx, decomposeOp, input)` from `src/operations/decompose.ts` instead.
-   * Throws `NaxError ADAPTER_METHOD_DEPRECATED` at runtime. Deleted in Wave 3.5.
-   */
-  decomposeAs(agentName: string, options: DecomposeOptions): Promise<DecomposeResult>;
 }
 
 export type { SessionRunHopFn };

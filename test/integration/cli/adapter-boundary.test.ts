@@ -33,8 +33,8 @@ const FORBIDDEN_PATTERNS = [
 
 // Patterns that are allowed (IAgentManager methods via the manager)
 const ALLOWED_PATTERNS = [
-  /agentManager\.(runAs|completeAs|planAs|decomposeAs)\s*\(/,
-  /manager\.(runAs|completeAs|planAs|decomposeAs)\s*\(/,
+  /agentManager\.(runAs|completeAs)\s*\(/,
+  /manager\.(runAs|completeAs)\s*\(/,
 ];
 
 interface Violation {

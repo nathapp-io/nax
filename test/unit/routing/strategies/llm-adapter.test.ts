@@ -97,8 +97,6 @@ function makeAgentManagerFromAdapter(adapter: AgentAdapter & { complete: ReturnT
     }),
     run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
     runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-    planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-    decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     isUnavailable: () => false,
     markUnavailable: () => {},
     reset: () => {},

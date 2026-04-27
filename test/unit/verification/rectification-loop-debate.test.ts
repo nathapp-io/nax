@@ -49,8 +49,6 @@ describe("runRectificationLoop — debate disabled (default)", () => {
         return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
       completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -87,8 +85,6 @@ describe("runRectificationLoop — debate disabled (default)", () => {
         return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
       completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
-      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -145,8 +141,6 @@ describe("runRectificationLoop — debate enabled", () => {
         completeCalls++;
         return { output: "The root cause is a missing null check.", costUsd: 0, source: "primary" as const };
       }),
-      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -183,8 +177,6 @@ describe("runRectificationLoop — debate enabled", () => {
         return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       }),
       completeFn: mock(async () => ({ output: diagnosisOutput, costUsd: 0, source: "primary" as const })),
-      planAsFn: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-      decomposeAsFn: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -217,8 +209,6 @@ describe("runRectificationLoop — debate enabled", () => {
         return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
       },
       completeAsFn: async () => ({ result: { output: diagnosisOutput, estimatedCost: 0 }, fallbacks: [] }),
-      planAsFn: async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] }),
-      decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -270,8 +260,6 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
       completeAsFn: async () => {
         throw new Error("Debate agent failed");
       },
-      planAsFn: async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] }),
-      decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -306,8 +294,6 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
       completeAsFn: async () => {
         throw new Error("All debaters failed");
       },
-      planAsFn: async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] }),
-      decomposeAsFn: async () => ({ result: { stories: [] }, fallbacks: [] }),
     });
 
     _rectificationDeps.agentManager = mockManager as any;

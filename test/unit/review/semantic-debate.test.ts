@@ -226,10 +226,6 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       agentFallbacks: [],
     }),
     completeAsFn: async (_agent, _prompt, _opts) => ({ output: llmResponse, costUsd: cost, source: "mock" }),
-    planFn: async () => { throw new Error("not used"); },
-    planAsFn: async () => { throw new Error("not used"); },
-    decomposeFn: async () => { throw new Error("not used"); },
-    decomposeAsFn: async () => { throw new Error("not used"); },
   });
 }
 
