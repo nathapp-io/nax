@@ -5,13 +5,11 @@
  * (prior failures, findings). A dedicated builder avoids forcing rectification prompts
  * into either TddPromptBuilder or ReviewPromptBuilder.
  *
- * Four triggers cover all rectification entry points:
- *   tdd-test-failure  — implementer fixes tests written by the test-writer
- *   tdd-suite-failure — implementer fixes regressions after the full-suite gate
- *   verify-failure    — post-verify rectification loop (autofix)
- *   review-findings   — review surfaced critical findings; rectifier addresses them
- *
  * Replaces: buildImplementerRectificationPrompt / buildRectificationPrompt from src/tdd/prompts.ts
+ *
+ * NOTE: This class is being deprecated in favor of static factory methods.
+ * The old `for(trigger)` builder pattern is removed in ADR-018 / Issue #737 PR 2.
+ * Remaining: static methods for review, autofix, and escalation prompts.
  */
 
 import type { RectificationConfig } from "../../config";
@@ -41,12 +39,6 @@ export const CONTRADICTION_ESCAPE_HATCH = `
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>`;
-
-export type RectifierTrigger =
-  | "tdd-test-failure" // tests written by test-writer fail; implementer rectifies
-  | "tdd-suite-failure" // full suite fails after implementation
-  | "verify-failure" // post-verify rectification (autofix loop)
-  | "review-findings"; // review surfaced critical findings; rectifier addresses them
 
 export type { FailureRecord, ReviewFinding };
 
