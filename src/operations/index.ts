@@ -33,3 +33,7 @@ export type {
   Operation,
   RunOperation,
 } from "./types";
+export { writeTddTestOp } from "./write-test";
+export type { TddRunOp } from "./write-test";
+export { implementTddOp } from "./implement";
+export { verifyTddOp } from "./verify";
