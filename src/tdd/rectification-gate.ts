@@ -271,7 +271,6 @@ async function runRectificationLoop(
         failures: failureRecords,
         testCommand: testCmd,
         conventions: true,
-        isolation: "strict",
       });
     },
     execute: async (prompt) => {
