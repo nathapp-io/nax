@@ -1,7 +1,71 @@
+import type { PipelineStage } from "../config/permissions";
 import type { StoryLogger } from "../logger/types";
 
 type LoopLogger = Pick<StoryLogger, "debug" | "error" | "info" | "warn"> | null;
 type LoopLogData<State> = Record<string, unknown> | ((state: State) => Record<string, unknown>);
+
+/**
+ * One completed attempt in a retry loop — passed to buildPrompt as previousAttempts
+ * so callers can compose progressive escalation prompts.
+ */
+export interface RetryAttempt<TResult> {
+  readonly attempt: number;
+  readonly result: TResult;
+}
+
+/**
+ * Outcome from verify() — either passed or failed with a new failure snapshot
+ * (the updated failures from re-running verification).
+ */
+export type VerifyOutcome<TFailure> =
+  | { readonly passed: true }
+  | { readonly passed: false; readonly newFailure: TFailure };
+
+/**
+ * Outcome from runRetryLoop() — either fixed (with the result that passed verify)
+ * or exhausted (all maxAttempts consumed without a passing verify).
+ */
+export type RetryOutcome<TResult> =
+  | { readonly outcome: "fixed"; readonly result: TResult; readonly attempts: number }
+  | { readonly outcome: "exhausted"; readonly attempts: number };
+
+/**
+ * Unified retry-loop input — ADR-018 §8.
+ *
+ * Purely functional: no mutable state, no callbacks with side-effect signatures.
+ * Progressive composition lives inside buildPrompt() via composeSections().
+ */
+export interface RetryInput<TFailure, TResult> {
+  /** Pipeline stage for logging. */
+  readonly stage: PipelineStage;
+  /** Story ID for log correlation. */
+  readonly storyId: string;
+  /** Package directory for log correlation. */
+  readonly packageDir: string;
+  /** Maximum number of attempts (inclusive). */
+  readonly maxAttempts: number;
+  /** Initial failure snapshot (before any attempts). */
+  readonly failure: TFailure;
+  /** Accumulated results from prior attempts (empty on first call). */
+  readonly previousAttempts: ReadonlyArray<RetryAttempt<TResult>>;
+  /**
+   * Build the prompt for this attempt.
+   * Receives the current failure snapshot and all previous attempt results.
+   * Called once per attempt before execute().
+   */
+  readonly buildPrompt: (failure: TFailure, previous: readonly RetryAttempt<TResult>[]) => string;
+  /**
+   * Execute one attempt (agent run, etc.) and return a result.
+   * Receives the prompt built by buildPrompt().
+   */
+  readonly execute: (prompt: string) => Promise<TResult>;
+  /**
+   * Verify the result of this attempt.
+   * Returns { passed: true } on success, or { passed: false, newFailure } with
+   * an updated failure snapshot for the next attempt's buildPrompt.
+   */
+  readonly verify: (result: TResult) => Promise<VerifyOutcome<TFailure>>;
+}
 
 export interface ProgressivePromptPreambleOptions {
   attempt: number;
@@ -71,6 +135,34 @@ export function buildProgressivePromptPreamble(opts: ProgressivePromptPreambleOp
   const urgencySection = shouldUrgency ? opts.urgencySection : "";
   const rethinkSection = shouldRethink ? opts.rethinkSection : "";
   return `${urgencySection}${rethinkSection}`;
+}
+
+/**
+ * Unified retry loop — ADR-018 §8.
+ *
+ * Runs up to maxAttempts iterations of: buildPrompt → execute → verify.
+ * Passes accumulated previousAttempts to buildPrompt for progressive escalation.
+ * Returns fixed (with the passing result) or exhausted (all attempts consumed).
+ */
+export async function runRetryLoop<TFailure, TResult>(
+  input: RetryInput<TFailure, TResult>,
+): Promise<RetryOutcome<TResult>> {
+  let currentFailure = input.failure;
+  const previous: RetryAttempt<TResult>[] = [...input.previousAttempts];
+
+  for (let attempt = 1; attempt <= input.maxAttempts; attempt++) {
+    const prompt = input.buildPrompt(currentFailure, previous);
+    const result = await input.execute(prompt);
+    const outcome = await input.verify(result);
+    previous.push({ attempt, result });
+
+    if (outcome.passed) {
+      return { outcome: "fixed", result, attempts: attempt };
+    }
+    currentFailure = outcome.newFailure;
+  }
+
+  return { outcome: "exhausted", attempts: input.maxAttempts };
 }
 
 export async function runSharedRectificationLoop<State extends { attempt: number }>(
