@@ -107,11 +107,6 @@ export class RectifierPromptBuilder {
     return this;
   }
 
-  task(): this {
-    this.acc.add(rectifierTaskFor(this.trigger));
-    return this;
-  }
-
   build(): Promise<string> {
     return Promise.resolve(this.acc.join());
   }
@@ -636,19 +631,6 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 
   private s(id: string, content: string): PromptSection {
     return { id, content, overridable: false };
-  }
-}
-
-function rectifierTaskFor(trigger: RectifierTrigger): PromptSection {
-  switch (trigger) {
-    case "tdd-test-failure":
-      return { id: "task", overridable: false, content: TDD_TEST_FAILURE_TASK };
-    case "tdd-suite-failure":
-      return { id: "task", overridable: false, content: TDD_SUITE_FAILURE_TASK };
-    case "verify-failure":
-      return { id: "task", overridable: false, content: VERIFY_FAILURE_TASK };
-    case "review-findings":
-      return { id: "task", overridable: false, content: REVIEW_FINDINGS_TASK };
   }
 }
 
