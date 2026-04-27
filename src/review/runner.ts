@@ -225,6 +225,7 @@ export async function runReview(
   projectDir?: string,
   env?: Record<string, string | undefined>,
   naxIgnoreIndex?: NaxIgnoreIndex,
+  runtime?: import("../runtime").NaxRuntime,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -318,6 +319,7 @@ export async function runReview(
         contextBundles?.semantic,
         projectDir,
         naxIgnoreIndex,
+        runtime,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {
@@ -361,6 +363,7 @@ export async function runReview(
         contextBundles?.adversarial,
         projectDir,
         naxIgnoreIndex,
+        runtime,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

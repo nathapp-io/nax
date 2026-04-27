@@ -131,6 +131,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       signal: ctx.runtime.signal,
       executeHop,
       noFallback: runOp.noFallback,
+      bundle: ctx.contextBundle,
     },
     dispatchAgent,
   );

@@ -29,6 +29,12 @@ export interface CallContext {
    * carry a context bundle. Bundle-aware ops should pass the real story.
    */
   readonly story?: import("../prd").UserStory;
+  /**
+   * Optional context bundle for kind:"run" ops that need context-engine pull
+   * tools (e.g. review ops). Passed as the initial `bundle` to runWithFallback
+   * so buildHopCallback can create contextToolRuntime for the first hop.
+   */
+  readonly contextBundle?: import("../context/engine").ContextBundle;
 }
 
 interface OperationBase<I, O, C> {
@@ -120,4 +126,18 @@ export interface LlmReviewFinding {
   line?: number;
   issue: string;
   suggestion?: string;
+  /** Adversarial review only — finding category (input, error-path, abandonment, etc.). */
+  category?: string;
+  /** Semantic review only — acceptance criterion ID this finding is linked to. */
+  acId?: string;
+  /**
+   * Semantic review ref-mode only — evidence that the finding was verified against
+   * current files. Used by sanitizeRefModeFindings to downgrade unverified findings.
+   */
+  verifiedBy?: {
+    command?: string;
+    file: string;
+    line?: number;
+    observed: string;
+  };
 }
