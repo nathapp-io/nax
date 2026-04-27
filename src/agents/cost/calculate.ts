@@ -3,7 +3,6 @@
  */
 
 import type { ModelTier } from "../../config/schema";
-import { parseTokenUsage } from "./parse";
 import { COST_RATES, MODEL_PRICING } from "./pricing";
 import type { CostEstimate, ModelCostRates, TokenUsage } from "./types";
 
@@ -32,28 +31,6 @@ export function estimateCost(
   const inputCost = (inputTokens / 1_000_000) * rates.inputPer1M;
   const outputCost = (outputTokens / 1_000_000) * rates.outputPer1M;
   return inputCost + outputCost;
-}
-
-/**
- * Estimate cost from agent output by parsing token usage.
- *
- * Attempts to extract token counts from stdout/stderr, then calculates cost.
- * Returns null if tokens cannot be parsed.
- *
- * @param modelTier - Model tier for cost calculation
- * @param output - Agent stdout + stderr combined
- * @returns Cost estimate with confidence indicator, or null if unparseable
- */
-export function estimateCostFromOutput(modelTier: ModelTier, output: string): CostEstimate | null {
-  const usage = parseTokenUsage(output);
-  if (!usage) {
-    return null;
-  }
-  const cost = estimateCost(modelTier, usage.inputTokens, usage.outputTokens);
-  return {
-    cost,
-    confidence: usage.confidence,
-  };
 }
 
 /**

@@ -7,9 +7,7 @@ export type { ModelCostRates, TokenUsage, CostEstimate, TokenUsageWithConfidence
 export {
   COST_RATES,
   MODEL_PRICING,
-  parseTokenUsage,
   estimateCost,
-  estimateCostFromOutput,
   estimateCostByDuration,
   formatCostWithConfidence,
   estimateCostFromTokenUsage,
