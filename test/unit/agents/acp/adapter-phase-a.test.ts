@@ -457,6 +457,30 @@ describe("sendTurn()", () => {
 
     expect(result.estimatedCostUsd).toBeCloseTo(0.003);
   });
+
+  test("drift smoke test: exact and estimated costs are within 50% (AC-B8)", async () => {
+    // Model: claude-sonnet-4-5 at $3/1M input, $15/1M output
+    // 1000 input + 500 output tokens → estimated = 0.003 + 0.0075 = $0.0105
+    // Wire reports exact cost of $0.012 → drift = |0.012 - 0.0105| / 0.0105 ≈ 14%
+    const session = makeSession({
+      promptFn: async () => ({
+        messages: [{ role: "assistant", content: "Done." }],
+        stopReason: "end_turn" as const,
+        cumulative_token_usage: { input_tokens: 1000, output_tokens: 500 },
+        exactCostUsd: 0.012,
+      }),
+    });
+    const handle = await openHandle(session);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: NO_OP_INTERACTION_HANDLER,
+    });
+
+    expect(result.estimatedCostUsd).toBeGreaterThan(0);
+    expect(result.exactCostUsd).toBeDefined();
+    const drift = Math.abs(result.exactCostUsd! - result.estimatedCostUsd) / result.estimatedCostUsd;
+    expect(drift).toBeLessThan(0.5);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
