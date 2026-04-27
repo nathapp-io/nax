@@ -14,8 +14,8 @@
 
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { findNaxProjectRoot } from "../agents/acp";
 import { getSafeLogger } from "../logger";
+import { findNaxProjectRoot } from "../utils/nax-project-root";
 
 export interface ReviewAuditEntry {
   /** Reviewer type. */

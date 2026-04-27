@@ -33,17 +33,17 @@ describe("Wave 2 exit criteria", () => {
     expect(rt.costAggregator.snapshot().totalInputTokens).toBe(200);
   });
 
-  test("EC-3: PromptAuditor.flush() writes to .nax/audit/<runId>.jsonl on close()", async () => {
+  test("EC-3: PromptAuditor.flush() writes to .nax/prompt-audit/<feature>/<runId>.jsonl on close()", async () => {
     await withTempDir(async (dir) => {
-      let flushedPath = "";
+      const paths: string[] = [];
       const orig = _promptAuditorDeps.write;
       _promptAuditorDeps.write = async (p, _d) => {
-        flushedPath = p;
+        paths.push(p);
         return 0;
       };
 
       try {
-        const rt = createRuntime(auditEnabledConfig, dir);
+        const rt = createRuntime(auditEnabledConfig, dir, { featureName: "my-feature" });
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,
@@ -55,8 +55,9 @@ describe("Wave 2 exit criteria", () => {
         });
         await rt.close();
 
-        expect(flushedPath).toBe(
-          join(dir, ".nax", "audit", `${rt.runId}.jsonl`),
+        // JSONL goes to .nax/prompt-audit/<feature>/<runId>.jsonl
+        expect(paths[0]).toBe(
+          join(dir, ".nax", "prompt-audit", "my-feature", `${rt.runId}.jsonl`),
         );
       } finally {
         _promptAuditorDeps.write = orig;
@@ -118,7 +119,7 @@ describe("Wave 2 exit criteria", () => {
       };
 
       try {
-        const rt = createRuntime(auditEnabledConfig, dir);
+        const rt = createRuntime(auditEnabledConfig, dir, { featureName: "my-feature" });
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,

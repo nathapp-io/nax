@@ -8,5 +8,8 @@ export interface TestRuntimeOptions extends CreateRuntimeOptions {
 }
 
 export function makeTestRuntime(opts?: TestRuntimeOptions): NaxRuntime {
-  return createRuntime(opts?.config ?? DEFAULT_CONFIG, opts?.workdir ?? "/tmp/test", opts);
+  return createRuntime(opts?.config ?? DEFAULT_CONFIG, opts?.workdir ?? "/tmp/test", {
+    ...opts,
+    featureName: opts?.featureName ?? "_test",
+  });
 }

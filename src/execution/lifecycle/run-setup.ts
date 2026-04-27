@@ -183,6 +183,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     parentSignal: shutdownController.signal,
     sessionManager,
     agentManager: options.agentManager,
+    featureName: options.feature,
   });
 
   // Cleanup stale PIDs from previous crashed runs

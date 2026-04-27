@@ -23,6 +23,7 @@ import { AgentManager } from "../agents/manager";
 import type { NaxConfig } from "../config";
 import { createConfigLoader } from "../config";
 import type { ConfigLoader } from "../config";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type { Logger } from "../logger";
 import type { ISessionManager } from "../session";
@@ -59,6 +60,12 @@ export interface CreateRuntimeOptions {
   agentManager?: IAgentManager;
   costAggregator?: ICostAggregator;
   promptAuditor?: IPromptAuditor;
+  /**
+   * Feature name — used as a subdirectory under the audit dir so each feature
+   * has its own folder. Required when promptAudit.enabled is true and no custom
+   * promptAuditor is provided.
+   */
+  featureName?: string;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
@@ -75,9 +82,22 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const costAggregator = opts?.costAggregator ?? new CostAggregator(runId, costDir);
 
   const auditEnabled = config.agent?.promptAudit?.enabled ?? false;
-  const auditDir = config.agent?.promptAudit?.dir ?? join(workdir, ".nax", "audit");
-  const promptAuditor =
-    opts?.promptAuditor ?? (auditEnabled ? new PromptAuditor(runId, auditDir) : createNoOpPromptAuditor());
+  const auditDir = config.agent?.promptAudit?.dir ?? join(workdir, ".nax", "prompt-audit");
+  let promptAuditor: IPromptAuditor;
+  if (opts?.promptAuditor) {
+    promptAuditor = opts.promptAuditor;
+  } else if (auditEnabled) {
+    if (!opts?.featureName) {
+      throw new NaxError(
+        "createRuntime: featureName is required when promptAudit.enabled is true",
+        "AUDIT_FEATURE_NAME_REQUIRED",
+        { stage: "runtime" },
+      );
+    }
+    promptAuditor = new PromptAuditor(runId, auditDir, opts.featureName);
+  } else {
+    promptAuditor = createNoOpPromptAuditor();
+  }
 
   let agentManager: IAgentManager | undefined;
   const middleware = MiddlewareChain.from([
