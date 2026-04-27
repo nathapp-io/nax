@@ -756,10 +756,10 @@ async function runAgentRectification(
     },
   }).catch((error: unknown) => {
     if (error instanceof Error && error.message === "AUTOFIX_AGENT_NOT_FOUND") {
-      return { outcome: "exhausted", attempts: 0 } as const;
+      return { outcome: "exhausted", attempts: 0, finalFailure: initialFailure } as const;
     }
     if (error instanceof Error && error.message === "AUTOFIX_UNRESOLVED") {
-      return { outcome: "exhausted", attempts: 0 } as const;
+      return { outcome: "exhausted", attempts: 0, finalFailure: initialFailure } as const;
     }
     throw error;
   });

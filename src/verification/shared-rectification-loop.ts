@@ -24,9 +24,9 @@ export type VerifyOutcome<TFailure> =
  * Outcome from runRetryLoop() — either fixed (with the result that passed verify)
  * or exhausted (all maxAttempts consumed without a passing verify).
  */
-export type RetryOutcome<TResult> =
+export type RetryOutcome<TFailure, TResult> =
   | { readonly outcome: "fixed"; readonly result: TResult; readonly attempts: number }
-  | { readonly outcome: "exhausted"; readonly attempts: number }
+  | { readonly outcome: "exhausted"; readonly attempts: number; readonly finalFailure: TFailure }
   | { readonly outcome: "aborted"; readonly attempts: number };
 
 /**
@@ -124,7 +124,7 @@ export function buildProgressivePromptPreamble(opts: ProgressivePromptPreambleOp
  */
 export async function runRetryLoop<TFailure, TResult>(
   input: RetryInput<TFailure, TResult>,
-): Promise<RetryOutcome<TResult>> {
+): Promise<RetryOutcome<TFailure, TResult>> {
   let currentFailure = input.failure;
   const previous: RetryAttempt<TResult>[] = [...input.previousAttempts];
 
@@ -144,5 +144,5 @@ export async function runRetryLoop<TFailure, TResult>(
     }
   }
 
-  return { outcome: "exhausted", attempts: input.maxAttempts };
+  return { outcome: "exhausted", attempts: input.maxAttempts, finalFailure: currentFailure };
 }

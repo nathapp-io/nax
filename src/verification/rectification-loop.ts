@@ -414,10 +414,11 @@ export async function runRectificationLoop(
 
   // Escalation logic — runs only when exhausted and conditions permit
   if (outcome.outcome === "exhausted") {
+    const finalFailure = outcome.finalFailure;
     const shouldEscalate =
       rectificationConfig.escalateOnExhaustion !== false &&
       config.autoMode?.escalation?.enabled === true &&
-      initialFailure.testSummary.failed > 0;
+      finalFailure.testSummary.failed > 0;
 
     if (shouldEscalate) {
       const complexity = story.routing?.complexity ?? "medium";
@@ -440,7 +441,7 @@ export async function runRectificationLoop(
             escalationManager.getDefault(),
           );
           let escalationPrompt = RectifierPromptBuilder.escalated(
-            initialFailure.testSummary.failures,
+            finalFailure.testSummary.failures,
             story,
             outcome.attempts,
             currentTier,
