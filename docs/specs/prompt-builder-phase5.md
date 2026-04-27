@@ -67,6 +67,7 @@ export type RectifierTrigger =
   | "tdd-suite-failure"    // full suite fails after implementation
   | "verify-failure"       // post-verify rectification (autofix loop)
   | "review-findings";     // review surfaced critical findings; rectifier addresses them
+// NOTE: "tdd-test-failure" and "review-findings" were planned in this spec but never wired in production.
 
 export class RectifierPromptBuilder {
   private acc = new SectionAccumulator();
@@ -163,6 +164,7 @@ const REVIEW_FINDINGS_TASK = `# YOUR TASK\n\nThe review surfaced critical findin
 const prompt = buildImplementerRectificationPrompt({ story, failures, ... });
 
 // After
+// NOTE: "tdd-test-failure" was planned here but never wired — session-runner does not build a fresh prompt.
 const prompt = await RectifierPromptBuilder.for("tdd-test-failure")
   .constitution(config.constitution)
   .story(story)
@@ -203,6 +205,8 @@ const prompt = await RectifierPromptBuilder.for("verify-failure")
 
 **`src/pipeline/stages/autofix.ts:313`** (if it constructs prompts directly; otherwise it just passes through `runSharedRectificationLoop` which uses one of the above).
 
+> **Annotation:** `review-findings` trigger was planned for autofix/review paths but review findings instead flow through `reviewRectification()` static method — never wired to `RectifierPromptBuilder`.
+
 ## Tests
 
 ### Snapshot tests
@@ -213,6 +217,8 @@ const prompt = await RectifierPromptBuilder.for("verify-failure")
 - `tdd-suite-failure` with suite failures
 - `verify-failure` with failures + findings
 - `review-findings` with critical findings
+
+> **Annotation:** Snapshot tests for `tdd-test-failure` and `review-findings` were planned but never created — the triggers were never wired in production.
 
 ### Parity tests
 
@@ -258,5 +264,6 @@ Tests asserting on TDD rectification *behaviour* should pass unchanged. Tests as
 - [ ] `src/tdd/prompts.ts` deleted
 - [ ] All rectification callsites use `RectifierPromptBuilder`
 - [ ] Snapshot + parity tests green for all 4 triggers
+  - **Annotation:** Only `tdd-suite-failure` and `verify-failure` were actually wired; `tdd-test-failure` and `review-findings` remained orphans.
 - [ ] `bun test` green
 - [ ] PR description lists which triggers are now consolidated
