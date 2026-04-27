@@ -52,8 +52,9 @@ export interface RetryInput<TFailure, TResult> {
    * Build the prompt for this attempt.
    * Receives the current failure snapshot and all previous attempt results.
    * Called once per attempt before execute().
+   * May be async (e.g., to build complex prompts with external calls).
    */
-  readonly buildPrompt: (failure: TFailure, previous: readonly RetryAttempt<TResult>[]) => string;
+  readonly buildPrompt: (failure: TFailure, previous: readonly RetryAttempt<TResult>[]) => Promise<string> | string;
   /**
    * Execute one attempt (agent run, etc.) and return a result.
    * Receives the prompt built by buildPrompt().
@@ -151,7 +152,7 @@ export async function runRetryLoop<TFailure, TResult>(
   const previous: RetryAttempt<TResult>[] = [...input.previousAttempts];
 
   for (let attempt = 1; attempt <= input.maxAttempts; attempt++) {
-    const prompt = input.buildPrompt(currentFailure, previous);
+    const prompt = await Promise.resolve(input.buildPrompt(currentFailure, previous));
     const result = await input.execute(prompt);
     const outcome = await input.verify(result);
     previous.push({ attempt, result });

@@ -121,9 +121,27 @@ export const rectifyStage: PipelineStage = {
 /**
  * Injectable deps for testing.
  */
-import { runRectificationLoopFromCtx } from "../../verification/rectification-loop";
+import { runRectificationLoop } from "../../verification/rectification-loop";
 export const _rectifyDeps = {
-  runRectificationLoop: runRectificationLoopFromCtx,
+  runRectificationLoop: (
+    ctx: PipelineContext,
+    opts: { testCommand: string; testOutput: string; promptPrefix?: string; testScopedTemplate?: string },
+  ) =>
+    runRectificationLoop({
+      config: ctx.config,
+      workdir: ctx.workdir,
+      story: ctx.story,
+      testCommand: opts.testCommand,
+      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+      testOutput: opts.testOutput,
+      promptPrefix: opts.promptPrefix,
+      featureName: ctx.prd.feature,
+      agentManager: ctx.agentManager,
+      projectDir: ctx.projectDir,
+      testScopedTemplate: opts.testScopedTemplate,
+      sessionManager: ctx.sessionManager,
+      sessionId: ctx.sessionId,
+    }),
   resolveTestCommands: resolveQualityTestCommands,
   appendScratch: appendScratchEntry,
 };
