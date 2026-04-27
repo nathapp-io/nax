@@ -121,4 +121,78 @@ describe("CostAggregator", () => {
       _costAggDeps.write = origWrite;
     });
   });
+
+  test("drain() captures events recorded during async write (in-flight buffer)", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      const written: string[] = [];
+      let resolveWrite: () => void;
+      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const origWrite = _costAggDeps.write;
+      _costAggDeps.write = async (_p, d) => { written.push(String(d)); return writePromise; };
+      const agg = new CostAggregator("r-test", drainDir);
+      agg.record(makeEvent({ ts: 1000 }));
+
+      const drainTask = agg.drain();
+      agg.record(makeEvent({ ts: 2000 }));
+      resolveWrite!();
+      await drainTask;
+
+      expect(written).toHaveLength(2);
+      // The second write is the complete merged file — both events must appear in it.
+      const allLines = written[1].trim().split("\n").filter(Boolean);
+      expect(allLines).toHaveLength(2);
+      expect(JSON.parse(allLines[0]).ts).toBe(1000);
+      expect(JSON.parse(allLines[1]).ts).toBe(2000);
+      _costAggDeps.write = origWrite;
+    });
+  });
+
+  test("drain() captures error events recorded during async write", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      const written: string[] = [];
+      let resolveWrite: () => void;
+      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const origWrite = _costAggDeps.write;
+      _costAggDeps.write = async (_p, d) => { written.push(String(d)); return writePromise; };
+      const agg = new CostAggregator("r-test", drainDir);
+      agg.record(makeEvent({ ts: 1000 }));
+
+      const drainTask = agg.drain();
+      agg.recordError({ ts: 2000, runId: "r-test", agentName: "claude", errorCode: "TIMEOUT", durationMs: 100 });
+      resolveWrite!();
+      await drainTask;
+
+      expect(written).toHaveLength(2);
+      // The second write is the complete merged file — all events must appear in it.
+      const allLines = written[1].trim().split("\n").filter(Boolean);
+      expect(allLines).toHaveLength(2);
+      expect(JSON.parse(allLines[1]).errorCode).toBe("TIMEOUT");
+      _costAggDeps.write = origWrite;
+    });
+  });
+
+  test("snapshot() includes in-flight events during drain", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      let resolveWrite: () => void;
+      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const origWrite = _costAggDeps.write;
+      _costAggDeps.write = async (_p, _d) => writePromise;
+      const agg = new CostAggregator("r-test", drainDir);
+      agg.record(makeEvent({ ts: 1000, costUsd: 0.01 }));
+
+      const drainTask = agg.drain();
+      agg.record(makeEvent({ ts: 2000, costUsd: 0.02 }));
+
+      const snap = agg.snapshot();
+      expect(snap.callCount).toBe(1);
+      expect(snap.totalCostUsd).toBeCloseTo(0.02);
+
+      resolveWrite!();
+      await drainTask;
+      _costAggDeps.write = origWrite;
+    });
+  });
 });

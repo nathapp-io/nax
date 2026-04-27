@@ -112,6 +112,9 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
 export class CostAggregator implements ICostAggregator {
   private readonly _events: CostEvent[] = [];
   private readonly _errors: CostErrorEvent[] = [];
+  private _draining = false;
+  private readonly _inFlightEvents: CostEvent[] = [];
+  private readonly _inFlightErrors: CostErrorEvent[] = [];
 
   constructor(
     private readonly _runId: string,
@@ -119,26 +122,41 @@ export class CostAggregator implements ICostAggregator {
   ) {}
 
   record(event: CostEvent): void {
+    if (this._draining) {
+      this._inFlightEvents.push(event);
+      return;
+    }
     this._events.push(event);
   }
 
   recordError(event: CostErrorEvent): void {
+    if (this._draining) {
+      this._inFlightErrors.push(event);
+      return;
+    }
     this._errors.push(event);
   }
 
   snapshot(): CostSnapshot {
-    return this._events.reduce(accumulate, { ...emptySnap(), errorCount: this._errors.length });
+    const allEvents = [...this._events, ...this._inFlightEvents];
+    const allErrors = [...this._errors, ...this._inFlightErrors];
+    return allEvents.reduce(accumulate, { ...emptySnap(), errorCount: allErrors.length });
   }
 
   byAgent(): Record<string, CostSnapshot> {
     const m: Record<string, CostSnapshot> = {};
     for (const e of this._events) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
+    for (const e of this._inFlightEvents) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
     return m;
   }
 
   byStage(): Record<string, CostSnapshot> {
     const m: Record<string, CostSnapshot> = {};
     for (const e of this._events) {
+      const k = e.stage ?? "unknown";
+      m[k] = accumulate(m[k] ?? emptySnap(), e);
+    }
+    for (const e of this._inFlightEvents) {
       const k = e.stage ?? "unknown";
       m[k] = accumulate(m[k] ?? emptySnap(), e);
     }
@@ -151,15 +169,37 @@ export class CostAggregator implements ICostAggregator {
       const k = e.storyId ?? "unknown";
       m[k] = accumulate(m[k] ?? emptySnap(), e);
     }
+    for (const e of this._inFlightEvents) {
+      const k = e.storyId ?? "unknown";
+      m[k] = accumulate(m[k] ?? emptySnap(), e);
+    }
     return m;
   }
 
   async drain(): Promise<void> {
-    if (this._events.length === 0 && this._errors.length === 0) return;
-    mkdirSync(this._drainDir, { recursive: true });
-    const path = join(this._drainDir, `${this._runId}.jsonl`);
-    const sorted = [...this._events, ...this._errors].sort((a, b) => a.ts - b.ts);
-    const content = `${sorted.map((e) => JSON.stringify(e)).join("\n")}\n`;
-    await _costAggDeps.write(path, content);
+    this._draining = true;
+    try {
+      const events = this._events.splice(0);
+      const errors = this._errors.splice(0);
+
+      if (events.length === 0 && errors.length === 0) return;
+
+      mkdirSync(this._drainDir, { recursive: true });
+      const path = join(this._drainDir, `${this._runId}.jsonl`);
+
+      const sorted = [...events, ...errors].sort((a, b) => a.ts - b.ts);
+      await _costAggDeps.write(path, `${sorted.map((e) => JSON.stringify(e)).join("\n")}\n`);
+
+      // Flush any events that arrived during the async write.
+      // Re-write the complete merged file so the first batch is not lost.
+      const lateEvents = this._inFlightEvents.splice(0);
+      const lateErrors = this._inFlightErrors.splice(0);
+      if (lateEvents.length > 0 || lateErrors.length > 0) {
+        const allSorted = [...sorted, ...lateEvents, ...lateErrors].sort((a, b) => a.ts - b.ts);
+        await _costAggDeps.write(path, `${allSorted.map((e) => JSON.stringify(e)).join("\n")}\n`);
+      }
+    } finally {
+      this._draining = false;
+    }
   }
 }
