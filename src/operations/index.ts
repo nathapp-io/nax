@@ -25,8 +25,6 @@ export { debateProposeOp } from "./debate-propose";
 export type { DebateProposeInput } from "./debate-propose";
 export { debateRebutOp } from "./debate-rebut";
 export type { DebateRebutInput } from "./debate-rebut";
-export { debateRankOp } from "./debate-rank";
-export type { DebateRankInput } from "./debate-rank";
 export type {
   BuildContext,
   CallContext,
