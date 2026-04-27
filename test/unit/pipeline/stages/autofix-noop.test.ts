@@ -212,14 +212,12 @@ describe("runAgentRectification — no-op short-circuit", () => {
 
     const result = await _autofixDeps.runAgentRectification(ctx, undefined, undefined, "/tmp");
 
-    // With maxAttempts=2 and MAX_CONSECUTIVE_NOOP_REPROMPTS=1:
-    // - attempt 1: no-op → not counted, reprompt scheduled (attempt rolls back to 0)
-    // - attempt 1 (reprompt): no-op again → no-op limit reached, counts as attempt 1
-    // - attempt 2: no-op → no-op limit reached, counts as attempt 2
-    // → loop exhausts at 2 consumed attempts, loop ran 3 actual agent calls
+    // With maxAttempts=2 and MAX_CONSECUTIVE_NOOP_REPROMPTS=1, runRetryLoop consumes one
+    // budget slot per iteration regardless of no-op status:
+    // - iteration 1: no-op (consecutiveNoOps=1, within limit) → verify returns false → attempt consumed
+    // - iteration 2: buildPrompt sends noOpReprompt; no-op again (consecutiveNoOps=2 > limit) → verify returns false → attempt consumed
+    // → loop exhausts at 2 consumed iterations (= 2 agent calls)
     expect(result.succeeded).toBe(false);
-    // Agent called maxAttempts times: 2 iterations of the retry loop.
-    // Reprompt happens within an iteration (buildPrompt detects lastWasNoOp and returns noOpReprompt).
     expect(capturedPrompts.length).toBe(2);
   });
 

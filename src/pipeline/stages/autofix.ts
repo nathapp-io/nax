@@ -659,11 +659,15 @@ async function runAgentRectification(
 
       // Check if this attempt was a no-op and we should continue
       if (result.noOp) {
-        logger.info("autofix", "No source changes — re-prompting with stronger directive (not counting attempt)", {
-          storyId: ctx.story.id,
-          noOpCount: `${result.consecutiveNoOps}/${MAX_CONSECUTIVE_NOOP_REPROMPTS}`,
-          attemptsRemaining: maxAttempts - currentAttempt,
-        });
+        logger.info(
+          "autofix",
+          "No source changes — re-prompting with stronger directive (counts as consumed attempt)",
+          {
+            storyId: ctx.story.id,
+            noOpCount: `${result.consecutiveNoOps}/${MAX_CONSECUTIVE_NOOP_REPROMPTS}`,
+            attemptsRemaining: maxAttempts - currentAttempt,
+          },
+        );
         // Return failure to trigger the no-op reprompt logic in buildPrompt
         return {
           passed: false,
