@@ -2,7 +2,7 @@ import { describe, test, expect, mock } from "bun:test";
 import { callOp } from "../../../src/operations/call";
 import type { CompleteOperation, RunOperation } from "../../../src/operations/types";
 import { pickSelector } from "../../../src/config";
-import { makeTestRuntime, makeMockAgentManager, makeSessionManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { CompleteResult } from "../../../src/agents/types";
 
@@ -53,17 +53,15 @@ describe("callOp — kind:complete", () => {
   });
 });
 
-describe("callOp — kind:run", () => {
-  test("calls sessionManager.runInSession (phase-B form) with session name and ctx.agentName", async () => {
-    const runInSessionMock = mock(async () => ({
-      output: "ran pinned",
-      tokenUsage: { inputTokens: 0, outputTokens: 0 },
-      internalRoundTrips: 0,
-    }));
-    // Object.assign mutates the base mock and overrides runInSession without
-    // hitting the overloaded-type incompatibility at the Partial<ISessionManager> boundary.
-    const sessionManager = Object.assign(makeSessionManager(), { runInSession: runInSessionMock });
-    const agentManager = makeMockAgentManager();
+describe("callOp — kind:run (ADR-019 §5)", () => {
+  test("dispatches via agentManager.runWithFallback with executeHop callback", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "ran via fallback", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
     const runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const result = await callOp(
@@ -78,20 +76,60 @@ describe("callOp — kind:run", () => {
       { text: "hello world" },
     );
 
-    expect(runInSessionMock).toHaveBeenCalledTimes(1);
-    expect(runInSessionMock).toHaveBeenCalledWith(
-      "nax-00000000",
-      expect.any(String),
-      expect.objectContaining({ agentName: "opencode" }),
-    );
-    expect(result).toBe("ran pinned");
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { executeHop?: unknown; runOptions: { storyId?: string } };
+    expect(reqArg.executeHop).toBeTypeOf("function");
+    expect(reqArg.runOptions.storyId).toBe("US-001");
+    expect(result).toBe("ran via fallback");
   });
 
-  test("throws CALL_OP_NO_OUTPUT when session returns no output", async () => {
-    // Default makeSessionManager() stub returns output: "" — the empty string
-    // triggers callOp's no-output guard.
+  test("noFallback ops still dispatch via real runWithFallback with noFallback:true flag", async () => {
+    // Post-C1 fix: noFallback no longer routes through wrapAdapterAsManager.
+    // It calls the real agentManager.runWithFallback with `noFallback: true`,
+    // which short-circuits the swap branch (manager.ts) but preserves the
+    // middleware envelope. This test pins the dispatch path.
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => ({
+        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] },
+        fallbacks: [],
+        // Surface req fields for assertion via the mock's call records below.
+        ...({ _req: req } as Record<string, unknown>),
+      }),
+    });
     const sessionManager = makeSessionManager();
-    const agentManager = makeMockAgentManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const noFallbackOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      ...runEchoOp,
+      noFallback: true,
+    };
+
+    const result = await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      noFallbackOp,
+      { text: "hello" },
+    );
+
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { noFallback?: boolean };
+    expect(reqArg.noFallback).toBe(true);
+    expect(result).toBe("single-agent output");
+  });
+
+  test("throws CALL_OP_NO_OUTPUT when run returns no output", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
     const runtime = makeTestRuntime({ agentManager, sessionManager });
 
     let thrown: Error | null = null;

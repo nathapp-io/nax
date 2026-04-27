@@ -69,6 +69,14 @@ export interface AgentRunRequest {
     failure: AdapterFailure | undefined,
     resolvedRunOptions: AgentRunOptions,
   ) => Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }>;
+  /**
+   * When true, runWithFallback dispatches at most one hop on the primary agent
+   * and never iterates the fallback chain. Used by ops that must preserve the
+   * `fallbacks: []` invariant (TDD test-writer / implementer / verifier per
+   * ADR-018 §5.2). Middleware still fires; rate-limit retry on the same agent
+   * still applies.
+   */
+  noFallback?: boolean;
 }
 
 /** Options for AgentManager.runAsSession — caller-managed session (Phase C). */
@@ -132,7 +140,7 @@ export interface IAgentManager {
    * Implements exponential backoff for rate-limit errors when no swap candidate
    * is available (up to 3 attempts). Emits onSwapAttempt / onSwapExhausted events.
    */
-  runWithFallback(request: AgentRunRequest): Promise<AgentRunOutcome>;
+  runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome>;
 
   /**
    * One-shot completion with cross-agent fallback.
