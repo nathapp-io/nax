@@ -44,11 +44,12 @@ function isRuntimeWithAgentManager(value: unknown): value is import("../runtime"
   return typeof value === "object" && value !== null && "agentManager" in value;
 }
 
-function createPlanRuntime(config: NaxConfig, workdir: string): import("../runtime").NaxRuntime {
-  const candidate = _planDeps.createRuntime(config, workdir) as unknown;
+function createPlanRuntime(config: NaxConfig, workdir: string, featureName: string): import("../runtime").NaxRuntime {
+  const candidate = _planDeps.createRuntime(config, workdir, featureName) as unknown;
   if (isRuntimeWithAgentManager(candidate)) return candidate;
   return createRuntime(config, workdir, {
     agentManager: candidate as import("../agents").IAgentManager,
+    featureName,
   });
 }
 
@@ -72,7 +73,7 @@ export const _planDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   scanCodebase: (workdir: string): Promise<CodebaseScan> => scanCodebase(workdir),
-  createRuntime: (cfg: NaxConfig, wd: string) => createRuntime(cfg, wd),
+  createRuntime: (cfg: NaxConfig, wd: string, featureName: string) => createRuntime(cfg, wd, { featureName }),
   readPackageJson: (workdir: string): Promise<Record<string, unknown> | null> =>
     Bun.file(join(workdir, "package.json"))
       .json()
@@ -209,7 +210,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     );
     // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
     const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
-    const debateRt = createPlanRuntime(config, workdir);
+    const debateRt = createPlanRuntime(config, workdir, options.feature);
     const debateAgentManager = debateRt.agentManager;
     const debateCallCtx = {
       runtime: debateRt,
@@ -256,7 +257,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     // Auto (one-shot) path — callOp routes via completeAs, returns JSON directly
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
-    const rt = createPlanRuntime(config, workdir);
+    const rt = createPlanRuntime(config, workdir, options.feature);
     const agentManager = rt.agentManager;
     if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
 
@@ -312,7 +313,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const prompt = `${interactiveTaskCtx}\n\n${interactiveOutputFmt}`;
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
-    const rt = createPlanRuntime(config, workdir);
+    const rt = createPlanRuntime(config, workdir, options.feature);
     const agentManager = rt.agentManager;
     if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     // Use configured interaction plugin (telegram/webhook/auto) if available;
@@ -600,7 +601,7 @@ export async function planDecomposeCommand(
   const defaultAgentName = resolveDefaultAgent(config);
   const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
   const agentName = resolvedPlanModel.agent;
-  const rt = createPlanRuntime(config, workdir);
+  const rt = createPlanRuntime(config, workdir, options.feature);
   const agentManager = rt.agentManager;
   const adapterForCapCheck = agentManager.getAgent(agentName);
   if (!adapterForCapCheck) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);

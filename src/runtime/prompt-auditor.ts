@@ -1,3 +1,6 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+
 export interface PromptAuditEntry {
   readonly ts: number;
   readonly runId: string;
@@ -53,13 +56,44 @@ export function createNoOpPromptAuditor(): IPromptAuditor {
   };
 }
 
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
-
 /** Injectable deps — swap `write` in tests to avoid real disk I/O. */
 export const _promptAuditorDeps = {
   write: (path: string, data: string): Promise<number> => Bun.write(path, data),
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Human-readable txt content builder
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildTxtContent(entry: PromptAuditEntry): string {
+  const ts = new Date(entry.ts).toISOString();
+  const lines = [
+    `Timestamp:  ${ts}`,
+    `Session:    ${entry.sessionName ?? "(none)"}`,
+    `RunId:      ${entry.runId}`,
+    `Agent:      ${entry.agentName}`,
+    `Stage:      ${entry.stage ?? entry.callType ?? "(none)"}`,
+    `StoryId:    ${entry.storyId ?? "(none)"}`,
+    `Feature:    ${entry.featureName ?? "(none)"}`,
+    `CallType:   ${entry.callType ?? "(none)"}`,
+    ...(entry.turn !== undefined ? [`Turn:       ${entry.turn}`] : []),
+    ...(entry.recordId ? [`RecordId:   ${entry.recordId}`] : []),
+    ...(entry.sessionId ? [`SessionId:  ${entry.sessionId}`] : []),
+    `Permission: ${entry.permissionProfile}`,
+    `Duration:   ${entry.durationMs}ms`,
+    "---",
+    entry.prompt,
+    "",
+    "=== RESPONSE ===",
+    "",
+    entry.response,
+  ];
+  return lines.join("\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PromptAuditor
+// ─────────────────────────────────────────────────────────────────────────────
 
 export class PromptAuditor implements IPromptAuditor {
   private readonly _entries: (PromptAuditEntry | PromptAuditErrorEntry)[] = [];
@@ -68,7 +102,10 @@ export class PromptAuditor implements IPromptAuditor {
 
   constructor(
     private readonly _runId: string,
+    /** Base audit directory (e.g. <workdir>/.nax/prompt-audit). */
     private readonly _flushDir: string,
+    /** Feature name — used as a subdirectory so each feature has its own folder. */
+    private readonly _featureName: string,
   ) {}
 
   record(entry: PromptAuditEntry): void {
@@ -91,19 +128,37 @@ export class PromptAuditor implements IPromptAuditor {
     this._draining = true;
     try {
       const entries = this._entries.splice(0);
-
       if (entries.length === 0) return;
 
-      mkdirSync(this._flushDir, { recursive: true });
-      const path = join(this._flushDir, `${this._runId}.jsonl`);
-      await _promptAuditorDeps.write(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+      const featureDir = join(this._flushDir, this._featureName);
+      mkdirSync(featureDir, { recursive: true });
 
-      // Flush any entries that arrived during the async write.
-      // Re-write the complete merged file so the first batch is not lost.
+      // ── JSONL (machine-readable) ───────────────────────────────────────────
+      const jsonlPath = join(featureDir, `${this._runId}.jsonl`);
+      await _promptAuditorDeps.write(jsonlPath, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+
+      // ── Per-entry .txt (human-readable) ───────────────────────────────────
+      // Only PromptAuditEntry has prompt+response; error entries go to JSONL only.
+      for (const entry of entries) {
+        if (!("prompt" in entry) || !("response" in entry)) continue;
+        const auditEntry = entry as PromptAuditEntry;
+        if (!auditEntry.sessionName) continue;
+        const filename = `${auditEntry.ts}-${auditEntry.sessionName}.txt`;
+        await _promptAuditorDeps.write(join(featureDir, filename), buildTxtContent(auditEntry));
+      }
+
+      // Flush any entries that arrived during the async writes.
       const lateEntries = this._inFlightEntries.splice(0);
       if (lateEntries.length > 0) {
         const allEntries = [...entries, ...lateEntries];
-        await _promptAuditorDeps.write(path, `${allEntries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+        await _promptAuditorDeps.write(jsonlPath, `${allEntries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+        for (const entry of lateEntries) {
+          if (!("prompt" in entry) || !("response" in entry)) continue;
+          const auditEntry = entry as PromptAuditEntry;
+          if (!auditEntry.sessionName) continue;
+          const filename = `${auditEntry.ts}-${auditEntry.sessionName}.txt`;
+          await _promptAuditorDeps.write(join(featureDir, filename), buildTxtContent(auditEntry));
+        }
       }
     } finally {
       this._draining = false;

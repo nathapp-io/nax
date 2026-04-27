@@ -77,7 +77,7 @@ describe("createRuntime", () => {
 
   test("promptAuditor is real PromptAuditor when agent.promptAudit.enabled is true", () => {
     const config = makeNaxConfig({ agent: { promptAudit: { enabled: true } } });
-    const rt = createRuntime(config, "/tmp/test");
+    const rt = createRuntime(config, "/tmp/test", { featureName: "my-feature" });
     // Real auditor.record() doesn't throw either, but snapshot() on cost aggregator
     // confirms the runtime is operational — the key contract is that record() doesn't
     // silently discard entries (tested via flush in EC-3 integration test).
@@ -91,7 +91,7 @@ describe("createRuntime", () => {
 
   test("promptAuditor uses configured dir when agent.promptAudit.dir is set", () => {
     const config = makeNaxConfig({ agent: { promptAudit: { enabled: true, dir: "/custom/audit" } } });
-    const rt = createRuntime(config, "/tmp/test");
+    const rt = createRuntime(config, "/tmp/test", { featureName: "my-feature" });
     expect(rt.promptAuditor).toBeDefined();
   });
 

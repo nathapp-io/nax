@@ -307,7 +307,9 @@ export async function runSemanticReview(
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
   if (reviewDebateEnabled) {
     const semanticEffectiveConfig = naxConfig ?? DEFAULT_CONFIG;
-    const createdRuntime = runtime ? undefined : createRuntime(semanticEffectiveConfig, workdir, { agentManager });
+    const createdRuntime = runtime
+      ? undefined
+      : createRuntime(semanticEffectiveConfig, workdir, { agentManager, featureName: featureName ?? "_standalone" });
     const debateRuntime = runtime ?? createdRuntime;
     if (!debateRuntime) {
       throw new Error("[review] Debate runtime unavailable");
