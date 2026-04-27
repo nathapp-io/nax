@@ -327,6 +327,12 @@ export async function runRectificationLoop(
         protocolIds: agentResult.protocolIds,
       };
     },
+    shouldAbort: (failure) => {
+      if (rectificationConfig.abortOnIncreasingFailures) {
+        return failure.testSummary.failed > initialFailure.testSummary.failed;
+      }
+      return false;
+    },
     verify: async (result) => {
       const retryVerification = await _rectificationDeps.runVerification({
         workdir,

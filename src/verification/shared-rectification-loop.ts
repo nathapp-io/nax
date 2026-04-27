@@ -26,7 +26,8 @@ export type VerifyOutcome<TFailure> =
  */
 export type RetryOutcome<TResult> =
   | { readonly outcome: "fixed"; readonly result: TResult; readonly attempts: number }
-  | { readonly outcome: "exhausted"; readonly attempts: number };
+  | { readonly outcome: "exhausted"; readonly attempts: number }
+  | { readonly outcome: "aborted"; readonly attempts: number };
 
 /**
  * Unified retry-loop input — ADR-018 §8.
@@ -65,6 +66,12 @@ export interface RetryInput<TFailure, TResult> {
    * an updated failure snapshot for the next attempt's buildPrompt.
    */
   readonly verify: (result: TResult) => Promise<VerifyOutcome<TFailure>>;
+  /**
+   * Optional callback to abort the retry loop early (e.g. when failures are
+   * increasing and abortOnIncreasingFailures is enabled). Called after each
+   * failed verify with the updated failure snapshot and current attempt number.
+   */
+  readonly shouldAbort?: (failure: TFailure, attempt: number) => boolean;
 }
 
 export interface ProgressivePromptPreambleOptions {
@@ -131,6 +138,10 @@ export async function runRetryLoop<TFailure, TResult>(
       return { outcome: "fixed", result, attempts: attempt };
     }
     currentFailure = outcome.newFailure;
+
+    if (input.shouldAbort?.(currentFailure, attempt)) {
+      return { outcome: "aborted", attempts: attempt };
+    }
   }
 
   return { outcome: "exhausted", attempts: input.maxAttempts };
