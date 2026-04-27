@@ -15,6 +15,7 @@ import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import { formatSessionName } from "./naming";
 import type {
@@ -32,12 +33,6 @@ import type {
   TransitionOptions,
 } from "./types";
 import { SESSION_TRANSITIONS } from "./types";
-
-const NO_OP_INTERACTION_HANDLER = {
-  async onInteraction() {
-    return null;
-  },
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
