@@ -90,6 +90,7 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
             rateLimited: false,
             durationMs: Date.now() - startTime,
             estimatedCostUsd: turnResult.estimatedCostUsd ?? 0,
+            exactCostUsd: turnResult.exactCostUsd,
             tokenUsage: turnResult.tokenUsage,
           };
         } finally {

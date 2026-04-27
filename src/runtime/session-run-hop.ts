@@ -60,6 +60,7 @@ export function createSessionRunHop(sessionManager: ISessionManager): SessionRun
           rateLimited: false,
           durationMs: Date.now() - startMs,
           estimatedCostUsd: turnResult.estimatedCostUsd ?? 0,
+          exactCostUsd: turnResult.exactCostUsd,
           tokenUsage: turnResult.tokenUsage,
         },
       };
