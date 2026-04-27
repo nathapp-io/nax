@@ -94,6 +94,93 @@ describe("createRuntime", () => {
     const rt = createRuntime(config, "/tmp/test");
     expect(rt.promptAuditor).toBeDefined();
   });
+
+  test("close() resolves when flush() throws", async () => {
+    const flushError = new Error("flush failed");
+    const promptAuditor = {
+      record() {},
+      recordError() {},
+      async flush() { throw flushError; },
+    };
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor });
+    await expect(rt.close()).resolves.toBeUndefined();
+  });
+
+  test("close() resolves when drain() throws", async () => {
+    const drainError = new Error("drain failed");
+    const costAggregator = {
+      record() {},
+      recordError() {},
+      snapshot() { return { totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }; },
+      byAgent() { return {}; },
+      byStage() { return {}; },
+      byStory() { return {}; },
+      async drain() { throw drainError; },
+    };
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { costAggregator });
+    await expect(rt.close()).resolves.toBeUndefined();
+  });
+
+  test("close() resolves when both flush() and drain() throw", async () => {
+    const promptAuditor = {
+      record() {},
+      recordError() {},
+      async flush() { throw new Error("flush failed"); },
+    };
+    const costAggregator = {
+      record() {},
+      recordError() {},
+      snapshot() { return { totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }; },
+      byAgent() { return {}; },
+      byStage() { return {}; },
+      byStory() { return {}; },
+      async drain() { throw new Error("drain failed"); },
+    };
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor, costAggregator });
+    await expect(rt.close()).resolves.toBeUndefined();
+  });
+
+  test("close() calls drain() even when flush() throws", async () => {
+    let drainCalled = false;
+    const promptAuditor = {
+      record() {},
+      recordError() {},
+      async flush() { throw new Error("flush failed"); },
+    };
+    const costAggregator = {
+      record() {},
+      recordError() {},
+      snapshot() { return { totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }; },
+      byAgent() { return {}; },
+      byStage() { return {}; },
+      byStory() { return {}; },
+      async drain() { drainCalled = true; },
+    };
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor, costAggregator });
+    await rt.close();
+    expect(drainCalled).toBe(true);
+  });
+
+  test("close() calls flush() even when drain() throws", async () => {
+    let flushCalled = false;
+    const promptAuditor = {
+      record() {},
+      recordError() {},
+      async flush() { flushCalled = true; },
+    };
+    const costAggregator = {
+      record() {},
+      recordError() {},
+      snapshot() { return { totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }; },
+      byAgent() { return {}; },
+      byStage() { return {}; },
+      byStory() { return {}; },
+      async drain() { throw new Error("drain failed"); },
+    };
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor, costAggregator });
+    await rt.close();
+    expect(flushCalled).toBe(true);
+  });
 });
 
 describe("makeTestRuntime", () => {

@@ -128,8 +128,12 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       if (closed) return;
       closed = true;
       controller.abort();
-      await promptAuditor.flush();
-      await costAggregator.drain();
+      const results = await Promise.allSettled([promptAuditor.flush(), costAggregator.drain()]);
+      for (const r of results) {
+        if (r.status === "rejected") {
+          logger.warn("runtime", "close() flush/drain error", { error: String(r.reason) });
+        }
+      }
     },
   };
 }
