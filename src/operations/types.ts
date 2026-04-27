@@ -141,3 +141,22 @@ export interface LlmReviewFinding {
     observed: string;
   };
 }
+
+/** Shared LLM review output shape consumed by semantic-review and adversarial-review ops. */
+export interface LlmReviewOutput {
+  passed: boolean;
+  findings: LlmReviewFinding[];
+  failOpen?: boolean;
+}
+
+/**
+ * Parse and validate a raw object into the shared {@link LlmReviewOutput} shape.
+ * Returns `null` when the object does not match the expected contract.
+ */
+export function parseLlmReviewShape(raw: unknown): LlmReviewOutput | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.passed !== "boolean") return null;
+  if (!Array.isArray(obj.findings)) return null;
+  return { passed: obj.passed, findings: obj.findings as LlmReviewFinding[] };
+}

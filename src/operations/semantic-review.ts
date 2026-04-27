@@ -5,7 +5,8 @@ import type { PriorFailure } from "../prompts";
 import { looksLikeTruncatedJson } from "../review/truncation";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { HopBody, LlmReviewFinding, RunOperation } from "./types";
+import type { HopBody, LlmReviewFinding, LlmReviewOutput, RunOperation } from "./types";
+import { parseLlmReviewShape } from "./types";
 
 export type { PriorFailure, SemanticReviewConfig, SemanticStory };
 
@@ -22,10 +23,7 @@ export interface SemanticReviewInput {
   featureCtxBlock?: string;
 }
 
-export interface SemanticReviewOutput {
-  passed: boolean;
-  findings: LlmReviewFinding[];
-  failOpen?: boolean;
+export interface SemanticReviewOutput extends LlmReviewOutput {
   /**
    * True when the raw output could not be parsed but contained `"passed": false` —
    * the agent clearly intended a failure but the response was truncated/malformed.
@@ -38,14 +36,6 @@ type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 
 const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], failOpen: true };
 
-function parseLLMShape(raw: unknown): SemanticReviewOutput | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const obj = raw as Record<string, unknown>;
-  if (typeof obj.passed !== "boolean") return null;
-  if (!Array.isArray(obj.findings)) return null;
-  return { passed: obj.passed, findings: obj.findings as LlmReviewFinding[] };
-}
-
 /**
  * Same-session JSON-parse retry. Sends the initial prompt; if the response is
  * unparseable or truncated, sends a retry prompt in the same handle so the
@@ -56,7 +46,7 @@ const semanticReviewHopBody: HopBody<SemanticReviewInput> = async (initialPrompt
   const first = await ctx.send(initialPrompt);
   const isTruncated = looksLikeTruncatedJson(first.output);
   const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
-  if (!isTruncated && parsed && parseLLMShape(parsed)) return first;
+  if (!isTruncated && parsed && parseLlmReviewShape(parsed)) return first;
 
   const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
   const retry: TurnResult = await ctx.send(retryPrompt);
@@ -90,7 +80,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   },
   parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
-    const parsed = parseLLMShape(raw);
+    const parsed = parseLlmReviewShape(raw);
     if (parsed) return parsed;
     if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
     return FAIL_OPEN;
