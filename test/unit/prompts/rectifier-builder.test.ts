@@ -1,162 +1,187 @@
 /**
  * Tests for RectifierPromptBuilder
  *
- * Covers snapshot stability + structural contract for the two active triggers:
- *   tdd-suite-failure — implementer fixes regressions after full-suite gate
- *   verify-failure    — post-verify rectification loop (autofix)
+ * Covers the regressionFailure() static method which generates prompts for
+ * implementers to fix test failures across the full test suite.
+ *
+ * Migration Note: Removed tests for the old fluent API (.for(), .story(), etc.)
+ * which were replaced by direct static method calls in Phase 2.
  */
 
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "../../helpers";
 import { RectifierPromptBuilder } from "../../../src/prompts";
-import type { FailureRecord, RectifierTrigger } from "../../../src/prompts";
+import type { FailureRecord } from "../../../src/prompts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const STORY = makeStory({
   id: "US-042",
-  title: "Add rate limiter to API gateway",
-  description: "Implement per-client rate limiting on the API gateway.",
-  acceptanceCriteria: [
-    "Requests over the limit receive a 429 response",
-    "Rate limit resets after the configured window",
-  ],
-  attempts: 2,
+  title: "Add rate limiter",
+  description: "Implement rate limiting.",
+  acceptanceCriteria: ["Rate limit returns 429"],
+  attempts: 1,
 });
 
 const FAILURES: FailureRecord[] = [
   {
-    test: "returns 429 when rate limit exceeded",
-    file: "test/unit/gateway/rate-limiter.test.ts",
+    test: "returns 429 when limit exceeded",
+    file: "test/unit/rate-limiter.test.ts",
     message: "Expected 429, received 200",
-    output: "at test/unit/gateway/rate-limiter.test.ts:34",
-  },
-  {
-    test: "resets counter after window expires",
-    file: "test/unit/gateway/rate-limiter.test.ts",
-    message: "Expected counter to be 0, received 3",
+    output: "at test/unit/rate-limiter.test.ts:34",
   },
 ];
 
-const TEST_CMD = "bun test test/unit/gateway/";
+const TEST_CMD = "bun test test/unit/";
 const CONTEXT = "# Project Context\n\nThis project uses Bun 1.3+.";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── RectifierPromptBuilder.regressionFailure() ────────────────────────────────
 
-async function buildMinimal(trigger: RectifierTrigger): Promise<string> {
-  return RectifierPromptBuilder.for(trigger).story(STORY).conventions().build();
-}
-
-// ─── Snapshot stability ───────────────────────────────────────────────────────
-
-describe("RectifierPromptBuilder — snapshot stability", () => {
-  const TRIGGERS: ("tdd-suite-failure" | "verify-failure")[] = [
-    "tdd-suite-failure",
-    "verify-failure",
-  ];
-
-  for (const trigger of TRIGGERS) {
-    test(`minimal build — ${trigger}`, async () => {
-      const result = await buildMinimal(trigger);
-      expect(result).toMatchSnapshot();
+describe("RectifierPromptBuilder.regressionFailure()", () => {
+  test("includes story title", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
     });
-  }
-});
-
-// ─── Structural contract: fluent API ─────────────────────────────────────────
-
-describe("RectifierPromptBuilder — fluent API", () => {
-  test(".story() is chainable", () => {
-    const builder = RectifierPromptBuilder.for("verify-failure").story(STORY);
-    expect(builder).toBeInstanceOf(RectifierPromptBuilder);
-  });
-
-  test(".priorFailures() is chainable", () => {
-    const builder = RectifierPromptBuilder.for("tdd-suite-failure").story(STORY).priorFailures(FAILURES);
-    expect(builder).toBeInstanceOf(RectifierPromptBuilder);
-  });
-
-  test(".testCommand() is chainable", () => {
-    const builder = RectifierPromptBuilder.for("verify-failure").story(STORY).testCommand(TEST_CMD);
-    expect(builder).toBeInstanceOf(RectifierPromptBuilder);
-  });
-
-  test(".build() returns a Promise<string>", async () => {
-    const p = RectifierPromptBuilder.for("verify-failure").story(STORY).conventions().build();
-    expect(p).toBeInstanceOf(Promise);
-    expect(typeof (await p)).toBe("string");
-  });
-});
-
-// ─── Structural contract: story section ──────────────────────────────────────
-
-describe("RectifierPromptBuilder — story section", () => {
-  test("includes story title", async () => {
-    const result = await buildMinimal("tdd-suite-failure");
     expect(result).toContain(STORY.title);
   });
 
-  test("includes story description", async () => {
-    const result = await buildMinimal("verify-failure");
+  test("includes story description", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
     expect(result).toContain(STORY.description);
   });
-});
 
-// ─── Structural contract: prior failures section ─────────────────────────────
+  test("includes acceptance criteria", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
+    for (const ac of STORY.acceptanceCriteria) {
+      expect(result).toContain(ac);
+    }
+  });
 
-describe("RectifierPromptBuilder — prior failures section", () => {
-  test("includes failure messages", async () => {
-    const result = await RectifierPromptBuilder.for("verify-failure")
-      .story(STORY)
-      .priorFailures(FAILURES)
-      .conventions()
-      .build();
+  test("includes failure messages", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
     for (const f of FAILURES) {
       expect(result).toContain(f.message);
     }
   });
 
-  test("includes failure output when present", async () => {
-    const result = await RectifierPromptBuilder.for("tdd-suite-failure")
-      .story(STORY)
-      .priorFailures(FAILURES)
-      .conventions()
-      .build();
-    expect(result).toContain("at test/unit/gateway/rate-limiter.test.ts:34");
-  });
-
-  test("empty failures list produces no prior-failures section", async () => {
-    const result = await RectifierPromptBuilder.for("verify-failure")
-      .story(STORY)
-      .priorFailures([])
-      .conventions()
-      .build();
-    expect(result).not.toContain("PRIOR FAILURES");
-  });
-});
-
-// ─── Structural contract: test command section ───────────────────────────────
-
-describe("RectifierPromptBuilder — test command section", () => {
-  test("includes test command when provided", async () => {
-    const result = await RectifierPromptBuilder.for("verify-failure")
-      .story(STORY)
-      .testCommand(TEST_CMD)
-      .conventions()
-      .build();
+  test("includes test command", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
     expect(result).toContain(TEST_CMD);
   });
-});
 
-// ─── Structural contract: constitution + context ─────────────────────────────
+  test("demands FULL test suite explicitly", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
+    expect(result).toContain("FULL repo test suite");
+    expect(result).toContain("EXACT command");
+    expect(result).toContain("cross-story regressions");
+  });
 
-describe("RectifierPromptBuilder — constitution and context", () => {
-  test("includes context when provided", async () => {
-    const result = await RectifierPromptBuilder.for("verify-failure")
-      .context(CONTEXT)
-      .story(STORY)
-      .conventions()
-      .build();
+  test("includes conventions by default", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
+    expect(result).toContain("Conventions");
+  });
+
+  test("omits conventions when disabled", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      conventions: false,
+    });
+    // Should not contain the conventions section heading
+    const lines = result.split("\n");
+    const hasConventionsSection = lines.some((line) => line.startsWith("# Conventions"));
+    expect(hasConventionsSection).toBe(false);
+  });
+
+  test("includes isolation when provided", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      isolation: "strict",
+    });
+    expect(result).toContain("Isolation");
+  });
+
+  test("includes context when provided", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      context: CONTEXT,
+    });
     expect(result).toContain("Project Context");
+  });
+
+  test("includes constitution when provided", () => {
+    const constitution = "# Constitution\n\nFollow these rules.";
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      constitution,
+    });
+    expect(result).toContain("Follow these rules");
+  });
+
+  test("includes promptPrefix when provided", () => {
+    const prefix = "DIAGNOSTIC: Retrying after escalation.";
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      promptPrefix: prefix,
+    });
+    expect(result).toContain(prefix);
+  });
+
+  test("snapshot: regressionFailure() with minimal options", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
+    expect(result).toMatchSnapshot();
+  });
+
+  test("snapshot: regressionFailure() with all options", () => {
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      conventions: true,
+      isolation: "strict",
+      context: CONTEXT,
+      constitution: "# Constitution\n\nRules apply.",
+      promptPrefix: "DIAGNOSTIC: Attempt 2",
+    });
+    expect(result).toMatchSnapshot();
   });
 });
