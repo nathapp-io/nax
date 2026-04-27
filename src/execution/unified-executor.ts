@@ -552,12 +552,20 @@ export async function executeUnified(
         postRunPipeline,
         {
           config: ctx.config,
+          rootConfig: ctx.config,
           prd,
           workdir: ctx.workdir,
+          projectDir: ctx.workdir,
           featureDir: ctx.featureDir,
           story: prd.userStories[0],
+          stories: prd.userStories,
+          routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+          hooks: ctx.hooks,
+          agentGetFn: ctx.agentGetFn,
+          agentManager: ctx.agentManager,
+          runtime: ctx.runtime,
           acceptanceTestPaths: preRunCtx?.acceptanceTestPaths,
-        } as unknown as PipelineContext,
+        } satisfies PipelineContext,
         ctx.eventEmitter,
       );
     }
