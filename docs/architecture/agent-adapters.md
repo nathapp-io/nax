@@ -11,7 +11,7 @@
 
 ### Architecture
 
-All permission decisions flow through one function: `resolvePermissions(config, stage)` in `src/config/permissions.ts`.
+All permission decisions flow through one function: `resolvePermissions(config, stage)` in `src/config/permissions.ts`. Under ADR-019 it is called by exactly two resource openers — `SessionManager.openSession` and `AgentManager.completeAs` — and never by callers above.
 
 ```
 ┌─────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
@@ -19,15 +19,18 @@ All permission decisions flow through one function: `resolvePermissions(config, 
 │ • profile    │     │ src/config/           │     │ • mode              │
 │ • legacy bool│     │ permissions.ts        │     │ • skipPermissions   │
 │ • stage      │     └──────────────────────┘     │ • allowedTools?     │
-└─────────────┘                                   └─────────────────────┘
-                                                         │
-                                                         ▼
-                                               ┌──────────────────┐
-                                               │ ACP adapter      │
-                                               │ reads .mode      │
-                                               │ ("approve-all"   │
-                                               │  "approve-reads")│
-                                               └──────────────────┘
+└─────────────┘                ▲                  └─────────────────────┘
+                               │ called once, pre-chain        │
+                  ┌────────────┴────────────┐                  ▼
+                  │                          │      ┌──────────────────┐
+        SessionManager.openSession   AgentManager.completeAs           │
+        (session-bound calls)        (sessionless one-shots)           │
+                  │                          │                         │
+                  ▼                          ▼                         │
+        adapter.openSession          adapter.complete                  │
+                  │                          │                         │
+                  ▼                          ▼                         │
+        receives resolvedPermissions in opts ←─────────────────────────┘
 ```
 
 ### Permission Profiles
@@ -79,29 +82,43 @@ In Phase 1, all stages resolve to the same profile. Phase 2 (`scoped`) will enab
 
 | Rule | Rationale |
 |:-----|:----------|
-| **Always call `resolvePermissions(config, stage)`** | Single source of truth — no local fallbacks |
+| **Resource openers resolve permissions; nobody else does** | Only `SessionManager.openSession` and `AgentManager.completeAs` call `resolvePermissions` (ADR-019 §3) |
 | **Never hardcode permission booleans** | No `?? true`, `?? false`, or literal `"approve-all"` |
 | **Never read `dangerouslySkipPermissions` directly** | Deprecated field — resolver handles backward compat |
-| **Always pass `config` and `pipelineStage` to adapters** | Required for resolver to work — both fields are on `AgentRunOptions` and `CompleteOptions` |
-| **New code must set `pipelineStage`** | Every `adapter.run()`, `.complete()`, `.plan()`, `.decompose()` call must specify the stage |
+| **Always pass `pipelineStage` upward** | Callers above the resource opener pass `pipelineStage`; the manager resolves once before invoking the adapter |
+| **Adapter primitives receive `resolvedPermissions`** | `OpenSessionOpts` / `CompleteOpts` carry pre-resolved permissions — adapters never re-resolve |
 
 ### Adding New Call Sites
 
-When writing code that spawns an agent session or calls `complete()`:
+ADR-019 split permission resolution between two resource openers:
+
+| Caller | Where it resolves |
+|:---|:---|
+| `SessionManager.openSession(name, opts)` | Internally — caller passes `pipelineStage`, manager calls `resolvePermissions` once and forwards `resolvedPermissions` to `adapter.openSession` |
+| `AgentManager.completeAs(name, prompt, opts)` | Internally — manager calls `resolvePermissions(this._config, opts.pipelineStage)` and forwards to `adapter.complete` |
+
+Above those entry points, callers pass `pipelineStage`, never raw permission
+booleans:
 
 ```typescript
-// ✅ Correct: use resolvePermissions with config and stage
-import { resolvePermissions } from "../config/permissions";
-
-const { skipPermissions, mode } = resolvePermissions(config, "run");
-
-// ACP adapter reads .mode ("approve-all" | "approve-reads")
-await adapter.run({
-  ...options,
+// ✅ Correct — sessionless one-shot
+await ctx.runtime.agentManager.completeAs(agentName, prompt, {
+  pipelineStage: "decompose",
+  jsonMode: true,
   config,
-  pipelineStage: "run",
-  dangerouslySkipPermissions: skipPermissions,
 });
+
+// ✅ Correct — session-bound (orchestrator opens its own handle)
+const handle = await ctx.runtime.sessionManager.openSession(name, {
+  agentName,
+  workdir,
+  pipelineStage: "run",
+  signal: ctx.signal,
+});
+
+// ✅ Correct — through callOp (most ops): Operation.stage drives the stage,
+// no manual permission threading
+await callOp(ctx, semanticReviewOp, input);
 ```
 
 ```typescript
@@ -111,9 +128,14 @@ const skip = config?.execution?.dangerouslySkipPermissions ?? true;
 // ❌ Wrong: hardcoded
 const args = ["--dangerously-skip-permissions", ...rest];
 
-// ❌ Wrong: no stage
-const perms = resolvePermissions(config, undefined as any);
+// ❌ Wrong: resolving permissions in a middle layer
+// (only resource openers — SessionManager.openSession / AgentManager.completeAs — resolve)
+const perms = resolvePermissions(config, "run");
+await sessionManager.openSession(name, { resolvedPermissions: perms, ... });
 ```
+
+**Rule:** the resource opener resolves permissions. Orchestrators, `callOp`,
+middleware, and ops never call `resolvePermissions` themselves.
 
 ### Reference Files
 
@@ -162,7 +184,44 @@ strategy values, descriptions, and classification rules are defined.
 
 ## §16 Agent Adapter Conventions
 
-*Added: 2026-03-16 (MR !52 — agents folder restructure)*
+*Added: 2026-03-16 (MR !52 — agents folder restructure). Updated 2026-04-27 for ADR-019 4-primitive surface.*
+
+### Adapter surface — 4 primitives (ADR-019)
+
+```typescript
+interface AgentAdapter {
+  // Session-related work — composed by SessionManager
+  openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle>;
+  sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult>;
+  closeSession(handle: SessionHandle): Promise<void>;
+
+  // Sessionless one-shot — called directly by AgentManager.completeAs
+  complete(prompt: string, opts: CompleteOpts): Promise<CompleteResult>;
+}
+```
+
+| Method | Owner of the call | Purpose |
+|:---|:---|:---|
+| `openSession` | `SessionManager.openSession` | Open or resume a physical session. Receives pre-resolved permissions. |
+| `sendTurn` | `SessionManager.sendPrompt` (via the framework's `interactionHandler`) | Send one prompt; agent runs to completion (with internal interaction round-trips handled inside the adapter). |
+| `closeSession` | `SessionManager.closeSession` | Idempotent close. |
+| `complete` | `AgentManager.completeAs` | Sessionless single-shot. No state, no interactionHandler. |
+
+**`AgentAdapter.run` is gone** (deleted in ADR-019 Phase D). Functionality lives
+in `SessionManager.runInSession`, which composes the three session primitives.
+
+**`plan` and `decompose` are gone too** — they are typed `kind:"complete"`
+operations under `src/operations/`, dispatched through `callOp` (§37).
+
+### `interactionHandler` — mid-turn callback
+
+The framework injects an `interactionHandler` into every `sendTurn` call. It
+handles permission prompts, tool calls, and context-tool resolution between the
+adapter's request and final response. The adapter dispatches to the handler;
+SessionManager and above never see these round-trips.
+
+`TurnResult.internalRoundTrips` surfaces the count for audit/metrics, but it is
+not state SessionManager tracks across turns.
 
 ### Folder Structure
 
@@ -173,7 +232,7 @@ Each agent adapter lives in its own subfolder under `src/agents/`. The depth mat
 | ACP protocol (all agents) | `acp/` | adapter, spawn-client, parser, cost, interaction-bridge, parse-agent-error, types, index |
 | Centralized cost | `cost/` | calculate, parse, pricing, types, index |
 
-All agents (Claude Code, OpenCode, Codex, Gemini, Aider, and any ACP-compatible agent) are driven through `AcpAgentAdapter`. There are no per-agent CLI adapter folders.
+All agents (Claude Code, OpenCode, Codex, Gemini, Aider, and any ACP-compatible agent) are driven through `AcpAgentAdapter`. There are no per-agent CLI adapter folders. The CLI protocol mode was removed before ADR-019 — the schema declares `agent.protocol: z.literal("acp").default("acp")`.
 
 ### Rules
 
@@ -216,8 +275,6 @@ nax has three independent retry layers, each targeting a different failure class
 | Tier escalation (nax) | `execution.escalation.*` | Repeated rectification failures | Bumps model tier (fast → balanced → powerful) |
 
 **Key rule:** `promptRetries` is the cheapest layer — it fires inside acpx before nax even sees the result. Set it to `2` for transient-rate-limit tolerance without overlapping the escalation logic. The failure classes are disjoint: prompt-level transients vs. quality failures vs. repeated quality failures.
-
-`promptRetries` is ACP-only (`agent.acp` sub-key); the CLI adapter (`protocol: "cli"`) has no equivalent.
 
 ### Async Decompose Prompts
 

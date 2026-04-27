@@ -19,6 +19,11 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | Prompt-building functions outside `src/prompts/builders/` | Add a method to the appropriate builder class | Orphan prompts scatter LLM instruction logic across subsystems, making them impossible to audit, test, or optimise centrally (see Prompt Builder Convention below) |
 | Inline test-file classification outside `src/test-runners/` | `resolveTestFilePatterns(config, workdir, packageDir)` SSOT | ADR-009 — nax is language-agnostic and monorepo-aware. Hardcoded `test/unit/`, `.test.ts`, `_test.go`, `\.spec\.` regexes fragment the truth and break under polyglot monorepos (see Test-File Classification Convention below) |
 | Hand-rolled LLM JSON extraction (`output.trim().replace(/\`\`\`json.../)`, bare `JSON.parse(output)`) | `parseLLMJson<T>(output)` from `src/utils/llm-json` | Single-tier parsing silently fails on fence-wrapped, preamble-padded, or trailing-comma responses. `parseLLMJson` runs three extraction tiers and is the SSOT for all LLM response parsing. |
+| Direct `adapter.openSession` / `sendTurn` / `closeSession` / `complete` outside the wiring layer (`src/agents/manager.ts`, `src/agents/utils.ts`, `src/session/manager.ts`) | `callOp` for ops; manager / session APIs otherwise | ADR-019 §1 — bypassing loses middleware + descriptor correlation |
+| `adapter.run` / `plan` / `decompose`, `agentManager.planAs` / `decomposeAs` | `callOp(ctx, planOp / decomposeOp, …)` or another `Operation` | Deleted (ADR-019 Phase D + ADR-018 Wave 3) |
+| `new AgentManager(config)` / `createAgentManager(config, …)` outside `src/runtime/internal/` | `createRuntime(config, workdir)` and read `runtime.agentManager` | ADR-018 §2 — one runtime per run, no orphans |
+| `runtime.configLoader.current()` inside an op's `build` / `parse` | `ctx.config` (sliced by `callOp` via `packageView.select`) | ADR-018 §4.2 — preserves per-package overrides |
+| Resolving permissions outside `SessionManager.openSession` / `AgentManager.completeAs` | Pass `pipelineStage` upward; resource opener resolves once | ADR-019 §3 |
 
 ## Prompt Builder Convention
 

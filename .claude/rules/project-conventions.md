@@ -69,6 +69,13 @@ logger.error("acceptance", "Tests failed", { failedACs, packageDir, storyId: ctx
 - Import from the barrel (`src/prompts`), never from internal paths (`src/prompts/builders/rectifier-builder`).
 - See `forbidden-patterns.md` → **Prompt Builder Convention** for the full builder registry and examples.
 
+## Runtime Layering
+
+- One `NaxRuntime` per run — construct via `createRuntime(config, workdir)`. No bare `new AgentManager(...)` outside `src/runtime/internal/`.
+- `AgentManager` and `SessionManager` are pure peers; integration lives at `callOp` / `buildHopCallback` in `src/operations/`.
+- New Operations: `src/operations/<name>.ts`, exported from the barrel.
+- See `adapter-wiring.md` for entry-point selection; `docs/architecture/subsystems.md` §34–§37 for the why.
+
 ## Commits
 
 - Conventional commits: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`.

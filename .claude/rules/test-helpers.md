@@ -13,12 +13,13 @@ Import from the barrel: `import { ... } from "../../helpers"` (adjust depth).
 
 | Helper | Purpose | File |
 |:---|:---|:---|
-| `makeMockAgentManager(overrides?)` | `IAgentManager` mock with all methods stubbed | `test/helpers/mock-agent-manager.ts` |
-| `makeAgentAdapter(overrides?)` | `AgentAdapter` mock with full capability surface | `test/helpers/mock-agent-adapter.ts` |
+| `makeMockAgentManager(overrides?)` | `IAgentManager` mock with all methods stubbed (incl. `completeAs` / `runAsSession` / `runWithFallback`) | `test/helpers/mock-agent-manager.ts` |
+| `makeAgentAdapter(overrides?)` | `AgentAdapter` mock — 4 primitives (`openSession` / `sendTurn` / `closeSession` / `complete`) + capabilities | `test/helpers/mock-agent-adapter.ts` |
 | `makeNaxConfig(overrides?)` | `NaxConfig` with `DEFAULT_CONFIG` + deep merge overrides | `test/helpers/mock-nax-config.ts` |
 | `makeStory(overrides?)`, `makePRD(overrides?)` | `UserStory` / `PRD` factories | `test/helpers/mock-story.ts` |
 | `makeLogger()` | Logger with captured calls for assertions | `test/helpers/mock-logger.ts` |
-| `makeSessionManager(overrides?)` | `ISessionManager` mock | `test/helpers/mock-session-manager.ts` |
+| `makeSessionManager(overrides?)` | `ISessionManager` mock (covers `openSession` / `sendPrompt` / `closeSession` / `runInSession` / `nameFor` / `handoff`) | `test/helpers/mock-session-manager.ts` |
+| `makeTestRuntime(opts?)` | `NaxRuntime` for tests that need the container (calls `createRuntime` with `DEFAULT_CONFIG` + `/tmp/test` defaults) | `test/helpers/runtime.ts` |
 
 ## Rule
 

@@ -159,15 +159,15 @@ Configure via `debate.sessionMode` (default: `"one-shot"`).
 
 ## Behavior Matrix — Plan Stage
 
-The plan stage uses `adapter.plan()` for proposals (not `adapter.run()` or `adapter.complete()`). `review.dialogue` does **not** apply to plan — `ReviewerSession` is not created for plan-stage debates.
+The plan stage dispatches `planOp` (a `kind:"complete"` Operation) for proposals — sessionless one-shots through `AgentManager.completeAs`. `review.dialogue` does **not** apply to plan — `ReviewerSession` is not created for plan-stage debates.
 
 | debate | sessionMode | mode | Proposer | Rebuttal | Resolver |
 |:---:|:---:|:---:|:---|:---|:---|
-| off | — | — | Single `adapter.plan()` | None | N/A |
-| on | one-shot | panel | N `adapter.plan()` (parallel) | None | Stateless resolver |
-| on | stateful | panel | N `adapter.plan()` (parallel) | None | Stateless resolver |
-| on | stateful | hybrid | N `adapter.plan()` (parallel) | Sequential via `adapter.run()` (`runRebuttalLoop`) | Stateless resolver |
-| on | one-shot | hybrid | N `adapter.plan()` (parallel) | **Skipped** — warns "hybrid requires stateful" | Stateless resolver |
+| off | — | — | Single `planOp` (complete) | None | N/A |
+| on | one-shot | panel | N `planOp` (parallel completes) | None | Stateless resolver |
+| on | stateful | panel | N `planOp` (parallel completes) | None | Stateless resolver |
+| on | stateful | hybrid | N `planOp` (parallel completes) | Sequential via `callOp` run-kind ops (`runRebuttalLoop`) | Stateless resolver |
+| on | one-shot | hybrid | N `planOp` (parallel completes) | **Skipped** — warns "hybrid requires stateful" | Stateless resolver |
 
 The resolver on the plan stage is always stateless regardless of dialogue settings. This matrix is unchanged by the debate+dialogue feature (Phase 2).
 

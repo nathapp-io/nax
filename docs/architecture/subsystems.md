@@ -807,28 +807,36 @@ DebateSession.run()
 ## §34 Session Manager
 
 `src/session/manager.ts` — `SessionManager` class implementing `ISessionManager`.
-Decision record: ADR-011 (extraction) + ADR-013 (hierarchy with AgentManager).
+Decision record: ADR-011 (extraction) + ADR-019 (full lifecycle ownership).
 Spec: `SPEC-session-manager-integration.md`.
 
-Owns session *lifecycle*. The adapter keeps the *physical* session (acpx
-process, protocol calls). Policy from ADR-008 is preserved but re-expressed as
-state-machine transitions instead of a `keepSessionOpen: boolean`.
+Owns the **full session lifecycle**. The adapter exposes 4 protocol primitives
+(`openSession`, `sendTurn`, `closeSession`, `complete`) — SessionManager
+orchestrates them.
 
-### Ownership boundary
+### Ownership boundary (ADR-019)
 
 ```
-SessionManager                               AcpAgentAdapter
+SessionManager                               AgentAdapter (4 primitives)
 ─────────────────────────────────            ─────────────────────────
 Owns:                                        Owns:
-  - Stable session ID (sess-<uuid>)            - acpx process lifecycle
-  - State machine (7 states)                   - loadSession / createSession
-  - Scratch directory                          - sendPrompt / multi-turn loop
-  - index.json (sidecar replacement)           - token / cost tracking
-  - Close / resume / handoff decisions         - prompt audit
-  - Orphan detection (state-based)             - protocol-level retry on
-  - Agent-agnostic session naming                QUEUE_DISCONNECTED (AC-79)
-  - Prompt audit (per #523)
+  - Stable descriptor ID (sess-<uuid>)         - openSession  / sendTurn /
+  - State machine (7 states)                     closeSession  / complete
+  - Scratch directory                          - acpx process lifecycle
+  - index.json (sidecar replacement)           - inner interaction-bridge loop
+  - Session naming (agent-agnostic)              (tool calls, permission prompts)
+  - Turn count (descriptor field)              - protocolIds (returned via
+  - Resume detection (descriptor lookup)         openSession / TurnResult)
+  - sendPrompt (delegates to sendTurn)         - Transport-level retry
+  - handoff() across fallback agent swaps        (QUEUE_DISCONNECTED)
+  - Permission resolution at openSession
+  - Orphan detection (state-based)
+  - Prompt audit metadata (per #523)
 ```
+
+ADR-013's `SessionManager` > `AgentManager` hierarchy was superseded by ADR-019.
+The two are now pure peers — neither imports the other. Integration happens at
+the operation / `callOp` layer via `buildHopCallback` (see §37).
 
 ### State machine
 
@@ -844,13 +852,44 @@ terminal.
 
 ### Key methods
 
-- `create(options)` → `SessionDescriptor` (stable `sess-<uuid>`).
-- `get(sessionId)` / `listActive()` → descriptor lookup; `listActive()` excludes
-  terminal states.
+**Lifecycle primitives (ADR-019 Phase B):**
+
+- `openSession(name, opts)` → `SessionHandle`. Resolves permissions internally
+  (`resolvePermissions(config, opts.pipelineStage)`) and calls
+  `adapter.openSession(name, { resolvedPermissions, resume })`. The
+  resource-opener-resolves-permissions rule applies — see §14.
+- `sendPrompt(handle, prompt, opts)` → `TurnResult`. Delegates to
+  `adapter.sendTurn` with the framework's `interactionHandler`. Single-flight
+  per handle (concurrent calls throw `SESSION_BUSY`).
+- `closeSession(handle)` → idempotent close; calls `adapter.closeSession`.
+
+**Convenience:**
+
+- `runInSession(name, prompt, opts)` → open + sendPrompt + close (try/finally).
+- `runInSession(name, runFn, opts)` — callback overload for transactional
+  multi-prompt orchestration (debate stateful debaters, future keep-open
+  patterns).
+
+**Naming + introspection:**
+
+- `nameFor(req)` → agent-agnostic session name (was previously
+  `computeAcpHandle` inside the adapter).
+- `descriptor(name)` / `get(sessionId)` / `listActive()` → descriptor lookup;
+  `listActive()` excludes terminal states.
 - `transition(sessionId, toState)` → state-machine guard.
-- `handoff(id, newAgent)` → updates `descriptor.agent` while preserving `id`,
-  `handle`, and `scratchDir` (availability fallback; AC-42 cross-agent scratch
-  neutralization).
+
+**Cross-agent fallback:**
+
+- `handoff(id, newAgent, reason?)` → updates `descriptor.agent` while preserving
+  `id`, scratch dir, and audit correlation. **Metadata only** — does NOT call
+  `adapter.openSession` / `closeSession`. Each fallback hop opens a fresh
+  adapter-level session via `buildHopCallback` (§37); one descriptor wraps N
+  adapter sessions across the lifetime of one story attempt (AC-42).
+- `bindHandle(sessionId, name, protocolIds)` → records protocolIds returned by
+  the adapter; preserved across `handoff()`.
+
+**Scratch:**
+
 - `scratchDir(sessionId)` → persistent per-session scratch path consumed by
   `SessionScratchProvider` (§24).
 
@@ -869,8 +908,15 @@ terminal.
 - `index.json` replaces the protocol-specific `acp-sessions.json` sidecar.
 - `descriptor.json` and `context-manifest-*.json` store paths **relative to
   `projectDir`**; loaders rehydrate to absolute paths for runtime use.
-- One `SessionManager` per run, threaded through `PipelineContext`. Sessions do
+- One `SessionManager` per run, owned by `NaxRuntime` (§36). Sessions do
   not persist across runs; `index.json` is rewritten at run start.
+
+### Mid-turn cancellation
+
+If `sendPrompt` aborts mid-turn (signal abort during the adapter's inner
+interaction-bridge loop), SessionManager marks the descriptor `CANCELLED`.
+Subsequent `sendPrompt` against the same handle throws `SESSION_CANCELLED` —
+the session must be closed and a new one opened to continue.
 
 ### Barrel
 
@@ -883,12 +929,12 @@ terminal.
 ## §35 Agent Manager
 
 `src/agents/manager.ts` — `AgentManager` class implementing `IAgentManager`.
-Decision record: ADR-012 (extraction) + ADR-013 (SessionManager hierarchy).
-Spec: `SPEC-agent-manager-integration.md`.
+Decision record: ADR-012 (extraction) + ADR-019 (peer relationship with
+SessionManager). Spec: `SPEC-agent-manager-integration.md`.
 
 Owns agent *policy*: default resolution, availability fallback, unavailable-agent
-tracking. The adapter keeps the *physical* agent call. ContextOrchestrator keeps
-`rebuildForAgent()` as a utility the manager invokes.
+tracking, and the per-call middleware envelope (audit, cost, cancellation,
+logging). It is a **pure peer of SessionManager** — neither imports the other.
 
 ### Three retry layers — only one is owned here
 
@@ -902,35 +948,61 @@ Conflating these was the root of the T16.3 silent-fallback regression. Reviewers
 must preserve this boundary — availability swaps never fire on payload-shape
 failures.
 
-### Ownership boundary
+### Ownership boundary (ADR-019 Shape C)
 
 ```
-AgentManager                                  AcpAgentAdapter
+AgentManager                                  SessionManager
 ─────────────────────────────────             ─────────────────────────
-Owns:                                         Owns:
-  - Default agent resolution                    - acpx process lifecycle
-  - Fallback chain (flat or keyed map)          - sendPrompt / multi-turn loop
-  - Per-run unavailable-agent tracking          - token / cost tracking
-  - shouldSwap(failure) decision                - RunResult { adapterFailure }
-  - nextCandidate(current, failure)             - Transport-level retry
-  - runWithFallback / completeWithFallback
-  - Swap event emission
+Owns:                                         Owns (see §34):
+  - Default agent resolution                    - openSession / sendTurn /
+  - Fallback chain (flat or keyed map)            closeSession (4 primitives)
+  - Per-run unavailable-agent tracking          - Lifecycle state machine
+  - shouldSwap(failure) decision                - Naming, turn count, resume
+  - nextCandidate(current, failure)             - handoff() across swaps
+  - runWithFallback (chain iteration)
+  - Middleware chain (audit, cost,
+    cancellation, logging)
+  - resolvePermissions for completeAs
   - Calls ContextOrchestrator.rebuildForAgent
-  - Calls SessionManager.handoff on swap
+    via buildHopCallback (§37)
+  - Emits onSwapAttempt / onSwapExhausted
+
+Neither imports the other. Integration happens at callOp / buildHopCallback.
 ```
 
-### Key methods
+### Three entry points (ADR-019)
 
-- `getDefault()` → reads `config.agent.default` (replaces 79-site
-  `config.autoMode.defaultAgent` access).
-- `runAs(name, request)` / `runWithFallback(request)` → delegate to adapter;
-  on availability failure, consult `nextCandidate`, rebuild context, hand off
-  session, retry.
-- `completeAs(name, prompt, opts?)` / `completeWithFallback(...)` — one-shot
-  variant.
-- `planAs()` / `decomposeAs()` — delegators for the specialized calls.
-- `shouldSwap(failure)` / `nextCandidate(agentName, failure)` /
-  `isUnavailable(agent)` — fallback policy primitives.
+| Method | Use case | Session involvement |
+|:---|:---|:---|
+| `completeAs(name, prompt, opts)` | Sessionless one-shot — Plan, Route, semantic review, debate-propose/rebut/rank, acceptance diagnose | None — calls `adapter.complete` directly |
+| `runAsSession(agent, handle, prompt, opts)` | Caller-managed session — orchestrators that keep a session open across multiple prompts (TDD multi-prompt, debate-stateful) | Caller opens handle via `SessionManager.openSession`; AgentManager wraps `sessionManager.sendPrompt` with the middleware envelope; **no internal fallback** |
+| `runWithFallback(request)` | Chain iteration with per-hop callback delegation | Iterates the fallback chain; invokes `request.executeHop(agent, bundle, failure, opts)` per hop. The callback (constructed by `callOp` via `buildHopCallback`, §37) owns rebuild + open + send + close |
+
+The middleware envelope (audit → cost → cancellation → logging) wraps every
+`completeAs` and `runAsSession` call uniformly. The chain is frozen at
+`createRuntime` time — see §36.
+
+### Why three entries, not one
+
+A single `runAs` would force every caller to either accept fallback iteration
+(unwanted by orchestrators that need pin-an-agent semantics) or manage handles
+(unwanted by ops that just want one prompt). `completeAs` is structurally
+distinct — sessionless one-shots have no handle to manage.
+
+### Shape C: peer relationship via `executeHop` callback
+
+`runWithFallback` does NOT call SessionManager directly. It invokes a
+caller-supplied `executeHop` callback per hop. The callback (built by
+`buildHopCallback` in `src/operations/`) owns:
+
+1. Context rebuild for the new agent (`contextEngine.rebuildForAgent`)
+2. Descriptor handoff (`sessionManager.handoff(id, newAgent)`)
+3. Fresh adapter-level session open (`sessionManager.openSession`)
+4. Prompt dispatch (`agentManager.runAsSession(agent, handle, prompt)`)
+5. Adapter session close (`sessionManager.closeSession`) in `finally`
+
+One descriptor lives across all hops; each hop opens and closes its own
+adapter-level session. See ADR-019 §5 and §37.
 
 ### Canonical resolution helper
 
@@ -939,29 +1011,6 @@ form for code that does not carry a `ctx`. In pipeline stages, prefer
 `ctx.agentManager?.getDefault() ?? "claude"`. **Never** read
 `config.autoMode.defaultAgent` directly — that key was removed in ADR-012
 Phase 6 and is rejected at config-load time.
-
-### Swap flow
-
-1. Adapter returns `RunResult { adapterFailure: { category, outcome, retriable, message } }`
-   (adapters no longer throw `AllAgentsUnavailableError`).
-2. Manager calls `shouldSwap(failure)`; if false, returns original result.
-3. Manager calls `nextCandidate(current, failure)` → next agent name or `null`.
-4. Manager calls `ContextOrchestrator.rebuildForAgent(bundle, { newAgentId, failure })`
-   to re-render under the new profile (no provider re-fetch).
-5. Manager calls `SessionManager.handoff(sessionId, newAgent)` so the descriptor
-   reflects the swap (ADR-013 Gap A).
-6. Manager emits `onSwapAttempt` event (consumed by reporters / TUI / audit).
-7. Manager invokes `runAs(newAgent, request)` and loops until terminal or
-   `maxHopsPerStory` exhausted.
-
-### Hierarchy with SessionManager (ADR-013)
-
-SessionManager orchestrates AgentManager, not the other way around.
-Execution-layer code receives `ISessionRunner` from the SessionManager; the
-runner holds a reference to AgentManager and calls `runInSession()` which
-internally dispatches through `AgentManager.runWithFallback`. This keeps all
-retry decisions in one place and prevents direct `adapter.run()` calls from
-bypassing the fallback chain (ADR-013 Problem 4).
 
 ### Configuration
 
@@ -975,3 +1024,213 @@ a migration hint (`NaxError code: CONFIG_LEGACY_AGENT_KEYS`).
 `src/agents/index.ts` exports `AgentManager`, `IAgentManager`,
 `resolveDefaultAgent`, `AgentRunRequest`, `AgentRunOutcome`,
 `AgentCompleteOutcome`, and `AgentManagerEvents`.
+
+---
+
+## §36 NaxRuntime
+
+`src/runtime/index.ts` — `NaxRuntime` interface + `createRuntime()` factory.
+Decision record: ADR-018 (runtime layering).
+
+Single lifecycle container per run / plan / standalone CLI invocation. Owns
+every long-lived service the pipeline needs and replaces the three orphan
+`createAgentManager` instantiations that previously diverged (ADR-018 §2.1
+"Orphan consolidation"; closes #523).
+
+### Container shape
+
+```typescript
+export interface NaxRuntime {
+  readonly runId: string;
+  readonly configLoader: ConfigLoader;       // current() / select(selector)
+  readonly workdir: string;
+  readonly projectDir: string;
+  readonly agentManager: IAgentManager;      // Layer 1 — runAs middleware envelope
+  readonly sessionManager: ISessionManager;  // Layer 2 — session lifecycle primitive
+  readonly costAggregator: ICostAggregator;  // middleware-owned sink; drains on close
+  readonly promptAuditor: IPromptAuditor;    // middleware-owned sink; flushes on close
+  readonly packages: PackageRegistry;        // root-equiv view when no workdir
+  readonly logger: Logger;
+  readonly signal: AbortSignal;              // scope-internal AbortController
+  close(): Promise<void>;                    // idempotent
+}
+```
+
+### Construction
+
+`createRuntime(config, workdir, opts?)` is the only public constructor for
+`AgentManager` and `SessionManager`. The factory:
+
+1. Allocates an `AbortController`; if `opts.parentSignal` is provided (e.g. CLI
+   SIGINT), aborts cascade.
+2. Builds the `ConfigLoader` (`current()` / `select<C>(selector)` memoized per
+   `selector.name`).
+3. Builds the observer middleware chain frozen for the runtime lifetime:
+   `cancellation → logging → cost → audit`.
+4. Wires `SessionManager` → `AgentManager` via the injected `sendPrompt` and
+   `runHop` deps (Shape C — peer relationship).
+5. Constructs `PackageRegistry` for polyglot-monorepo correctness.
+
+### close() ordering
+
+`close()` is idempotent and drains in this order:
+`signal.abort()` → flush `promptAuditor` → drain `costAggregator`. Errors are
+swallowed and logged (drain must not block run completion).
+
+### Why a runtime container?
+
+Before ADR-018, three different code paths constructed `AgentManager`
+independently (`runner.ts`, `acceptance/generator.ts`, `acceptance/refinement.ts`).
+A 401 on routing fell into a different fallback chain than execution; cost events
+from rectification and debate proposers landed in unrelated `CostAggregator`
+instances. `NaxRuntime` collapses these into one shared lifecycle, with
+middleware sinks wired once.
+
+### Middleware chain (ADR-018 §3)
+
+Observer middleware fires for every `completeAs` and `runAsSession` call across
+every adapter, including session-internal calls. The chain is structurally
+uniform — adapters cannot opt out, and there is no "remember to call the helper"
+seam.
+
+| Middleware | Concern | Sink |
+|:---|:---|:---|
+| `cancellation` | Threads `signal`; translates `AbortError` into a typed failure | — |
+| `logging` | Structured JSONL at every entry/exit | `logger` |
+| `cost` | Token/cost accumulation across the chain | `CostAggregator` |
+| `audit` | Prompt + result capture for replay | `PromptAuditor` |
+
+Permission resolution is **pre-chain**, once, on the resource-opener side
+(`SessionManager.openSession` for sessions; `AgentManager.completeAs` for
+sessionless calls). See §14.
+
+### Threading
+
+`NaxRuntime` flows through `PipelineContext` as `ctx.runtime`. Ops never read
+from `runtime.configLoader.current()` directly — they receive a sliced config
+view through `ctx.packageView.select(op.config)` so per-package overrides
+always apply (polyglot-monorepo correctness by construction).
+
+### Barrel
+
+`src/runtime/index.ts` exports `NaxRuntime`, `createRuntime`, `CostAggregator`,
+`PromptAuditor`, `PackageRegistry`, `MiddlewareChain`, `AgentMiddleware`, and
+`MiddlewareContext`.
+
+---
+
+## §37 Operations & `callOp`
+
+`src/operations/` — typed `Operation<I, O, C>` framework + `callOp()` dispatcher.
+Decision record: ADR-018 (operation envelope) + ADR-019 (Shape C integration).
+
+Operations are the **Layer-4 semantic envelope**: each op declares its config
+slice, prompt builder, and parser. `callOp` slices config, composes the prompt,
+dispatches through the appropriate manager, and parses the output.
+
+### `Operation<I, O, C>` shape
+
+```typescript
+type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;
+
+interface OperationBase<I, O, C> {
+  readonly name: string;
+  readonly stage: PipelineStage;
+  readonly config: ConfigSelector<C> | readonly (keyof NaxConfig)[];
+  readonly build: (input: I, ctx: BuildContext<C>) => ComposeInput;
+  readonly parse: (output: string, input: I, ctx: BuildContext<C>) => O;
+}
+
+interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
+  readonly kind: "run";
+  readonly model?: ConfiguredModel;
+  readonly session: { role: SessionRole; lifetime: "fresh" | "warm" };
+  readonly noFallback?: boolean;     // TDD ops opt out of cross-agent fallback
+}
+
+interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
+  readonly kind: "complete";
+  readonly jsonMode?: boolean;
+}
+```
+
+### `callOp` — the dispatcher
+
+```typescript
+async function callOp<I, O, C>(
+  ctx: CallContext,
+  op: Operation<I, O, C>,
+  input: I,
+): Promise<O> {
+  const config = ctx.packageView.select(op.config);
+  const buildCtx: BuildContext<C> = { packageView: ctx.packageView, config };
+  const sections = composeSections(op.build(input, buildCtx));
+  const prompt = join(sections);
+
+  if (op.kind === "complete") {
+    const result = await ctx.runtime.agentManager.completeAs(name, prompt, opts);
+    return op.parse(result.output, input, buildCtx);
+  }
+
+  // kind:"run" — buildHopCallback owns rebuild + open + send + close per hop
+  const executeHop = buildHopCallback(ctx, op, input, prompt);
+  const outcome = await ctx.runtime.agentManager.runWithFallback({
+    runOptions, bundle: ctx.contextBundle, executeHop, signal: ctx.signal,
+  });
+  return op.parse(outcome.result.output, input, buildCtx);
+}
+```
+
+### `buildHopCallback` — per-hop integration
+
+`src/operations/build-hop-callback.ts`. Replaces the deleted
+`SingleSessionRunner` (ADR-019 Phase C). Steps per hop:
+
+1. **Rebuild context** for the new agent (`contextEngine.rebuildForAgent`) when
+   this is a fallback hop.
+2. **Handoff descriptor** (`sessionManager.handoff(id, newAgent)`) — metadata
+   only; preserves audit correlation across the agent swap.
+3. **Open** a fresh adapter-level session via `sessionManager.openSession`.
+4. **Send** the prompt via `agentManager.runAsSession(agent, handle, prompt)` —
+   the middleware envelope (audit / cost / cancellation / logging) fires here.
+5. **Bind protocolIds** early to the descriptor (closes #591).
+6. **Close** the adapter session in `finally` — each hop is self-contained.
+
+One descriptor wraps N adapter sessions across the lifetime of one story attempt.
+
+### `composeSections()` and `ConfigSelector`
+
+- `composeSections(input)` — `src/prompts/compose.ts`. Materializes typed
+  `PromptSection` slots (constitution, context, role, task, examples,
+  output-format) in canonical order. Builders expose slot-specific methods;
+  no middleware chain.
+- `ConfigSelector<C>` — `src/config/selectors.ts`. Named, memoized config
+  selectors (`reviewConfigSelector`, `planConfigSelector`,
+  `acceptanceConfigSelector`, …). One file lists every subsystem's slice;
+  refactoring `config.*` surfaces every dependent via the compiler.
+
+### Operation directory
+
+`src/operations/` is the discovery surface for every typed LLM call:
+
+| Op | Kind | Used by |
+|:---|:---|:---|
+| `planOp` / `decomposeOp` | complete | Plan stage / decomposition |
+| `classifyRouteOp` | complete | Routing stage |
+| `acceptanceGenerateOp` / `acceptanceRefineOp` / `acceptanceDiagnoseOp` | varies | Acceptance subsystem |
+| `acceptanceFixSourceOp` / `acceptanceFixTestOp` | run | Acceptance fix stories |
+| `semanticReviewOp` / `adversarialReviewOp` | run | Review subsystem |
+| `rectifyOp` | run | Rectification loop |
+| `debateProposeOp` / `debateRebutOp` | varies | Debate subsystem |
+| `writeTddTestOp` / `implementTddOp` / `verifyTddOp` | run | TDD three-session orchestrator |
+
+Multi-session orchestrators (TDD three-session, debate) live next to their
+domain (`src/tdd/`, `src/debate/`) and sequence multiple `callOp` invocations.
+They are **not** `ISessionRunner` implementations — that interface was removed
+in ADR-019 Phase C.
+
+### Barrel
+
+`src/operations/index.ts` exports `callOp`, `buildHopCallback`, every concrete
+op spec, and the type aliases (`Operation`, `RunOperation`, `CompleteOperation`,
+`BuildContext`, `CallContext`).

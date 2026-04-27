@@ -45,7 +45,7 @@ How agents are configured, permissioned, and organized.
 - **§15 Test Strategy Resolution** — `resolveTestStrategy()`, available strategies, shared prompt fragments
 - **§16 Agent Adapter Conventions** — Folder structure, `shared/` contents, ACP cost alignment
 
-### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§33)
+### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§37)
 
 Deep reference for each subsystem — consult when working on a specific module.
 
@@ -66,8 +66,10 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§31 Queue Management** — PAUSE/ABORT/SKIP mid-run control
 - **§32 TUI (Terminal UI)** — React/Ink terminal UI, components, hooks
 - **§33 Error Classes** — `NaxError` + 5 derived error classes
-- **§34 Session Manager** (ADR-011) — `SessionManager`, 7-state machine, scratch dir, `handoff`, orphan detection, runtime helpers (`failAndClose`)
-- **§35 Agent Manager** (ADR-012 + ADR-013) — `AgentManager`, three retry layers, availability fallback, `runWithFallback`, `resolveDefaultAgent`, SessionManager hierarchy
+- **§34 Session Manager** (ADR-011 + ADR-019) — `SessionManager` owns full session lifecycle: `openSession` / `sendPrompt` / `closeSession` / `runInSession` / `nameFor` / `handoff`, 7-state machine, scratch dir, runtime helpers (`failAndClose`)
+- **§35 Agent Manager** (ADR-012 + ADR-019) — `AgentManager` is a peer of `SessionManager`. Three entry points: `completeAs` (sessionless), `runAsSession` (caller-managed handle), `runWithFallback` (chain iteration via `executeHop` callback)
+- **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `packages`, `logger`, `signal`. Frozen middleware chain (audit → cost → cancellation → logging) wraps every `runAs` / `completeAs` call.
+- **§37 Operations & `callOp`** (ADR-018) — `Operation<I, O, C>` typed spec under `src/operations/`. `callOp(ctx, op, input)` slices config via `packageView.select`, composes prompts via `composeSections`, dispatches `kind:"complete"` to `completeAs` and `kind:"run"` to `runWithFallback` with `buildHopCallback`.
 
 ---
 
@@ -105,9 +107,11 @@ Deep reference for each subsystem — consult when working on a specific module.
 | PidRegistry | Subprocess lifecycle | Register on spawn, unregister on exit, `killAll()` on crash |
 | Permission resolver | Agent permissions | `resolvePermissions(config, stage)` → `{ mode, skipPermissions }` |
 | Context Engine v2 | Stage-aware context assembly | `ContextOrchestrator.assemble(request)` → `ContextBundle` |
-| Session Manager | Session lifecycle + state machine | `ctx.sessionManager.create() / transition() / handoff()` |
-| Agent Manager | Agent default + availability fallback | `ctx.agentManager.getDefault() / runWithFallback()` |
+| Session Manager | Session lifecycle + state machine | `sessionManager.openSession() / sendPrompt() / closeSession() / runInSession() / handoff()` |
+| Agent Manager | Agent default + availability fallback | `agentManager.getDefault() / completeAs() / runAsSession() / runWithFallback()` |
+| NaxRuntime | Single lifecycle container per run | `createRuntime(config, workdir)` → `{ agentManager, sessionManager, configLoader, costAggregator, promptAuditor, … }` |
+| Operation | Typed semantic envelope for LLM work | `Operation<I, O, C>` + `callOp(ctx, op, input)` |
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-04-22. Maintained by nax-dev.*
+*Created: 2026-03-10. Last updated: 2026-04-27 (ADR-018 + ADR-019). Maintained by nax-dev.*
