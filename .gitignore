@@ -70,4 +70,5 @@ logs/
 .vscode/
 opencode.json
 .codex
-skills/.claude/worktrees/
+skills/
+.claude/worktrees/
