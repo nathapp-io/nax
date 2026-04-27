@@ -5,7 +5,8 @@ import type { PriorFailure, TestInventory } from "../prompts";
 import { looksLikeTruncatedJson } from "../review/truncation";
 import type { AdversarialFindingsCache, AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { HopBody, LlmReviewFinding, RunOperation } from "./types";
+import type { HopBody, LlmReviewFinding, LlmReviewOutput, RunOperation } from "./types";
+import { parseLlmReviewShape } from "./types";
 
 export type { AdversarialReviewConfig, PriorFailure, SemanticStory, TestInventory };
 
@@ -25,10 +26,7 @@ export interface AdversarialReviewInput {
   priorAdversarialFindings?: AdversarialFindingsCache;
 }
 
-export interface AdversarialReviewOutput {
-  passed: boolean;
-  findings: LlmReviewFinding[];
-  failOpen?: boolean;
+export interface AdversarialReviewOutput extends LlmReviewOutput {
   /**
    * True when the raw output could not be parsed but contained `"passed": false`.
    * Callers should treat this as a hard failure rather than fail-open.
@@ -40,20 +38,12 @@ type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 
 const FAIL_OPEN: AdversarialReviewOutput = { passed: true, findings: [], failOpen: true };
 
-function parseLLMShape(raw: unknown): AdversarialReviewOutput | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const obj = raw as Record<string, unknown>;
-  if (typeof obj.passed !== "boolean") return null;
-  if (!Array.isArray(obj.findings)) return null;
-  return { passed: obj.passed, findings: obj.findings as LlmReviewFinding[] };
-}
-
 /** Same-session JSON-parse retry. See semantic-review.ts for rationale. */
 const adversarialReviewHopBody: HopBody<AdversarialReviewInput> = async (initialPrompt, ctx) => {
   const first = await ctx.send(initialPrompt);
   const isTruncated = looksLikeTruncatedJson(first.output);
   const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
-  if (!isTruncated && parsed && parseLLMShape(parsed)) return first;
+  if (!isTruncated && parsed && parseLlmReviewShape(parsed)) return first;
 
   const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
   const retry: TurnResult = await ctx.send(retryPrompt);
@@ -93,7 +83,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   },
   parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
-    const parsed = parseLLMShape(raw);
+    const parsed = parseLlmReviewShape(raw);
     if (parsed) return parsed;
     if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
     return FAIL_OPEN;
