@@ -3,9 +3,8 @@ import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import { appendScratchEntry, readDigestFile, writeDigestFile } from "../session/scratch-writer";
 import { errorMessage } from "../utils/errors";
-import type { ThreeSessionTddOptions } from "./orchestrator";
 import { runThreeSessionTdd } from "./orchestrator";
-import type { TddSessionRole, ThreeSessionTddResult } from "./types";
+import type { TddSessionRole, ThreeSessionTddOptions, ThreeSessionTddResult } from "./types";
 
 export async function runThreeSessionTddFromCtx(
   ctx: PipelineContext,

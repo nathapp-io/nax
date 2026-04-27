@@ -1,105 +1,22 @@
-/**
- * Three-Session TDD Orchestrator
- *
- * Orchestrates the three-session TDD pipeline:
- * 1. Session 1 (test-writer): Write tests only
- * 2. Session 2 (implementer): Implement code to pass tests
- * 3. Session 3 (verifier): Verify tests pass and changes are legitimate
- */
+/** Three-Session TDD Orchestrator */
 
-import type { AgentAdapter } from "../agents";
 import { resolveDefaultAgent, wrapAdapterAsManager } from "../agents";
-import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
-import { buildInteractionBridge } from "../interaction/bridge-builder";
-import type { InteractionChain } from "../interaction/chain";
 import { getLogger } from "../logger";
-import type { UserStory } from "../prd";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
 import { runFullSuiteGate } from "./rectification-gate";
-import { rollbackToRef, runTddSession, truncateTestOutput } from "./session-runner";
-import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
+import { implementTddOp, runTddSessionOp, verifyTddOp, writeTddTestOp } from "./session-op";
+import { rollbackToRef, truncateTestOutput } from "./session-runner";
+import type { FailureCategory, TddSessionResult, ThreeSessionTddOptions, ThreeSessionTddResult } from "./types";
+import { sumTddTokenUsage } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
 
-/** Options for three-session TDD */
-export interface ThreeSessionTddOptions {
-  agent: AgentAdapter;
-  story: UserStory;
-  config: NaxConfig;
-  workdir: string;
-  modelTier: ModelTier;
-  /** Feature name — used for ACP session naming (nax-<hash>-<feature>-<story>-<role>) */
-  featureName?: string;
-  contextMarkdown?: string;
-  /** Raw (unfiltered) feature context markdown from context engine v1 */
-  featureContextMarkdown?: string;
-  /**
-   * Per-session v2 context bundles (context engine v2, Finding 1+2 fix).
-   * When present, each session uses the bundle's pushMarkdown directly
-   * (bypasses filterContextByRole in the TDD prompt builder).
-   */
-  tddContextBundles?: {
-    testWriter?: import("../context/engine").ContextBundle;
-    implementer?: import("../context/engine").ContextBundle;
-    verifier?: import("../context/engine").ContextBundle;
-  };
-  /**
-   * Lazy bundle hook used by the v2 path so each TDD session can assemble
-   * after the previous one has already produced scratch/digest output.
-   */
-  getTddContextBundle?: (role: TddSessionRole) => Promise<import("../context/engine").ContextBundle | undefined>;
-  /** Persist per-session outcomes (scratch, digests, metrics) as soon as they exist. */
-  recordTddSessionOutcome?: (result: TddSessionResult) => Promise<void>;
-  /**
-   * #541: Bind a TDD session's ACP protocolIds to a pre-created session descriptor.
-   * Returns `{ sessionManager, sessionId }` when the orchestrator has a descriptor
-   * for this role; undefined when no sessionManager is configured.
-   */
-  getTddSessionBinding?: (role: TddSessionRole) => import("./session-runner").TddSessionBinding | undefined;
-  constitution?: string;
-  dryRun?: boolean;
-  lite?: boolean;
-  _recursionDepth?: number;
-  /** Interaction chain for multi-turn Q&A during test-writer and implementer sessions */
-  interactionChain?: InteractionChain | null;
-  /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
-  projectDir?: string;
-  /** Shutdown abort signal (Issue 5) — forwarded to each agent.run call */
-  abortSignal?: AbortSignal;
-}
-
-/**
- * Sum TokenUsage values across TDD session results (#590).
- * Returns undefined when no session reported usage — mirrors the adapter
- * contract so `metrics.tracker` can emit a tokens block only when real data exists.
- */
-function sumTddTokenUsage(sessions: TddSessionResult[]): import("../agents/cost").TokenUsage | undefined {
-  const usages = sessions.map((s) => s.tokenUsage).filter((u): u is import("../agents/cost").TokenUsage => !!u);
-  if (usages.length === 0) return undefined;
-  const total = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadInputTokens: 0,
-    cacheCreationInputTokens: 0,
-  };
-  for (const u of usages) {
-    total.inputTokens += u.inputTokens ?? 0;
-    total.outputTokens += u.outputTokens ?? 0;
-    total.cacheReadInputTokens += u.cacheReadInputTokens ?? 0;
-    total.cacheCreationInputTokens += u.cacheCreationInputTokens ?? 0;
-  }
-  return {
-    inputTokens: total.inputTokens,
-    outputTokens: total.outputTokens,
-    ...(total.cacheReadInputTokens > 0 && { cacheReadInputTokens: total.cacheReadInputTokens }),
-    ...(total.cacheCreationInputTokens > 0 && { cacheCreationInputTokens: total.cacheCreationInputTokens }),
-  };
-}
+export type { ThreeSessionTddOptions };
 
 /**
  * Run the full three-session TDD pipeline for a user story.
@@ -112,19 +29,14 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     workdir,
     modelTier,
     featureName,
-    contextMarkdown,
-    featureContextMarkdown,
     tddContextBundles,
     getTddContextBundle,
     recordTddSessionOutcome,
     getTddSessionBinding,
-    constitution,
     dryRun = false,
     lite = false,
     _recursionDepth = 0,
-    interactionChain,
     projectDir,
-    abortSignal,
   } = options;
   const logger = getLogger();
 
@@ -156,7 +68,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   // Dry-run mode
   if (dryRun) {
-    const modelDef = resolveModelForAgent(
+    const { model } = resolveModelForAgent(
       config.models,
       story.routing?.agent ?? resolveDefaultAgent(config),
       modelTier,
@@ -165,9 +77,9 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     logger.info("tdd", "[DRY RUN] Would run 3-session TDD", {
       storyId: story.id,
       lite,
-      session1: { role: "test-writer", model: modelDef.model },
-      session2: { role: "implementer", model: modelDef.model },
-      session3: { role: "verifier", model: modelDef.model },
+      session1: { role: "test-writer", model },
+      session2: { role: "implementer", model },
+      session3: { role: "verifier", model },
     });
 
     return {
@@ -187,16 +99,11 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const shouldRollbackOnFailure = config.tdd.rollbackOnFailure ?? true;
 
   // Session 1: Test Writer
-  // BUG-018 Fix: Skip test-writer on retry iterations — tests already exist from first attempt.
-  // Saves ~3min per escalation by avoiding a no-op Claude Code session.
-  // #410: Also skip when escalation came from review stage — tests were already written and
-  // passing when review failed, so there is no need to re-run the test-writer on the new tier.
-  // stage === "review" covers both review-stage and autofix-stage escalations: buildEscalationFailure
-  // (tier-escalation.ts) records stage="review" whenever reviewFindings are present, which is true
-  // when autofix exhausts its attempts without fixing review failures.
+  // BUG-018 / #410: Skip on retry (tests already exist) or review-stage escalation
+  // (tests already passed). stage="review" is set by buildEscalationFailure when
+  // reviewFindings are present (covers both review and autofix exhaustion).
   const hasReviewEscalation = (story.priorFailures ?? []).some((f) => f.stage === "review");
   const isRetry = (story.attempts ?? 0) > 0 || hasReviewEscalation;
-  const session1Ref = initialRef;
 
   if (isRetry) {
     const skipReason =
@@ -213,27 +120,13 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   let session1: TddSessionResult | undefined;
 
   if (!isRetry) {
-    const testWriterTier = config.tdd.sessionTiers?.testWriter ?? "balanced";
     const testWriterBundle = (await getTddContextBundle?.("test-writer")) ?? tddContextBundles?.testWriter;
-    session1 = await runTddSession(
-      "test-writer",
-      agent,
-      story,
-      config,
-      workdir,
-      testWriterTier,
-      session1Ref,
-      contextMarkdown,
-      lite,
-      lite,
-      constitution,
-      featureName,
-      buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
-      projectDir,
-      featureContextMarkdown,
+    session1 = await runTddSessionOp(
+      writeTddTestOp,
+      options,
+      initialRef,
       testWriterBundle,
       getTddSessionBinding?.("test-writer"),
-      abortSignal,
     );
     sessions.push(session1);
     await recordTddSessionOutcome?.(session1);
@@ -257,12 +150,8 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     };
   }
 
-  // BUG-20 Fix: Verify that test-writer session actually created test files.
-  // Uses the shared language-agnostic `isTestFile()` classifier — recognizes
-  // .test.*, .spec.*, _test.go, test_*.py, test/ directory segments, etc.
-  // On retry (BUG-018 fix), session1 is undefined — skip this check entirely.
-  // ADR-009: pass user-configured testFilePatterns so custom patterns are recognised;
-  // undefined → broad regex fallback for backward compat.
+  // BUG-20 Fix: Verify test-writer created test files (isTestFile is language-agnostic).
+  // ADR-009: pass user-configured testFilePatterns; undefined → broad regex fallback.
   const _tddTestFilePatterns =
     typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
       ? config.execution.smartTestRunner.testFilePatterns
@@ -337,25 +226,12 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // Session 2: Implementer
   const implementerTier = config.tdd.sessionTiers?.implementer ?? modelTier;
   const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
-  const session2 = await runTddSession(
-    "implementer",
-    agent,
-    story,
-    config,
-    workdir,
-    implementerTier,
+  const session2 = await runTddSessionOp(
+    implementTddOp,
+    options,
     session2Ref,
-    contextMarkdown,
-    lite,
-    lite,
-    constitution,
-    featureName,
-    buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
-    projectDir,
-    featureContextMarkdown,
     implementerBundle,
     getTddSessionBinding?.("implementer"),
-    abortSignal,
   );
   sessions.push(session2);
   await recordTddSessionOutcome?.(session2);
@@ -394,27 +270,13 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   // Session 3: Verifier
   const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
-  const verifierTier = config.tdd.sessionTiers?.verifier ?? "fast";
   const verifierBundle = (await getTddContextBundle?.("verifier")) ?? tddContextBundles?.verifier;
-  const session3 = await runTddSession(
-    "verifier",
-    agent,
-    story,
-    config,
-    workdir,
-    verifierTier,
+  const session3 = await runTddSessionOp(
+    verifyTddOp,
+    options,
     session3Ref,
-    undefined,
-    false,
-    false,
-    constitution,
-    featureName,
-    undefined,
-    projectDir,
-    featureContextMarkdown,
     verifierBundle,
     getTddSessionBinding?.("verifier"),
-    abortSignal,
   );
   sessions.push(session3);
   await recordTddSessionOutcome?.(session3);

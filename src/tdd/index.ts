@@ -3,6 +3,7 @@ export type {
   FailureCategory,
   IsolationCheck,
   TddSessionResult,
+  ThreeSessionTddOptions,
   ThreeSessionTddResult,
 } from "./types";
 export { isTestFile } from "../test-runners";
