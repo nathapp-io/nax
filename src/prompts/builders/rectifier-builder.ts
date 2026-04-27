@@ -633,37 +633,3 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
     return { id, content, overridable: false };
   }
 }
-
-const TDD_SUITE_FAILURE_TASK = `# Rectification Required
-
-Your changes caused test regressions. Fix these without breaking existing logic.
-
-## Instructions
-
-1. Review the failures above carefully.
-2. Identify the root cause of each failure.
-3. Fix the implementation WITHOUT loosening test assertions.
-4. Run the test command shown above to verify your fixes.
-5. Ensure ALL tests pass before completing.
-
-**IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
-- Do NOT loosen assertions to mask implementation bugs.
-- Focus on fixing the source code to meet the test requirements.`;
-
-const VERIFY_FAILURE_TASK = `# Rectification Required
-
-The verification step failed. Fix the implementation to pass all tests.
-
-## Instructions
-
-1. Review the failures above carefully.
-2. Identify the root cause of each failure.
-3. Fix the implementation WITHOUT loosening test assertions.
-4. Run the test command shown above to verify your fixes.
-5. Ensure ALL tests pass before completing.
-
-**IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
-- Do NOT loosen assertions to mask implementation bugs.
-- Focus on fixing the source code to meet the test requirements.`;
