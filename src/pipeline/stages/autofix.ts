@@ -21,6 +21,7 @@
 
 import { resolveModelForAgent } from "../../config";
 import { getLogger } from "../../logger";
+import { buildHopCallback } from "../../operations/build-hop-callback";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
 import { runQualityCommand } from "../../quality";
@@ -539,26 +540,55 @@ async function runAgentRectification(
         defaultAgent,
       );
       const isLastAttempt = currentAttempt >= maxAttempts;
+      const runOptions = {
+        prompt,
+        workdir: ctx.workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+        pipelineStage: "rectification" as const,
+        config: ctx.config,
+        projectDir: ctx.projectDir,
+        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+        featureName: ctx.prd.feature,
+        storyId: ctx.story.id,
+        sessionRole: "implementer" as const,
+      };
       let result: import("../../agents").AgentResult;
       try {
-        result = await agentManager.run({
-          runOptions: {
-            prompt,
-            workdir: ctx.workdir,
-            modelTier,
-            modelDef,
-            timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-            pipelineStage: "rectification",
-            config: ctx.config,
-            projectDir: ctx.projectDir,
-            maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-            featureName: ctx.prd.feature,
-            storyId: ctx.story.id,
-            sessionRole: "implementer",
-            keepOpen: !isLastAttempt,
-          },
-        });
-        sessionConfirmedOpen = true;
+        if (ctx.runtime) {
+          // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
+          // Each attempt opens a fresh session (openSession → runAsSession → closeSession).
+          // No cross-attempt session continuity; session lifecycle managed by buildHopCallback.
+          const executeHop = buildHopCallback(
+            {
+              sessionManager: ctx.runtime.sessionManager,
+              agentManager: ctx.runtime.agentManager,
+              story: ctx.story,
+              config: ctx.config,
+              projectDir: ctx.projectDir,
+              featureName: ctx.prd.feature ?? "",
+              workdir: ctx.workdir,
+              effectiveTier: modelTier,
+              defaultAgent,
+              pipelineStage: "rectification",
+            },
+            ctx.sessionId,
+            runOptions,
+          );
+          const outcome = await agentManager.runWithFallback(
+            { runOptions, signal: ctx.runtime.signal, executeHop },
+            defaultAgent,
+          );
+          result = outcome.result;
+          sessionConfirmedOpen = false;
+        } else {
+          // Legacy keepOpen path — used when no runtime is available (standalone callers).
+          result = await agentManager.run({
+            runOptions: { ...runOptions, keepOpen: !isLastAttempt },
+          });
+          sessionConfirmedOpen = true;
+        }
       } catch (err) {
         sessionConfirmedOpen = false; // Session state unknown — next attempt uses full prompt
         throw err;

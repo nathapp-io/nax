@@ -14,6 +14,7 @@ import { resolveModelForAgent } from "../config";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { getSafeLogger } from "../logger";
+import { buildHopCallback } from "../operations/build-hop-callback";
 import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
@@ -73,6 +74,12 @@ export interface RectificationLoopOptions {
    * Required alongside sessionManager for bindHandle to work.
    */
   sessionId?: string;
+  /**
+   * NaxRuntime (ADR-019 Phase D). When present, each rectification attempt dispatches
+   * via buildHopCallback → runWithFallback (fresh session per hop). keepOpen is only
+   * used in the legacy path when runtime is absent.
+   */
+  runtime?: import("../runtime").NaxRuntime;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +175,7 @@ export async function runRectificationLoop(
     testScopedTemplate,
     sessionManager,
     sessionId,
+    runtime,
   } = opts;
   const logger = getSafeLogger();
   const agentManager = opts.agentManager ?? _rectificationDeps.agentManager;
@@ -279,23 +287,52 @@ export async function runRectificationLoop(
 
       const isLastAttempt = currentAttempt >= rectificationConfig.maxRetries;
 
-      const agentResult = await agentManager.run({
-        runOptions: {
-          prompt,
-          workdir,
-          modelTier,
-          modelDef,
-          timeoutSeconds: config.execution.sessionTimeoutSeconds,
-          pipelineStage: "rectification",
-          config,
-          projectDir,
-          maxInteractionTurns: config.agent?.maxInteractionTurns,
-          featureName,
-          storyId: story.id,
-          sessionRole: "implementer",
-          keepOpen: !isLastAttempt,
-        },
-      });
+      const runOptions = {
+        prompt,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds: config.execution.sessionTimeoutSeconds,
+        pipelineStage: "rectification" as const,
+        config,
+        projectDir,
+        maxInteractionTurns: config.agent?.maxInteractionTurns,
+        featureName,
+        storyId: story.id,
+        sessionRole: "implementer" as const,
+      };
+
+      let agentResult: import("../agents").AgentResult;
+      if (runtime) {
+        // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
+        // Each attempt opens a fresh session; keepOpen is not used in the runtime path.
+        const executeHop = buildHopCallback(
+          {
+            sessionManager: runtime.sessionManager,
+            agentManager: runtime.agentManager,
+            story,
+            config,
+            projectDir,
+            featureName: featureName ?? "",
+            workdir,
+            effectiveTier: modelTier,
+            defaultAgent,
+            pipelineStage: "rectification",
+          },
+          sessionId,
+          runOptions,
+        );
+        const outcome = await agentManager.runWithFallback(
+          { runOptions, signal: runtime.signal, executeHop },
+          defaultAgent,
+        );
+        agentResult = outcome.result;
+      } else {
+        // Legacy keepOpen path — used when no runtime is available (standalone callers).
+        agentResult = await agentManager.run({
+          runOptions: { ...runOptions, keepOpen: !isLastAttempt },
+        });
+      }
 
       costAccum += agentResult.estimatedCostUsd ?? 0;
 

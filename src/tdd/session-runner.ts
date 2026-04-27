@@ -205,9 +205,10 @@ export async function runTddSession(
   logger.info("tdd", `-> Session: ${role}`, { role, storyId: story.id, lite });
 
   // When rectification is enabled, keep the implementer session open after it finishes.
-  // The rectification gate uses the same session name and will resume it directly — so
-  // the implementer retains full context of what it built.
-  // The session sweep (or the last rectification attempt) handles final cleanup.
+  // Legacy path: the rectification gate resumes the same session directly, preserving context.
+  // ADR-019 runtime path: each rectification hop opens a fresh session via buildHopCallback;
+  // keepOpen=true causes session-run-hop to skip closeSession so the sweep handles cleanup.
+  // This flag lives in runOptions and is meaningful regardless of execution path (ADR-019 Phase D).
   const keepOpen = role === "implementer" && (config.execution.rectification?.enabled ?? false);
 
   const agentRunOptions = {

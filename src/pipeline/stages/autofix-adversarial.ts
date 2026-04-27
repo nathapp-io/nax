@@ -13,6 +13,7 @@
 import type { IAgentManager } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { getLogger } from "../../logger";
+import { buildHopCallback } from "../../operations/build-hop-callback";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
 import type { ReviewCheckResult } from "../../review/types";
@@ -148,23 +149,49 @@ export async function runTestWriterRectification(
   }
   const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
   const modelDef = resolveModelForAgent(ctx.rootConfig.models, defaultAgent, modelTier, defaultAgent);
+  const runOptions = {
+    prompt: twPrompt,
+    workdir: ctx.workdir,
+    modelTier,
+    modelDef,
+    timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+    pipelineStage: "rectification" as const,
+    config: ctx.config,
+    projectDir: ctx.projectDir,
+    maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+    featureName: ctx.prd.feature,
+    storyId: ctx.story.id,
+    sessionRole: "test-writer" as const,
+  };
   try {
+    if (ctx.runtime) {
+      // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
+      // Each call opens a fresh session; keepOpen is not used in the runtime path.
+      const executeHop = buildHopCallback(
+        {
+          sessionManager: ctx.runtime.sessionManager,
+          agentManager: ctx.runtime.agentManager,
+          story,
+          config: ctx.config,
+          projectDir: ctx.projectDir,
+          featureName: ctx.prd.feature ?? "",
+          workdir: ctx.workdir,
+          effectiveTier: modelTier,
+          defaultAgent,
+          pipelineStage: "rectification",
+        },
+        ctx.sessionId,
+        runOptions,
+      );
+      const outcome = await agentManager.runWithFallback(
+        { runOptions, signal: ctx.runtime.signal, executeHop },
+        defaultAgent,
+      );
+      return outcome.result.estimatedCostUsd ?? 0;
+    }
+    // Legacy keepOpen path — used when no runtime is available (standalone callers).
     const twResult = await agentManager.run({
-      runOptions: {
-        prompt: twPrompt,
-        workdir: ctx.workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-        pipelineStage: "rectification",
-        config: ctx.config,
-        projectDir: ctx.projectDir,
-        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-        featureName: ctx.prd.feature,
-        storyId: ctx.story.id,
-        sessionRole: "test-writer",
-        keepOpen,
-      },
+      runOptions: { ...runOptions, keepOpen },
     });
     return twResult.estimatedCostUsd ?? 0;
   } catch {

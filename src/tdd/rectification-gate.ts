@@ -10,6 +10,7 @@ import type { IAgentManager } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { type rectificationGateConfigSelector, resolveModelForAgent } from "../config";
 import type { getLogger } from "../logger";
+import { buildHopCallback } from "../operations/build-hop-callback";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
@@ -91,6 +92,7 @@ export async function runFullSuiteGate(
   storyFromRef?: string,
   sessionManager?: import("../session").ISessionManager,
   sessionId?: string,
+  runtime?: import("../runtime").NaxRuntime,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) return { passed: false, cost: 0 };
@@ -179,6 +181,7 @@ export async function runFullSuiteGate(
         projectDir,
         sessionManager,
         sessionId,
+        runtime,
       );
     }
 
@@ -234,6 +237,7 @@ async function runRectificationLoop(
   projectDir?: string,
   sessionManager?: import("../session").ISessionManager,
   sessionId?: string,
+  runtime?: import("../runtime").NaxRuntime,
 ): Promise<{ passed: boolean; cost: number }> {
   logger.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
@@ -278,30 +282,60 @@ async function runRectificationLoop(
       const isLastAttempt = currentAttempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
       const defaultAgent = agentManager.getDefault();
-      const rectifyResult = await agentManager.run({
-        runOptions: {
-          prompt,
-          workdir,
-          modelTier: implementerTier,
-          modelDef: resolveModelForAgent(
-            config.models,
-            story.routing?.agent ?? defaultAgent,
-            implementerTier,
+
+      const runOptions = {
+        prompt,
+        workdir,
+        modelTier: implementerTier,
+        modelDef: resolveModelForAgent(
+          config.models,
+          story.routing?.agent ?? defaultAgent,
+          implementerTier,
+          defaultAgent,
+        ),
+        timeoutSeconds: config.execution.sessionTimeoutSeconds,
+        pipelineStage: "rectification" as const,
+        // Cast required: AgentRunOptions.config expects NaxConfig, but only the picked
+        // subset of keys is actually used by the adapter (permissions, models, agent).
+        config: config as unknown as NaxConfig,
+        projectDir,
+        maxInteractionTurns: config.agent?.maxInteractionTurns,
+        featureName,
+        storyId: story.id,
+        sessionRole: "implementer" as const,
+      };
+
+      let rectifyResult: import("../agents").AgentResult;
+      if (runtime) {
+        // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
+        // Each attempt opens a fresh session; keepOpen is not used in the runtime path.
+        const executeHop = buildHopCallback(
+          {
+            sessionManager: runtime.sessionManager,
+            agentManager: runtime.agentManager,
+            story,
+            config: config as unknown as NaxConfig,
+            projectDir,
+            featureName: featureName ?? "",
+            workdir,
+            effectiveTier: implementerTier,
             defaultAgent,
-          ),
-          timeoutSeconds: config.execution.sessionTimeoutSeconds,
-          pipelineStage: "rectification",
-          // Cast required: AgentRunOptions.config expects NaxConfig, but only the picked
-          // subset of keys is actually used by the adapter (permissions, models, agent).
-          config: config as unknown as NaxConfig,
-          projectDir,
-          maxInteractionTurns: config.agent?.maxInteractionTurns,
-          featureName,
-          storyId: story.id,
-          sessionRole: "implementer",
-          keepOpen: !isLastAttempt,
-        },
-      });
+            pipelineStage: "rectification",
+          },
+          sessionId,
+          runOptions,
+        );
+        const outcome = await agentManager.runWithFallback(
+          { runOptions, signal: runtime.signal, executeHop },
+          defaultAgent,
+        );
+        rectifyResult = outcome.result;
+      } else {
+        // Legacy keepOpen path — used when no runtime is available (standalone callers).
+        rectifyResult = await agentManager.run({
+          runOptions: { ...runOptions, keepOpen: !isLastAttempt },
+        });
+      }
 
       // G5: bind updated protocolIds after each rectification attempt so the session descriptor
       // reflects the session that actually ran (may change after internal session retries).
