@@ -225,6 +225,35 @@ export class TddPromptBuilder {
     return acc.join();
   }
 
+  static buildForRole(
+    role: PromptRole,
+    workdir: string,
+    config: NaxConfig,
+    story: UserStory,
+    opts: {
+      lite?: boolean;
+      contextMarkdown?: string;
+      featureContextMarkdown?: string;
+      contextBundle?: import("../../context/engine").ContextBundle;
+      constitution?: string;
+    },
+  ): Promise<string> {
+    const variant: "standard" | "lite" | undefined =
+      role === "implementer" ? (opts.lite ? "lite" : "standard") : undefined;
+    const isolation: "strict" | "lite" | undefined =
+      role === "test-writer" ? (opts.lite ? "lite" : "strict") : undefined;
+    return TddPromptBuilder.for(role, { variant, isolation })
+      .withLoader(workdir, config)
+      .story(story)
+      .context(opts.contextMarkdown)
+      .v2FeatureContext(opts.contextBundle?.pushMarkdown)
+      .featureContext(opts.contextBundle ? undefined : opts.featureContextMarkdown)
+      .constitution(opts.constitution)
+      .testCommand(config.quality?.commands?.test)
+      .hermeticConfig(config.quality?.testing)
+      .build();
+  }
+
   /** Wrap a string-returning section builder into a PromptSection for the accumulator. */
   private s(id: string, content: string): PromptSection {
     return { id, content, overridable: false };

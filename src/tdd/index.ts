@@ -3,6 +3,7 @@ export type {
   FailureCategory,
   IsolationCheck,
   TddSessionResult,
+  ThreeSessionTddOptions,
   ThreeSessionTddResult,
 } from "./types";
 export { isTestFile } from "../test-runners";
@@ -12,7 +13,10 @@ export {
   verifyTestWriterIsolation,
   verifyImplementerIsolation,
 } from "./isolation";
-export { runThreeSessionTdd, runThreeSessionTddFromCtx } from "./orchestrator";
+export { runThreeSessionTdd } from "./orchestrator";
+export { runThreeSessionTddFromCtx } from "./orchestrator-ctx";
+export { runTddSessionOp, writeTddTestOp, implementTddOp, verifyTddOp } from "./session-op";
+export type { TddRunOp } from "./session-op";
 export { cleanupProcessTree, getPgid } from "./cleanup";
 export type { VerifierVerdict, VerdictCategorization } from "./verdict";
 export { VERDICT_FILE, readVerdict, cleanupVerdict, categorizeVerdict } from "./verdict";
