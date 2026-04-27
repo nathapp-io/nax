@@ -3,7 +3,6 @@ import type { AgentAdapter, IAgentManager } from "../../src/agents";
 import type { AgentRunRequest, RunAsSessionOpts } from "../../src/agents/manager-types";
 import type { SessionHandle, TurnResult } from "../../src/agents/types";
 import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../src/agents/types";
-import type { PlanOptions, PlanResult, DecomposeOptions, DecomposeResult } from "../../src/agents/shared/types-extended";
 import { makeAgentAdapter } from "./mock-agent-adapter";
 
 const DEFAULT_RESULT = {
@@ -29,10 +28,6 @@ export interface MockAgentManagerOptions {
   completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
   runWithFallbackFn?: (req: AgentRunRequest) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
   completeWithFallbackFn?: (prompt: string, opts?: CompleteOptions) => Promise<{ result: CompleteResult; fallbacks: unknown[] }>;
-  planFn?: (opts: PlanOptions) => Promise<PlanResult>;
-  planAsFn?: (agentName: string, opts: PlanOptions) => Promise<PlanResult>;
-  decomposeFn?: (opts: DecomposeOptions) => Promise<DecomposeResult>;
-  decomposeAsFn?: (agentName: string, opts: DecomposeOptions) => Promise<DecomposeResult>;
   runAsFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: unknown[] }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
   runAsSessionFn?: (agentName: string, handle: SessionHandle, prompt: string, opts: RunAsSessionOpts) => Promise<TurnResult>;
@@ -98,16 +93,6 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
       : opts.completeFn
         ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!(name, prompt, completeOpts))
         : mock((name: string, _p: string, _o?: CompleteOptions) => Promise.resolve({ output: `output from ${name}`, costUsd: 0, source: "primary" as const })),
-    plan: opts.planFn
-      ? mock((planOpts: PlanOptions) => opts.planFn!("claude", planOpts))
-      : mock(() => Promise.resolve({ specContent: "" })),
-    planAs: opts.planAsFn
-      ? mock((agentName: string, planOpts: PlanOptions) => opts.planAsFn!(agentName, planOpts))
-      : opts.planFn
-        ? mock((agentName: string, planOpts: PlanOptions) => opts.planFn!("claude", planOpts))
-        : mock(() => Promise.resolve({ specContent: "" })),
-    decompose: opts.decomposeFn ? mock((planOpts: DecomposeOptions) => opts.decomposeFn!(planOpts)) : mock(() => Promise.resolve({ stories: [] })),
-    decomposeAs: opts.decomposeAsFn ? mock((agentName: string, planOpts: DecomposeOptions) => opts.decomposeAsFn!(agentName, planOpts)) : mock(() => Promise.resolve({ stories: [] })),
     runAsSession: opts.runAsSessionFn
       ? mock((agentName: string, handle: SessionHandle, prompt: string, sessionOpts: RunAsSessionOpts) =>
           opts.runAsSessionFn!(agentName, handle, prompt, sessionOpts),

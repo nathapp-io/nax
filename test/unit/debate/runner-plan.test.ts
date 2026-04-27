@@ -93,9 +93,8 @@ afterEach(() => {
 // ─── Core plan mode tests ─────────────────────────────────────────────────────
 
 describe("DebateRunner.runPlan() — plan mode uses sessionManager.runInSession", () => {
-  test("plan mode calls sessionManager.runInSession (not agentManager.planAs)", async () => {
+  test("plan mode calls sessionManager.runInSession", async () => {
     const runInSessionCalls: Array<{ name: string; prompt: string }> = [];
-    const planAsCalls: string[] = [];
 
     const sm = makeSessionManager({
       runInSession: mock(async (name: string, prompt: string, _opts: unknown) => {
@@ -109,12 +108,7 @@ describe("DebateRunner.runPlan() — plan mode uses sessionManager.runInSession"
       nameFor: mock((_req: unknown) => "nax-test-session"),
     });
 
-    const agentManager = makeMockAgentManager({
-      planAsFn: async (agentName) => {
-        planAsCalls.push(agentName);
-        return { specContent: "plan content" };
-      },
-    });
+    const agentManager = makeMockAgentManager({});
 
     const ctx = makeCallCtx({
       runtime: {
@@ -142,12 +136,9 @@ describe("DebateRunner.runPlan() — plan mode uses sessionManager.runInSession"
     });
 
     expect(runInSessionCalls.length).toBeGreaterThan(0);
-    expect(planAsCalls.length).toBe(0);
   });
 
-  test("planAs is not called — verify mock never invoked", async () => {
-    const planAsMock = mock(async () => ({ specContent: "from planAs" }));
-
+  test("runPlan uses sessionManager.runInSession exclusively", async () => {
     const sm = makeSessionManager({
       runInSession: mock(async (_name: string, _prompt: string, _opts: unknown) => ({
         output: "plan output",
@@ -157,9 +148,7 @@ describe("DebateRunner.runPlan() — plan mode uses sessionManager.runInSession"
       nameFor: mock((_req: unknown) => "nax-mock-session"),
     });
 
-    const agentManager = makeMockAgentManager({
-      planAsFn: planAsMock as any,
-    });
+    const agentManager = makeMockAgentManager({});
 
     const ctx = makeCallCtx({
       runtime: {
@@ -186,7 +175,8 @@ describe("DebateRunner.runPlan() — plan mode uses sessionManager.runInSession"
       outputDir: "/tmp/out",
     });
 
-    expect(planAsMock).not.toHaveBeenCalled();
+    // planAs no longer exists on IAgentManager (deleted in Wave 3.5)
+    expect(sm.runInSession).toHaveBeenCalled();
   });
 
   test("runPlan() returns a DebateResult", async () => {

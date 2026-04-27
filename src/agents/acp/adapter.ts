@@ -12,7 +12,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { NaxError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import type { InteractionHandler } from "../interaction-handler";
@@ -28,11 +27,7 @@ import type {
   AgentRunOptions,
   CompleteOptions,
   CompleteResult,
-  DecomposeOptions,
-  DecomposeResult,
   OpenSessionOpts,
-  PlanOptions,
-  PlanResult,
   SendTurnOpts,
   SessionHandle,
   TurnResult,
@@ -723,22 +718,6 @@ export class AcpAgentAdapter implements AgentAdapter {
       }
       throw err;
     }
-  }
-
-  async plan(_options: PlanOptions): Promise<PlanResult> {
-    throw new NaxError(
-      "AgentAdapter.plan() is deprecated. Use callOp(ctx, planOp, input) instead.",
-      "ADAPTER_METHOD_DEPRECATED",
-      { stage: "plan", migration: "src/operations/plan.ts" },
-    );
-  }
-
-  async decompose(_options: DecomposeOptions): Promise<DecomposeResult> {
-    throw new NaxError(
-      "AgentAdapter.decompose() is deprecated. Use callOp(ctx, decomposeOp, input) instead.",
-      "ADAPTER_METHOD_DEPRECATED",
-      { stage: "plan", migration: "src/operations/decompose.ts" },
-    );
   }
 
   async closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void> {

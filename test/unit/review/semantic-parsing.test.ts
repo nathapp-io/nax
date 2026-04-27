@@ -72,10 +72,6 @@ function makeAgentManager(response: string, cost = 0) {
       agentFallbacks: [] as unknown[],
     }),
     completeAsFn: async () => ({ output: response, costUsd: cost, source: "mock" }),
-    planFn: async () => { throw new Error("not used"); },
-    planAsFn: async () => { throw new Error("not used"); },
-    decomposeFn: async () => { throw new Error("not used"); },
-    decomposeAsFn: async () => { throw new Error("not used"); },
     getAgentFn: () => makeAgentAdapter(),
   });
 }

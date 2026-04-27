@@ -15,8 +15,6 @@ import type { TokenUsage } from "./cost";
 
 // Re-export extended types for backward compatibility
 export type {
-  PlanOptions,
-  PlanResult,
   DecomposeOptions,
   DecomposeResult,
   DecomposedStory,
@@ -386,20 +384,6 @@ export interface AgentAdapter {
 
   /** Build the CLI command for a given run (for dry-run display). */
   buildCommand(options: AgentRunOptions): string[];
-
-  /**
-   * @deprecated Use `callOp(ctx, planOp, input)` from `src/operations/plan.ts` instead.
-   * Implementations throw `NaxError ADAPTER_METHOD_DEPRECATED`. Deleted in Wave 3.5.
-   */
-  plan(options: import("./shared/types-extended").PlanOptions): Promise<import("./shared/types-extended").PlanResult>;
-
-  /**
-   * @deprecated Use `callOp(ctx, decomposeOp, input)` from `src/operations/decompose.ts` instead.
-   * Implementations throw `NaxError ADAPTER_METHOD_DEPRECATED`. Deleted in Wave 3.5.
-   */
-  decompose(
-    options: import("./shared/types-extended").DecomposeOptions,
-  ): Promise<import("./shared/types-extended").DecomposeResult>;
 
   /**
    * Run a one-shot LLM call and return output with cost metadata.
