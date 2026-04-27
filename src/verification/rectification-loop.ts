@@ -244,13 +244,13 @@ export async function runRectificationLoop(
       }
 
       const failureRecords: FailureRecord[] = buildFailureRecords(failure.testSummary, failure.testOutput);
-      const rectPromise = RectifierPromptBuilder.for("verify-failure")
-        .story(story)
-        .priorFailures(failureRecords)
-        .testCommand(testCommand)
-        .conventions()
-        .task()
-        .build();
+      const rectPrompt = RectifierPromptBuilder.regressionFailure({
+        story,
+        failures: failureRecords,
+        testCommand,
+        conventions: true,
+      });
+      const rectPromise = Promise.resolve(rectPrompt);
 
       return (async () => {
         const [diagnosis, rectificationPrompt] = await Promise.all([debatePromise, rectPromise]);

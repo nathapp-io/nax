@@ -107,11 +107,6 @@ export class RectifierPromptBuilder {
     return this;
   }
 
-  task(): this {
-    this.acc.add(rectifierTaskFor(this.trigger));
-    return this;
-  }
-
   build(): Promise<string> {
     return Promise.resolve(this.acc.join());
   }
@@ -634,87 +629,123 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
     return `${trimmed}\n\n${basePrompt}`;
   }
 
+  /**
+   * Prompt for implementing rectification when tests fail after implementation.
+   *
+   * Used when the full test suite reveals failures — either during the TDD
+   * full-suite gate (rectification-gate.ts) or post-verify rectification
+   * (rectification-loop.ts). Demand is explicit: agents must run the FULL
+   * test command, not just the listed failures.
+   *
+   * Covers both semantic scenarios:
+   *   - tdd-suite-failure — implementation's changes broke existing tests
+   *   - verify-failure — post-verify rectification caught cross-story regressions
+   *
+   * Issue #737 consolidates both into this single method (removed separate
+   * trigger-based branching in PR 2).
+   *
+   * @param opts.story — the story context
+   * @param opts.failures — test failures to display
+   * @param opts.testCommand — the full-suite test command to run
+   * @param opts.conventions — whether to include conventions section (default: true)
+   * @param opts.isolation — isolation mode ("strict" | "lite"), if any
+   * @param opts.constitution — constitution text, if any
+   * @param opts.context — context markdown, if any
+   * @param opts.promptPrefix — diagnostic prefix (e.g., from debate stage), if any
+   * @returns fully assembled prompt string
+   */
+  static regressionFailure(opts: {
+    story: UserStory;
+    failures: FailureRecord[];
+    testCommand: string;
+    conventions?: boolean;
+    isolation?: "strict" | "lite";
+    constitution?: string;
+    context?: string;
+    promptPrefix?: string;
+  }): string {
+    const parts: string[] = [];
+
+    // 1. Diagnostic prefix (optional)
+    if (opts.promptPrefix) {
+      parts.push(opts.promptPrefix);
+      parts.push("\n\n");
+    }
+
+    // 2. Constitution (optional)
+    if (opts.constitution) {
+      const constSection = universalConstitutionSection(opts.constitution);
+      if (constSection) {
+        parts.push(constSection.content);
+        parts.push("\n\n");
+      }
+    }
+
+    // 3. Context (optional)
+    if (opts.context) {
+      const ctxSection = universalContextSection(opts.context);
+      if (ctxSection) {
+        parts.push(ctxSection.content);
+        parts.push("\n\n");
+      }
+    }
+
+    // 4. Story section
+    parts.push(buildStorySection(opts.story));
+    parts.push("\n\n");
+
+    // 5. Prior failures section
+    const failureSection = priorFailuresSection(opts.failures);
+    if (failureSection) {
+      parts.push(failureSection.content);
+      parts.push("\n\n");
+    }
+
+    // 6. Test command section
+    parts.push(`# TEST COMMAND\n\n\`${opts.testCommand}\``);
+    parts.push("\n\n");
+
+    // 7. Isolation (optional)
+    if (opts.isolation) {
+      parts.push(buildIsolationSection("implementer", opts.isolation, undefined));
+      parts.push("\n\n");
+    }
+
+    // 8. Conventions (optional, default true)
+    if (opts.conventions !== false) {
+      parts.push(buildConventionsSection());
+      parts.push("\n\n");
+    }
+
+    // 9. Task section with explicit full-suite demand
+    parts.push(`# Rectification Required
+
+Tests are failing. Fix the source so all tests pass — not just the ones listed.
+
+## Instructions
+
+1. Review the failures above and identify the root cause of each.
+2. Fix the source code WITHOUT loosening test assertions or removing tests.
+3. After your fix, run the FULL repo test suite — the EXACT command below:
+
+   \`${opts.testCommand}\`
+
+   The verifier will replay this same command. If you only run the failing
+   tests in isolation, you may have introduced cross-story regressions you
+   won't see. There is no benefit to skipping this — the verifier WILL catch
+   anything you miss, and you'll just be back here in another cycle.
+
+4. Do not declare done until step 3 shows 0 failures.
+
+**IMPORTANT:**
+- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT loosen assertions to mask implementation bugs.
+- Focus on fixing the source code to meet the test requirements.`);
+
+    return parts.join("");
+  }
+
   private s(id: string, content: string): PromptSection {
     return { id, content, overridable: false };
   }
 }
-
-function rectifierTaskFor(trigger: RectifierTrigger): PromptSection {
-  switch (trigger) {
-    case "tdd-test-failure":
-      return { id: "task", overridable: false, content: TDD_TEST_FAILURE_TASK };
-    case "tdd-suite-failure":
-      return { id: "task", overridable: false, content: TDD_SUITE_FAILURE_TASK };
-    case "verify-failure":
-      return { id: "task", overridable: false, content: VERIFY_FAILURE_TASK };
-    case "review-findings":
-      return { id: "task", overridable: false, content: REVIEW_FINDINGS_TASK };
-  }
-}
-
-const TDD_TEST_FAILURE_TASK = `# Rectification Required
-
-The tests written for this story are failing. Fix the implementation to make them pass without modifying the test files.
-
-## Instructions
-
-1. Review the failures listed above carefully.
-2. Identify the root cause of each failure.
-3. Fix the implementation WITHOUT modifying test files.
-4. Run the test command shown above to verify your fixes.
-5. Ensure ALL tests pass before completing.
-
-**IMPORTANT:**
-- Do NOT modify test files — they were written by the test-writer and define the expected behavior.
-- Do NOT loosen assertions to mask implementation bugs.
-- Focus on fixing the source code to meet the test requirements.`;
-
-const TDD_SUITE_FAILURE_TASK = `# Rectification Required
-
-Your changes caused test regressions. Fix these without breaking existing logic.
-
-## Instructions
-
-1. Review the failures above carefully.
-2. Identify the root cause of each failure.
-3. Fix the implementation WITHOUT loosening test assertions.
-4. Run the test command shown above to verify your fixes.
-5. Ensure ALL tests pass before completing.
-
-**IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
-- Do NOT loosen assertions to mask implementation bugs.
-- Focus on fixing the source code to meet the test requirements.`;
-
-const VERIFY_FAILURE_TASK = `# Rectification Required
-
-The verification step failed. Fix the implementation to pass all tests.
-
-## Instructions
-
-1. Review the failures above carefully.
-2. Identify the root cause of each failure.
-3. Fix the implementation WITHOUT loosening test assertions.
-4. Run the test command shown above to verify your fixes.
-5. Ensure ALL tests pass before completing.
-
-**IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
-- Do NOT loosen assertions to mask implementation bugs.
-- Focus on fixing the source code to meet the test requirements.`;
-
-const REVIEW_FINDINGS_TASK = `# Rectification Required
-
-The code review surfaced critical findings that must be addressed before this story can proceed.
-
-## Instructions
-
-1. Review the findings listed above carefully.
-2. Verify each finding is a real issue by reading the relevant files.
-3. Fix only valid issues — do NOT add code that already exists in the codebase.
-4. Do NOT change test files or test behavior.
-5. Do NOT add new features — only fix the identified issues.
-
-**IMPORTANT:**
-- The reviewer may have flagged false positives based on the diff. Verify before acting.
-- Commit your fixes when done.`;
