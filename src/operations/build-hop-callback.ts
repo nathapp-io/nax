@@ -6,6 +6,7 @@
  */
 
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
+import { SessionFailureError } from "../agents/types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { resolveModelForAgent } from "../config";
 import type { NaxConfig } from "../config";
@@ -40,6 +41,18 @@ export interface BuildHopCallbackContext {
   defaultAgent: string;
   contextToolRunCounter?: RunCallCounter;
   pipelineStage?: import("../config/permissions").PipelineStage;
+  /**
+   * Optional intra-hop multi-prompt body. When set, the callback invokes
+   * `hopBody(initialPrompt, { send })` instead of issuing a single
+   * `runAsSession` call. The `send` closure dispatches one turn against the
+   * current handle. Used by review ops for same-session JSON-parse retry.
+   */
+  hopBody?: <I = unknown>(
+    initialPrompt: string,
+    bodyCtx: { send: (prompt: string) => Promise<TurnResult>; input: I },
+  ) => Promise<TurnResult>;
+  /** Input value forwarded to `hopBody` via its `ctx.input`. */
+  hopBodyInput?: unknown;
 }
 
 function turnResultToAgentResult(r: TurnResult): AgentResult {
@@ -71,6 +84,8 @@ export function buildHopCallback(
     defaultAgent,
     contextToolRunCounter,
     pipelineStage,
+    hopBody,
+    hopBodyInput,
   } = ctx;
 
   const stage = pipelineStage ?? "run";
@@ -152,28 +167,42 @@ export function buildHopCallback(
     });
 
     try {
-      const turnResult = await agentManager.runAsSession(agentName, handle, prompt, {
-        storyId: story.id,
-        pipelineStage: stage,
-        signal: resolvedRunOptions.abortSignal,
-        contextPullTools,
-        contextToolRuntime,
-      });
+      // Bound `send` closure: each call dispatches one turn through AgentManager
+      // (so middleware fires) against the current hop's handle. Reused by both
+      // the default single-prompt path and any caller-supplied hopBody.
+      const send = (turnPrompt: string): Promise<TurnResult> =>
+        agentManager.runAsSession(agentName, handle, turnPrompt, {
+          storyId: story.id,
+          pipelineStage: stage,
+          signal: resolvedRunOptions.abortSignal,
+          contextPullTools,
+          contextToolRuntime,
+        });
+
+      const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);
       return { result: turnResultToAgentResult(turnResult), bundle: workingBundle, prompt };
     } catch (err) {
+      // Preserve typed adapter failure on SessionFailureError so runWithFallback's
+      // swap policy sees the real outcome (rate-limit, auth, quota) instead of
+      // a generic "fail-adapter-error" reclassification. Mirrors session-run-hop.ts.
+      const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
+      const errMessage = err instanceof Error ? err.message : String(err);
       return {
         result: {
           success: false,
           exitCode: 1,
-          output: `Agent "${agentName}" failed: ${String(err)}`,
-          rateLimited: false,
+          // Always prefix with agent name so downstream logs can attribute the
+          // failure even when the underlying error message doesn't carry it
+          // (e.g. bare `new Error("timeout")`).
+          output: `Agent "${agentName}" failed: ${errMessage}`,
+          rateLimited: sessionFailure?.outcome === "fail-rate-limit",
           durationMs: 0,
           estimatedCost: 0,
-          adapterFailure: {
+          adapterFailure: sessionFailure ?? {
             category: "availability",
             outcome: "fail-adapter-error",
             retriable: false,
-            message: String(err).slice(0, 500),
+            message: errMessage.slice(0, 500),
           },
         },
         bundle: workingBundle,

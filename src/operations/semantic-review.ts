@@ -1,9 +1,11 @@
+import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import { ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure } from "../prompts";
+import { looksLikeTruncatedJson } from "../review/truncation";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { LlmReviewFinding, RunOperation } from "./types";
+import type { HopBody, LlmReviewFinding, RunOperation } from "./types";
 
 export type { PriorFailure, SemanticReviewConfig, SemanticStory };
 
@@ -36,12 +38,36 @@ function parseLLMShape(raw: unknown): SemanticReviewOutput | null {
   return { passed: obj.passed, findings: obj.findings as LlmReviewFinding[] };
 }
 
+/**
+ * Same-session JSON-parse retry. Sends the initial prompt; if the response is
+ * unparseable or truncated, sends a retry prompt in the same handle so the
+ * agent has full conversation history. Single retry; further failures fall
+ * through to the parse() FAIL_OPEN path.
+ */
+const semanticReviewHopBody: HopBody<SemanticReviewInput> = async (initialPrompt, ctx) => {
+  const first = await ctx.send(initialPrompt);
+  const isTruncated = looksLikeTruncatedJson(first.output);
+  const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
+  if (!isTruncated && parsed && parseLLMShape(parsed)) return first;
+
+  const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
+  const retry: TurnResult = await ctx.send(retryPrompt);
+  return {
+    ...retry,
+    cost: {
+      ...(retry.cost ?? { total: 0, source: "fallback" as const }),
+      total: (first.cost?.total ?? 0) + (retry.cost?.total ?? 0),
+    },
+  };
+};
+
 export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {
   kind: "run",
   name: "semantic-review",
   stage: "review",
   session: { role: "reviewer-semantic", lifetime: "fresh" },
   config: reviewConfigSelector,
+  hopBody: semanticReviewHopBody,
   build(input, _ctx) {
     const prompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(input.story, input.semanticConfig, {
       mode: input.mode,

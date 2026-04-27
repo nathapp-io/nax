@@ -3,6 +3,7 @@ import { buildHopCallback, _buildHopCallbackDeps } from "../../../src/operations
 import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
 import { makeNaxConfig, makeSessionManager, makeStory } from "../../helpers";
 import type { IAgentManager } from "../../../src/agents/manager-types";
+import { SessionFailureError } from "../../../src/agents/types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "../../../src/agents/types";
 import type { AdapterFailure, ContextBundle } from "../../../src/context/engine";
 
@@ -178,6 +179,120 @@ describe("buildHopCallback — runAsSession throws", () => {
     expect(hop.result.success).toBe(false);
     expect(hop.result.exitCode).toBe(1);
     expect(hop.result.output).toContain("session error");
+  });
+});
+
+describe("buildHopCallback — failure classification (Finding 3)", () => {
+  test("preserves SessionFailureError adapterFailure with rate-limit outcome", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-rate-limit",
+      category: "availability",
+      message: "rate limited by upstream",
+      retriable: true,
+    };
+    const agentManager = makeAgentManagerStub(() =>
+      Promise.reject(new SessionFailureError("rate limit", failure)),
+    );
+    const sessionManager = makeSessionManager();
+    const ctx = makeCtx({ agentManager, sessionManager });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    const hop = await cb("claude", undefined, undefined, baseOptions);
+
+    expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
+    expect(hop.result.success).toBe(false);
+    expect(hop.result.rateLimited).toBe(true);
+    expect(hop.result.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(hop.result.adapterFailure?.category).toBe("availability");
+  });
+
+  test("preserves SessionFailureError adapterFailure with auth-error outcome", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-auth",
+      category: "availability",
+      message: "missing credentials",
+      retriable: false,
+    };
+    const agentManager = makeAgentManagerStub(() =>
+      Promise.reject(new SessionFailureError("auth fail", failure)),
+    );
+    const ctx = makeCtx({ agentManager });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    const hop = await cb("claude", undefined, undefined, baseOptions);
+
+    expect(hop.result.success).toBe(false);
+    expect(hop.result.rateLimited).toBe(false);
+    expect(hop.result.adapterFailure?.outcome).toBe("fail-auth");
+    expect(hop.result.adapterFailure?.message).toBe("missing credentials");
+  });
+
+  test("falls back to generic availability/fail-adapter-error for non-typed errors", async () => {
+    const agentManager = makeAgentManagerStub(() => Promise.reject(new Error("plain network error")));
+    const ctx = makeCtx({ agentManager });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    const hop = await cb("claude", undefined, undefined, baseOptions);
+
+    expect(hop.result.success).toBe(false);
+    expect(hop.result.rateLimited).toBe(false);
+    expect(hop.result.adapterFailure?.outcome).toBe("fail-adapter-error");
+    expect(hop.result.adapterFailure?.category).toBe("availability");
+    expect(hop.result.output).toContain("plain network error");
+  });
+});
+
+describe("buildHopCallback — hopBody (multi-prompt within one hop)", () => {
+  test("invokes hopBody with bound send closure; runs initial prompt followed by retry", async () => {
+    const turn1 = makeStubTurnResult("first-output");
+    const turn2 = makeStubTurnResult("second-output");
+    let runAsCount = 0;
+    const agentManager = makeAgentManagerStub(() => {
+      runAsCount++;
+      return Promise.resolve(runAsCount === 1 ? turn1 : turn2);
+    });
+    const sessionManager = makeSessionManager();
+    const observed: string[] = [];
+
+    const ctx = makeCtx({
+      agentManager,
+      sessionManager,
+      hopBody: async (initial, body) => {
+        observed.push(initial);
+        const a = await body.send(initial);
+        observed.push(`after-first:${a.output}`);
+        return body.send("retry-prompt");
+      },
+      hopBodyInput: { foo: "bar" },
+    });
+    const baseOptions = makeBaseOptions("initial-prompt", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    const hop = await cb("claude", undefined, undefined, baseOptions);
+
+    expect(observed).toEqual(["initial-prompt", "after-first:first-output"]);
+    expect(runAsCount).toBe(2);
+    expect(hop.result.success).toBe(true);
+    expect(hop.result.output).toBe("second-output");
+    // openSession + closeSession still called exactly once across both prompts
+    expect(sessionManager.openSession).toHaveBeenCalledTimes(1);
+    expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
+  });
+
+  test("default body (no hopBody) sends initial prompt once", async () => {
+    const agentManager = makeAgentManagerStub();
+    const ctx = makeCtx({ agentManager });
+    const baseOptions = makeBaseOptions("only-prompt", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    await cb("claude", undefined, undefined, baseOptions);
+
+    expect(agentManager.runAsSession).toHaveBeenCalledTimes(1);
+    const promptArg = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[2] as string;
+    expect(promptArg).toBe("only-prompt");
   });
 });
 

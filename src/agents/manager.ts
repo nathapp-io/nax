@@ -221,6 +221,13 @@ export class AgentManager implements IAgentManager {
 
       const bundleForSwapCheck = updatedBundle ?? request.bundle;
 
+      // Op-level opt-out (TDD ops per ADR-018 §5.2). Returns the primary-agent
+      // result without entering the swap branch. Rate-limit backoff inside
+      // shouldSwap is also skipped — single-agent ops should fail fast.
+      if (request.noFallback) {
+        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+      }
+
       if (!this.shouldSwap(result.adapterFailure, hopsSoFar, !!bundleForSwapCheck)) {
         // Preserve legacy rate-limit backoff when no swap candidates are available.
         // #585 Path B: race the sleep against the shutdown signal — an abort during

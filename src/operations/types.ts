@@ -1,4 +1,5 @@
-import type { ConfigSelector, ModelTier } from "../config";
+import type { TurnResult } from "../agents/types";
+import type { ConfigSelector, ConfiguredModel } from "../config";
 import type { NaxConfig } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ComposeInput } from "../prompts/compose";
@@ -21,6 +22,13 @@ export interface CallContext {
     readonly role?: SessionRole;
     readonly discriminator?: string | number;
   };
+  /**
+   * Optional full UserStory passed to buildHopCallback for cross-agent fallback
+   * bundle rebuilds. When absent (e.g. ad-hoc CLI calls), callOp synthesizes a
+   * minimal stub from `storyId` — sufficient for `kind:"run"` ops that don't
+   * carry a context bundle. Bundle-aware ops should pass the real story.
+   */
+  readonly story?: import("../prd").UserStory;
 }
 
 interface OperationBase<I, O, C> {
@@ -43,22 +51,64 @@ interface OperationBase<I, O, C> {
   readonly parse: (output: string, input: I, ctx: BuildContext<C>) => O;
 }
 
+/**
+ * Context passed to a per-op `hopBody`. Exposes a bound `send(prompt)` closure
+ * that dispatches one turn against the active hop's session via
+ * `agentManager.runAsSession` (which fires the Wave-2 middleware chain). Ops
+ * never see the SessionHandle or the AgentManager directly — those stay inside
+ * `buildHopCallback`.
+ */
+export interface HopBodyContext<I> {
+  readonly send: (prompt: string) => Promise<TurnResult>;
+  readonly input: I;
+}
+
+/**
+ * Optional multi-prompt body executed within a single hop's session.
+ * When omitted, the default body is "send the initial prompt and return".
+ * The body owns same-session retry logic (e.g. JSON parse retries in review ops).
+ * It does NOT own openSession / closeSession / fallback iteration — those are
+ * `buildHopCallback`'s job.
+ */
+export type HopBody<I> = (initialPrompt: string, ctx: HopBodyContext<I>) => Promise<TurnResult>;
+
 export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "run";
   /** Reserved for future model-tier override; not yet consumed by callOp (Wave 3). */
   readonly mode?: string;
+  /**
+   * Model selection for this op. Accepts either a tier label
+   * ("fast" | "balanced" | "powerful") or an explicit `{ agent, model }`
+   * pin (for cross-agent or shorthand-aliased model overrides). Resolved via
+   * `resolveConfiguredModel` in callOp. Defaults to "balanced" when omitted.
+   */
+  readonly model?: ConfiguredModel;
   readonly session: {
     readonly role: SessionRole;
     readonly lifetime: "fresh" | "warm";
   };
+  /**
+   * When true, callOp wraps the adapter as a fallback-less manager so the op
+   * runs single-agent. Used by TDD ops to preserve the established
+   * `fallbacks: []` invariant. ADR-018 §5.2.
+   */
   readonly noFallback?: boolean;
+  /**
+   * Optional intra-hop multi-prompt body. See HopBody / HopBodyContext.
+   * Used by review ops to perform a same-session JSON-parse retry.
+   */
+  readonly hopBody?: HopBody<I>;
 }
 
 export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "complete";
   readonly jsonMode?: boolean;
-  /** Model tier to use for this call. Defaults to "balanced" when omitted. */
-  readonly modelTier?: ModelTier;
+  /**
+   * Model selection for this call. Accepts a tier label or an explicit
+   * `{ agent, model }` pin. Resolved via `resolveConfiguredModel` in callOp.
+   * Defaults to "balanced" when omitted.
+   */
+  readonly model?: ConfiguredModel;
 }
 
 export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;
