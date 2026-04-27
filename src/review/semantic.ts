@@ -299,7 +299,7 @@ export async function runSemanticReview(
   });
   const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 
-  // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
+  // Debate path: when debate is enabled for review stage, use DebateRunner instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
   if (reviewDebateEnabled) {
     // Safe: reviewDebateEnabled guard confirms naxConfig.debate.stages.review is defined

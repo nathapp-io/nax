@@ -187,7 +187,7 @@ export async function runPlan(
   // Multiple proposals — run hybrid rebuttal loop if configured, then resolve
   const proposalOutputs = successful.map((p) => p.output);
 
-  // Hybrid rebuttal loop — delegates to session-hybrid.ts (SSOT)
+  // Hybrid rebuttal loop — delegates to runner-hybrid.ts (SSOT)
   const mode = ctx.stageConfig.mode ?? "panel";
   const sessionMode = ctx.stageConfig.sessionMode ?? "one-shot";
   let critiqueOutputs: string[] = [];

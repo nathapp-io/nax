@@ -185,7 +185,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
 
   if (debateEnabled) {
-    // Debate path: run N agents in parallel via DebateSession.runPlan().
+    // Debate path: run N agents in parallel via DebateRunner.runPlan().
     // Each debater calls adapter.plan() writing to a temp path; resolver picks the best PRD.
     // taskContext is passed to the rebuttal loop; outputFormat is proposal-round only.
     const { taskContext: planTaskContext, outputFormat: planOutputFormat } = new PlanPromptBuilder().build(
