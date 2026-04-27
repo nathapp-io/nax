@@ -70,7 +70,7 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     run: mock(async (request: { runOptions: Record<string, unknown> }) => {
       return await mockRun(request.runOptions);
     }),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 })),
     completeAs: mock(async () => ({ output: "", costUsd: 0 })),
     complete: mock(async () => ({ output: "", costUsd: 0 })),
     isUnavailable: () => false,
@@ -120,7 +120,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     const capturedPrompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       capturedPrompts.push(opts.prompt as string);
-      return { success: true, estimatedCost: 0, output: "ok" };
+      return { success: true, estimatedCostUsd: 0, output: "ok" };
     });
     const agentManager = makeMockAgentManager(mockRun);
 
@@ -159,7 +159,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     const capturedPrompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       capturedPrompts.push(opts.prompt as string);
-      return { success: true, estimatedCost: 0, output: "ok" };
+      return { success: true, estimatedCostUsd: 0, output: "ok" };
     });
     const agentManager = makeMockAgentManager(mockRun);
 
@@ -187,7 +187,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     const capturedPrompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       capturedPrompts.push(opts.prompt as string);
-      return { success: true, estimatedCost: 0, output: "ok" };
+      return { success: true, estimatedCostUsd: 0, output: "ok" };
     });
     const agentManager = makeMockAgentManager(mockRun);
 
@@ -225,7 +225,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     const capturedPrompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       capturedPrompts.push(opts.prompt as string);
-      return { success: true, estimatedCost: 0, output: "ok" };
+      return { success: true, estimatedCostUsd: 0, output: "ok" };
     });
     const agentManager = makeMockAgentManager(mockRun);
 
@@ -266,7 +266,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
 
 describe("runAgentRectification — attemptsRemaining in logs", () => {
   test("loop exhaustion reports attemptsUsed and globalBudgetUsed", async () => {
-    const mockRun = mock(async () => ({ success: false, estimatedCost: 0, output: "", exitCode: 1, rateLimited: false }));
+    const mockRun = mock(async () => ({ success: false, estimatedCostUsd: 0, output: "", exitCode: 1, rateLimited: false }));
     const agentManager = makeMockAgentManager(mockRun);
 
     // Always different ref so no-op short-circuit doesn't fire.

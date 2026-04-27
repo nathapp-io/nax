@@ -187,13 +187,13 @@ export async function runTestWriterRectification(
         { runOptions, signal: ctx.runtime.signal, executeHop },
         defaultAgent,
       );
-      return outcome.result.estimatedCost ?? 0;
+      return outcome.result.estimatedCostUsd ?? 0;
     }
     // Legacy keepOpen path — used when no runtime is available (standalone callers).
     const twResult = await agentManager.run({
       runOptions: { ...runOptions, keepOpen },
     });
-    return twResult.estimatedCost ?? 0;
+    return twResult.estimatedCostUsd ?? 0;
   } catch {
     logger.warn("autofix", "Test-writer rectification failed -- proceeding with implementer", {
       storyId: ctx.story.id,

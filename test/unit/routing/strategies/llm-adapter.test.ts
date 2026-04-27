@@ -95,8 +95,8 @@ function makeAgentManagerFromAdapter(adapter: AgentAdapter & { complete: ReturnT
       const result = await adapter.complete(_prompt, _opts);
       return { output: result, costUsd: 0, source: "primary" as const };
     }),
-    run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+    run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, fallbacks: [] })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, fallbacks: [] })),
     isUnavailable: () => false,
     markUnavailable: () => {},
     reset: () => {},

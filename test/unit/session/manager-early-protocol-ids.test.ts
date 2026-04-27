@@ -35,7 +35,7 @@ function makeBaseResult(): AgentResult {
     output: "ok",
     rateLimited: false,
     durationMs: 100,
-    estimatedCost: 0.01,
+    estimatedCostUsd: 0.01,
   };
 }
 

@@ -19,12 +19,15 @@ describe("costMiddleware", () => {
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const mw = costMiddleware(agg, "r-001");
     const result = {
-      success: true, estimatedCost: 0.005,
+      success: true, estimatedCostUsd: 0.005,
       tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10, cacheCreationInputTokens: 5 },
     };
     await mw.after!(makeCtx(), result, 200);
     expect(recorded).toHaveLength(1);
     expect(recorded[0].costUsd).toBe(0.005);
+    expect(recorded[0].estimatedCostUsd).toBe(0.005);
+    expect(recorded[0].exactCostUsd).toBeUndefined();
+    expect(recorded[0].confidence).toBe("estimated");
     expect(recorded[0].tokens.input).toBe(100);
     expect(recorded[0].tokens.output).toBe(50);
     expect(recorded[0].tokens.cacheRead).toBe(10);
@@ -45,6 +48,22 @@ describe("costMiddleware", () => {
     expect(recorded[0].tokens.input).toBe(0);
     expect(recorded[0].tokens.output).toBe(0);
     expect(recorded[0].durationMs).toBe(150);
+  });
+
+  test("after() records exactCostUsd and confidence=exact when present", async () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const mw = costMiddleware(agg, "r-001");
+    const result = {
+      success: true, estimatedCostUsd: 0.005, exactCostUsd: 0.006,
+      tokenUsage: { inputTokens: 100, outputTokens: 50 },
+    };
+    await mw.after!(makeCtx(), result, 200);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].costUsd).toBe(0.006);
+    expect(recorded[0].estimatedCostUsd).toBe(0.005);
+    expect(recorded[0].exactCostUsd).toBe(0.006);
+    expect(recorded[0].confidence).toBe("exact");
   });
 
   test("after() is a no-op when result has no tokenUsage and no costUsd", async () => {

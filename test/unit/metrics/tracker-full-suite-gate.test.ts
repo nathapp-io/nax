@@ -70,7 +70,7 @@ function makeCtx(
     agentResult: {
       success: true,
       output: "",
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
       durationMs: 5000,
     },
     ...ctxOverrides,
@@ -209,7 +209,7 @@ describe("collectBatchMetrics - fullSuiteGatePassed always false", () => {
       agentResult: {
         success: true,
         output: "",
-        estimatedCost: 0.02,
+        estimatedCostUsd: 0.02,
         durationMs: 10000,
       },
       fullSuiteGatePassed: true,

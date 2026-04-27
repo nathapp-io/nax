@@ -37,7 +37,7 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     workdir: PROJECT_DIR,
     projectDir: PROJECT_DIR,
     hooks: { hooks: {} },
-    agentResult: { success: true, output: "", estimatedCost: 0.01, durationMs: 5000 },
+    agentResult: { success: true, output: "", estimatedCostUsd: 0.01, durationMs: 5000 },
     ...overrides,
   } as unknown as PipelineContext;
 }

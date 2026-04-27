@@ -124,7 +124,7 @@ export async function runRebuttalLoop(
             storyId: ctx.storyId,
             pipelineStage: pipelineStageForDebate(ctx.stage),
           });
-          costUsd += turnResult.cost?.total ?? 0;
+          costUsd += turnResult.estimatedCostUsd ?? 0;
           rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
         } catch (err) {
           logger?.warn("debate", "debate:rebuttal-failed", {

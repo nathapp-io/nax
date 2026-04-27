@@ -68,7 +68,7 @@ export interface StoryRouting {
   /** Required when testStrategy is "no-test" — explains why tests are unnecessary for this story */
   noTestJustification?: string;
   reasoning: string;
-  estimatedCost?: number;
+  estimatedCostUsd?: number;
   /** Estimated lines of code (from LLM classifier) */
   estimatedLOC?: number;
   /** Implementation risks (from LLM classifier) */

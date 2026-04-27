@@ -30,7 +30,7 @@ export function makeAgentAdapter(overrides: Partial<AgentAdapter> = {}): AgentAd
     },
     isInstalled: mock(() => Promise.resolve(true)),
     buildCommand: mock(() => []),
-    plan: mock(() => Promise.resolve({ specContent: "", estimatedCost: 0 })),
+    plan: mock(() => Promise.resolve({ specContent: "", estimatedCostUsd: 0 })),
     decompose: mock(() => Promise.resolve({ stories: [] })),
     complete: mock(() => Promise.resolve(DEFAULT_COMPLETE_RESULT)),
     deriveSessionName: mock(() => ""),

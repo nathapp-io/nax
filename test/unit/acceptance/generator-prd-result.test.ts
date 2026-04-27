@@ -231,18 +231,18 @@ function makeMockGeneratorManager(
     resolveFallbackChain: () => [],
     shouldSwap: () => false,
     nextCandidate: () => null,
-    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: '', rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] }),
+    runWithFallback: async () => ({ result: { success: true, exitCode: 0, output: '', rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
     completeWithFallback: completeFn
       ? async (prompt: string, opts: any) => ({ result: await completeFn(prompt, opts), fallbacks: [] })
       : async () => ({ result: { output: '', costUsd: 0, source: 'fallback' }, fallbacks: [] }),
-    run: async () => ({ success: true, exitCode: 0, output: '', rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    run: async () => ({ success: true, exitCode: 0, output: '', rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }),
     complete: completeFn
       ? async (prompt: string, opts: any) => completeFn(prompt, opts)
       : async () => ({ output: '', costUsd: 0, source: 'fallback' }),
     completeAs: completeFn
       ? async (name: string, opts: any) => completeFn('', opts)
       : async () => ({ output: '', costUsd: 0, source: 'fallback' }),
-    runAs: async () => ({ success: true, exitCode: 0, output: '', rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
+    runAs: async () => ({ success: true, exitCode: 0, output: '', rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }),
     plan: async () => ({ specContent: '' }),
     decompose: async () => ({ stories: [] }),
   } as any;

@@ -145,7 +145,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       needsHumanReview,
       reviewReason,
       failureCategory,
-      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
       lite,
     };
   }
@@ -209,7 +209,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
         needsHumanReview,
         reviewReason,
         failureCategory: "greenfield-no-tests",
-        totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+        totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
         lite,
       };
     }
@@ -247,7 +247,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       needsHumanReview,
       reviewReason,
       failureCategory: "session-failure",
-      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
       lite,
     };
   }
@@ -352,7 +352,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     }
   }
 
-  const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0) + fullSuiteGateCost;
+  const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0) + fullSuiteGateCost;
   const totalDurationMs = sessions.reduce((sum, s) => sum + s.durationMs, 0);
   // #590: sum tokenUsage across all sessions so metrics.tracker emits a tokens block
   // for TDD runs the same way single-session runs do.

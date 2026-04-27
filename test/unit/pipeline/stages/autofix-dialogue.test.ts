@@ -100,7 +100,7 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     run: mock(async (request: { runOptions: Record<string, unknown> }) => {
       return await mockRun(request.runOptions);
     }),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 })),
     completeAs: mock(async () => ({ output: "", costUsd: 0 })),
     complete: mock(async () => ({ output: "", costUsd: 0 })),
     isUnavailable: () => false,
@@ -178,11 +178,11 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
         return {
           output: "CLARIFY: What does AC1 mean exactly?\nWill fix once clarified.",
           success: false,
-          estimatedCost: 0,
+          estimatedCostUsd: 0,
         };
       }
       // Subsequent: no CLARIFY
-      return { output: "Fixed the issue.", success: true, estimatedCost: 0 };
+      return { output: "Fixed the issue.", success: true, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => agentCallCount >= 2);
@@ -206,7 +206,7 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
     const mockRun = mock(async (_opts: Record<string, unknown>) => ({
       output: "Some intro text.\nCLARIFY: Should I modify auth.ts or service.ts?\nMore content.",
       success: false,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => false);
@@ -236,7 +236,7 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
     const mockRun = mock(async (_opts: Record<string, unknown>) => ({
       output: "I fixed the issue by updating the handler.",
       success: true,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
@@ -257,7 +257,7 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
     const mockRun = mock(async (_opts: Record<string, unknown>) => ({
       output: "CLARIFY: What should I do?\nProceeding.",
       success: true,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
@@ -304,7 +304,7 @@ describe("autofixStage — clarification cap (AC6)", () => {
       output:
         "CLARIFY: Question 1?\nCLARIFY: Question 2?\nCLARIFY: Question 3?\nCLARIFY: Question 4?\nDone.",
       success: false,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => false);
@@ -332,7 +332,7 @@ describe("autofixStage — clarification cap (AC6)", () => {
     const mockRun = mock(async (_opts: Record<string, unknown>) => ({
       output: "CLARIFY: Q1?\nCLARIFY: Q2?\nCLARIFY: Q3?\nFixed.",
       success: true,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
@@ -366,7 +366,7 @@ describe("autofixStage — clarify() error resilience (AC10)", () => {
     const mockRun = mock(async (_opts: Record<string, unknown>) => ({
       output: "CLARIFY: What is AC1?\nFixed the issue anyway.",
       success: true,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     }));
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => true);
@@ -399,7 +399,7 @@ describe("autofixStage — clarify() error resilience (AC10)", () => {
     let agentCallCount = 0;
     const mockRun = mock(async (_opts: Record<string, unknown>) => {
       agentCallCount++;
-      return { output: "CLARIFY: Question?\nAttempting fix.", success: true, estimatedCost: 0 };
+      return { output: "CLARIFY: Question?\nAttempting fix.", success: true, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     _autofixDeps.recheckReview = mock(async () => agentCallCount >= 1);

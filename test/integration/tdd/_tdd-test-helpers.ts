@@ -68,7 +68,7 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
         output: r.output ?? "",
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
         internalRoundTrips: 1,
-        cost: { total: r.estimatedCost ?? 0 },
+        estimatedCostUsd: r.estimatedCostUsd ?? 0 ,
       };
     }),
     closeSession: mock(async () => {}),

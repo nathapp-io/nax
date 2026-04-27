@@ -412,11 +412,11 @@ export async function runAdversarialReview(
     try {
       const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
       rawResponse = runResult.output;
-      llmCost = runResult.estimatedCost ?? 0;
+      llmCost = runResult.estimatedCostUsd ?? 0;
       logger?.debug("adversarial", "LLM call complete (legacy)", {
         storyId: story.id,
         responseLen: rawResponse.length,
-        estimatedCost: llmCost,
+        estimatedCostUsd: llmCost,
       });
     } catch (err) {
       logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -447,7 +447,7 @@ export async function runAdversarialReview(
           runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
         });
         rawResponse = retryResult.output;
-        llmCost += retryResult.estimatedCost ?? 0;
+        llmCost += retryResult.estimatedCostUsd ?? 0;
         if (parseAdversarialResponse(rawResponse)) {
           logger?.info("adversarial", "JSON retry succeeded", { storyId: story.id, responseLen: rawResponse.length });
         }

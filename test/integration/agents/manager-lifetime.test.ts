@@ -33,13 +33,13 @@ function makeFailResult(): AgentResult {
     output: "auth error",
     rateLimited: false,
     durationMs: 0,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     adapterFailure: AUTH_FAILURE,
   };
 }
 
 function makeSuccessResult(): AgentResult {
-  return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCost: 0 };
+  return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
 }
 
 // Config: claude (primary) → [codex, gemini] fallback chain, 3-hop budget.

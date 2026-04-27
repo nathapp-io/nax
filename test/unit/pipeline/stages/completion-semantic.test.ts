@@ -75,7 +75,7 @@ function makeCtx(
     workdir: tempDir,
     projectDir: tempDir,
     featureDir: tempDir,
-    agentResult: { success: true, estimatedCost: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
+    agentResult: { success: true, estimatedCostUsd: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
     hooks: {} as PipelineContext["hooks"],
     storyStartTime: new Date().toISOString(),
     reviewResult,

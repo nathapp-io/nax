@@ -39,7 +39,7 @@ function makeRateLimitedRunHop() {
       output: "rate limit",
       rateLimited: true,
       durationMs: 1,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
       adapterFailure: rateLimitFailure,
     },
   });

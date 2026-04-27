@@ -11,7 +11,7 @@ const DEFAULT_RESULT = {
   output: "",
   rateLimited: false,
   durationMs: 0,
-  estimatedCost: 0,
+  estimatedCostUsd: 0,
 };
 
 const DEFAULT_COMPLETE_RESULT: CompleteResult = {
@@ -24,11 +24,11 @@ export interface MockAgentManagerOptions {
   getDefaultAgent?: string;
   unavailableAgents?: Set<string>;
   getAgentFn?: (name: string) => AgentAdapter | undefined;
-  runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: unknown[] }>;
+  runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
   completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-  runWithFallbackFn?: (req: AgentRunRequest) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
+  runWithFallbackFn?: (req: AgentRunRequest) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
   completeWithFallbackFn?: (prompt: string, opts?: CompleteOptions) => Promise<{ result: CompleteResult; fallbacks: unknown[] }>;
-  runAsFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCost: number; agentFallbacks: unknown[] }>;
+  runAsFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
   runAsSessionFn?: (agentName: string, handle: SessionHandle, prompt: string, opts: RunAsSessionOpts) => Promise<TurnResult>;
 }
@@ -85,7 +85,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
             output: `output from ${name}`,
             rateLimited: false,
             durationMs: 1,
-            estimatedCost: 0.01,
+            estimatedCostUsd: 0.01,
             agentFallbacks: [],
           })),
     completeAs: opts.completeAsFn

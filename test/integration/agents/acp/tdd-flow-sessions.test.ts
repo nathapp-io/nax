@@ -209,7 +209,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
 
     expect(result.success).toBe(true);
     expect(result.role).toBe("test-writer");
-    expect(result.estimatedCost).toBeGreaterThan(0);
+    expect(result.estimatedCostUsd).toBeGreaterThan(0);
   });
 
   test("implementer session completes successfully via AcpAgentAdapter", async () => {
@@ -239,7 +239,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
 
     expect(result.success).toBe(true);
     expect(result.role).toBe("implementer");
-    expect(result.estimatedCost).toBeGreaterThan(0);
+    expect(result.estimatedCostUsd).toBeGreaterThan(0);
   });
 
   test("verifier session completes successfully via AcpAgentAdapter", async () => {
@@ -268,7 +268,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
 
     expect(result.success).toBe(true);
     expect(result.role).toBe("verifier");
-    expect(result.estimatedCost).toBeGreaterThan(0);
+    expect(result.estimatedCostUsd).toBeGreaterThan(0);
   });
 
   test("failed agent response maps to session failure", async () => {
@@ -439,7 +439,7 @@ describe("cost tracking across 3 ACP sessions", () => {
         undefined,
         true,
       );
-      costs.push(result.estimatedCost);
+      costs.push(result.estimatedCostUsd);
     }
 
     expect(costs[0]).toBeGreaterThan(0);
@@ -473,7 +473,7 @@ describe("cost tracking across 3 ACP sessions", () => {
       true,
     );
 
-    expect(result.estimatedCost).toBe(0);
+    expect(result.estimatedCostUsd).toBe(0);
   });
 
   test("missing token usage returns zero cost", async () => {
@@ -498,6 +498,6 @@ describe("cost tracking across 3 ACP sessions", () => {
       true,
     );
 
-    expect(result.estimatedCost).toBe(0);
+    expect(result.estimatedCostUsd).toBe(0);
   });
 });

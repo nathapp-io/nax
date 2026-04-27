@@ -29,7 +29,7 @@ function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
     output: '{"verdict":"source_bug","reasoning":"test reasoning","confidence":0.9}',
     rateLimited: false,
     durationMs: 1000,
-    estimatedCost: 0.05,
+    estimatedCostUsd: 0.05,
   };
   const mockRun = mock(async () => ({ ...defaultResult, ...result }));
   const mockComplete = mock(async () => ({ output: "{}", costUsd: 0.01, source: "exact" as const }));

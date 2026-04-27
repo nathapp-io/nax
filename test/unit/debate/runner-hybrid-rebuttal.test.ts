@@ -348,7 +348,7 @@ describe("DebateRunner hybrid rebuttal — rebuttal costs accumulated in totalCo
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async (_agentName, _handle, prompt) => {
         const cost = isRebuttalPrompt(prompt) ? 0.05 : 0.1;
-        return { output: "output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0, cost: { total: cost } };
+        return { output: "output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0, estimatedCostUsd: cost  };
       },
     });
     const runner = makeRunner(agentManager, sm);

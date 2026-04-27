@@ -57,10 +57,7 @@ const adversarialReviewHopBody: HopBody<AdversarialReviewInput> = async (initial
   const retry: TurnResult = await ctx.send(retryPrompt);
   return {
     ...retry,
-    cost: {
-      ...(retry.cost ?? { total: 0, source: "fallback" as const }),
-      total: (first.cost?.total ?? 0) + (retry.cost?.total ?? 0),
-    },
+    estimatedCostUsd: (first.estimatedCostUsd ?? 0) + (retry.estimatedCostUsd ?? 0),
   };
 };
 

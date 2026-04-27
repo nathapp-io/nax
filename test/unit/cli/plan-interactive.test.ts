@@ -21,7 +21,7 @@ function makeMockPlanManager(
 ) {
   return makeMockAgentManager({
     runAsFn: runFn
-      ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }; }
+      ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }; }
       : undefined,
   });
 }

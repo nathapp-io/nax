@@ -50,7 +50,7 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       output: llmResponse,
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: cost,
+      estimatedCostUsd: cost,
       agentFallbacks: [] as unknown[],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
@@ -243,7 +243,7 @@ describe("runAdversarialReview — cost propagation", () => {
 
   afterEach(restoreAllDeps);
 
-  test("result.cost is populated from LLM estimatedCost", async () => {
+  test("result.cost is populated from LLM estimatedCostUsd", async () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE, 0.042);
 
     const result = await runAdversarialReview(
@@ -257,7 +257,7 @@ describe("runAdversarialReview — cost propagation", () => {
     expect(result.cost).toBe(0.042);
   });
 
-  test("result.cost is 0 when estimatedCost is 0", async () => {
+  test("result.cost is 0 when estimatedCostUsd is 0", async () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE, 0);
 
     const result = await runAdversarialReview(

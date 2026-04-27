@@ -10,7 +10,9 @@ function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
     agentName: "claude",
     model: "claude-sonnet-4-6",
     tokens: { input: 100, output: 50 },
+    estimatedCostUsd: 0.001,
     costUsd: 0.001,
+    confidence: "estimated",
     durationMs: 500,
     ...overrides,
   };

@@ -85,7 +85,7 @@ export interface AgentFallbackHop {
   hop: number;
   /**
    * Cost incurred on the hop that FAILED (the attempt on `priorAgent` that triggered
-   * the swap to `newAgent`). Sourced from the failing agent's `AgentResult.estimatedCost`.
+   * the swap to `newAgent`). Sourced from the failing agent's `AgentResult.estimatedCostUsd`.
    * Zero when the adapter did not report a cost. Summed across hops into
    * `RunMetrics.fallback.totalWastedCostUsd` (ADR-012 / review #2).
    */

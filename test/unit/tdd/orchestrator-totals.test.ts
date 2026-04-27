@@ -66,7 +66,7 @@ function agentReturning(tokens: Array<AgentResult["tokenUsage"] | undefined>) {
         output: "ok",
         tokenUsage,
         internalRoundTrips: 1,
-        cost: { total: 0.01 },
+        estimatedCostUsd: 0.01 ,
       };
     }),
     closeSession: mock(async () => {}),

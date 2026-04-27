@@ -57,9 +57,9 @@ describe("runThreeSessionTdd", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -84,7 +84,7 @@ describe("runThreeSessionTdd", () => {
       diffFiles: [["test/user.test.ts"], ["test/user.test.ts"]],
     });
 
-    const agent = createMockAgent([{ success: false, exitCode: 1, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: false, exitCode: 1, estimatedCostUsd: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -109,7 +109,7 @@ describe("runThreeSessionTdd", () => {
       ],
     });
 
-    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -140,8 +140,8 @@ describe("runThreeSessionTdd", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: false, exitCode: 1, estimatedCost: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: false, exitCode: 1, estimatedCostUsd: 0.02 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -176,9 +176,9 @@ describe("runThreeSessionTdd", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -291,9 +291,9 @@ describe("runThreeSessionTdd", () => {
     }));
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // test-writer succeeds
-      { success: true, estimatedCost: 0.02 }, // implementer succeeds
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails (e.g., fixed issues)
+      { success: true, estimatedCostUsd: 0.01 }, // test-writer succeeds
+      { success: true, estimatedCostUsd: 0.02 }, // implementer succeeds
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // verifier fails (e.g., fixed issues)
     ]);
 
     const result = await runThreeSessionTdd({
@@ -327,7 +327,7 @@ describe("runThreeSessionTdd", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates wrong files
+      { success: true, estimatedCostUsd: 0.01 }, // test-writer succeeds but creates wrong files
     ]);
 
     const result = await runThreeSessionTdd({
@@ -357,7 +357,7 @@ describe("runThreeSessionTdd", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates nothing
+      { success: true, estimatedCostUsd: 0.01 }, // test-writer succeeds but creates nothing
     ]);
 
     const result = await runThreeSessionTdd({
@@ -393,9 +393,9 @@ describe("runThreeSessionTdd", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -466,9 +466,9 @@ describe("runThreeSessionTdd", () => {
     }));
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // verifier fails
     ]);
 
     const result = await runThreeSessionTdd({
@@ -521,8 +521,8 @@ describe("test-writer skip on review escalation", () => {
 
     // 2 agent calls: implementer + verifier (no test-writer)
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.02 }, // implementer
-      { success: true, estimatedCost: 0.01 }, // verifier
+      { success: true, estimatedCostUsd: 0.02 }, // implementer
+      { success: true, estimatedCostUsd: 0.01 }, // verifier
     ]);
 
     const result = await runThreeSessionTdd({
@@ -564,9 +564,9 @@ describe("test-writer skip on review escalation", () => {
     };
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // test-writer
-      { success: true, estimatedCost: 0.02 }, // implementer
-      { success: true, estimatedCost: 0.01 }, // verifier
+      { success: true, estimatedCostUsd: 0.01 }, // test-writer
+      { success: true, estimatedCostUsd: 0.02 }, // implementer
+      { success: true, estimatedCostUsd: 0.01 }, // verifier
     ]);
 
     const result = await runThreeSessionTdd({
@@ -614,9 +614,9 @@ describe("test-writer skip on review escalation", () => {
     };
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // test-writer
-      { success: true, estimatedCost: 0.02 }, // implementer
-      { success: true, estimatedCost: 0.01 }, // verifier
+      { success: true, estimatedCostUsd: 0.01 }, // test-writer
+      { success: true, estimatedCostUsd: 0.02 }, // implementer
+      { success: true, estimatedCostUsd: 0.01 }, // verifier
     ]);
 
     const result = await runThreeSessionTdd({

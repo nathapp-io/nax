@@ -143,7 +143,7 @@ describe("session-runner bindHandle (#541)", () => {
       output: "done",
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
       agentFallbacks: [] as unknown[],
       protocolIds,
     };

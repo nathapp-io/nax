@@ -109,7 +109,7 @@ describe("runRectificationLoop — session context params", () => {
 
     const runFn = mock(async (agentName: string, opts: any) => {
       capturedRunOptions.push({ type: "run", opts: { ...opts, agent: agentName } });
-      return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
     });
     const runWithFallbackFn = mock(async (req: any) => ({ result: await runFn(req.runOptions.agent, req.runOptions), fallbacks: [] }));
 
@@ -118,9 +118,9 @@ describe("runRectificationLoop — session context params", () => {
       runWithFallbackFn,
       runAs: mock(async (agentName: string, req: any) => {
         capturedRunOptions.push({ type: "runAs", opts: { ...req.runOptions, agent: agentName } });
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
-      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCostUsd: 0 }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockAgentManager;
@@ -156,7 +156,7 @@ describe("runRectificationLoop — session context params", () => {
     const mockAgent = {
       name: "claude",
       run: mock(async (_opts: AgentRunOptions) => {
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
       isInstalled: mock(async () => true),
@@ -168,7 +168,7 @@ describe("runRectificationLoop — session context params", () => {
       getAgentFn: (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
       runFn: mock(async (_agentName: string, opts: AgentRunOptions) => {
         capturedOptions.push(opts);
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
     });
 
@@ -200,7 +200,7 @@ describe("runRectificationLoop — session context params", () => {
   test("returns false when agent not found", async () => {
     _rectificationDeps.agentManager = makeMockAgentManager({
       getAgentFn: () => undefined,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
 
     _rectificationDeps.runVerification = mock(async () => ({
@@ -239,7 +239,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
     _rectificationDeps.agentManager = makeMockAgentManager({
       runFn: mock(async (_agentName: string, opts: AgentRunOptions) => {
           capturedPrompts.push(opts.prompt);
-          return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+          return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
     });
 
@@ -284,7 +284,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
 
     // Set the injected agentManager (DI pattern — createManager no longer exists)
     _rectificationDeps.agentManager = makeMockAgentManager({
-      runFn: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      runFn: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
 
     _rectificationDeps.runVerification = mock(async () => ({
@@ -346,7 +346,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
 
     // Set the injected agentManager (DI pattern — createManager no longer exists)
     _rectificationDeps.agentManager = makeMockAgentManager({
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
 
     _rectificationDeps.escalateTier = mock(() => ({ tier: "balanced", agent: "claude" }));
@@ -381,7 +381,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       name: "claude",
       run: mock(async (opts: AgentRunOptions) => {
         capturedOptions.push(opts);
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
       isInstalled: mock(async () => true),
@@ -393,11 +393,11 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
       runFn: mock(async (agentName: string, opts: AgentRunOptions) => {
       capturedOptions.push(opts);
-      return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
       runAs: mock(async (_name: string, req: any) => {
       capturedOptions.push(req.runOptions);
-      return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
     });
 
@@ -463,7 +463,7 @@ describe("runRectificationLoop — logging failing test names", () => {
     const mockAgent = {
       name: "claude",
       run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
       isInstalled: mock(async () => true),
@@ -473,8 +473,8 @@ describe("runRectificationLoop — logging failing test names", () => {
 
     _rectificationDeps.agentManager = makeMockAgentManager({
       getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
 
     const retryOutput = `
@@ -523,7 +523,7 @@ Error: Expected true to be false
     const mockAgent = {
       name: "claude",
       run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
       isInstalled: mock(async () => true),
@@ -533,8 +533,8 @@ Error: Expected true to be false
 
     _rectificationDeps.agentManager = makeMockAgentManager({
       getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
 
     // Create test output with 15 failures
@@ -590,7 +590,7 @@ Error: Test failed
     const mockAgent = {
       name: "claude",
       run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
       isInstalled: mock(async () => true),
@@ -600,8 +600,8 @@ Error: Test failed
 
     _rectificationDeps.agentManager = makeMockAgentManager({
       getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
 
     // Retry output with failures but no structured (fail) blocks
@@ -645,7 +645,7 @@ test/example.test.ts:
     const mockAgent = {
       name: "claude",
       run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
       isInstalled: mock(async () => true),
@@ -655,8 +655,8 @@ test/example.test.ts:
 
     _rectificationDeps.agentManager = makeMockAgentManager({
       getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] })),
+      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
+      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
 
     const retryOutput = `
@@ -700,7 +700,7 @@ Error: Test failed
       name: "claude",
       run: mock(async (_opts: AgentRunOptions) => {
         agentRunCount += 1;
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
       }),
       complete: mock(async (_prompt: string) => ""),
       isInstalled: mock(async () => true),
@@ -710,7 +710,7 @@ Error: Test failed
 
     const runFn = mock(async () => {
       agentRunCount += 1;
-      return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
     });
     _rectificationDeps.agentManager = makeMockAgentManager({
       getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,

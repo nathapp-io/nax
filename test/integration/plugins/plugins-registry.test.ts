@@ -225,7 +225,7 @@ describe("PluginRegistry", () => {
                 output: "",
                 rateLimited: false,
                 durationMs: 0,
-                estimatedCost: 0,
+                estimatedCostUsd: 0,
               };
             },
             buildCommand() {
@@ -269,7 +269,7 @@ describe("PluginRegistry", () => {
                 output: "",
                 rateLimited: false,
                 durationMs: 0,
-                estimatedCost: 0,
+                estimatedCostUsd: 0,
               };
             },
             buildCommand() {
@@ -315,7 +315,7 @@ describe("PluginRegistry", () => {
                 output: "",
                 rateLimited: false,
                 durationMs: 0,
-                estimatedCost: 0,
+                estimatedCostUsd: 0,
               };
             },
             buildCommand() {
@@ -354,7 +354,7 @@ describe("PluginRegistry", () => {
                 output: "",
                 rateLimited: false,
                 durationMs: 0,
-                estimatedCost: 0,
+                estimatedCostUsd: 0,
               };
             },
             buildCommand() {

@@ -141,7 +141,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     };
 
     const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
-    const cost = pipelineResult.context.agentResult?.estimatedCost ?? 0;
+    const cost = pipelineResult.context.agentResult?.estimatedCostUsd ?? 0;
 
     if (!pipelineResult.success) {
       logger?.info("parallel", "Rectification failed - preserving worktree", { storyId });

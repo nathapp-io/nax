@@ -249,7 +249,7 @@ describe("executionStage — three-session-tdd strategy (no regression)", () => 
     (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
       runWithFallbackFn: async () => {
         managerRunCalled = true;
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
 

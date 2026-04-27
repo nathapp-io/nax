@@ -65,7 +65,7 @@ function makeAgent(output: string) {
       output,
       tokenUsage: { inputTokens: 0, outputTokens: 0 },
       internalRoundTrips: 1,
-      cost: { total: 0.01 },
+      estimatedCostUsd: 0.01 ,
     })),
   });
 }

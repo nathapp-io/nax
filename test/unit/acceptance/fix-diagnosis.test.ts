@@ -34,7 +34,7 @@ function makeMockAgent(overrides?: Partial<{ output: string }>): IAgentManager {
       output: overrides?.output ?? '{"verdict":"source_bug","reasoning":"test reasoning","confidence":0.9}',
       rateLimited: false,
       durationMs: 1000,
-      estimatedCost: 0.05,
+      estimatedCostUsd: 0.05,
       agentFallbacks: [],
     }),
   });

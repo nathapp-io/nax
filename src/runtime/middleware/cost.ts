@@ -16,10 +16,13 @@ function extractTokens(
   };
 }
 
-function extractCostUsd(result: unknown): number {
-  if (!result || typeof result !== "object") return 0;
+function extractCosts(result: unknown): { estimatedCostUsd: number; exactCostUsd?: number } | null {
+  if (!result || typeof result !== "object") return null;
   const r = result as Record<string, unknown>;
-  return (r.estimatedCost as number | undefined) ?? (r.costUsd as number | undefined) ?? 0;
+  const estimatedCostUsd = (r.estimatedCostUsd as number | undefined) ?? (r.costUsd as number | undefined) ?? 0;
+  const exactCostUsd = r.exactCostUsd as number | undefined;
+  if (estimatedCostUsd === 0 && exactCostUsd == null) return null;
+  return { estimatedCostUsd, exactCostUsd };
 }
 
 export function costMiddleware(aggregator: ICostAggregator, runId: string): AgentMiddleware {
@@ -27,8 +30,14 @@ export function costMiddleware(aggregator: ICostAggregator, runId: string): Agen
     name: "cost",
     async after(ctx: MiddlewareContext, result: unknown, durationMs: number): Promise<void> {
       const tokens = extractTokens(result);
-      const costUsd = extractCostUsd(result);
-      if (!tokens && costUsd === 0) return;
+      const costs = extractCosts(result);
+      if (!tokens && !costs) return;
+
+      const estimatedCostUsd = costs?.estimatedCostUsd ?? 0;
+      const exactCostUsd = costs?.exactCostUsd;
+      const costUsd = exactCostUsd ?? estimatedCostUsd;
+      const confidence: "exact" | "estimated" = exactCostUsd != null ? "exact" : "estimated";
+
       const event: CostEvent = {
         ts: Date.now(),
         runId,
@@ -37,7 +46,10 @@ export function costMiddleware(aggregator: ICostAggregator, runId: string): Agen
         stage: ctx.stage,
         storyId: ctx.storyId,
         tokens: tokens ?? { input: 0, output: 0 },
+        estimatedCostUsd,
+        exactCostUsd,
         costUsd,
+        confidence,
         durationMs,
       };
       aggregator.record(event);

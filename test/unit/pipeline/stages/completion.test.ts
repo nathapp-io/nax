@@ -64,7 +64,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/nax-test",
     // featureDir intentionally not set — avoids appendProgress file write
     hooks: {},
-    agentResult: { output: "", exitCode: 0, success: true, estimatedCost: 0 },
+    agentResult: { output: "", exitCode: 0, success: true, estimatedCostUsd: 0 },
     ...overrides,
   // biome-ignore lint/suspicious/noExplicitAny: test context
   } as any;

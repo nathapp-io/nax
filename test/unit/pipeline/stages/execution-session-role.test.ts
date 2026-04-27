@@ -81,7 +81,7 @@ describe("execution stage — session role normalization (AC-1)", () => {
     (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
         capturedSessionRole = req.runOptions.sessionRole;
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
     await executionStage.execute(ctx);
@@ -104,7 +104,7 @@ describe("execution stage — session role normalization (AC-1)", () => {
     (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
         capturedSessionRole = req.runOptions.sessionRole;
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
     await executionStage.execute(ctx);
@@ -134,7 +134,7 @@ describe("execution stage — keepOpen when review enabled (AC-2)", () => {
     (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
         capturedKeepSessionOpen = req.runOptions.keepOpen;
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
     await executionStage.execute(ctx);
@@ -162,7 +162,7 @@ describe("execution stage — keepOpen when rectification enabled (AC-3)", () =>
     (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
         capturedKeepSessionOpen = req.runOptions.keepOpen;
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
     await executionStage.execute(ctx);
@@ -191,7 +191,7 @@ describe("execution stage — keepOpen when review and rectification disabled (A
     (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
         capturedKeepSessionOpen = req.runOptions.keepOpen;
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
     await executionStage.execute(ctx);

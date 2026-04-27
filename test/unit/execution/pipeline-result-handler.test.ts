@@ -51,7 +51,7 @@ function makeMinimalResult(): PipelineRunResult {
     success: true,
     finalAction: "complete",
     context: {
-      agentResult: { estimatedCost: 0 },
+      agentResult: { estimatedCostUsd: 0 },
       storyMetrics: [],
     } as unknown as PipelineRunResult["context"],
   };
@@ -326,7 +326,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
       success: false,
       finalAction: "fail",
       reason: "Tests failed",
-      context: { agentResult: { estimatedCost: 0 } } as unknown as PipelineRunResult["context"],
+      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
     };
 
     await handlePipelineFailure(ctx, failResult);
@@ -357,7 +357,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
       success: false,
       finalAction: "fail",
       reason: "Tests failed",
-      context: { agentResult: { estimatedCost: 0 } } as unknown as PipelineRunResult["context"],
+      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
     };
 
     await handlePipelineFailure(ctx, failResult);

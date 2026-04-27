@@ -71,7 +71,7 @@ export async function executeStoryInWorktree(
 
     return {
       success: result.success,
-      cost: result.context.agentResult?.estimatedCost || 0,
+      cost: result.context.agentResult?.estimatedCostUsd || 0,
       error: result.success ? undefined : result.reason,
       pipelineResult: result,
     };

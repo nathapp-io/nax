@@ -58,7 +58,7 @@ export async function runStatefulTurn(
     debater,
     agentName,
     output: turnResult.output,
-    cost: turnResult.cost?.total ?? 0,
+    cost: turnResult.estimatedCostUsd ?? 0,
     handle,
   };
 }

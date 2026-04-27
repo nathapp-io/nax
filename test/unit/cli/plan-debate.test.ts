@@ -31,7 +31,7 @@ function makeMockPlanManager(
   completeFn?: (name: string, prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: "exact" | "estimated" | "fallback" }>,
 ) {
   return makeMockAgentManager({
-    runAsFn: runFn ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }; } : undefined,
+    runAsFn: runFn ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }; } : undefined,
     completeAsFn: completeFn,
   });
 }

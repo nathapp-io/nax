@@ -27,7 +27,7 @@ import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
 const mockAgentRun = mock(async () => ({
   success: true,
   rateLimited: false,
-  estimatedCost: 0.01,
+  estimatedCostUsd: 0.01,
   output: "done",
   exitCode: 0,
   durationMs: 100,
@@ -195,7 +195,7 @@ describe("storyId is present in JSONL event payloads", () => {
         run: mock(async () => ({
           success: true,
           rateLimited: false,
-          estimatedCost: 0,
+          estimatedCostUsd: 0,
           output: "",
           exitCode: 0,
           durationMs: 0,

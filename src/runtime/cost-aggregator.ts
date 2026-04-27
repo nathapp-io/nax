@@ -7,7 +7,14 @@ export interface CostEvent {
   readonly storyId?: string;
   readonly packageDir?: string;
   readonly tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+  /** Estimated cost from token usage × pricing rates (always present). */
+  readonly estimatedCostUsd: number;
+  /** Exact cost reported by wire protocol (when available). */
+  readonly exactCostUsd?: number;
+  /** Canonical cost for budget/totals: exact when available, else estimated. */
   readonly costUsd: number;
+  /** Confidence derived from presence of exactCostUsd. */
+  readonly confidence: "exact" | "estimated";
   readonly durationMs: number;
 }
 
@@ -24,6 +31,8 @@ export interface CostErrorEvent {
 
 export interface CostSnapshot {
   readonly totalCostUsd: number;
+  readonly totalEstimatedCostUsd: number;
+  readonly totalExactCostUsd?: number;
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
   readonly callCount: number;
@@ -42,6 +51,7 @@ export interface ICostAggregator {
 
 const EMPTY_SNAPSHOT: CostSnapshot = {
   totalCostUsd: 0,
+  totalEstimatedCostUsd: 0,
   totalInputTokens: 0,
   totalOutputTokens: 0,
   callCount: 0,
@@ -77,12 +87,21 @@ export const _costAggDeps = {
 };
 
 function emptySnap(): CostSnapshot {
-  return { totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 };
+  return {
+    totalCostUsd: 0,
+    totalEstimatedCostUsd: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    callCount: 0,
+    errorCount: 0,
+  };
 }
 
 function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
   return {
     totalCostUsd: snap.totalCostUsd + e.costUsd,
+    totalEstimatedCostUsd: snap.totalEstimatedCostUsd + e.estimatedCostUsd,
+    totalExactCostUsd: e.exactCostUsd != null ? (snap.totalExactCostUsd ?? 0) + e.exactCostUsd : snap.totalExactCostUsd,
     totalInputTokens: snap.totalInputTokens + e.tokens.input,
     totalOutputTokens: snap.totalOutputTokens + e.tokens.output,
     callCount: snap.callCount + 1,

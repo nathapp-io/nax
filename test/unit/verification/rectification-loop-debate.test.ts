@@ -38,7 +38,7 @@ describe("runRectificationLoop — debate disabled (default)", () => {
       if (opts?.prompt) {
         capturedPrompts.push(opts.prompt);
       }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
     });
     const mockManager = makeMockAgentManager({
       runFn,
@@ -46,9 +46,9 @@ describe("runRectificationLoop — debate disabled (default)", () => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
-      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCostUsd: 0 }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -74,7 +74,7 @@ describe("runRectificationLoop — debate disabled (default)", () => {
       if (opts?.prompt) {
         capturedPrompts.push(opts.prompt);
       }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
     });
     const mockManager = makeMockAgentManager({
       runFn,
@@ -82,9 +82,9 @@ describe("runRectificationLoop — debate disabled (default)", () => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
-      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCost: 0 }, fallbacks: [] })),
+      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCostUsd: 0 }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -127,7 +127,7 @@ describe("runRectificationLoop — debate enabled", () => {
       if (opts?.prompt) {
         capturedPrompts.push(opts.prompt);
       }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
     });
     const mockManager = makeMockAgentManager({
       runFn,
@@ -135,7 +135,7 @@ describe("runRectificationLoop — debate enabled", () => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
       completeFn: mock(async () => {
         completeCalls++;
@@ -166,7 +166,7 @@ describe("runRectificationLoop — debate enabled", () => {
       if (opts?.prompt) {
         capturedPrompts.push(opts.prompt);
       }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
     });
     const mockManager = makeMockAgentManager({
       runFn,
@@ -174,7 +174,7 @@ describe("runRectificationLoop — debate enabled", () => {
         if (req.runOptions?.prompt) {
           capturedPrompts.push(req.runOptions.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
       completeFn: mock(async () => ({ output: diagnosisOutput, costUsd: 0, source: "primary" as const })),
     });
@@ -206,9 +206,9 @@ describe("runRectificationLoop — debate enabled", () => {
         if (opts?.prompt) {
           capturedPrompts.push(opts.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       },
-      completeAsFn: async () => ({ result: { output: diagnosisOutput, estimatedCost: 0 }, fallbacks: [] }),
+      completeAsFn: async () => ({ result: { output: diagnosisOutput, estimatedCostUsd: 0 }, fallbacks: [] }),
     });
 
     _rectificationDeps.agentManager = mockManager as any;
@@ -255,7 +255,7 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
         if (opts?.prompt) {
           capturedPrompts.push(opts.prompt);
         }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0, agentFallbacks: [] };
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       },
       completeAsFn: async () => {
         throw new Error("Debate agent failed");
@@ -288,7 +288,7 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
         output: "done",
         rateLimited: false,
         durationMs: 10,
-        estimatedCost: 0,
+        estimatedCostUsd: 0,
         agentFallbacks: [] as unknown[],
       }),
       completeAsFn: async () => {

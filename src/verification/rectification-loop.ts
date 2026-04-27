@@ -231,7 +231,7 @@ export async function runRectificationLoop(
               agentManager,
             );
             if (debateResult.totalCostUsd > 0 && story.routing) {
-              story.routing.estimatedCost = (story.routing.estimatedCost ?? 0) + debateResult.totalCostUsd;
+              story.routing.estimatedCostUsd = (story.routing.estimatedCostUsd ?? 0) + debateResult.totalCostUsd;
             }
             if (debateResult.output !== null) {
               return `## Root Cause Analysis\n\n${debateResult.output}`;
@@ -334,7 +334,7 @@ export async function runRectificationLoop(
         });
       }
 
-      costAccum += agentResult.estimatedCost ?? 0;
+      costAccum += agentResult.estimatedCostUsd ?? 0;
 
       // G5: update session descriptor with latest protocolIds so the audit trail
       // reflects the session that actually ran (may differ after internal retries).
@@ -349,7 +349,7 @@ export async function runRectificationLoop(
       if (agentResult.success) {
         logger?.info("rectification", `Agent ${label} session complete`, {
           storyId: story.id,
-          cost: agentResult.estimatedCost,
+          cost: agentResult.estimatedCostUsd,
         });
       } else {
         logger?.warn("rectification", `Agent ${label} session failed`, {
@@ -360,7 +360,7 @@ export async function runRectificationLoop(
 
       return {
         agentSuccess: agentResult.success,
-        cost: agentResult.estimatedCost ?? 0,
+        cost: agentResult.estimatedCostUsd ?? 0,
         protocolIds: agentResult.protocolIds,
       };
     },
@@ -508,11 +508,11 @@ export async function runRectificationLoop(
             },
           });
 
-          costAccum += escalationRunResult.estimatedCost ?? 0;
+          costAccum += escalationRunResult.estimatedCostUsd ?? 0;
           logger?.info("rectification", "escalated rectification attempt cost", {
             storyId: story.id,
             escalatedTier,
-            cost: escalationRunResult.estimatedCost,
+            cost: escalationRunResult.estimatedCostUsd,
           });
 
           const escalationVerification = await _rectificationDeps.runVerification({

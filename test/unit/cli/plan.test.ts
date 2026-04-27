@@ -264,7 +264,7 @@ describe("planCommand", () => {
     const planSpy = mock(async (_options: any) => {});
     _planDeps.createManager = mock((_cfg: any) =>
       makeMockAgentManager({
-        runAsFn: async (_name: string, opts: any) => { await planSpy(opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }; },
+        runAsFn: async (_name: string, opts: any) => { await planSpy(opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }; },
       }),
     );
     // Simulate agent having written the PRD file to disk

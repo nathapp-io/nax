@@ -73,7 +73,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
           const { result, bundle: b, prompt } = await request.executeHop("claude", request.bundle, undefined, request.runOptions);
           return { result, fallbacks: [], finalBundle: b, finalPrompt: prompt };
         }
-        const result = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCost: 0.01 };
+        const result = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCostUsd: 0.01 };
         return { result, fallbacks: [], finalBundle: request.bundle, finalPrompt: request.runOptions.prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),

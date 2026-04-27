@@ -217,7 +217,7 @@ describe("cost tracking across 3 ACP sessions", () => {
         undefined,
         true,
       );
-      costs.push(result.estimatedCost);
+      costs.push(result.estimatedCostUsd);
     }
 
     expect(costs[0]).toBeGreaterThan(0);
@@ -251,7 +251,7 @@ describe("cost tracking across 3 ACP sessions", () => {
       true,
     );
 
-    expect(result.estimatedCost).toBe(0);
+    expect(result.estimatedCostUsd).toBe(0);
   });
 
   test("missing token usage returns zero cost", async () => {
@@ -276,6 +276,6 @@ describe("cost tracking across 3 ACP sessions", () => {
       true,
     );
 
-    expect(result.estimatedCost).toBe(0);
+    expect(result.estimatedCostUsd).toBe(0);
   });
 });

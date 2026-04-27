@@ -100,7 +100,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // s1 strict test-writer
+      { success: true, estimatedCostUsd: 0.01 }, // s1 strict test-writer
     ]);
 
     const configWithAutoStrategy = {
@@ -131,7 +131,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       ],
     });
 
-    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -155,7 +155,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       ],
     });
 
-    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
     const configWithStrictStrategy = {
       ...DEFAULT_CONFIG,
@@ -185,7 +185,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       ],
     });
 
-    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -212,7 +212,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       ],
     });
 
-    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
     const configWithLiteStrategy = {
       ...DEFAULT_CONFIG,

@@ -351,12 +351,12 @@ async function runRectificationLoop(
         await cleanupProcessTree(rectifyResult.pid);
       }
 
-      gateCostAccum += rectifyResult.estimatedCost ?? 0;
+      gateCostAccum += rectifyResult.estimatedCostUsd ?? 0;
 
       if (rectifyResult.success) {
         logger.info("tdd", "Rectification agent session complete", {
           storyId: story.id,
-          cost: rectifyResult.estimatedCost,
+          cost: rectifyResult.estimatedCostUsd,
         });
       } else {
         logger.warn("tdd", "Rectification agent session failed", {
@@ -378,7 +378,7 @@ async function runRectificationLoop(
 
       return {
         agentSuccess: rectifyResult.success,
-        cost: rectifyResult.estimatedCost ?? 0,
+        cost: rectifyResult.estimatedCostUsd ?? 0,
         isolationPassed,
       };
     },

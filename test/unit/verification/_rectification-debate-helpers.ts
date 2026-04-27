@@ -92,7 +92,7 @@ export function makeAgent(overrides: Partial<{ run: typeof mock; complete: typeo
       output: "done",
       rateLimited: false,
       durationMs: 10,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     })),
     complete: mock(async (_prompt: string) => ""),
     isInstalled: mock(async () => true),

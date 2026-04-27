@@ -119,14 +119,14 @@ export async function diagnoseAcceptanceFailure(
 
     const diagnosis = parseDiagnosisResult(result.output);
     if (diagnosis) {
-      return { ...diagnosis, cost: result.estimatedCost ?? 0 };
+      return { ...diagnosis, cost: result.estimatedCostUsd ?? 0 };
     }
 
     return {
       verdict: "source_bug",
       reasoning: "diagnosis failed — falling back to source fix",
       confidence: 0,
-      cost: result.estimatedCost ?? 0,
+      cost: result.estimatedCostUsd ?? 0,
     };
   } catch {
     return {
