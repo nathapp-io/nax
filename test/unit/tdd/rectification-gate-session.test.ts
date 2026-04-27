@@ -140,7 +140,7 @@ describe("rectification session reuse", () => {
     expect(sessionRoles[0]).toBe(sessionRoles[1]);
   });
 
-  test("keepOpen=true for all attempts except the last", async () => {
+  test("all attempts use the same sessionRole across retry attempts", async () => {
     const story = makeStory();
     const config = makeConfig(3); // maxRetries=3 — three attempts
     const agent = makeAgent();
@@ -171,14 +171,14 @@ describe("rectification session reuse", () => {
 
     expect(agent.calls.length).toBe(3);
 
-    // Attempts 1 and 2 (not last): keepOpen=true
-    expect(agent.calls[0]!.keepOpen).toBe(true);
-    expect(agent.calls[1]!.keepOpen).toBe(true);
-    // Last attempt: keepOpen=false so session closes normally
-    expect(agent.calls[2]!.keepOpen).toBe(false);
+    // All attempts must share the same sessionRole for session reuse (caller-managed per ADR-019)
+    const sessionRoles = agent.calls.map((c) => c.sessionRole);
+    expect(sessionRoles[0]).toBeDefined();
+    expect(sessionRoles[0]).toBe(sessionRoles[1]);
+    expect(sessionRoles[1]).toBe(sessionRoles[2]);
   });
 
-  test("session closes on the last attempt (keepOpen=false or undefined)", async () => {
+  test("rectification calls do not set keepOpen (caller-managed per ADR-019)", async () => {
     const story = makeStory();
     const config = makeConfig(2);
     const agent = makeAgent();
@@ -207,8 +207,10 @@ describe("rectification session reuse", () => {
     } as any);
 
     expect(agent.calls.length).toBe(2);
-    // Last attempt must NOT set keepOpen=true
-    expect(agent.calls[1]!.keepOpen).not.toBe(true);
+    // Session management is caller-managed (ADR-019) — keepOpen is not set by runRetryLoop
+    for (const call of agent.calls) {
+      expect(call.keepOpen).not.toBeDefined();
+    }
   });
 
   test("all attempts use the same sessionRole even without featureName", async () => {

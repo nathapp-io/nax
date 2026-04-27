@@ -14,18 +14,31 @@ import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
-import { formatSessionName } from "../session/naming";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
   type RectificationState,
   executeWithTimeout as _executeWithTimeout,
   parseTestOutput as _parseTestOutput,
   shouldRetryRectification as _shouldRetryRectification,
-  runSharedRectificationLoop,
+  runRetryLoop,
 } from "../verification";
 import { buildFailureRecords } from "../verification/failure-records";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
+
+/** Failure snapshot for the TDD rectification gate retry loop. */
+interface TddRectificationFailure {
+  testSummary: ReturnType<typeof _parseTestOutput>;
+  testOutput: string;
+  isolationPassed: boolean;
+}
+
+/** Result from one TDD rectification attempt. */
+interface TddRectificationAttemptResult {
+  agentSuccess: boolean;
+  cost: number;
+  isolationPassed: boolean;
+}
 
 /** Injectable deps for testability — avoids mock.module() contamination */
 export const _rectificationGateDeps = {
@@ -213,59 +226,29 @@ async function runRectificationLoop(
   featureName?: string,
   projectDir?: string,
 ): Promise<{ passed: boolean; cost: number }> {
-  const rectificationState: RectificationState = {
-    attempt: 0,
-    initialFailures: testSummary.failed,
-    currentFailures: testSummary.failed,
-  };
-
   logger.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
     failedTests: testSummary.failed,
     passedTests: testSummary.passed,
   });
 
-  // Build session name once so all rectification attempts share the same ACP session.
-  // This preserves full conversation context across retries (the agent knows what it already tried).
-  const rectificationSessionName = formatSessionName({
-    workdir,
-    featureName,
-    storyId: story.id,
-    role: "implementer",
-  });
-  logger.debug("tdd", "Rectification session name (shared across all attempts)", {
-    storyId: story.id,
-    sessionName: rectificationSessionName,
-  });
+  let gateCostAccum = 0;
 
-  const loopState = {
-    ...rectificationState,
+  const initialFailure: TddRectificationFailure = {
+    testSummary,
+    testOutput,
     isolationPassed: true,
   };
-  let gateCostAccum = 0;
-  let currentTestOutput = testOutput;
 
-  const fixed = await runSharedRectificationLoop({
-    stage: "tdd",
+  const outcome = await runRetryLoop<TddRectificationFailure, TddRectificationAttemptResult>({
+    stage: "rectification",
     storyId: story.id,
+    packageDir: workdir,
     maxAttempts: rectificationConfig.maxRetries,
-    state: loopState,
-    logger,
-    startMessage: "Full suite gate detected regressions",
-    startData: {
-      storyId: story.id,
-      failedTests: testSummary.failed,
-      passedTests: testSummary.passed,
-    },
-    attemptMessage: (attempt) => `-> Implementer rectification attempt ${attempt}/${rectificationConfig.maxRetries}`,
-    attemptData: (state) => ({
-      storyId: story.id,
-      currentFailures: state.currentFailures,
-    }),
-    canContinue: (state) =>
-      state.isolationPassed && _rectificationGateDeps.shouldRetryRectification(state, rectificationConfig),
-    buildPrompt: async () => {
-      const failureRecords: FailureRecord[] = buildFailureRecords(testSummary, currentTestOutput);
+    failure: initialFailure,
+    previousAttempts: [],
+    buildPrompt: (failure) => {
+      const failureRecords = buildFailureRecords(failure.testSummary, failure.testOutput);
       return RectifierPromptBuilder.for("tdd-suite-failure")
         .story(story)
         .priorFailures(failureRecords)
@@ -274,14 +257,12 @@ async function runRectificationLoop(
         .task()
         .build();
     },
-    runAttempt: async (attempt, rectificationPrompt) => {
-      const isLastAttempt = attempt >= rectificationConfig.maxRetries;
+    execute: async (prompt) => {
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
-
       const defaultAgent = agentManager.getDefault();
       const rectifyResult = await agentManager.run({
         runOptions: {
-          prompt: rectificationPrompt,
+          prompt,
           workdir,
           modelTier: implementerTier,
           modelDef: resolveModelForAgent(
@@ -298,7 +279,6 @@ async function runRectificationLoop(
           featureName,
           storyId: story.id,
           sessionRole: "implementer",
-          keepOpen: !isLastAttempt,
         },
       });
 
@@ -311,20 +291,17 @@ async function runRectificationLoop(
       if (rectifyResult.success) {
         logger.info("tdd", "Rectification agent session complete", {
           storyId: story.id,
-          attempt,
           cost: rectifyResult.estimatedCost,
         });
       } else {
         logger.warn("tdd", "Rectification agent session failed", {
           storyId: story.id,
-          attempt,
           exitCode: rectifyResult.exitCode,
         });
       }
 
       await autoCommitIfDirty(workdir, "tdd", "rectification", story.id);
 
-      // ADR-009: pass undefined when user hasn't configured patterns → broad regex fallback in isTestFile.
       const testFilePatterns =
         typeof config.execution?.smartTestRunner === "object"
           ? config.execution.smartTestRunner?.testFilePatterns
@@ -332,74 +309,57 @@ async function runRectificationLoop(
       const rectifyIsolation = lite
         ? undefined
         : await verifyImplementerIsolation(workdir, rectifyBeforeRef, testFilePatterns);
-      if (rectifyIsolation && !rectifyIsolation.passed) {
-        loopState.isolationPassed = false;
-        logger.error("tdd", "Rectification violated isolation", {
-          storyId: story.id,
-          attempt,
-          violations: rectifyIsolation.violations,
-        });
-      }
+      const isolationPassed = !rectifyIsolation || rectifyIsolation.passed;
+
+      return {
+        agentSuccess: rectifyResult.success,
+        cost: rectifyResult.estimatedCost ?? 0,
+        isolationPassed,
+      };
     },
-    checkResult: async (attempt, state) => {
-      if (!state.isolationPassed) {
-        return false;
+    verify: async (result) => {
+      if (!result.isolationPassed) {
+        return {
+          passed: false,
+          newFailure: {
+            testSummary: initialFailure.testSummary,
+            testOutput: initialFailure.testOutput,
+            isolationPassed: false,
+          },
+        };
       }
 
       const retryFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
         cwd: workdir,
       });
-      const retrySuitePassed = retryFullSuite.success && retryFullSuite.exitCode === 0;
-
-      if (retrySuitePassed) {
+      if (retryFullSuite.success && retryFullSuite.exitCode === 0) {
         logger.info("tdd", "Full suite gate passed after rectification!", {
           storyId: story.id,
-          attempt,
         });
-        return true;
+        return { passed: true };
       }
 
-      if (retryFullSuite.output) {
-        const newTestSummary = _rectificationGateDeps.parseTestOutput(retryFullSuite.output);
-        currentTestOutput = retryFullSuite.output;
-        state.currentFailures = newTestSummary.failed;
-        testSummary.failures = newTestSummary.failures;
-        testSummary.failed = newTestSummary.failed;
-        testSummary.passed = newTestSummary.passed;
-      }
-
-      return false;
-    },
-    onAttemptFailure: (attempt, state) => {
-      if (!state.isolationPassed) {
-        return;
-      }
-
-      logger.warn("tdd", "Full suite still failing after rectification attempt", {
-        storyId: story.id,
-        attempt,
-        remainingFailures: state.currentFailures,
-      });
+      const newTestSummary = _rectificationGateDeps.parseTestOutput(retryFullSuite.output ?? "");
+      return {
+        passed: false,
+        newFailure: {
+          testSummary: newTestSummary,
+          testOutput: retryFullSuite.output ?? "",
+          isolationPassed: true,
+        },
+      };
     },
   });
+
+  const fixed = outcome.outcome === "fixed";
 
   if (fixed) {
     return { passed: true, cost: gateCostAccum };
   }
 
-  const finalFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
-    cwd: workdir,
+  logger.warn("tdd", "[WARN] Full suite gate failed after rectification exhausted", {
+    storyId: story.id,
+    attempts: outcome.attempts,
   });
-  const finalSuitePassed = finalFullSuite.success && finalFullSuite.exitCode === 0;
-
-  if (!finalSuitePassed) {
-    logger.warn("tdd", "[WARN] Full suite gate failed after rectification exhausted", {
-      storyId: story.id,
-      attempts: rectificationState.attempt,
-      remainingFailures: rectificationState.currentFailures,
-    });
-    return { passed: false, cost: gateCostAccum };
-  }
-  logger.info("tdd", "Full suite gate passed", { storyId: story.id });
-  return { passed: true, cost: gateCostAccum };
+  return { passed: false, cost: gateCostAccum };
 }
