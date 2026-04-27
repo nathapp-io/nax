@@ -12,7 +12,7 @@ import type { AgentAdapter } from "../agents";
 import type { AgentResult } from "../agents/types";
 import type { PipelineContext } from "../pipeline/types";
 import type { SessionRunnerContext, StoryRunOutcome } from "../session/session-runner";
-import { runThreeSessionTddFromCtx } from "./orchestrator";
+import { runThreeSessionTddFromCtx } from "./orchestrator-ctx";
 import type { FailureCategory, ThreeSessionTddResult } from "./types";
 
 export interface ThreeSessionRunnerContext extends SessionRunnerContext {
