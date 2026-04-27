@@ -8,7 +8,7 @@
 
 import { validateAgentForTier, wrapAdapterAsManager } from "../../agents";
 import type { AgentRunRequest, IAgentManager } from "../../agents/manager-types";
-import type { AgentAdapter } from "../../agents/types";
+import type { AgentAdapter, AgentResult } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
 import type { ContextBundle } from "../../context/engine";
 import { failAndClose } from "../../execution/session-manager-runtime";
@@ -16,7 +16,7 @@ import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { buildHopCallback } from "../../operations/build-hop-callback";
-import { ThreeSessionRunner } from "../../tdd/three-session-runner";
+import { runThreeSessionTddFromCtx } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { isAmbiguousOutput, routeTddFailure } from "./execution-helpers";
@@ -53,34 +53,32 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      // Phase 2 refactor: dispatch through ThreeSessionRunner. Per-role
-      // SessionManager.runInSession inside runTddSession now handles state
-      // transitions (#589) and tokenUsage propagation (#590) automatically.
-      const tddRunner = new ThreeSessionRunner();
-      const outcome = await tddRunner.run({
-        pipelineContext: ctx,
+      const tddResult = await runThreeSessionTddFromCtx(ctx, {
         agent,
         dryRun: false,
         lite: isLiteMode,
-        // Base fields — ThreeSessionRunner reads pipelineContext for everything else.
-        sessionId: ctx.sessionId,
-        sessionManager: ctx.sessionManager,
-        defaultAgent,
-        runOptions: {
-          prompt: ctx.prompt ?? "",
-          workdir: ctx.workdir,
-          modelTier: ctx.routing.modelTier,
-          modelDef: resolveModelForAgent(
-            ctx.rootConfig.models,
-            ctx.routing.agent ?? defaultAgent,
-            ctx.routing.modelTier,
-            defaultAgent,
-          ),
-          timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-          pipelineStage: "run",
-          config: ctx.config,
-        },
       });
+      const primaryResult: AgentResult = {
+        success: tddResult.success,
+        estimatedCost: tddResult.totalCost,
+        rateLimited: false,
+        output: "",
+        exitCode: tddResult.success ? 0 : 1,
+        durationMs: tddResult.totalDurationMs ?? 0,
+        ...(tddResult.totalTokenUsage && { tokenUsage: tddResult.totalTokenUsage }),
+      };
+      const outcome = {
+        success: tddResult.success,
+        primaryResult,
+        totalCost: tddResult.totalCost,
+        totalTokenUsage: tddResult.totalTokenUsage,
+        fallbacks: [],
+        needsHumanReview: tddResult.needsHumanReview,
+        reviewReason: tddResult.reviewReason,
+        failureCategory: tddResult.failureCategory,
+        fullSuiteGatePassed: tddResult.fullSuiteGatePassed,
+        lite: tddResult.lite,
+      };
 
       ctx.agentResult = outcome.primaryResult;
 
