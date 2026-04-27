@@ -244,9 +244,7 @@ function makeMockGeneratorManager(
       : async () => ({ output: '', costUsd: 0, source: 'fallback' }),
     runAs: async () => ({ success: true, exitCode: 0, output: '', rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
     plan: async () => ({ specContent: '' }),
-    planAs: async () => ({ specContent: '' }),
     decompose: async () => ({ stories: [] }),
-    decomposeAs: async () => ({ stories: [] }),
   } as any;
 }
 

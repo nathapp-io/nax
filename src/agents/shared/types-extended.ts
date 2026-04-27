@@ -53,7 +53,7 @@ export interface PlanOptions {
   sessionRole?: string;
   /** Timeout in seconds — inherited from config.execution.sessionTimeoutSeconds */
   timeoutSeconds?: number;
-  /** Pre-resolved permissions from AgentManager.planAs() — adapter reads this instead of calling resolvePermissions(). */
+  /** Pre-resolved permissions — adapter reads this instead of calling resolvePermissions(). */
   resolvedPermissions?: ResolvedPermissions;
   /** Max interaction turns when interactionBridge is active (default: 10) */
   maxInteractionTurns?: number;

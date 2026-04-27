@@ -103,8 +103,6 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
     completeAs: mock(async () => ({ output: "", costUsd: 0 })),
     complete: mock(async () => ({ output: "", costUsd: 0 })),
-    planAs: mock(async () => ({ specContent: "" })),
-    decomposeAs: mock(async () => ({ stories: [] })),
     isUnavailable: () => false,
     markUnavailable: () => {},
     reset: () => {},

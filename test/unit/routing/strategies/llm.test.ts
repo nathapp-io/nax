@@ -80,8 +80,6 @@ function makeAgentManagerWithMocks({
       : mock(async (_name: string, _prompt: string, _opts?: any) => ({ output: "", costUsd: 0, source: "primary" as const })),
     run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
     runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
-    planAs: mock(async () => ({ result: { plan: "", estimatedCost: 0 }, fallbacks: [] })),
-    decomposeAs: mock(async () => ({ result: { stories: [] }, fallbacks: [] })),
     isUnavailable: () => false,
     markUnavailable: () => {},
     reset: () => {},
