@@ -148,6 +148,7 @@ export class ReviewOrchestrator {
     projectDir?: string,
     env?: Record<string, string | undefined>,
     naxIgnoreIndex?: NaxIgnoreIndex,
+    runtime?: import("../runtime").NaxRuntime,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -211,6 +212,7 @@ export class ReviewOrchestrator {
         projectDir,
         env,
         naxIgnoreIndex,
+        runtime,
       );
     } else {
       // Always split: mechanical checks first, then LLM checks independently.
@@ -243,6 +245,7 @@ export class ReviewOrchestrator {
         projectDir,
         env,
         naxIgnoreIndex,
+        runtime,
       );
 
       // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
@@ -297,6 +300,7 @@ export class ReviewOrchestrator {
             contextBundles?.semantic,
             projectDir,
             naxIgnoreIndex,
+            runtime,
           ),
           _orchestratorDeps.runAdversarialReview(
             workdir,
@@ -312,6 +316,7 @@ export class ReviewOrchestrator {
             contextBundles?.adversarial,
             projectDir,
             naxIgnoreIndex,
+            runtime,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -338,6 +343,7 @@ export class ReviewOrchestrator {
           undefined,
           env,
           naxIgnoreIndex,
+          runtime,
         );
         llmCheckResults = llmResult.checks;
       }
@@ -528,6 +534,7 @@ export class ReviewOrchestrator {
       ctx.projectDir,
       ctx.worktreeDependencyContext?.env,
       ctx.naxIgnoreIndex,
+      ctx.runtime,
     );
   }
 }

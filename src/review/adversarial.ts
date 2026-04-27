@@ -20,6 +20,8 @@ import { resolveModelForAgent } from "../config/schema-types";
 import { filterContextByRole } from "../context";
 import { createContextToolRuntime } from "../context/engine";
 import { getSafeLogger } from "../logger";
+import { adversarialReviewOp } from "../operations/adversarial-review";
+import { callOp } from "../operations/call";
 import type { ReviewFinding } from "../plugins/types";
 import type { UserStory } from "../prd";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
@@ -141,6 +143,7 @@ export async function runAdversarialReview(
   contextBundle?: import("../context/engine").ContextBundle,
   projectDir?: string,
   naxIgnoreIndex?: NaxIgnoreIndex,
+  runtime?: import("../runtime").NaxRuntime,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -238,167 +241,93 @@ export async function runAdversarialReview(
     if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
   }
 
-  // Build prompt
-  const basePrompt = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(story, adversarialConfig, {
-    mode: diffMode,
-    diff,
-    storyGitRef: effectiveRef,
-    stat,
-    priorFailures,
-    testInventory,
-    excludePatterns: adversarialConfig.excludePatterns,
-  });
-  const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
-
-  // Resolve model definition
-  const defaultAgent = agentManager.getDefault();
-  let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
-  try {
-    if (naxConfig?.models) {
-      resolvedModelDef = resolveModelForAgent(
-        naxConfig.models,
-        defaultAgent,
-        adversarialConfig.modelTier,
-        defaultAgent,
-      );
-    }
-  } catch {
-    // Use default model if resolution fails
-  }
-
-  // Adversarial review uses its own session (NOT the implementer session).
-  const adversarialSessionName = formatSessionName({
-    workdir,
-    featureName,
-    storyId: story.id,
-    role: "reviewer-adversarial",
-  });
-  const contextToolStory: UserStory = {
-    id: story.id,
-    title: story.title,
-    description: story.description,
-    acceptanceCriteria: story.acceptanceCriteria,
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-  };
-
-  const runOpts = {
-    workdir,
-    timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
-    modelTier: adversarialConfig.modelTier,
-    modelDef: resolvedModelDef,
-    pipelineStage: "review",
-    config: naxConfig ?? DEFAULT_CONFIG,
-    featureName,
-    storyId: story.id,
-    sessionRole: "reviewer-adversarial",
-    contextPullTools: contextBundle?.pullTools,
-    contextToolRuntime: contextBundle
-      ? createContextToolRuntime({
-          bundle: contextBundle,
-          story: contextToolStory,
-          config: naxConfig ?? DEFAULT_CONFIG,
-          repoRoot: workdir,
-        })
-      : undefined,
-  } as const;
-
-  const adapter = agentManager.getAgent(defaultAgent);
-  let rawResponse: string;
+  // ADR-019 Pattern A: when a NaxRuntime is available, dispatch via callOp so the
+  // hop routes through AgentManager.runWithFallback + buildHopCallback, firing the
+  // middleware chain and managing session lifecycle explicitly. The adversarialReviewOp
+  // hopBody handles the same-session JSON-parse retry.
+  //
+  // Falls back to the legacy keepOpen path when no runtime is available.
+  let parsed: AdversarialLLMResponse | null;
+  // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
+  // costAggregator. ReviewCheckResult.cost will be 0 for pipeline-managed reviews.
   let llmCost = 0;
-  let retryAttempted = false;
-  try {
-    // keepOpen: true — session stays alive so the JSON retry prompt has
-    // full conversation history. Closed explicitly below on the happy path, or
-    // by the retry call (keepOpen: false) when a retry is needed.
-    const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
-    rawResponse = runResult.output;
-    llmCost = runResult.estimatedCost ?? 0;
-    logger?.debug("adversarial", "LLM call complete", {
-      storyId: story.id,
-      responseLen: rawResponse.length,
-      estimatedCost: llmCost,
-    });
-  } catch (err) {
-    logger?.warn("adversarial", "LLM call failed — fail-open", {
-      storyId: story.id,
-      cause: String(err),
-    });
-    void adapter?.closePhysicalSession(adversarialSessionName, workdir);
-    return {
-      check: "adversarial",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: `skipped: LLM call failed — ${String(err)}`,
-      durationMs: Date.now() - startTime,
-    };
-  }
 
-  // Detect cap truncation before attempting parse — the ACP adapter tail-truncates
-  // output at MAX_AGENT_OUTPUT_CHARS, so a near-cap response is corrupted JSON and
-  // parsing it is pointless. Go straight to condensed retry in that case.
-  // For short unparseable responses (model misbehaved), use the standard retry.
-  const isTruncated = looksLikeTruncatedJson(rawResponse);
-  if (isTruncated || !parseAdversarialResponse(rawResponse)) {
-    retryAttempted = true;
-    const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
-    logger?.info("adversarial", "JSON parse failed, retrying (1/1)", {
+  if (runtime) {
+    const callCtx = {
+      runtime,
+      packageView: runtime.packages.resolve(workdir),
+      packageDir: workdir,
+      agentName: agentManager.getDefault(),
       storyId: story.id,
-      rawHead: rawResponse.slice(0, 200),
-      responseLen: rawResponse.length,
-      isTruncated,
-    });
+      featureName,
+      contextBundle,
+    };
+    let opResult: import("../operations/adversarial-review").AdversarialReviewOutput;
     try {
-      const retryResult = await agentManager.run({
-        runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
+      opResult = await callOp(callCtx, adversarialReviewOp, {
+        story,
+        adversarialConfig,
+        mode: diffMode,
+        diff,
+        storyGitRef: effectiveRef,
+        stat,
+        priorFailures,
+        testInventory,
+        excludePatterns: adversarialConfig.excludePatterns,
+        featureCtxBlock,
       });
-      rawResponse = retryResult.output;
-      llmCost += retryResult.estimatedCost ?? 0;
-      if (parseAdversarialResponse(rawResponse)) {
-        logger?.info("adversarial", "JSON retry succeeded", {
+    } catch (err) {
+      logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+      return {
+        check: "adversarial",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: `skipped: LLM call failed — ${String(err)}`,
+        durationMs: Date.now() - startTime,
+      };
+    }
+    if (opResult.failOpen) {
+      logger?.warn("adversarial", "Retry exhausted — fail-open", { storyId: story.id });
+      if (naxConfig?.review?.audit?.enabled) {
+        void _adversarialDeps.writeReviewAudit({
+          reviewer: "adversarial",
+          sessionName: "",
+          workdir,
           storyId: story.id,
-          responseLen: rawResponse.length,
+          featureName,
+          parsed: false,
+          looksLikeFail: false,
+          result: null,
         });
       }
-    } catch (err) {
-      logger?.warn("adversarial", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+      return {
+        check: "adversarial",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: "adversarial review: could not parse LLM response (fail-open)",
+        durationMs: Date.now() - startTime,
+      };
     }
-  }
-
-  // Close the session — covers both the happy path (no retry) and the retry-exhausted
-  // path (retry threw or returned unparseable JSON, so keepOpen: false on the
-  // retry call may not have closed it). Best-effort: already-closed sessions no-op.
-  void adapter?.closePhysicalSession(adversarialSessionName, workdir);
-
-  // Parse response — fail-closed when LLM clearly intended to fail,
-  // fail-open only when response is truly unparseable with no signal.
-  const parsed = parseAdversarialResponse(rawResponse);
-  if (!parsed) {
-    const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
-    if (naxConfig?.review?.audit?.enabled) {
-      void _adversarialDeps.writeReviewAudit({
-        reviewer: "adversarial",
-        sessionName: adversarialSessionName,
-        workdir,
-        storyId: story.id,
-        featureName,
-        parsed: false,
-        looksLikeFail,
-        result: null,
-      });
-    }
-    if (looksLikeFail) {
+    if (opResult.looksLikeFail) {
       logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
         storyId: story.id,
-        retryAttempted,
-        rawHead: rawResponse.slice(0, 200),
       });
+      if (naxConfig?.review?.audit?.enabled) {
+        void _adversarialDeps.writeReviewAudit({
+          reviewer: "adversarial",
+          sessionName: "",
+          workdir,
+          storyId: story.id,
+          featureName,
+          parsed: false,
+          looksLikeFail: true,
+          result: null,
+        });
+      }
       return {
         check: "adversarial",
         success: false,
@@ -407,38 +336,190 @@ export async function runAdversarialReview(
         output:
           "adversarial review: LLM response truncated but indicated failure (passed:false found in partial response)",
         durationMs: Date.now() - startTime,
-        cost: llmCost,
+      };
+    }
+    parsed = { passed: opResult.passed, findings: opResult.findings as AdversarialLLMFinding[] };
+  } else {
+    // Legacy keepOpen path — used when no runtime is available (standalone callers).
+    const basePrompt = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(story, adversarialConfig, {
+      mode: diffMode,
+      diff,
+      storyGitRef: effectiveRef,
+      stat,
+      priorFailures,
+      testInventory,
+      excludePatterns: adversarialConfig.excludePatterns,
+    });
+    const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
+
+    const defaultAgent = agentManager.getDefault();
+    let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
+    try {
+      if (naxConfig?.models) {
+        resolvedModelDef = resolveModelForAgent(
+          naxConfig.models,
+          defaultAgent,
+          adversarialConfig.modelTier,
+          defaultAgent,
+        );
+      }
+    } catch {
+      // Use default model if resolution fails
+    }
+
+    const adversarialSessionName = formatSessionName({
+      workdir,
+      featureName,
+      storyId: story.id,
+      role: "reviewer-adversarial",
+    });
+    const contextToolStory: UserStory = {
+      id: story.id,
+      title: story.title,
+      description: story.description,
+      acceptanceCriteria: story.acceptanceCriteria,
+      tags: [],
+      dependencies: [],
+      status: "in-progress",
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    };
+    const runOpts = {
+      workdir,
+      timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
+      modelTier: adversarialConfig.modelTier,
+      modelDef: resolvedModelDef,
+      pipelineStage: "review",
+      config: naxConfig ?? DEFAULT_CONFIG,
+      featureName,
+      storyId: story.id,
+      sessionRole: "reviewer-adversarial",
+      contextPullTools: contextBundle?.pullTools,
+      contextToolRuntime: contextBundle
+        ? createContextToolRuntime({
+            bundle: contextBundle,
+            story: contextToolStory,
+            config: naxConfig ?? DEFAULT_CONFIG,
+            repoRoot: workdir,
+          })
+        : undefined,
+    } as const;
+
+    const adapter = agentManager.getAgent(defaultAgent);
+    let rawResponse: string;
+    let retryAttempted = false;
+    try {
+      const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
+      rawResponse = runResult.output;
+      llmCost = runResult.estimatedCost ?? 0;
+      logger?.debug("adversarial", "LLM call complete (legacy)", {
+        storyId: story.id,
+        responseLen: rawResponse.length,
+        estimatedCost: llmCost,
+      });
+    } catch (err) {
+      logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+      void adapter?.closePhysicalSession(adversarialSessionName, workdir);
+      return {
+        check: "adversarial",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: `skipped: LLM call failed — ${String(err)}`,
+        durationMs: Date.now() - startTime,
       };
     }
 
-    logger?.warn("adversarial", "Retry exhausted — fail-open", {
-      storyId: story.id,
-      retries: retryAttempted ? 1 : 0,
-      rawHead: rawResponse.slice(0, 200),
-      responseLen: rawResponse.length,
-    });
-    return {
-      check: "adversarial",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: "adversarial review: could not parse LLM response (fail-open)",
-      durationMs: Date.now() - startTime,
-      cost: llmCost,
-    };
-  }
+    const isTruncated = looksLikeTruncatedJson(rawResponse);
+    if (isTruncated || !parseAdversarialResponse(rawResponse)) {
+      retryAttempted = true;
+      const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
+      logger?.info("adversarial", "JSON parse failed, retrying (1/1)", {
+        storyId: story.id,
+        rawHead: rawResponse.slice(0, 200),
+        responseLen: rawResponse.length,
+        isTruncated,
+      });
+      try {
+        const retryResult = await agentManager.run({
+          runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
+        });
+        rawResponse = retryResult.output;
+        llmCost += retryResult.estimatedCost ?? 0;
+        if (parseAdversarialResponse(rawResponse)) {
+          logger?.info("adversarial", "JSON retry succeeded", { storyId: story.id, responseLen: rawResponse.length });
+        }
+      } catch (err) {
+        logger?.warn("adversarial", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+      }
+    }
 
-  if (naxConfig?.review?.audit?.enabled) {
-    void _adversarialDeps.writeReviewAudit({
-      reviewer: "adversarial",
-      sessionName: adversarialSessionName,
-      workdir,
-      storyId: story.id,
-      featureName,
-      parsed: true,
-      result: { passed: parsed.passed, findings: parsed.findings },
-    });
+    void adapter?.closePhysicalSession(adversarialSessionName, workdir);
+
+    const legacyParsed = parseAdversarialResponse(rawResponse);
+    if (!legacyParsed) {
+      const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+      if (naxConfig?.review?.audit?.enabled) {
+        void _adversarialDeps.writeReviewAudit({
+          reviewer: "adversarial",
+          sessionName: adversarialSessionName,
+          workdir,
+          storyId: story.id,
+          featureName,
+          parsed: false,
+          looksLikeFail,
+          result: null,
+        });
+      }
+      if (looksLikeFail) {
+        logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
+          storyId: story.id,
+          retryAttempted,
+          rawHead: rawResponse.slice(0, 200),
+        });
+        return {
+          check: "adversarial",
+          success: false,
+          command: "",
+          exitCode: 1,
+          output:
+            "adversarial review: LLM response truncated but indicated failure (passed:false found in partial response)",
+          durationMs: Date.now() - startTime,
+          cost: llmCost,
+        };
+      }
+      logger?.warn("adversarial", "Retry exhausted — fail-open", {
+        storyId: story.id,
+        retries: retryAttempted ? 1 : 0,
+        rawHead: rawResponse.slice(0, 200),
+        responseLen: rawResponse.length,
+      });
+      return {
+        check: "adversarial",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: "adversarial review: could not parse LLM response (fail-open)",
+        durationMs: Date.now() - startTime,
+        cost: llmCost,
+      };
+    }
+    parsed = legacyParsed;
+    if (naxConfig?.review?.audit?.enabled) {
+      void _adversarialDeps.writeReviewAudit({
+        reviewer: "adversarial",
+        sessionName: adversarialSessionName,
+        workdir,
+        storyId: story.id,
+        featureName,
+        parsed: true,
+        looksLikeFail: false,
+        result: legacyParsed,
+      });
+    }
   }
 
   const threshold = blockingThreshold ?? "error";

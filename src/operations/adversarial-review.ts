@@ -19,12 +19,19 @@ export interface AdversarialReviewInput {
   priorFailures?: PriorFailure[];
   testInventory?: TestInventory;
   excludePatterns?: string[];
+  /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
+  featureCtxBlock?: string;
 }
 
 export interface AdversarialReviewOutput {
   passed: boolean;
   findings: LlmReviewFinding[];
   failOpen?: boolean;
+  /**
+   * True when the raw output could not be parsed but contained `"passed": false`.
+   * Callers should treat this as a hard failure rather than fail-open.
+   */
+  looksLikeFail?: boolean;
 }
 
 type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
@@ -65,7 +72,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   config: reviewConfigSelector,
   hopBody: adversarialReviewHopBody,
   build(input, _ctx) {
-    const prompt = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
+    const base = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
       input.story,
       input.adversarialConfig,
       {
@@ -78,13 +85,17 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         excludePatterns: input.excludePatterns,
       },
     );
+    const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;
     return {
       role: { id: "role", content: "", overridable: false },
-      task: { id: "task", content: prompt, overridable: false },
+      task: { id: "task", content, overridable: false },
     };
   },
   parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
-    return parseLLMShape(raw) ?? FAIL_OPEN;
+    const parsed = parseLLMShape(raw);
+    if (parsed) return parsed;
+    if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
+    return FAIL_OPEN;
   },
 };

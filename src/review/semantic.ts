@@ -16,6 +16,8 @@ import { createContextToolRuntime } from "../context/engine";
 import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
 import { getSafeLogger } from "../logger";
+import { callOp } from "../operations/call";
+import { semanticReviewOp } from "../operations/semantic-review";
 import type { ReviewFinding } from "../plugins/types";
 import type { UserStory } from "../prd";
 import { ReviewPromptBuilder } from "../prompts";
@@ -188,6 +190,7 @@ export async function runSemanticReview(
   contextBundle?: import("../context/engine").ContextBundle,
   projectDir?: string,
   naxIgnoreIndex?: NaxIgnoreIndex,
+  runtime?: import("../runtime").NaxRuntime,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -485,149 +488,96 @@ export async function runSemanticReview(
     };
   }
 
-  // Call LLM via agent.run() with own reviewer session (not the implementer session).
-  // The reviewer works from diff + tools, not from implementer conversation history.
-  // See #414: supersedes #262 US-003 session-sharing design.
-  const reviewerSessionName = formatSessionName({
-    workdir,
-    featureName,
-    storyId: story.id,
-    role: "reviewer-semantic",
-  });
-  const contextToolStory: UserStory = {
-    id: story.id,
-    title: story.title,
-    description: story.description,
-    acceptanceCriteria: story.acceptanceCriteria,
-    tags: [],
-    dependencies: [],
-    status: "in-progress",
-    passes: false,
-    escalations: [],
-    attempts: 0,
-  };
-  const defaultAgent = agentManager.getDefault();
-  const adapter = agentManager.getAgent(defaultAgent);
-  let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
-  try {
-    if (naxConfig?.models) {
-      resolvedModelDef = resolveModelForAgent(naxConfig.models, defaultAgent, semanticConfig.modelTier, defaultAgent);
-    }
-  } catch {
-    // Use default model if resolution fails
-  }
-
-  const runOpts = {
-    workdir,
-    timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
-    modelTier: semanticConfig.modelTier,
-    modelDef: resolvedModelDef,
-    pipelineStage: "review",
-    config: naxConfig ?? DEFAULT_CONFIG,
-    featureName,
-    storyId: story.id,
-    sessionRole: "reviewer-semantic",
-    contextPullTools: contextBundle?.pullTools,
-    contextToolRuntime: contextBundle
-      ? createContextToolRuntime({
-          bundle: contextBundle,
-          story: contextToolStory,
-          config: naxConfig ?? DEFAULT_CONFIG,
-          repoRoot: workdir,
-        })
-      : undefined,
-  } as const;
-
-  let rawResponse: string;
+  // ADR-019 Pattern A: when a NaxRuntime is available, dispatch via callOp so the
+  // hop routes through AgentManager.runWithFallback + buildHopCallback, firing the
+  // middleware chain (audit, cost, cancellation) and managing session lifecycle
+  // explicitly via openSession + runAsSession × N + closeSession. The semanticReviewOp
+  // hopBody handles the same-session JSON-parse retry.
+  //
+  // Falls back to the legacy keepOpen path when no runtime is available (standalone
+  // callers, tests that only pass agentManager).
+  let parsed: LLMResponse | null;
+  // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
+  // costAggregator directly. ReviewCheckResult.cost will be 0 for pipeline-managed
+  // reviews; per-stage cost roll-up is the trade-off for ADR-019 session-lifecycle
+  // ownership. Track in follow-up if per-check cost breakdown is needed.
   let llmCost = 0;
-  let retryAttempted = false;
-  try {
-    // keepOpen: true — session stays alive so the JSON retry prompt has
-    // full conversation history. Closed explicitly below on the happy path, or
-    // by the retry call (keepOpen: false) when a retry is needed.
-    const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
-    rawResponse = runResult.output;
-    llmCost = runResult.estimatedCost ?? 0;
-    logger?.debug("semantic", "LLM call complete", {
-      storyId: story.id,
-      responseLen: rawResponse.length,
-      estimatedCost: llmCost,
-    });
-  } catch (err) {
-    logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-    void adapter?.closePhysicalSession(reviewerSessionName, workdir);
-    return {
-      check: "semantic",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: `skipped: LLM call failed — ${String(err)}`,
-      durationMs: Date.now() - startTime,
-    };
-  }
 
-  // Detect cap truncation before attempting parse — the ACP adapter tail-truncates
-  // output at MAX_AGENT_OUTPUT_CHARS, so a near-cap response is corrupted JSON and
-  // parsing it is pointless. Go straight to condensed retry in that case.
-  // For short unparseable responses (model misbehaved), use the standard retry.
-  const isTruncated = looksLikeTruncatedJson(rawResponse);
-  if (isTruncated || !parseLLMResponse(rawResponse)) {
-    retryAttempted = true;
-    const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
-    logger?.info("semantic", "JSON parse failed, retrying (1/1)", {
+  if (runtime) {
+    const callCtx = {
+      runtime,
+      packageView: runtime.packages.resolve(workdir),
+      packageDir: workdir,
+      agentName: agentManager.getDefault(),
       storyId: story.id,
-      rawHead: rawResponse.slice(0, 200),
-      responseLen: rawResponse.length,
-      isTruncated,
-    });
+      featureName,
+      contextBundle,
+    };
+    let opResult: import("../operations/semantic-review").SemanticReviewOutput;
     try {
-      const retryResult = await agentManager.run({
-        runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
+      opResult = await callOp(callCtx, semanticReviewOp, {
+        story,
+        semanticConfig,
+        mode: diffMode,
+        diff,
+        storyGitRef: effectiveRef,
+        stat,
+        priorFailures,
+        excludePatterns,
+        featureCtxBlock,
       });
-      rawResponse = retryResult.output;
-      llmCost += retryResult.estimatedCost ?? 0;
-      if (parseLLMResponse(rawResponse)) {
-        logger?.info("semantic", "JSON retry succeeded", {
+    } catch (err) {
+      logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+      return {
+        check: "semantic",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: `skipped: LLM call failed — ${String(err)}`,
+        durationMs: Date.now() - startTime,
+      };
+    }
+    if (opResult.failOpen) {
+      logger?.warn("semantic", "Retry exhausted — fail-open", { storyId: story.id });
+      if (naxConfig?.review?.audit?.enabled) {
+        void _semanticDeps.writeReviewAudit({
+          reviewer: "semantic",
+          sessionName: "",
+          workdir,
           storyId: story.id,
-          responseLen: rawResponse.length,
+          featureName,
+          parsed: false,
+          looksLikeFail: false,
+          result: null,
         });
       }
-    } catch (err) {
-      logger?.warn("semantic", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+      return {
+        check: "semantic",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: "semantic review: could not parse LLM response (fail-open)",
+        durationMs: Date.now() - startTime,
+      };
     }
-  }
-
-  // Close the session — covers both the happy path (no retry) and the retry-exhausted
-  // path (retry threw or returned unparseable JSON, so keepOpen: false on the
-  // retry call may not have closed it). Best-effort: already-closed sessions no-op.
-  void adapter?.closePhysicalSession(reviewerSessionName, workdir);
-
-  // Parse response — fail-closed when LLM clearly intended to fail,
-  // fail-open only when response is truly unparseable with no signal.
-  const parsed = parseLLMResponse(rawResponse);
-  if (!parsed) {
-    // Check if truncated response contains "passed": false — LLM intended to fail
-    // but output was cut off mid-response. Treating this as a pass is incorrect (#105).
-    const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
-    if (naxConfig?.review?.audit?.enabled) {
-      void _semanticDeps.writeReviewAudit({
-        reviewer: "semantic",
-        sessionName: reviewerSessionName,
-        workdir,
-        storyId: story.id,
-        featureName,
-        parsed: false,
-        looksLikeFail,
-        result: null,
-      });
-    }
-    if (looksLikeFail) {
+    if (opResult.looksLikeFail) {
       logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
         storyId: story.id,
-        retryAttempted,
-        rawHead: rawResponse.slice(0, 200),
       });
+      if (naxConfig?.review?.audit?.enabled) {
+        void _semanticDeps.writeReviewAudit({
+          reviewer: "semantic",
+          sessionName: "",
+          workdir,
+          storyId: story.id,
+          featureName,
+          parsed: false,
+          looksLikeFail: true,
+          result: null,
+        });
+      }
       return {
         check: "semantic",
         success: false,
@@ -636,42 +586,166 @@ export async function runSemanticReview(
         output:
           "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
         durationMs: Date.now() - startTime,
-        cost: llmCost,
+      };
+    }
+    parsed = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
+  } else {
+    // Legacy keepOpen path — used when no runtime is available (standalone callers).
+    const reviewerSessionName = formatSessionName({
+      workdir,
+      featureName,
+      storyId: story.id,
+      role: "reviewer-semantic",
+    });
+    const contextToolStory: UserStory = {
+      id: story.id,
+      title: story.title,
+      description: story.description,
+      acceptanceCriteria: story.acceptanceCriteria,
+      tags: [],
+      dependencies: [],
+      status: "in-progress",
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    };
+    const defaultAgent = agentManager.getDefault();
+    const adapter = agentManager.getAgent(defaultAgent);
+    let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
+    try {
+      if (naxConfig?.models) {
+        resolvedModelDef = resolveModelForAgent(naxConfig.models, defaultAgent, semanticConfig.modelTier, defaultAgent);
+      }
+    } catch {
+      // Use default model if resolution fails
+    }
+
+    const runOpts = {
+      workdir,
+      timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
+      modelTier: semanticConfig.modelTier,
+      modelDef: resolvedModelDef,
+      pipelineStage: "review",
+      config: naxConfig ?? DEFAULT_CONFIG,
+      featureName,
+      storyId: story.id,
+      sessionRole: "reviewer-semantic",
+      contextPullTools: contextBundle?.pullTools,
+      contextToolRuntime: contextBundle
+        ? createContextToolRuntime({
+            bundle: contextBundle,
+            story: contextToolStory,
+            config: naxConfig ?? DEFAULT_CONFIG,
+            repoRoot: workdir,
+          })
+        : undefined,
+    } as const;
+
+    let rawResponse: string;
+    let retryAttempted = false;
+    try {
+      const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
+      rawResponse = runResult.output;
+      llmCost = runResult.estimatedCost ?? 0;
+      logger?.debug("semantic", "LLM call complete (legacy)", {
+        storyId: story.id,
+        responseLen: rawResponse.length,
+        estimatedCost: llmCost,
+      });
+    } catch (err) {
+      logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+      void adapter?.closePhysicalSession(reviewerSessionName, workdir);
+      return {
+        check: "semantic",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: `skipped: LLM call failed — ${String(err)}`,
+        durationMs: Date.now() - startTime,
       };
     }
 
-    logger?.warn("semantic", "Retry exhausted — fail-open", {
-      storyId: story.id,
-      retries: retryAttempted ? 1 : 0,
-      rawHead: rawResponse.slice(0, 200),
-      responseLen: rawResponse.length,
-    });
-    return {
-      check: "semantic",
-      success: true,
-      failOpen: true,
-      command: "",
-      exitCode: 0,
-      output: "semantic review: could not parse LLM response (fail-open)",
-      durationMs: Date.now() - startTime,
-      cost: llmCost,
-    };
+    const isTruncated = looksLikeTruncatedJson(rawResponse);
+    if (isTruncated || !parseLLMResponse(rawResponse)) {
+      retryAttempted = true;
+      const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
+      logger?.info("semantic", "JSON parse failed, retrying (1/1)", {
+        storyId: story.id,
+        rawHead: rawResponse.slice(0, 200),
+        responseLen: rawResponse.length,
+        isTruncated,
+      });
+      try {
+        const retryResult = await agentManager.run({
+          runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
+        });
+        rawResponse = retryResult.output;
+        llmCost += retryResult.estimatedCost ?? 0;
+        if (parseLLMResponse(rawResponse)) {
+          logger?.info("semantic", "JSON retry succeeded", { storyId: story.id, responseLen: rawResponse.length });
+        }
+      } catch (err) {
+        logger?.warn("semantic", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+      }
+    }
+
+    void adapter?.closePhysicalSession(reviewerSessionName, workdir);
+
+    const legacyParsed = parseLLMResponse(rawResponse);
+    if (!legacyParsed) {
+      const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+      if (naxConfig?.review?.audit?.enabled) {
+        void _semanticDeps.writeReviewAudit({
+          reviewer: "semantic",
+          sessionName: reviewerSessionName,
+          workdir,
+          storyId: story.id,
+          featureName,
+          parsed: false,
+          looksLikeFail,
+          result: null,
+        });
+      }
+      if (looksLikeFail) {
+        logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+          storyId: story.id,
+          retryAttempted,
+          rawHead: rawResponse.slice(0, 200),
+        });
+        return {
+          check: "semantic",
+          success: false,
+          command: "",
+          exitCode: 1,
+          output:
+            "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
+          durationMs: Date.now() - startTime,
+          cost: llmCost,
+        };
+      }
+      logger?.warn("semantic", "Retry exhausted — fail-open", {
+        storyId: story.id,
+        retries: retryAttempted ? 1 : 0,
+        rawHead: rawResponse.slice(0, 200),
+        responseLen: rawResponse.length,
+      });
+      return {
+        check: "semantic",
+        success: true,
+        failOpen: true,
+        command: "",
+        exitCode: 0,
+        output: "semantic review: could not parse LLM response (fail-open)",
+        durationMs: Date.now() - startTime,
+        cost: llmCost,
+      };
+    }
+    parsed = legacyParsed;
   }
 
   const sanitizedFindings = sanitizeRefModeFindings(parsed.findings, diffMode);
   const sanitizedParsed: LLMResponse = { ...parsed, findings: sanitizedFindings };
-
-  if (naxConfig?.review?.audit?.enabled) {
-    void _semanticDeps.writeReviewAudit({
-      reviewer: "semantic",
-      sessionName: reviewerSessionName,
-      workdir,
-      storyId: story.id,
-      featureName,
-      parsed: true,
-      result: { passed: sanitizedParsed.passed, findings: sanitizedParsed.findings },
-    });
-  }
 
   // Split findings by blocking threshold
   const threshold = blockingThreshold ?? "error";
