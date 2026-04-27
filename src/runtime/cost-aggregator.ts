@@ -113,8 +113,8 @@ export class CostAggregator implements ICostAggregator {
   private readonly _events: CostEvent[] = [];
   private readonly _errors: CostErrorEvent[] = [];
   private _draining = false;
-  private _inFlightEvents: CostEvent[] = [];
-  private _inFlightErrors: CostErrorEvent[] = [];
+  private readonly _inFlightEvents: CostEvent[] = [];
+  private readonly _inFlightErrors: CostErrorEvent[] = [];
 
   constructor(
     private readonly _runId: string,
@@ -179,34 +179,24 @@ export class CostAggregator implements ICostAggregator {
   async drain(): Promise<void> {
     this._draining = true;
     try {
-      const events = [...this._events];
-      const errors = [...this._errors];
-      this._events.length = 0;
-      this._errors.length = 0;
+      const events = this._events.splice(0);
+      const errors = this._errors.splice(0);
 
-      if (
-        events.length === 0 &&
-        errors.length === 0 &&
-        this._inFlightEvents.length === 0 &&
-        this._inFlightErrors.length === 0
-      )
-        return;
+      if (events.length === 0 && errors.length === 0) return;
 
       mkdirSync(this._drainDir, { recursive: true });
       const path = join(this._drainDir, `${this._runId}.jsonl`);
 
       const sorted = [...events, ...errors].sort((a, b) => a.ts - b.ts);
-      const content = `${sorted.map((e) => JSON.stringify(e)).join("\n")}\n`;
-      await _costAggDeps.write(path, content);
+      await _costAggDeps.write(path, `${sorted.map((e) => JSON.stringify(e)).join("\n")}\n`);
 
-      if (this._inFlightEvents.length > 0 || this._inFlightErrors.length > 0) {
-        const lateEvents = [...this._inFlightEvents];
-        const lateErrors = [...this._inFlightErrors];
-        this._inFlightEvents.length = 0;
-        this._inFlightErrors.length = 0;
-        const lateSorted = [...lateEvents, ...lateErrors].sort((a, b) => a.ts - b.ts);
-        const lateContent = `${lateSorted.map((e) => JSON.stringify(e)).join("\n")}\n`;
-        await _costAggDeps.write(path, lateContent);
+      // Flush any events that arrived during the async write.
+      // Re-write the complete merged file so the first batch is not lost.
+      const lateEvents = this._inFlightEvents.splice(0);
+      const lateErrors = this._inFlightErrors.splice(0);
+      if (lateEvents.length > 0 || lateErrors.length > 0) {
+        const allSorted = [...sorted, ...lateEvents, ...lateErrors].sort((a, b) => a.ts - b.ts);
+        await _costAggDeps.write(path, `${allSorted.map((e) => JSON.stringify(e)).join("\n")}\n`);
       }
     } finally {
       this._draining = false;

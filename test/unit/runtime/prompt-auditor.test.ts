@@ -90,7 +90,8 @@ describe("PromptAuditor", () => {
       await flushTask;
 
       expect(written).toHaveLength(2);
-      const allLines = written.join("").trim().split("\n").filter(Boolean);
+      // The second write is the complete merged file — both entries must appear in it.
+      const allLines = written[1].trim().split("\n").filter(Boolean);
       expect(allLines).toHaveLength(2);
       expect(JSON.parse(allLines[0]).prompt).toBe("first");
       expect(JSON.parse(allLines[1]).prompt).toBe("second");
@@ -115,7 +116,9 @@ describe("PromptAuditor", () => {
       await flushTask;
 
       expect(written).toHaveLength(2);
-      const allLines = written.join("").trim().split("\n").filter(Boolean);
+      // The second write is the complete merged file — all entries must appear in it.
+      const allLines = written[1].trim().split("\n").filter(Boolean);
+      expect(allLines).toHaveLength(2);
       expect(JSON.parse(allLines[1]).errorCode).toBe("TIMEOUT");
       _promptAuditorDeps.write = orig;
     });

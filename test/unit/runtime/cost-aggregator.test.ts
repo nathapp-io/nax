@@ -139,7 +139,8 @@ describe("CostAggregator", () => {
       await drainTask;
 
       expect(written).toHaveLength(2);
-      const allLines = written.join("").trim().split("\n").filter(Boolean);
+      // The second write is the complete merged file — both events must appear in it.
+      const allLines = written[1].trim().split("\n").filter(Boolean);
       expect(allLines).toHaveLength(2);
       expect(JSON.parse(allLines[0]).ts).toBe(1000);
       expect(JSON.parse(allLines[1]).ts).toBe(2000);
@@ -164,7 +165,9 @@ describe("CostAggregator", () => {
       await drainTask;
 
       expect(written).toHaveLength(2);
-      const allLines = written.join("").trim().split("\n").filter(Boolean);
+      // The second write is the complete merged file — all events must appear in it.
+      const allLines = written[1].trim().split("\n").filter(Boolean);
+      expect(allLines).toHaveLength(2);
       expect(JSON.parse(allLines[1]).errorCode).toBe("TIMEOUT");
       _costAggDeps.write = origWrite;
     });

@@ -64,7 +64,7 @@ export const _promptAuditorDeps = {
 export class PromptAuditor implements IPromptAuditor {
   private readonly _entries: (PromptAuditEntry | PromptAuditErrorEntry)[] = [];
   private _draining = false;
-  private _inFlightEntries: (PromptAuditEntry | PromptAuditErrorEntry)[] = [];
+  private readonly _inFlightEntries: (PromptAuditEntry | PromptAuditErrorEntry)[] = [];
 
   constructor(
     private readonly _runId: string,
@@ -90,21 +90,20 @@ export class PromptAuditor implements IPromptAuditor {
   async flush(): Promise<void> {
     this._draining = true;
     try {
-      const entries = [...this._entries];
-      this._entries.length = 0;
+      const entries = this._entries.splice(0);
 
-      if (entries.length === 0 && this._inFlightEntries.length === 0) return;
+      if (entries.length === 0) return;
 
       mkdirSync(this._flushDir, { recursive: true });
       const path = join(this._flushDir, `${this._runId}.jsonl`);
-      const content = `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`;
-      await _promptAuditorDeps.write(path, content);
+      await _promptAuditorDeps.write(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
 
-      if (this._inFlightEntries.length > 0) {
-        const lateEntries = [...this._inFlightEntries];
-        this._inFlightEntries.length = 0;
-        const lateContent = `${lateEntries.map((e) => JSON.stringify(e)).join("\n")}\n`;
-        await _promptAuditorDeps.write(path, lateContent);
+      // Flush any entries that arrived during the async write.
+      // Re-write the complete merged file so the first batch is not lost.
+      const lateEntries = this._inFlightEntries.splice(0);
+      if (lateEntries.length > 0) {
+        const allEntries = [...entries, ...lateEntries];
+        await _promptAuditorDeps.write(path, `${allEntries.map((e) => JSON.stringify(e)).join("\n")}\n`);
       }
     } finally {
       this._draining = false;
