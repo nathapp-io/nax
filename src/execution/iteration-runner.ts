@@ -182,6 +182,7 @@ export async function runIteration(
     agentManager: ctx.agentManager,
     pluginProviderCache: ctx.pluginProviderCache,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
+    runtime: ctx.runtime,
   };
 
   ctx.statusWriter.setPrd(prd);

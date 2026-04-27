@@ -596,6 +596,11 @@ export async function runSemanticReview(
     }
     parsed = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
   } else {
+    // @deprecated Legacy keepOpen path — runtime is always present under executeUnified().
+    // TODO(ADR-019): Remove this branch once all callers thread runtime (tracked in dogfood findings 2026-04-27).
+    logger?.warn("semantic", "LLM call via legacy agentManager.run — runtime not threaded, middleware skipped", {
+      storyId: story.id,
+    });
     // Legacy keepOpen path — used when no runtime is available (standalone callers).
     const reviewerSessionName = formatSessionName({
       workdir,

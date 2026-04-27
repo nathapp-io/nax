@@ -144,6 +144,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       agentGetFn: ctx.agentGetFn,
       agentManager: ctx.agentManager,
       acceptanceTestPaths: ctx.acceptanceTestPaths,
+      runtime: ctx.runtime,
     };
 
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
