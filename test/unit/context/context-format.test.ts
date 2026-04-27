@@ -168,7 +168,6 @@ describe("Context Builder", () => {
         expect(markdown).toContain("# Story Context");
         expect(markdown).toContain("## Relevant Source Files");
         expect(markdown).toContain("helper.ts");
-        expect(markdown).toContain("helper()");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }

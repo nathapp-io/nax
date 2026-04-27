@@ -2,14 +2,14 @@
  * Tests for context.fileInjection config flag (CTX-001)
  *
  * Verifies that:
- * - fileInjection: 'disabled' skips all file elements (auto-detect + explicit contextFiles)
- * - fileInjection: 'keyword' runs auto-detect and injects explicit contextFiles
- * - missing fileInjection (undefined) is treated as 'disabled'
+ * - Explicit contextFiles from the PRD are ALWAYS honored (path-only) regardless of fileInjection
+ * - fileInjection: 'disabled' only skips auto-detection; explicit contextFiles still appear
+ * - fileInjection: 'keyword' enables auto-detect when no explicit files are provided
+ * - missing fileInjection (undefined) disables auto-detect; explicit contextFiles still honored
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 // NOTE: _contextBuilderDeps is exported from builder.ts — mock-based tests below
 // use this injection pattern for testing
@@ -110,7 +110,7 @@ describe("context.fileInjection config flag (CTX-001)", () => {
       }
     });
 
-    test("no file elements added when fileInjection is disabled even with explicit contextFiles", async () => {
+    test("explicit contextFiles are honored even when fileInjection is disabled", async () => {
       const tempDir = await setupGitRepo({
         "src/routing/router.ts": "export class Router { /* routing logic */ }",
       });
@@ -142,8 +142,9 @@ describe("context.fileInjection config flag (CTX-001)", () => {
         const built = await buildContext(storyContext, BUDGET);
         const fileElements = built.elements.filter((e) => e.type === "file");
 
-        // disabled => bypass applies to explicit contextFiles too (full injection bypass)
-        expect(fileElements.length).toBe(0);
+        // disabled only blocks auto-detect; explicit contextFiles are always honored
+        expect(fileElements.length).toBe(1);
+        expect(fileElements[0].filePath).toBe("src/routing/router.ts");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
@@ -190,7 +191,7 @@ describe("context.fileInjection config flag (CTX-001)", () => {
       }
     });
 
-    test("treated as disabled — explicit contextFiles are also skipped when fileInjection is undefined", async () => {
+    test("explicit contextFiles are honored even when fileInjection is undefined", async () => {
       const tempDir = await setupGitRepo({
         "src/explicit.ts": "export const explicit = true;",
       });
@@ -222,8 +223,9 @@ describe("context.fileInjection config flag (CTX-001)", () => {
         const built = await buildContext(storyContext, BUDGET);
         const fileElements = built.elements.filter((e) => e.type === "file");
 
-        // undefined => treated as disabled => explicit contextFiles also skipped
-        expect(fileElements.length).toBe(0);
+        // undefined disables auto-detect but explicit contextFiles are always honored
+        expect(fileElements.length).toBe(1);
+        expect(fileElements[0].filePath).toBe("src/explicit.ts");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
@@ -483,7 +485,8 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
     expect(fileElements[0].filePath).toBe("explicit.ts");
   });
 
-  test("fileInjection undefined — autoDetectContextFiles is never called", async () => {
+  test("fileInjection undefined — autoDetectContextFiles is never called, explicit contextFiles still honored", async () => {
+    await fs.writeFile(path.join(tempDir, "some-file.ts"), "export const x = 1;");
     const spy = mock(async () => ["src/some-file.ts"]);
     _contextBuilderDeps.autoDetectContextFiles = spy;
 
@@ -511,12 +514,13 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
 
     const built = await buildContext(storyContext, BUDGET);
 
+    // auto-detect skipped, but explicit contextFiles are always honored
     expect(spy).not.toHaveBeenCalled();
-    expect(built.elements.filter((e) => e.type === "file").length).toBe(0);
+    expect(built.elements.filter((e) => e.type === "file").length).toBe(1);
   });
 
-  test("fileInjection 'disabled' with explicit contextFiles — autoDetectContextFiles not called, no files injected", async () => {
-    await fs.writeFile(path.join(tempDir, "should-not-appear.ts"), "export const x = 1;");
+  test("fileInjection 'disabled' with explicit contextFiles — autoDetectContextFiles not called, explicit files still honored", async () => {
+    await fs.writeFile(path.join(tempDir, "explicit.ts"), "export const x = 1;");
     const spy = mock(async () => []);
     _contextBuilderDeps.autoDetectContextFiles = spy;
 
@@ -526,7 +530,7 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
         title: "Story with explicit contextFiles",
         description: "Some story",
         acceptanceCriteria: ["Works"],
-        contextFiles: ["should-not-appear.ts"],
+        contextFiles: ["explicit.ts"],
       },
     ]);
 
@@ -545,8 +549,9 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
     const built = await buildContext(storyContext, BUDGET);
     const fileElements = built.elements.filter((e) => e.type === "file");
 
+    // disabled only blocks auto-detect; explicit contextFiles are always honored
     expect(spy).not.toHaveBeenCalled();
-    expect(fileElements.length).toBe(0);
-    expect(fileElements.find((e) => e.filePath === "should-not-appear.ts")).toBeUndefined();
+    expect(fileElements.length).toBe(1);
+    expect(fileElements[0].filePath).toBe("explicit.ts");
   });
 });

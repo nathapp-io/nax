@@ -7,7 +7,7 @@
 export { buildHermeticSection } from "./hermetic";
 export { buildIsolationSection } from "./isolation";
 export { buildRoleTaskSection } from "./role-task";
-export { buildBatchStorySection, buildStorySection } from "./story";
+export { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "./story";
 export { buildVerdictSection } from "./verdict";
 export { buildConventionsSection } from "./conventions";
 export { buildTddLanguageSection } from "./tdd-conventions";

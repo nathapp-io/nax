@@ -21,7 +21,7 @@
  * ```
  */
 
-import { assembleForStage, getBundleMarkdown } from "../../context/engine";
+import { assembleForStage } from "../../context/engine";
 import { getLogger } from "../../logger";
 import { PromptBuilder } from "../../prompts";
 import type { AcceptanceEntry } from "../../prompts/sections/acceptance";
@@ -85,7 +85,8 @@ export const promptStage: PipelineStage = {
         .withLoader(ctx.workdir, ctx.config)
         .stories(ctx.stories)
         .context(ctx.contextMarkdown)
-        .featureContext(getBundleMarkdown(ctx, execBundle))
+        .v2FeatureContext(execBundle?.pushMarkdown)
+        .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
         .hermeticConfig(ctx.config.quality?.testing);
@@ -98,7 +99,8 @@ export const promptStage: PipelineStage = {
         .withLoader(ctx.workdir, ctx.config)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
-        .featureContext(getBundleMarkdown(ctx, execBundle))
+        .v2FeatureContext(execBundle?.pushMarkdown)
+        .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
         .hermeticConfig(ctx.config.quality?.testing)

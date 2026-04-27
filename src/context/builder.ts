@@ -207,16 +207,13 @@ async function addFileElements(
   storyContext: StoryContext,
   story: UserStory,
 ): Promise<void> {
-  const MAX_FILE_SIZE_BYTES = 10 * 1024;
   const MAX_FILES = 5;
-
-  // Skip all file injection when fileInjection is 'disabled' or undefined (treat missing as disabled)
   const fileInjection = storyContext.config?.context?.fileInjection;
-  if (fileInjection !== "keyword") return;
 
+  // Explicit contextFiles from the PRD are always honored regardless of fileInjection setting.
   let contextFiles = getContextFiles(story);
 
-  // ENH-005: Inject parent output files for context chaining
+  // ENH-005: Inject parent output files for context chaining (always supplementary)
   const parentFiles = getParentOutputFiles(story, storyContext.prd?.userStories ?? []);
   if (parentFiles.length > 0) {
     const logger = getLogger();
@@ -224,13 +221,13 @@ async function addFileElements(
       storyId: story.id,
       parentFiles,
     });
-    // Merge with existing contextFiles (don't replace — parent files are supplementary)
     contextFiles = [...new Set([...contextFiles, ...parentFiles])];
   }
 
-  // Auto-detect contextFiles if empty and enabled (BUG-006)
+  // Auto-detect only when keyword mode is enabled and no explicit files are provided (BUG-006)
   if (
     contextFiles.length === 0 &&
+    fileInjection === "keyword" &&
     storyContext.config?.context?.autoDetect?.enabled !== false &&
     storyContext.workdir
   ) {
@@ -268,44 +265,22 @@ async function addFileElements(
     return;
   }
 
-  for (const relativeFilePath of filesToLoad) {
-    try {
-      const absolutePath = path.resolve(workdir, relativeFilePath);
-      const file = Bun.file(absolutePath);
-      if (!(await file.exists())) {
-        const logger = getLogger();
-        logger.warn("context", "Relevant file not found", { filePath: relativeFilePath, storyId: story.id });
-        continue;
-      }
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        // FEAT-011: File too large to inline — pass path-only so agent can read it if needed
-        const logger = getLogger();
-        logger.warn("context", "File too large for inline — using path-only", {
-          filePath: relativeFilePath,
-          sizeKB: Math.round(file.size / 1024),
-          maxKB: 10,
-          storyId: story.id,
-        });
-        elements.push(
-          createFileContext(
-            relativeFilePath,
-            `_File too large to inline (${Math.round(file.size / 1024)}KB). Path: \`${relativeFilePath}\` — read it directly if needed._`,
-            5,
-          ),
-        );
-        continue;
-      }
-      const content = await file.text();
-      const ext = path.extname(relativeFilePath).slice(1) || "txt";
-      elements.push(
-        createFileContext(relativeFilePath, `\`\`\`${ext}\n// File: ${relativeFilePath}\n${content}\n\`\`\``, 60),
-      );
-    } catch (error) {
-      const logger = getLogger();
-      logger.warn("context", "Error loading file", {
-        filePath: relativeFilePath,
-        error: errorMessage(error),
-      });
+  for (let i = 0; i < filesToLoad.length; i++) {
+    const relativeFilePath = filesToLoad[i];
+    const absolutePath = path.resolve(workdir, relativeFilePath);
+    const file = Bun.file(absolutePath);
+    if (!(await file.exists())) {
+      getLogger().warn("context", "Relevant file not found", { filePath: relativeFilePath, storyId: story.id });
+      continue;
     }
+    // Always emit path-only — agent reads when needed; avoids token bloat from inlining.
+    // Use decreasing priority per index so insertion order is preserved after sort.
+    elements.push(
+      createFileContext(
+        relativeFilePath,
+        `_Path: \`${relativeFilePath}\` — read this file before implementing._`,
+        60 - i,
+      ),
+    );
   }
 }

@@ -189,6 +189,39 @@ When a spec is provided, these rules govern acceptance criteria generation:
 3. **Respect story scope.** Each story's criteria must only cover what the spec says for that story. Do not assign criteria that belong to a different story's scope (wrong feature area, wrong file, wrong dependency chain).
 4. **\`suggestedCriteria\` format.** Each element must be a plain behavioral assertion — an observable output, return value, state change, or error condition that a test can assert. Never include implementation details (imports, internal structure), design suggestions, or vague descriptions.`;
 
+export const DESCRIPTION_QUALITY_RULES = `## Description Quality Rules
+
+When a spec contains a design subsection for a story (e.g. \`### N. <Topic>\` under \`## Design\`), the story description MUST embed that subsection's interface declarations, algorithms, and design notes verbatim.
+
+### Format
+
+\`\`\`
+**Goal** — 1 sentence: what this story changes
+**Motivation** — 1 sentence from spec's Motivation section: why this matters
+**Approach** — verbatim from spec's design subsection
+**Scope** — In: ... Out: ...
+**Interface** — verbatim TypeScript (or language-appropriate) signatures from the spec
+\`\`\`
+
+### Rules
+
+1. Do NOT paraphrase spec design sections — embed them verbatim.
+2. A one-sentence description is almost always too short for implementation stories that have spec design content.
+3. The implementer receives only this description — no access to the spec. Design decisions lost here are permanently invisible to the implementer.
+
+### Examples
+
+BAD (do NOT write this):
+\`\`\`json
+"description": "Replace full re-import with incremental diff-and-apply against durable tables."
+\`\`\`
+(One sentence — all design content dropped.)
+
+GOOD (write descriptions like this):
+\`\`\`json
+"description": "**Goal** — Replace O(n) full re-import with incremental diff-and-apply against durable graph tables.\\n\\n**Motivation** — importGraphify() deletes all nodes then re-indexes everything in memory, causing timeouts at 500+ nodes.\\n\\n**Interface**\\n\\\`\\\`\\\`typescript\\nclass IncrementalGraphDiffService {\\n  async diffAndApply(projectId: string, newNodes: NodeDto[], newLinks: LinkDto[]): Promise<DiffResult>\\n  async getStoredGraph(projectId: string): Promise<StoredGraph>\\n}\\n\\\`\\\`\\\`\\n\\n**Approach** — 5-step diff: (1) load stored graph, (2) compute added/updated/removed sets, (3) delete removed nodes, (4) upsert changed nodes, (5) re-index only changed content."
+\`\`\``;
+
 export const GROUPING_RULES = `## Story Rules
 
 - Every story must produce code changes verifiable by tests or review.
