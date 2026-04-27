@@ -608,6 +608,129 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
 
   /**
+   * Prompt for rectification when tests fail after implementation (full-suite failures).
+   *
+   * Consolidates two live triggers (tdd-suite-failure, verify-failure) that both
+   * represent the same semantic scenario: implementation changes broke existing tests,
+   * or post-verify revealed cross-story regressions. Both demand the full test suite
+   * be run to catch additional failures the agent may have introduced.
+   *
+   * **Key difference from old prompts:** Explicit, unambiguous wording that the agent
+   * MUST run the full test command, not just the listed failures in isolation.
+   * This prevents one avoidable rectification cycle per cross-story regression.
+   *
+   * **Triggers consolidated:**
+   *   - tdd-suite-failure (src/tdd/rectification-gate.ts)
+   *   - verify-failure (src/verification/rectification-loop.ts)
+   *
+   * Issue #737 PR 2 consolidates both into this single static method, replacing
+   * the old fluent builder pattern for these two cases.
+   *
+   * @param opts.story — UserStory with title, description, acceptance criteria
+   * @param opts.failures — FailureRecord[] parsed from test output (may include test file path, name, message)
+   * @param opts.testCommand — Full test command to run (e.g., "bun test", "pytest", "go test ./...")
+   * @param opts.conventions — Include conventions section (default: true)
+   * @param opts.isolation — Isolation mode ("strict" | "lite") to include, if any
+   * @param opts.constitution — Constitution markdown to prepend, if any
+   * @param opts.context — Context markdown to inject, if any
+   * @param opts.promptPrefix — Diagnostic prefix (e.g., from debate stage), if any
+   * @returns Fully assembled prompt string (synchronous, no Promise)
+   *
+   * @example
+   * const prompt = RectifierPromptBuilder.regressionFailure({
+   *   story: ctx.story,
+   *   failures: parsedFailures,
+   *   testCommand: "bun test",
+   *   isolation: "strict",
+   *   conventions: true,
+   * });
+   * // Prompt includes explicit demand: "run the FULL repo test suite — the EXACT command below"
+   */
+  static regressionFailure(opts: {
+    story: UserStory;
+    failures: FailureRecord[];
+    testCommand: string;
+    conventions?: boolean;
+    isolation?: "strict" | "lite";
+    constitution?: string;
+    context?: string;
+    promptPrefix?: string;
+  }): string {
+    const parts: string[] = [];
+
+    // 1. Optional diagnostic prefix (e.g., from debate stage)
+    if (opts.promptPrefix) {
+      parts.push(opts.promptPrefix);
+      parts.push("\n");
+    }
+
+    // 2. Optional constitution
+    if (opts.constitution) {
+      parts.push(universalConstitutionSection(opts.constitution).content);
+      parts.push("\n");
+    }
+
+    // 3. Optional context
+    if (opts.context) {
+      parts.push(universalContextSection(opts.context).content);
+      parts.push("\n");
+    }
+
+    // 4. Story (title, description, acceptance criteria)
+    parts.push(buildStorySection(opts.story));
+    parts.push("\n");
+
+    // 5. Prior failures (test output, file paths, error messages)
+    parts.push(priorFailuresSection(opts.failures).content);
+    parts.push("\n");
+
+    // 6. Test command (explicit, unambiguous)
+    parts.push(`# TEST COMMAND\n\n\`${opts.testCommand}\``);
+    parts.push("\n\n");
+
+    // 7. Optional isolation constraints
+    if (opts.isolation) {
+      parts.push(buildIsolationSection("implementer", opts.isolation, undefined));
+      parts.push("\n");
+    }
+
+    // 8. Optional conventions
+    if (opts.conventions !== false) {
+      parts.push(buildConventionsSection());
+      parts.push("\n");
+    }
+
+    // 9. Task section with explicit demand for FULL test suite
+    //    This is the core behavioral change: unambiguous wording that prevents
+    //    agents from running only the listed failures in isolation.
+    parts.push(`# Rectification Required
+
+Tests are failing. Fix the source so all tests pass — not just the ones listed.
+
+## Instructions
+
+1. Review the failures above and identify the root cause of each.
+2. Fix the source code WITHOUT loosening test assertions or removing tests.
+3. After your fix, run the FULL repo test suite — the EXACT command below:
+
+   \`${opts.testCommand}\`
+
+   The verifier will replay this same command. If you only run the failing
+   tests in isolation, you may have introduced cross-story regressions you
+   won't see. There is no benefit to skipping this — the verifier WILL catch
+   anything you miss, and you'll just be back here in another cycle.
+
+4. Do not declare done until step 3 shows 0 failures.
+
+**IMPORTANT:**
+- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT loosen assertions to mask implementation bugs.
+- Focus on fixing the source code to meet the test requirements.`);
+
+    return parts.join("");
+  }
+
+  /**
    * Prepends handoff markdown to a base prompt when swapping to a new agent.
    *
    * Used by execution.ts during agent fallback: when an agent is unavailable
