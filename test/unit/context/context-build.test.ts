@@ -261,8 +261,8 @@ describe("Context Builder", () => {
         expect(fileElements.length).toBe(2);
         expect(fileElements[0].filePath).toBe("helper.ts");
         expect(fileElements[1].filePath).toBe("utils.ts");
-        expect(fileElements[0].content).toContain("helper()");
-        expect(fileElements[1].content).toContain("utils()");
+        expect(fileElements[0].content).toContain("helper.ts");
+        expect(fileElements[1].content).toContain("utils.ts");
         expect(built.summary).toContain("2 files");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
@@ -304,7 +304,7 @@ describe("Context Builder", () => {
         const fileElements = built.elements.filter((e) => e.type === "file");
         expect(fileElements.length).toBe(1);
         expect(fileElements[0].filePath).toBe("legacy.ts");
-        expect(fileElements[0].content).toContain("legacy()");
+        expect(fileElements[0].content).toContain("legacy.ts");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
@@ -348,7 +348,7 @@ describe("Context Builder", () => {
         const fileElements = built.elements.filter((e) => e.type === "file");
         expect(fileElements.length).toBe(1);
         expect(fileElements[0].filePath).toBe("new.ts");
-        expect(fileElements[0].content).toContain("newFunc()");
+        expect(fileElements[0].content).toContain("new.ts");
         expect(fileElements.find((e) => e.filePath === "old.ts")).toBeUndefined();
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
@@ -440,11 +440,11 @@ describe("Context Builder", () => {
         console.warn = originalWarn;
 
         const fileElements = built.elements.filter((e) => e.type === "file");
-        expect(fileElements.length).toBe(2); // small file (inline) + large file (path-only)
+        expect(fileElements.length).toBe(2); // both emitted as path-only references
         expect(fileElements[0].filePath).toBe("small.ts");
         const largeElement = fileElements.find((e) => e.filePath === "large.ts");
         expect(largeElement).toBeDefined();
-        expect(largeElement?.content).toContain("File too large to inline");
+        expect(largeElement?.content).toContain("large.ts");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }

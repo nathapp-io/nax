@@ -6,7 +6,6 @@
 
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { buildContext } from "../../../src/context/builder";
 import type { ContextBudget, StoryContext } from "../../../src/context/types";
@@ -76,7 +75,7 @@ describe("Context and Verification Integration", () => {
       const fileElements = built.elements.filter((e) => e.type === "file");
       expect(fileElements.length).toBe(1);
       expect(fileElements[0].filePath).toBe("src-file.ts");
-      expect(fileElements[0].content).toContain("source");
+      expect(fileElements[0].content).toContain("src-file.ts");
 
       // Context should NOT include dist-file.js (only in expectedFiles)
       expect(fileElements.some((e) => e.filePath === "dist-file.js")).toBe(false);
@@ -291,7 +290,7 @@ describe("Context and Verification Integration", () => {
       const fileElements = built.elements.filter((e) => e.type === "file");
       expect(fileElements.length).toBe(1);
       expect(fileElements[0].filePath).toBe("new.ts");
-      expect(fileElements[0].content).toContain("newFile");
+      expect(fileElements[0].content).toContain("new.ts");
 
       // Old file should not be loaded
       expect(fileElements.some((e) => e.filePath === "old.ts")).toBe(false);

@@ -35,6 +35,7 @@ import {
   buildHermeticSection,
   buildIsolationSection,
   buildRoleTaskSection,
+  buildStoryReminderSection,
   buildStorySection,
   buildTddLanguageSection,
   buildVerdictSection,
@@ -157,7 +158,21 @@ export class TddPromptBuilder {
     // (2) Role task body — disk override or default template
     acc.add(this.s("role-task", await this.resolveRoleBody()));
 
-    // (2.5) Feature-level context — between role task and story.
+    // (3) Story context — placed immediately after role task (primacy: LLMs attend to content
+    // near the top; story must not be buried under rules).
+    if (this.role === "batch" && this.stories_ && this.stories_.length > 0) {
+      acc.add(this.s("story", buildBatchStorySection(this.stories_)));
+    } else if (this.story_) {
+      acc.add(this.s("story", buildStorySection(this.story_)));
+    }
+
+    // (3.5) Acceptance test context
+    if (this.acceptanceEntries_ && this.acceptanceEntries_.length > 0) {
+      const content = buildAcceptanceSection(this.acceptanceEntries_);
+      if (content) acc.add(this.s("acceptance", content));
+    }
+
+    // (4) Feature-level context — after story so rules don't bury the task.
     // v2 path: pushMarkdown is injected directly (already role-filtered by the orchestrator).
     // v1 path: featureContextMd_ goes through filterContextByRole for audience filtering.
     if (this.v2PushMarkdown_) {
@@ -179,33 +194,20 @@ export class TddPromptBuilder {
       }
     }
 
-    // (3) Story context
-    if (this.role === "batch" && this.stories_ && this.stories_.length > 0) {
-      acc.add(this.s("story", buildBatchStorySection(this.stories_)));
-    } else if (this.story_) {
-      acc.add(this.s("story", buildStorySection(this.story_)));
-    }
-
-    // (3.5) Acceptance test context
-    if (this.acceptanceEntries_ && this.acceptanceEntries_.length > 0) {
-      const content = buildAcceptanceSection(this.acceptanceEntries_);
-      if (content) acc.add(this.s("acceptance", content));
-    }
-
-    // (4) Verdict — verifier only
+    // (5) Verdict — verifier only
     if (this.role === "verifier" && this.story_) {
       acc.add(this.s("verdict", buildVerdictSection(this.story_)));
     }
 
-    // (5) Isolation rules
+    // (6) Isolation rules
     const isolation = this.options.isolation as "strict" | "lite" | undefined;
     acc.add(this.s("isolation", buildIsolationSection(this.role, isolation, this.testCommand_)));
 
-    // (5.5) TDD language convention
+    // (6.5) TDD language convention
     const tddLang = buildTddLanguageSection(this.loaderConfig_?.project?.language);
     if (tddLang) acc.add(this.s("tdd-language", tddLang));
 
-    // (5.6) Hermetic test rules
+    // (6.6) Hermetic test rules
     if (this.hermeticConfig_ !== undefined && this.hermeticConfig_.hermetic !== false) {
       const hermeticSection = buildHermeticSection(
         this.role,
@@ -216,11 +218,17 @@ export class TddPromptBuilder {
       if (hermeticSection) acc.add(this.s("hermetic", hermeticSection));
     }
 
-    // (6) Context markdown
+    // (7) Context markdown
     acc.add(universalContextSection(this.contextMd_));
 
-    // (7) Conventions footer — always last
+    // (8) Conventions footer
     acc.add(this.s("conventions", buildConventionsSection()));
+
+    // (9) Story restatement — recency anchor: restates the task goal after all rules so the
+    // final lines the agent sees are the task, not generic conventions.
+    if (this.story_) {
+      acc.add(this.s("reminder", buildStoryReminderSection(this.story_)));
+    }
 
     return acc.join();
   }

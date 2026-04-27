@@ -32,6 +32,11 @@ export function buildBatchStorySection(stories: UserStory[]): string {
   ].join("\n");
 }
 
+/** One-line restatement appended at the end of the prompt (recency anchor). */
+export function buildStoryReminderSection(story: UserStory): string {
+  return `---\n\n**Reminder:** Your task is to implement **${story.title}**. Satisfy every acceptance criterion listed above before finishing.`;
+}
+
 export function buildStorySection(story: UserStory): string {
   const criteria = story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
 

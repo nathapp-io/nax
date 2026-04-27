@@ -14,6 +14,7 @@
 import type { ProjectProfile } from "../../config/runtime-types";
 import {
   COMPLEXITY_GUIDE,
+  DESCRIPTION_QUALITY_RULES,
   GROUPING_RULES,
   SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
@@ -117,6 +118,8 @@ ${codebaseContext}${monorepoHint}
 Based on your Step 2 analysis, create stories that produce CODE CHANGES.
 
 ${GROUPING_RULES}
+
+${DESCRIPTION_QUALITY_RULES}
 
 ${getAcQualityRules(projectProfile)}${specAnchorSection}
 
