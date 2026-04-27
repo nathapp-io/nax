@@ -464,7 +464,7 @@ async function runAgentRectification(
       const lastResult = previous[previous.length - 1]?.result;
       const lastWasNoOp = lastResult?.noOp ?? false;
       currentConsecutiveNoOps = lastResult?.consecutiveNoOps ?? 0;
-      currentCheckSignatureChanged = lastResult?.checkSignatureChanged ?? false;
+      currentCheckSignatureChanged = failure.checkSignature !== initialFailure.checkSignature;
 
       logger.debug("autofix", `Building prompt for attempt ${consumed + currentAttempt}/${maxTotal}`, {
         storyId: ctx.story.id,
