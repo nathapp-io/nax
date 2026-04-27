@@ -7,13 +7,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { UserStory } from "../../../src/prd";
+import { makeStory } from "../../helpers";
 import { RectifierPromptBuilder } from "../../../src/prompts";
 import type { FailureRecord, RectifierTrigger } from "../../../src/prompts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-const STORY: UserStory = {
+const STORY = makeStory({
   id: "US-042",
   title: "Add rate limiter to API gateway",
   description: "Implement per-client rate limiting on the API gateway.",
@@ -21,13 +21,8 @@ const STORY: UserStory = {
     "Requests over the limit receive a 429 response",
     "Rate limit resets after the configured window",
   ],
-  tags: [],
-  dependencies: [],
-  status: "pending",
-  passes: false,
-  escalations: [],
   attempts: 2,
-};
+});
 
 const FAILURES: FailureRecord[] = [
   {
