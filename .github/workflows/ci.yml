@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        check: [typecheck, lint, check:test-mocks]
+        check: [typecheck, lint, check:test-mocks, check:process-cwd]
     steps:
       - uses: actions/checkout@v5
 

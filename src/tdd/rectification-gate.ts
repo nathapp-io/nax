@@ -8,7 +8,9 @@
 
 import type { IAgentManager } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
-import { resolveModelForAgent } from "../config";
+import { type rectificationGateConfigSelector, resolveModelForAgent } from "../config";
+
+type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";

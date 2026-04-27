@@ -110,7 +110,7 @@ export interface AgentRunOptions {
   /** Story ID for ACP session naming and logging */
   storyId?: string;
   /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
-  sessionRole?: string;
+  sessionRole?: import("../session/types").SessionRole;
   /** Max turns in multi-turn interaction loop when interactionBridge is active (default: 10) */
   maxInteractionTurns?: number;
   /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */

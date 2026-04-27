@@ -234,11 +234,11 @@ export async function runEnvironmentPrecheck(
 export async function runPrecheck(
   config: NaxConfig,
   prd: PRD,
-  options?: PrecheckOptions,
+  options: PrecheckOptions,
 ): Promise<PrecheckResultWithCode> {
-  const workdir = options?.workdir || process.cwd();
-  const format = options?.format || "human";
-  const silent = options?.silent ?? false;
+  const workdir = options.workdir;
+  const format = options.format || "human";
+  const silent = options.silent ?? false;
 
   const passed: Check[] = [];
   const blockers: Check[] = [];

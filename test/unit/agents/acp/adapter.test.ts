@@ -175,7 +175,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    const result = await new AcpAgentAdapter("claude").complete("What is the answer?");
+    const result = await new AcpAgentAdapter("claude").complete("What is the answer?", { workdir: ACP_WORKDIR });
     expect(result.output).toBe("The answer is 42.");
   });
 
@@ -193,7 +193,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await new AcpAgentAdapter("claude").complete("Explain recursion");
+    await new AcpAgentAdapter("claude").complete("Explain recursion", { workdir: ACP_WORKDIR });
     expect(received).toBe("Explain recursion");
   });
 
@@ -203,7 +203,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(new AcpAgentAdapter("claude").complete("Hello")).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("Hello", { workdir: ACP_WORKDIR })).rejects.toBeInstanceOf(CompleteError);
   });
 
   test("throws CompleteError when assistant output is blank", async () => {
@@ -216,7 +216,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(new AcpAgentAdapter("claude").complete("Hello")).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("Hello", { workdir: ACP_WORKDIR })).rejects.toBeInstanceOf(CompleteError);
   });
 
   test("closes the session after one-shot completion", async () => {
@@ -224,7 +224,7 @@ describe("complete()", () => {
     const session = makeSession({ closeFn: async () => { closeCalled = true; } });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await new AcpAgentAdapter("claude").complete("Quick question");
+    await new AcpAgentAdapter("claude").complete("Quick question", { workdir: ACP_WORKDIR });
     expect(closeCalled).toBe(true);
   });
 
@@ -235,7 +235,7 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await expect(
-      new AcpAgentAdapter("claude").complete("Hang?", { timeoutMs: 50 }),
+      new AcpAgentAdapter("claude").complete("Hang?", { timeoutMs: 50, workdir: ACP_WORKDIR }),
     ).rejects.toThrow(/timed out/i);
   });
 
@@ -245,7 +245,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    const result = await new AcpAgentAdapter("claude").complete("Rate limited");
+    const result = await new AcpAgentAdapter("claude").complete("Rate limited", { workdir: ACP_WORKDIR });
     expect(result.adapterFailure).toBeDefined();
     expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
     expect(result.adapterFailure?.category).toBe("availability");
@@ -259,7 +259,7 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await expect(
-      new AcpAgentAdapter("claude").complete("Unknown fail"),
+      new AcpAgentAdapter("claude").complete("Unknown fail", { workdir: ACP_WORKDIR }),
     ).rejects.toThrow(/unexpected internal error/);
   });
 });
@@ -294,7 +294,7 @@ describe("complete() — model resolution", () => {
       return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    await new AcpAgentAdapter("claude").complete("test");
+    await new AcpAgentAdapter("claude").complete("test", { workdir: ACP_WORKDIR });
     expect(capturedCmd).toContain("--model default");
   });
 
@@ -306,7 +306,7 @@ describe("complete() — model resolution", () => {
       return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    await new AcpAgentAdapter("claude").complete("test", { model: "claude-haiku-4-5" });
+    await new AcpAgentAdapter("claude").complete("test", { model: "claude-haiku-4-5", workdir: ACP_WORKDIR });
     expect(capturedCmd).toContain("--model claude-haiku-4-5");
   });
 
@@ -323,7 +323,7 @@ agent: { default: "claude" },
       models: { claude: { fast: "claude-haiku-4-5-20250514", balanced: "claude-sonnet-4-5-20250514" } },
     } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
 
-    await new AcpAgentAdapter("claude").complete("test", { modelTier: "fast", config: naxConfig });
+    await new AcpAgentAdapter("claude").complete("test", { modelTier: "fast", config: naxConfig, workdir: ACP_WORKDIR });
     expect(capturedCmd).toContain("--model claude-haiku-4-5-20250514");
   });
 
@@ -337,7 +337,7 @@ agent: { default: "claude" },
 
     const naxConfig = { agent: { default: "claude" }, models: {} } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
 
-    await new AcpAgentAdapter("claude").complete("test", { modelTier: "powerful", config: naxConfig });
+    await new AcpAgentAdapter("claude").complete("test", { modelTier: "powerful", config: naxConfig, workdir: ACP_WORKDIR });
     expect(capturedCmd).toContain("--model default");
   });
 });

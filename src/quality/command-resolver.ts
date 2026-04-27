@@ -58,7 +58,7 @@ export const _commandResolverDeps = {
  * @param storyWorkdir - story.workdir — set for monorepo stories, undefined for single-package
  */
 export async function resolveQualityTestCommands(
-  config: NaxConfig,
+  config: Pick<NaxConfig, "review" | "quality">,
   workdir: string,
   storyWorkdir?: string,
 ): Promise<ResolvedTestCommands> {
