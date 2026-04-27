@@ -17,11 +17,11 @@ import { makeMockAgentManager } from "../../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMockPlanManager(
-  planFn?: (agentName: string, opts: any) => Promise<{ specContent: string }>,
+  runFn?: (agentName: string, opts: any) => Promise<any>,
 ) {
   return makeMockAgentManager({
-    planAsFn: planFn
-      ? async (name: string, opts: any) => planFn(name, opts)
+    runAsFn: runFn
+      ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }; }
       : undefined,
   });
 }
@@ -159,7 +159,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // AC-1: Default nax plan (no --auto) starts an interactive ACP session
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-1: default nax plan (no --auto) calls adapter.plan() with interactive: true", async () => {
+  test("AC-1: default nax plan (no --auto) calls adapter.runAs() for interactive planning", async () => {
     const capturedPlans: unknown[] = [];
     _deps.createManager = mock(() =>
       makeMockPlanManager(async (_name: string, opts: any) => {
@@ -304,7 +304,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // AC-6: Planning session respects timeout (default 10 min)
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-6: passes timeout option to adapter.plan()", async () => {
+  test("AC-6: passes timeout option to adapter.runAs()", async () => {
     let capturedTimeoutSeconds: number | undefined;
     _deps.createManager = mock(() =>
       makeMockPlanManager(
@@ -394,7 +394,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     expect(bridgeHasRequiredMethods).toBe(true);
   });
 
-  test("AC-8: interactive planning passes sessionRole 'plan' to adapter.plan()", async () => {
+  test("AC-8: interactive planning passes sessionRole 'plan' to adapter.runAs()", async () => {
     let capturedSessionRole: string | undefined;
     _deps.createManager = mock(() =>
       makeMockPlanManager(

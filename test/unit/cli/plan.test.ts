@@ -257,14 +257,14 @@ describe("planCommand", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AC-3: interactive mode (non-auto path still uses planAs)
+  // AC-3: interactive mode (non-auto path uses runAs)
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-3: interactive mode is now supported when --auto not set", async () => {
-    const planSpy = mock(async (_options: any) => ({ specContent: "" }));
+    const planSpy = mock(async (_options: any) => {});
     _planDeps.createManager = mock((_cfg: any) =>
       makeMockAgentManager({
-        planAsFn: async (_name: string, opts: any) => { await planSpy(opts); return { specContent: "" }; },
+        runAsFn: async (_name: string, opts: any) => { await planSpy(opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }; },
       }),
     );
     // Simulate agent having written the PRD file to disk

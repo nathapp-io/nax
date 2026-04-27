@@ -27,11 +27,11 @@ import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMockPlanManager(
-  planFn?: (agentName: string, opts: any) => Promise<{ specContent: string }>,
+  runFn?: (agentName: string, opts: any) => Promise<any>,
   completeFn?: (name: string, prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: "exact" | "estimated" | "fallback" }>,
 ) {
   return makeMockAgentManager({
-    planAsFn: planFn ? async (name: string, opts: any) => planFn(name, opts) : undefined,
+    runAsFn: runFn ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] }; } : undefined,
     completeAsFn: completeFn,
   });
 }
@@ -195,12 +195,12 @@ const origInitInteractionChain = _planDeps.initInteractionChain;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Set up mocks for a successful interactive plan (adapter.plan() path) */
+/** Set up mocks for a successful interactive plan (adapter.runAs() path) */
 function setupInteractivePlanMocks(
-  planFn: (name: string, opts: any) => Promise<{ specContent: string }>,
+  runFn: (name: string, opts: any) => Promise<any>,
 ) {
   _planDeps.createManager = mock(() =>
-    makeMockPlanManager(planFn, undefined),
+    makeMockPlanManager(runFn, undefined),
   );
   _planDeps.existsSync = mock((p: string) => p.includes(".nax"));
   _planDeps.readFile = mock(async () => JSON.stringify(SAMPLE_PRD));
@@ -428,7 +428,7 @@ describe("planCommand — debate integration (US-004)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC6: all debaters fail → fallback to interactive plan path (adapter.plan())
+  // AC6: all debaters fail → fallback to interactive plan path (adapter.runAs())
   // ─────────────────────────────────────────────────────────────────────────
 
   test("AC6: falls back to interactive plan path when DebateSession returns outcome=failed", async () => {
