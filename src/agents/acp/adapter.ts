@@ -21,6 +21,8 @@ import { createSpawnAcpClient } from "./spawn-client";
 import type { ModelDef } from "../../config/schema";
 import type { ProtocolIds } from "../../session/types";
 import type { TokenUsage } from "../cost";
+import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
+import type { ITokenUsageMapper } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -33,8 +35,9 @@ import type {
   TurnResult,
 } from "../types";
 import { CompleteError } from "../types";
-import { estimateCostFromTokenUsage } from "./cost";
+import { defaultAcpTokenUsageMapper } from "./token-mapper";
 import type { AgentRegistryEntry } from "./types";
+import type { SessionTokenUsage } from "./wire-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -83,12 +86,7 @@ const DEFAULT_ENTRY: AgentRegistryEntry = {
 export interface AcpSessionResponse {
   messages: Array<{ role: string; content: string }>;
   stopReason: string;
-  cumulative_token_usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-  };
+  cumulative_token_usage?: SessionTokenUsage;
   /** Exact cost in USD from acpx usage_update event. Preferred over token-based estimation. */
   exactCostUsd?: number;
   /** True if acpx signalled the error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). */
@@ -527,12 +525,14 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly displayName: string;
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
+  private readonly _mapper: ITokenUsageMapper<SessionTokenUsage>;
 
-  constructor(agentName: string) {
+  constructor(agentName: string, mapper: ITokenUsageMapper<SessionTokenUsage> = defaultAcpTokenUsageMapper) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
     this.displayName = entry.displayName;
     this.binary = entry.binary;
+    this._mapper = mapper;
     this.capabilities = {
       supportedTiers: entry.supportedTiers,
       maxContextTokens: entry.maxContextTokens,
@@ -653,7 +653,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         if (response.cumulative_token_usage) {
           return {
             output: unwrapped,
-            costUsd: estimateCostFromTokenUsage(response.cumulative_token_usage, model),
+            costUsd: estimateCostFromTokenUsage(this._mapper.toInternal(response.cumulative_token_usage), model),
             source: "estimated",
           };
         }
@@ -830,12 +830,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     const { interactionHandler, signal } = opts;
     const MAX_TURNS = opts.maxTurns ?? 10;
 
-    const totalTokenUsage = {
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    };
+    let totalTokenUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     let totalExactCostUsd: number | undefined;
     let turnCount = 0;
     let lastResponse: AcpSessionResponse | null = null;
@@ -871,11 +866,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (!lastResponse) break;
 
       if (lastResponse.cumulative_token_usage) {
-        totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
-        totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
-        totalTokenUsage.cache_read_input_tokens += lastResponse.cumulative_token_usage.cache_read_input_tokens ?? 0;
-        totalTokenUsage.cache_creation_input_tokens +=
-          lastResponse.cumulative_token_usage.cache_creation_input_tokens ?? 0;
+        totalTokenUsage = addTokenUsage(totalTokenUsage, this._mapper.toInternal(lastResponse.cumulative_token_usage));
       }
       if (lastResponse.exactCostUsd !== undefined) {
         totalExactCostUsd = (totalExactCostUsd ?? 0) + lastResponse.exactCostUsd;
@@ -957,20 +948,11 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     const output = extractOutput(lastResponse);
-    const tokenUsage: TokenUsage = {
-      inputTokens: totalTokenUsage.input_tokens,
-      outputTokens: totalTokenUsage.output_tokens,
-      ...(totalTokenUsage.cache_read_input_tokens > 0 && {
-        cacheReadInputTokens: totalTokenUsage.cache_read_input_tokens,
-      }),
-      ...(totalTokenUsage.cache_creation_input_tokens > 0 && {
-        cacheCreationInputTokens: totalTokenUsage.cache_creation_input_tokens,
-      }),
-    };
+    const tokenUsage = totalTokenUsage;
 
     const estimatedCost =
       totalExactCostUsd ??
-      (totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
+      (totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0
         ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
         : 0);
 

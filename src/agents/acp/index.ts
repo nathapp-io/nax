@@ -13,3 +13,5 @@ export { createSpawnAcpClient } from "./spawn-client";
 export { parseAgentError } from "./parse-agent-error";
 export { writePromptAudit, findNaxProjectRoot, _promptAuditDeps } from "./prompt-audit";
 export type { AgentRegistryEntry } from "./types";
+export type { SessionTokenUsage } from "./wire-types";
+export { AcpTokenUsageMapper, defaultAcpTokenUsageMapper } from "./token-mapper";
