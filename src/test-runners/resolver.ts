@@ -17,7 +17,7 @@
  * Injectable `_resolverDeps` follows the project `_deps` pattern.
  */
 
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { NaxConfig } from "../config/types";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
@@ -123,6 +123,14 @@ export async function resolveTestFilePatterns(
   packageDir?: string,
   options?: ResolveTestFilePatternsOptions,
 ): Promise<ResolvedTestPatterns> {
+  if (packageDir !== undefined && isAbsolute(packageDir)) {
+    throw new NaxError(
+      `resolveTestFilePatterns: packageDir must be relative to workdir, got absolute path "${packageDir}"`,
+      "INVALID_PACKAGE_DIR",
+      { stage: "resolver", workdir, packageDir },
+    );
+  }
+
   // 1. Per-package override
   if (packageDir) {
     const monoConfigPath = `${workdir}/.nax/mono/${packageDir}/config.json`;

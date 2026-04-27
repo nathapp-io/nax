@@ -8,6 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { relative } from "node:path";
 import type { NaxConfig } from "../../../config/types";
 import { getLogger } from "../../../logger";
 import { getContextFiles } from "../../../prd";
@@ -66,10 +67,13 @@ export class TestCoverageProvider implements IContextProvider {
     }
 
     try {
+      // request.packageDir is absolute; resolveTestFilePatterns expects a relative path.
+      // Relativise against repoRoot and pass undefined for single-package repos.
+      const relPackageDir = relative(request.repoRoot, request.packageDir) || undefined;
       const resolved = await _testCoverageProviderDeps.resolveTestFilePatterns(
         this.config,
         request.repoRoot,
-        request.packageDir,
+        relPackageDir,
       );
 
       const contextFiles = _testCoverageProviderDeps.getContextFiles(this.story);

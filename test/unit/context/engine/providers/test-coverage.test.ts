@@ -141,6 +141,38 @@ describe("TestCoverageProvider", () => {
     });
   });
 
+  describe("AC7: packageDir relativised before resolveTestFilePatterns", () => {
+    test("passes relative packageDir when packageDir differs from repoRoot", async () => {
+      const cfg = makeConfigWithTestCoverage();
+      let receivedPackageDir: string | undefined;
+      _testCoverageProviderDeps.resolveTestFilePatterns = async (_config, _workdir, pkg) => {
+        receivedPackageDir = pkg;
+        return { globs: ["**/*.test.ts"], regex: [], pathspec: [], resolution: "fallback", testDirs: [] };
+      };
+      mockScanner({ summary: "coverage", tokens: 10, files: [], totalTests: 5 });
+
+      const provider = new TestCoverageProvider(STORY, cfg);
+      await provider.fetch(makeRequest({ repoRoot: "/repo", packageDir: "/repo/packages/api" }));
+
+      expect(receivedPackageDir).toBe("packages/api");
+    });
+
+    test("passes undefined packageDir when packageDir equals repoRoot (single-package repo)", async () => {
+      const cfg = makeConfigWithTestCoverage();
+      let receivedPackageDir: string | undefined | null = null;
+      _testCoverageProviderDeps.resolveTestFilePatterns = async (_config, _workdir, pkg) => {
+        receivedPackageDir = pkg;
+        return { globs: ["**/*.test.ts"], regex: [], pathspec: [], resolution: "fallback", testDirs: [] };
+      };
+      mockScanner({ summary: "coverage", tokens: 10, files: [], totalTests: 5 });
+
+      const provider = new TestCoverageProvider(STORY, cfg);
+      await provider.fetch(makeRequest({ repoRoot: "/repo", packageDir: "/repo" }));
+
+      expect(receivedPackageDir).toBeUndefined();
+    });
+  });
+
   describe("AC6: forwards config options to scanner", () => {
     test("forwards testDir from config", async () => {
       const cfg = makeConfigWithTestCoverage({ testDir: "custom-test-dir" });
@@ -265,7 +297,8 @@ describe("TestCoverageProvider", () => {
 
       expect(receivedConfig).toBe(cfg);
       expect(receivedWorkdir).toBe("/repo");
-      expect(receivedPackageDir).toBe("/repo/packages/api");
+      // packageDir must be relative to repoRoot — absolute paths caused doubled cache paths (Issue 2)
+      expect(receivedPackageDir).toBe("packages/api");
     });
 
     test("passes resolvedTestGlobs to the scanner", async () => {

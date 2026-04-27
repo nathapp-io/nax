@@ -37,6 +37,26 @@ afterEach(() => {
   _resolverDeps.detectTestFilePatterns = origDetect;
 });
 
+// ─── Contract validation ──────────────────────────────────────────────────────
+
+describe("resolveTestFilePatterns — contract validation", () => {
+  test("throws INVALID_PACKAGE_DIR when packageDir is an absolute path", async () => {
+    await expect(
+      resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "/absolute/path/to/package"),
+    ).rejects.toMatchObject({ code: "INVALID_PACKAGE_DIR" });
+  });
+
+  test("accepts undefined packageDir (single-package repos)", async () => {
+    const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, undefined);
+    expect(resolved.resolution).toBe("fallback");
+  });
+
+  test("accepts relative packageDir (monorepo packages)", async () => {
+    const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/api");
+    expect(resolved.resolution).toBe("fallback");
+  });
+});
+
 // ─── Resolution chain ─────────────────────────────────────────────────────────
 
 describe("resolveTestFilePatterns — resolution chain", () => {
