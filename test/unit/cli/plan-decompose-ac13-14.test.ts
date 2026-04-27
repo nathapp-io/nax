@@ -102,7 +102,7 @@ const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
 const origCreateManager = _planDeps.createManager;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateSession = _planDeps.createDebateSession;
+const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -161,7 +161,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     _planDeps.scanCodebase = origScanCodebase;
     _planDeps.createManager = origCreateManager;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateSession = origCreateDebateSession;
+    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -179,7 +179,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     const prd = makePrd();
     setupDeps(prd, stories);
 
-    _planDeps.createDebateSession = mock(() => ({
+    _planDeps.createDebateRunner = mock(() => ({
       run: mock(async () => ({
         storyId: "US-001",
         stage: "decompose",
@@ -239,7 +239,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     );
 
     const createDebateCalled: boolean[] = [];
-    _planDeps.createDebateSession = mock(() => {
+    _planDeps.createDebateRunner = mock(() => {
       createDebateCalled.push(true);
       return {} as never;
     });
@@ -255,7 +255,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     setupDeps(prd);
 
     const createDebateCalled: boolean[] = [];
-    _planDeps.createDebateSession = mock(() => {
+    _planDeps.createDebateRunner = mock(() => {
       createDebateCalled.push(true);
       return {} as never;
     });
@@ -274,7 +274,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     setupDeps(prd);
 
     const createDebateCalled: boolean[] = [];
-    _planDeps.createDebateSession = mock(() => {
+    _planDeps.createDebateRunner = mock(() => {
       createDebateCalled.push(true);
       return {} as never;
     });

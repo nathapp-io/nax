@@ -88,7 +88,7 @@ const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
 const origCreateManager = _planDeps.createManager;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateSession = _planDeps.createDebateSession;
+const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -147,7 +147,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.scanCodebase = origScanCodebase;
     _planDeps.createManager = origCreateManager;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateSession = origCreateDebateSession;
+    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -236,7 +236,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     setupDeps(prd, stories);
 
     const capturedDebateOpts: unknown[] = [];
-    _planDeps.createDebateSession = mock((opts) => {
+    _planDeps.createDebateRunner = mock((opts) => {
       capturedDebateOpts.push(opts);
       return {
         run: mock(async () => ({
@@ -272,7 +272,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
       { feature: FEATURE, storyId: "US-001" },
     );
 
-    expect(_planDeps.createDebateSession).toHaveBeenCalledTimes(1);
+    expect(_planDeps.createDebateRunner).toHaveBeenCalledTimes(1);
     expect(capturedDebateOpts[0]).toMatchObject({ stage: "decompose" });
   });
 
@@ -281,7 +281,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const prd = makePrd();
     setupDeps(prd, stories);
 
-    _planDeps.createDebateSession = mock(() => ({
+    _planDeps.createDebateRunner = mock(() => ({
       run: mock(async () => ({
         storyId: "US-001",
         stage: "decompose",

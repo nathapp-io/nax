@@ -13,8 +13,8 @@ import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import { filterContextByRole } from "../context";
 import { createContextToolRuntime } from "../context/engine";
-import { DebateSession } from "../debate";
-import type { DebateSessionOptions } from "../debate";
+import { DebateRunner } from "../debate";
+import type { DebateRunnerOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import type { UserStory } from "../prd";
@@ -33,7 +33,7 @@ export type { SemanticStory };
 
 /** Injectable dependencies for semantic.ts — allows tests to mock without mock.module() */
 export const _semanticDeps = {
-  createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
+  createDebateRunner: (opts: DebateRunnerOptions): DebateRunner => new DebateRunner(opts),
   writeReviewAudit,
 };
 
@@ -299,21 +299,55 @@ export async function runSemanticReview(
   });
   const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 
-  // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
+  // Debate path: when debate is enabled for review stage, use DebateRunner instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
   if (reviewDebateEnabled) {
     // Safe: reviewDebateEnabled guard confirms naxConfig.debate.stages.review is defined
     const reviewStageConfig = naxConfig?.debate?.stages.review as import("../debate").DebateStageConfig;
     const isReReview = resolverSession !== undefined && resolverSession.history.length > 0;
-    const debateSession = _semanticDeps.createDebateSession({
+    const semanticEffectiveConfig = naxConfig ?? DEFAULT_CONFIG;
+    const semanticAgentName =
+      agentManager && typeof (agentManager as IAgentManager).getDefault === "function"
+        ? (agentManager as IAgentManager).getDefault()
+        : "claude";
+    const semanticCallCtx: import("../operations/types").CallContext = {
+      runtime: {
+        agentManager: agentManager ?? ({} as import("../agents").IAgentManager),
+        sessionManager: undefined as unknown as import("../session").ISessionManager,
+        configLoader: { current: () => semanticEffectiveConfig } as import("../config").ConfigLoader,
+        packages: {
+          resolve: () => ({
+            config: semanticEffectiveConfig,
+            select: (sel: { select: (c: import("../config").NaxConfig) => unknown }) =>
+              sel.select(semanticEffectiveConfig),
+          }),
+        } as unknown as import("../runtime").PackageRegistry,
+        runId: "semantic-review",
+        workdir,
+        projectDir: workdir,
+        costAggregator: undefined as unknown as import("../runtime").ICostAggregator,
+        promptAuditor: undefined as unknown as import("../runtime").IPromptAuditor,
+        logger: undefined as unknown as import("../logger").Logger,
+        signal: undefined as unknown as AbortSignal,
+        close: async () => {},
+      } as import("../runtime").NaxRuntime,
+      packageView: {
+        config: semanticEffectiveConfig,
+        select: (sel: { select: (c: import("../config").NaxConfig) => unknown }) => sel.select(semanticEffectiveConfig),
+      } as unknown as import("../runtime").PackageView,
+      packageDir: workdir,
+      agentName: semanticAgentName,
       storyId: story.id,
+      featureName,
+    };
+    const debateRunner = _semanticDeps.createDebateRunner({
+      ctx: semanticCallCtx,
       stage: "review",
       stageConfig: reviewStageConfig,
-      config: naxConfig ?? DEFAULT_CONFIG,
+      config: semanticEffectiveConfig,
       workdir,
       featureName: featureName,
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
-      agentManager: agentManager ?? undefined,
       reviewerSession: resolverSession,
       resolverContextInput: resolverSession
         ? {
@@ -328,7 +362,7 @@ export async function runSemanticReview(
     });
     // Track history length before to detect if the session was actually used by the resolver
     const historyLenBefore = resolverSession?.history.length ?? 0;
-    const debateResult = await debateSession.run(prompt);
+    const debateResult = await debateRunner.run(prompt);
     const debateCost = debateResult.totalCostUsd ?? 0;
 
     // When the ReviewerSession was used by the resolver (history grew), use its tool-verified

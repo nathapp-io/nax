@@ -1,5 +1,5 @@
 /**
- * Tests for DebateSession.run() mode routing — US-002
+ * Tests for DebateRunner.run() mode routing — US-002
  *
  * Covers mode-based dispatch logic:
  * - AC1: mode 'panel' + sessionMode 'one-shot' → runOneShot
@@ -11,9 +11,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
-import type { DebateStageConfig, DebateResult } from "../../../src/debate/types";
-import { makeMockAgentManager } from "../../helpers";
+import { DebateRunner } from "../../../src/debate/runner";
+import { _debateSessionDeps } from "../../../src/debate/session-helpers";
+import type { DebateStageConfig } from "../../../src/debate/types";
+import type { CallContext } from "../../../src/operations/types";
+import { DEFAULT_CONFIG } from "../../../src/config";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
@@ -33,25 +36,38 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-_debateSessionDeps.agentManager = makeMockAgentManager({
-  completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
-});
+function makeCallCtx(storyId: string, agentManager: ReturnType<typeof makeMockAgentManager>): CallContext {
+  return {
+    runtime: {
+      agentManager,
+      sessionManager: makeSessionManager({
+        openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+        closeSession: mock(async () => {}),
+      }),
+      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
+      signal: undefined,
+    } as any,
+    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    packageDir: "/tmp/work",
+    agentName: "claude",
+    storyId,
+    featureName: "test-feature",
+  };
+}
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────────
 
 let loggedWarnings: Array<{ stage: string; message: string }> = [];
 let loggedInfos: Array<{ stage: string; message: string }> = [];
-let mockGetSafeLogger: ReturnType<typeof mock>;
-let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
   loggedWarnings = [];
   loggedInfos = [];
-  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 
-  mockGetSafeLogger = mock(() => ({
+  _debateSessionDeps.getSafeLogger = mock(() => ({
     info: (stage: string, message: string) => {
       loggedInfos.push({ stage, message });
     },
@@ -61,16 +77,9 @@ beforeEach(() => {
     },
     error: () => {},
   }));
-
-  // Mock manager so debaters resolve quickly
-  _debateSessionDeps.agentManager = makeMockAgentManager({
-    completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
-  });
-  _debateSessionDeps.getSafeLogger = mockGetSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
   loggedWarnings = [];
   loggedInfos = [];
@@ -78,48 +87,60 @@ afterEach(() => {
 
 // ─── AC1: mode 'panel' + sessionMode 'one-shot' → runOneShot ──────────────────
 
-describe("DebateSession.run() mode routing — AC1: panel + one-shot", () => {
+describe("DebateRunner.run() mode routing — AC1: panel + one-shot", () => {
   test("with mode 'panel' and sessionMode 'one-shot', calls runOneShot", async () => {
-    const session = new DebateSession({
-      storyId: "test-story",
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+    });
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("test-story", agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         mode: "panel",
         sessionMode: "one-shot",
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    // Mock that runOneShot is called (indirectly verified by checking session resolves)
-    // The routing logic should call runOneShot for this combination
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
     expect(result.storyId).toBe("test-story");
   });
 });
 
 // ─── AC2: mode 'panel' + sessionMode 'stateful' → runStateful ────────────────
 
-describe("DebateSession.run() mode routing — AC2: panel + stateful", () => {
+describe("DebateRunner.run() mode routing — AC2: panel + stateful", () => {
   test("with mode 'panel' and sessionMode 'stateful', calls runStateful", async () => {
-    const session = new DebateSession({
-      storyId: "test-story",
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async (_name, _handle, _prompt) => ({
+        output: `{"passed": true}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      }),
+    });
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("test-story", agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         mode: "panel",
         sessionMode: "stateful",
       }),
+      config: DEFAULT_CONFIG,
       workdir: "/tmp",
       featureName: "test-feature",
     });
 
-    // The routing logic should call runStateful for this combination
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
     expect(result.storyId).toBe("test-story");
   });
 });
 
 // ─── AC3: mode undefined + sessionMode 'one-shot' → runOneShot (backward compat) ──
 
-describe("DebateSession.run() mode routing — AC3: mode undefined defaults to panel", () => {
+describe("DebateRunner.run() mode routing — AC3: mode undefined defaults to panel", () => {
   test("with mode undefined and sessionMode 'one-shot', calls runOneShot (panel behavior)", async () => {
     const stageConfig = makeStageConfig({
       sessionMode: "one-shot",
@@ -127,40 +148,48 @@ describe("DebateSession.run() mode routing — AC3: mode undefined defaults to p
     // Explicitly set mode to undefined to test backward compatibility
     delete (stageConfig as any).mode;
 
-    const session = new DebateSession({
-      storyId: "test-story",
-      stage: "review",
-      stageConfig: stageConfig as any,
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
     });
 
-    // Mode defaults to 'panel', should call runOneShot
-    const result = await session.run("test prompt");
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("test-story", agentManager),
+      stage: "review",
+      stageConfig: stageConfig as any,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
+    });
+
+    const result = await runner.run("test prompt");
     expect(result.storyId).toBe("test-story");
   });
 });
 
 // ─── AC4: mode 'hybrid' + sessionMode 'stateful' → runHybrid ──────────────────
 
-describe("DebateSession.run() mode routing — AC4: hybrid + stateful", () => {
+describe("DebateRunner.run() mode routing — AC4: hybrid + stateful", () => {
   test("with mode 'hybrid' and sessionMode 'stateful', calls runHybrid", async () => {
-  // Mock manager so debaters resolve quickly
-  _debateSessionDeps.agentManager = makeMockAgentManager({
-    completeFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
-  });
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async (_name, _handle, _prompt) => ({
+        output: `{"passed": true}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      }),
+    });
 
-    const session = new DebateSession({
-      storyId: "test-story",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("test-story", agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         mode: "hybrid",
         sessionMode: "stateful",
       }),
+      config: DEFAULT_CONFIG,
       workdir: "/tmp",
       featureName: "test-feature",
     });
 
-    // runHybrid is now implemented — verify routing dispatches to it and returns a result
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
     expect(result.storyId).toBe("test-story");
     expect(result.stage).toBe("review");
   });
@@ -168,18 +197,24 @@ describe("DebateSession.run() mode routing — AC4: hybrid + stateful", () => {
 
 // ─── AC5: mode 'hybrid' + sessionMode 'one-shot' → runOneShot + warning ────────
 
-describe("DebateSession.run() mode routing — AC5: hybrid + one-shot with fallback", () => {
+describe("DebateRunner.run() mode routing — AC5: hybrid + one-shot with fallback", () => {
   test("with mode 'hybrid' and sessionMode 'one-shot', calls runOneShot and logs warning", async () => {
-    const session = new DebateSession({
-      storyId: "test-story",
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+    });
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("test-story", agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         mode: "hybrid",
         sessionMode: "one-shot",
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    const result = await session.run("test prompt");
+    const result = await runner.run("test prompt");
 
     expect(result.storyId).toBe("test-story");
     // Verify warning was logged
@@ -192,7 +227,7 @@ describe("DebateSession.run() mode routing — AC5: hybrid + one-shot with fallb
 
 // ─── AC6: mode 'hybrid' + sessionMode undefined → runOneShot + warning ────────
 
-describe("DebateSession.run() mode routing — AC6: hybrid + undefined sessionMode with fallback", () => {
+describe("DebateRunner.run() mode routing — AC6: hybrid + undefined sessionMode with fallback", () => {
   test("with mode 'hybrid' and sessionMode undefined, calls runOneShot and logs warning", async () => {
     const stageConfig = makeStageConfig({
       mode: "hybrid",
@@ -200,13 +235,19 @@ describe("DebateSession.run() mode routing — AC6: hybrid + undefined sessionMo
     // Remove sessionMode to test undefined behavior
     delete (stageConfig as any).sessionMode;
 
-    const session = new DebateSession({
-      storyId: "test-story",
-      stage: "review",
-      stageConfig: stageConfig as any,
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
     });
 
-    const result = await session.run("test prompt");
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("test-story", agentManager),
+      stage: "review",
+      stageConfig: stageConfig as any,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
+    });
+
+    const result = await runner.run("test prompt");
 
     expect(result.storyId).toBe("test-story");
     // Verify warning was logged

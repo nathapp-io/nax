@@ -1,16 +1,18 @@
 /**
- * session-plan.ts
+ * runner-plan.ts
  *
- * Extracted runPlan() implementation for DebateSession.
+ * runPlan() implementation for DebateRunner.
  */
 
 import { join } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import type { ModelDef } from "../config";
+import { NaxError } from "../errors";
 import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
+import { type HybridCtx, runRebuttalLoop } from "./runner-hybrid";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -21,7 +23,6 @@ import {
   resolveModelDefForDebater,
   resolveOutcome,
 } from "./session-helpers";
-import { type HybridCtx, runRebuttalLoop } from "./session-hybrid";
 import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 
 interface PlanCtx {
@@ -31,6 +32,7 @@ interface PlanCtx {
   readonly config: NaxConfig;
   readonly agentManager?: IAgentManager;
   readonly sessionManager?: import("../session/types").ISessionManager;
+  readonly signal?: AbortSignal;
 }
 
 export async function runPlan(
@@ -90,22 +92,33 @@ export async function runPlan(
       const modelTier = modelTierFromDebater(rd);
       const modelDef: ModelDef = resolveModelDefForDebater(rd, modelTier, ctx.config);
 
-      const planResult = await agentManager.planAs(agentName, {
-        prompt: debaterPrompt,
+      const sessionManager = ctx.sessionManager;
+      if (!sessionManager) {
+        throw new NaxError(
+          "[debate] plan mode requires sessionManager; got undefined",
+          "DEBATE_MISSING_SESSION_MANAGER",
+          { stage: "plan", storyId: ctx.storyId },
+        );
+      }
+      const sessionName = sessionManager.nameFor({
         workdir: opts.workdir,
-        interactive: false,
-        timeoutSeconds: opts.timeoutSeconds,
-        config: ctx.config,
-        modelTier,
-        modelDef,
-        maxInteractionTurns: opts.maxInteractionTurns,
         featureName: opts.feature,
         storyId: ctx.storyId,
-        sessionRole: `plan-${i}`,
+        role: `plan-${i}`,
       });
-
+      await sessionManager.runInSession(sessionName, debaterPrompt, {
+        agentName,
+        role: `plan-${i}`,
+        workdir: opts.workdir,
+        pipelineStage: "plan",
+        modelDef,
+        timeoutSeconds: opts.timeoutSeconds ?? 600,
+        featureName: opts.feature,
+        storyId: ctx.storyId,
+        signal: ctx.signal,
+      });
       const output = await _debateSessionDeps.readFile(tempOutputPath);
-      return { debater: rd, agentName, output, cost: planResult.costUsd ?? 0 };
+      return { debater: rd, agentName, output, cost: 0 };
     }),
     concurrencyLimit,
   );
@@ -174,7 +187,7 @@ export async function runPlan(
   // Multiple proposals — run hybrid rebuttal loop if configured, then resolve
   const proposalOutputs = successful.map((p) => p.output);
 
-  // Hybrid rebuttal loop — delegates to session-hybrid.ts (SSOT)
+  // Hybrid rebuttal loop — delegates to runner-hybrid.ts (SSOT)
   const mode = ctx.stageConfig.mode ?? "panel";
   const sessionMode = ctx.stageConfig.sessionMode ?? "one-shot";
   let critiqueOutputs: string[] = [];
@@ -189,6 +202,7 @@ export async function runPlan(
       workdir: opts.workdir,
       featureName: opts.feature,
       timeoutSeconds: opts.timeoutSeconds ?? 600,
+      agentManager,
       sessionManager: ctx.sessionManager,
     };
     const rebuttalBuilder = new DebatePromptBuilder(

@@ -177,7 +177,7 @@ const DEBATE_DUPLICATE_FINDINGS_RESULT: DebateResult = {
 const origSpawn = _diffUtilsDeps.spawn;
 const origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
 const origGetMergeBase = _diffUtilsDeps.getMergeBase;
-const origCreateDebateSession = _semanticDeps.createDebateSession;
+const origCreateDebateSession = _semanticDeps.createDebateRunner;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -245,7 +245,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("diff content");
     _diffUtilsDeps.isGitRefValid = mock(async () => true);
     _diffUtilsDeps.getMergeBase = mock(async () => null);
-    _semanticDeps.createDebateSession = origCreateDebateSession;
+    _semanticDeps.createDebateRunner = origCreateDebateSession;
   });
 
   afterEach(() => {
@@ -253,16 +253,16 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     _diffUtilsDeps.spawn = origSpawn;
     _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
     _diffUtilsDeps.getMergeBase = origGetMergeBase;
-    _semanticDeps.createDebateSession = origCreateDebateSession;
+    _semanticDeps.createDebateRunner = origCreateDebateSession;
   });
 
   // ─────────────────────────────────────────────────────────────────────────
   // AC3: debate enabled → DebateSession.run() used instead of agent.complete()
   // ─────────────────────────────────────────────────────────────────────────
 
-  test("AC3: createDebateSession is called when debate.stages.review.enabled=true", async () => {
+  test("AC3: createDebateRunner is called when debate.stages.review.enabled=true", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateSession = mock(() => ({ run: runMock }));
+    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
 
@@ -275,12 +275,12 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       DEBATE_REVIEW_ENABLED_CONFIG,
     );
 
-    expect(_semanticDeps.createDebateSession).toHaveBeenCalled();
+    expect(_semanticDeps.createDebateRunner).toHaveBeenCalled();
   });
 
   test("AC3: DebateSession.run() is called with the semantic review prompt", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateSession = mock(() => ({ run: runMock }));
+    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
 
     await runSemanticReview(
       WORKDIR,
@@ -299,7 +299,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
   test("AC3: agent.complete() is NOT called when debate is enabled and debate runs", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateSession = mock(() => ({ run: runMock }));
+    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
 
@@ -319,7 +319,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const createDebateMock = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
     }));
-    _semanticDeps.createDebateSession = createDebateMock;
+    _semanticDeps.createDebateRunner = createDebateMock;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
 
@@ -341,7 +341,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   test("AC4: success=true when majority (2 of 3) proposals have passed=true", async () => {
-    _semanticDeps.createDebateSession = mock(() => ({
+    _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
     }));
 
@@ -358,7 +358,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   });
 
   test("AC4: success=false when majority (2 of 3) proposals have passed=false", async () => {
-    _semanticDeps.createDebateSession = mock(() => ({
+    _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
     }));
 
@@ -379,7 +379,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   test("AC5: findings contains entries from all debaters when majority fails", async () => {
-    _semanticDeps.createDebateSession = mock(() => ({
+    _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
     }));
 
@@ -401,7 +401,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     // - claude: [{file: semantic.ts, line: 10}]
     // - opencode: [{file: semantic.ts, line: 10}, {file: plan.ts, line: 200}]
     // Expected merged+deduped: 2 findings (not 3)
-    _semanticDeps.createDebateSession = mock(() => ({
+    _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_DUPLICATE_FINDINGS_RESULT),
     }));
 
@@ -423,7 +423,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   });
 
   test("AC5: findings from both debaters are included when they report different issues", async () => {
-    _semanticDeps.createDebateSession = mock(() => ({
+    _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_DUPLICATE_FINDINGS_RESULT),
     }));
 

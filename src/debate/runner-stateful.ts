@@ -1,10 +1,11 @@
 /**
- * session-hybrid.ts
+ * runner-stateful.ts
  *
- * runHybrid() implementation for hybrid-mode debate sessions.
+ * runStateful(), runStatefulTurn() implementations for DebateRunner.
  */
 
 import type { IAgentManager } from "../agents";
+import type { ModelDef } from "../config";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
 import { allSettledBounded } from "./concurrency";
@@ -21,16 +22,9 @@ import {
   resolveModelDefForDebater,
   resolveOutcome,
 } from "./session-helpers";
-import { runStatefulTurn } from "./session-stateful";
-import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
+import type { DebateResult, DebateStageConfig, Debater } from "./types";
 
-/** Result of the rebuttal loop — rebuttals collected + accumulated cost. */
-export interface RebuttalLoopResult {
-  rebuttals: Rebuttal[];
-  costUsd: number;
-}
-
-export interface HybridCtx {
+interface StatefulCtx {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
@@ -42,123 +36,40 @@ export interface HybridCtx {
   readonly sessionManager?: import("../session/types").ISessionManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
+  readonly signal?: AbortSignal;
 }
 
-/**
- * Run the sequential rebuttal loop across all debaters for N rounds.
- * Uses proposal.handle when present (hybrid mode); opens fresh sessions otherwise (plan-mode).
- * Closes only internally-opened handles in finally.
- */
-export async function runRebuttalLoop(
-  ctx: HybridCtx,
-  proposals: SuccessfulProposal[],
-  builder: DebatePromptBuilder,
-  sessionRolePrefix: string,
-): Promise<RebuttalLoopResult> {
-  const logger = _debateSessionDeps.getSafeLogger();
-  const config = ctx.stageConfig;
-  const rebuttals: Rebuttal[] = [];
-  let costUsd = 0;
-  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
-  if (!agentManager) {
-    return { rebuttals: [], costUsd: 0 };
-  }
+export async function runStatefulTurn(
+  ctx: StatefulCtx,
+  agentManager: IAgentManager,
+  agentName: string,
+  debater: Debater,
+  prompt: string,
+  handle: import("../agents/types").SessionHandle,
+): Promise<SuccessfulProposal> {
+  const pipelineStage = pipelineStageForDebate(ctx.stage);
 
-  const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
-  const sessionManager = ctx.sessionManager;
+  const turnResult = await agentManager.runAsSession(agentName, handle, prompt, {
+    storyId: ctx.storyId,
+    pipelineStage,
+  });
 
-  // Resolve effective handles — use caller-supplied handles when present (hybrid mode),
-  // open fresh sessions otherwise (plan-mode rebuttals where proposals came from planAs).
-  const internalHandles: Array<import("../agents/types").SessionHandle | null> = [];
-  for (let i = 0; i < proposals.length; i++) {
-    const proposal = proposals[i];
-    const sessionRole = `${sessionRolePrefix}-${i}`;
-    if (proposal.handle) {
-      internalHandles.push(null); // Caller owns this handle; we do not close it
-    } else if (sessionManager) {
-      const modelTier = modelTierFromDebater(proposal.debater);
-      const modelDef = resolveModelDefForDebater(proposal.debater, modelTier, ctx.config);
-      const name = sessionManager.nameFor({
-        workdir: ctx.workdir,
-        featureName: ctx.featureName,
-        storyId: ctx.storyId,
-        role: sessionRole,
-      });
-      const handle = await sessionManager.openSession(name, {
-        agentName: proposal.agentName,
-        role: sessionRole,
-        workdir: ctx.workdir,
-        pipelineStage: pipelineStageForDebate(ctx.stage),
-        modelDef,
-        timeoutSeconds: ctx.timeoutSeconds,
-        featureName: ctx.featureName,
-        storyId: ctx.storyId,
-      });
-      internalHandles.push(handle);
-    } else {
-      internalHandles.push(null);
-    }
-  }
-
-  try {
-    for (let round = 1; round <= config.rounds; round++) {
-      const priorRebuttals = rebuttals.filter((r) => r.round < round);
-
-      for (let debaterIdx = 0; debaterIdx < proposals.length; debaterIdx++) {
-        const proposal = proposals[debaterIdx];
-        const effectiveHandle = proposal.handle ?? internalHandles[debaterIdx];
-        if (!effectiveHandle) continue;
-
-        logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
-          storyId: ctx.storyId,
-          round,
-          debaterIndex: debaterIdx,
-        });
-
-        const rebuttalPrompt = builder.buildRebuttalPrompt(debaterIdx, proposalList, priorRebuttals);
-
-        try {
-          const turnResult = await agentManager.runAsSession(proposal.agentName, effectiveHandle, rebuttalPrompt, {
-            storyId: ctx.storyId,
-            pipelineStage: pipelineStageForDebate(ctx.stage),
-          });
-          costUsd += turnResult.cost?.total ?? 0;
-          rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
-        } catch (err) {
-          logger?.warn("debate", "debate:rebuttal-failed", {
-            storyId: ctx.storyId,
-            round,
-            debaterIndex: debaterIdx,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
-  } finally {
-    // Close only internally-opened handles (caller-supplied handles are closed by the caller)
-    for (const handle of internalHandles) {
-      if (handle && sessionManager) {
-        try {
-          await sessionManager.closeSession(handle);
-        } catch {
-          // Ignore close errors
-        }
-      }
-    }
-  }
-
-  return { rebuttals, costUsd };
+  return {
+    debater,
+    agentName,
+    output: turnResult.output,
+    cost: turnResult.cost?.total ?? 0,
+    handle,
+  };
 }
 
-export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateResult> {
+export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
   const personaStage: "plan" | "review" = ctx.stage === "plan" ? "plan" : "review";
   const rawDebaters = config.debaters ?? [];
   const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
-  const sessionManager = ctx.sessionManager;
-
   const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
   if (!agentManager) {
     return buildFailedResult(ctx.storyId, ctx.stage, config, 0);
@@ -173,34 +84,46 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     resolved.push({ debater, agentName: debater.agent });
   }
 
+  logger?.info("debate", "debate:start", {
+    storyId: ctx.storyId,
+    stage: ctx.stage,
+    debaters: resolved.map((r) => r.debater.agent),
+  });
+
   const debate = ctx.config?.debate;
   const concurrencyLimit = debate?.maxConcurrentDebaters ?? 2;
+  const proposalBuilder = new DebatePromptBuilder(
+    { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+    { debaters: resolved.map((r) => r.debater), sessionMode: "stateful" },
+  );
 
   // Pre-open one session per resolved debater
   const openHandles: Array<import("../agents/types").SessionHandle | null> = [];
+  const sessionManager = ctx.sessionManager;
 
   try {
     for (let i = 0; i < resolved.length; i++) {
       const { debater, agentName } = resolved[i];
-      const sessionRole = `debate-hybrid-${i}`;
+      const roleKey = `debate-${ctx.stage}-${i}`;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
-        const modelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
+        const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
         const name = sessionManager.nameFor({
           workdir: ctx.workdir,
           featureName: ctx.featureName,
           storyId: ctx.storyId,
-          role: sessionRole,
+          role: roleKey,
         });
         const handle = await sessionManager.openSession(name, {
           agentName,
-          role: sessionRole,
+          role: roleKey,
           workdir: ctx.workdir,
           pipelineStage: pipelineStageForDebate(ctx.stage),
           modelDef,
           timeoutSeconds: ctx.timeoutSeconds,
           featureName: ctx.featureName,
           storyId: ctx.storyId,
+          signal: ctx.signal,
         });
         openHandles.push(handle);
       } else {
@@ -208,13 +131,21 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       }
     }
 
+    // Proposal round
     const proposalSettled = await allSettledBounded(
       resolved.map(({ debater, agentName }, debaterIdx) => () => {
         const handle = openHandles[debaterIdx];
         if (!handle) {
-          return Promise.reject(new Error(`No session handle for hybrid debater ${debaterIdx}`));
+          return Promise.reject(new Error(`No session handle for debater ${debaterIdx}`));
         }
-        return runStatefulTurn(ctx, agentManager, agentName, debater, prompt, handle);
+        return runStatefulTurn(
+          ctx,
+          agentManager,
+          agentName,
+          debater,
+          proposalBuilder.buildProposalPrompt(debaterIdx),
+          handle,
+        );
       }),
       concurrencyLimit,
     );
@@ -238,6 +169,11 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
           stage: ctx.stage,
           reason: "only 1 debater succeeded",
         });
+        logger?.info("debate", "debate:result", {
+          storyId: ctx.storyId,
+          stage: ctx.stage,
+          outcome: "passed",
+        });
         return {
           storyId: ctx.storyId,
           stage: ctx.stage,
@@ -250,7 +186,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
         };
       }
 
-      // 0 succeeded — retry with first resolved agent (use existing open handle)
+      // 0 succeeded — retry with first adapter (uses existing open handle)
       if (resolved.length > 0) {
         const { agentName: fallbackAgentName, debater: fallbackDebater } = resolved[0];
         const fallbackHandle = openHandles[0];
@@ -270,6 +206,11 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
               fallbackHandle,
             );
             totalCostUsd += fallbackResult.cost;
+            logger?.info("debate", "debate:result", {
+              storyId: ctx.storyId,
+              stage: ctx.stage,
+              outcome: "passed",
+            });
             return {
               storyId: ctx.storyId,
               stage: ctx.stage,
@@ -282,31 +223,66 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
             };
           }
         } catch {
-          // Retry also failed — fall through to failed result
+          // Retry also failed — fall through to failed result.
         }
       }
 
+      logger?.warn("debate", "debate:fallback", {
+        storyId: ctx.storyId,
+        stage: ctx.stage,
+        reason: "fewer than 2 proposal rounds succeeded",
+      });
       return buildFailedResult(ctx.storyId, ctx.stage, config, totalCostUsd);
     }
 
+    for (let i = 0; i < successfulProposals.length; i++) {
+      const s = successfulProposals[i];
+      logger?.info("debate", "debate:proposal", {
+        storyId: ctx.storyId,
+        stage: ctx.stage,
+        debaterIndex: i,
+        agent: s.debater.agent,
+      });
+    }
+
+    // Critique round (when rounds > 1)
+    let critiqueOutputs: string[] = [];
+    if (config.rounds > 1) {
+      const proposals = successfulProposals.map((s) => ({ debater: s.debater, output: s.output }));
+      const critiqueBuilder = new DebatePromptBuilder(
+        { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+        { debaters: proposals.map((p) => p.debater), sessionMode: ctx.stageConfig.sessionMode ?? "one-shot" },
+      );
+      const critiqueSettled = await allSettledBounded(
+        successfulProposals.map((proposal, successfulIdx) => () => {
+          if (!proposal.handle) {
+            return Promise.reject(new Error("No handle on successful proposal for critique round"));
+          }
+          return runStatefulTurn(
+            ctx,
+            agentManager,
+            proposal.agentName,
+            proposal.debater,
+            critiqueBuilder.buildCritiquePrompt(successfulIdx, proposals),
+            proposal.handle,
+          );
+        }),
+        concurrencyLimit,
+      );
+
+      for (const r of critiqueSettled) {
+        if (r.status === "fulfilled") {
+          totalCostUsd += r.value.cost;
+        }
+      }
+
+      critiqueOutputs = critiqueSettled
+        .filter((r): r is PromiseFulfilledResult<SuccessfulProposal> => r.status === "fulfilled")
+        .map((r) => r.value.output);
+    }
+
+    // Resolve outcome
     const proposalOutputs = successfulProposals.map((s) => s.output);
-    const proposalList = successfulProposals.map((s) => ({ debater: s.debater, output: s.output }));
-
-    // Rebuttal loop — successfulProposals carry handles, so runRebuttalLoop uses them directly
-    const rebuttalBuilder = new DebatePromptBuilder(
-      { taskContext: prompt, outputFormat: "", stage: ctx.stage },
-      { debaters: successfulProposals.map((s) => s.debater), sessionMode: "stateful" },
-    );
-    const { rebuttals, costUsd: rebuttalCost } = await runRebuttalLoop(
-      ctx,
-      successfulProposals,
-      rebuttalBuilder,
-      "debate-hybrid",
-    );
-    totalCostUsd += rebuttalCost;
-
-    const critiqueOutputs = rebuttals.map((r) => r.output);
-
     const fullResolverContext = ctx.resolverContextInput
       ? {
           ...ctx.resolverContextInput,
@@ -316,7 +292,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
           })),
         }
       : undefined;
-    const resolveResult: ResolveOutcome = await resolveOutcome(
+    const outcome: ResolveOutcome = await resolveOutcome(
       proposalOutputs,
       critiqueOutputs,
       ctx.stageConfig,
@@ -331,21 +307,29 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       successfulProposals.map((s) => s.debater),
       agentManager,
     );
-    totalCostUsd += resolveResult.resolverCostUsd;
+    totalCostUsd += outcome.resolverCostUsd;
 
+    const proposals = successfulProposals.map((s) => ({
+      debater: s.debater,
+      output: s.output,
+    }));
+
+    logger?.info("debate", "debate:result", {
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      outcome: outcome.outcome,
+    });
     return {
       storyId: ctx.storyId,
       stage: ctx.stage,
-      outcome: "passed",
+      outcome: outcome.outcome,
       rounds: config.rounds,
       debaters: successfulProposals.map((s) => s.debater.agent),
       resolverType: config.resolver.type,
-      proposals: proposalList,
-      rebuttals,
+      proposals,
       totalCostUsd,
     };
   } finally {
-    // Close all pre-opened handles
     for (const handle of openHandles) {
       if (handle && sessionManager) {
         try {

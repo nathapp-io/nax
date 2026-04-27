@@ -21,8 +21,8 @@ import type { NaxConfig } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { discoverWorkspacePackages } from "../context/generator";
-import { DebateSession } from "../debate";
-import type { DebateSessionOptions, DebateStageConfig } from "../debate";
+import { DebateRunner } from "../debate";
+import type { DebateRunnerOptions, DebateStageConfig } from "../debate";
 import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
@@ -82,7 +82,7 @@ export const _planDeps = {
     onQuestionDetected: (text: string) => Promise<string>;
   } => createCliInteractionBridge(),
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => initInteractionChain(cfg, headless),
-  createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
+  createDebateRunner: (opts: DebateRunnerOptions): DebateRunner => new DebateRunner(opts),
   runPrecheck: async (
     config: NaxConfig,
     prd: PRD,
@@ -185,7 +185,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
 
   if (debateEnabled) {
-    // Debate path: run N agents in parallel via DebateSession.runPlan().
+    // Debate path: run N agents in parallel via DebateRunner.runPlan().
     // Each debater calls adapter.plan() writing to a temp path; resolver picks the best PRD.
     // taskContext is passed to the rebuttal loop; outputFormat is proposal-round only.
     const { taskContext: planTaskContext, outputFormat: planOutputFormat } = new PlanPromptBuilder().build(
@@ -199,22 +199,31 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
     const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
     const debateAgentManager = _planDeps.createManager(config);
-    const debateSession = _planDeps.createDebateSession({
+    const debateRt = createRuntime(config, workdir, { agentManager: debateAgentManager });
+    const debateCallCtx = {
+      runtime: debateRt,
+      packageView: debateRt.packages.resolve(),
+      packageDir: workdir,
+      agentName: debateAgentManager.getDefault(),
       storyId: options.feature,
+      featureName: options.feature,
+    } satisfies import("../operations/types").CallContext;
+    const debateRunner = _planDeps.createDebateRunner({
+      ctx: debateCallCtx,
       stage: "plan",
       stageConfig: planStageConfig,
       config,
       workdir,
       featureName: options.feature,
       timeoutSeconds,
-      agentManager: debateAgentManager,
+      sessionManager: debateRt.sessionManager,
     });
     logger?.info("plan", "Starting debate planning session", {
       debaters: planStageConfig.debaters?.map((d) => d.agent),
       rounds: planStageConfig.rounds,
       feature: options.feature,
     });
-    const debateResult = await debateSession.runPlan(planTaskContext, planOutputFormat, {
+    const debateResult = await debateRunner.runPlan(planTaskContext, planOutputFormat, {
       workdir,
       feature: options.feature,
       outputDir: outputDir,
@@ -605,17 +614,25 @@ export async function planDecomposeCommand(
           storyId: options.storyId,
           config,
         });
-        const debateSession = _planDeps.createDebateSession({
+        const decompCallCtx = {
+          runtime: rt,
+          packageView: rt.packages.resolve(),
+          packageDir: workdir,
+          agentName: agentManager.getDefault(),
           storyId: options.storyId,
+          featureName: options.feature,
+        } satisfies import("../operations/types").CallContext;
+        const debateRunner2 = _planDeps.createDebateRunner({
+          ctx: decompCallCtx,
           stage: "decompose",
           stageConfig: decomposeStageConfig,
           config,
           workdir,
           featureName: options.feature,
           timeoutSeconds,
-          agentManager,
+          sessionManager: rt.sessionManager,
         });
-        const debateResult = await debateSession.run(prompt);
+        const debateResult = await debateRunner2.run(prompt);
         if (debateResult.outcome !== "failed" && debateResult.output) {
           decompStories = parseDecomposeOutput(debateResult.output);
         }

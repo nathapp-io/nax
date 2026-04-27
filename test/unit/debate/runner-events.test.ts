@@ -1,18 +1,41 @@
 /**
- * Tests for DebateSession — US-002
+ * Tests for DebateRunner — US-002
  *
  * File: session-events.test.ts
  * Covers:
  * - JSONL events: debate:start, debate:proposal, debate:result, debate:fallback
- * - resolveDebaterModel used to pass resolved model to complete()
+ * - resolveDebaterModel used to pass resolved model to completeAs()
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DebateSession, _debateSessionDeps, resolveDebaterModel } from "../../../src/debate/session";
+import { DebateRunner } from "../../../src/debate/runner";
+import { _debateSessionDeps, resolveDebaterModel } from "../../../src/debate/session-helpers";
 import type { DebateStageConfig, Debater } from "../../../src/debate/types";
 import type { NaxConfig } from "../../../src/config";
-import type { CompleteOptions } from "../../../src/agents/types";
-import { makeMockAgentManager } from "../../helpers";
+import { DEFAULT_CONFIG } from "../../../src/config";
+import type { CallContext } from "../../../src/operations/types";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+
+function makeCallCtx(
+  storyId: string,
+  agentManager: ReturnType<typeof makeMockAgentManager>,
+  config?: NaxConfig,
+): CallContext {
+  return {
+    runtime: {
+      agentManager,
+      sessionManager: makeSessionManager(),
+      configLoader: { current: () => config ?? DEFAULT_CONFIG, select: (_sel: unknown) => config ?? DEFAULT_CONFIG } as any,
+      packages: { resolve: () => ({ config: config ?? DEFAULT_CONFIG, select: (_sel: unknown) => config ?? DEFAULT_CONFIG }) } as any,
+      signal: undefined,
+    } as any,
+    packageView: { config: config ?? DEFAULT_CONFIG, select: (_sel: unknown) => config ?? DEFAULT_CONFIG } as any,
+    packageDir: "/tmp/work",
+    agentName: "claude",
+    storyId,
+    featureName: "test",
+  };
+}
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -31,22 +54,19 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
-let origAgentManager: typeof _debateSessionDeps.agentManager;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  origAgentManager = _debateSessionDeps.agentManager;
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 });
 
 afterEach(() => {
-  _debateSessionDeps.agentManager = origAgentManager;
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
 });
 
 // ─── JSONL log events ─────────────────────────────────────────────────────────
 
-describe("DebateSession.run() — JSONL log events", () => {
+describe("DebateRunner.run() — JSONL log events", () => {
   test("emits debate:start event with storyId, stage, and debaters", async () => {
     const events: Array<{ stage: string; event: string; data: Record<string, unknown> }> = [];
 
@@ -59,18 +79,20 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.agentManager = makeMockAgentManager();
+    const agentManager = makeMockAgentManager();
 
-    const session = new DebateSession({
-      storyId: "US-LOG",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-LOG", agentManager),
       stage: "plan",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 1,
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("prompt");
+    await runner.run("prompt");
 
     const startEvent = events.find((e) => e.event === "debate:start");
     expect(startEvent).toBeDefined();
@@ -91,18 +113,20 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.agentManager = makeMockAgentManager();
+    const agentManager = makeMockAgentManager();
 
-    const session = new DebateSession({
-      storyId: "US-LOG",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-LOG", agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 1,
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("prompt");
+    await runner.run("prompt");
 
     const proposalEvents = events.filter((e) => e.event === "debate:proposal");
     expect(proposalEvents.length).toBe(2);
@@ -122,18 +146,20 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.agentManager = makeMockAgentManager();
+    const agentManager = makeMockAgentManager();
 
-    const session = new DebateSession({
-      storyId: "US-LOG",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-LOG", agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
         rounds: 1,
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("prompt");
+    await runner.run("prompt");
 
     const resultEvent = events.find((e) => e.event === "debate:result");
     expect(resultEvent).toBeDefined();
@@ -153,20 +179,22 @@ describe("DebateSession.run() — JSONL log events", () => {
       error: () => {},
     })) as never;
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
+    const agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing"]),
     });
 
-    const session = new DebateSession({
-      storyId: "US-LOG",
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-LOG", agentManager),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "missing" }],
         rounds: 1,
       }),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
     });
 
-    await session.run("prompt");
+    await runner.run("prompt");
 
     const fallbackWarning = warnings.find((w) => w.event === "debate:fallback");
     expect(fallbackWarning).toBeDefined();
@@ -176,29 +204,30 @@ describe("DebateSession.run() — JSONL log events", () => {
   test("uses resolveDebaterModel to pass resolved model to completeAs()", async () => {
     const completeCalls: Array<{ agent: string; model: string | undefined }> = [];
 
-    _debateSessionDeps.agentManager = makeMockAgentManager({
-      completeFn: async (agentName, _prompt, opts) => {
-        completeCalls.push({ agent: agentName, model: opts?.model });
-        return { output: `output from ${agentName}`, costUsd: 0, source: "fallback" };
-      },
-    });
-
     const config = {
       models: { claude: { fast: "claude-haiku-4-5" } },
       autoMode: { defaultAgent: "claude" },
     } as unknown as NaxConfig;
 
-    const session = new DebateSession({
-      storyId: "US-LOG",
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (agentName, _prompt, opts) => {
+        completeCalls.push({ agent: agentName, model: opts?.model });
+        return { output: `output from ${agentName}`, costUsd: 0, source: "fallback" as const };
+      },
+    });
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtx("US-LOG", agentManager, config),
       stage: "review",
       stageConfig: makeStageConfig({
         debaters: [{ agent: "claude" }, { agent: "claude" }],
         rounds: 1,
       }),
       config,
+      workdir: "/tmp/work",
     });
 
-    await session.run("prompt");
+    await runner.run("prompt");
 
     expect(completeCalls.every((c) => c.model === "claude-haiku-4-5")).toBe(true);
   });
