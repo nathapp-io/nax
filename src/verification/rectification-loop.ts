@@ -41,7 +41,7 @@ export interface RectificationAttemptResult {
   /** Estimated cost for this attempt. */
   cost: number;
   /** Protocol IDs for session manager binding. */
-  protocolIds?: import("../session/types").ProtocolIds;
+  protocolIds?: import("../runtime/protocol-types").ProtocolIds;
 }
 
 export interface RectificationLoopOptions {

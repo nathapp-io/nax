@@ -101,7 +101,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -134,7 +134,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async (_name: string, prompt: string) => {
           capturedCompleteArgs.push(prompt);
@@ -156,7 +156,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -263,7 +263,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async (_name: string, _prompt: string, opts?: any) => {
           capturedDecomposeOpts.push(opts ?? {});

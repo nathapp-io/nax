@@ -181,7 +181,7 @@ const DEBATE_FAILED_RESULT: DebateResult = {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
@@ -199,7 +199,7 @@ const origInitInteractionChain = _planDeps.initInteractionChain;
 function setupInteractivePlanMocks(
   runFn: (name: string, opts: any) => Promise<any>,
 ) {
-  _planDeps.createManager = mock(() =>
+  _planDeps.createRuntime = mock(() =>
     makeMockPlanManager(runFn, undefined),
   );
   _planDeps.existsSync = mock((p: string) => p.includes(".nax"));
@@ -232,7 +232,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.existsSync = mock(() => false);
     _planDeps.initInteractionChain = mock(async () => null);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(
         undefined,
         async (_name: string, _prompt: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const }),
@@ -246,7 +246,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;
@@ -313,7 +313,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC1: adapter.complete() is NOT called when debate is enabled and succeeds", async () => {
     const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(
         undefined,
         async (_name: string, _prompt: string, _opts: any) => { adapterComplete(); return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const }; },
@@ -351,7 +351,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC2: adapter.complete() called exactly once when debate.enabled=false", async () => {
     const completeCalls: string[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
         completeCalls.push("called");
         return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
@@ -377,7 +377,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC2: adapter.complete() called exactly once when debate config is absent", async () => {
     const completeCalls: string[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
         completeCalls.push("called");
         return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
@@ -403,7 +403,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC2: adapter.complete() called when debate.stages.plan.enabled=false", async () => {
     const completeCalls: string[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
         completeCalls.push("called");
         return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };

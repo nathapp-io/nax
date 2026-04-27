@@ -162,7 +162,6 @@ describe("execution stage — AC-41 fallback observability", () => {
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 }),
-        deriveSessionName: () => "nax-test-session",
       }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
 
     const ctx = makeCtx({ agentManager: manager });
@@ -204,7 +203,6 @@ describe("execution stage — AC-41 fallback observability", () => {
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0 }),
-        deriveSessionName: () => "nax-test-session",
       }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
 
     const ctx = makeCtx({ agentManager: manager });
@@ -232,7 +230,6 @@ describe("execution stage — AC-41 fallback observability", () => {
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0 }),
-        deriveSessionName: () => "nax-test-session",
       }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
 
     const ctx = makeCtx({ agentManager: manager });
@@ -267,7 +264,6 @@ describe("execution stage — AC-41 fallback observability", () => {
         name: "claude",
         capabilities: { supportedTiers: ["fast"] },
         run: async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0 }),
-        deriveSessionName: () => "nax-test-session",
       }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
 
     const ctx = makeCtx({ agentManager: manager });
@@ -344,7 +340,6 @@ describe("execution stage — AC-41 fallback observability", () => {
         name: agentId,
         capabilities: { supportedTiers: ["fast"] },
         run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0 }),
-        deriveSessionName: () => "nax-test-session",
       }) as unknown as ReturnType<typeof _executionDeps.getAgent>;
 
     const ctx = makeCtx({ projectDir: "/repo", agentManager: manager, sessionManager });

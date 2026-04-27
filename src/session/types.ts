@@ -6,6 +6,7 @@
  *
  * See: docs/specs/SPEC-session-manager-integration.md
  */
+import type { ProtocolIds } from "../runtime/protocol-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State machine — 7 states
@@ -74,26 +75,6 @@ export type SessionRole =
   | "judge" // Debate custom judge resolver
   | `debate-${string}` // Debate stateful debater roles
   | `plan-hybrid-${number}`; // Plan-stage hybrid rebuttal roles
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Protocol IDs
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Protocol-level IDs captured from the acpx adapter for audit correlation.
- *
- * recordId is stable — it identifies the logical ACP record across reconnects.
- * sessionId is volatile — it changes when the physical session is reconnected.
- *
- * Correlation chain:
- *   storyId → SessionDescriptor.id → protocolIds.recordId → prompt audit files
- */
-export interface ProtocolIds {
-  /** Stable acpx record ID — never changes for the lifetime of a logical session */
-  recordId: string | null;
-  /** Volatile acpx physical session ID — changes on reconnect */
-  sessionId: string | null;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SessionDescriptor

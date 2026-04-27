@@ -21,6 +21,7 @@ import { semanticReviewOp } from "../operations/semantic-review";
 import type { ReviewFinding } from "../plugins/types";
 import type { UserStory } from "../prd";
 import { ReviewPromptBuilder } from "../prompts";
+import { createRuntime } from "../runtime";
 import { formatSessionName } from "../session/naming";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -305,79 +306,145 @@ export async function runSemanticReview(
   // Debate path: when debate is enabled for review stage, use DebateRunner instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
   if (reviewDebateEnabled) {
-    // Safe: reviewDebateEnabled guard confirms naxConfig.debate.stages.review is defined
-    const reviewStageConfig = naxConfig?.debate?.stages.review as import("../debate").DebateStageConfig;
-    const isReReview = resolverSession !== undefined && resolverSession.history.length > 0;
     const semanticEffectiveConfig = naxConfig ?? DEFAULT_CONFIG;
-    const semanticAgentName =
-      agentManager && typeof (agentManager as IAgentManager).getDefault === "function"
-        ? (agentManager as IAgentManager).getDefault()
-        : "claude";
-    const semanticCallCtx: import("../operations/types").CallContext = {
-      runtime: {
-        agentManager: agentManager ?? ({} as import("../agents").IAgentManager),
-        sessionManager: undefined as unknown as import("../session").ISessionManager,
-        configLoader: { current: () => semanticEffectiveConfig } as import("../config").ConfigLoader,
-        packages: {
-          resolve: () => ({
-            config: semanticEffectiveConfig,
-            select: (sel: { select: (c: import("../config").NaxConfig) => unknown }) =>
-              sel.select(semanticEffectiveConfig),
-          }),
-        } as unknown as import("../runtime").PackageRegistry,
-        runId: "semantic-review",
-        workdir,
-        projectDir: workdir,
-        costAggregator: undefined as unknown as import("../runtime").ICostAggregator,
-        promptAuditor: undefined as unknown as import("../runtime").IPromptAuditor,
-        logger: undefined as unknown as import("../logger").Logger,
-        signal: undefined as unknown as AbortSignal,
-        close: async () => {},
-      } as import("../runtime").NaxRuntime,
-      packageView: {
+    const createdRuntime = runtime ? undefined : createRuntime(semanticEffectiveConfig, workdir, { agentManager });
+    const debateRuntime = runtime ?? createdRuntime;
+    if (!debateRuntime) {
+      throw new Error("[review] Debate runtime unavailable");
+    }
+    try {
+      // Safe: reviewDebateEnabled guard confirms naxConfig.debate.stages.review is defined
+      const configuredStageConfig = naxConfig?.debate?.stages.review as import("../debate").DebateStageConfig;
+      const reviewStageConfig =
+        configuredStageConfig.sessionMode === "one-shot" && (configuredStageConfig.mode ?? "panel") === "panel"
+          ? configuredStageConfig
+          : {
+              ...configuredStageConfig,
+              // Review debate currently supports panel one-shot only.
+              sessionMode: "one-shot" as const,
+              mode: "panel" as const,
+            };
+      if (reviewStageConfig !== configuredStageConfig) {
+        logger?.warn("review", "Review debate requires sessionMode=one-shot and mode=panel — forcing safe defaults", {
+          storyId: story.id,
+          configuredSessionMode: configuredStageConfig.sessionMode,
+          configuredMode: configuredStageConfig.mode ?? "panel",
+        });
+      }
+      const isReReview = resolverSession !== undefined && resolverSession.history.length > 0;
+      const semanticAgentName =
+        agentManager && typeof (agentManager as IAgentManager).getDefault === "function"
+          ? (agentManager as IAgentManager).getDefault()
+          : "claude";
+      const semanticCallCtx: import("../operations/types").CallContext = {
+        runtime: debateRuntime,
+        packageView: debateRuntime.packages.resolve(workdir),
+        packageDir: workdir,
+        agentName: semanticAgentName,
+        storyId: story.id,
+        featureName,
+      };
+      const debateRunner = _semanticDeps.createDebateRunner({
+        ctx: semanticCallCtx,
+        stage: "review",
+        stageConfig: reviewStageConfig,
         config: semanticEffectiveConfig,
-        select: (sel: { select: (c: import("../config").NaxConfig) => unknown }) => sel.select(semanticEffectiveConfig),
-      } as unknown as import("../runtime").PackageView,
-      packageDir: workdir,
-      agentName: semanticAgentName,
-      storyId: story.id,
-      featureName,
-    };
-    const debateRunner = _semanticDeps.createDebateRunner({
-      ctx: semanticCallCtx,
-      stage: "review",
-      stageConfig: reviewStageConfig,
-      config: semanticEffectiveConfig,
-      workdir,
-      featureName: featureName,
-      timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
-      reviewerSession: resolverSession,
-      resolverContextInput: resolverSession
-        ? {
-            diffMode,
-            ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat } : { diff }),
-            story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
-            semanticConfig,
-            resolverType: reviewStageConfig.resolver.type,
-            isReReview,
-          }
-        : undefined,
-    });
-    // Track history length before to detect if the session was actually used by the resolver
-    const historyLenBefore = resolverSession?.history.length ?? 0;
-    const debateResult = await debateRunner.run(prompt);
-    const debateCost = debateResult.totalCostUsd ?? 0;
+        workdir,
+        featureName: featureName,
+        timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
+        reviewerSession: resolverSession,
+        resolverContextInput: resolverSession
+          ? {
+              diffMode,
+              ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat } : { diff }),
+              story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
+              semanticConfig,
+              resolverType: reviewStageConfig.resolver.type,
+              isReReview,
+            }
+          : undefined,
+      });
+      // Track history length before to detect if the session was actually used by the resolver
+      const historyLenBefore = resolverSession?.history.length ?? 0;
+      const debateResult = await debateRunner.run(prompt);
+      const debateCost = debateResult.totalCostUsd ?? 0;
 
-    // When the ReviewerSession was used by the resolver (history grew), use its tool-verified
-    // verdict via getVerdict() instead of re-deriving from raw proposals.
-    const sessionUsed = resolverSession && resolverSession.history.length > historyLenBefore;
-    if (sessionUsed) {
+      // When the ReviewerSession was used by the resolver (history grew), use its tool-verified
+      // verdict via getVerdict() instead of re-deriving from raw proposals.
+      const sessionUsed = resolverSession && resolverSession.history.length > historyLenBefore;
+      if (sessionUsed) {
+        const durationMs = Date.now() - startTime;
+        try {
+          const verdict = resolverSession.getVerdict();
+          const findings = verdict.findings ?? [];
+          if (!verdict.passed && findings.length > 0) {
+            logger?.warn("review", `Semantic review failed (debate+dialogue): ${findings.length} findings`, {
+              storyId: story.id,
+              durationMs,
+            });
+            return {
+              check: "semantic",
+              success: false,
+              command: "",
+              exitCode: 1,
+              output: `Semantic review failed:\n\n${findings.map((f) => `${f.ruleId}: ${f.message}`).join("\n")}`,
+              durationMs,
+              findings,
+              cost: debateCost,
+            };
+          }
+          const label = verdict.passed
+            ? "Semantic review passed (debate+dialogue)"
+            : "Semantic review passed (debate+dialogue, all findings non-blocking)";
+          logger?.info("review", label, { storyId: story.id, durationMs });
+          return {
+            check: "semantic",
+            success: true,
+            command: "",
+            exitCode: 0,
+            output: label,
+            durationMs,
+            cost: debateCost,
+          };
+        } catch {
+          // getVerdict() threw (e.g. session destroyed) — fall through to stateless path
+          logger?.warn("review", "getVerdict() failed after debate+dialogue — falling back to stateless verdict", {
+            storyId: story.id,
+          });
+        }
+      }
+
+      // Stateless fallback: re-derive verdict from proposals (existing behavior)
+      const resolverPassed = debateResult.outcome === "passed";
+      const allFindings: LLMFinding[] = [];
+      for (const p of debateResult.proposals) {
+        const parsed = parseLLMResponse(p.output);
+        if (parsed) {
+          allFindings.push(...parsed.findings);
+        }
+      }
+
+      // Deduplicate findings by AC id (primary) or file:line (fallback)
+      const seen = new Set<string>();
+      const deduped: LLMFinding[] = [];
+      for (const f of allFindings) {
+        const key = f.acId ?? `${f.file}:${f.line}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(f);
+        }
+      }
+
+      // Split debate findings by blocking threshold
+      const debateFindings = sanitizeRefModeFindings(deduped, diffMode);
+      const debateThreshold = blockingThreshold ?? "error";
+      const debateBlocking = debateFindings.filter((f) => isBlockingSeverity(f.severity, debateThreshold));
+      const debateAdvisory = debateFindings.filter((f) => !isBlockingSeverity(f.severity, debateThreshold));
+
       const durationMs = Date.now() - startTime;
-      try {
-        const verdict = resolverSession.getVerdict();
-        const findings = verdict.findings ?? [];
-        if (!verdict.passed && findings.length > 0) {
-          logger?.warn("review", `Semantic review failed (debate+dialogue): ${findings.length} findings`, {
+      if (!resolverPassed) {
+        if (debateBlocking.length > 0) {
+          logger?.warn("review", `Semantic review failed (debate): ${debateBlocking.length} blocking findings`, {
             storyId: story.id,
             durationMs,
           });
@@ -386,106 +453,45 @@ export async function runSemanticReview(
             success: false,
             command: "",
             exitCode: 1,
-            output: `Semantic review failed:\n\n${findings.map((f) => `${f.ruleId}: ${f.message}`).join("\n")}`,
+            output: `Semantic review failed:\n\n${formatFindings(debateBlocking)}`,
             durationMs,
-            findings,
+            findings: toReviewFindings(debateBlocking),
+            advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
             cost: debateCost,
           };
         }
-        const label = verdict.passed
-          ? "Semantic review passed (debate+dialogue)"
-          : "Semantic review passed (debate+dialogue, all findings non-blocking)";
-        logger?.info("review", label, { storyId: story.id, durationMs });
+        // All findings were advisory — override to pass
+        logger?.info("review", "Semantic review passed (debate, all findings below blocking threshold)", {
+          storyId: story.id,
+          durationMs,
+        });
         return {
           check: "semantic",
           success: true,
           command: "",
           exitCode: 0,
-          output: label,
+          output: "Semantic review passed (debate, all findings were advisory — below blocking threshold)",
           durationMs,
-          cost: debateCost,
-        };
-      } catch {
-        // getVerdict() threw (e.g. session destroyed) — fall through to stateless path
-        logger?.warn("review", "getVerdict() failed after debate+dialogue — falling back to stateless verdict", {
-          storyId: story.id,
-        });
-      }
-    }
-
-    // Stateless fallback: re-derive verdict from proposals (existing behavior)
-    const resolverPassed = debateResult.outcome === "passed";
-    const allFindings: LLMFinding[] = [];
-    for (const p of debateResult.proposals) {
-      const parsed = parseLLMResponse(p.output);
-      if (parsed) {
-        allFindings.push(...parsed.findings);
-      }
-    }
-
-    // Deduplicate findings by AC id (primary) or file:line (fallback)
-    const seen = new Set<string>();
-    const deduped: LLMFinding[] = [];
-    for (const f of allFindings) {
-      const key = f.acId ?? `${f.file}:${f.line}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduped.push(f);
-      }
-    }
-
-    // Split debate findings by blocking threshold
-    const debateFindings = sanitizeRefModeFindings(deduped, diffMode);
-    const debateThreshold = blockingThreshold ?? "error";
-    const debateBlocking = debateFindings.filter((f) => isBlockingSeverity(f.severity, debateThreshold));
-    const debateAdvisory = debateFindings.filter((f) => !isBlockingSeverity(f.severity, debateThreshold));
-
-    const durationMs = Date.now() - startTime;
-    if (!resolverPassed) {
-      if (debateBlocking.length > 0) {
-        logger?.warn("review", `Semantic review failed (debate): ${debateBlocking.length} blocking findings`, {
-          storyId: story.id,
-          durationMs,
-        });
-        return {
-          check: "semantic",
-          success: false,
-          command: "",
-          exitCode: 1,
-          output: `Semantic review failed:\n\n${formatFindings(debateBlocking)}`,
-          durationMs,
-          findings: toReviewFindings(debateBlocking),
           advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
           cost: debateCost,
         };
       }
-      // All findings were advisory — override to pass
-      logger?.info("review", "Semantic review passed (debate, all findings below blocking threshold)", {
-        storyId: story.id,
-        durationMs,
-      });
+      logger?.info("review", "Semantic review passed (debate)", { storyId: story.id, durationMs });
       return {
         check: "semantic",
         success: true,
         command: "",
         exitCode: 0,
-        output: "Semantic review passed (debate, all findings were advisory — below blocking threshold)",
+        output: "Semantic review passed",
         durationMs,
         advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
         cost: debateCost,
       };
+    } finally {
+      if (createdRuntime) {
+        await createdRuntime.close().catch(() => {});
+      }
     }
-    logger?.info("review", "Semantic review passed (debate)", { storyId: story.id, durationMs });
-    return {
-      check: "semantic",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "Semantic review passed",
-      durationMs,
-      advisoryFindings: debateAdvisory.length > 0 ? toReviewFindings(debateAdvisory) : undefined,
-      cost: debateCost,
-    };
   }
 
   // ADR-019 Pattern A: when a NaxRuntime is available, dispatch via callOp so the
@@ -611,6 +617,11 @@ export async function runSemanticReview(
     };
     const defaultAgent = agentManager.getDefault();
     const adapter = agentManager.getAgent(defaultAgent);
+    const legacyCloser = adapter as
+      | (import("../agents/types").AgentAdapter & {
+          closePhysicalSession?: (handle: string, runWorkdir: string, options?: { force?: boolean }) => Promise<void>;
+        })
+      | undefined;
     let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
     try {
       if (naxConfig?.models) {
@@ -654,7 +665,7 @@ export async function runSemanticReview(
       });
     } catch (err) {
       logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-      void adapter?.closePhysicalSession(reviewerSessionName, workdir);
+      void legacyCloser?.closePhysicalSession?.(reviewerSessionName, workdir);
       return {
         check: "semantic",
         success: true,
@@ -690,7 +701,7 @@ export async function runSemanticReview(
       }
     }
 
-    void adapter?.closePhysicalSession(reviewerSessionName, workdir);
+    void legacyCloser?.closePhysicalSession?.(reviewerSessionName, workdir);
 
     const legacyParsed = parseLLMResponse(rawResponse);
     if (!legacyParsed) {

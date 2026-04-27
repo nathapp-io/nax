@@ -21,7 +21,6 @@ function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
     plan: async () => ({ spec: "", cost: 0 }) as never,
     decompose: async () => ({ stories: [] }) as never,
     complete: async () => ({ output: "", costUsd: 0, source: "estimated" as const }),
-    deriveSessionName: () => "",
     closePhysicalSession: async () => {},
     closeSession: async () => {},
   });

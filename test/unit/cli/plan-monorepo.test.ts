@@ -64,7 +64,7 @@ const SAMPLE_PRD: PRD = {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
@@ -102,7 +102,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.existsSync = mock(() => true);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
         capturedPrompts.push(prompt);
         return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
@@ -115,7 +115,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
     _planDeps.spawnSync = origSpawnSync;
@@ -265,7 +265,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
       if (path.endsWith("prd.json")) return JSON.stringify(minimalPrd);
       return "# Spec\nDo something.\n";
     });
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
         capturedPrompts.push(prompt);
         return { output: JSON.stringify(minimalPrd), costUsd: 0, source: "exact" as const };
@@ -278,7 +278,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;

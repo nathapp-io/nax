@@ -57,7 +57,6 @@ function agentReturning(tokens: Array<AgentResult["tokenUsage"] | undefined>) {
     complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
     plan: mock(async () => ({ specContent: "" })),
     decompose: mock(async () => ({ stories: [] })),
-    deriveSessionName: mock(() => "nax-test"),
     closePhysicalSession: mock(async () => {}),
     openSession: mock(async () => ({ id: "mock-session", agentName: "mock" })),
     sendTurn: mock(async () => {

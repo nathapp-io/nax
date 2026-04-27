@@ -72,7 +72,7 @@ const SAMPLE_PRD: PRD = {
 const origReadFile = _deps.readFile;
 const origWriteFile = _deps.writeFile;
 const origScanCodebase = _deps.scanCodebase;
-const origCreateManager = _deps.createManager;
+const origCreateRuntime = _deps.createRuntime;
 const origReadPackageJson = _deps.readPackageJson;
 const origSpawnSync = _deps.spawnSync;
 const origMkdirp = _deps.mkdirp;
@@ -146,7 +146,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.readFile = origReadFile;
     _deps.writeFile = origWriteFile;
     _deps.scanCodebase = origScanCodebase;
-    _deps.createManager = origCreateManager;
+    _deps.createRuntime = origCreateRuntime;
     _deps.readPackageJson = origReadPackageJson;
     _deps.spawnSync = origSpawnSync;
     _deps.mkdirp = origMkdirp;
@@ -161,7 +161,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-1: default nax plan (no --auto) calls adapter.runAs() for interactive planning", async () => {
     const capturedPlans: unknown[] = [];
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(async (_name: string, opts: any) => {
         capturedPlans.push(opts);
         return { specContent: JSON.stringify(SAMPLE_PRD) };
@@ -182,7 +182,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-2: agent questions are forwarded via interaction bridge", async () => {
     const questionsAsked: string[] = [];
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async (_name: string, opts: any) => {
           const bridge = opts.interactionBridge;
@@ -217,7 +217,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-3: human answers sent as follow-up prompts to session", async () => {
     const prompts: string[] = [];
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async (_name: string, opts: any) => {
           const bridge = opts.interactionBridge;
@@ -246,7 +246,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-4: extracts JSON from agent final output wrapped in code block", async () => {
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(async () => ({ specContent: JSON.stringify(SAMPLE_PRD) }), undefined),
     );
 
@@ -262,7 +262,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   });
 
   test("AC-4: throws on invalid JSON in agent output", async () => {
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(async () => ({ specContent: "" }), undefined),
     );
     _deps.readFile = mock(async (_path: string) =>
@@ -282,7 +282,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-5: validates output and writes to nax/features/<feature>/prd.json", async () => {
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(async () => ({ specContent: JSON.stringify(SAMPLE_PRD) }), undefined),
     );
 
@@ -306,7 +306,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-6: passes timeout option to adapter.runAs()", async () => {
     let capturedTimeoutSeconds: number | undefined;
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async (_name: string, opts: any) => {
           capturedTimeoutSeconds = opts.timeoutSeconds;
@@ -330,7 +330,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-6: defaults to 10 min timeout if not specified", async () => {
     let capturedTimeoutSeconds: number | undefined;
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async (_name: string, opts: any) => {
           capturedTimeoutSeconds = opts.timeoutSeconds;
@@ -354,7 +354,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-7: interaction bridge is provided to adapter for CLI stdin support", async () => {
     let bridgeProvided = false;
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async (_name: string, opts: any) => {
           bridgeProvided = !!opts.interactionBridge;
@@ -374,7 +374,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-7: interaction bridge has detectQuestion and onQuestionDetected methods", async () => {
     let bridgeHasRequiredMethods = false;
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async (_name: string, opts: any) => {
           const bridge = opts.interactionBridge;
@@ -396,7 +396,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-8: interactive planning passes sessionRole 'plan' to adapter.runAs()", async () => {
     let capturedSessionRole: string | undefined;
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async (_name: string, opts: any) => {
           capturedSessionRole = opts.sessionRole;
@@ -416,7 +416,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("continues when interactive plan() errors but prd.json exists", async () => {
     let planCalled = false;
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(
         async () => {
           planCalled = true;
@@ -438,7 +438,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   });
 
   test("throws when interactive plan() errors and prd.json is missing", async () => {
-    _deps.createManager = mock(() =>
+    _deps.createRuntime = mock(() =>
       makeMockPlanManager(async () => { throw new Error("missing end_turn"); }, undefined),
     );
     _deps.existsSync = mock((_path: string) => false);

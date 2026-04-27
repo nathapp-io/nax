@@ -407,6 +407,11 @@ export async function runAdversarialReview(
     } as const;
 
     const adapter = agentManager.getAgent(defaultAgent);
+    const legacyCloser = adapter as
+      | (import("../agents/types").AgentAdapter & {
+          closePhysicalSession?: (handle: string, runWorkdir: string, options?: { force?: boolean }) => Promise<void>;
+        })
+      | undefined;
     let rawResponse: string;
     let retryAttempted = false;
     try {
@@ -420,7 +425,7 @@ export async function runAdversarialReview(
       });
     } catch (err) {
       logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-      void adapter?.closePhysicalSession(adversarialSessionName, workdir);
+      void legacyCloser?.closePhysicalSession?.(adversarialSessionName, workdir);
       return {
         check: "adversarial",
         success: true,
@@ -456,7 +461,7 @@ export async function runAdversarialReview(
       }
     }
 
-    void adapter?.closePhysicalSession(adversarialSessionName, workdir);
+    void legacyCloser?.closePhysicalSession?.(adversarialSessionName, workdir);
 
     const legacyParsed = parseAdversarialResponse(rawResponse);
     if (!legacyParsed) {

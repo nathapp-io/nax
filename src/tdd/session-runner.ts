@@ -268,7 +268,12 @@ export async function runTddSession(
     if (descriptor && !descriptor.handle) {
       sessionBinding.sessionManager.bindHandle(
         sessionBinding.sessionId,
-        agent.deriveSessionName(descriptor),
+        sessionBinding.sessionManager.nameFor({
+          workdir: descriptor.workdir,
+          featureName: descriptor.featureName,
+          storyId: descriptor.storyId,
+          role: descriptor.role,
+        }),
         result.protocolIds,
       );
     }

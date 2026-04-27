@@ -86,7 +86,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -127,7 +127,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
 
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => ({
         stories: stories.map(toDecomposedStory),
       })),
@@ -145,7 +145,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -296,7 +296,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     }) as never);
 
     const adapterDecomposeCalls: unknown[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async (_name: string, opts: unknown) => {
         adapterDecomposeCalls.push(opts);
         return { stories: stories.map(toDecomposedStory) };

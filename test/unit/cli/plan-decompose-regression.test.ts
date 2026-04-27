@@ -99,7 +99,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -150,7 +150,7 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -167,7 +167,7 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
 
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async () => ({ output: fencedJson, costUsd: 0, source: "exact" as const }),
       }),
@@ -184,7 +184,7 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
 
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async () => ({ output: fencedJson, costUsd: 0, source: "exact" as const }),
       }),
@@ -201,7 +201,7 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
 
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async () => ({ output: fencedJson, costUsd: 0, source: "exact" as const }),
       }),
@@ -235,7 +235,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -250,7 +250,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A"), makeDecomposedStory("US-001-B")];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => ({ stories: decomposed })),
     );
 
@@ -266,7 +266,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { title: "Unique title from LLM" })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => ({ stories: decomposed })),
     );
 
@@ -281,7 +281,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { contextFiles: ["src/bar.ts", "src/baz.ts"] })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => ({ stories: decomposed })),
     );
 
@@ -296,7 +296,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { complexity: "complex" })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => ({ stories: decomposed })),
     );
 

@@ -58,7 +58,6 @@ function makeAgent(overrides: { tokenUsage?: TokenUsage; success?: boolean; outp
     isInstalled: mock(async () => true),
     complete: mock(async () => ""),
     buildCommand: mock(() => []),
-    deriveSessionName: mock(() => "nax-abc12345-feat-US-001-implementer"),
   };
 }
 

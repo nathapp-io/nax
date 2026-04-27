@@ -49,7 +49,6 @@ function makeAgent() {
       internalRoundTrips: 1,
     })),
     closeSession: mock(async () => {}),
-    deriveSessionName: mock(() => "nax-abc12345-feat-US-001-implementer"),
   });
 }
 
@@ -79,6 +78,11 @@ function makeSessionManager() {
     descriptor.state = to as SessionDescriptor["state"];
     return descriptor;
   });
+  const nameFor = mock((_req: { featureName?: string; storyId?: string; role?: string; workdir: string }) =>
+    ["nax", "abc12345", _req.featureName, _req.storyId, _req.role]
+      .filter(Boolean)
+      .join("-"),
+  );
   // Stub runInSession that delegates to agentManager.run() and applies bindHandle
   // the same way the real implementation does (ADR-013 Phase 1 signature).
   const runInSession = mock(async (id: string, agentMgr: IAgentManager, request: AgentRunRequest) => {
@@ -91,7 +95,7 @@ function makeSessionManager() {
     return result;
   });
   return {
-    manager: { get, bindHandle, transition, runInSession } as unknown as ISessionManager,
+    manager: { get, bindHandle, transition, runInSession, nameFor } as unknown as ISessionManager,
     bindHandle,
     descriptor,
   };

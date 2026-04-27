@@ -19,7 +19,7 @@ import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type { ModelDef } from "../../config/schema";
-import type { ProtocolIds } from "../../session/types";
+import type { ProtocolIds } from "../../runtime/protocol-types";
 import type { TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
 import type { ITokenUsageMapper } from "../cost";
@@ -543,10 +543,6 @@ export class AcpAgentAdapter implements AgentAdapter {
   async isInstalled(): Promise<boolean> {
     const path = _acpAdapterDeps.which(this.binary);
     return path !== null;
-  }
-
-  deriveSessionName(descriptor: import("../../session/types").SessionDescriptor): string {
-    return computeAcpHandle(descriptor.workdir, descriptor.featureName, descriptor.storyId, descriptor.role);
   }
 
   buildCommand(_options: AgentRunOptions): string[] {

@@ -36,10 +36,21 @@ import type { PrecheckResultWithCode } from "../precheck";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import { createRuntime } from "../runtime";
-import { createAgentManager } from "../runtime/internal/agent-manager-factory";
 import { errorMessage } from "../utils/errors";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
+
+function isRuntimeWithAgentManager(value: unknown): value is import("../runtime").NaxRuntime {
+  return typeof value === "object" && value !== null && "agentManager" in value;
+}
+
+function createPlanRuntime(config: NaxConfig, workdir: string): import("../runtime").NaxRuntime {
+  const candidate = _planDeps.createRuntime(config, workdir) as unknown;
+  if (isRuntimeWithAgentManager(candidate)) return candidate;
+  return createRuntime(config, workdir, {
+    agentManager: candidate as import("../agents").IAgentManager,
+  });
+}
 
 function resolvePlanModelSelection(config: NaxConfig, preferredAgent: string) {
   const selection = config.plan?.model ?? "balanced";
@@ -61,7 +72,7 @@ export const _planDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   scanCodebase: (workdir: string): Promise<CodebaseScan> => scanCodebase(workdir),
-  createManager: createAgentManager,
+  createRuntime: (cfg: NaxConfig, wd: string) => createRuntime(cfg, wd),
   readPackageJson: (workdir: string): Promise<Record<string, unknown> | null> =>
     Bun.file(join(workdir, "package.json"))
       .json()
@@ -198,8 +209,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     );
     // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
     const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
-    const debateAgentManager = _planDeps.createManager(config);
-    const debateRt = createRuntime(config, workdir, { agentManager: debateAgentManager });
+    const debateRt = createPlanRuntime(config, workdir);
+    const debateAgentManager = debateRt.agentManager;
     const debateCallCtx = {
       runtime: debateRt,
       packageView: debateRt.packages.resolve(),
@@ -245,7 +256,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     // Auto (one-shot) path — callOp routes via completeAs, returns JSON directly
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
-    const agentManager = _planDeps.createManager(config);
+    const rt = createPlanRuntime(config, workdir);
+    const agentManager = rt.agentManager;
     if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
 
     logger?.info("plan", "Starting auto planning via callOp", {
@@ -255,7 +267,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       feature: options.feature,
     });
 
-    const rt = createRuntime(config, workdir, { agentManager });
     let autoPrd: PRD;
     try {
       autoPrd = await callOp(
@@ -301,7 +312,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const prompt = `${interactiveTaskCtx}\n\n${interactiveOutputFmt}`;
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
-    const agentManager = _planDeps.createManager(config);
+    const rt = createPlanRuntime(config, workdir);
+    const agentManager = rt.agentManager;
     if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     // Use configured interaction plugin (telegram/webhook/auto) if available;
     // fall back to hardcoded stdin bridge when no interaction config is set.
@@ -354,6 +366,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     } finally {
       await pidRegistry.killAll().catch(() => {});
       if (interactionChain) await interactionChain.destroy().catch(() => {});
+      await rt.close().catch(() => {});
       logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });
     }
     // Read back from file written by agent
@@ -587,7 +600,8 @@ export async function planDecomposeCommand(
   const defaultAgentName = resolveDefaultAgent(config);
   const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
   const agentName = resolvedPlanModel.agent;
-  const agentManager = _planDeps.createManager(config);
+  const rt = createPlanRuntime(config, workdir);
+  const agentManager = rt.agentManager;
   const adapterForCapCheck = agentManager.getAgent(agentName);
   if (!adapterForCapCheck) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
 
@@ -601,7 +615,6 @@ export async function planDecomposeCommand(
   let decompStories: DecomposedStory[] | undefined;
   let repairHint = "";
 
-  const rt = createRuntime(config, workdir, { agentManager });
   try {
     for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
       if (attempt === 0 && debateDecompEnabled) {

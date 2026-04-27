@@ -170,7 +170,7 @@ export interface IAgentManager {
    * Resolve a specific adapter by name.
    * Returns undefined when no registry is set or the name is not registered.
    * Internal use by subsystems that need to call adapter-level operations
-   * (e.g. deriveSessionName, closeSession) without bypassing AgentManager.
+   * (e.g. closeSession/force-close hooks) without bypassing AgentManager.
    */
   getAgent(name: string): AgentAdapter | undefined;
 

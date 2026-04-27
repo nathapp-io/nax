@@ -10,7 +10,7 @@ import type { NaxConfig } from "../config";
 import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
-import type { ProtocolIds, SessionDescriptor } from "../session/types";
+import type { ProtocolIds } from "../runtime/protocol-types";
 import type { TokenUsage } from "./cost";
 
 // Re-export extended types for backward compatibility
@@ -141,7 +141,17 @@ export interface AgentRunOptions {
    * When provided, the adapter MAY use descriptor.id/role/handle for audit correlation.
    * Phase 5.5: replaces sessionHandle, featureName, storyId, sessionRole, keepOpen.
    */
-  session?: SessionDescriptor;
+  session?: {
+    id: string;
+    role: string;
+    state: string;
+    agent: string;
+    workdir: string;
+    featureName?: string;
+    storyId?: string;
+    protocolIds: ProtocolIds;
+    handle?: string;
+  };
   /**
    * Shutdown signal (fix for v0.63.0-canary.8 Issue 5).
    * When aborted, the adapter's retry loop must stop issuing new work:
@@ -390,26 +400,6 @@ export interface AgentAdapter {
    * Uses claude -p CLI for non-interactive completions.
    */
   complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
-
-  /**
-   * Derive the protocol-specific session name for the given descriptor (Phase 1 plumbing).
-   * Used by pipeline stages to obtain the handle string for sessionManager.bindHandle().
-   *
-   * ACP: "nax-<hash8>-<feature>-<storyId>-<role>" (same formula as computeAcpHandle)
-   * CLI: not applicable — returns empty string.
-   */
-  deriveSessionName(descriptor: SessionDescriptor): string;
-
-  /**
-   * Close a physical agent session by its protocol-specific handle (Phase 3).
-   * Called by pipeline stages via sessionManager.closeStory() or explicit close.
-   * Best-effort — errors are swallowed.
-   *
-   * @param handle - The ACP session name (from descriptor.handle or deriveSessionName())
-   * @param workdir - Working directory used when the session was created
-   * @param options.force - When true, uses hard termination (acpx stop) after close (AC-83)
-   */
-  closePhysicalSession(handle: string, workdir: string, options?: { force?: boolean }): Promise<void>;
 
   /**
    * Open a new (or resume an existing) physical agent session.
