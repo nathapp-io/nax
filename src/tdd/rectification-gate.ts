@@ -9,8 +9,6 @@
 import type { IAgentManager } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { type rectificationGateConfigSelector, resolveModelForAgent } from "../config";
-
-type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
@@ -28,6 +26,8 @@ import {
 import { buildFailureRecords } from "../verification/failure-records";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
+
+type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
 
 /** Failure snapshot for the TDD rectification gate retry loop. */
 interface TddRectificationFailure {
@@ -80,7 +80,7 @@ async function getStoryChangedFiles(workdir: string, fromRef: string): Promise<R
  */
 export async function runFullSuiteGate(
   story: UserStory,
-  config: NaxConfig,
+  config: RectificationGateConfig,
   workdir: string,
   agentManager: IAgentManager,
   implementerTier: ModelTier,
@@ -219,14 +219,14 @@ export async function runFullSuiteGate(
 /** Run the rectification retry loop when full suite gate detects regressions. */
 async function runRectificationLoop(
   story: UserStory,
-  config: NaxConfig,
+  config: RectificationGateConfig,
   workdir: string,
   agentManager: IAgentManager,
   implementerTier: ModelTier,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
   testSummary: ReturnType<typeof _parseTestOutput>,
-  rectificationConfig: NonNullable<NaxConfig["execution"]["rectification"]>,
+  rectificationConfig: NonNullable<RectificationGateConfig["execution"]["rectification"]>,
   testCmd: string,
   fullSuiteTimeout: number,
   testOutput: string,
@@ -292,7 +292,9 @@ async function runRectificationLoop(
           ),
           timeoutSeconds: config.execution.sessionTimeoutSeconds,
           pipelineStage: "rectification",
-          config,
+          // Cast required: AgentRunOptions.config expects NaxConfig, but only the picked
+          // subset of keys is actually used by the adapter (permissions, models, agent).
+          config: config as unknown as NaxConfig,
           projectDir,
           maxInteractionTurns: config.agent?.maxInteractionTurns,
           featureName,
