@@ -72,4 +72,52 @@ describe("PromptAuditor", () => {
       _promptAuditorDeps.write = orig;
     });
   });
+
+  test("flush() captures entries recorded during async write (in-flight buffer)", async () => {
+    await withTempDir(async (dir) => {
+      const flushDir = join(dir, "audit");
+      const written: string[] = [];
+      let resolveWrite: () => void;
+      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const orig = _promptAuditorDeps.write;
+      _promptAuditorDeps.write = async (_p, d) => { written.push(String(d)); return writePromise; };
+      const aud = new PromptAuditor("r-test", flushDir);
+      aud.record(makeEntry({ ts: 1000, prompt: "first" }));
+
+      const flushTask = aud.flush();
+      aud.record(makeEntry({ ts: 2000, prompt: "second" }));
+      resolveWrite!();
+      await flushTask;
+
+      expect(written).toHaveLength(2);
+      const allLines = written.join("").trim().split("\n").filter(Boolean);
+      expect(allLines).toHaveLength(2);
+      expect(JSON.parse(allLines[0]).prompt).toBe("first");
+      expect(JSON.parse(allLines[1]).prompt).toBe("second");
+      _promptAuditorDeps.write = orig;
+    });
+  });
+
+  test("flush() captures error entries recorded during async write", async () => {
+    await withTempDir(async (dir) => {
+      const flushDir = join(dir, "audit");
+      const written: string[] = [];
+      let resolveWrite: () => void;
+      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const orig = _promptAuditorDeps.write;
+      _promptAuditorDeps.write = async (_p, d) => { written.push(String(d)); return writePromise; };
+      const aud = new PromptAuditor("r-test", flushDir);
+      aud.record(makeEntry({ ts: 1000, prompt: "first" }));
+
+      const flushTask = aud.flush();
+      aud.recordError({ ts: 2000, runId: "r-test", agentName: "claude", errorCode: "TIMEOUT", durationMs: 50 });
+      resolveWrite!();
+      await flushTask;
+
+      expect(written).toHaveLength(2);
+      const allLines = written.join("").trim().split("\n").filter(Boolean);
+      expect(JSON.parse(allLines[1]).errorCode).toBe("TIMEOUT");
+      _promptAuditorDeps.write = orig;
+    });
+  });
 });

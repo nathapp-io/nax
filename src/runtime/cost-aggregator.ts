@@ -112,6 +112,9 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
 export class CostAggregator implements ICostAggregator {
   private readonly _events: CostEvent[] = [];
   private readonly _errors: CostErrorEvent[] = [];
+  private _draining = false;
+  private _inFlightEvents: CostEvent[] = [];
+  private _inFlightErrors: CostErrorEvent[] = [];
 
   constructor(
     private readonly _runId: string,
@@ -119,26 +122,41 @@ export class CostAggregator implements ICostAggregator {
   ) {}
 
   record(event: CostEvent): void {
+    if (this._draining) {
+      this._inFlightEvents.push(event);
+      return;
+    }
     this._events.push(event);
   }
 
   recordError(event: CostErrorEvent): void {
+    if (this._draining) {
+      this._inFlightErrors.push(event);
+      return;
+    }
     this._errors.push(event);
   }
 
   snapshot(): CostSnapshot {
-    return this._events.reduce(accumulate, { ...emptySnap(), errorCount: this._errors.length });
+    const allEvents = [...this._events, ...this._inFlightEvents];
+    const allErrors = [...this._errors, ...this._inFlightErrors];
+    return allEvents.reduce(accumulate, { ...emptySnap(), errorCount: allErrors.length });
   }
 
   byAgent(): Record<string, CostSnapshot> {
     const m: Record<string, CostSnapshot> = {};
     for (const e of this._events) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
+    for (const e of this._inFlightEvents) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
     return m;
   }
 
   byStage(): Record<string, CostSnapshot> {
     const m: Record<string, CostSnapshot> = {};
     for (const e of this._events) {
+      const k = e.stage ?? "unknown";
+      m[k] = accumulate(m[k] ?? emptySnap(), e);
+    }
+    for (const e of this._inFlightEvents) {
       const k = e.stage ?? "unknown";
       m[k] = accumulate(m[k] ?? emptySnap(), e);
     }
@@ -151,15 +169,47 @@ export class CostAggregator implements ICostAggregator {
       const k = e.storyId ?? "unknown";
       m[k] = accumulate(m[k] ?? emptySnap(), e);
     }
+    for (const e of this._inFlightEvents) {
+      const k = e.storyId ?? "unknown";
+      m[k] = accumulate(m[k] ?? emptySnap(), e);
+    }
     return m;
   }
 
   async drain(): Promise<void> {
-    if (this._events.length === 0 && this._errors.length === 0) return;
-    mkdirSync(this._drainDir, { recursive: true });
-    const path = join(this._drainDir, `${this._runId}.jsonl`);
-    const sorted = [...this._events, ...this._errors].sort((a, b) => a.ts - b.ts);
-    const content = `${sorted.map((e) => JSON.stringify(e)).join("\n")}\n`;
-    await _costAggDeps.write(path, content);
+    this._draining = true;
+    try {
+      const events = [...this._events];
+      const errors = [...this._errors];
+      this._events.length = 0;
+      this._errors.length = 0;
+
+      if (
+        events.length === 0 &&
+        errors.length === 0 &&
+        this._inFlightEvents.length === 0 &&
+        this._inFlightErrors.length === 0
+      )
+        return;
+
+      mkdirSync(this._drainDir, { recursive: true });
+      const path = join(this._drainDir, `${this._runId}.jsonl`);
+
+      const sorted = [...events, ...errors].sort((a, b) => a.ts - b.ts);
+      const content = `${sorted.map((e) => JSON.stringify(e)).join("\n")}\n`;
+      await _costAggDeps.write(path, content);
+
+      if (this._inFlightEvents.length > 0 || this._inFlightErrors.length > 0) {
+        const lateEvents = [...this._inFlightEvents];
+        const lateErrors = [...this._inFlightErrors];
+        this._inFlightEvents.length = 0;
+        this._inFlightErrors.length = 0;
+        const lateSorted = [...lateEvents, ...lateErrors].sort((a, b) => a.ts - b.ts);
+        const lateContent = `${lateSorted.map((e) => JSON.stringify(e)).join("\n")}\n`;
+        await _costAggDeps.write(path, lateContent);
+      }
+    } finally {
+      this._draining = false;
+    }
   }
 }
