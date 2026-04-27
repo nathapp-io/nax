@@ -154,6 +154,24 @@ export interface AdversarialReviewConfig {
   maxConcurrentSessions: number;
 }
 
+/**
+ * Carry-forward cache for adversarial prior findings (issue #736).
+ * Stored in PipelineContext and injected into the next adversarial round's prompt
+ * so the reviewer does not open a fresh session with no memory of prior flags.
+ */
+export interface AdversarialFindingsCache {
+  /** Round that produced these findings (1-indexed) */
+  round: number;
+  /** Blocking findings from the previous adversarial round */
+  findings: Array<{
+    severity: string;
+    category?: string;
+    file: string;
+    line?: number;
+    issue: string;
+  }>;
+}
+
 /** Review configuration */
 export interface ReviewConfig {
   /** Enable review phase */

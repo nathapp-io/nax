@@ -15,7 +15,7 @@ import { runAdversarialReview as _runAdversarialReviewImpl } from "./adversarial
 import { resolveLanguageCommand } from "./language-commands";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { SemanticStory } from "./semantic";
-import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+import type { AdversarialFindingsCache, ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 // Re-export for test compatibility
 export { resolveLanguageCommand };
@@ -226,10 +226,7 @@ export async function runReview(
   env?: Record<string, string | undefined>,
   naxIgnoreIndex?: NaxIgnoreIndex,
   runtime?: import("../runtime").NaxRuntime,
-  priorAdversarialFindings?: {
-    round: number;
-    findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>;
-  },
+  priorAdversarialFindings?: AdversarialFindingsCache,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();

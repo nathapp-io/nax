@@ -24,6 +24,7 @@ import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
 import { runSemanticReview } from "./semantic";
 import type {
+  AdversarialFindingsCache,
   AdversarialReviewConfig,
   ReviewCheckResult,
   ReviewConfig,
@@ -149,10 +150,7 @@ export class ReviewOrchestrator {
     env?: Record<string, string | undefined>,
     naxIgnoreIndex?: NaxIgnoreIndex,
     runtime?: import("../runtime").NaxRuntime,
-    priorAdversarialFindings?: {
-      round: number;
-      findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>;
-    },
+    priorAdversarialFindings?: AdversarialFindingsCache,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -563,6 +561,10 @@ export class ReviewOrchestrator {
       } else if (advCheck.success) {
         ctx.priorAdversarialFindings = undefined;
       }
+    } else if (retrySkipChecks?.has("adversarial")) {
+      // Adversarial was skipped because it passed in the previous review pass.
+      // Clear any stale findings — the reviewer already approved this code.
+      ctx.priorAdversarialFindings = undefined;
     }
 
     return result;

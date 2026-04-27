@@ -9,8 +9,7 @@
  * Reuses PriorFailure and buildAttemptContextBlock from review-builder.ts.
  */
 
-import type { AdversarialReviewConfig } from "../../review/types";
-import type { SemanticStory } from "../../review/types";
+import type { AdversarialFindingsCache, AdversarialReviewConfig, SemanticStory } from "../../review/types";
 import { buildAttemptContextBlock } from "./review-builder";
 import type { PriorFailure } from "./review-builder";
 
@@ -47,10 +46,7 @@ export interface AdversarialReviewPromptOptions {
    * When set, injects a "## Prior Adversarial Findings" block instructing the reviewer
    * to verdict on unresolved prior issues before scanning for new ones.
    */
-  priorAdversarialFindings?: {
-    round: number;
-    findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>;
-  };
+  priorAdversarialFindings?: AdversarialFindingsCache;
 }
 
 const ADVERSARIAL_ROLE = `You are an adversarial code reviewer with full access to the repository.
