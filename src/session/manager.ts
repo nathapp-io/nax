@@ -10,19 +10,19 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { NO_OP_INTERACTION_HANDLER } from "../agents";
 import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
+import type { ProtocolIds } from "../runtime/protocol-types";
 import { formatSessionName } from "./naming";
 import type {
   CreateSessionOptions,
   ISessionManager,
   NameForRequest,
   OpenSessionRequest,
-  ProtocolIds,
   RunInSessionOpts,
   SendPromptOpts,
   SessionDescriptor,

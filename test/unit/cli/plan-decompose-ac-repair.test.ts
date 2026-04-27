@@ -81,7 +81,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -121,7 +121,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -141,7 +141,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => {
         callCount++;
         if (callCount === 1) {
@@ -168,7 +168,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => {
         callCount++;
         return { stories: [makeOversizedSubStory("US-001-A", 8)] };
@@ -188,7 +188,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => {
         callCount++;
         return { stories: [makeOversizedSubStory("US-001-A", 8)] };
@@ -212,7 +212,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const prd = makePrd();
     setupBaseDeps(prd);
 
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => ({
         stories: [
           makeOversizedSubStory("US-001-A", 8),
@@ -243,7 +243,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const prd = makePrd();
     setupBaseDeps(prd);
 
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => ({
         stories: [makeOversizedSubStory("US-001-A", 9)],
       })),
@@ -271,7 +271,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const capturedPrompts: string[] = [];
     let callCount = 0;
 
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async (_name: string, prompt: string) => {
           capturedPrompts.push(prompt);

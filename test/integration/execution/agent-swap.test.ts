@@ -168,7 +168,6 @@ function makeFailingAgent(name: string): AgentAdapter {
     }),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
-    deriveSessionName: mock(() => `nax-session-${name}`),
   } as unknown as AgentAdapter;
 }
 
@@ -186,7 +185,6 @@ function makeSucceedingAgent(name: string): AgentAdapter {
     })),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
-    deriveSessionName: mock(() => `nax-session-${name}`),
   } as unknown as AgentAdapter;
 }
 

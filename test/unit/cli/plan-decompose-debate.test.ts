@@ -163,7 +163,7 @@ function makeConfigWithDebate(debateDecomposeEnabled: boolean) {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -202,7 +202,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockDecomposeManager(async () => makeDecomposeAdapterResult()),
     );
   }
@@ -218,7 +218,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -273,7 +273,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     setupDeps(prd);
 
     const completeCalls: number[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
@@ -323,7 +323,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     setupDeps(prd);
 
     const completeCalls: number[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
@@ -388,7 +388,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     setupDeps(prd);
 
     const completeCalls: number[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
@@ -414,7 +414,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     setupDeps(prd);
 
     const completeCalls: number[] = [];
-    _planDeps.createManager = mock(() =>
+    _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);

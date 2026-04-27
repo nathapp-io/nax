@@ -4,11 +4,11 @@
 
 export { SessionManager, _sessionManagerDeps } from "./manager";
 export { formatSessionName } from "./naming";
+export type { ProtocolIds } from "../runtime/protocol-types";
 export type {
   SessionDescriptor,
   SessionState,
   SessionRole,
-  ProtocolIds,
   CreateSessionOptions,
   TransitionOptions,
   ISessionManager,

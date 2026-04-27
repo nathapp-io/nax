@@ -106,7 +106,7 @@ function makeFakeScan() {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origMkdirp = _planDeps.mkdirp;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
@@ -143,7 +143,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
 
-    _planDeps.createManager = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg?: unknown) =>
       makeMockDecomposeManager(async (_name: string, opts: unknown) => {
         capturedDecomposeCalls.push(opts);
         return { stories: makeDecomposeResult().stories };
@@ -155,7 +155,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.mkdirp = origMkdirp;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -176,7 +176,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
     const config = makeConfig();
 
     // Replace complete() with a non-throwing mock so we can check call count
-    _planDeps.createManager = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg?: unknown) =>
       makeMockDecomposeManager(async (_name: string, opts: unknown) => {
         capturedDecomposeCalls.push(opts);
         return { stories: makeDecomposeResult().stories };
@@ -223,7 +223,7 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
 
-    _planDeps.createManager = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg?: unknown) =>
       makeMockDecomposeManager(async (_name: string, opts: Record<string, unknown>) => {
         capturedDecomposeOpts.push(opts);
         return { stories: makeDecomposeResult().stories };
@@ -235,7 +235,7 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.mkdirp = origMkdirp;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -318,7 +318,7 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.mkdirp = origMkdirp;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
@@ -331,7 +331,7 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
   test("does not throw when adapter.decompose() returns a structured DecomposeResult", async () => {
     // adapter.decompose() returns DecomposeResult (stories array), not a raw JSON string.
     // planDecomposeCommand must not attempt JSON.parse on this structured value.
-    _planDeps.createManager = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg?: unknown) =>
       makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
     );
 
@@ -347,7 +347,7 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
       capturedWrites.push([path, content]);
     });
 
-    _planDeps.createManager = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg?: unknown) =>
       makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
     );
 

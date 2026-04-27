@@ -2,7 +2,7 @@ import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { getLogger } from "../logger";
-import { formatSessionName } from "../session/naming";
+import { formatSessionName } from "../runtime/session-name";
 import { buildContextToolPreamble, buildRunInteractionHandler } from "./acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 import type { IAgentManager } from "./manager-types";

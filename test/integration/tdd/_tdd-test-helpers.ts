@@ -55,7 +55,6 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
     complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
     plan: mock(async () => ({ specContent: "" })),
     decompose: mock(async () => ({ stories: [] })),
-    deriveSessionName: mock(() => ""),
     closePhysicalSession: mock(async () => {}),
     openSession: mock(async () => ({ id: "mock-session", agentName: "mock" })),
     sendTurn: mock(async () => {

@@ -62,7 +62,7 @@ const SAMPLE_PRD: PRD = {
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
 const origScanCodebase = _planDeps.scanCodebase;
-const origCreateManager = _planDeps.createManager;
+const origCreateRuntime = _planDeps.createRuntime;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
@@ -117,7 +117,7 @@ describe("planCommand", () => {
 
     _planDeps.mkdirp = mock(async (_path: string) => {});
 
-    _planDeps.createManager = mock((_cfg: any) => {
+    _planDeps.createRuntime = mock((_cfg: any) => {
       capturedPlanArgs = [];
       return makeMockAgentManager({
         completeAsFn: async (_name: string, prompt: string, _opts?: any) => {
@@ -133,7 +133,7 @@ describe("planCommand", () => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
     _planDeps.scanCodebase = origScanCodebase;
-    _planDeps.createManager = origCreateManager;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;
@@ -182,7 +182,7 @@ describe("planCommand", () => {
   test("uses explicit plan model selector to choose adapter", async () => {
     let receivedAgentName: string | undefined;
 
-    _planDeps.createManager = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockAgentManager({
         completeAsFn: async (name: string, _prompt: string, _opts?: any) => {
           receivedAgentName = name;
@@ -262,7 +262,7 @@ describe("planCommand", () => {
 
   test("AC-3: interactive mode is now supported when --auto not set", async () => {
     const planSpy = mock(async (_options: any) => {});
-    _planDeps.createManager = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockAgentManager({
         runAsFn: async (_name: string, opts: any) => { await planSpy(opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }; },
       }),
@@ -284,7 +284,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-4: throws on invalid JSON response from adapter", async () => {
-    _planDeps.createManager = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockAgentManager({
         completeAsFn: async () => ({ output: "not valid json {{", costUsd: 0, source: "exact" as const }),
       }),
@@ -304,7 +304,7 @@ describe("planCommand", () => {
     const prdWithoutProject = { ...SAMPLE_PRD } as Partial<PRD>;
     prdWithoutProject.project = undefined;
 
-    _planDeps.createManager = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockAgentManager({
         completeAsFn: async () => ({
           output: JSON.stringify(prdWithoutProject),
@@ -330,7 +330,7 @@ describe("planCommand", () => {
     const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
     badPrd.userStories = undefined;
 
-    _planDeps.createManager = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockAgentManager({
         completeAsFn: async () => ({
           output: JSON.stringify(badPrd),
@@ -391,7 +391,7 @@ describe("planCommand", () => {
       ],
     };
 
-    _planDeps.createManager = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockAgentManager({
         completeAsFn: async () => ({
           output: JSON.stringify(prdWithBadStatuses),
