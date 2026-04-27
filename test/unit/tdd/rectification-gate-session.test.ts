@@ -178,7 +178,7 @@ describe("rectification session reuse", () => {
     expect(sessionRoles[1]).toBe(sessionRoles[2]);
   });
 
-  test("rectification calls do not set keepOpen (caller-managed per ADR-019)", async () => {
+  test("rectification calls set keepOpen except on last attempt", async () => {
     const story = makeStory();
     const config = makeConfig(2);
     const agent = makeAgent();
@@ -207,10 +207,10 @@ describe("rectification session reuse", () => {
     } as any);
 
     expect(agent.calls.length).toBe(2);
-    // Session management is caller-managed (ADR-019) — keepOpen is not set by runRetryLoop
-    for (const call of agent.calls) {
-      expect(call.keepOpen).not.toBeDefined();
-    }
+    // Non-last attempts keep the session open so retries share context.
+    // Last attempt closes the session.
+    expect(agent.calls[0]?.keepOpen).toBe(true);
+    expect(agent.calls[1]?.keepOpen).toBe(false);
   });
 
   test("all attempts use the same sessionRole even without featureName", async () => {

@@ -14,6 +14,7 @@ import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
+import { formatSessionName } from "../session/naming";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
   type RectificationState,
@@ -86,6 +87,8 @@ export async function runFullSuiteGate(
   featureName?: string,
   projectDir?: string,
   storyFromRef?: string,
+  sessionManager?: import("../session").ISessionManager,
+  sessionId?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) return { passed: false, cost: 0 };
@@ -172,6 +175,8 @@ export async function runFullSuiteGate(
         fullSuiteResult.output,
         featureName,
         projectDir,
+        sessionManager,
+        sessionId,
       );
     }
 
@@ -225,6 +230,8 @@ async function runRectificationLoop(
   testOutput: string,
   featureName?: string,
   projectDir?: string,
+  sessionManager?: import("../session").ISessionManager,
+  sessionId?: string,
 ): Promise<{ passed: boolean; cost: number }> {
   logger.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
@@ -233,6 +240,14 @@ async function runRectificationLoop(
   });
 
   let gateCostAccum = 0;
+  let currentAttempt = 0;
+
+  const rectificationSessionName = formatSessionName({
+    workdir,
+    featureName,
+    storyId: story.id,
+    role: "implementer",
+  });
 
   const initialFailure: TddRectificationFailure = {
     testSummary,
@@ -258,6 +273,8 @@ async function runRectificationLoop(
         .build();
     },
     execute: async (prompt) => {
+      currentAttempt++;
+      const isLastAttempt = currentAttempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
       const defaultAgent = agentManager.getDefault();
       const rectifyResult = await agentManager.run({
@@ -279,8 +296,19 @@ async function runRectificationLoop(
           featureName,
           storyId: story.id,
           sessionRole: "implementer",
+          keepOpen: !isLastAttempt,
         },
       });
+
+      // G5: bind updated protocolIds after each rectification attempt so the session descriptor
+      // reflects the session that actually ran (may change after internal session retries).
+      if (sessionManager && sessionId && rectifyResult.protocolIds) {
+        try {
+          sessionManager.bindHandle(sessionId, rectificationSessionName, rectifyResult.protocolIds);
+        } catch {
+          // Session may not exist in manager (e.g. v2 context disabled) — ignore.
+        }
+      }
 
       if (!rectifyResult.success && rectifyResult.pid) {
         await cleanupProcessTree(rectifyResult.pid);
