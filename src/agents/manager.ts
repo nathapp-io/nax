@@ -491,6 +491,7 @@ export class AgentManager implements IAgentManager {
       request: null,
       prompt,
       config: this._config,
+      signal: options.signal,
       resolvedPermissions,
       storyId: options.storyId,
       stage: options.pipelineStage,

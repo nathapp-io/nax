@@ -312,4 +312,29 @@ describe("AgentManager — middleware envelope", () => {
     expect(afterCalls[0].agentName).toBe("codex");
     expect(afterCalls[0].prompt).toBe("swap-handoff-prompt");
   });
+
+  test("completeAs() threads signal into middleware context", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const mw: AgentMiddleware = {
+      name: "spy",
+      before: async (ctx: MiddlewareContext) => { capturedSignal = ctx.signal; },
+    };
+    const manager = makeMiddlewareManager(mw);
+    const controller = new AbortController();
+    try {
+      await manager.completeAs("claude", "prompt", { signal: controller.signal } as never);
+    } catch {}
+    expect(capturedSignal).toBe(controller.signal);
+  });
+
+  test("completeAs() middleware context has undefined signal when not provided", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const mw: AgentMiddleware = {
+      name: "spy",
+      before: async (ctx: MiddlewareContext) => { capturedSignal = ctx.signal; },
+    };
+    const manager = makeMiddlewareManager(mw);
+    try { await manager.completeAs("claude", "prompt", {} as never); } catch {}
+    expect(capturedSignal).toBeUndefined();
+  });
 });

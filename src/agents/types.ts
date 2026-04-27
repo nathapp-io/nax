@@ -239,6 +239,8 @@ export interface CompleteOptions {
   storyId?: string;
   /** Session role for disambiguation when the same story has multiple concurrent sessions */
   sessionRole?: string;
+  /** Abort signal for cancellation middleware support on complete() calls. */
+  signal?: AbortSignal;
   /**
    * Model tier hint for adapters that resolve model from config (e.g. ACP adapter).
    * When set alongside `config`, the adapter resolves the model from `config.models[modelTier]`

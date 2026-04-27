@@ -34,4 +34,17 @@ describe("cancellationMiddleware", () => {
     };
     await expect(mw.before!(ctx)).resolves.toBeUndefined();
   });
+
+  test("before() throws for kind='complete' with aborted signal", async () => {
+    const mw = cancellationMiddleware();
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const ctx: MiddlewareContext = {
+      runId: "r-001", agentName: "claude", kind: "complete",
+      request: null, prompt: "test", config: DEFAULT_CONFIG,
+      signal: ctrl.signal,
+      resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+    };
+    await expect(mw.before!(ctx)).rejects.toThrow("Agent call cancelled");
+  });
 });
