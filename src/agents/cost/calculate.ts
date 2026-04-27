@@ -118,14 +118,23 @@ export function formatCostWithConfidence(estimate: CostEstimate): string {
   }
 }
 
-/** Sum two internal TokenUsage values. Pure. */
+/** Sum two internal TokenUsage values. Pure.
+ * Optional cache fields are only included when at least one operand has a defined value,
+ * preserving the zero-omit serialization semantics from the original adapter code. */
 export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
-  return {
+  const result: TokenUsage = {
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
-    cacheReadInputTokens: (a.cacheReadInputTokens ?? 0) + (b.cacheReadInputTokens ?? 0),
-    cacheCreationInputTokens: (a.cacheCreationInputTokens ?? 0) + (b.cacheCreationInputTokens ?? 0),
   };
+  const cacheRead = (a.cacheReadInputTokens ?? 0) + (b.cacheReadInputTokens ?? 0);
+  const cacheCreation = (a.cacheCreationInputTokens ?? 0) + (b.cacheCreationInputTokens ?? 0);
+  if (cacheRead > 0 || a.cacheReadInputTokens !== undefined || b.cacheReadInputTokens !== undefined) {
+    result.cacheReadInputTokens = cacheRead;
+  }
+  if (cacheCreation > 0 || a.cacheCreationInputTokens !== undefined || b.cacheCreationInputTokens !== undefined) {
+    result.cacheCreationInputTokens = cacheCreation;
+  }
+  return result;
 }
 
 /**

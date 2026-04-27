@@ -22,6 +22,7 @@ import type { ModelDef } from "../../config/schema";
 import type { ProtocolIds } from "../../session/types";
 import type { TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
+import type { ITokenUsageMapper } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -35,7 +36,6 @@ import type {
 } from "../types";
 import { CompleteError } from "../types";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
-import type { AcpTokenUsageMapper } from "./token-mapper";
 import type { AgentRegistryEntry } from "./types";
 import type { SessionTokenUsage } from "./wire-types";
 
@@ -525,9 +525,9 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly displayName: string;
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
-  private readonly _mapper: AcpTokenUsageMapper;
+  private readonly _mapper: ITokenUsageMapper<SessionTokenUsage>;
 
-  constructor(agentName: string, mapper: AcpTokenUsageMapper = defaultAcpTokenUsageMapper) {
+  constructor(agentName: string, mapper: ITokenUsageMapper<SessionTokenUsage> = defaultAcpTokenUsageMapper) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
     this.displayName = entry.displayName;
