@@ -86,7 +86,7 @@ export const _planDeps = {
   runPrecheck: async (
     config: NaxConfig,
     prd: PRD,
-    opts?: { workdir: string; silent?: boolean },
+    opts: { workdir: string; silent?: boolean },
   ): Promise<PrecheckResultWithCode> => {
     const { runPrecheck } = await import("../precheck");
     return runPrecheck(config, prd, opts);

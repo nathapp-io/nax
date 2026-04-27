@@ -131,7 +131,7 @@ export const _acpAdapterDeps = {
    */
   createClient(
     cmdStr: string,
-    cwd?: string,
+    cwd: string,
     timeoutSeconds?: number,
     onPidSpawned?: (pid: number) => void,
     promptRetries?: number,
@@ -564,6 +564,9 @@ export class AcpAgentAdapter implements AgentAdapter {
     const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = _options?.resolvedPermissions?.mode ?? "approve-reads";
     const workdir = _options?.workdir;
+    if (!workdir) {
+      throw new Error("[acp-adapter] complete() requires workdir in options");
+    }
     // Resolve model for a given agent name
     const resolveModel = async (agentName: string): Promise<string> => {
       let model = _options?.model;
@@ -598,7 +601,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       try {
         const completeSessionName =
           _options?.sessionName ??
-          computeAcpHandle(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
+          computeAcpHandle(workdir, _options?.featureName, _options?.storyId, _options?.sessionRole);
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;

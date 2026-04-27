@@ -16,7 +16,7 @@ export interface PtySpawnOptions {
   /** Command arguments */
   args?: string[];
   /** Working directory */
-  cwd?: string;
+  cwd: string;
   /** Environment variables */
   env?: Record<string, string>;
   /** Terminal columns (default: 80) */
@@ -97,7 +97,7 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
     // BUN-001: Replaced node-pty with Bun.spawn (piped stdio).
     // TERM + FORCE_COLOR preserve Claude Code output formatting.
     const proc = Bun.spawn([command, ...(JSON.parse(argsJson) || [])], {
-      cwd: cwd || process.cwd(),
+      cwd,
       env: { ...process.env, ...JSON.parse(envJson), TERM: "xterm-256color", FORCE_COLOR: "1" },
       stdin: "pipe",
       stdout: "pipe",

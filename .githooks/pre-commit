@@ -13,4 +13,7 @@ bun run typecheck
 echo "[pre-commit] Running lint..."
 bun run lint
 
+echo "[pre-commit] Running process.cwd() check..."
+bun run check:process-cwd
+
 echo "[pre-commit] OK"

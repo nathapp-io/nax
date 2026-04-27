@@ -392,7 +392,10 @@ export class SpawnAcpClient implements AcpClient {
     if (!lastToken || lastToken.startsWith("-")) {
       throw new Error(`[acp-adapter] Could not parse agentName from cmdStr: "${cmdStr}"`);
     }
-    this.cwd = cwd || process.cwd();
+    if (!cwd) {
+      throw new Error("[acp-adapter] SpawnAcpClient requires cwd");
+    }
+    this.cwd = cwd;
     this.timeoutSeconds = timeoutSeconds || 1800;
     this.promptRetries = promptRetries ?? 0;
     this.env = buildAllowedEnv();
@@ -515,7 +518,7 @@ export class SpawnAcpClient implements AcpClient {
  */
 export function createSpawnAcpClient(
   cmdStr: string,
-  cwd?: string,
+  cwd: string,
   timeoutSeconds?: number,
   onPidSpawned?: (pid: number) => void,
   promptRetries?: number,

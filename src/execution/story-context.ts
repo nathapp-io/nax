@@ -75,6 +75,7 @@ export async function maybeGetContext(
   story: UserStory,
   config: NaxConfig,
   useContext: boolean,
+  workdir: string,
 ): Promise<string | undefined> {
   if (!useContext) {
     return undefined;
@@ -82,7 +83,7 @@ export async function maybeGetContext(
 
   const logger = getSafeLogger();
   logger?.debug("context", "Building context...");
-  const contextMarkdown = await buildStoryContext(prd, story, config);
+  const contextMarkdown = await buildStoryContext(prd, story, config, workdir);
   if (contextMarkdown) {
     logger?.debug("context", "Context built successfully");
   }
@@ -97,12 +98,17 @@ export async function maybeGetContext(
  * @param config - Ngent config
  * @returns Context markdown or undefined if no context available
  */
-export async function buildStoryContext(prd: PRD, story: UserStory, _config: NaxConfig): Promise<string | undefined> {
+export async function buildStoryContext(
+  prd: PRD,
+  story: UserStory,
+  _config: NaxConfig,
+  workdir: string,
+): Promise<string | undefined> {
   try {
     const storyContext: StoryContext = {
       prd,
       currentStoryId: story.id,
-      workdir: process.cwd(),
+      workdir,
       config: _config,
     };
 
@@ -154,13 +160,14 @@ export async function buildStoryContextFull(
   prd: PRD,
   story: UserStory,
   config: NaxConfig,
+  workdir: string,
   packageWorkdir?: string,
 ): Promise<{ markdown: string; builtContext: BuiltContext } | undefined> {
   try {
     const storyContext: StoryContext = {
       prd,
       currentStoryId: story.id,
-      workdir: process.cwd(),
+      workdir,
       config,
     };
 
@@ -211,7 +218,7 @@ export function buildStoryContextFullFromCtx(
   ctx: PipelineContext,
 ): Promise<{ markdown: string; builtContext: BuiltContext } | undefined> {
   const packageWorkdir = ctx.story.workdir ? ctx.workdir : undefined;
-  return buildStoryContextFull(ctx.prd, ctx.story, ctx.config, packageWorkdir);
+  return buildStoryContextFull(ctx.prd, ctx.story, ctx.config, ctx.workdir, packageWorkdir);
 }
 
 /**

@@ -24,3 +24,12 @@ export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => 
   timeout: c.execution?.verificationTimeoutSeconds,
   testCommand: c.quality?.commands?.test,
 }));
+
+export const rectificationGateConfigSelector = pickSelector(
+  "rectification-gate",
+  "execution",
+  "models",
+  "agent",
+  "quality",
+  "review",
+);

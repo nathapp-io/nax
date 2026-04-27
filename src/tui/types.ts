@@ -42,7 +42,7 @@ export interface PtySpawnOptions {
   /** Command arguments */
   args?: string[];
   /** Working directory */
-  cwd?: string;
+  cwd: string;
   /** Environment variables */
   env?: Record<string, string>;
   /** Terminal columns (default: 80) */

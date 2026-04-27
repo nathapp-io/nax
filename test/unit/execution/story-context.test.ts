@@ -61,7 +61,7 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
   test("returns result without package context when no packageWorkdir", async () => {
     const story = makeStory();
     const prd = makePrd(story);
-    const result = await buildStoryContextFull(prd, story, makeConfig());
+    const result = await buildStoryContextFull(prd, story, makeConfig(), tmpDir);
     // PRD context contains story elements — result is defined
     expect(result).not.toBeUndefined();
     expect(result?.markdown).not.toContain("---");
@@ -73,7 +73,7 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
 
     const story = makeStory();
     const prd = makePrd(story);
-    const result = await buildStoryContextFull(prd, story, makeConfig(), tmpDir);
+    const result = await buildStoryContextFull(prd, story, makeConfig(), tmpDir, tmpDir);
 
     // Should include the package context.md content
     expect(result).not.toBeUndefined();
@@ -85,7 +85,7 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
     // tmpDir has no nax/context.md
     const story = makeStory();
     const prd = makePrd(story);
-    const result = await buildStoryContextFull(prd, story, makeConfig(), tmpDir);
+    const result = await buildStoryContextFull(prd, story, makeConfig(), tmpDir, tmpDir);
     // PRD context still present, but no package section appended
     expect(result).not.toBeUndefined();
     expect(result?.markdown).not.toContain("---");
@@ -96,7 +96,7 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
 
     const story = makeStory();
     const prd = makePrd(story);
-    const result = await buildStoryContextFull(prd, story, makeConfig(), tmpDir);
+    const result = await buildStoryContextFull(prd, story, makeConfig(), tmpDir, tmpDir);
 
     expect(result?.markdown).toContain("---");
     expect(result?.markdown).toContain("# Package Context");

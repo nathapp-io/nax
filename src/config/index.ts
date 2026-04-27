@@ -53,6 +53,7 @@ export {
   debateConfigSelector,
   routingConfigSelector,
   verifyConfigSelector,
+  rectificationGateConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";
