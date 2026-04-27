@@ -38,7 +38,7 @@ describe("runRetryLoop", () => {
     }
   });
 
-  test("returns exhausted outcome when verify never passes", async () => {
+  test("returns exhausted outcome with finalFailure when verify never passes", async () => {
     const input = makeInput({
       maxAttempts: 2,
       verify: async (_result) => ({ passed: false, newFailure: { message: "still failing" } }),
@@ -47,6 +47,7 @@ describe("runRetryLoop", () => {
     expect(outcome.outcome).toBe("exhausted");
     if (outcome.outcome === "exhausted") {
       expect(outcome.attempts).toBe(2);
+      expect(outcome.finalFailure).toEqual({ message: "still failing" });
     }
   });
 
