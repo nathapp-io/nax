@@ -144,6 +144,10 @@ export async function runAdversarialReview(
   projectDir?: string,
   naxIgnoreIndex?: NaxIgnoreIndex,
   runtime?: import("../runtime").NaxRuntime,
+  priorAdversarialFindings?: {
+    round: number;
+    findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>;
+  },
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -275,6 +279,7 @@ export async function runAdversarialReview(
         testInventory,
         excludePatterns: adversarialConfig.excludePatterns,
         featureCtxBlock,
+        priorAdversarialFindings,
       });
     } catch (err) {
       logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -349,6 +354,7 @@ export async function runAdversarialReview(
       priorFailures,
       testInventory,
       excludePatterns: adversarialConfig.excludePatterns,
+      priorAdversarialFindings,
     });
     const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 

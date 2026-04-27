@@ -42,6 +42,15 @@ export interface AdversarialReviewPromptOptions {
    * Adversarial does NOT exclude test files (unlike semantic).
    */
   excludePatterns?: string[];
+  /**
+   * Prior adversarial findings from the previous round (issue #736).
+   * When set, injects a "## Prior Adversarial Findings" block instructing the reviewer
+   * to verdict on unresolved prior issues before scanning for new ones.
+   */
+  priorAdversarialFindings?: {
+    round: number;
+    findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>;
+  };
 }
 
 const ADVERSARIAL_ROLE = `You are an adversarial code reviewer with full access to the repository.
@@ -191,6 +200,35 @@ ${diff}\`\`\`
 }
 
 /**
+ * Build the prior-findings carry-forward block injected at the top of subsequent rounds.
+ * Verdict-first: the reviewer sees unresolved findings before scanning for new issues.
+ */
+function buildPriorFindingsBlock(
+  round: number,
+  findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>,
+): string {
+  const rows = findings
+    .map((f) => {
+      const location = f.line !== undefined ? `${f.file}:${f.line}` : f.file;
+      const category = f.category ?? "—";
+      return `| ${f.severity} | ${category} | ${location} | ${f.issue} |`;
+    })
+    .join("\n");
+
+  return `## Prior Adversarial Findings — Round ${round}
+
+The following issues were flagged in the previous adversarial review round.
+**Verdict on each of these first — determine whether each has been fixed, partially addressed, or is still present.**
+Then continue scanning for new issues.
+
+| Severity | Category | Location | Issue |
+|:---------|:---------|:---------|:------|
+${rows}
+
+`;
+}
+
+/**
  * Build an adversarial review prompt for the given story and diff context.
  */
 export class AdversarialReviewPromptBuilder {
@@ -199,7 +237,13 @@ export class AdversarialReviewPromptBuilder {
     config: AdversarialReviewConfig,
     options: AdversarialReviewPromptOptions,
   ): string {
-    const { mode, diff, storyGitRef, stat, priorFailures, testInventory, excludePatterns } = options;
+    const { mode, diff, storyGitRef, stat, priorFailures, testInventory, excludePatterns, priorAdversarialFindings } =
+      options;
+
+    const priorFindingsBlock =
+      priorAdversarialFindings && priorAdversarialFindings.findings.length > 0
+        ? buildPriorFindingsBlock(priorAdversarialFindings.round, priorAdversarialFindings.findings)
+        : "";
 
     const storyBlock = `## Story Under Review
 
@@ -231,6 +275,7 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
     return [
       ADVERSARIAL_ROLE,
       "\n\n",
+      priorFindingsBlock,
       storyBlock,
       ADVERSARIAL_INSTRUCTIONS,
       "\n\n",

@@ -226,6 +226,10 @@ export async function runReview(
   env?: Record<string, string | undefined>,
   naxIgnoreIndex?: NaxIgnoreIndex,
   runtime?: import("../runtime").NaxRuntime,
+  priorAdversarialFindings?: {
+    round: number;
+    findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>;
+  },
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -364,6 +368,7 @@ export async function runReview(
         projectDir,
         naxIgnoreIndex,
         runtime,
+        priorAdversarialFindings,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

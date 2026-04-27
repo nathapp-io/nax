@@ -21,6 +21,11 @@ export interface AdversarialReviewInput {
   excludePatterns?: string[];
   /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
   featureCtxBlock?: string;
+  /** Prior adversarial findings to carry forward into this review round (issue #736). */
+  priorAdversarialFindings?: {
+    round: number;
+    findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>;
+  };
 }
 
 export interface AdversarialReviewOutput {
@@ -80,6 +85,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         priorFailures: input.priorFailures,
         testInventory: input.testInventory,
         excludePatterns: input.excludePatterns,
+        priorAdversarialFindings: input.priorAdversarialFindings,
       },
     );
     const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;
