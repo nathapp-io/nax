@@ -634,23 +634,6 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
 }
 
-const TDD_TEST_FAILURE_TASK = `# Rectification Required
-
-The tests written for this story are failing. Fix the implementation to make them pass without modifying the test files.
-
-## Instructions
-
-1. Review the failures listed above carefully.
-2. Identify the root cause of each failure.
-3. Fix the implementation WITHOUT modifying test files.
-4. Run the test command shown above to verify your fixes.
-5. Ensure ALL tests pass before completing.
-
-**IMPORTANT:**
-- Do NOT modify test files — they were written by the test-writer and define the expected behavior.
-- Do NOT loosen assertions to mask implementation bugs.
-- Focus on fixing the source code to meet the test requirements.`;
-
 const TDD_SUITE_FAILURE_TASK = `# Rectification Required
 
 Your changes caused test regressions. Fix these without breaking existing logic.
@@ -684,19 +667,3 @@ The verification step failed. Fix the implementation to pass all tests.
 - Do NOT modify test files unless there is a legitimate bug in the test itself.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.`;
-
-const REVIEW_FINDINGS_TASK = `# Rectification Required
-
-The code review surfaced critical findings that must be addressed before this story can proceed.
-
-## Instructions
-
-1. Review the findings listed above carefully.
-2. Verify each finding is a real issue by reading the relevant files.
-3. Fix only valid issues — do NOT add code that already exists in the codebase.
-4. Do NOT change test files or test behavior.
-5. Do NOT add new features — only fix the identified issues.
-
-**IMPORTANT:**
-- The reviewer may have flagged false positives based on the diff. Verify before acting.
-- Commit your fixes when done.`;
