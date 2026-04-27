@@ -228,7 +228,7 @@ function makeMockGeneratorManager(
       output: "",
       rateLimited: false,
       durationMs: 0,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
       agentFallbacks: [] as unknown[],
     }),
   });
@@ -444,7 +444,7 @@ describe("test-feature - Acceptance Tests", () => {
         output: "",
         rateLimited: false,
         durationMs: 0,
-        estimatedCost: 0,
+        estimatedCostUsd: 0,
         agentFallbacks: [] as unknown[],
       }),
     });
@@ -484,7 +484,7 @@ describe("test-feature - Acceptance Tests", () => {
         output: "",
         rateLimited: false,
         durationMs: 0,
-        estimatedCost: 0,
+        estimatedCostUsd: 0,
         agentFallbacks: [] as unknown[],
       }),
     });

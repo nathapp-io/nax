@@ -89,7 +89,7 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
             output: turnResult.output,
             rateLimited: false,
             durationMs: Date.now() - startTime,
-            estimatedCost: turnResult.cost?.total ?? 0,
+            estimatedCostUsd: turnResult.estimatedCostUsd ?? 0,
             tokenUsage: turnResult.tokenUsage,
           };
         } finally {
@@ -102,7 +102,7 @@ export function wrapAdapterAsManager(adapter: AgentAdapter): IAgentManager {
           output: err instanceof Error ? err.message : String(err),
           rateLimited: false,
           durationMs: Date.now() - startTime,
-          estimatedCost: 0,
+          estimatedCostUsd: 0,
           adapterFailure: {
             category: "quality",
             outcome: "fail-unknown",

@@ -60,7 +60,7 @@ export const executionStage: PipelineStage = {
       });
       const primaryResult: AgentResult = {
         success: tddResult.success,
-        estimatedCost: tddResult.totalCost,
+        estimatedCostUsd: tddResult.totalCost,
         rateLimited: false,
         output: "",
         exitCode: tddResult.success ? 0 : 1,
@@ -313,7 +313,7 @@ export const executionStage: PipelineStage = {
 
     logger.info("execution", "Agent session complete", {
       storyId: ctx.story.id,
-      cost: result.estimatedCost,
+      cost: result.estimatedCostUsd,
     });
     return { action: "continue" };
   },

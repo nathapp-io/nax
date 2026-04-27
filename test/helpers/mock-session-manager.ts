@@ -28,7 +28,7 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
       output: "",
       rateLimited: false,
       durationMs: 0,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     })),
     listActive: mock(() => [] as SessionDescriptor[]),
     closeStory: mock(() => [] as SessionDescriptor[]),

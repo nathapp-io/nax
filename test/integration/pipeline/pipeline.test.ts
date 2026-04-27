@@ -425,7 +425,7 @@ describe("Pipeline Runner", () => {
               output: "Agent output",
               rateLimited: false,
               durationMs: 1000,
-              estimatedCost: 0.01,
+              estimatedCostUsd: 0.01,
             };
             return { action: "continue" };
           },

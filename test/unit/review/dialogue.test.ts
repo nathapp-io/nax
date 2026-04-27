@@ -88,7 +88,7 @@ function makeAgentManager(runAsSessionFn?: RunAsSessionFnType): IAgentManager {
   const defaultFn: RunAsSessionFnType = async () => ({
     output: PASSING_RUN_RESPONSE,
     tokenUsage: { inputTokens: 0, outputTokens: 0 },
-    cost: { total: 0.001 },
+    estimatedCostUsd: 0.001 ,
     internalRoundTrips: 0,
   });
   const effectiveFn = runAsSessionFn ?? defaultFn;

@@ -72,7 +72,7 @@ function makeCtx(
     agentResult: {
       success: true,
       output: "",
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
       durationMs: 5000,
     },
     verifyResult,
@@ -237,7 +237,7 @@ describe("collectStoryMetrics - tokenUsage field", () => {
       output: "",
       exitCode: 0,
       rateLimited: false,
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
       durationMs: 5000,
       tokenUsage: {
         inputTokens: 1000,
@@ -260,7 +260,7 @@ describe("collectStoryMetrics - tokenUsage field", () => {
       output: "",
       exitCode: 0,
       rateLimited: false,
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
       durationMs: 5000,
       tokenUsage: {
         inputTokens: 1000,
@@ -287,7 +287,7 @@ describe("collectStoryMetrics - tokenUsage field", () => {
       output: "",
       exitCode: 0,
       rateLimited: false,
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
       durationMs: 5000,
     };
 

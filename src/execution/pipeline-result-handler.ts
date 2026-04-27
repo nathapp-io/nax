@@ -105,7 +105,7 @@ export async function handlePipelineSuccess(
   pipelineResult: PipelineRunResult,
 ): Promise<PipelineSuccessResult> {
   const logger = getSafeLogger();
-  const costDelta = (pipelineResult.context.agentResult?.estimatedCost ?? 0) + (pipelineResult.stageCost ?? 0);
+  const costDelta = (pipelineResult.context.agentResult?.estimatedCostUsd ?? 0) + (pipelineResult.stageCost ?? 0);
   const prd = ctx.prd;
 
   if (pipelineResult.context.storyMetrics) {
@@ -213,7 +213,7 @@ export async function handlePipelineFailure(
   let prd = ctx.prd;
   let prdDirty = false;
   // Always capture cost even for failed stories — agent ran and spent tokens
-  const costDelta = (pipelineResult.context.agentResult?.estimatedCost ?? 0) + (pipelineResult.stageCost ?? 0);
+  const costDelta = (pipelineResult.context.agentResult?.estimatedCostUsd ?? 0) + (pipelineResult.stageCost ?? 0);
 
   switch (pipelineResult.finalAction) {
     case "pause":
@@ -299,7 +299,7 @@ export async function handlePipelineFailure(
         feature: ctx.feature,
         totalCost: ctx.totalCost,
         workdir: ctx.workdir,
-        attemptCost: pipelineResult.context.agentResult?.estimatedCost || 0,
+        attemptCost: pipelineResult.context.agentResult?.estimatedCostUsd || 0,
       });
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;

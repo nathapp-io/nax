@@ -842,7 +842,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       return {
         output: "",
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        cost: { total: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       };
     }
@@ -950,16 +950,17 @@ export class AcpAgentAdapter implements AgentAdapter {
     const output = extractOutput(lastResponse);
     const tokenUsage = totalTokenUsage;
 
-    const estimatedCost =
-      totalExactCostUsd ??
-      (totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0
+    const estimatedCostUsd =
+      totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0
         ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
-        : 0);
+        : 0;
+    const exactCostUsd = totalExactCostUsd; // undefined if wire never reported
 
     return {
       output,
       tokenUsage,
-      cost: { total: estimatedCost },
+      estimatedCostUsd,
+      exactCostUsd,
       internalRoundTrips: turnCount,
     };
   }

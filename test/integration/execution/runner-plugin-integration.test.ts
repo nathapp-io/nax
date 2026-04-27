@@ -157,7 +157,7 @@ describe("Runner Plugin Integration (US-001)", () => {
       isInstalled: async () => true,
       spawn: async () => ({
         success: true,
-        estimatedCost: 0,
+        estimatedCostUsd: 0,
         transcript: "",
       }),
     } as any);

@@ -44,11 +44,11 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       output: llmResponse,
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: cost,
+      estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
-    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCost: cost, agentFallbacks: [] }, fallbacks: [] }),
+    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
     completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
     runAsFn: async (_agent, opts) => ({
       success: true,
@@ -56,7 +56,7 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       output: llmResponse,
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: cost,
+      estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
     completeAsFn: async (_agent, _prompt, _opts) => ({ output: llmResponse, costUsd: cost, source: "mock" }),
@@ -128,7 +128,7 @@ describe("runSemanticReview — LLM prompt construction", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     (agentManager.run as ReturnType<typeof mock>).mockImplementation(async (args: { runOptions: { prompt: string } }) => {
       capturedPrompt = args.runOptions.prompt;
-      return { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCost: 0 } as AgentResult;
+      return { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult;
     });
     await runSemanticReview("/tmp/wd", "abc123", story, config, agentManager);
     return capturedPrompt;

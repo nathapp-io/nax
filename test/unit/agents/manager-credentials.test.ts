@@ -16,7 +16,7 @@ function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
     },
     isInstalled: async () => true,
     hasCredentials: async () => hasCreds,
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }),
+    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 }),
     buildCommand: () => [],
     plan: async () => ({ spec: "", cost: 0 }) as never,
     decompose: async () => ({ stories: [] }) as never,

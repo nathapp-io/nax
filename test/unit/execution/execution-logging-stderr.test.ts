@@ -20,7 +20,7 @@ function createFailedResult(overrides: Partial<AgentResult> = {}): AgentResult {
     stderr: "",
     rateLimited: false,
     durationMs: 1000,
-    estimatedCost: 0.01,
+    estimatedCostUsd: 0.01,
     ...overrides,
   };
 }
@@ -90,7 +90,7 @@ describe("AgentResult failure logging fields", () => {
       // stderr intentionally undefined for backward compat
       rateLimited: false,
       durationMs: 1000,
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
     };
 
     expect(result.exitCode).toBe(1);
@@ -138,7 +138,7 @@ describe("AgentResult failure logging fields", () => {
       stderr: "Last 1000 chars of stderr",
       rateLimited: false,
       durationMs: 5000,
-      estimatedCost: 0.05,
+      estimatedCostUsd: 0.05,
       pid: 12345,
     });
 

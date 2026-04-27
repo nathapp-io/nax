@@ -15,7 +15,7 @@ import { makeMockAgentManager } from "../../../test/helpers";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeAgentManager(result?: Partial<{ success: boolean; estimatedCost: number }>): IAgentManager {
+function makeAgentManager(result?: Partial<{ success: boolean; estimatedCostUsd: number }>): IAgentManager {
   return makeMockAgentManager({
     runFn: async () => ({
       success: result?.success ?? true,
@@ -23,7 +23,7 @@ function makeAgentManager(result?: Partial<{ success: boolean; estimatedCost: nu
       output: "console.log('fix applied');",
       rateLimited: false,
       durationMs: 1000,
-      estimatedCost: result?.estimatedCost ?? 0.05,
+      estimatedCostUsd: result?.estimatedCostUsd ?? 0.05,
       agentFallbacks: [],
     }),
   });
@@ -115,13 +115,13 @@ describe("executeTestFix()", () => {
   });
 
   test("success is true when agent.run() succeeds", async () => {
-    const agent = makeAgentManager({ success: true, estimatedCost: 0.05 });
+    const agent = makeAgentManager({ success: true, estimatedCostUsd: 0.05 });
     const result = await executeTestFix(agent, makeTestFixOptions());
     expect(result.success).toBe(true);
   });
 
   test("success is false when agent.run() fails", async () => {
-    const agent = makeAgentManager({ success: false, estimatedCost: 0.05 });
+    const agent = makeAgentManager({ success: false, estimatedCostUsd: 0.05 });
     const result = await executeTestFix(agent, makeTestFixOptions());
     expect(result.success).toBe(false);
   });

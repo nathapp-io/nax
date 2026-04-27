@@ -44,7 +44,7 @@ function makeCtxWithAgent(
     run: mock(async (request: { runOptions: Record<string, unknown> }) => {
       return await mockAgent.run(request.runOptions);
     }),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0, fallbacks: [] })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, fallbacks: [] })),
     completeAs: mock(async () => ({ output: "", costUsd: 0 })),
     complete: mock(async () => ({ output: "", costUsd: 0 })),
     isUnavailable: () => false,
@@ -86,7 +86,7 @@ function makeMockAgent(succeed = true) {
       output: "",
       exitCode: succeed ? 0 : 1,
       durationMs: 100,
-      estimatedCost: 0,
+      estimatedCostUsd: 0,
     })),
   };
 }

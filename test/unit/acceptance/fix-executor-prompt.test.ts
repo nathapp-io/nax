@@ -28,7 +28,7 @@ function makeAgentWithPromptCapture(result?: Partial<{ output: string }>): IAgen
         output: result?.output ?? "",
         rateLimited: false,
         durationMs: 500,
-        estimatedCost: 0.01,
+        estimatedCostUsd: 0.01,
         agentFallbacks: [],
       };
     },

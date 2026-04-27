@@ -245,7 +245,7 @@ export async function runIteration(
 
   // Collect result from handlers BEFORE GC clearing — pipelineResult.context is the same
   // object as pipelineContext, so clearing agentResult before handlers read
-  // agentResult.estimatedCost caused costDelta to always be 0. See #253.
+  // agentResult.estimatedCostUsd caused costDelta to always be 0. See #253.
   let iterResult: IterationResult;
   if (pipelineResult.success) {
     const r = await handlePipelineSuccess(handlerCtx, pipelineResult);

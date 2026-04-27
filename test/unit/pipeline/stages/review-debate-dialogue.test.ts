@@ -122,8 +122,8 @@ function makePRD(): PRD {
 
 function makeCtx(config: ReturnType<typeof makeNaxConfig>, overrides: Partial<PipelineContext> = {}): PipelineContext {
   const mockAgentManager = makeMockAgentManager({
-    run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+    run: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 })),
     completeAs: mock(async () => ({ output: "", costUsd: 0 })),
     complete: mock(async () => ({ output: "", costUsd: 0 })),
     getAgent: () => undefined,

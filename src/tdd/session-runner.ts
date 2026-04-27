@@ -283,7 +283,7 @@ export async function runTddSession(
       role,
       storyId: story.id,
       durationMs: Date.now() - startTime,
-      cost: result.estimatedCost,
+      cost: result.estimatedCostUsd,
     });
   } else {
     logger.warn("tdd", `Session failed: ${role}`, {
@@ -357,7 +357,7 @@ export async function runTddSession(
     isolation,
     filesChanged,
     durationMs,
-    estimatedCost: result.estimatedCost,
+    estimatedCostUsd: result.estimatedCostUsd,
     tokenUsage: result.tokenUsage,
     outputTail: result.output.slice(-500),
   };

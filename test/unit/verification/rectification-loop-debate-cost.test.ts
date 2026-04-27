@@ -3,8 +3,8 @@
  *
  * Covers:
  * - _rectificationDeps.runDebate is injectable (AC5)
- * - Debate cost is accumulated into story.routing.estimatedCost when totalCostUsd > 0
- * - story.routing.estimatedCost is unchanged when debate returns totalCostUsd === 0
+ * - Debate cost is accumulated into story.routing.estimatedCostUsd when totalCostUsd > 0
+ * - story.routing.estimatedCostUsd is unchanged when debate returns totalCostUsd === 0
  * - Loop completes without error when debate succeeds with cost
  */
 
@@ -41,7 +41,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
     expect(typeof (_rectificationDeps as Record<string, unknown>).runDebate).toBe("function");
   });
 
-  test("debate cost is accumulated into story.routing.estimatedCost when totalCostUsd > 0", async () => {
+  test("debate cost is accumulated into story.routing.estimatedCostUsd when totalCostUsd > 0", async () => {
     _rectificationDeps.agentManager = makeMockAgentManager();
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
@@ -49,7 +49,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       totalCostUsd: 0.05,
     }));
 
-    const story = makeStory({ routing: { modelTier: "balanced", estimatedCost: 0.10 } as never });
+    const story = makeStory({ routing: { modelTier: "balanced", estimatedCostUsd: 0.10 } as never });
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -60,10 +60,10 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(story.routing?.estimatedCost).toBeCloseTo(0.15, 5);
+    expect(story.routing?.estimatedCostUsd).toBeCloseTo(0.15, 5);
   });
 
-  test("story.routing.estimatedCost is not modified when debate returns totalCostUsd === 0", async () => {
+  test("story.routing.estimatedCostUsd is not modified when debate returns totalCostUsd === 0", async () => {
     _rectificationDeps.agentManager = makeMockAgentManager();
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
@@ -71,7 +71,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       totalCostUsd: 0,
     }));
 
-    const story = makeStory({ routing: { modelTier: "balanced", estimatedCost: 0.10 } as never });
+    const story = makeStory({ routing: { modelTier: "balanced", estimatedCostUsd: 0.10 } as never });
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -82,7 +82,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(story.routing?.estimatedCost).toBeCloseTo(0.10, 5);
+    expect(story.routing?.estimatedCostUsd).toBeCloseTo(0.10, 5);
   });
 
   test("debate cost is tracked and loop completes without error when debate succeeds", async () => {

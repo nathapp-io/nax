@@ -80,7 +80,7 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
     output,
     rateLimited: false,
     durationMs: 100,
-    estimatedCost: costPerCall,
+    estimatedCostUsd: costPerCall,
   });
   return makeAgentAdapter({
     name: "mock",

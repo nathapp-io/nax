@@ -172,7 +172,7 @@ describe("collectBatchMetrics - runtimeCrashes per story", () => {
       },
       workdir: WORKDIR_BATCH,
       hooks: { hooks: {} },
-      agentResult: { success: true, estimatedCost: 0.01, durationMs: 1000 },
+      agentResult: { success: true, estimatedCostUsd: 0.01, durationMs: 1000 },
     } as PipelineContext;
 
     const batchMetrics = collectBatchMetrics(ctx, STORY_START_TIME);

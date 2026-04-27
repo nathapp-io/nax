@@ -76,7 +76,7 @@ function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager
         return { result, fallbacks: outcome.fallbacks ?? [], finalBundle: bundle, finalPrompt: prompt };
       }
       return {
-        result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
+        result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
         fallbacks: outcome.fallbacks ?? [],
         finalBundle: req.bundle,
         finalPrompt: req.runOptions.prompt,
@@ -142,7 +142,7 @@ describe("execution stage — AC-41 fallback observability", () => {
 
     // Manager reports one successful swap hop
     const manager = makeAgentManager({
-      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
+      result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
       fallbacks: [
         {
           storyId: "US-001",
@@ -184,7 +184,7 @@ describe("execution stage — AC-41 fallback observability", () => {
 
     // Manager reports one failed swap hop, final result is failure
     const manager = makeAgentManager({
-      result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
+      result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
       fallbacks: [
         {
           storyId: "US-001",
@@ -223,7 +223,7 @@ describe("execution stage — AC-41 fallback observability", () => {
 
     // Manager reports no fallbacks (primary succeeded)
     const manager = makeAgentManager({
-      result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
+      result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
       fallbacks: [],
     });
 
@@ -247,7 +247,7 @@ describe("execution stage — AC-41 fallback observability", () => {
 
     // Manager reports two hops — pre-existing hop in ctx + new hop from manager
     const manager = makeAgentManager({
-      result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 },
+      result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
       fallbacks: [
         {
           storyId: "US-001",
@@ -336,7 +336,7 @@ describe("execution stage — AC-41 fallback observability", () => {
         const { result, bundle, prompt } = await req.executeHop("codex", req.bundle, failure, req.runOptions);
         return { result, fallbacks: swapFallbacks, finalBundle: bundle, finalPrompt: prompt };
       }
-      return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }, fallbacks: [] };
+      return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 }, fallbacks: [] };
     };
 
     _executionDeps.getAgent = (agentId: string) =>

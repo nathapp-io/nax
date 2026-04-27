@@ -107,7 +107,7 @@ describe("StoryRouting type structure", () => {
       modelTier: "powerful",
       testStrategy: "three-session-tdd",
       reasoning: "Multi-tiered approach needed",
-      estimatedCost: 5.5,
+      estimatedCostUsd: 5.5,
       estimatedLOC: 250,
       risks: ["database migration", "backward compatibility"],
       strategy: "llm",

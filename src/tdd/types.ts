@@ -40,7 +40,7 @@ export interface TddSessionResult {
   /** Isolation check results (if applicable) */
   isolation?: IsolationCheck;
   /** Cost of this session (USD) */
-  estimatedCost: number;
+  estimatedCostUsd: number;
   /**
    * Token usage for this session (fixes #590).
    * Undefined when the adapter did not report usage (e.g. pre-first-turn

@@ -62,7 +62,7 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
     output: r.output,
     rateLimited: false,
     durationMs: 0,
-    estimatedCost: r.cost?.total ?? 0,
+    estimatedCostUsd: r.estimatedCostUsd ?? 0,
     tokenUsage: r.tokenUsage,
   };
 }
@@ -197,7 +197,7 @@ export function buildHopCallback(
           output: `Agent "${agentName}" failed: ${errMessage}`,
           rateLimited: sessionFailure?.outcome === "fail-rate-limit",
           durationMs: 0,
-          estimatedCost: 0,
+          estimatedCostUsd: 0,
           adapterFailure: sessionFailure ?? {
             category: "availability",
             outcome: "fail-adapter-error",

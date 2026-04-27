@@ -70,7 +70,7 @@ export async function executeSourceFix(
 
   return {
     success: result.success,
-    cost: result.estimatedCost,
+    cost: result.estimatedCostUsd,
   };
 }
 
@@ -140,6 +140,6 @@ export async function executeTestFix(
 
   return {
     success: result.success,
-    cost: result.estimatedCost,
+    cost: result.estimatedCostUsd,
   };
 }

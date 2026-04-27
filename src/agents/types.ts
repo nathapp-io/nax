@@ -38,8 +38,10 @@ export interface AgentResult {
   rateLimited: boolean;
   /** Duration in milliseconds */
   durationMs: number;
-  /** Estimated cost for this run (USD) */
-  estimatedCost: number;
+  /** Estimated cost for this run (USD), computed from token usage × pricing rates. Always present. */
+  estimatedCostUsd: number;
+  /** Exact cost reported by the wire protocol (USD), when available. Independent of estimatedCostUsd. */
+  exactCostUsd?: number;
   /** Token usage for this run (when available) */
   tokenUsage?: TokenUsage;
   /** Process ID of the spawned agent (for cleanup on failure) */
@@ -338,8 +340,10 @@ export interface TurnResult {
   output: string;
   /** Accumulated token usage across all turns. */
   tokenUsage: TokenUsage;
-  /** Total cost (exact or estimated) for all turns. */
-  cost?: { total: number };
+  /** Estimated cost from token usage × pricing rates (always present). */
+  estimatedCostUsd: number;
+  /** Exact cost reported by wire protocol (when available). */
+  exactCostUsd?: number;
   /** Number of session.prompt() calls made. */
   internalRoundTrips: number;
 }

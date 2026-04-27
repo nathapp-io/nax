@@ -170,7 +170,7 @@ describe("validatePlugin", () => {
                 output: "done",
                 rateLimited: false,
                 durationMs: 1000,
-                estimatedCost: 0.01,
+                estimatedCostUsd: 0.01,
               };
             },
             buildCommand(options: any) {

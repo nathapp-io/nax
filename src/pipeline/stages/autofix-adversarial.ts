@@ -166,7 +166,7 @@ export async function runTestWriterRectification(
         keepOpen,
       },
     });
-    return twResult.estimatedCost ?? 0;
+    return twResult.estimatedCostUsd ?? 0;
   } catch {
     logger.warn("autofix", "Test-writer rectification failed -- proceeding with implementer", {
       storyId: ctx.story.id,

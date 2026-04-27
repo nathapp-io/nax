@@ -181,7 +181,7 @@ function makeSucceedingAgent(name: string): AgentAdapter {
     sendTurn: mock(async () => ({
       output: "done",
       tokenUsage: { inputTokens: 10, outputTokens: 20 },
-      cost: { total: 0.02 },
+      estimatedCostUsd: 0.02 ,
       internalRoundTrips: 1,
     })),
     closeSession: mock(async () => {}),
@@ -216,14 +216,14 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
         return {
           output: "done",
           tokenUsage: { inputTokens: 10, outputTokens: 20 },
-          cost: { total: 0.02 },
+          estimatedCostUsd: 0.02 ,
           internalRoundTrips: 1,
         };
       },
       runWithFallbackFn: async (req) => {
         if (!req.executeHop) {
           return {
-            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
             fallbacks: [],
           };
         }
@@ -268,7 +268,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
             fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
           };
         }
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
 
@@ -307,7 +307,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
             fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
           };
         }
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
 
@@ -351,7 +351,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
       runWithFallbackFn: async (req) => {
         if (!req.executeHop) {
           return {
-            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
             fallbacks: [],
           };
         }
@@ -420,14 +420,14 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
         return {
           output: "done",
           tokenUsage: { inputTokens: 10, outputTokens: 20 },
-          cost: { total: 0.02 },
+          estimatedCostUsd: 0.02 ,
           internalRoundTrips: 1,
         };
       },
       runWithFallbackFn: async (req) => {
         if (!req.executeHop) {
           return {
-            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
             fallbacks: [],
           };
         }
@@ -479,7 +479,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
       runWithFallbackFn: async (req) => {
         if (!req.executeHop) {
           return {
-            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
+            result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, adapterFailure: QUOTA_FAILURE, agentFallbacks: [] },
             fallbacks: [],
           };
         }
@@ -538,7 +538,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
             fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
           };
         }
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
       },
     });
 

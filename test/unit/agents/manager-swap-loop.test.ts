@@ -23,7 +23,7 @@ function makeRunHop(results: Record<string, boolean>) {
           output: "ok",
           rateLimited: false,
           durationMs: 1,
-          estimatedCost: 0,
+          estimatedCostUsd: 0,
         }
       : {
           success: false,
@@ -31,7 +31,7 @@ function makeRunHop(results: Record<string, boolean>) {
           output: "auth failure",
           rateLimited: false,
           durationMs: 1,
-          estimatedCost: 0,
+          estimatedCostUsd: 0,
           adapterFailure: availFailure,
         },
   });
@@ -108,7 +108,7 @@ describe("AgentManager.runWithFallback — executeHop callback", () => {
       executeHop: async (agentName, bundle, failure) => {
         calls.push({ agentName, failure });
         return {
-          result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCost: 0 },
+          result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
           bundle,
           prompt: "test",
         };
@@ -139,7 +139,7 @@ describe("AgentManager.runWithFallback — executeHop callback", () => {
             output: "",
             rateLimited: false,
             durationMs: 0,
-            estimatedCost: 0,
+            estimatedCostUsd: 0,
             adapterFailure: success ? undefined : availFailure,
           },
           bundle,
@@ -191,7 +191,7 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
                   output: "rate limited",
                   rateLimited: true,
                   durationMs: 1,
-                  estimatedCost: 0,
+                  estimatedCostUsd: 0,
                   adapterFailure: rateLimitFailure,
                 }
               : {
@@ -200,7 +200,7 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
                   output: "ok",
                   rateLimited: false,
                   durationMs: 1,
-                  estimatedCost: 0,
+                  estimatedCostUsd: 0,
                 },
         };
       },

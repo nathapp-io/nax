@@ -29,7 +29,7 @@ export interface PipelineRunResult {
   /**
    * Sum of cost reported by secondary agent calls within pipeline stages
    * (e.g. rectification loops, semantic review, acceptance diagnosis).
-   * Distinct from context.agentResult.estimatedCost which holds the main execution cost.
+   * Distinct from context.agentResult.estimatedCostUsd which holds the main execution cost.
    */
   stageCost?: number;
 }

@@ -23,8 +23,8 @@ function makeAgentManager(): { mgr: IAgentManager; callCount: () => number } {
   Object.assign(mgr, {
     complete: completeWithFallbackFn,
     completeAs: async () => mockCompleteResult,
-    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0, agentFallbacks: [] }),
-    getAgent: () => ({ run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 }) } as any),
+    runAs: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }),
+    getAgent: () => ({ run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 }) } as any),
   });
   return { mgr, callCount: () => count };
 }

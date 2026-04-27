@@ -99,7 +99,7 @@ function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): Pip
       exitCode: 0,
       output: "",
       rateLimited: false,
-      estimatedCost: 0.10,
+      estimatedCostUsd: 0.10,
       durationMs: 5000,
     },
     ...overrides,
@@ -191,7 +191,7 @@ describe("collectStoryMetrics — firstPassSuccess is false when escalation occu
           exitCode: 0,
           output: "",
           rateLimited: false,
-          estimatedCost: 0.05,
+          estimatedCostUsd: 0.05,
           durationMs: 3000,
         },
       });
@@ -261,7 +261,7 @@ describe("collectStoryMetrics — attempt count includes all cross-tier attempts
 // ---------------------------------------------------------------------------
 // (1) cost — must sum across all attempts, including failed ones
 //
-// Bug: collectStoryMetrics uses only agentResult.estimatedCost (the final
+// Bug: collectStoryMetrics uses only agentResult.estimatedCostUsd (the final
 // successful attempt). Prior attempt costs from failed escalations are lost.
 //
 // Fix: The runner/escalation handler must persist prior attempt costs so
@@ -281,7 +281,7 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
       expectedCost: 0.15,
     },
     {
-      name: "cost is just agentResult.estimatedCost when no prior attempts (no escalation)",
+      name: "cost is just agentResult.estimatedCostUsd when no prior attempts (no escalation)",
       priorFailuresCount: 0,
       priorAttemptCost: 0,
       currentAttemptCost: 0.05,
@@ -335,7 +335,7 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
           exitCode: 0,
           output: "",
           rateLimited: false,
-          estimatedCost: currentAttemptCost,
+          estimatedCostUsd: currentAttemptCost,
           durationMs: priorFailuresCount === 2 ? 30000 : 5000,
         },
         accumulatedAttemptCost: priorAttemptCost,
@@ -525,7 +525,7 @@ describe("collectStoryMetrics — firstPassSuccess is false when autofix or rect
           exitCode: 0,
           output: "",
           rateLimited: false,
-          estimatedCost: 0.05,
+          estimatedCostUsd: 0.05,
           durationMs: 3000,
         },
       });

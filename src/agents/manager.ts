@@ -207,7 +207,7 @@ export class AgentManager implements IAgentManager {
             output: `AgentManager run hop is not wired for agent "${currentAgent}"`,
             rateLimited: false,
             durationMs: 0,
-            estimatedCost: 0,
+            estimatedCostUsd: 0,
           };
           return { result: unboundResult, fallbacks, finalBundle: currentBundle, finalPrompt };
         }
@@ -289,7 +289,7 @@ export class AgentManager implements IAgentManager {
         outcome: adapterFailure.outcome,
         category: adapterFailure.category,
         timestamp: new Date().toISOString(),
-        costUsd: result.estimatedCost ?? 0,
+        costUsd: result.estimatedCostUsd ?? 0,
       };
       fallbacks.push(hop);
       this._emitter.emit("onSwapAttempt", hop);

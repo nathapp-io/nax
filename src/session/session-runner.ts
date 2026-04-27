@@ -26,7 +26,7 @@ export interface StoryRunOutcome {
   success: boolean;
   /** Primary agent result — used by downstream pipeline stages for auto-commit, merge detection, etc. */
   primaryResult: AgentResult;
-  /** Sum of estimatedCost across all sessions run. */
+  /** Sum of estimatedCostUsd across all sessions run. */
   totalCost: number;
   /** Sum of tokenUsage across all sessions run (undefined if nothing reported). */
   totalTokenUsage?: {

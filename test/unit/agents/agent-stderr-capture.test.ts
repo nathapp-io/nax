@@ -20,7 +20,7 @@ function createAgentResult(overrides: Partial<AgentResult> = {}): AgentResult {
     stderr: "",
     rateLimited: false,
     durationMs: 1000,
-    estimatedCost: 0.01,
+    estimatedCostUsd: 0.01,
     ...overrides,
   };
 }
@@ -55,7 +55,7 @@ describe("AgentResult stderr field", () => {
       // stderr not provided
       rateLimited: false,
       durationMs: 1000,
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
     };
 
     expect(result.stderr).toBeUndefined();
@@ -131,7 +131,7 @@ describe("AgentResult stderr field", () => {
       stderr: "stderr output",
       rateLimited: false,
       durationMs: 5000,
-      estimatedCost: 0.05,
+      estimatedCostUsd: 0.05,
       pid: 12345,
     });
 
@@ -141,7 +141,7 @@ describe("AgentResult stderr field", () => {
     expect(result.stderr).toBe("stderr output");
     expect(result.rateLimited).toBe(false);
     expect(result.durationMs).toBe(5000);
-    expect(result.estimatedCost).toBe(0.05);
+    expect(result.estimatedCostUsd).toBe(0.05);
     expect(result.pid).toBe(12345);
   });
 });

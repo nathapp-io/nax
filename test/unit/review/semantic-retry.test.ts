@@ -80,7 +80,7 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
     output,
     rateLimited: false,
     durationMs: 100,
-    estimatedCost: costPerCall,
+    estimatedCostUsd: costPerCall,
   });
   return makeAgentAdapter({
     name: "mock",
@@ -306,7 +306,7 @@ describe("runSemanticReview — JSON retry failure paths", () => {
     const runMock = mock(async () => {
       callIndex++;
       if (callIndex === 1) {
-        return { success: true, exitCode: 0, output: "not json at all", rateLimited: false, durationMs: 100, estimatedCost: 0 } as AgentResult;
+        return { success: true, exitCode: 0, output: "not json at all", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult;
       }
       throw new Error("retry connection failure");
     });

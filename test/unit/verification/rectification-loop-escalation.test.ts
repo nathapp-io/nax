@@ -173,7 +173,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "failed",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });
@@ -221,7 +221,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "failed",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });
@@ -272,7 +272,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "failed",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });
@@ -316,7 +316,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "ok",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });
@@ -374,7 +374,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "ok",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });
@@ -414,7 +414,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "failed",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });
@@ -468,7 +468,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "failed",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });
@@ -533,7 +533,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     output: "failed",
     rateLimited: false,
     durationMs: 10,
-    estimatedCost: 0,
+    estimatedCostUsd: 0,
     agentFallbacks: [],
   }),
 });

@@ -49,7 +49,7 @@ function makeAgent(runResults: Partial<AgentResult>[] = []) {
       output: "agent done",
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: 0.01,
+      estimatedCostUsd: 0.01,
       ...result,
     };
   };
@@ -120,7 +120,7 @@ describe("rectification session reuse", () => {
       runFn: async (_agentName: string, opts: AgentRunOptions) => {
         agent.calls.push(opts);
         const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
       },
     });
 
@@ -158,7 +158,7 @@ describe("rectification session reuse", () => {
       runFn: async (_agentName: string, opts: AgentRunOptions) => {
         agent.calls.push(opts);
         const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
       },
     });
 
@@ -195,7 +195,7 @@ describe("rectification session reuse", () => {
       runFn: async (_agentName: string, opts: AgentRunOptions) => {
         agent.calls.push(opts);
         const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
       },
     });
 
@@ -230,7 +230,7 @@ describe("rectification session reuse", () => {
       runFn: async (_agentName: string, opts: AgentRunOptions) => {
         agent.calls.push(opts);
         const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
       },
     });
 
@@ -279,7 +279,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       runFn: async (_agentName: string, opts: AgentRunOptions) => {
         agent.calls.push(opts);
         const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCost: result.estimatedCost, agentFallbacks: [] };
+        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
       },
     });
 

@@ -190,7 +190,7 @@ function formatStoryComplete(entry: LogEntry, c: ChalkLike, _timestamp: string, 
   const storyId = String(data.storyId || entry.storyId || "unknown");
   const success = data.success ?? true;
   const cost =
-    typeof data.cost === "number" ? data.cost : typeof data.estimatedCost === "number" ? data.estimatedCost : 0;
+    typeof data.cost === "number" ? data.cost : typeof data.estimatedCostUsd === "number" ? data.estimatedCostUsd : 0;
   const duration = typeof data.durationMs === "number" ? data.durationMs : 0;
   const action = data.finalAction || data.action;
 

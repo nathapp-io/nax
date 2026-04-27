@@ -59,7 +59,7 @@ export function createSessionRunHop(sessionManager: ISessionManager): SessionRun
           output: turnResult.output,
           rateLimited: false,
           durationMs: Date.now() - startMs,
-          estimatedCost: turnResult.cost?.total ?? 0,
+          estimatedCostUsd: turnResult.estimatedCostUsd ?? 0,
           tokenUsage: turnResult.tokenUsage,
         },
       };
@@ -73,7 +73,7 @@ export function createSessionRunHop(sessionManager: ISessionManager): SessionRun
           output: err instanceof Error ? err.message : String(err),
           rateLimited: sessionFailure?.outcome === "fail-rate-limit",
           durationMs: Date.now() - startMs,
-          estimatedCost: 0,
+          estimatedCostUsd: 0,
           adapterFailure: sessionFailure ?? {
             category: "quality",
             outcome: "fail-unknown",

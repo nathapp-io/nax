@@ -139,9 +139,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     mockGitAndTestForT9({});
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier exits non-zero
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // verifier exits non-zero
     ]);
 
     const result = await runThreeSessionTdd({
@@ -169,9 +169,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // verifier fails
     ]);
 
     // Disable rectification to avoid test command being called for full-suite gate
@@ -198,9 +198,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     mockGitAndTestForT9({});
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 }, // sessions succeed but verdict says rejected
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 }, // sessions succeed but verdict says rejected
     ]);
 
     const result = await runThreeSessionTdd({
@@ -222,9 +222,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     mockGitAndTestForT9({});
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -245,9 +245,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     mockGitAndTestForT9({});
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -274,9 +274,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // verifier fails
     ]);
 
     const result = await runThreeSessionTdd({
@@ -304,9 +304,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: false, exitCode: 1, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -326,9 +326,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     mockGitAndTestForT9({});
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -353,9 +353,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     mockGitAndTestForT9({});
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -379,9 +379,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     expect(existsSync(verdictPath)).toBe(true); // File exists before run
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
     await runThreeSessionTdd({
       agent,
@@ -405,9 +405,9 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     // Disable rectification to avoid test command being called for full-suite gate
@@ -443,7 +443,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     });
 
     const agent = createMockAgent([
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // session 1 fails
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // session 1 fails
     ]);
 
     const result = await runThreeSessionTdd({

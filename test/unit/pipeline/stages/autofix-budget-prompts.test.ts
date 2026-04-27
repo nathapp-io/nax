@@ -28,7 +28,7 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     run: mock(async (request: { runOptions: Record<string, unknown> }) => {
       return await mockRun(request.runOptions);
     }),
-    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCost: 0 })),
+    runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 })),
     completeAs: mock(async () => ({ output: "", costUsd: 0 })),
     complete: mock(async () => ({ output: "", costUsd: 0 })),
     isUnavailable: () => false,
@@ -82,7 +82,7 @@ describe("autofixStage — global budget (#106)", () => {
     let agentSpawnCount = 0;
     const mockRun = mock(async () => {
       agentSpawnCount++;
-      return { success: false, estimatedCost: 0 };
+      return { success: false, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     const saved = { recheckReview: _autofixDeps.recheckReview };
@@ -138,7 +138,7 @@ describe("autofixStage — prompt escalation", () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       prompts.push(opts.prompt as string);
-      return { success: false, estimatedCost: 0 };
+      return { success: false, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     const saved = { recheckReview: _autofixDeps.recheckReview };
@@ -172,7 +172,7 @@ describe("autofixStage — prompt escalation", () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       prompts.push(opts.prompt as string);
-      return { success: false, estimatedCost: 0 };
+      return { success: false, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     const saved = { recheckReview: _autofixDeps.recheckReview };
@@ -206,7 +206,7 @@ describe("autofixStage — prompt escalation", () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       prompts.push(opts.prompt as string);
-      return { success: false, estimatedCost: 0 };
+      return { success: false, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     const saved = { recheckReview: _autofixDeps.recheckReview };
@@ -247,7 +247,7 @@ describe("autofixStage — #412 prompt selection", () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       prompts.push(opts.prompt as string);
-      return { success: false, estimatedCost: 0 };
+      return { success: false, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     const saved = { recheckReview: _autofixDeps.recheckReview };
@@ -303,7 +303,7 @@ describe("autofixStage — #412 prompt selection", () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       prompts.push(opts.prompt as string);
-      return { success: false, estimatedCost: 0 };
+      return { success: false, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     const saved = { recheckReview: _autofixDeps.recheckReview };
@@ -338,7 +338,7 @@ describe("autofixStage — #412 prompt selection", () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
       prompts.push(opts.prompt as string);
-      return { success: false, estimatedCost: 0 };
+      return { success: false, estimatedCostUsd: 0 };
     });
     const agentManager = makeMockAgentManager(mockRun);
     const saved = { recheckReview: _autofixDeps.recheckReview };

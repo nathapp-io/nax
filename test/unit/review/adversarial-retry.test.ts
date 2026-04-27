@@ -87,7 +87,7 @@ function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapte
     run: mock(async () => {
       const response = responses[callIndex] ?? responses[responses.length - 1];
       callIndex++;
-      return { output: response, estimatedCost: costPerCall };
+      return { output: response, estimatedCostUsd: costPerCall };
     }),
     closeSession: mock(async () => {}),
     closePhysicalSession: mock(async () => {}),
@@ -288,7 +288,7 @@ describe("runAdversarialReview — JSON retry failure paths", () => {
     let callIndex = 0;
     const runMock = mock(async () => {
       callIndex++;
-      if (callIndex === 1) return { output: "not json at all", estimatedCost: 0 };
+      if (callIndex === 1) return { output: "not json at all", estimatedCostUsd: 0 };
       throw new Error("retry connection failure");
     });
     const agentManager = makeMockAgentManager({
@@ -411,7 +411,7 @@ describe("runAdversarialReview — retry logging", () => {
     let callIndex = 0;
     const runMock = mock(async () => {
       callIndex++;
-      if (callIndex === 1) return { output: "not json", estimatedCost: 0 };
+      if (callIndex === 1) return { output: "not json", estimatedCostUsd: 0 };
       throw new Error("retry network failure");
     });
     const agentManager = makeMockAgentManager({

@@ -53,7 +53,7 @@ class MockAgentAdapter implements AgentAdapter {
     return [this.binary];
   }
   async run(_o: AgentRunOptions): Promise<AgentResult> {
-    return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCost: 0, rateLimited: false };
+    return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCostUsd: 0, rateLimited: false };
   }
   async plan(_o: PlanOptions): Promise<PlanResult> {
     return { specContent: "# Feature\n" };

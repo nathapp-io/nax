@@ -108,7 +108,7 @@ describe("AgentManager — Phase 1 pass-through", () => {
             output: "done",
             rateLimited: false,
             durationMs: 1,
-            estimatedCost: 0.001,
+            estimatedCostUsd: 0.001,
           },
         };
       },
@@ -217,7 +217,7 @@ describe("AgentManager — middleware envelope", () => {
     let calledRunAs = false;
     (manager as unknown as { runAs: typeof manager.runAs }).runAs = async (_name, _req) => {
       calledRunAs = true;
-      return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 };
+      return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
     };
     try { await manager.run({ runOptions: { prompt: "test" } as never }); } catch {}
     expect(calledRunAs).toBe(true);
@@ -292,7 +292,7 @@ describe("AgentManager — middleware envelope", () => {
           // Primary hop — claude fails with availability failure; return a bundle so shouldSwap allows the swap
           return {
             result: {
-              success: false, exitCode: 1, output: "unavailable", rateLimited: false, durationMs: 10, estimatedCost: 0,
+              success: false, exitCode: 1, output: "unavailable", rateLimited: false, durationMs: 10, estimatedCostUsd: 0,
               adapterFailure: { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" },
             },
             bundle: { files: [] } as never,
@@ -301,7 +301,7 @@ describe("AgentManager — middleware envelope", () => {
         }
         // Fallback hop — codex succeeds
         return {
-          result: { success: true, exitCode: 0, output: "fallback-done", rateLimited: false, durationMs: 20, estimatedCost: 0.001 },
+          result: { success: true, exitCode: 0, output: "fallback-done", rateLimited: false, durationMs: 20, estimatedCostUsd: 0.001 },
           bundle: undefined,
           prompt: "swap-handoff-prompt",
         };

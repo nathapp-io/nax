@@ -564,7 +564,7 @@ async function runAgentRectification(
         throw err;
       }
 
-      autofixCostAccum += result.estimatedCost ?? 0;
+      autofixCostAccum += result.estimatedCostUsd ?? 0;
 
       // G5: bind updated protocolIds after each autofix attempt so the session descriptor
       // reflects the session that actually ran (may change after internal session retries).
@@ -629,7 +629,7 @@ async function runAgentRectification(
 
       return {
         agentSuccess: result.success,
-        cost: result.estimatedCost ?? 0,
+        cost: result.estimatedCostUsd ?? 0,
         checkSignatureChanged,
         noOp,
         consecutiveNoOps: newConsecutiveNoOps,

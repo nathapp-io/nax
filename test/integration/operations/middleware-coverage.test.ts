@@ -76,7 +76,7 @@ describe("callOp middleware coverage (ADR-018 Wave 2 + ADR-019 §5)", () => {
         output: `runOp says: ${prompt}`,
         tokenUsage: { inputTokens: 10, outputTokens: 5 },
         internalRoundTrips: 1,
-        cost: { total: 0.001 },
+        estimatedCostUsd: 0.001 ,
       })),
     });
 
@@ -123,7 +123,7 @@ describe("callOp middleware coverage (ADR-018 Wave 2 + ADR-019 §5)", () => {
         output: `noFallback says: ${prompt}`,
         tokenUsage: { inputTokens: 5, outputTokens: 5 },
         internalRoundTrips: 1,
-        cost: { total: 0.0005 },
+        estimatedCostUsd: 0.0005 ,
       })),
     });
     const runtime = makeTestRuntime({ agentManager: realManager, sessionManager });

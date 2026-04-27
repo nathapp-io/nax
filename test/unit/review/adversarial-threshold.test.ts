@@ -80,7 +80,7 @@ function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
       output: llmResponse,
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: cost,
+      estimatedCostUsd: cost,
       agentFallbacks: [] as unknown[],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),

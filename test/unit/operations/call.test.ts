@@ -57,7 +57,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
   test("dispatches via agentManager.runWithFallback with executeHop callback", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: true, exitCode: 0, output: "ran via fallback", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] },
+        result: { success: true, exitCode: 0, output: "ran via fallback", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
         fallbacks: [],
       }),
     });
@@ -90,7 +90,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     // middleware envelope. This test pins the dispatch path.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => ({
-        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] },
+        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
         fallbacks: [],
         // Surface req fields for assertion via the mock's call records below.
         ...({ _req: req } as Record<string, unknown>),
@@ -125,7 +125,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
   test("throws CALL_OP_NO_OUTPUT when run returns no output", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 1, estimatedCost: 0, agentFallbacks: [] },
+        result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
         fallbacks: [],
       }),
     });

@@ -18,7 +18,7 @@ import { makeMockAgentManager, makeNaxConfig } from "../../../test/helpers";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMockManager(result?: Partial<{ success: boolean; estimatedCost: number }>): IAgentManager {
+function makeMockManager(result?: Partial<{ success: boolean; estimatedCostUsd: number }>): IAgentManager {
   return makeMockAgentManager({
     runFn: async () => ({
       success: result?.success ?? true,
@@ -26,7 +26,7 @@ function makeMockManager(result?: Partial<{ success: boolean; estimatedCost: num
       output: "console.log('fix applied');",
       rateLimited: false,
       durationMs: 1000,
-      estimatedCost: result?.estimatedCost ?? 0.05,
+      estimatedCostUsd: result?.estimatedCostUsd ?? 0.05,
       agentFallbacks: [],
     }),
   });
@@ -434,7 +434,7 @@ describe("AC-6: executeSourceFix does not use pipeline", () => {
 
 describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", () => {
   test("return type has success and cost fields", async () => {
-    const manager = makeMockManager({ estimatedCost: 0.07 });
+    const manager = makeMockManager({ estimatedCostUsd: 0.07 });
     const config = makeNaxConfig();
     const result = await executeSourceFix(manager, {
       testOutput: "FAIL",
@@ -450,8 +450,8 @@ describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", ()
     expect(typeof result.cost).toBe("number");
   });
 
-  test("cost value comes from result.estimatedCost", async () => {
-    const manager = makeMockManager({ estimatedCost: 0.12 });
+  test("cost value comes from result.estimatedCostUsd", async () => {
+    const manager = makeMockManager({ estimatedCostUsd: 0.12 });
     const config = makeNaxConfig();
     const result = await executeSourceFix(manager, {
       testOutput: "FAIL",
@@ -467,7 +467,7 @@ describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", ()
   });
 
   test("success is true when agent.run() succeeds", async () => {
-    const manager = makeMockManager({ success: true, estimatedCost: 0.05 });
+    const manager = makeMockManager({ success: true, estimatedCostUsd: 0.05 });
     const config = makeNaxConfig();
     const result = await executeSourceFix(manager, {
       testOutput: "FAIL",
@@ -483,7 +483,7 @@ describe("AC-7: executeSourceFix returns { success: boolean, cost: number }", ()
   });
 
   test("success is false when agent.run() fails", async () => {
-    const manager = makeMockManager({ success: false, estimatedCost: 0.05 });
+    const manager = makeMockManager({ success: false, estimatedCostUsd: 0.05 });
     const config = makeNaxConfig();
     const result = await executeSourceFix(manager, {
       testOutput: "FAIL",

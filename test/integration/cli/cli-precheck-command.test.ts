@@ -73,7 +73,7 @@ function createValidPRD() {
         routing: {
           tier: "fast",
           complexity: "simple",
-          estimatedCost: 0.01,
+          estimatedCostUsd: 0.01,
           security: false,
           thinkingBudget: 1000,
         },

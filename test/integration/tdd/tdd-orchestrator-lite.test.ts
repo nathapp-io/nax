@@ -49,9 +49,9 @@ describe("runThreeSessionTdd — lite mode", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -80,9 +80,9 @@ describe("runThreeSessionTdd — lite mode", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -109,9 +109,9 @@ describe("runThreeSessionTdd — lite mode", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -144,9 +144,9 @@ describe("runThreeSessionTdd — lite mode", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -175,9 +175,9 @@ describe("runThreeSessionTdd — lite mode", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({

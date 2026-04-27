@@ -378,7 +378,7 @@ describe("runTestWriterRectification", () => {
 
   test("returns cost from agent on success", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const mockRun = mock(async () => ({ estimatedCost: 0.05, success: true, output: "done", exitCode: 0, rateLimited: false }));
+    const mockRun = mock(async () => ({ estimatedCostUsd: 0.05, success: true, output: "done", exitCode: 0, rateLimited: false }));
     const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
 
@@ -390,7 +390,7 @@ describe("runTestWriterRectification", () => {
 
   test("returns 0 when agent is not found (agentGetFn returns null)", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const agentManager = { getDefault: () => null, run: makeMockAgentManager(mock(async () => ({ estimatedCost: 0 }))) } as any;
+    const agentManager = { getDefault: () => null, run: makeMockAgentManager(mock(async () => ({ estimatedCostUsd: 0 }))) } as any;
     const ctx = makeCtx();
 
     // Suppress resolveModelForAgent error for this test — getDefault returns null
@@ -417,7 +417,7 @@ describe("runTestWriterRectification", () => {
     let capturedModelTier = "";
     const mockRun = mock(async (opts: any) => {
       capturedModelTier = opts.modelTier;
-      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx({
@@ -437,7 +437,7 @@ describe("runTestWriterRectification", () => {
     let capturedModelTier = "";
     const mockRun = mock(async (opts: any) => {
       capturedModelTier = opts.modelTier;
-      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx({
@@ -458,7 +458,7 @@ describe("runTestWriterRectification", () => {
     let capturedKeepSessionOpen: boolean | undefined;
     const mockRun = mock(async (opts: any) => {
       capturedKeepSessionOpen = opts.keepOpen;
-      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
@@ -473,7 +473,7 @@ describe("runTestWriterRectification", () => {
     let capturedKeepSessionOpen: boolean | undefined;
     const mockRun = mock(async (opts: any) => {
       capturedKeepSessionOpen = opts.keepOpen;
-      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();
@@ -488,7 +488,7 @@ describe("runTestWriterRectification", () => {
     const capturedSessionRoles: string[] = [];
     const mockRun = mock(async (opts: any) => {
       capturedSessionRoles.push(opts.sessionRole);
-      return { estimatedCost: 0, success: true, output: "", exitCode: 0, rateLimited: false };
+      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
     });
     const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
     const ctx = makeCtx();

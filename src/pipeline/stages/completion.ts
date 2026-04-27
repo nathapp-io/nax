@@ -31,7 +31,7 @@ export const completionStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
-    const sessionCost = ctx.agentResult?.estimatedCost || 0;
+    const sessionCost = ctx.agentResult?.estimatedCostUsd || 0;
 
     // Calculate PRD path — prefer ctx.prdPath (already resolved by runner), fall back to
     // featureDir reconstruction, with a last-resort for contexts where neither is set (e.g. tests).

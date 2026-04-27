@@ -308,7 +308,7 @@ export function createReviewerSession(
       history.push({ role: "reviewer", content: turnResult.output });
 
       const parsed = parseReviewResponse(turnResult.output);
-      const reviewResult: ReviewDialogueResult = { ...parsed, cost: turnResult.cost?.total ?? 0 };
+      const reviewResult: ReviewDialogueResult = { ...parsed, cost: turnResult.estimatedCostUsd ?? 0 };
       lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
@@ -344,7 +344,7 @@ export function createReviewerSession(
 
       const parsed = parseReviewResponse(turnResult.output);
       const deltaSummary = extractDeltaSummary(turnResult.output, previousFindings, parsed.checkResult.findings);
-      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: turnResult.cost?.total ?? 0 };
+      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: turnResult.estimatedCostUsd ?? 0 };
       lastCheckResult = dialogueResult;
 
       const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;
@@ -418,7 +418,7 @@ export function createReviewerSession(
       history.push({ role: "reviewer", content: turnResult.output });
 
       const parsed = parseReviewResponse(turnResult.output);
-      const reviewResult: ReviewDialogueResult = { ...parsed, cost: turnResult.cost?.total ?? 0 };
+      const reviewResult: ReviewDialogueResult = { ...parsed, cost: turnResult.estimatedCostUsd ?? 0 };
       lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
@@ -466,7 +466,7 @@ export function createReviewerSession(
 
       const parsed = parseReviewResponse(turnResult.output);
       const deltaSummary = extractDeltaSummary(turnResult.output, previousFindings, parsed.checkResult.findings);
-      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: turnResult.cost?.total ?? 0 };
+      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: turnResult.estimatedCostUsd ?? 0 };
       lastCheckResult = dialogueResult;
 
       const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;

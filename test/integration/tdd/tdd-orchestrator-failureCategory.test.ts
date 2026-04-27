@@ -45,7 +45,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
       ],
     });
 
-    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -68,7 +68,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
       ],
     });
 
-    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
     const configWithStrictStrategy = {
       ...DEFAULT_CONFIG,
@@ -99,7 +99,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
     });
 
     const agent = createMockAgent([
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // Agent crash
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // Agent crash
     ]);
 
     const result = await runThreeSessionTdd({
@@ -130,8 +130,8 @@ describe("runThreeSessionTdd — failureCategory", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // test-writer OK
-      { success: false, exitCode: 1, estimatedCost: 0.02 }, // implementer fails
+      { success: true, estimatedCostUsd: 0.01 }, // test-writer OK
+      { success: false, exitCode: 1, estimatedCostUsd: 0.02 }, // implementer fails
     ]);
 
     const result = await runThreeSessionTdd({
@@ -198,9 +198,9 @@ describe("runThreeSessionTdd — failureCategory", () => {
     }));
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // verifier fails
     ]);
 
     const result = await runThreeSessionTdd({
@@ -221,9 +221,9 @@ describe("runThreeSessionTdd — failureCategory", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd({
@@ -269,7 +269,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
     }));
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // s1 strict test-writer
+      { success: true, estimatedCostUsd: 0.01 }, // s1 strict test-writer
     ]);
 
     const configWithAutoStrategy = {

@@ -646,11 +646,11 @@ export async function runSemanticReview(
     try {
       const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
       rawResponse = runResult.output;
-      llmCost = runResult.estimatedCost ?? 0;
+      llmCost = runResult.estimatedCostUsd ?? 0;
       logger?.debug("semantic", "LLM call complete (legacy)", {
         storyId: story.id,
         responseLen: rawResponse.length,
-        estimatedCost: llmCost,
+        estimatedCostUsd: llmCost,
       });
     } catch (err) {
       logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -681,7 +681,7 @@ export async function runSemanticReview(
           runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
         });
         rawResponse = retryResult.output;
-        llmCost += retryResult.estimatedCost ?? 0;
+        llmCost += retryResult.estimatedCostUsd ?? 0;
         if (parseLLMResponse(rawResponse)) {
           logger?.info("semantic", "JSON retry succeeded", { storyId: story.id, responseLen: rawResponse.length });
         }

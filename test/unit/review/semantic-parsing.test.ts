@@ -45,7 +45,7 @@ function makeAgentManager(response: string, cost = 0) {
       output: response,
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: cost,
+      estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: response, costUsd: cost, source: "mock" }),
@@ -56,7 +56,7 @@ function makeAgentManager(response: string, cost = 0) {
         output: response,
         rateLimited: false,
         durationMs: 100,
-        estimatedCost: cost,
+        estimatedCostUsd: cost,
         agentFallbacks: [] as unknown[],
       };
       return { result, fallbacks: [], bundle: request.bundle };
@@ -68,7 +68,7 @@ function makeAgentManager(response: string, cost = 0) {
       output: response,
       rateLimited: false,
       durationMs: 100,
-      estimatedCost: cost,
+      estimatedCostUsd: cost,
       agentFallbacks: [] as unknown[],
     }),
     completeAsFn: async () => ({ output: response, costUsd: cost, source: "mock" }),

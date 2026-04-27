@@ -80,7 +80,7 @@ function makeRunFn(response: string, cost = 0.001): RunAsSessionFnType {
   return mock(async (_agentName: string, _handle: SessionHandle, _prompt: string, _opts: RunAsSessionOpts): Promise<TurnResult> => ({
     output: response,
     tokenUsage: { inputTokens: 0, outputTokens: 0 },
-    cost: { total: cost },
+    estimatedCostUsd: cost ,
     internalRoundTrips: 0,
   }));
 }
