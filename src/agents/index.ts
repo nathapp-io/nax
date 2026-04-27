@@ -3,7 +3,7 @@ export type { InteractionHandler } from "./interaction-handler";
 export { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 export { CompleteError, SessionFailureError } from "./types";
 export { getAllAgentNames, getInstalledAgents, checkAgentHealth, KNOWN_AGENT_NAMES } from "./registry";
-export type { ModelCostRates, TokenUsage, CostEstimate, TokenUsageWithConfidence, SessionTokenUsage } from "./cost";
+export type { ModelCostRates, TokenUsage, CostEstimate, TokenUsageWithConfidence } from "./cost";
 export {
   COST_RATES,
   MODEL_PRICING,
