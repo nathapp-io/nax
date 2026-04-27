@@ -455,7 +455,7 @@ describe("sendTurn()", () => {
       },
     });
 
-    expect(result.cost?.total).toBeCloseTo(0.003);
+    expect(result.estimatedCostUsd).toBeCloseTo(0.003);
   });
 });
 
