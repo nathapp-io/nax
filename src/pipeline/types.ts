@@ -14,7 +14,7 @@ import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
-import type { ReviewResult } from "../review/types";
+import type { AdversarialFindingsCache, ReviewResult } from "../review/types";
 import type { FailureCategory } from "../tdd/types";
 import type { VerifyResult } from "../verification/orchestrator-types";
 
@@ -254,6 +254,13 @@ export interface PipelineContext {
    * for mechanical failures in files the agent cannot modify (e.g. lint in test files).
    */
   mechanicalFailedOnly?: boolean;
+  /**
+   * Carry-forward cache for adversarial prior findings (issue #736).
+   * Set by reviewFromContext() when the adversarial check fails with blocking findings.
+   * Cleared when adversarial passes. Injected into the next round's prompt so the reviewer
+   * does not open a fresh session with no memory of what it already flagged.
+   */
+  priorAdversarialFindings?: AdversarialFindingsCache;
 }
 
 /**

@@ -24,6 +24,7 @@ import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
 import { runSemanticReview } from "./semantic";
 import type {
+  AdversarialFindingsCache,
   AdversarialReviewConfig,
   ReviewCheckResult,
   ReviewConfig,
@@ -149,6 +150,7 @@ export class ReviewOrchestrator {
     env?: Record<string, string | undefined>,
     naxIgnoreIndex?: NaxIgnoreIndex,
     runtime?: import("../runtime").NaxRuntime,
+    priorAdversarialFindings?: AdversarialFindingsCache,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -317,6 +319,7 @@ export class ReviewOrchestrator {
             projectDir,
             naxIgnoreIndex,
             runtime,
+            priorAdversarialFindings,
           ),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -344,6 +347,7 @@ export class ReviewOrchestrator {
           env,
           naxIgnoreIndex,
           runtime,
+          priorAdversarialFindings,
         );
         llmCheckResults = llmResult.checks;
       }
@@ -508,7 +512,7 @@ export class ReviewOrchestrator {
         ? { semantic: semanticBundle ?? undefined, adversarial: adversarialBundle ?? undefined }
         : undefined;
 
-    return this.review(
+    const result = await this.review(
       ctx.config.review,
       ctx.workdir,
       ctx.config.execution,
@@ -535,7 +539,35 @@ export class ReviewOrchestrator {
       ctx.worktreeDependencyContext?.env,
       ctx.naxIgnoreIndex,
       ctx.runtime,
+      ctx.priorAdversarialFindings,
     );
+
+    // Update ctx.priorAdversarialFindings for the next review round (issue #736).
+    // When adversarial fails with blocking findings, cache them so the next round's
+    // prompt carries them forward. When adversarial passes, clear the cache.
+    const advCheck = result.builtIn.checks?.find((c) => c.check === "adversarial");
+    if (advCheck) {
+      if (!advCheck.success && (advCheck.findings?.length ?? 0) > 0) {
+        ctx.priorAdversarialFindings = {
+          round: (ctx.priorAdversarialFindings?.round ?? 0) + 1,
+          findings: (advCheck.findings ?? []).map((f) => ({
+            severity: f.severity,
+            category: f.category,
+            file: f.file,
+            line: f.line,
+            issue: f.message,
+          })),
+        };
+      } else if (advCheck.success) {
+        ctx.priorAdversarialFindings = undefined;
+      }
+    } else if (retrySkipChecks?.has("adversarial")) {
+      // Adversarial was skipped because it passed in the previous review pass.
+      // Clear any stale findings — the reviewer already approved this code.
+      ctx.priorAdversarialFindings = undefined;
+    }
+
+    return result;
   }
 }
 

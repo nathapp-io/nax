@@ -78,6 +78,26 @@ describe("adversarialReviewOp.build()", () => {
     const result = adversarialReviewOp.build(embeddedInput, ctx);
     expect(result.task.content).toContain("-old line");
   });
+
+  test("task content contains prior findings block when priorAdversarialFindings is set", () => {
+    const ctx = makeBuildCtx();
+    const inputWithPrior: AdversarialReviewInput = {
+      ...SAMPLE_INPUT,
+      priorAdversarialFindings: {
+        round: 2,
+        findings: [{ severity: "error", file: "src/session.ts", line: 10, issue: "Silent catch block" }],
+      },
+    };
+    const result = adversarialReviewOp.build(inputWithPrior, ctx);
+    expect(result.task.content).toContain("Prior Adversarial Findings — Round 2");
+    expect(result.task.content).toContain("Silent catch block");
+  });
+
+  test("task content has no prior findings block when priorAdversarialFindings is absent", () => {
+    const ctx = makeBuildCtx();
+    const result = adversarialReviewOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).not.toContain("Prior Adversarial Findings");
+  });
 });
 
 describe("adversarialReviewOp.parse()", () => {

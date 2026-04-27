@@ -3,7 +3,7 @@ import { reviewConfigSelector } from "../config";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure, TestInventory } from "../prompts";
 import { looksLikeTruncatedJson } from "../review/truncation";
-import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
+import type { AdversarialFindingsCache, AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBody, LlmReviewFinding, RunOperation } from "./types";
 
@@ -21,6 +21,8 @@ export interface AdversarialReviewInput {
   excludePatterns?: string[];
   /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
   featureCtxBlock?: string;
+  /** Prior adversarial findings to carry forward into this review round (issue #736). */
+  priorAdversarialFindings?: AdversarialFindingsCache;
 }
 
 export interface AdversarialReviewOutput {
@@ -80,6 +82,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         priorFailures: input.priorFailures,
         testInventory: input.testInventory,
         excludePatterns: input.excludePatterns,
+        priorAdversarialFindings: input.priorAdversarialFindings,
       },
     );
     const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;

@@ -294,3 +294,111 @@ describe("AdversarialReviewPromptBuilder — no diff available", () => {
     expect(result).toContain("No diff available");
   });
 });
+
+// ─── prior adversarial findings (issue #736) ──────────────────────────────────
+
+describe("AdversarialReviewPromptBuilder — priorAdversarialFindings", () => {
+  const PRIOR_FINDINGS = {
+    round: 1,
+    findings: [
+      {
+        severity: "error",
+        category: "error-path",
+        file: "src/auth/login.ts",
+        line: 42,
+        issue: "Null pointer dereference on empty input",
+      },
+      {
+        severity: "warn",
+        category: "convention",
+        file: "src/auth/session.ts",
+        issue: "Missing storyId in logger call",
+      },
+    ],
+  };
+
+  test("prior findings block appears when priorAdversarialFindings is set", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialFindings: PRIOR_FINDINGS,
+    });
+    expect(result).toContain("Prior Adversarial Findings — Round 1");
+  });
+
+  test("prior findings block contains the correct round number", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialFindings: { round: 3, findings: PRIOR_FINDINGS.findings },
+    });
+    expect(result).toContain("Round 3");
+  });
+
+  test("prior findings block contains finding severity, file:line, category, and issue", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialFindings: PRIOR_FINDINGS,
+    });
+    expect(result).toContain("src/auth/login.ts:42");
+    expect(result).toContain("Null pointer dereference on empty input");
+    expect(result).toContain("error-path");
+    expect(result).toContain("src/auth/session.ts");
+    expect(result).toContain("Missing storyId in logger call");
+  });
+
+  test("prior findings block appears before the story block (verdict-first)", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialFindings: PRIOR_FINDINGS,
+    });
+    const priorFindingsIdx = result.indexOf("Prior Adversarial Findings");
+    const storyIdx = result.indexOf("## Story Under Review");
+    expect(priorFindingsIdx).toBeGreaterThanOrEqual(0);
+    expect(priorFindingsIdx).toBeLessThan(storyIdx);
+  });
+
+  test("prior findings block instructs reviewer to verdict prior issues first", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialFindings: PRIOR_FINDINGS,
+    });
+    expect(result).toContain("Verdict on each of these first");
+  });
+
+  test("finding with no line number renders file path without colon-line suffix", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialFindings: {
+        round: 1,
+        findings: [{ severity: "warn", file: "src/utils.ts", issue: "Unhandled promise rejection" }],
+      },
+    });
+    expect(result).toContain("src/utils.ts");
+    // Location cell should be "src/utils.ts" without a trailing colon+line
+    const tableRowIdx = result.indexOf("Unhandled promise rejection");
+    const rowText = result.slice(result.lastIndexOf("|", tableRowIdx), tableRowIdx + 30);
+    expect(rowText).not.toMatch(/src\/utils\.ts:\d/);
+  });
+
+  test("no prior findings block when priorAdversarialFindings is undefined", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+    });
+    expect(result).not.toContain("Prior Adversarial Findings");
+  });
+
+  test("no prior findings block when findings array is empty", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialFindings: { round: 1, findings: [] },
+    });
+    expect(result).not.toContain("Prior Adversarial Findings");
+  });
+});

@@ -32,7 +32,7 @@ import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import { looksLikeTruncatedJson } from "./truncation";
-import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
+import type { AdversarialFindingsCache, AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
 export const _adversarialDeps = {
@@ -144,6 +144,7 @@ export async function runAdversarialReview(
   projectDir?: string,
   naxIgnoreIndex?: NaxIgnoreIndex,
   runtime?: import("../runtime").NaxRuntime,
+  priorAdversarialFindings?: AdversarialFindingsCache,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -275,6 +276,7 @@ export async function runAdversarialReview(
         testInventory,
         excludePatterns: adversarialConfig.excludePatterns,
         featureCtxBlock,
+        priorAdversarialFindings,
       });
     } catch (err) {
       logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -349,6 +351,7 @@ export async function runAdversarialReview(
       priorFailures,
       testInventory,
       excludePatterns: adversarialConfig.excludePatterns,
+      priorAdversarialFindings,
     });
     const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
 
