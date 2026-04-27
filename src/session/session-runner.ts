@@ -1,9 +1,8 @@
 /**
  * Session Runner — shared types for per-story agent execution.
  *
- * `StoryRunOutcome` and `SessionRunnerContext` are consumed by
- * `ThreeSessionRunner` (TDD three-session strategy). This file only keeps
- * the shared types used by the concrete runner implementation.
+ * `StoryRunOutcome` and `SessionRunnerContext` are shared types for
+ * execution strategies. This file only keeps the shared types.
  */
 
 import type { AgentAdapter } from "../agents";
@@ -18,10 +17,9 @@ import type { AdapterFailure } from "../context/engine/types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Outcome of one ThreeSessionRunner.run() call — one user story.
+ * Outcome of one per-story execution run.
  *
- * Aggregates cost/tokens across the three sessions (test-writer, implementer,
- * verifier) and the final pass/fail decision.
+ * Aggregates cost/tokens across all sessions and the final pass/fail decision.
  */
 export interface StoryRunOutcome {
   /** Whether the story's agent work succeeded overall. */
@@ -48,7 +46,7 @@ export interface StoryRunOutcome {
 }
 
 /**
- * Everything ThreeSessionRunner needs from the pipeline. Kept intentionally
+ * Execution context passed to per-story runners. Kept intentionally
  * narrow — runners should not depend on the full PipelineContext.
  */
 export interface SessionRunnerContext {
