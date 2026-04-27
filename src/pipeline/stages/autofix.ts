@@ -27,13 +27,26 @@ import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
 import { formatSessionName } from "../../session/naming";
 import { captureGitRef } from "../../utils/git";
-import {
-  buildProgressivePromptPreamble,
-  runSharedRectificationLoop,
-} from "../../verification/shared-rectification-loop";
+import { buildProgressivePromptPreamble, runRetryLoop } from "../../verification/shared-rectification-loop";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { runTestWriterRectification, splitFindingsByScope } from "./autofix-adversarial";
+
+/** Failure snapshot for the autofix retry loop. */
+interface AutofixFailure {
+  checks: ReviewCheckResult[];
+  checkSignature: string;
+}
+
+/** Result from one autofix attempt. */
+interface AutofixAttemptResult {
+  agentSuccess: boolean;
+  cost: number;
+  checkSignatureChanged: boolean;
+  /** True when the agent produced zero file changes. */
+  noOp: boolean;
+  consecutiveNoOps: number;
+}
 
 const CLARIFY_REGEX = /^CLARIFY:\s*(.+)$/ms;
 /** Matches the REVIEW-003 reviewer contradiction escape hatch emitted by the implementer. */
@@ -404,25 +417,15 @@ async function runAgentRectification(
     return { succeeded: false, cost: autofixCostAccum };
   }
 
-  const loopState = {
-    attempt: 0,
-    failedChecks: implementerChecks,
-    checkSignature: getCheckSignature(implementerChecks),
-    checkSignatureChanged: false,
-    /** Number of consecutive no-op turns (zero file changes) so far this cycle. */
-    consecutiveNoOps: 0,
-    /** True when the previous turn produced no file changes and the reprompt should fire. */
-    lastWasNoOp: false,
-  };
   let unresolvedReason: string | undefined;
-  // #411: Track git HEAD before each agent attempt so checkResult can detect
+  // #411: Track git HEAD before each agent attempt so verify can detect
   // whether the agent actually modified source files. When no files changed
   // (e.g. UNRESOLVED signal, lint-only fix), passed LLM checks are skipped.
-  let refBeforeAttempt: string | undefined;
+  let autofixBeforeRef: string | undefined;
 
   // Session continuity: the implementer session is open only on the very first autofix call
   // (consumed === 0). On subsequent cycles (after a review retry), the previous loop's last
-  // runAttempt used keepOpen: false, so the session was closed before we re-enter.
+  // execute used keepOpen: false, so the session was closed before we re-enter.
   const implementerSession = formatSessionName({
     workdir: ctx.workdir,
     featureName: ctx.prd.feature,
@@ -431,33 +434,50 @@ async function runAgentRectification(
   });
   let sessionConfirmedOpen = consumed === 0;
 
-  const succeeded = await runSharedRectificationLoop({
-    stage: "autofix",
+  logger.info("autofix", "Starting agent rectification for review failures", {
     storyId: ctx.story.id,
+    failedChecks: implementerChecks.map((check) => check.check),
     maxAttempts,
-    state: loopState,
-    logger,
-    startMessage: "Starting agent rectification for review failures",
-    startData: {
-      storyId: ctx.story.id,
-      failedChecks: implementerChecks.map((check) => check.check),
-      maxAttempts,
-      totalUsed: consumed,
-      maxTotalAttempts: maxTotal,
-    },
-    attemptMessage: (attempt) => `Agent rectification attempt ${consumed + attempt}/${maxTotal}`,
-    attemptData: { storyId: ctx.story.id },
-    canContinue: (state) => state.failedChecks.length > 0 && state.attempt < maxAttempts,
-    buildPrompt: (attempt, state) => {
-      // runSharedRectificationLoop increments attempt before calling buildPrompt,
-      // so attempt=1 on the first call. Continuation mode starts from attempt=2.
+    totalUsed: consumed,
+    maxTotalAttempts: maxTotal,
+  });
+
+  const initialFailure: AutofixFailure = {
+    checks: implementerChecks,
+    checkSignature: getCheckSignature(implementerChecks),
+  };
+
+  // Track state across buildPrompt/execute/verify callbacks
+  let currentAttempt = 0;
+  let currentConsecutiveNoOps = 0;
+  let currentCheckSignatureChanged = false;
+
+  const outcome = await runRetryLoop<AutofixFailure, AutofixAttemptResult>({
+    stage: "rectification",
+    storyId: ctx.story.id,
+    packageDir: ctx.workdir,
+    maxAttempts,
+    failure: initialFailure,
+    previousAttempts: [],
+    buildPrompt: (failure, previous) => {
+      currentAttempt = previous.length + 1;
+      const lastResult = previous[previous.length - 1]?.result;
+      const lastWasNoOp = lastResult?.noOp ?? false;
+      currentConsecutiveNoOps = lastResult?.consecutiveNoOps ?? 0;
+      currentCheckSignatureChanged = failure.checkSignature !== initialFailure.checkSignature;
+
+      logger.debug("autofix", `Building prompt for attempt ${consumed + currentAttempt}/${maxTotal}`, {
+        storyId: ctx.story.id,
+        lastWasNoOp,
+        consecutiveNoOps: currentConsecutiveNoOps,
+      });
 
       // No-op reprompt: agent produced zero file changes on the previous turn.
       // Send a focused directive before falling back to the normal prompt hierarchy.
-      if (state.lastWasNoOp) {
+      if (lastWasNoOp) {
         return RectifierPromptBuilder.noOpReprompt(
-          state.failedChecks,
-          state.consecutiveNoOps,
+          failure.checks,
+          currentConsecutiveNoOps,
           MAX_CONSECUTIVE_NOOP_REPROMPTS,
         );
       }
@@ -465,33 +485,33 @@ async function runAgentRectification(
       // #412: First attempt uses a lean delta prompt when the implementer session is
       // already open — the agent has full story context from execution, so we only
       // need to send the review findings, not re-state the full prompt.
-      if (attempt === 1 && sessionConfirmedOpen) {
-        return RectifierPromptBuilder.firstAttemptDelta(state.failedChecks, maxAttempts);
+      if (currentAttempt === 1 && sessionConfirmedOpen) {
+        return RectifierPromptBuilder.firstAttemptDelta(failure.checks, maxAttempts);
       }
 
-      const isSessionContinuation = attempt > 1 && sessionConfirmedOpen;
+      const isSessionContinuation = currentAttempt > 1 && sessionConfirmedOpen;
 
       if (isSessionContinuation) {
         // If failing check categories changed since the previous attempt, this is the
         // first attempt for a new failure class (e.g. semantic -> adversarial). Reset
         // to first-attempt framing instead of continuation wording.
-        if (state.checkSignatureChanged) {
-          const attemptsRemaining = Math.max(1, maxAttempts - attempt + 1);
-          return RectifierPromptBuilder.firstAttemptDelta(state.failedChecks, attemptsRemaining);
+        if (currentCheckSignatureChanged) {
+          const attemptsRemaining = Math.max(1, maxAttempts - currentAttempt + 1);
+          return RectifierPromptBuilder.firstAttemptDelta(failure.checks, attemptsRemaining);
         }
         // Apply the same capping as buildProgressivePromptPreamble so the last attempt
         // always triggers urgency even when urgencyAtAttempt > maxAttempts.
         return RectifierPromptBuilder.continuation(
-          state.failedChecks,
-          attempt,
+          failure.checks,
+          currentAttempt,
           Math.min(rethinkAtAttempt, maxAttempts),
           Math.min(urgencyAtAttempt, maxAttempts),
         );
       }
 
-      let prompt = RectifierPromptBuilder.reviewRectification(state.failedChecks, ctx.story);
+      let prompt = RectifierPromptBuilder.reviewRectification(failure.checks, ctx.story);
       const escalationPreamble = buildAutofixEscalationPreamble(
-        attempt,
+        currentAttempt,
         maxAttempts,
         rethinkAtAttempt,
         urgencyAtAttempt,
@@ -501,10 +521,14 @@ async function runAgentRectification(
       }
       return prompt;
     },
-    runAttempt: async (attempt, prompt) => {
-      // #411: Capture HEAD before agent runs so checkResult can detect file changes.
-      refBeforeAttempt = await _autofixDeps.captureGitRef(ctx.workdir);
-      ctx.autofixAttempt = consumed + attempt;
+    execute: async (prompt) => {
+      logger.info("autofix", `Agent rectification attempt ${consumed + currentAttempt}/${maxTotal}`, {
+        storyId: ctx.story.id,
+      });
+
+      // #411: Capture HEAD before agent runs so verify can detect file changes.
+      autofixBeforeRef = await _autofixDeps.captureGitRef(ctx.workdir);
+      ctx.autofixAttempt = consumed + currentAttempt;
       const modelTier =
         ctx.story.routing?.modelTier ?? ctx.rootConfig.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
       const defaultAgent = agentManager.getDefault();
@@ -514,7 +538,7 @@ async function runAgentRectification(
         modelTier,
         defaultAgent,
       );
-      const isLastAttempt = attempt >= maxAttempts;
+      const isLastAttempt = currentAttempt >= maxAttempts;
       let result: import("../../agents").AgentResult;
       try {
         result = await agentManager.run({
@@ -590,35 +614,33 @@ async function runAgentRectification(
           }
         }
       }
-    },
-    checkResult: async (attempt, state) => {
-      // #411: Detect whether the agent modified source files since the attempt started.
-      // When captureGitRef returns undefined (not a git repo or git unavailable), assume
-      // files changed — we cannot detect a no-op without git-ref comparison.
+
+      // Detect no-op (zero changes)
       const refAfterAttempt = await _autofixDeps.captureGitRef(ctx.workdir);
       const sourceFilesChanged =
-        refBeforeAttempt === undefined || refAfterAttempt === undefined || refBeforeAttempt !== refAfterAttempt;
+        autofixBeforeRef === undefined || refAfterAttempt === undefined || autofixBeforeRef !== refAfterAttempt;
+      const noOp = !sourceFilesChanged;
 
-      if (!sourceFilesChanged) {
-        // No-op short-circuit: don't consume this attempt — re-prompt with a stronger
-        // directive so the agent either edits files or emits UNRESOLVED explicitly.
-        if (state.consecutiveNoOps < MAX_CONSECUTIVE_NOOP_REPROMPTS) {
-          state.consecutiveNoOps++;
-          state.lastWasNoOp = true;
-          state.attempt--; // Undo the loop's increment — this attempt doesn't count.
-          logger.info("autofix", "No source changes — re-prompting with stronger directive (not counting attempt)", {
-            storyId: ctx.story.id,
-            noOpCount: `${state.consecutiveNoOps}/${MAX_CONSECUTIVE_NOOP_REPROMPTS}`,
-            attemptsRemaining: maxAttempts - state.attempt,
-          });
-          return false;
-        }
-        // No-op limit reached — count as a consumed attempt and proceed to recheck.
-        state.lastWasNoOp = false;
-        state.consecutiveNoOps = 0;
+      // Detect check signature change — will be computed during verify phase
+      const checkSignatureChanged = false;
+
+      // Track consecutive no-ops
+      const newConsecutiveNoOps = noOp ? currentConsecutiveNoOps + 1 : 0;
+
+      return {
+        agentSuccess: result.success,
+        cost: result.estimatedCost ?? 0,
+        checkSignatureChanged,
+        noOp,
+        consecutiveNoOps: newConsecutiveNoOps,
+      };
+    },
+    verify: async (result) => {
+      // If too many consecutive no-ops, escalate by failing
+      if (result.consecutiveNoOps > MAX_CONSECUTIVE_NOOP_REPROMPTS) {
         logger.warn("autofix", "No source changes (no-op limit reached) — counting as consumed attempt", {
           storyId: ctx.story.id,
-          attemptsRemaining: maxAttempts - attempt,
+          attemptsRemaining: maxAttempts - currentAttempt,
         });
         // Skip LLM checks that already passed — they'll return the same result on the unchanged diff.
         const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
@@ -629,18 +651,37 @@ async function runAgentRectification(
             skippedChecks: passedChecks,
           });
         }
-      } else {
-        // Source files changed — reset no-op tracking.
-        state.consecutiveNoOps = 0;
-        state.lastWasNoOp = false;
+        return {
+          passed: false,
+          newFailure: initialFailure,
+        };
       }
 
+      // Check if this attempt was a no-op and we should continue
+      if (result.noOp) {
+        logger.info(
+          "autofix",
+          "No source changes — re-prompting with stronger directive (counts as consumed attempt)",
+          {
+            storyId: ctx.story.id,
+            noOpCount: `${result.consecutiveNoOps}/${MAX_CONSECUTIVE_NOOP_REPROMPTS}`,
+            attemptsRemaining: maxAttempts - currentAttempt,
+          },
+        );
+        // Return failure to trigger the no-op reprompt logic in buildPrompt
+        return {
+          passed: false,
+          newFailure: initialFailure,
+        };
+      }
+
+      // Re-run checks to see if they pass
       const passed = await _autofixDeps.recheckReview(ctx);
       if (passed) {
-        logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${attempt}`, {
+        logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${consumed + currentAttempt}`, {
           storyId: ctx.story.id,
         });
-        return true;
+        return { passed: true };
       }
 
       const updatedFailed = collectFailedChecks(ctx);
@@ -674,50 +715,56 @@ async function runAgentRectification(
         const mechPassed = await _autofixDeps.recheckReview(ctx);
         pipelineEventBus.emit({ type: "autofix:completed", storyId: ctx.story.id, fixed: mechPassed });
         if (mechPassed) {
-          logger.info("autofix", `[OK] Mechanical fix resolved agent-introduced lint errors on attempt ${attempt}`, {
-            storyId: ctx.story.id,
-          });
-          return true;
+          logger.info(
+            "autofix",
+            `[OK] Mechanical fix resolved agent-introduced lint errors on attempt ${consumed + currentAttempt}`,
+            {
+              storyId: ctx.story.id,
+            },
+          );
+          return { passed: true };
         }
       }
 
       if (updatedFailed.length > 0) {
         const updatedCheckSignature = getCheckSignature(updatedFailed);
-        state.checkSignatureChanged = updatedCheckSignature !== state.checkSignature;
-        state.checkSignature = updatedCheckSignature;
-        state.failedChecks.splice(0, state.failedChecks.length, ...updatedFailed);
-      } else {
-        state.checkSignatureChanged = false;
-      }
-      return false;
-    },
-    onAttemptFailure: (attempt) => {
-      logger.warn("autofix", `Agent rectification still failing after attempt ${attempt}`, {
-        storyId: ctx.story.id,
-        attemptsRemaining: maxAttempts - attempt,
-        globalBudgetRemaining: maxTotal - (consumed + attempt),
-      });
-    },
-    onLoopEnd: (state) => {
-      if (state.attempt >= maxAttempts) {
-        logger.warn("autofix", "Agent rectification exhausted", {
+        currentCheckSignatureChanged = updatedCheckSignature !== initialFailure.checkSignature;
+        logger.warn("autofix", `Agent rectification still failing after attempt ${consumed + currentAttempt}`, {
           storyId: ctx.story.id,
-          attemptsUsed: state.attempt,
-          globalBudgetUsed: consumed + state.attempt,
-          maxTotalAttempts: maxTotal,
+          attemptsRemaining: maxAttempts - currentAttempt,
+          globalBudgetRemaining: maxTotal - (consumed + currentAttempt),
         });
+        return {
+          passed: false,
+          newFailure: {
+            checks: updatedFailed,
+            checkSignature: updatedCheckSignature,
+          },
+        };
       }
+
+      logger.warn("autofix", "Agent rectification exhausted", {
+        storyId: ctx.story.id,
+        attemptsUsed: currentAttempt,
+        globalBudgetUsed: consumed + currentAttempt,
+        maxTotalAttempts: maxTotal,
+      });
+      return {
+        passed: false,
+        newFailure: initialFailure,
+      };
     },
   }).catch((error: unknown) => {
     if (error instanceof Error && error.message === "AUTOFIX_AGENT_NOT_FOUND") {
-      return false;
+      return { outcome: "exhausted", attempts: 0 } as const;
     }
     if (error instanceof Error && error.message === "AUTOFIX_UNRESOLVED") {
-      return false;
+      return { outcome: "exhausted", attempts: 0 } as const;
     }
     throw error;
   });
 
+  const succeeded = outcome.outcome === "fixed";
   return { succeeded, cost: autofixCostAccum, unresolvedReason };
 }
 
