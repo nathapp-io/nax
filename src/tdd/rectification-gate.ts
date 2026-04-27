@@ -266,13 +266,13 @@ async function runRectificationLoop(
     previousAttempts: [],
     buildPrompt: (failure) => {
       const failureRecords = buildFailureRecords(failure.testSummary, failure.testOutput);
-      return RectifierPromptBuilder.for("tdd-suite-failure")
-        .story(story)
-        .priorFailures(failureRecords)
-        .testCommand(testCmd)
-        .conventions()
-        .task()
-        .build();
+      return RectifierPromptBuilder.regressionFailure({
+        story,
+        failures: failureRecords,
+        testCommand: testCmd,
+        conventions: true,
+        isolation: "strict",
+      });
     },
     execute: async (prompt) => {
       currentAttempt++;

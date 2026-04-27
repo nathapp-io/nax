@@ -674,14 +674,20 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 
     // 2. Constitution (optional)
     if (opts.constitution) {
-      parts.push(universalConstitutionSection(opts.constitution).content);
-      parts.push("\n\n");
+      const constSection = universalConstitutionSection(opts.constitution);
+      if (constSection) {
+        parts.push(constSection.content);
+        parts.push("\n\n");
+      }
     }
 
     // 3. Context (optional)
     if (opts.context) {
-      parts.push(universalContextSection(opts.context).content);
-      parts.push("\n\n");
+      const ctxSection = universalContextSection(opts.context);
+      if (ctxSection) {
+        parts.push(ctxSection.content);
+        parts.push("\n\n");
+      }
     }
 
     // 4. Story section
@@ -689,8 +695,11 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
     parts.push("\n\n");
 
     // 5. Prior failures section
-    parts.push(priorFailuresSection(opts.failures).content);
-    parts.push("\n\n");
+    const failureSection = priorFailuresSection(opts.failures);
+    if (failureSection) {
+      parts.push(failureSection.content);
+      parts.push("\n\n");
+    }
 
     // 6. Test command section
     parts.push(`# TEST COMMAND\n\n\`${opts.testCommand}\``);
