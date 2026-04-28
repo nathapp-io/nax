@@ -1,5 +1,5 @@
-import type { CostErrorEvent, CostEvent, ICostAggregator } from "../cost-aggregator";
-import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus } from "../dispatch-events";
+import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
+import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
 
 export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAggregator, runId: string): () => void {
   const offDispatch = bus.onDispatch((event: DispatchEvent) => {
@@ -49,8 +49,22 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
     aggregator.recordError(errorEvent);
   });
 
+  const offCompleted = bus.onOperationCompleted((event: OperationCompletedEvent) => {
+    const summary: OperationSummaryEvent = {
+      runId,
+      operation: event.operation,
+      hopCount: event.hopCount,
+      fallbackTriggered: event.fallbackTriggered,
+      totalCostUsd: event.totalCostUsd,
+      totalElapsedMs: event.totalElapsedMs,
+      finalStatus: event.finalStatus,
+    };
+    aggregator.recordOperationSummary(summary);
+  });
+
   return () => {
     offDispatch();
     offError();
+    offCompleted();
   };
 }

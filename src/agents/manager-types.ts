@@ -82,6 +82,12 @@ export interface AgentRunRequest {
 /** Options for AgentManager.runAsSession — caller-managed session (Phase C). */
 export interface RunAsSessionOpts {
   storyId?: string;
+  /** Feature name — forwarded to DispatchEvent.featureName for audit correlation. */
+  featureName?: string;
+  /** Working directory — forwarded to DispatchEvent.workdir. */
+  workdir?: string;
+  /** Project directory — forwarded to DispatchEvent.projectDir. */
+  projectDir?: string;
   pipelineStage?: import("../config/permissions").PipelineStage;
   /** Session role — forwarded to DispatchEvent.sessionRole for audit/cost correlation. */
   sessionRole?: import("../runtime/session-role").SessionRole;

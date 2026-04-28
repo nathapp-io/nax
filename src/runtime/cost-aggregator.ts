@@ -39,9 +39,20 @@ export interface CostSnapshot {
   readonly errorCount: number;
 }
 
+export interface OperationSummaryEvent {
+  readonly runId: string;
+  readonly operation: "run-with-fallback" | "complete-with-fallback";
+  readonly hopCount: number;
+  readonly fallbackTriggered: boolean;
+  readonly totalCostUsd: number;
+  readonly totalElapsedMs: number;
+  readonly finalStatus: "ok" | "exhausted" | "cancelled" | "error";
+}
+
 export interface ICostAggregator {
   record(event: CostEvent): void;
   recordError(event: CostErrorEvent): void;
+  recordOperationSummary(event: OperationSummaryEvent): void;
   snapshot(): CostSnapshot;
   byAgent(): Record<string, CostSnapshot>;
   byStage(): Record<string, CostSnapshot>;
@@ -62,6 +73,7 @@ export function createNoOpCostAggregator(): ICostAggregator {
   return {
     record() {},
     recordError() {},
+    recordOperationSummary() {},
     snapshot() {
       return EMPTY_SNAPSHOT;
     },
@@ -136,6 +148,8 @@ export class CostAggregator implements ICostAggregator {
     }
     this._errors.push(event);
   }
+
+  recordOperationSummary(_event: OperationSummaryEvent): void {}
 
   snapshot(): CostSnapshot {
     const allEvents = [...this._events, ...this._inFlightEvents];
