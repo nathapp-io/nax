@@ -1,6 +1,6 @@
 /** Three-Session TDD Orchestrator */
 
-import { resolveDefaultAgent, wrapAdapterAsManager } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
 import { getLogger } from "../logger";
@@ -261,7 +261,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     story,
     config,
     workdir,
-    agentManager ?? wrapAdapterAsManager(agent),
+    agentManager,
     implementerTier,
     lite,
     logger,

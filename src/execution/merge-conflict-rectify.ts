@@ -13,6 +13,7 @@ import type { PipelineEventEmitter } from "../pipeline/events";
 import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import { errorMessage } from "../utils/errors";
 
 /**
@@ -55,7 +56,7 @@ export type RectificationResult =
     };
 
 /** Options passed to rectifyConflictedStory */
-export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo {
+export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo, DispatchContext {
   workdir: string;
   config: NaxConfig;
   hooks: LoadedHooksConfig;
@@ -138,6 +139,10 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
       storyStartTime: new Date().toISOString(),
       routing: routing as import("../pipeline/types").RoutingResult,
       agentGetFn,
+      agentManager: options.agentManager,
+      sessionManager: options.sessionManager,
+      runtime: options.runtime,
+      abortSignal: options.abortSignal,
     };
 
     const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);

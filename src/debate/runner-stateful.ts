@@ -8,6 +8,7 @@ import type { IAgentManager } from "../agents";
 import type { ModelDef } from "../config";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
@@ -25,7 +26,7 @@ import {
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Debater } from "./types";
 
-interface StatefulCtx {
+interface StatefulCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
@@ -33,11 +34,8 @@ interface StatefulCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
-  readonly agentManager?: IAgentManager;
-  readonly sessionManager?: import("../session/types").ISessionManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
-  readonly signal?: AbortSignal;
 }
 
 export async function runStatefulTurn(
@@ -124,7 +122,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
           timeoutSeconds: ctx.timeoutSeconds,
           featureName: ctx.featureName,
           storyId: ctx.storyId,
-          signal: ctx.signal,
+          signal: ctx.abortSignal,
         });
         openHandles.push(handle);
       } else {

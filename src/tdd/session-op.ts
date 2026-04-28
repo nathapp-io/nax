@@ -20,6 +20,7 @@ export const verifyTddOp: TddRunOp = { role: "verifier" };
 /** Subset of ThreeSessionTddOptions needed by runTddSessionOp */
 export interface TddSessionOpOptions {
   agent: AgentAdapter;
+  agentManager: import("../agents/manager-types").IAgentManager;
   story: UserStory;
   config: NaxConfig;
   workdir: string;
@@ -49,6 +50,7 @@ export async function runTddSessionOp(
 ): Promise<TddSessionResult> {
   const {
     agent,
+    agentManager,
     story,
     config,
     workdir,
@@ -94,6 +96,7 @@ export async function runTddSessionOp(
   return runTddSession(
     role,
     agent,
+    agentManager,
     story,
     config,
     workdir,

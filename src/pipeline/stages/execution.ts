@@ -6,7 +6,7 @@
  * On availability failure, delegates swap policy to AgentManager.runWithFallback().
  */
 
-import { validateAgentForTier, wrapAdapterAsManager } from "../../agents";
+import { validateAgentForTier } from "../../agents";
 import type { AgentRunRequest, IAgentManager } from "../../agents/manager-types";
 import type { AgentAdapter, AgentResult } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
@@ -53,7 +53,7 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      const tddResult = await runThreeSessionTddFromCtx(ctx, {
+      const tddResult = await _executionDeps.runThreeSessionTddFromCtx(ctx, {
         agent,
         dryRun: false,
         lite: isLiteMode,
@@ -187,7 +187,7 @@ export const executionStage: PipelineStage = {
       }),
     };
 
-    const effectiveManager: IAgentManager = ctx.agentManager ?? wrapAdapterAsManager(agent);
+    const effectiveManager: IAgentManager = ctx.agentManager;
 
     // finalBundle/finalPrompt track the last hop's values via closure side-effects.
     let finalBundle: ContextBundle | undefined = ctx.contextBundle;
@@ -328,4 +328,5 @@ export const _executionDeps = {
   isAmbiguousOutput,
   checkStoryAmbiguity,
   failAndClose,
+  runThreeSessionTddFromCtx,
 };

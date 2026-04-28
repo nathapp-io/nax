@@ -301,6 +301,10 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
         prd,
         eventEmitter,
         agentGetFn,
+        agentManager: ctx.pipelineContext.agentManager,
+        sessionManager: ctx.pipelineContext.sessionManager,
+        runtime: ctx.pipelineContext.runtime,
+        abortSignal: ctx.pipelineContext.abortSignal,
       });
       mergeConflicts.push({ story, rectified: rectResult.success, cost: rectResult.cost });
     } catch (err) {

@@ -14,6 +14,7 @@ import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "../../../../test/helpers";
+import { fakeAgentManager } from "../../../../test/helpers/fake-agent-manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -47,6 +48,7 @@ function makeCtx(
     workdir: "/repo",
     hooks: {},
     prompt: "Do the thing",
+    agentManager: (() => { const a = _executionDeps.getAgent?.("claude"); return a ? fakeAgentManager(a, "claude") : fakeAgentManager(makeAgentAdapter({ name: "claude" })); })(),
   } as unknown as PipelineContext;
 }
 

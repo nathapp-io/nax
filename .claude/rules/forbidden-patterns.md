@@ -24,6 +24,8 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | `new AgentManager(config)` / `createAgentManager(config, …)` outside `src/runtime/internal/` | `createRuntime(config, workdir)` and read `runtime.agentManager` | ADR-018 §2 — one runtime per run, no orphans |
 | `runtime.configLoader.current()` inside an op's `build` / `parse` | `ctx.config` (sliced by `callOp` via `packageView.select`) | ADR-018 §4.2 — preserves per-package overrides |
 | Resolving permissions outside `SessionManager.openSession` / `AgentManager.completeAs` | Pass `pipelineStage` upward; resource opener resolves once | ADR-019 §3 |
+| `wrapAdapterAsManager` (production or test imports from `src/agents/utils`) | `createRuntime(config, workdir).agentManager` for production; `fakeAgentManager(adapter)` for tests | ADR-020 §D3 — privatized; all dispatch must flow through the middleware chain |
+| `fakeAgentManager` in `src/` production code | `createRuntime(config, workdir).agentManager` | Test-only helper (see Test-Only Helpers below) |
 
 ## Prompt Builder Convention
 
@@ -146,3 +148,13 @@ for (const glob of resolved.globs) { /* ... */ }
 ### Scope
 
 Applies to `src/context/`, `src/pipeline/`, `src/review/`, `src/tdd/`, `src/verification/`, `src/acceptance/`, `src/plugins/`, `src/analyze/`. The only module permitted to hold raw patterns is `src/test-runners/`.
+
+## Test-Only Helpers
+
+The following symbols are **test-only** and must never appear in `src/` production code:
+
+| Symbol | Location | Use In |
+|:---|:---|:---|
+| `fakeAgentManager` | `test/helpers/fake-agent-manager.ts` | Unit tests that need an `IAgentManager` without booting a full runtime. Wraps a single adapter with no middleware chain and no fallback policy. |
+
+CI gate: `scripts/check-no-adapter-wrap.sh` runs in pre-commit to block `wrapAdapterAsManager` from re-entering `src/`.

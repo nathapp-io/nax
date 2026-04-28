@@ -13,6 +13,7 @@ export type {
 } from "./prompt-auditor";
 export type { PackageView, PackageRegistry } from "./packages";
 export { createPackageRegistry } from "./packages";
+export type { DispatchContext } from "./dispatch-context";
 export type { AgentMiddleware, MiddlewareContext } from "./agent-middleware";
 export { MiddlewareChain } from "./agent-middleware";
 export type {

@@ -14,7 +14,7 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "../../prompts";
 import { typedSpawn } from "../../utils/bun-deps";
-import type { RoutingContext, RoutingDecision } from "../router";
+import type { RoutingDecision } from "../router";
 import { determineTestStrategy } from "../router";
 import { parseBatchResponse, parseRoutingResponse } from "./llm-parsing";
 
@@ -208,7 +208,15 @@ async function callLlm(
  *
  * Pre-populates the cache with routing decisions for all stories.
  */
-export async function routeBatch(stories: UserStory[], context: RoutingContext): Promise<Map<string, RoutingDecision>> {
+interface LlmRoutingContext {
+  config: NaxConfig;
+  agentManager: IAgentManager;
+}
+
+export async function routeBatch(
+  stories: UserStory[],
+  context: LlmRoutingContext,
+): Promise<Map<string, RoutingDecision>> {
   const config = context.config;
   const llmConfig = config.routing.llm;
 
@@ -254,7 +262,7 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
 export async function classifyWithLlm(
   story: UserStory,
   config: NaxConfig,
-  agentManager?: IAgentManager,
+  agentManager: IAgentManager,
 ): Promise<RoutingDecision | null> {
   const llmConfig = config.routing.llm;
   if (!llmConfig) return null;

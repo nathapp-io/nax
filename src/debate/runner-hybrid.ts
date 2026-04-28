@@ -7,6 +7,7 @@
 import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
@@ -31,7 +32,7 @@ export interface RebuttalLoopResult {
   costUsd: number;
 }
 
-export interface HybridCtx {
+export interface HybridCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
@@ -39,11 +40,8 @@ export interface HybridCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
-  readonly agentManager?: IAgentManager;
-  readonly sessionManager?: import("../session/types").ISessionManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
-  readonly signal?: AbortSignal;
 }
 
 /**
@@ -95,7 +93,7 @@ export async function runRebuttalLoop(
         timeoutSeconds: ctx.timeoutSeconds,
         featureName: ctx.featureName,
         storyId: ctx.storyId,
-        signal: ctx.signal,
+        signal: ctx.abortSignal,
       });
       internalHandles.push(handle);
     } else {
@@ -204,7 +202,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
           timeoutSeconds: ctx.timeoutSeconds,
           featureName: ctx.featureName,
           storyId: ctx.storyId,
-          signal: ctx.signal,
+          signal: ctx.abortSignal,
         });
         openHandles.push(handle);
       } else {
