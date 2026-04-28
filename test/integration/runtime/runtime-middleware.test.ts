@@ -35,12 +35,11 @@ describe("Wave 2 exit criteria", () => {
 
   test("EC-3: PromptAuditor.flush() writes to .nax/prompt-audit/<feature>/<runId>.jsonl on close()", async () => {
     await withTempDir(async (dir) => {
-      const paths: string[] = [];
-      const orig = _promptAuditorDeps.write;
-      _promptAuditorDeps.write = async (p, _d) => {
-        paths.push(p);
-        return 0;
-      };
+      const appendedPaths: string[] = [];
+      const origAppend = _promptAuditorDeps.appendLine;
+      const origWrite = _promptAuditorDeps.write;
+      _promptAuditorDeps.appendLine = async (p, _d) => { appendedPaths.push(p); };
+      _promptAuditorDeps.write = async (_p, _d) => 0;
 
       try {
         const rt = createRuntime(auditEnabledConfig, dir, { featureName: "my-feature" });
@@ -55,12 +54,13 @@ describe("Wave 2 exit criteria", () => {
         });
         await rt.close();
 
-        // JSONL goes to .nax/prompt-audit/<feature>/<runId>.jsonl
-        expect(paths[0]).toBe(
+        // JSONL goes to .nax/prompt-audit/<feature>/<runId>.jsonl (written via appendLine)
+        expect(appendedPaths[0]).toBe(
           join(dir, ".nax", "prompt-audit", "my-feature", `${rt.runId}.jsonl`),
         );
       } finally {
-        _promptAuditorDeps.write = orig;
+        _promptAuditorDeps.appendLine = origAppend;
+        _promptAuditorDeps.write = origWrite;
       }
     });
   });
