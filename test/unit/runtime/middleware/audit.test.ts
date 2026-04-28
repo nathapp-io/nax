@@ -52,6 +52,53 @@ describe("auditMiddleware", () => {
     expect(recorded[0].featureName).toBe("feat-x");
   });
 
+  test("after() records session-style name for complete calls with feature context", async () => {
+    const recorded: PromptAuditEntry[] = [];
+    const aud = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const mw = auditMiddleware(aud, "r-001");
+    const ctx: MiddlewareContext = {
+      runId: "r-001", agentName: "claude", kind: "complete",
+      request: null,
+      completeOptions: {
+        config: DEFAULT_CONFIG,
+        workdir: "/tmp/w",
+        featureName: "Feat X",
+        storyId: "US-001",
+        sessionRole: "refine",
+        pipelineStage: "acceptance",
+      },
+      prompt: "hello",
+      config: DEFAULT_CONFIG,
+      resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+      storyId: "US-001", stage: "acceptance",
+    };
+    await mw.after!(ctx, { output: "ok" }, 100);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].sessionName).toStartWith("nax-");
+    expect(recorded[0].sessionName).toEndWith("-feat-x-us-001-refine");
+    expect(recorded[0].featureName).toBe("Feat X");
+    expect(recorded[0].workdir).toBe("/tmp/w");
+  });
+
+  test("after() skips outer runAs audit when executeHop handles session audit", async () => {
+    const recorded: PromptAuditEntry[] = [];
+    const aud = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const mw = auditMiddleware(aud, "r-001");
+    const ctx: MiddlewareContext = {
+      runId: "r-001", agentName: "claude", kind: "run",
+      request: {
+        runOptions: { prompt: "hello", workdir: "/tmp/w", projectDir: "/tmp/p", featureName: "feat-x" } as never,
+        executeHop: async () => ({ result: {} as never, bundle: undefined }),
+      },
+      prompt: "hello",
+      config: DEFAULT_CONFIG,
+      resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+      storyId: "s-1", stage: "run",
+    };
+    await mw.after!(ctx, { output: "ok" }, 100);
+    expect(recorded).toHaveLength(0);
+  });
+
   test("after() records ACP session correlation from MiddlewareContext.sessionHandle", async () => {
     const recorded: PromptAuditEntry[] = [];
     const aud = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };

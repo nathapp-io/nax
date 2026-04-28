@@ -489,6 +489,7 @@ export class AgentManager implements IAgentManager {
       agentName,
       kind: "complete",
       request: null,
+      completeOptions: augmented,
       prompt,
       config: this._config,
       signal: options.signal,

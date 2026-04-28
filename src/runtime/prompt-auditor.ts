@@ -75,11 +75,21 @@ export const _promptAuditorDeps = {
 
 function deriveTxtFilename(entry: PromptAuditEntry): string {
   if (entry.sessionName) {
-    return `${entry.ts}-${entry.sessionName}.txt`;
+    const suffix = deriveAuditSuffix(entry);
+    return `${entry.ts}-${entry.sessionName}${suffix ? `-${suffix}` : ""}.txt`;
   }
   const parts: string[] = [String(entry.ts), entry.callType ?? "call", entry.stage ?? "unknown"];
   if (entry.storyId) parts.push(entry.storyId);
   return `${parts.join("-")}.txt`;
+}
+
+function deriveAuditSuffix(entry: PromptAuditEntry): string | undefined {
+  if (entry.callType === "run" && entry.turn !== undefined) {
+    const stage = entry.stage ?? "run";
+    return `${stage}-t${String(entry.turn).padStart(2, "0")}`;
+  }
+  if (entry.callType === "complete") return "complete";
+  return entry.stage ?? entry.callType;
 }
 
 function buildTxtContent(entry: PromptAuditEntry): string {
