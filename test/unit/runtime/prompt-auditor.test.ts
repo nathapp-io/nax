@@ -87,7 +87,7 @@ describe("PromptAuditor", () => {
     });
   });
 
-  test("flush() writes <ts>-<sessionName>.txt alongside JSONL for entries with sessionName", async () => {
+  test("flush() writes legacy session-style run filename alongside JSONL for entries with sessionName", async () => {
     await withTempDir(async (dir) => {
       const flushDir = join(dir, "audit");
       const txtPaths: string[] = [];
@@ -96,10 +96,43 @@ describe("PromptAuditor", () => {
       _promptAuditorDeps.write = async (p: string) => { txtPaths.push(p); return 0; };
       _promptAuditorDeps.appendLine = async () => {};
       const aud = new PromptAuditor("my-run", flushDir, FEATURE);
-      aud.record(makeEntry({ ts: 1234567890000, sessionName: "nax-abc12345-my-feature-us-000-run" }));
+      aud.record(makeEntry({
+        ts: 1234567890000,
+        callType: "run",
+        stage: "run",
+        sessionName: "nax-abc12345-my-feature-us-000-implementer",
+        turn: 1,
+      }));
       await aud.flush();
       expect(txtPaths).toHaveLength(1);
-      expect(txtPaths[0]).toBe(join(flushDir, FEATURE, "1234567890000-nax-abc12345-my-feature-us-000-run.txt"));
+      expect(txtPaths[0]).toBe(
+        join(flushDir, FEATURE, "1234567890000-nax-abc12345-my-feature-us-000-implementer-run-t01.txt"),
+      );
+      _promptAuditorDeps.write = origWrite;
+      _promptAuditorDeps.appendLine = origAppend;
+    });
+  });
+
+  test("flush() writes legacy session-style complete filename for complete entries", async () => {
+    await withTempDir(async (dir) => {
+      const flushDir = join(dir, "audit");
+      const txtPaths: string[] = [];
+      const origWrite = _promptAuditorDeps.write;
+      const origAppend = _promptAuditorDeps.appendLine;
+      _promptAuditorDeps.write = async (p: string) => { txtPaths.push(p); return 0; };
+      _promptAuditorDeps.appendLine = async () => {};
+      const aud = new PromptAuditor("my-run", flushDir, FEATURE);
+      aud.record(makeEntry({
+        ts: 1234567890000,
+        callType: "complete",
+        stage: "acceptance",
+        sessionName: "nax-abc12345-my-feature-us-000-refine",
+      }));
+      await aud.flush();
+      expect(txtPaths).toHaveLength(1);
+      expect(txtPaths[0]).toBe(
+        join(flushDir, FEATURE, "1234567890000-nax-abc12345-my-feature-us-000-refine-complete.txt"),
+      );
       _promptAuditorDeps.write = origWrite;
       _promptAuditorDeps.appendLine = origAppend;
     });

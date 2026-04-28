@@ -2,23 +2,40 @@ import type { AgentResult } from "../../agents/types";
 import { NaxError } from "../../errors";
 import type { AgentMiddleware, MiddlewareContext } from "../agent-middleware";
 import type { IPromptAuditor, PromptAuditEntry, PromptAuditErrorEntry } from "../prompt-auditor";
+import { formatSessionName } from "../session-name";
 
 function extractOutput(result: unknown): string {
   if (!result || typeof result !== "object") return "";
   return ((result as Record<string, unknown>).output as string | undefined) ?? "";
 }
 
+function sessionNameFromCompleteOptions(ctx: MiddlewareContext): string | undefined {
+  const opts = ctx.completeOptions;
+  if (!opts) return undefined;
+  if (opts.sessionName) return opts.sessionName;
+  if (!opts.workdir || !opts.featureName) return undefined;
+  return formatSessionName({
+    workdir: opts.workdir,
+    featureName: opts.featureName,
+    storyId: opts.storyId,
+    role: opts.sessionRole,
+    pipelineStage: opts.pipelineStage,
+  });
+}
+
 export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMiddleware {
   return {
     name: "audit",
     async after(ctx: MiddlewareContext, result: unknown, durationMs: number): Promise<void> {
+      if (ctx.kind === "run" && ctx.sessionHandle === undefined && ctx.request?.executeHop) return;
+
       const runOpts = ctx.request?.runOptions;
       const prompt = ctx.prompt ?? runOpts?.prompt;
       if (!prompt) return;
 
       const agentResult = (result ?? {}) as Partial<AgentResult>;
       const { protocolIds } = agentResult;
-      const sessionName = ctx.sessionHandle?.id;
+      const sessionName = ctx.sessionHandle?.id ?? sessionNameFromCompleteOptions(ctx);
       const internalRoundTrips =
         result && typeof result === "object" && "internalRoundTrips" in result
           ? (result as { internalRoundTrips: number }).internalRoundTrips
@@ -35,9 +52,9 @@ export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMi
         response: extractOutput(result),
         durationMs,
         callType: ctx.kind,
-        workdir: runOpts?.workdir,
+        workdir: runOpts?.workdir ?? ctx.completeOptions?.workdir,
         projectDir: runOpts?.projectDir,
-        featureName: runOpts?.featureName,
+        featureName: runOpts?.featureName ?? ctx.completeOptions?.featureName,
         ...(sessionName !== undefined && { sessionName }),
         ...(protocolIds?.recordId !== undefined && { recordId: protocolIds.recordId }),
         ...(protocolIds?.sessionId !== undefined && { sessionId: protocolIds.sessionId }),
