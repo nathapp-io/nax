@@ -155,6 +155,43 @@ describe("runDeferredRegression — early exit after first story", () => {
     // Cost is tracked for the story that ran
     expect(result.storyCosts).toEqual({ "US-001": 0.5 });
   });
+
+  test("count-only failures are treated as unmapped and still trigger deferred rectification", async () => {
+    const verifyCalls: string[] = [];
+
+    _regressionDeps.runVerification = mock(async () => {
+      const call = verifyCalls.length;
+      verifyCalls.push(`call-${call}`);
+      if (call === 0) {
+        return makeVerifyResult({
+          output: "3 passed, 2 failed [1.7ms]\nsrc/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'",
+          passCount: 3,
+          failCount: 2,
+        });
+      }
+      return makePassResult(151);
+    });
+
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 3,
+      failed: 2,
+      failures: [],
+    }));
+
+    const rectifiedStories: string[] = [];
+    _regressionDeps.runRectificationLoop = mock(async (opts) => {
+      rectifiedStories.push(opts.story.id);
+      return { succeeded: true, cost: 0.4, durationMs: 120 };
+    });
+
+    const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
+
+    expect(result.success).toBe(true);
+    expect(result.affectedStories).toEqual(["US-001", "US-002"]);
+    expect(rectifiedStories).toEqual(["US-001"]);
+    expect(result.rectificationAttempts).toBe(1);
+    expect(verifyCalls).toHaveLength(2);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

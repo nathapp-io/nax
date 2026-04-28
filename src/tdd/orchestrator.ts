@@ -256,7 +256,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // Pass initialRef so the gate can use git-diff to suppress pre-existing failures
   // in files the story never touched (BUG-TC-001).
   const implementerBinding = getTddSessionBinding?.("implementer");
-  const { passed: fullSuiteGatePassed, cost: fullSuiteGateCost } = await runFullSuiteGate(
+  const { cost: fullSuiteGateCost, fullSuiteGatePassed } = await runFullSuiteGate(
     story,
     config,
     workdir,

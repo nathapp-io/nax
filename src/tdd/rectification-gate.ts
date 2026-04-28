@@ -44,6 +44,12 @@ interface TddRectificationAttemptResult {
   isolationPassed: boolean;
 }
 
+interface FullSuiteGateResult {
+  passed: boolean;
+  cost: number;
+  fullSuiteGatePassed: boolean;
+}
+
 /** Injectable deps for testability — avoids mock.module() contamination */
 export const _rectificationGateDeps = {
   executeWithTimeout: _executeWithTimeout,
@@ -93,9 +99,9 @@ export async function runFullSuiteGate(
   sessionManager?: import("../session").ISessionManager,
   sessionId?: string,
   runtime?: import("../runtime").NaxRuntime,
-): Promise<{ passed: boolean; cost: number }> {
+): Promise<FullSuiteGateResult> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
-  if (!rectificationEnabled) return { passed: false, cost: 0 };
+  if (!rectificationEnabled) return { passed: false, cost: 0, fullSuiteGatePassed: false };
 
   const rectificationConfig = config.execution.rectification;
   const fullSuiteTimeout = rectificationConfig.fullSuiteTimeoutSeconds;
@@ -125,12 +131,21 @@ export async function runFullSuiteGate(
     const testSummary = _rectificationGateDeps.parseTestOutput(fullSuiteResult.output);
 
     if (testSummary.failed > 0) {
+      if (testSummary.failures.length === 0) {
+        logger.warn("tdd", "Full suite gate found unattributable failures — deferring to run-level regression", {
+          storyId: story.id,
+          failedTests: testSummary.failed,
+          passedTests: testSummary.passed,
+          outputLength: fullSuiteResult.output.length,
+          outputTail: fullSuiteResult.output.slice(-200),
+        });
+        return { passed: true, cost: 0, fullSuiteGatePassed: false };
+      }
+
       // Filter out failures in files the story never touched (pre-existing pollution).
       // Uses git diff since storyFromRef to identify story-owned files.
-      // Only applies when structured failures are available — if failures[] is empty
-      // (parser limitation / count-only output), fall through to rectification unchanged.
       let filteredFailures = testSummary.failures;
-      if (storyFromRef && testSummary.failures.length > 0) {
+      if (storyFromRef) {
         const storyFiles = await getStoryChangedFiles(workdir, storyFromRef);
         if (storyFiles.size > 0) {
           filteredFailures = testSummary.failures.filter((f) => storyFiles.has(f.file));
@@ -146,7 +161,7 @@ export async function runFullSuiteGate(
           suppressedTestCount: testSummary.failures.length,
           suppressedFiles: uniqueSuppressedFiles,
         });
-        return { passed: true, cost: 0 };
+        return { passed: true, cost: 0, fullSuiteGatePassed: true };
       }
 
       if (wasFiltered) {
@@ -196,7 +211,7 @@ export async function runFullSuiteGate(
         exitCode: fullSuiteResult.exitCode,
         passedTests: testSummary.passed,
       });
-      return { passed: true, cost: 0 };
+      return { passed: true, cost: 0, fullSuiteGatePassed: true };
     }
 
     // No tests passed AND no tests failed — output is likely truncated/crashed
@@ -206,17 +221,17 @@ export async function runFullSuiteGate(
       outputLength: fullSuiteResult.output.length,
       outputTail: fullSuiteResult.output.slice(-200),
     });
-    return { passed: false, cost: 0 };
+    return { passed: false, cost: 0, fullSuiteGatePassed: false };
   }
   if (fullSuitePassed) {
     logger.info("tdd", "Full suite gate passed", { storyId: story.id });
-    return { passed: true, cost: 0 };
+    return { passed: true, cost: 0, fullSuiteGatePassed: true };
   }
   logger.warn("tdd", "Full suite gate execution failed (no output)", {
     storyId: story.id,
     exitCode: fullSuiteResult.exitCode,
   });
-  return { passed: false, cost: 0 };
+  return { passed: false, cost: 0, fullSuiteGatePassed: false };
 }
 
 /** Run the rectification retry loop when full suite gate detects regressions. */
@@ -238,7 +253,7 @@ async function runRectificationLoop(
   sessionManager?: import("../session").ISessionManager,
   sessionId?: string,
   runtime?: import("../runtime").NaxRuntime,
-): Promise<{ passed: boolean; cost: number }> {
+): Promise<FullSuiteGateResult> {
   logger.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
     failedTests: testSummary.failed,
@@ -419,12 +434,12 @@ async function runRectificationLoop(
   const fixed = outcome.outcome === "fixed";
 
   if (fixed) {
-    return { passed: true, cost: gateCostAccum };
+    return { passed: true, cost: gateCostAccum, fullSuiteGatePassed: true };
   }
 
   logger.warn("tdd", "[WARN] Full suite gate failed after rectification exhausted", {
     storyId: story.id,
     attempts: outcome.attempts,
   });
-  return { passed: false, cost: gateCostAccum };
+  return { passed: false, cost: gateCostAccum, fullSuiteGatePassed: false };
 }
