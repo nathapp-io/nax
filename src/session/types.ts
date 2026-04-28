@@ -65,7 +65,7 @@ export interface SessionDescriptor {
   /** nax-internal session ID: `sess-<uuid>` */
   id: string;
   /** Purpose of this session */
-  role: import("../runtime/session-role").SessionRole;
+  role: SessionRole;
   /** Current lifecycle state */
   state: SessionState;
   /** Agent name (e.g. "claude", "codex") */

@@ -11,6 +11,7 @@ import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
 import type { ProtocolIds } from "../runtime/protocol-types";
+import type { SessionRole } from "../runtime/session-role";
 import type { TokenUsage } from "./cost";
 
 // Re-export extended types for backward compatibility
@@ -118,7 +119,7 @@ export interface AgentRunOptions {
   /** Story ID for ACP session naming and logging */
   storyId?: string;
   /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
-  sessionRole?: import("../runtime/session-role").SessionRole;
+  sessionRole?: SessionRole;
   /** Max turns in multi-turn interaction loop when interactionBridge is active (default: 10) */
   maxInteractionTurns?: number;
   /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */
@@ -244,7 +245,7 @@ export interface CompleteOptions {
   /** Story ID for ACP session naming — combined with featureName to form session key */
   storyId?: string;
   /** Session role for disambiguation when the same story has multiple concurrent sessions */
-  sessionRole?: import("../runtime/session-role").SessionRole;
+  sessionRole?: SessionRole;
   /** Abort signal for cancellation middleware support on complete() calls. */
   signal?: AbortSignal;
   /**
@@ -313,7 +314,7 @@ export interface SessionHandle {
   /** Agent name this session was opened for. */
   readonly agentName: string;
   /** Session role — populated when the caller knows the role at open time. */
-  readonly role?: import("../runtime/session-role").SessionRole;
+  readonly role?: SessionRole;
   /** Protocol-specific IDs for SessionManager correlation. */
   readonly protocolIds?: ProtocolIds;
 }

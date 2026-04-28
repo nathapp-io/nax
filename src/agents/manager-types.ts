@@ -5,6 +5,7 @@
 
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
+import type { SessionRole } from "../runtime/session-role";
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
 import type { AgentAdapter, AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
 
@@ -90,7 +91,7 @@ export interface RunAsSessionOpts {
   projectDir?: string;
   pipelineStage?: import("../config/permissions").PipelineStage;
   /** Session role — forwarded to DispatchEvent.sessionRole for audit/cost correlation. */
-  sessionRole?: import("../runtime/session-role").SessionRole;
+  sessionRole?: SessionRole;
   signal?: AbortSignal;
   /** Mid-turn interaction callback (context-tool calls, agent questions). */
   interactionHandler?: import("./interaction-handler").InteractionHandler;

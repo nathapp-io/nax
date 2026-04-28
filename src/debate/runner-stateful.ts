@@ -8,6 +8,7 @@ import type { IAgentManager } from "../agents";
 import type { ModelDef } from "../config";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
+import type { SessionRole } from "../runtime/session-role";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
 import {
@@ -104,7 +105,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   try {
     for (let i = 0; i < resolved.length; i++) {
       const { debater, agentName } = resolved[i];
-      const roleKey = `debate-${ctx.stage}-${i}` as import("../runtime/session-role").SessionRole;
+      const roleKey = `debate-${ctx.stage}-${i}` as SessionRole;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
         const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);

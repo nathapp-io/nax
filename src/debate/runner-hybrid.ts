@@ -7,6 +7,7 @@
 import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
+import type { SessionRole } from "../runtime/session-role";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
 import { runStatefulTurn } from "./runner-stateful";
@@ -73,7 +74,7 @@ export async function runRebuttalLoop(
   const internalHandles: Array<import("../agents/types").SessionHandle | null> = [];
   for (let i = 0; i < proposals.length; i++) {
     const proposal = proposals[i];
-    const sessionRole = `${sessionRolePrefix}-${i}` as import("../runtime/session-role").SessionRole;
+    const sessionRole = `${sessionRolePrefix}-${i}` as SessionRole;
     if (proposal.handle) {
       internalHandles.push(null); // Caller owns this handle; we do not close it
     } else if (sessionManager) {
@@ -184,7 +185,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   try {
     for (let i = 0; i < resolved.length; i++) {
       const { debater, agentName } = resolved[i];
-      const sessionRole = `debate-hybrid-${i}` as import("../runtime/session-role").SessionRole;
+      const sessionRole = `debate-hybrid-${i}` as SessionRole;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
         const modelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
