@@ -50,6 +50,35 @@ describe("costMiddleware", () => {
     expect(recorded[0].durationMs).toBe(150);
   });
 
+  test("after() records explicit zero-cost complete calls", async () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const mw = costMiddleware(agg, "r-001");
+    const result = { output: "", costUsd: 0, source: "fallback" };
+    await mw.after!(makeCtx(), result, 150);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].costUsd).toBe(0);
+    expect(recorded[0].estimatedCostUsd).toBe(0);
+    expect(recorded[0].confidence).toBe("estimated");
+  });
+
+  test("after() skips outer runAs cost when executeHop handles session cost", async () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const mw = costMiddleware(agg, "r-001");
+    const ctx: MiddlewareContext = {
+      ...makeCtx(),
+      request: {
+        runOptions: { prompt: "hello" } as never,
+        executeHop: async () => ({ result: {} as never, bundle: undefined }),
+      },
+      prompt: "hello",
+    };
+    const result = { success: true, estimatedCostUsd: 0.005, tokenUsage: { inputTokens: 1, outputTokens: 1 } };
+    await mw.after!(ctx, result, 100);
+    expect(recorded).toHaveLength(0);
+  });
+
   test("after() records exactCostUsd and confidence=exact when present", async () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
