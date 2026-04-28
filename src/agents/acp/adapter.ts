@@ -91,6 +91,8 @@ export interface AcpSessionResponse {
   exactCostUsd?: number;
   /** True if acpx signalled the error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). */
   retryable?: boolean;
+  /** acpx exit code — present only on error responses (exitCode !== 0). */
+  exitCode?: number;
 }
 
 export interface AcpSession {
@@ -349,6 +351,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
   readonly _resumed: boolean;
   readonly _timeoutSeconds: number;
   readonly _modelDef: ModelDef;
+  readonly _permissionMode: string;
 
   constructor(opts: {
     id: string;
@@ -360,6 +363,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     resumed: boolean;
     timeoutSeconds: number;
     modelDef: ModelDef;
+    permissionMode: string;
   }) {
     this.id = opts.id;
     this.agentName = opts.agentName;
@@ -370,6 +374,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     this._resumed = opts.resumed;
     this._timeoutSeconds = opts.timeoutSeconds;
     this._modelDef = opts.modelDef;
+    this._permissionMode = opts.permissionMode;
   }
 }
 
@@ -810,6 +815,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         resumed: ensured.resumed,
         timeoutSeconds,
         modelDef,
+        permissionMode: resolvedPermissions.mode,
       });
     } catch (error) {
       if (session) {
@@ -822,7 +828,11 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const impl = handle as AcpSessionHandleImpl;
-    const { _session: session, _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
+    const { _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
+    // biome-ignore lint/style/useConst: mutated in NO_SESSION recovery block
+    let session = impl._session;
+    // biome-ignore lint/style/useConst: mutated in NO_SESSION recovery block
+    let sessionRecreated = false;
     const { interactionHandler, signal } = opts;
     const MAX_TURNS = opts.maxTurns ?? 10;
 
@@ -860,6 +870,25 @@ export class AcpAgentAdapter implements AgentAdapter {
 
       lastResponse = turnResult.response;
       if (!lastResponse) break;
+
+      // NO_SESSION recovery: acpx session expired server-side (exit code 4).
+      // Re-establish and retry this turn once — don't count the dead attempt.
+      if (lastResponse.exitCode === 4 && !sessionRecreated) {
+        sessionRecreated = true;
+        getSafeLogger()?.info("acp-adapter", "NO_SESSION detected — re-establishing session", { sessionName });
+        try {
+          const ensured = await ensureAcpSession(impl._client, impl._sessionName, impl.agentName, impl._permissionMode);
+          session = ensured.session;
+          turnCount--;
+          continue;
+        } catch (err) {
+          getSafeLogger()?.warn("acp-adapter", "Session re-establishment failed after NO_SESSION", {
+            sessionName,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          // Fall through to error throw at end of loop
+        }
+      }
 
       if (lastResponse.cumulative_token_usage) {
         totalTokenUsage = addTokenUsage(totalTokenUsage, this._mapper.toInternal(lastResponse.cumulative_token_usage));
