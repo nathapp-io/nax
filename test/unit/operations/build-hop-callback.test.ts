@@ -37,6 +37,7 @@ function makeStubTurnResult(output = "agent output"): TurnResult {
     tokenUsage: { inputTokens: 10, outputTokens: 20 },
     internalRoundTrips: 1,
     estimatedCostUsd: 0.001 ,
+    exactCostUsd: 0.002,
   };
 }
 
@@ -120,6 +121,7 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     expect(hop.result.success).toBe(true);
     expect(hop.result.output).toBe("hello from agent");
     expect(hop.result.estimatedCostUsd).toBe(0.001);
+    expect(hop.result.exactCostUsd).toBe(0.002);
     expect(hop.result.tokenUsage).toEqual(turnResult.tokenUsage);
   });
 });

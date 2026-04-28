@@ -63,6 +63,7 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
     rateLimited: false,
     durationMs: 0,
     estimatedCostUsd: r.estimatedCostUsd ?? 0,
+    exactCostUsd: r.exactCostUsd,
     tokenUsage: r.tokenUsage,
   };
 }
