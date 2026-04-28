@@ -11,6 +11,7 @@ import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
+import type { DispatchContext } from "../runtime/dispatch-context";
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy } from "./classify";
 import { classifyComplexity, determineTestStrategy } from "./classify";
@@ -20,13 +21,11 @@ import { classifyComplexity, determineTestStrategy } from "./classify";
 // ---------------------------------------------------------------------------
 
 /** Context passed to plugin routing strategies */
-export interface RoutingContext {
+export interface RoutingContext extends DispatchContext {
   /** Full configuration */
   config: NaxConfig;
   /** Optional codebase context summary */
   codebaseContext?: string;
-  /** Optional agent manager for LLM-based routing */
-  agentManager?: IAgentManager;
 }
 
 /**
@@ -141,10 +140,12 @@ function keywordRoute(story: UserStory, config: NaxConfig): RoutingDecision {
 export async function resolveRouting(
   story: UserStory,
   config: NaxConfig,
-  plugins?: PluginRegistry,
-  agentManager?: IAgentManager,
+  plugins: PluginRegistry | undefined,
+  dispatchContext: DispatchContext,
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
+  const runtimeContext = dispatchContext as DispatchContext | undefined;
+  const agentManager = runtimeContext?.agentManager;
 
   // 0. PRD wins — if story already has routing values set (either manually by the user
   //    or persisted from a previous run), use them directly. This ensures retries use
@@ -164,7 +165,7 @@ export async function resolveRouting(
   if (plugins) {
     for (const pluginRouter of plugins.getRouters()) {
       try {
-        const decision = await pluginRouter.route(story, { config, agentManager });
+        const decision = await pluginRouter.route(story, { ...runtimeContext, config } as RoutingContext);
         if (decision !== null) return decision;
       } catch (err) {
         logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
@@ -175,7 +176,7 @@ export async function resolveRouting(
     }
   }
 
-  // 2. LLM fallback (if configured and agentManager available)
+  // 2. LLM fallback (if configured)
   if (config.routing.strategy === "llm" && agentManager) {
     try {
       const { classifyWithLlm } = await import("./strategies/llm");
@@ -206,7 +207,7 @@ export async function routeStory(
   _workdir: string,
   plugins?: PluginRegistry,
 ): Promise<RoutingDecision> {
-  return resolveRouting(story, context.config, plugins, context.agentManager);
+  return resolveRouting(story, context.config, plugins, context);
 }
 
 // ---------------------------------------------------------------------------

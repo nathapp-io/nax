@@ -305,6 +305,7 @@ export async function handlePipelineFailure(
         totalCost: ctx.totalCost,
         workdir: ctx.workdir,
         attemptCost: pipelineResult.context.agentResult?.estimatedCostUsd || 0,
+        agentManager: ctx.agentManager,
       });
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;

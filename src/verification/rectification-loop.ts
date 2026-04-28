@@ -53,8 +53,8 @@ export interface RectificationLoopOptions {
   testOutput: string;
   promptPrefix?: string;
   featureName?: string;
-  /** AgentManager — routes all agent calls through IAgentManager. Falls back to createManager when absent. */
-  agentManager?: IAgentManager;
+  /** AgentManager — routes all agent calls through IAgentManager. */
+  agentManager: IAgentManager;
   /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
   projectDir?: string;
   /**

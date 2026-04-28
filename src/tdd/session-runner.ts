@@ -117,7 +117,7 @@ export interface TddSessionBinding {
   sessionManager: ISessionManager;
   sessionId: string;
   /** When provided, routes the session through IAgentManager.run() for fallback support. */
-  agentManager?: import("../agents/manager-types").IAgentManager;
+  agentManager: import("../agents/manager-types").IAgentManager;
 }
 
 /** Run a single TDD session */

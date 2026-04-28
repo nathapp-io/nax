@@ -189,13 +189,13 @@ export async function resolveOutcome(
   config: NaxConfig | undefined,
   storyId: string,
   timeoutMs: number,
-  workdir?: string,
-  featureName?: string,
-  reviewerSession?: import("../review/dialogue").ReviewerSession,
-  resolverContext?: ResolverContext,
-  promptSuffix?: string,
-  debaters?: Debater[],
-  agentManager?: IAgentManager,
+  workdir: string | undefined,
+  featureName: string | undefined,
+  reviewerSession: import("../review/dialogue").ReviewerSession | undefined,
+  resolverContext: ResolverContext | undefined,
+  promptSuffix: string | undefined,
+  debaters: Debater[] | undefined,
+  agentManager: IAgentManager,
 ): Promise<ResolveOutcome> {
   const resolverConfig = stageConfig.resolver;
   const logger = _debateSessionDeps.getSafeLogger();

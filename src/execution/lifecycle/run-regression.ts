@@ -33,7 +33,7 @@ export interface DeferredRegressionOptions {
   prd: PRD;
   workdir: string;
   /** AgentManager — routes agent calls through IAgentManager for fallback support. */
-  agentManager?: IAgentManager;
+  agentManager: IAgentManager;
 }
 
 export interface DeferredRegressionResult {
