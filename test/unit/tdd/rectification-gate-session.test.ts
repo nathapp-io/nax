@@ -247,10 +247,11 @@ describe("rectification session reuse", () => {
     expect(role1).toBe(role2);
   });
 
-  test("includes raw test output in the TDD rectification prompt when failures are unmapped", async () => {
+  test("defers unattributable failures to run-level regression instead of rectifying", async () => {
     const story = makeStory({ id: "US-UNMAPPED" });
     const config = makeConfig(1);
     const agent = makeAgent();
+    const warn = mock(() => {});
     const unmappedOutput = `
 test/example.test.ts:
 ✓ passing test [0.5ms]
@@ -283,16 +284,16 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       },
     });
 
-    await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
+    const result = await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
-      warn: () => {},
+      warn,
       error: () => {},
       debug: () => {},
     } as any, "my-feature");
 
-    expect(agent.calls.length).toBe(1);
-    expect(agent.calls[0]?.prompt).toContain("Unmapped test failures (2 detected)");
-    expect(agent.calls[0]?.prompt).toContain("Structured test failure parsing returned no failure records");
-    expect(agent.calls[0]?.prompt).toContain("Cannot find name 'missingSymbol'");
+    expect(result.passed).toBe(true);
+    expect(result.fullSuiteGatePassed).toBe(false);
+    expect(agent.calls.length).toBe(0);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
