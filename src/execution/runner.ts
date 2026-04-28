@@ -138,7 +138,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     formatterMode,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
-    // BUG-017: Pass getters for run.complete event on SIGTERM
+    // @design: BUG-017: Pass getters for run.complete event on SIGTERM
     getStoriesCompleted: () => storiesCompleted,
     getTotalStories: () => (prd ? countStories(prd).total : 0),
   });

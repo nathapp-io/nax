@@ -99,7 +99,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const shouldRollbackOnFailure = config.tdd.rollbackOnFailure ?? true;
 
   // Session 1: Test Writer
-  // BUG-018 / #410: Skip on retry (tests already exist) or review-stage escalation
+  // @design: BUG-018 / #410: Skip on retry (tests already exist) or review-stage escalation
   // (tests already passed). stage="review" is set by buildEscalationFailure when
   // reviewFindings are present (covers both review and autofix exhaustion).
   const hasReviewEscalation = (story.priorFailures ?? []).some((f) => f.stage === "review");
@@ -150,7 +150,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     };
   }
 
-  // BUG-20 Fix: Verify test-writer created test files (isTestFile is language-agnostic).
+  // @design: BUG-20 Fix: Verify test-writer created test files (isTestFile is language-agnostic).
   // ADR-009: pass user-configured testFilePatterns; undefined → broad regex fallback.
   const _tddTestFilePatterns =
     typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
@@ -159,7 +159,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const testFilesCreated = session1 ? session1.filesChanged.filter((f) => isTestFile(f, _tddTestFilePatterns)) : [];
 
   if (!isRetry && testFilesCreated.length === 0) {
-    // BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.
+    // @design: BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.
     // The test-writer may have produced 0 new files because tests were pre-written and committed
     // separately (e.g. during dogfooding or manual setup). If tests already exist, skip
     // test-writer phase and proceed directly to the implementer.

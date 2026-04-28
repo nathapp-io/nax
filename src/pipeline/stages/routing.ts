@@ -34,7 +34,7 @@ export const routingStage: PipelineStage = {
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx.agentManager);
 
-    // BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
+    // @design: BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
     // (i.e., a higher tier than what routing freshly derives). This prevents stale tiers
     // from sticking when complexity changes between runs, while still honoring explicit
     // escalations set by handleTierEscalation.
@@ -59,7 +59,7 @@ export const routingStage: PipelineStage = {
       await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
     }
 
-    // BUG-010: Greenfield detection — force test-after if no test files exist
+    // @design: BUG-010: Greenfield detection — force test-after if no test files exist
     // MW-011: Scan story.workdir for monorepo, not repo root
     // STRAT-001: no-test is exempt from greenfield override
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;

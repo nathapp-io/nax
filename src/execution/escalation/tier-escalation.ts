@@ -278,7 +278,7 @@ export const _tierEscalationDeps = {
 export async function handleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult> {
   const logger = getSafeLogger();
 
-  // BUG-070: Runtime crashes are transient — retry same tier, do NOT escalate
+  // @design: BUG-070: Runtime crashes are transient — retry same tier, do NOT escalate
   if (shouldRetrySameTier(ctx.verifyResult)) {
     logger?.warn("escalation", "Runtime crash detected — retrying same tier (transient, not a code issue)", {
       storyId: ctx.story.id,
@@ -362,7 +362,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
         ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
       };
 
-      // BUG-011: Reset attempt counter on tier escalation
+      // @design: BUG-011: Reset attempt counter on tier escalation
       const currentStoryTier = s.routing?.modelTier ?? ctx.routing.modelTier;
       const isChangingTier = currentStoryTier !== escalatedTier;
       const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;

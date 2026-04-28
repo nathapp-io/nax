@@ -91,7 +91,7 @@ export interface RunSetupOptions {
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   getTotalCost: () => number;
   getIterations: () => number;
-  // BUG-017: Additional getters for run.complete event on SIGTERM
+  // @design: BUG-017: Additional getters for run.complete event on SIGTERM
   getStoriesCompleted: () => number;
   getTotalStories: () => number;
   /** Protocol-aware agent resolver — passed from runner.ts registry */
@@ -197,7 +197,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     jsonlFilePath: logFilePath,
     pidRegistry,
     abortController: shutdownController,
-    // BUG-017: Pass context for run.complete event on SIGTERM
+    // @design: BUG-017: Pass context for run.complete event on SIGTERM
     runId: options.runId,
     feature: options.feature,
     featureDir: options.featureDir,

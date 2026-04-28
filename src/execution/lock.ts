@@ -45,7 +45,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
   const lockFile = Bun.file(lockPath);
 
   try {
-    // BUG-2 fix: First check for stale lock before attempting atomic create
+    // @design: BUG-2 fix: First check for stale lock before attempting atomic create
     const exists = await lockFile.exists();
     if (exists) {
       // Read lock data

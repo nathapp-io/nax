@@ -103,7 +103,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     await worktreeManager.create(workdir, storyId);
     const worktreePath = path.join(workdir, ".nax-wt", storyId);
 
-    // BUG-122: Close stale ACP session from the original failed run before re-running.
+    // @design: BUG-122: Close stale ACP session from the original failed run before re-running.
     // computeAcpHandle hashes the workdir path — same worktree path = same session name.
     // The old Claude process may still be registered in acpx, causing prompt() to exit
     // with code 4 immediately. Close it explicitly so ensureAcpSession creates fresh.

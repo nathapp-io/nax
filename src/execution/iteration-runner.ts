@@ -84,7 +84,7 @@ export async function runIteration(
     effectiveWorkdir = worktreePath;
   }
 
-  // BUG-114: Persist storyGitRef in prd.json so it survives crashes and restarts.
+  // @design: BUG-114: Persist storyGitRef in prd.json so it survives crashes and restarts.
   // On the first attempt we capture HEAD and save it. On resume we reuse the stored
   // ref (after validating it still exists in git history), so semantic review always
   // diffs from the true start of this story regardless of how many times nax restarted.
@@ -100,7 +100,7 @@ export async function runIteration(
     }
   }
 
-  // BUG-067: Accumulate cost from all prior failed attempts (stored in priorFailures by handleTierEscalation)
+  // @design: BUG-067: Accumulate cost from all prior failed attempts (stored in priorFailures by handleTierEscalation)
   const accumulatedAttemptCost = (story.priorFailures || []).reduce((sum, f) => sum + (f.cost || 0), 0);
 
   // PKG-003: Resolve per-package effective config once per story (not per-stage)

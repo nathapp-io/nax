@@ -195,7 +195,7 @@ export const verifyStage: PipelineStage = {
       logger.info("verify", message, { storyId: ctx.story.id });
     }
 
-    // BUG-044: Log the effective command for observability
+    // @design: BUG-044: Log the effective command for observability
     logger.info("verify", isFullSuite ? "Running full suite" : "Running scoped tests", {
       storyId: ctx.story.id,
       command: effectiveCommand,
@@ -260,7 +260,7 @@ export const verifyStage: PipelineStage = {
 
     // HARD FAILURE: Tests must pass for story to be marked complete
     if (!result.success) {
-      // BUG-019: Distinguish timeout from actual test failures
+      // @design: BUG-019: Distinguish timeout from actual test failures
       if (result.status === "TIMEOUT") {
         const timeout = ctx.config.execution.verificationTimeoutSeconds;
         logger.error(
@@ -280,7 +280,7 @@ export const verifyStage: PipelineStage = {
       }
 
       // Log tail of output at debug level for context (ENH-001)
-      // BUG-037: Use .slice(-20) to show failures, not prechecks
+      // @design: BUG-037: Use .slice(-20) to show failures, not prechecks
       if (result.status !== "TIMEOUT") {
         logTestOutput(logger, "verify", result.output, { storyId: ctx.story.id });
       }

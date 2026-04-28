@@ -507,7 +507,7 @@ export const acceptanceSetupStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    // BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
+    // @design: BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
     // Run RED gate for each per-package test file from its package directory.
     // Use per-package testFramework/commandOverride resolved above.
     let redFailCount = 0;
