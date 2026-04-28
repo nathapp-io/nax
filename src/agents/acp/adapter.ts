@@ -346,7 +346,8 @@ export class AcpSessionHandleImpl implements SessionHandle {
 
   // ACP-internal fields — opaque to callers above the adapter boundary.
   readonly _client: AcpClient;
-  readonly _session: AcpSession;
+  /** Mutable — updated on NO_SESSION recovery so closeSession targets the live session. */
+  _session: AcpSession;
   readonly _sessionName: string;
   readonly _resumed: boolean;
   readonly _timeoutSeconds: number;
@@ -829,7 +830,6 @@ export class AcpAgentAdapter implements AgentAdapter {
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const impl = handle as AcpSessionHandleImpl;
     const { _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
-    let session = impl._session;
     let sessionRecreated = false;
     const { interactionHandler, signal } = opts;
     const MAX_TURNS = opts.maxTurns ?? 10;
@@ -855,7 +855,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       turnCount++;
       getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
-      const turnResult = await runSessionPrompt(session, currentPrompt, timeoutSeconds * 1000, signal);
+      const turnResult = await runSessionPrompt(impl._session, currentPrompt, timeoutSeconds * 1000, signal);
 
       if (turnResult.timedOut) {
         timedOut = true;
@@ -876,7 +876,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         getSafeLogger()?.info("acp-adapter", "NO_SESSION detected — re-establishing session", { sessionName });
         try {
           const ensured = await ensureAcpSession(impl._client, impl._sessionName, impl.agentName, impl._permissionMode);
-          session = ensured.session;
+          impl._session = ensured.session;
           turnCount--;
           continue;
         } catch (err) {

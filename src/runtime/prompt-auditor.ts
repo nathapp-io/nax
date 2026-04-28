@@ -128,7 +128,13 @@ export class PromptAuditor implements IPromptAuditor {
   }
 
   private _enqueue(entry: PromptAuditEntry | PromptAuditErrorEntry): void {
-    this._queue = this._queue.then(() => this._writeEntry(entry)).catch(() => this._writeEntry(entry));
+    this._queue = this._queue
+      .then(() => this._writeEntry(entry))
+      .catch(() => {
+        // Swallow write errors to keep the queue healthy for subsequent entries.
+        // Individual entry failures (disk full, permission denied) must not break
+        // the chain — later entries should still attempt to persist.
+      });
   }
 
   private async _writeEntry(entry: PromptAuditEntry | PromptAuditErrorEntry): Promise<void> {
