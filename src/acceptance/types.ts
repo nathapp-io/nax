@@ -6,6 +6,7 @@
 
 import type { IAgentManager } from "../agents/manager-types";
 import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
+import type { DispatchContext } from "../runtime/dispatch-context";
 
 /**
  * Return value of refineAcceptanceCriteria — criteria plus cost metadata.
@@ -32,7 +33,7 @@ export interface RefinedCriterion {
 /**
  * Context passed to refineAcceptanceCriteria.
  */
-export interface RefinementContext {
+export interface RefinementContext extends DispatchContext {
   /** Story ID for attribution on each RefinedCriterion */
   storyId: string;
   /** Feature name for ACP session naming */
@@ -51,8 +52,6 @@ export interface RefinementContext {
   storyTitle?: string;
   /** Story description — additional context so the refiner avoids guessing function names */
   storyDescription?: string;
-  /** AgentManager for completeWithFallback — when provided, replaces direct adapter.complete() */
-  agentManager?: IAgentManager;
 }
 
 /**
@@ -94,7 +93,7 @@ export interface AcceptanceCriterion {
 /**
  * Options for generating acceptance tests from PRD stories and refined criteria.
  */
-export interface GenerateFromPRDOptions {
+export interface GenerateFromPRDOptions extends DispatchContext {
   /** Feature name for context */
   featureName: string;
   /** Working directory for context scanning */
@@ -113,8 +112,6 @@ export interface GenerateFromPRDOptions {
   testStrategy?: AcceptanceTestStrategy;
   /** Test framework for component/snapshot strategies (e.g. 'ink-testing-library', 'react') */
   testFramework?: string;
-  /** AgentManager for completeWithFallback — when provided, replaces direct createManager().complete() */
-  agentManager?: IAgentManager;
   /** Target language for test generation (e.g. 'go', 'python', 'rust') — defaults to TypeScript */
   language?: string;
   /** Implementation context — files to include in the prompt so the generator writes tests against the real API */

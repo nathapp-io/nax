@@ -19,6 +19,7 @@ import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
 import { pipelineEventBus } from "../../pipeline/event-bus";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
+import type { DispatchContext } from "../../runtime/dispatch-context";
 import type { ISessionManager } from "../../session";
 import { purgeStaleScratch } from "../../session/scratch-purge";
 import { closeAllRunSessions } from "../session-manager-runtime";
@@ -35,7 +36,7 @@ export const _runCompletionDeps = {
   closeAllRunSessions,
 };
 
-export interface RunCompletionOptions {
+export interface RunCompletionOptions extends DispatchContext {
   runId: string;
   feature: string;
   startedAt: string;
@@ -53,16 +54,12 @@ export interface RunCompletionOptions {
   isSequential?: boolean;
   /** Skip deferred regression gate — set when regression phase already passed on a prior run. */
   skipRegression?: boolean;
-  /** AgentManager — routes agent calls through IAgentManager for fallback support. */
-  agentManager?: IAgentManager;
   /**
    * Absolute path to the project root (where .nax/ lives).
    * Defaults to workdir when absent (non-monorepo).
    * Used for session scratch purge (AC-20).
    */
   projectDir?: string;
-  /** Optional run-level session manager for final active-session teardown. */
-  sessionManager?: ISessionManager;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed after session teardown. */
   pluginProviderCache?: import("../../context/engine").PluginProviderCache;
 }

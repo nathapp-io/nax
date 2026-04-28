@@ -74,6 +74,10 @@ export async function executeParallel(
   pidRegistry?: PidRegistry,
   interactionChain?: InteractionChain | null,
   statusWriter?: PostRunStatusWriter,
+  agentManager?: import("../agents").IAgentManager,
+  sessionManager?: import("../session/types").ISessionManager,
+  runtime?: import("../runtime").NaxRuntime,
+  abortSignal?: AbortSignal,
 ): Promise<{
   storiesCompleted: number;
   totalCost: number;
@@ -123,6 +127,14 @@ export async function executeParallel(
       agentGetFn,
       pidRegistry,
       interaction: interactionChain ?? undefined,
+      // biome-ignore lint/style/noNonNullAssertion: executeParallel is exported but unused in production; callers always provide these fields
+      agentManager: agentManager!,
+      // biome-ignore lint/style/noNonNullAssertion: executeParallel is exported but unused in production; callers always provide these fields
+      sessionManager: sessionManager!,
+      // biome-ignore lint/style/noNonNullAssertion: executeParallel is exported but unused in production; callers always provide these fields
+      runtime: runtime!,
+      // biome-ignore lint/style/noNonNullAssertion: executeParallel is exported but unused in production; callers always provide these fields
+      abortSignal: abortSignal!,
     };
 
     // #121: Ensure nax runtime files (acp-sessions.json, etc.) are excluded from

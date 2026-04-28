@@ -13,6 +13,7 @@ import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import { savePRD } from "../prd";
 import type { PRD } from "../prd/types";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
 import { buildAcceptanceRunCommand } from "./generator";
 import { generateFromPRD } from "./generator";
@@ -31,14 +32,13 @@ export interface HardeningResult {
   costUsd: number;
 }
 
-export interface HardeningContext {
+export interface HardeningContext extends DispatchContext {
   prd: PRD;
   prdPath: string;
   featureDir: string;
   workdir: string;
   config: NaxConfig;
   agentGetFn?: (name: string) => AgentAdapter | undefined;
-  agentManager?: IAgentManager;
 }
 
 // ─── Injectable deps ────────────────────────────────────────────────────────
@@ -83,6 +83,9 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
         storyTitle: story.title,
         storyDescription: story.description,
         agentManager: ctx.agentManager,
+        sessionManager: ctx.sessionManager,
+        runtime: ctx.runtime,
+        abortSignal: ctx.abortSignal,
       });
       allRefined.push(...refineResult.criteria);
       result.costUsd += refineResult.costUsd;
@@ -125,6 +128,9 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       language,
       targetTestFile: suggestedTestPath,
       agentManager: ctx.agentManager,
+      sessionManager: ctx.sessionManager,
+      runtime: ctx.runtime,
+      abortSignal: ctx.abortSignal,
     });
     result.costUsd += genResult.costUsd ?? 0;
 

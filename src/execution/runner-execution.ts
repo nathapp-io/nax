@@ -16,6 +16,7 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { tryLlmBatchRoute } from "../routing";
 import { clearCache as clearLlmCache } from "../routing/strategies/llm";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import { SessionManager } from "../session";
 import type { ISessionManager } from "../session";
 import { precomputeBatchPlan } from "./batching";
@@ -25,7 +26,7 @@ import type { PidRegistry } from "./pid-registry";
 /**
  * Options for the execution phase.
  */
-export interface RunnerExecutionOptions {
+export interface RunnerExecutionOptions extends DispatchContext {
   prdPath: string;
   workdir: string;
   config: NaxConfig;
@@ -49,18 +50,10 @@ export interface RunnerExecutionOptions {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — passed to agent.run() to register child processes. */
   pidRegistry?: PidRegistry;
-  /** Shutdown abort signal (Issue 5). Threaded into pipeline ctx for agent.run cancellation. */
-  abortSignal?: AbortSignal;
   /** Interaction chain for cost/pre-merge triggers during sequential execution. */
   interactionChain?: InteractionChain | null;
-  /** Run-level SessionManager shared across story iterations. */
-  sessionManager?: ISessionManager;
-  /** Per-run AgentManager (ADR-012). Threaded into SequentialExecutionContext. */
-  agentManager?: import("../agents").IAgentManager;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
-  /** NaxRuntime created in setup phase — threaded into preRunCtx for callOp support. */
-  runtime?: import("../runtime").NaxRuntime;
 }
 
 /**
@@ -145,9 +138,17 @@ export async function runExecutionPhase(
   const batchPlan = options.useBatch ? precomputeBatchPlan(readyStories, 4) : [];
 
   if (options.useBatch) {
-    await tryLlmBatchRoute(options.config, readyStories, "routing", {
-      agentManager: options.agentManager,
-    });
+    await tryLlmBatchRoute(
+      options.config,
+      readyStories,
+      "routing",
+      {
+        agentManager: options.agentManager,
+      },
+      options.sessionManager,
+      options.runtime,
+      options.abortSignal,
+    );
   }
 
   const { executeUnified } = await import("./unified-executor");

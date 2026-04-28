@@ -242,6 +242,10 @@ export async function runIteration(
     interactionChain: ctx.interactionChain,
     storyStartTime,
     statusWriter: ctx.statusWriter,
+    agentManager: ctx.agentManager,
+    sessionManager: ctx.sessionManager,
+    runtime: ctx.runtime,
+    abortSignal: ctx.abortSignal,
   };
 
   // Collect result from handlers BEFORE GC clearing — pipelineResult.context is the same

@@ -19,6 +19,7 @@ import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd"
 import type { PostRunStatusWriter } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { WorktreeManager } from "../worktree/manager";
@@ -70,7 +71,7 @@ function filterOutputFiles(files: string[]): string[] {
   return files.filter((f) => !NOISE.some((p) => p.test(f))).slice(0, 15);
 }
 
-export interface PipelineHandlerContext {
+export interface PipelineHandlerContext extends DispatchContext {
   config: NaxConfig;
   prd: PRD;
   prdPath: string;
@@ -171,6 +172,10 @@ export async function handlePipelineSuccess(
         hooks: ctx.hooks,
         pluginRegistry: ctx.pluginRegistry,
         prd,
+        agentManager: ctx.agentManager,
+        sessionManager: ctx.sessionManager,
+        runtime: ctx.runtime,
+        abortSignal: ctx.abortSignal,
       });
       if (!rectifyResult.success) {
         logger?.error("worktree", "Merge conflict could not be rectified — marking story as failed", {

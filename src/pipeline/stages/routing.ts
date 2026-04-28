@@ -32,7 +32,15 @@ export const routingStage: PipelineStage = {
     }
 
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
-    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx.agentManager);
+    const decision = await _routingDeps.resolveRouting(
+      ctx.story,
+      ctx.config,
+      ctx.plugins,
+      ctx.agentManager,
+      ctx.sessionManager,
+      ctx.runtime,
+      ctx.abortSignal,
+    );
 
     // @design: BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
     // (i.e., a higher tier than what routing freshly derives). This prevents stale tiers
