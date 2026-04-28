@@ -57,6 +57,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const dispatchAgent = resolved.agent;
   const effectiveTier = resolved.modelTier ?? "balanced";
 
+  const stageTimeoutMs = op.stage === "acceptance" ? (config.acceptance?.timeoutMs ?? 1_800_000) : undefined;
+
   if (op.kind === "complete") {
     const completeOp = op as CompleteOperation<I, O, C>;
     const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, {
@@ -67,6 +69,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       storyId: ctx.storyId,
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
+      ...(stageTimeoutMs !== undefined ? { timeoutMs: stageTimeoutMs } : {}),
     });
     return op.parse(raw.output, input, buildCtx);
   }
@@ -83,7 +86,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     workdir: ctx.packageDir,
     modelTier: effectiveTier,
     modelDef: resolved.modelDef,
-    timeoutSeconds: config.execution.sessionTimeoutSeconds,
+    timeoutSeconds:
+      stageTimeoutMs !== undefined ? Math.ceil(stageTimeoutMs / 1000) : config.execution.sessionTimeoutSeconds,
     pipelineStage: op.stage,
     config,
     sessionRole,

@@ -101,7 +101,7 @@ export async function diagnoseAcceptanceFailure(
   });
 
   try {
-    const timeoutSeconds = (config.acceptance?.timeoutMs ?? 120_000) / 1000;
+    const timeoutSeconds = (config.acceptance?.timeoutMs ?? 1_800_000) / 1000;
 
     const result = await agentManager.run({
       runOptions: {

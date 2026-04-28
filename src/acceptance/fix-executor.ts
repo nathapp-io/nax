@@ -51,7 +51,7 @@ export async function executeSourceFix(
     testFileContent: options.testFileContent,
   });
 
-  const timeoutSeconds = config.execution?.sessionTimeoutSeconds ?? 3600;
+  const timeoutSeconds = Math.ceil((config.acceptance?.timeoutMs ?? 1_800_000) / 1000);
 
   const result = await agentManager.run({
     runOptions: {
@@ -121,7 +121,7 @@ export async function executeTestFix(
     testFileContent: options.testFileContent,
   });
 
-  const timeoutSeconds = config.execution?.sessionTimeoutSeconds ?? 3600;
+  const timeoutSeconds = Math.ceil((config.acceptance?.timeoutMs ?? 1_800_000) / 1000);
 
   const result = await agentManager.run({
     runOptions: {

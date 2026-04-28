@@ -116,7 +116,7 @@ export async function refineAcceptanceCriteria(criteria: string[], context: Refi
       storyId,
       workdir,
       sessionRole: "refine",
-      timeoutMs: config.acceptance?.timeoutMs ?? 120_000,
+      timeoutMs: config.acceptance?.timeoutMs ?? 1_800_000,
     } as const;
     const completeResult = context.agentManager
       ? (await manager.completeWithFallback(prompt, completeOpts)).result
