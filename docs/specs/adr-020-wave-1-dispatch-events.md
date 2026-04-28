@@ -101,27 +101,41 @@ Export from `src/runtime/index.ts` barrel.
 
 ### Step 2 — Typed event types
 
-**New file: `src/runtime/dispatch-events.ts`** (~120 LOC)
+**New file: `src/runtime/dispatch-events.ts`** (~140 LOC)
+
+> **Verified imports** (use these exact paths — the originals were wrong):
+> - `PipelineStage` lives at `../config/permissions` (NOT `../pipeline/types`)
+> - `AgentResult.tokenUsage` is the field name (NOT `usage`)
+> - `ResolvedPermissions` lives at `../config/permissions`
+> - `internalRoundTrips` is **not** on the typed `AgentResult`. Either: (a) add it as `internalRoundTrips?: number` to `src/agents/types.ts:AgentResult` (recommended, ~3 LOC), or (b) keep it off the type and source `turn` from `SessionManager` descriptor turn count. **Decision for this wave: option (a)** — make it a typed field; existing audit middleware already reads it via type assertion (`as { internalRoundTrips: number }`), so the field is de facto present at runtime.
 
 ```typescript
-import type { PipelineStage } from "../pipeline/types";
 import type { TokenUsage } from "../agents/types";
+import type { PipelineStage, ResolvedPermissions } from "../config/permissions";
+import { getSafeLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 import type { SessionRole } from "./session-role";
 
 /**
  * Fields every dispatch event carries, regardless of kind. New cross-cutting
- * fields (e.g. traceId, resolvedPermissions, packageId) go here once; both
- * variants and every subscriber pick them up via the compiler.
+ * fields (e.g. traceId, packageId) go here once; both variants and every
+ * subscriber pick them up via the compiler.
+ *
+ * @see docs/adr/ADR-020-dispatch-boundary-ssot.md §D1
  */
 export interface DispatchEventBase {
   readonly sessionName: string;
   readonly sessionRole: SessionRole;
   readonly prompt: string;
+  readonly response: string;                       // result.output
   readonly agentName: string;
   readonly stage: PipelineStage;
   readonly storyId?: string;
   readonly featureName?: string;
-  readonly usage?: TokenUsage;
+  readonly workdir?: string;
+  readonly projectDir?: string;
+  readonly resolvedPermissions: ResolvedPermissions;  // resolved by pre-chain in manager
+  readonly tokenUsage?: TokenUsage;
   readonly exactCostUsd?: number;
   readonly durationMs: number;
   readonly timestamp: number;
@@ -131,6 +145,7 @@ export interface SessionTurnDispatchEvent extends DispatchEventBase {
   readonly kind: "session-turn";
   readonly turn: number;
   readonly protocolIds: { sessionId?: string; turnId?: string };
+  /** Diagnostic only — never branch subscriber logic on this. */
   readonly origin: "runAsSession" | "runTrackedSession";
 }
 
@@ -181,7 +196,7 @@ export class DispatchEventBus implements IDispatchEventBus {
       try { l(event); }
       catch (err) {
         // Subscribers must not break the chain. Log and continue.
-        getLogger().warn("dispatch-bus", "listener threw", { error: errorMessage(err) });
+        getSafeLogger()?.warn("dispatch-bus", "listener threw", { error: errorMessage(err) });
       }
     }
   }
@@ -189,14 +204,20 @@ export class DispatchEventBus implements IDispatchEventBus {
     for (const l of this._completedListeners) {
       try { l(event); }
       catch (err) {
-        getLogger().warn("dispatch-bus", "completion-listener threw", { error: errorMessage(err) });
+        getSafeLogger()?.warn("dispatch-bus", "completion-listener threw", { error: errorMessage(err) });
       }
     }
   }
 }
 ```
 
-Wire into `NaxRuntime` (`src/runtime/index.ts`): add `readonly dispatchEvents: IDispatchEventBus` field, instantiate in `createRuntime`, expose via `runtime.dispatchEvents`.
+**Wire into `NaxRuntime`** (`src/runtime/index.ts`):
+
+1. Add `readonly dispatchEvents: IDispatchEventBus` to the `NaxRuntime` interface (line ~47).
+2. In `createRuntime` (line ~102), instantiate `const dispatchEvents = new DispatchEventBus()` early (before manager construction so it can be passed in).
+3. Pass `dispatchEvents` into `createAgentManager(config, { dispatchEvents })` and `new SessionManager({ dispatchEvents, ... })` constructors.
+4. Both managers store the bus on a private field (`this._dispatchEvents`) for emission inside `runAsSession` / `runTrackedSession` / `completeAs`.
+5. Subscribers (`attachAuditSubscriber`, `attachCostSubscriber`, `attachLoggingSubscriber`) called from `createRuntime` after the bus exists; their unsubscribe functions stored for `runtime.close()` cleanup.
 
 ### Step 3 — Tighten role-bearing types
 
@@ -215,92 +236,197 @@ Run typecheck after this step. Compile errors at every drift site (acceptance ge
 
 **File: `src/agents/manager.ts`** around line 442 (`runAsSession`).
 
-After successful adapter return, before the existing middleware `runAfter` call (which gets removed in Step 7):
+Capture `startedAt` at entry; emit after successful adapter return; remove the existing middleware `runBefore`/`runAfter` calls (they're replaced by event emission, see Step 7):
 
 ```typescript
-const event: SessionTurnDispatchEvent = {
-  kind: "session-turn",
-  sessionName: handle.id,
-  sessionRole: handle.role,
-  prompt,
-  agentName,
-  stage: opts.pipelineStage,
-  storyId: opts.storyId,
-  featureName: opts.featureName,
-  turn: result.internalRoundTrips ?? 0,
-  protocolIds: result.protocolIds ?? {},
-  origin: "runAsSession",
-  usage: result.usage,
-  exactCostUsd: result.exactCostUsd,
-  durationMs: Date.now() - startedAt,
-  timestamp: Date.now(),
-};
-this._runtime.dispatchEvents.emitDispatch(event);
+async runAsSession(
+  agentName: string,
+  handle: SessionHandle,
+  prompt: string,
+  opts: AgentRunOptions,        // existing param
+): Promise<TurnResult> {
+  const startedAt = Date.now();
+  const resolvedPermissions = resolvePermissions(opts.config, opts.pipelineStage);
+
+  // ... (existing adapter dispatch — unchanged)
+  const result = await adapter.sendTurn(handle, prompt, { ... });
+
+  // Emit dispatch event before returning. Errors caught — must not block the call.
+  const event: SessionTurnDispatchEvent = {
+    kind: "session-turn",
+    sessionName: handle.id,
+    sessionRole: handle.role,           // post-D6: required SessionRole
+    prompt,
+    response: result.output,
+    agentName,
+    stage: opts.pipelineStage,
+    storyId: opts.storyId,
+    featureName: opts.featureName,
+    workdir: opts.workdir,
+    projectDir: opts.projectDir,
+    resolvedPermissions,
+    turn: result.internalRoundTrips ?? 0,
+    protocolIds: result.protocolIds ?? {},
+    origin: "runAsSession",
+    tokenUsage: result.tokenUsage,
+    exactCostUsd: result.exactCostUsd,
+    durationMs: Date.now() - startedAt,
+    timestamp: Date.now(),
+  };
+  this._dispatchEvents.emitDispatch(event);
+
+  return result;
+}
 ```
 
-Apply the same pattern in `onError` path with a separate `DispatchErrorEvent` if needed (or surface via existing logging — defer to taste; audit currently records errors via `recordError`, can be done via a separate event type if cleaner, otherwise keep in middleware error path).
+**Error path:** `runAsSession` should emit an error variant for failed dispatches so audit can record `recordError`. Add a third event variant:
+
+```typescript
+// In dispatch-events.ts
+export interface DispatchErrorEvent {
+  readonly kind: "error";
+  readonly origin: "runAsSession" | "runTrackedSession" | "completeAs";
+  readonly agentName: string;
+  readonly stage: PipelineStage;
+  readonly storyId?: string;
+  readonly errorCode: string;
+  readonly errorMessage: string;
+  readonly prompt?: string;
+  readonly durationMs: number;
+  readonly timestamp: number;
+  readonly resolvedPermissions: ResolvedPermissions;
+}
+
+// Add to bus:
+emitDispatchError(event: DispatchErrorEvent): void;
+onDispatchError(listener: (e: DispatchErrorEvent) => void): () => void;
+```
+
+In `runAsSession`'s try/catch around the adapter call, emit `DispatchErrorEvent` on throw, then re-throw. Audit subscriber listens to both `DispatchEvent` and `DispatchErrorEvent`.
 
 ### Step 5 — Emit from `runTrackedSession`
 
-**File: `src/session/manager-run.ts`** around line 36–82.
+**File: `src/session/manager-run.ts`** lines 36–110.
 
-The descriptor is already loaded at line 42. After `runner.run(injectedRequest)` returns successfully:
+Capture `startedAt` at entry; emit after `runner.run(injectedRequest)` returns successfully (around current line 82). Note: `runTrackedSession` returns `AgentResult`, not `TurnResult`, so the type assertion for `internalRoundTrips` documented in Step 2 applies.
 
 ```typescript
-const sessionName = state.nameFor({
-  workdir: descriptor.workdir,
-  featureName: descriptor.featureName,
-  storyId: descriptor.storyId,
-  role: descriptor.role,
-});
+export async function runTrackedSession(
+  state: SessionManagerState,
+  id: string,
+  runner: SessionRunClient,
+  request: SessionManagedRunRequest,
+): Promise<AgentResult> {
+  const startedAt = Date.now();
+  const pre = state.sessions.get(id);
+  if (!pre) { /* existing throw */ }
 
-const event: SessionTurnDispatchEvent = {
-  kind: "session-turn",
-  sessionName,
-  sessionRole: descriptor.role,
-  prompt: request.runOptions.prompt,
-  agentName: request.runOptions.agentName ?? "claude",
-  stage: request.runOptions.pipelineStage,
-  storyId: descriptor.storyId,
-  featureName: descriptor.featureName,
-  turn: result.internalRoundTrips ?? 0,
-  protocolIds: result.protocolIds ?? {},
-  origin: "runTrackedSession",
-  usage: result.usage,
-  exactCostUsd: result.exactCostUsd,
-  durationMs: Date.now() - startedAt,
-  timestamp: Date.now(),
-};
-state.dispatchEvents.emitDispatch(event);
+  const descriptor = pre;  // alias for clarity
+  // ... (existing transition + injectedRequest construction)
+
+  const result = await runner.run(injectedRequest);
+
+  // Build dispatch event from descriptor (which owns role + sessionName).
+  // resolvedPermissions: forwarded from runOptions if pre-resolved by caller;
+  // else re-resolve here (cheap; pure function).
+  const sessionName = state.nameFor({
+    workdir: descriptor.workdir,
+    featureName: descriptor.featureName,
+    storyId: descriptor.storyId,
+    role: descriptor.role,
+  });
+
+  const event: SessionTurnDispatchEvent = {
+    kind: "session-turn",
+    sessionName,
+    sessionRole: descriptor.role,                          // post-D6: required SessionRole
+    prompt: request.runOptions.prompt,
+    response: result.output,
+    agentName: request.runOptions.agentName ?? state.defaultAgent,
+    stage: request.runOptions.pipelineStage,
+    storyId: descriptor.storyId,
+    featureName: descriptor.featureName,
+    workdir: descriptor.workdir,
+    projectDir: request.runOptions.projectDir,
+    resolvedPermissions: request.runOptions.resolvedPermissions
+      ?? resolvePermissions(request.runOptions.config, request.runOptions.pipelineStage),
+    turn: (result as { internalRoundTrips?: number }).internalRoundTrips ?? 0,
+    protocolIds: result.protocolIds ?? {},
+    origin: "runTrackedSession",
+    tokenUsage: result.tokenUsage,
+    exactCostUsd: result.exactCostUsd,
+    durationMs: Date.now() - startedAt,
+    timestamp: Date.now(),
+  };
+  state.dispatchEvents.emitDispatch(event);
+
+  return result;
+}
 ```
 
-Threading: `SessionManagerState` (`src/session/manager-run.ts` top) gains `dispatchEvents: IDispatchEventBus`. `SessionManager` constructor receives it from `NaxRuntime`.
+**Threading changes** (apply to `src/session/manager-run.ts` types and `src/session/manager.ts`):
 
-**Critical:** delete the tactical `sessionHint` field-write here. Wave 1's emission replaces it.
+- `SessionManagerState` interface (top of `manager-run.ts`) gains:
+  - `dispatchEvents: IDispatchEventBus`
+  - `defaultAgent: string` (so the `agentName` fallback isn't a hardcoded literal)
+- `SessionManager` constructor accepts `{ dispatchEvents, defaultAgent }` and threads both into the state bag passed to `runTrackedSession`.
+- `NaxRuntime.createRuntime` passes both at construction (defaultAgent comes from `resolveDefaultAgent(config)`).
+
+**Delete the tactical `sessionHint` field-write** at the top of `runTrackedSession` (added by the tactical patch at `manager-run.ts:55-72`). Event emission replaces it.
+
+**Error path:** if `runner.run()` throws, emit `DispatchErrorEvent` (kind:"error", origin:"runTrackedSession") in the catch block before re-throwing.
 
 ### Step 6 — Emit from `completeAs`
 
-**File: `src/agents/manager.ts`** around line 388 (`completeAs`).
+**File: `src/agents/manager.ts`** — find `completeAs(agentName, prompt, opts)` (grep for `completeAs` definition; line varies).
 
-Compute `sessionName` from `formatSessionName({ workdir, featureName, storyId, role: opts.sessionRole, pipelineStage })` (already done by current audit middleware — move the call here).
+Capture `startedAt`; emit after successful adapter return. Move `formatSessionName` call from `audit.ts:sessionNameFromCompleteOptions` here — `completeAs` is the new owner of the computation.
 
 ```typescript
-const event: CompleteDispatchEvent = {
-  kind: "complete",
-  sessionName: formatSessionName({ ... }),
-  sessionRole: opts.sessionRole ?? "main",
-  prompt,
-  agentName,
-  stage: opts.pipelineStage,
-  storyId: opts.storyId,
-  featureName: opts.featureName,
-  usage: result.usage,
-  exactCostUsd: result.exactCostUsd,
-  durationMs: Date.now() - startedAt,
-  timestamp: Date.now(),
-};
-this._runtime.dispatchEvents.emitDispatch(event);
+async completeAs(
+  agentName: string,
+  prompt: string,
+  opts: AgentCompleteOptions,
+): Promise<CompleteResult> {
+  const startedAt = Date.now();
+  const resolvedPermissions = resolvePermissions(opts.config, opts.pipelineStage);
+
+  // ... (existing adapter.complete dispatch — unchanged)
+  const result = await adapter.complete(prompt, opts);
+
+  const sessionName = formatSessionName({
+    workdir: opts.workdir,
+    featureName: opts.featureName,
+    storyId: opts.storyId,
+    role: opts.sessionRole,
+    pipelineStage: opts.pipelineStage,
+  });
+
+  const event: CompleteDispatchEvent = {
+    kind: "complete",
+    sessionName,
+    sessionRole: opts.sessionRole ?? "main",        // post-D6: required SessionRole
+    prompt,
+    response: result.output,
+    agentName,
+    stage: opts.pipelineStage,
+    storyId: opts.storyId,
+    featureName: opts.featureName,
+    workdir: opts.workdir,
+    projectDir: opts.projectDir,
+    resolvedPermissions,
+    tokenUsage: result.tokenUsage,
+    exactCostUsd: result.exactCostUsd,
+    durationMs: Date.now() - startedAt,
+    timestamp: Date.now(),
+  };
+  this._dispatchEvents.emitDispatch(event);
+
+  return result;
+}
 ```
+
+**Error path:** same pattern — emit `DispatchErrorEvent` (kind:"error", origin:"completeAs") in catch before re-throwing.
 
 ### Step 7 — Strip middleware emission from envelopes; emit `OperationCompletedEvent`
 
@@ -308,27 +434,51 @@ this._runtime.dispatchEvents.emitDispatch(event);
 
 In `runAs()` (line 395–440): remove `_middleware.runBefore` + `_middleware.runAfter` calls. They were the duplicate-emission source. Permission resolution (pre-chain) stays — still required.
 
-In `runWithFallback()` (line 181–306): track agentChain, hopCount, fallbackTriggered, totalElapsedMs, totalCostUsd (sum of dispatch events emitted for this call's children — see below). At end (success or exhaustion), emit:
+In `runWithFallback()` (line 181–306): track per-hop telemetry directly from the loop, no event subscription needed.
 
 ```typescript
-this._runtime.dispatchEvents.emitOperationCompleted({
-  kind: "operation-completed",
-  operation: "run-with-fallback",
-  agentChain,
-  hopCount,
-  fallbackTriggered: hopCount > 1,
-  totalElapsedMs: Date.now() - startedAt,
-  totalCostUsd: hopCosts.reduce((a, b) => a + b, 0),
-  finalStatus: result ? "ok" : (signal.aborted ? "cancelled" : "exhausted"),
-  storyId: request.runOptions?.storyId,
-  stage: request.runOptions?.pipelineStage ?? "run",
-  timestamp: Date.now(),
-});
+async runWithFallback(
+  request: AgentRunRequest,
+  primaryAgentOverride?: string,
+): Promise<AgentRunOutcome> {
+  const startedAt = Date.now();
+  const agentChain: string[] = [];
+  const hopCosts: number[] = [];
+  let finalStatus: OperationCompletedEvent["finalStatus"] = "ok";
+  let outcome: AgentRunOutcome | undefined;
+
+  try {
+    // ... existing fallback loop ...
+    // Inside the loop, after each executeHop / runAsSession completes:
+    agentChain.push(currentAgent);
+    if (hopResult.exactCostUsd !== undefined) hopCosts.push(hopResult.exactCostUsd);
+    // ... existing swap logic ...
+
+    if (request.signal?.aborted) finalStatus = "cancelled";
+    else if (!outcome) finalStatus = "exhausted";
+  } catch (err) {
+    finalStatus = "error";
+    throw err;
+  } finally {
+    this._dispatchEvents.emitOperationCompleted({
+      kind: "operation-completed",
+      operation: "run-with-fallback",
+      agentChain,
+      hopCount: agentChain.length,
+      fallbackTriggered: agentChain.length > 1,
+      totalElapsedMs: Date.now() - startedAt,
+      totalCostUsd: hopCosts.reduce((a, b) => a + b, 0),
+      finalStatus,
+      storyId: request.runOptions?.storyId,
+      stage: request.runOptions?.pipelineStage ?? "run",
+      timestamp: Date.now(),
+    });
+  }
+  return outcome;
+}
 ```
 
-`hopCosts` is collected by subscribing to dispatch events for the call's lifetime. Implementation detail: a per-call `correlationId` on `runOptions` lets the envelope filter dispatch events by call. Or simpler: capture `result.exactCostUsd` from each hop directly.
-
-Same treatment for `completeWithFallback`.
+Same treatment for `completeWithFallback` (single hop in the no-fallback case → `agentChain = [agent]`, `hopCount = 1`, `fallbackTriggered = false`).
 
 ### Step 8 — Rewrite audit middleware as subscriber
 
@@ -370,25 +520,31 @@ export function attachAuditSubscriber(
 }
 ```
 
-**Important:** `DispatchEvent` does not currently carry `response`, `workdir`, `projectDir`, `resolvedPermissions`. Add them to `DispatchEventBase` in Step 2 (resolved at the boundary that has them: `workdir`/`projectDir` from `opts`, `resolvedPermissions` from the pre-chain resolution, `response` from `result.output`). This was the gap that drove the original ad-hoc context sniffing — make it explicit fields on the event now.
+All event fields above are already declared on `DispatchEventBase` in Step 2 (response, workdir, projectDir, resolvedPermissions included from the start) and populated by each emitter in Steps 4–6.
 
-Update `DispatchEventBase` in `src/runtime/dispatch-events.ts`:
+Wire `attachAuditSubscriber` into runtime construction (`src/runtime/index.ts` `createRuntime`) after the bus is instantiated; replace the existing `auditMiddleware(...)` registration. Store the unsubscribe handle for `runtime.close()` cleanup.
+
+Add `attachAuditSubscriber` for `DispatchErrorEvent` too:
 
 ```typescript
-export interface DispatchEventBase {
-  // ... existing fields ...
-  readonly response: string;             // result.output
-  readonly workdir?: string;
-  readonly projectDir?: string;
-  readonly resolvedPermissions: ResolvedPermissions;
-}
+bus.onDispatchError((event) => {
+  auditor.recordError({
+    ts: event.timestamp,
+    runId,
+    agentName: event.agentName,
+    stage: event.stage,
+    storyId: event.storyId,
+    errorCode: event.errorCode,
+    errorMessage: event.errorMessage,
+    durationMs: event.durationMs,
+    callType: event.origin === "completeAs" ? "complete" : "run",
+    permissionProfile: event.resolvedPermissions.mode,
+    prompt: event.prompt,
+  });
+});
 ```
 
-Each emitter (Steps 4, 5, 6) populates these from data already in scope.
-
-Wire `attachAuditSubscriber` into runtime construction (`src/runtime/index.ts` `createRuntime`); replace the existing `auditMiddleware(...)` registration.
-
-**Delete:** `src/runtime/middleware/audit.ts:30` `executeHop` guard, `sessionNameFromCompleteOptions` helper (no scrape). Old `auditMiddleware(auditor, runId): AgentMiddleware` factory deleted.
+**Delete:** `src/runtime/middleware/audit.ts` lines 30 (`executeHop` guard), 12–24 (`sessionNameFromCompleteOptions` helper), and the entire `auditMiddleware(auditor, runId): AgentMiddleware` factory function. Replace the file's exports with `attachAuditSubscriber`.
 
 ### Step 9 — Rewrite cost middleware as subscriber
 
@@ -440,24 +596,44 @@ Add `recordOperationSummary(...)` to `ICostAggregator` if not already present (s
 
 ### Step 11 — Delete tactical `sessionHint`
 
+The tactical patch (Step 5 of the findings doc) introduced `AgentRunOptions.sessionHint` and a populator in `runTrackedSession`. Both are made redundant by Wave 1's `DispatchEvent` emission. Removal is mechanical:
+
 | File | Change |
 |:---|:---|
-| `src/agents/types.ts` | Remove `AgentRunOptions.sessionHint` field |
-| `src/session/manager-run.ts` | Remove the tactical's `injectedRequest.runOptions.sessionHint` write (replaced by `emitDispatch` in Step 5) |
-| `src/runtime/middleware/audit.ts` | The third-fallback line (already deleted in the rewrite) |
-| `src/runtime/middleware/cost.ts` | Same |
+| `src/agents/types.ts` | Delete `AgentRunOptions.sessionHint` field declaration (the typed `{ sessionName: string; role: string }` field added by the tactical) |
+| `src/session/manager-run.ts` | Delete the `sessionHint: { sessionName, role }` write inside `injectedRequest.runOptions` (Step 5 of tactical). Step 5 of this wave replaces it with `emitDispatch`. |
+| `src/runtime/middleware/audit.ts` | The `?? ctx.request?.runOptions?.sessionHint?.sessionName ??` line — already removed by Step 8's full rewrite. Listed here for completeness. |
+| `src/runtime/middleware/cost.ts` | Same. Already removed by Step 9's full rewrite. |
 
-Grep `sessionHint` returns zero hits.
+**Validation:** `rg sessionHint src/` returns zero hits. `rg sessionHint test/` returns zero hits except in tests that explicitly assert the field has been removed (the no-regression test from Step 11 below).
 
 ### Step 12 — `MiddlewareContext` and chain cleanup
 
 **File: `src/runtime/agent-middleware.ts`**.
 
-`AgentMiddleware` interface stays for any non-event-driven concerns (cancellation translation, e.g.) but `MiddlewareContext` no longer needs to carry dispatch metadata. Audit/cost are no longer middleware — they're subscribers.
+Audit/cost/logging are no longer middleware — they're event subscribers. **Inventory remaining middleware:**
 
-Remove from `MiddlewareContext`: any field added in earlier rounds purely for audit/cost scraping (e.g. `completeOptions`, `sessionHandle` if no remaining middleware reads them). Cancellation middleware likely still needs `signal`; keep that.
+```bash
+rg "implements AgentMiddleware\|: AgentMiddleware\|AgentMiddleware = {" src/
+```
 
-If after audit and cost are removed, no middleware remains, the chain itself can be deleted. Verify by greping for remaining `AgentMiddleware` implementations.
+Expected after Wave 1: only `cancellation.ts` remains (it translates aborted signals into typed errors and is stage-agnostic — does not read dispatch metadata).
+
+**Decision:** keep the `AgentMiddleware` interface and `MiddlewareChain` plumbing for cancellation. Do **not** delete the chain entirely — that would force cancellation into a fourth event type unnecessarily.
+
+**Trim `MiddlewareContext`:** remove fields that exist only for audit/cost scraping. Specifically delete:
+- `completeOptions` (was only read by `sessionNameFromCompleteOptions`)
+- `sessionHandle` (was only read by audit's session-name resolution)
+- `prompt` (was only read for audit recording)
+- Any `executeHop`-related fields on the request
+
+Keep:
+- `signal` (cancellation reads it)
+- `agentName`, `stage`, `storyId` (cancellation logs them on translated errors)
+- `kind` (`"run"` | `"complete"` — cancellation needs to surface the right error code)
+- `resolvedPermissions` (cancellation translates permission-denied separately)
+
+**Output:** `MiddlewareContext` shrinks from ~12 fields to ~6. Cancellation middleware keeps working unchanged. Audit/cost no longer touch the chain.
 
 ## Tests
 

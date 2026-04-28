@@ -58,24 +58,29 @@ Export from `src/runtime/index.ts` barrel.
 
 For each row below: add `extends DispatchContext` to the interface declaration; drop the `?` from any field name that overlaps (`agentManager?` → required via the base; `sessionManager?` → required; `abortSignal?` → required). Run `bun run typecheck` after each file to surface compile errors at call sites; fix in same PR.
 
-| File | Type | Existing optional fields to make required (via base) |
-|:---|:---|:---|
-| `src/pipeline/types.ts:60` | `PipelineContext` | `agentManager?`, `sessionManager?`, `abortSignal?` |
-| `src/operations/types.ts` | `OperationContext<C>` | likely `agentManager?` and `sessionManager?` (verify) |
-| `src/execution/lifecycle/acceptance-loop.ts:61` | `AcceptanceLoopOptions` | `agentManager?` |
-| `src/execution/lifecycle/run-completion.ts:57` | `RunCompletionOptions` | `agentManager?` |
-| `src/debate/runner-stateful.ts:35` | `DebateRunnerCtx` (stateful) | `agentManager?` |
-| `src/debate/runner-hybrid.ts:41` | `DebateRunnerCtx` (hybrid) | `agentManager?` |
-| `src/debate/runner-plan.ts:33` | `DebateRunnerCtx` (plan) | `agentManager?` |
-| `src/debate/session-helpers.ts:76` | `DebateSessionCtx` | `agentManager?` |
-| `src/review/semantic-debate.ts:30` | `SemanticDebateCtx` | already required — verify |
-| `src/review/runner.ts` | `ReviewCtx` | grep for declaration |
-| `src/routing/router.ts:29` | `RoutingCtx` | `agentManager?` |
-| `src/cli/plan-runtime.ts` | `PlanCtx` | grep for declaration |
-| `src/session/session-runner.ts:63` | `SessionRunnerContext` | `agentManager?` |
-| `src/acceptance/types.ts:55` | `AcceptanceContext` | `agentManager?` |
-| `src/acceptance/types.ts:117` | (second declaration — verify name) | `agentManager?` |
-| `src/acceptance/hardening.ts:41` | `HardeningCtx` | `agentManager?` |
+> **Note on `OperationContext`:** there is **no** type by that name in the codebase. `src/operations/types.ts` declares `BuildContext<C>` (lines 9-12; `packageView` + `config` only) and `CallContext` (lines 14-38; the larger ambient context). `CallContext` is the one to extend `DispatchContext` from — it already has `runtime: NaxRuntime` (line 15), which is the agentManager/sessionManager owner per ADR-018. The cleanest move: have `CallContext` extend `DispatchContext`, and have callers populate the four required fields explicitly (or derive `agentManager`/`sessionManager` from `runtime`).
+>
+> **Decision:** for `CallContext` specifically, do NOT extend `DispatchContext`. Instead, treat `runtime` (which contains both managers) as the SSOT — `CallContext` already requires `runtime: NaxRuntime`, so the agentManager/sessionManager are non-nullably reachable via `ctx.runtime.agentManager` / `ctx.runtime.sessionManager`. No optional `?` exists on this type today; no fix needed. **Skip `CallContext` from the table below.** Other context types that today declare their own optional `agentManager?` are the migration targets.
+
+| File | Type | Existing optional fields to make required (via base) | Verified? |
+|:---|:---|:---|:---|
+| `src/pipeline/types.ts:60` | `PipelineContext` | `agentManager?` (145), `sessionManager?` (139), `abortSignal?` (119) | ✓ confirmed via grep |
+| `src/execution/lifecycle/acceptance-loop.ts:61` | `AcceptanceLoopOptions` | `agentManager?` (61) | ✓ |
+| `src/execution/lifecycle/run-completion.ts:57` | `RunCompletionOptions` | `agentManager?` (57) | ✓ |
+| `src/debate/runner-stateful.ts:35` | (verify name via `grep "^export interface\|^interface" src/debate/runner-stateful.ts`) | `agentManager?` (35) | ✓ field present, type name unverified |
+| `src/debate/runner-hybrid.ts:41` | (verify name) | `agentManager?` (41) | ✓ field present |
+| `src/debate/runner-plan.ts:33` | (verify name) | `agentManager?` (33) | ✓ field present |
+| `src/debate/session-helpers.ts:76,201` | (function-param object — may not be a named interface) | `agentManager?` (76, 201) | ✓ field present, may need refactor to a named type |
+| `src/review/semantic-debate.ts:30` | (verify name) | already required (`agentManager: IAgentManager`) | ✓ — no change needed |
+| `src/routing/router.ts:29,145` | (verify name) | `agentManager?` (29, 145) | ✓ field present |
+| `src/session/session-runner.ts:63` | (verify name) | `agentManager?` (63) | ✓ field present |
+| `src/acceptance/types.ts:55,117` | (two declarations — verify names) | `agentManager?` (both) | ✓ fields present; confirm two distinct types |
+| `src/acceptance/hardening.ts:41` | (verify name) | `agentManager?` (41) | ✓ field present |
+| `src/runtime/index.ts:60` | `CreateRuntimeOptions` (constructor input) | `agentManager?` (60) | ⚠ deliberately optional — `createRuntime` constructs a default if absent. **Do NOT make this required;** it's the constructor's "bring-your-own" override slot, not a dispatch-time field. Skip from migration. |
+
+**Implementer action for each unverified type name:** before editing, run `grep -n "^export interface\|^export type\|^interface" <file>` to find the actual declaration name. Add `extends DispatchContext` to the declaration.
+
+**Function-parameter-object cases** (`session-helpers.ts:76,201` and similar): these aren't named interfaces — they're inline `{ agentManager?: IAgentManager, ... }` parameter shapes. Refactor to a named type that extends `DispatchContext`, then update the function signature. ~5 LOC per occurrence.
 
 After all extends added, run `bun run typecheck`. Each compile error is one of:
 
@@ -109,9 +114,9 @@ Update the existing call site in `SingleSessionRunner.run` to reference the priv
 
 **File: `src/agents/utils.ts`**.
 
-Delete the `wrapAdapterAsManager` and `NO_OP_INTERACTION_HANDLER` exports.
+Delete the `wrapAdapterAsManager` export. Inline its body (one occurrence) into `SingleSessionRunner` per Step 3.
 
-If other files in `src/agents/` use `NO_OP_INTERACTION_HANDLER` internally, move it to a private location (e.g. `src/agents/internal/no-op-handler.ts`).
+For `NO_OP_INTERACTION_HANDLER`: run `rg "NO_OP_INTERACTION_HANDLER" src/` to find consumers. If used **only** by `wrapAdapterAsManager`, delete with it. If consumed elsewhere (likely: ad-hoc adapter calls in tests or one-shot tools), move to a clearly-named private module — `src/agents/internal/no-op-interaction-handler.ts` — and update imports. Do **not** re-export from `src/agents` barrel; consumers import directly from `internal/`.
 
 ### Step 5 — Audit raw `IAgentAdapter` helper signatures
 
@@ -119,11 +124,14 @@ The #783 root pattern: helpers like `runFullSuiteGate(agent: IAgentAdapter)` acc
 
 Update each helper to accept `IAgentManager` instead. Where the helper truly needs adapter access (to call `adapter.openSession` for ad-hoc work), get it via `agentManager.getAdapter(name)`.
 
-| File | Helper | Today's signature | After |
-|:---|:---|:---|:---|
-| `src/tdd/rectification-gate.ts` | `runFullSuiteGate` | `(agent: IAgentAdapter, ...)` | `(agentManager: IAgentManager, ...)` |
-| `src/tdd/orchestrator-ctx.ts` | `getTddSessionBinding` | (verify — post-#783 may already be manager-typed) | `(agentManager: IAgentManager, ...)` |
-| `src/tdd/session-runner.ts` | (internal helpers) | grep for `agent: IAgentAdapter` parameters | manager-typed |
+**Pre-step audit:** run `rg "agent:\s*IAgentAdapter\|agent:\s*AgentAdapter" src/ --type ts` to enumerate every helper that takes a raw adapter. Compare against the list below; if grep finds additional sites, add them to the migration.
+
+| File | Helper | Migration |
+|:---|:---|:---|
+| `src/tdd/rectification-gate.ts` | `runFullSuiteGate` | Replace `agent: IAgentAdapter` param with `agentManager: IAgentManager`. Where the body called `agent.openSession`/`adapter.complete` directly (if any), route through the manager (`agentManager.runWithFallback` or `agentManager.completeWithFallback`). |
+| `src/tdd/orchestrator-ctx.ts` | `getTddSessionBinding` | Confirmed manager-typed post-#783 — verify with grep; no change expected. |
+| `src/tdd/session-runner.ts:253` | `runTddSession` internals | The current `effectiveManager = sessionBinding?.agentManager ?? wrapAdapterAsManager(agent)` pattern is removed. Function signature accepts `agentManager: IAgentManager` (no `?`); callers pass `ctx.agentManager`. |
+| Others surfaced by the pre-step grep | — | Same pattern: replace adapter param with manager; route adapter calls through `agentManager.getAdapter(name)` only if the helper truly needs adapter primitives (rare — most can use the higher-layer manager API). |
 
 For each updated helper, update every caller. Most callers already have `ctx.agentManager` reachable (verified during Wave 1).
 
@@ -226,7 +234,7 @@ All existing tests using `wrapAdapterAsManager` from `src/agents/utils.ts` switc
 2. **Tests pass:** `bun run test`
 3. **Pre-commit gate:** `bash scripts/check-no-adapter-wrap.sh` returns OK
 4. **Grep:** `rg 'wrapAdapterAsManager' src/` returns exactly one file: `src/session/runners/single-session-runner.ts`
-5. **Grep:** `rg 'agentManager\?\: IAgentManager' src/` returns zero hits — no remaining optional declarations
+5. **Grep (whitespace-tolerant):** `rg 'agentManager\?\s*:\s*(import\(.+\)\.)?IAgentManager' src/` returns zero hits — covers `agentManager?: IAgentManager`, `agentManager? : IAgentManager`, and `agentManager?: import("../agents").IAgentManager` variants. The exception is `src/runtime/index.ts:60` (CreateRuntimeOptions, deliberately optional per Step 2 note).
 6. **Re-run dogfood (`tdd-calc`, `hello-lint`):** all audit and cost coverage from Wave 1 still works (no regressions); TDD per-role audit names still present
 
 ## Rollback
