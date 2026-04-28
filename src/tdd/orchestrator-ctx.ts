@@ -19,7 +19,7 @@ export async function runThreeSessionTddFromCtx(
     if (!ctx.sessionManager) return undefined;
     const id = sessionIdByRole.get(role);
     if (!id) return undefined;
-    return { sessionManager: ctx.sessionManager, sessionId: id };
+    return { sessionManager: ctx.sessionManager, sessionId: id, agentManager: ctx.agentManager };
   };
 
   // Defensive check: test fixtures may bypass Zod and omit `context.v2`.
@@ -168,5 +168,6 @@ export async function runThreeSessionTddFromCtx(
     interactionChain: ctx.interaction,
     projectDir: ctx.projectDir,
     abortSignal: ctx.abortSignal,
+    agentManager: ctx.agentManager,
   });
 }
