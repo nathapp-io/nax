@@ -22,13 +22,19 @@ import { createContextToolRuntime } from "../context/engine";
 import { getSafeLogger } from "../logger";
 import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp } from "../operations/call";
-import type { ReviewFinding } from "../plugins/types";
 import type { UserStory } from "../prd";
 import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
 import { ReviewPromptBuilder } from "../prompts/builders/review-builder";
 import { formatSessionName } from "../session/naming";
-import { tryParseLLMJson } from "../utils/llm-json";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
+import {
+  type AdversarialLLMFinding,
+  type AdversarialLLMResponse,
+  formatFindings,
+  isBlockingSeverity,
+  parseAdversarialResponse,
+  toAdversarialReviewFindings,
+} from "./adversarial-helpers";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import { looksLikeTruncatedJson } from "./truncation";
@@ -38,92 +44,6 @@ import type { AdversarialFindingsCache, AdversarialReviewConfig, ReviewCheckResu
 export const _adversarialDeps = {
   writeReviewAudit,
 };
-
-interface AdversarialLLMFinding {
-  severity: string;
-  category: string;
-  file: string;
-  line: number;
-  issue: string;
-  suggestion: string;
-}
-
-interface AdversarialLLMResponse {
-  passed: boolean;
-  findings: AdversarialLLMFinding[];
-}
-
-/**
- * Validate parsed JSON matches the expected adversarial LLM response shape.
- */
-function validateAdversarialShape(parsed: unknown): AdversarialLLMResponse | null {
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj.passed !== "boolean") return null;
-  if (!Array.isArray(obj.findings)) return null;
-  return { passed: obj.passed, findings: obj.findings as AdversarialLLMFinding[] };
-}
-
-/**
- * Parse and validate adversarial LLM JSON response.
- * Returns null only when all extraction tiers fail or shape validation fails.
- */
-function parseAdversarialResponse(raw: string): AdversarialLLMResponse | null {
-  try {
-    return validateAdversarialShape(tryParseLLMJson(raw));
-  } catch {
-    return null;
-  }
-}
-
-/** Format findings into readable text output. */
-function formatFindings(findings: AdversarialLLMFinding[]): string {
-  return findings
-    .map((f) => `[${f.severity}][${f.category}] ${f.file}:${f.line} — ${f.issue}\n  Suggestion: ${f.suggestion}`)
-    .join("\n");
-}
-
-/** Normalize LLM severity values to ReviewFinding severity union. */
-function normalizeSeverity(sev: string): ReviewFinding["severity"] {
-  if (sev === "warn") return "warning";
-  if (sev === "unverifiable") return "info";
-  if (sev === "critical" || sev === "error" || sev === "warning" || sev === "info" || sev === "low") return sev;
-  return "info";
-}
-
-/**
- * Severity rank for threshold comparison.
- * "unverifiable" is treated as info (non-blocking by default).
- */
-const SEVERITY_RANK: Record<string, number> = {
-  info: 0,
-  unverifiable: 0,
-  low: 1,
-  warning: 1,
-  error: 2,
-  critical: 3,
-};
-
-/**
- * Check whether a normalized finding severity meets or exceeds the blocking threshold.
- * threshold defaults to "error" — only error/critical block unless configured stricter.
- */
-function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {
-  return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
-}
-
-/** Convert AdversarialLLMFinding[] to ReviewFinding[] with adversarial-review metadata. */
-function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): ReviewFinding[] {
-  return findings.map((f) => ({
-    ruleId: "adversarial",
-    severity: normalizeSeverity(f.severity),
-    file: f.file,
-    line: f.line,
-    message: f.issue,
-    source: "adversarial-review",
-    category: f.category,
-  }));
-}
 
 /**
  * Run an adversarial review using an LLM against the story diff.

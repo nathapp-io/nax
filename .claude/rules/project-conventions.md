@@ -20,8 +20,8 @@ Quick rules of thumb:
 
 ## File Size
 
-- **400-line hard limit** for all source and test files.
-- If a file approaches 400 lines, split it before adding more code.
+- **600-line hard limit** for all source and test files.
+- If a file approaches 600 lines, split it before adding more code.
 - Split by logical concern (one function/class per file when possible).
 
 ## Module Structure
