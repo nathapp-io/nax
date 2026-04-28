@@ -7,9 +7,6 @@
  * See: docs/specs/SPEC-session-manager-integration.md
  */
 
-import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
 import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -17,6 +14,8 @@ import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
+import { _sessionManagerDeps, resolveProjectDirFromScratchDir } from "./manager-deps";
+import { runTrackedSession } from "./manager-run";
 import { formatSessionName } from "./naming";
 import type {
   CreateSessionOptions,
@@ -34,6 +33,8 @@ import type {
 } from "./types";
 import { SESSION_TRANSITIONS } from "./types";
 
+export { _sessionManagerDeps } from "./manager-deps";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,53 +44,6 @@ const DEFAULT_ORPHAN_TTL_MS = 4 * 60 * 60 * 1000;
 
 /** Null protocol IDs used when no adapter has reported back yet */
 const NULL_PROTOCOL_IDS: ProtocolIds = { recordId: null, sessionId: null };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Injectable deps
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const _sessionManagerDeps = {
-  now: () => new Date().toISOString(),
-  nowMs: () => Date.now(),
-  uuid: () => randomUUID(),
-  sessionScratchDir: (projectDir: string, featureName: string, sessionId: string): string =>
-    join(projectDir, ".nax", "features", featureName, "sessions", sessionId),
-  /**
-   * Persist a minimal session descriptor to <scratchDir>/descriptor.json for
-   * cross-iteration disk discovery (Finding 2 from the Context Engine v2
-   * architecture review). Creates the scratch directory if it does not exist.
-   * `handle` is omitted — it is process-bound and cannot be rehydrated.
-   */
-  writeDescriptor: async (scratchDir: string, descriptor: SessionDescriptor, projectDir?: string): Promise<void> => {
-    await mkdir(scratchDir, { recursive: true });
-    const { handle: _handle, ...persistable } = descriptor;
-    const derivedProjectDir = projectDir ?? resolveProjectDirFromScratchDir(scratchDir);
-    if (derivedProjectDir) {
-      persistable.workdir = toProjectRelativePath(derivedProjectDir, persistable.workdir);
-      if (persistable.scratchDir) {
-        persistable.scratchDir = toProjectRelativePath(derivedProjectDir, persistable.scratchDir);
-      }
-    }
-    await Bun.write(join(scratchDir, "descriptor.json"), JSON.stringify(persistable, null, 2));
-  },
-};
-
-function resolveProjectDirFromScratchDir(scratchDir: string): string | undefined {
-  const marker = `${sep}.nax${sep}features${sep}`;
-  const markerIdx = scratchDir.lastIndexOf(marker);
-  if (markerIdx > 0) return scratchDir.slice(0, markerIdx);
-
-  // Backstop: tolerate persisted forward-slash paths regardless of platform.
-  const posixIdx = scratchDir.lastIndexOf("/.nax/features/");
-  if (posixIdx > 0) return scratchDir.slice(0, posixIdx);
-
-  return undefined;
-}
-
-function toProjectRelativePath(projectDir: string, pathValue: string): string {
-  const relativePath = isAbsolute(pathValue) ? relative(projectDir, pathValue) : pathValue;
-  return relativePath === "" ? "." : relativePath;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SessionManager
@@ -609,101 +563,18 @@ export class SessionManager implements ISessionManager {
     runner: SessionRunClient,
     request: SessionManagedRunRequest,
   ): Promise<AgentResult> {
-    const pre = this._sessions.get(id);
-    if (!pre) {
-      throw new NaxError(`Session "${id}" not found in registry`, "SESSION_NOT_FOUND", {
-        stage: "session",
-        sessionId: id,
-      });
-    }
-
-    if (pre.state === "CREATED") {
-      this.transition(id, "RUNNING");
-    }
-
-    const callerCallback = request.runOptions.onSessionEstablished;
-    const injectedRequest: SessionManagedRunRequest = {
-      ...request,
-      runOptions: {
-        ...request.runOptions,
-        onSessionEstablished: (protocolIds, sessionName) => {
-          try {
-            this.bindHandle(id, sessionName, protocolIds);
-          } catch (err) {
-            getLogger().warn("session", "bindHandle via onSessionEstablished failed", {
-              storyId: this._sessions.get(id)?.storyId,
-              sessionId: id,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-          callerCallback?.(protocolIds, sessionName);
-        },
+    return runTrackedSession(
+      {
+        sessions: this._sessions,
+        transition: (sid, to, opts) => this.transition(sid, to, opts),
+        bindHandle: (sid, handle, protocolIds) => this.bindHandle(sid, handle, protocolIds),
+        handoff: (sid, agent, reason) => this.handoff(sid, agent, reason),
+        persistDescriptor: (desc) => this._persistDescriptor(desc),
       },
-    };
-
-    const config = request.runOptions.config;
-    const maxRetriable = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
-    const maxNonRetriable = config?.execution?.sessionErrorMaxRetries ?? 1;
-    let sessionRetries = 0;
-
-    let result: AgentResult;
-    while (true) {
-      try {
-        result = await runner.run(injectedRequest);
-      } catch (err) {
-        if (this._sessions.get(id)?.state === "RUNNING") {
-          this.transition(id, "FAILED");
-        }
-        throw err;
-      }
-
-      if (result.adapterFailure?.outcome === "fail-adapter-error") {
-        const max = result.adapterFailure.retriable ? maxRetriable : maxNonRetriable;
-        if (sessionRetries < max && !request.signal?.aborted) {
-          sessionRetries++;
-          getLogger().warn("session", "Session transport error — retrying with fresh session", {
-            sessionId: id,
-            storyId: this._sessions.get(id)?.storyId,
-            retriable: result.adapterFailure.retriable,
-            attempt: sessionRetries,
-            maxAttempts: max,
-          });
-          continue;
-        }
-      }
-      break;
-    }
-
-    if (result.protocolIds) {
-      const current = this._sessions.get(id);
-      const handle = current?.handle;
-      if (handle) {
-        this.bindHandle(id, handle, result.protocolIds);
-      } else if (current) {
-        const updated: SessionDescriptor = {
-          ...current,
-          protocolIds: result.protocolIds,
-          lastActivityAt: _sessionManagerDeps.now(),
-        };
-        this._sessions.set(id, updated);
-        this._persistDescriptor(updated);
-      }
-    }
-
-    const finalAgent = result.agentFallbacks?.at(-1)?.newAgent;
-    if (finalAgent) {
-      const current = this._sessions.get(id);
-      if (current && finalAgent !== current.agent) {
-        this.handoff(id, finalAgent, "post-run-reconcile");
-      }
-    }
-
-    const current = this._sessions.get(id);
-    if (current?.state === "RUNNING") {
-      this.transition(id, result.success ? "COMPLETED" : "FAILED");
-    }
-
-    return result;
+      id,
+      runner,
+      request,
+    );
   }
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {
