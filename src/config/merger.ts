@@ -101,17 +101,14 @@ export function deepMergeConfig<T = NaxConfig>(base: Record<string, unknown>, ov
       const baseContent = typeof baseConst.content === "string" ? baseConst.content : "";
       const overrideContent = typeof overrideConst.content === "string" ? overrideConst.content : "";
 
-      // Merge constitution object, but concatenate content field
-      const mergedConstitution = deepMergeConfig(baseConst, overrideConst);
+      // Compute desired content before merging so we never mutate deepMergeConfig's return value
+      const desiredContent =
+        baseContent && overrideContent ? `${baseContent}\n\n${overrideContent}` : overrideContent || baseContent;
 
-      // Concatenate content if both exist
-      if (baseContent && overrideContent) {
-        (mergedConstitution as unknown as Record<string, unknown>).content = `${baseContent}\n\n${overrideContent}`;
-      } else if (overrideContent) {
-        (mergedConstitution as unknown as Record<string, unknown>).content = overrideContent;
-      } else if (baseContent) {
-        (mergedConstitution as unknown as Record<string, unknown>).content = baseContent;
-      }
+      const mergedConstitution = {
+        ...deepMergeConfig(baseConst, overrideConst),
+        ...(desiredContent ? { content: desiredContent } : {}),
+      };
 
       result[key] = mergedConstitution;
       continue;

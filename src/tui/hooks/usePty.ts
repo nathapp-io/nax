@@ -106,8 +106,9 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
 
     setState((prev) => ({ ...prev, isRunning: true }));
 
-    // Stream stdout line-by-line into state buffer
-    (async () => {
+    // Stream stdout line-by-line into state buffer.
+    // void is explicit: proc.kill() closes stdout, which terminates the for-await loop.
+    void (async () => {
       let currentLine = "";
       for await (const chunk of proc.stdout) {
         const data = Buffer.from(chunk).toString();
@@ -129,7 +130,7 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
           });
         }
       }
-    })();
+    })().catch(() => {});
 
     // Handle exit
     proc.exited
