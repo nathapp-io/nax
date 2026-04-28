@@ -127,6 +127,60 @@ describe("PromptAuditor", () => {
     });
   });
 
+  describe("deriveTxtFilename fallback (no sessionName)", () => {
+    test("uses <ts>-<callType>-<stage>-<storyId>.txt when all fields present", async () => {
+      await withTempDir(async (dir) => {
+        const paths: string[] = [];
+        const origWrite = _promptAuditorDeps.write;
+        const origAppend = _promptAuditorDeps.appendLine;
+        _promptAuditorDeps.write = async (p: string) => { paths.push(p); return 0; };
+        _promptAuditorDeps.appendLine = async () => {};
+        const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+        aud.record(makeEntry({ ts: 1777301912062, callType: "complete", stage: "acceptance", storyId: "US-001" }));
+        await aud.flush();
+        expect(paths).toHaveLength(1);
+        expect(paths[0]).toEndWith("1777301912062-complete-acceptance-US-001.txt");
+        _promptAuditorDeps.write = origWrite;
+        _promptAuditorDeps.appendLine = origAppend;
+      });
+    });
+
+    test("omits storyId segment when storyId absent", async () => {
+      await withTempDir(async (dir) => {
+        const paths: string[] = [];
+        const origWrite = _promptAuditorDeps.write;
+        const origAppend = _promptAuditorDeps.appendLine;
+        _promptAuditorDeps.write = async (p: string) => { paths.push(p); return 0; };
+        _promptAuditorDeps.appendLine = async () => {};
+        const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+        aud.record(makeEntry({ ts: 1777301880073, callType: "complete", stage: "acceptance" }));
+        await aud.flush();
+        expect(paths).toHaveLength(1);
+        expect(paths[0]).toEndWith("1777301880073-complete-acceptance.txt");
+        _promptAuditorDeps.write = origWrite;
+        _promptAuditorDeps.appendLine = origAppend;
+      });
+    });
+
+    test("writes txt even when response is empty (e.g. crashed regen)", async () => {
+      await withTempDir(async (dir) => {
+        const writes: Array<[string, string]> = [];
+        const origWrite = _promptAuditorDeps.write;
+        const origAppend = _promptAuditorDeps.appendLine;
+        _promptAuditorDeps.write = async (p: string, d: string) => { writes.push([p, String(d)]); return 0; };
+        _promptAuditorDeps.appendLine = async () => {};
+        const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+        aud.record(makeEntry({ ts: 1777302229409, callType: "complete", stage: "acceptance", prompt: "Generate tests", response: "" }));
+        await aud.flush();
+        expect(writes).toHaveLength(1);
+        expect(writes[0][0]).toEndWith("1777302229409-complete-acceptance.txt");
+        expect(writes[0][1]).toContain("Generate tests");
+        _promptAuditorDeps.write = origWrite;
+        _promptAuditorDeps.appendLine = origAppend;
+      });
+    });
+  });
+
   test("recordError() entries appear in JSONL but produce no txt file", async () => {
     await withTempDir(async (dir) => {
       const appends: string[] = [];
