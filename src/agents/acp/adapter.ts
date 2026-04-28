@@ -829,9 +829,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const impl = handle as AcpSessionHandleImpl;
     const { _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
-    // biome-ignore lint/style/useConst: mutated in NO_SESSION recovery block
     let session = impl._session;
-    // biome-ignore lint/style/useConst: mutated in NO_SESSION recovery block
     let sessionRecreated = false;
     const { interactionHandler, signal } = opts;
     const MAX_TURNS = opts.maxTurns ?? 10;
