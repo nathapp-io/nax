@@ -48,8 +48,9 @@ function safeRealpathForComparison(p: string): string {
  */
 export function isRelativeAndSafe(filePath: string): boolean {
   if (!filePath) return false;
-  if (isAbsolute(filePath)) return false;
-  if (filePath.includes("..")) return false;
+  const normalized = normalize(filePath);
+  if (isAbsolute(normalized)) return false;
+  if (normalized.includes("..")) return false;
   return true;
 }
 
