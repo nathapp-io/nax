@@ -20,19 +20,16 @@ import type { TestFailure } from "../../verification/types";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { FailureRecord, ReviewFinding } from "../core";
 import { buildConventionsSection, buildIsolationSection, buildStorySection } from "../sections";
+import {
+  CONTRADICTION_ESCAPE_HATCH,
+  adversarialRectification,
+  combinedLlmRectification,
+  formatCheckErrors,
+  mechanicalRectification,
+  semanticRectification,
+} from "./rectifier-builder-helpers";
 
-/**
- * Reviewer contradiction escape hatch (REVIEW-003).
- *
- * Appended to all rectification prompts so the implementer can signal
- * when two findings cannot both be satisfied. The autofix stage detects
- * "UNRESOLVED: <explanation>" in the agent output and escalates instead
- * of retrying — avoiding an infinite loop on an unresolvable conflict.
- */
-export const CONTRADICTION_ESCAPE_HATCH = `
-If two findings in this list contradict each other and you cannot satisfy both, do not guess.
-Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>`;
+export { CONTRADICTION_ESCAPE_HATCH } from "./rectifier-builder-helpers";
 
 export type { FailureRecord, ReviewFinding };
 
@@ -340,29 +337,29 @@ ${testCommands}
 
     if (llmChecks.length > 0 && mechanicalChecks.length === 0) {
       if (adversarialChecks.length === 0) {
-        return RectifierPromptBuilder.semanticRectification(semanticChecks, story, scopeConstraint);
+        return semanticRectification(semanticChecks, story, scopeConstraint);
       }
       if (semanticChecks.length === 0) {
-        return RectifierPromptBuilder.adversarialRectification(adversarialChecks, story, scopeConstraint);
+        return adversarialRectification(adversarialChecks, story, scopeConstraint);
       }
       // Both semantic and adversarial failed — combined LLM reviewer prompt.
-      return RectifierPromptBuilder.combinedLlmRectification(semanticChecks, adversarialChecks, story, scopeConstraint);
+      return combinedLlmRectification(semanticChecks, adversarialChecks, story, scopeConstraint);
     }
 
     if (mechanicalChecks.length > 0 && llmChecks.length === 0) {
-      return RectifierPromptBuilder.mechanicalRectification(mechanicalChecks, story, scopeConstraint);
+      return mechanicalRectification(mechanicalChecks, story, scopeConstraint);
     }
 
     // Mixed: mechanical + one or more LLM reviewer checks.
-    const mechanicalSection = RectifierPromptBuilder.formatCheckErrors(mechanicalChecks);
+    const mechanicalSection = formatCheckErrors(mechanicalChecks);
     const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
     const llmSection =
       semanticChecks.length > 0 && adversarialChecks.length > 0
-        ? `## Semantic Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(semanticChecks)}\n\n## Adversarial Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(adversarialChecks)}`
+        ? `## Semantic Review Findings\n\n${formatCheckErrors(semanticChecks)}\n\n## Adversarial Review Findings\n\n${formatCheckErrors(adversarialChecks)}`
         : semanticChecks.length > 0
-          ? `## Semantic Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(semanticChecks)}`
-          : `## Adversarial Review Findings\n\n${RectifierPromptBuilder.formatCheckErrors(adversarialChecks)}`;
+          ? `## Semantic Review Findings\n\n${formatCheckErrors(semanticChecks)}`
+          : `## Adversarial Review Findings\n\n${formatCheckErrors(adversarialChecks)}`;
 
     return `You are fixing issues from a code review.
 
@@ -406,7 +403,7 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
       ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
       : "";
 
-    const errors = RectifierPromptBuilder.formatCheckErrors(failedChecks);
+    const errors = formatCheckErrors(failedChecks);
 
     let reasoningSection = "";
     if (opts.findingReasoning.size > 0) {
@@ -437,115 +434,6 @@ ${errors}${reasoningSection}${historySection}
 
 Do NOT change test files or test behavior.
 Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
-  }
-
-  private static formatCheckErrors(checks: ReviewCheckResult[]): string {
-    return checks
-      .map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``)
-      .join("\n\n");
-  }
-
-  private static semanticRectification(checks: ReviewCheckResult[], story: UserStory, scopeConstraint: string): string {
-    const errors = RectifierPromptBuilder.formatCheckErrors(checks);
-    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
-
-    return `You are fixing acceptance criteria compliance issues found during semantic review.
-
-Story: ${story.title} (${story.id})
-
-### Acceptance Criteria
-${acList}
-
-### Semantic Review Findings
-${errors}
-
-**Important:** The semantic reviewer only analyzed the git diff and may have flagged false positives (e.g., claiming a key or function is "missing" when it already exists in the codebase). Before making any changes:
-1. Read the relevant files to verify each finding is a real issue
-2. Only fix findings that are actually valid problems
-3. Do NOT add keys, functions, or imports that already exist — check first
-
-Do NOT change test files or test behavior.
-Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
-  }
-
-  private static adversarialRectification(
-    checks: ReviewCheckResult[],
-    story: UserStory,
-    scopeConstraint: string,
-  ): string {
-    const errors = RectifierPromptBuilder.formatCheckErrors(checks);
-    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
-
-    return `You are fixing issues found during an adversarial code review.
-
-Story: ${story.title} (${story.id})
-
-### Acceptance Criteria
-${acList}
-
-### Adversarial Review Findings
-${errors}
-
-**Important:** The adversarial reviewer probes for breakage, missing error paths, and edge cases. Before making any changes:
-1. Read the relevant files to verify each finding is a real issue
-2. Only fix findings that are actually valid problems
-3. Do NOT add keys, functions, or imports that already exist — check first
-
-Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
-  }
-
-  private static combinedLlmRectification(
-    semanticChecks: ReviewCheckResult[],
-    adversarialChecks: ReviewCheckResult[],
-    story: UserStory,
-    scopeConstraint: string,
-  ): string {
-    const semanticErrors = RectifierPromptBuilder.formatCheckErrors(semanticChecks);
-    const adversarialErrors = RectifierPromptBuilder.formatCheckErrors(adversarialChecks);
-    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
-
-    return `You are fixing issues found during LLM code review.
-
-Story: ${story.title} (${story.id})
-
-### Acceptance Criteria
-${acList}
-
-### Semantic Review Findings
-${semanticErrors}
-
-### Adversarial Review Findings
-${adversarialErrors}
-
-**Important:** LLM reviewers may flag false positives. Before making any changes:
-1. Read the relevant files to verify each finding is a real issue
-2. Only fix findings that are actually valid problems
-3. Do NOT add keys, functions, or imports that already exist — check first
-
-Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
-  }
-
-  private static mechanicalRectification(
-    checks: ReviewCheckResult[],
-    story: UserStory,
-    scopeConstraint: string,
-  ): string {
-    const errors = RectifierPromptBuilder.formatCheckErrors(checks);
-
-    return `You are fixing lint/typecheck errors from a code review.
-
-Story: ${story.title} (${story.id})
-
-The following quality checks failed after implementation:
-
-${errors}
-
-Fix ALL errors listed above. Do NOT change test files or test behavior.
-Do NOT add new features — only fix the quality check errors.
 Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
 

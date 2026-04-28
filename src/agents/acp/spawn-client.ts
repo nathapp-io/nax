@@ -15,7 +15,7 @@
 import { getSafeLogger } from "../../logger";
 import { typedSpawn } from "../../utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
-import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter";
+import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 import { type AcpxParseState, createParseState, finalizeParseState, parseAcpxJsonLine } from "./parser";
 
 // ─────────────────────────────────────────────────────────────────────────────
