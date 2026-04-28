@@ -112,6 +112,12 @@ export interface ThreeSessionTddOptions {
   projectDir?: string;
   /** Shutdown abort signal (Issue 5) — forwarded to each agent.run call */
   abortSignal?: AbortSignal;
+  /**
+   * Audit-wired AgentManager from the pipeline context. When provided, the rectification
+   * gate and TDD session runner use it instead of wrapAdapterAsManager(agent) so all
+   * agent calls flow through the middleware chain (audit, cost, cancellation).
+   */
+  agentManager?: import("../agents/manager-types").IAgentManager;
 }
 
 /**

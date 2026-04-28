@@ -37,6 +37,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite = false,
     _recursionDepth = 0,
     projectDir,
+    agentManager,
   } = options;
   const logger = getLogger();
 
@@ -260,7 +261,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     story,
     config,
     workdir,
-    wrapAdapterAsManager(agent),
+    agentManager ?? wrapAdapterAsManager(agent),
     implementerTier,
     lite,
     logger,
