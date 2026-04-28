@@ -92,6 +92,22 @@ test("AC-1: something", async () => {
     const content = `expect(false).toBe(false);`;
     expect(isStubTestFile(content)).toBe(false);
   });
+
+  test("returns false when real assertions coexist with sentinel expect(true).toBe(true)", () => {
+    const content = [
+      'test("AC-1: check content", () => {',
+      "  const fileContent = Bun.file(sourcePath).text();",
+      '  expect(fileContent).toContain("const name");',
+      '  expect(fileContent).not.toContain("let name");',
+      "});",
+      'test("AC-3: runs without error", () => {',
+      '  Bun.spawnSync(["bun", "run", "typecheck"]);',
+      "  // If we get here, exit code was 0",
+      "  expect(true).toBe(true);",
+      "});",
+    ].join("\n");
+    expect(isStubTestFile(content)).toBe(false);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

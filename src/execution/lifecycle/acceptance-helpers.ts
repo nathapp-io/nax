@@ -16,8 +16,11 @@ import type { AcceptanceLoopResult } from "./acceptance-loop";
 // ─── Stub detection ─────────────────────────────────────────────────────────
 
 export function isStubTestFile(content: string): boolean {
-  // Detect skeleton stubs: expect(true).toBe(false) or expect(true).toBe(true) in test bodies
-  return /expect\s*\(\s*true\s*\)\s*\.\s*toBe\s*\(\s*(?:false|true)\s*\)/.test(content);
+  // Must have a placeholder assertion to be a candidate stub
+  if (!/expect\s*\(\s*true\s*\)\s*\.\s*toBe\s*\(\s*(?:false|true)\s*\)/.test(content)) return false;
+  // Not a stub if real (non-boolean) assertions exist — e.g. expect(result).toBe(3).
+  // [^\s)] anchors to a real non-whitespace arg; \b prevents matching truthy/falsy-prefixed names.
+  return !/expect\s*\(\s*(?!(?:true|false)\b)[^\s)]/.test(content);
 }
 
 // ─── Test-level failure detection ───────────────────────────────────────────
