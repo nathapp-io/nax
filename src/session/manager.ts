@@ -507,6 +507,15 @@ export class SessionManager implements ISessionManager {
       );
     }
 
+    const terminalDesc = this._findByName(handle.id);
+    if (terminalDesc && (terminalDesc.state === "COMPLETED" || terminalDesc.state === "FAILED")) {
+      throw new NaxError(
+        `Session "${handle.id}" is in terminal state ${terminalDesc.state} — call openSession first to resume`,
+        "SESSION_TERMINAL_STATE",
+        { stage: "session", sessionName: handle.id, state: terminalDesc.state },
+      );
+    }
+
     const adapter = this._getAdapter(handle.agentName);
     if (!adapter) {
       throw new NaxError(
