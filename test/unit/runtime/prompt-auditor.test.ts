@@ -133,7 +133,7 @@ describe("PromptAuditor", () => {
       const paths: string[] = [];
       const origAppend = _promptAuditorDeps.appendLine;
       const origWrite = _promptAuditorDeps.write;
-      _promptAuditorDeps.appendLine = async (p: string, d: string) => { appends.push(d); };
+      _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appends.push(d); };
       _promptAuditorDeps.write = async (p: string) => { paths.push(p); return 0; };
       const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
       aud.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", errorCode: "TIMEOUT", durationMs: 50 });

@@ -114,15 +114,9 @@ export class PromptAuditor implements IPromptAuditor {
   private readonly _jsonlPath: string;
   private readonly _featureDir: string;
 
-  constructor(
-    private readonly _runId: string,
-    /** Base audit directory (e.g. <workdir>/.nax/prompt-audit). */
-    private readonly _flushDir: string,
-    /** Feature name — used as a subdirectory so each feature has its own folder. */
-    private readonly _featureName: string,
-  ) {
-    this._featureDir = join(_flushDir, _featureName);
-    this._jsonlPath = join(this._featureDir, `${_runId}.jsonl`);
+  constructor(runId: string, flushDir: string, featureName: string) {
+    this._featureDir = join(flushDir, featureName);
+    this._jsonlPath = join(this._featureDir, `${runId}.jsonl`);
   }
 
   record(entry: PromptAuditEntry): void {
