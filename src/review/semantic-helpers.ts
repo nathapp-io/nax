@@ -5,6 +5,7 @@
 
 import type { ReviewFinding } from "../plugins/types";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { SEVERITY_RANK } from "./severity";
 import type { SemanticReviewConfig } from "./types";
 
 export interface LLMFinding {
@@ -56,15 +57,6 @@ export function normalizeSeverity(sev: string): ReviewFinding["severity"] {
   if (sev === "critical" || sev === "error" || sev === "warning" || sev === "info" || sev === "low") return sev;
   return "info";
 }
-
-export const SEVERITY_RANK: Record<string, number> = {
-  info: 0,
-  unverifiable: 0,
-  low: 1,
-  warning: 1,
-  error: 2,
-  critical: 3,
-};
 
 export const UNVERIFIED_FINDING_PATTERNS = [
   "cannot verify",

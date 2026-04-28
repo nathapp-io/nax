@@ -7,6 +7,7 @@
 
 import type { ReviewFinding } from "../plugins/types";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { SEVERITY_RANK } from "./severity";
 
 export interface AdversarialLLMFinding {
   severity: string;
@@ -59,19 +60,6 @@ export function normalizeSeverity(sev: string): ReviewFinding["severity"] {
   if (sev === "critical" || sev === "error" || sev === "warning" || sev === "info" || sev === "low") return sev;
   return "info";
 }
-
-/**
- * Severity rank for threshold comparison.
- * "unverifiable" is treated as info (non-blocking by default).
- */
-export const SEVERITY_RANK: Record<string, number> = {
-  info: 0,
-  unverifiable: 0,
-  low: 1,
-  warning: 1,
-  error: 2,
-  critical: 3,
-};
 
 /**
  * Check whether a normalized finding severity meets or exceeds the blocking threshold.

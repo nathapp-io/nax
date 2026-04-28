@@ -16,6 +16,7 @@ import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler"
 import type { ProtocolIds } from "../runtime/protocol-types";
 import { _sessionManagerDeps, resolveProjectDirFromScratchDir } from "./manager-deps";
 import { runTrackedSession } from "./manager-run";
+import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { formatSessionName } from "./naming";
 import type {
   CreateSessionOptions,
@@ -38,9 +39,6 @@ export { _sessionManagerDeps } from "./manager-deps";
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Default TTL for orphan sweep: 4 hours */
-const DEFAULT_ORPHAN_TTL_MS = 4 * 60 * 60 * 1000;
 
 /** Null protocol IDs used when no adapter has reported back yet */
 const NULL_PROTOCOL_IDS: ProtocolIds = { recordId: null, sessionId: null };
@@ -578,22 +576,6 @@ export class SessionManager implements ISessionManager {
   }
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {
-    const cutoff = _sessionManagerDeps.nowMs() - ttlMs;
-    const terminal: SessionState[] = ["COMPLETED", "FAILED"];
-    let removed = 0;
-
-    for (const [id, session] of this._sessions.entries()) {
-      if (!terminal.includes(session.state)) continue;
-      if (new Date(session.lastActivityAt).getTime() < cutoff) {
-        this._sessions.delete(id);
-        removed++;
-      }
-    }
-
-    if (removed > 0) {
-      getLogger().debug("session", "Swept orphan sessions", { removed });
-    }
-
-    return removed;
+    return sweepOrphansImpl(this._sessions, ttlMs);
   }
 }
