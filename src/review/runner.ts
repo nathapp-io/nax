@@ -233,7 +233,7 @@ export async function runReview(
   const checks: ReviewCheckResult[] = [];
   let firstFailure: string | undefined;
 
-  // BUG-074: Auto-commit any dirty files the agent left (e.g. bun.lock / package.json
+  // @design: BUG-074: Auto-commit any dirty files the agent left (e.g. bun.lock / package.json
   // after `bun add`) before the uncommitted-changes check. Mirrors BUG-058/063.
   await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review");
 

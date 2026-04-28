@@ -250,7 +250,7 @@ export const executionStage: PipelineStage = {
       }));
     }
 
-    // BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
+    // @design: BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
     await autoCommitIfDirty(ctx.workdir, "execution", "single-session", ctx.story.id);
 
     // merge-conflict trigger: detect CONFLICT markers in agent output

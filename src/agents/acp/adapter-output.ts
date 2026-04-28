@@ -25,7 +25,7 @@ export function extractQuestion(output: string): string | null {
   const text = output.trim();
   if (!text) return null;
 
-  // BUG-097: Only check the last non-empty line for question marks.
+  // @design: BUG-097: Only check the last non-empty line for question marks.
   // Scanning all sentences caused false positives on code snippets mid-output
   // containing ?. (optional chaining), ?? (nullish coalescing), or ternary ?.
   const lines = text.split("\n").filter((l) => l.trim().length > 0);

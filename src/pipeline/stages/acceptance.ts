@@ -155,7 +155,7 @@ export const acceptanceStage: PipelineStage = {
         continue;
       }
 
-      // BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
+      // @design: BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
       // Resolution order: per-package commandOverride → per-package testFramework → bun test fallback.
       // In monorepo mode, testFramework and commandOverride come from the per-package config
       // resolved by acceptance-setup. In fallback (single-package) mode they fall back to ctx.config.

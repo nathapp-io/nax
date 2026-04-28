@@ -299,7 +299,7 @@ export async function getChangedNonTestFiles(
   try {
     // FEAT-010: Use per-attempt baseRef for precise diff; fall back to HEAD~1 if not provided
     const ref = baseRef ?? "HEAD~1";
-    // BUG-039: Use gitWithTimeout to prevent orphan processes on hang
+    // @design: BUG-039: Use gitWithTimeout to prevent orphan processes on hang
     const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", ref], workdir);
     if (exitCode !== 0) return [];
 

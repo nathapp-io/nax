@@ -41,8 +41,8 @@ export async function loadPRD(path: string): Promise<PRD> {
 
   const prd: PRD = await Bun.file(path).json();
 
-  // BUG-21: Normalize story fields to prevent null/undefined arithmetic issues
-  // BUG-004: Auto-default optional PRD fields in-memory (tags, status, acceptanceCriteria, storyPoints)
+  // @design: BUG-21: Normalize story fields to prevent null/undefined arithmetic issues
+  // @design: BUG-004: Auto-default optional PRD fields in-memory (tags, status, acceptanceCriteria, storyPoints)
   for (const story of prd.userStories) {
     story.attempts = story.attempts ?? 0;
     story.priorErrors = story.priorErrors ?? [];

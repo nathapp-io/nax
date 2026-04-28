@@ -125,7 +125,7 @@ export function determineTestStrategy(
   if (tddStrategy === "off") return "test-after";
 
   // auto mode: apply heuristics
-  // BUG-031: exclude description — only use stable, immutable story fields
+  // @design: BUG-031: exclude description — only use stable, immutable story fields
   const text = [title, ...(tags ?? [])].join(" ").toLowerCase();
 
   const isSecurityCritical = SECURITY_KEYWORDS.some((kw) => text.includes(kw));

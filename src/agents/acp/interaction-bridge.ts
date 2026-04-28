@@ -35,7 +35,7 @@ type BridgeEventHandler = (event: unknown) => void;
 const QUESTION_PATTERNS = [/\?\s*$/, /\bwhich\b/i, /\bshould i\b/i, /\bunclear\b/i, /\bplease clarify\b/i];
 
 function containsQuestionPattern(content: string): boolean {
-  // BUG-097: Only check the last non-empty line to avoid false positives
+  // @design: BUG-097: Only check the last non-empty line to avoid false positives
   // from code snippets containing ?. / ?? / ternary ? in the body.
   const lines = content.split("\n").filter((l) => l.trim().length > 0);
   const lastLine = lines.at(-1)?.trim() ?? "";

@@ -69,7 +69,7 @@ export async function runAdversarialReview(
   const startTime = Date.now();
   const logger = getSafeLogger();
 
-  // BUG-114: Resolve effective git ref via shared fallback chain (diff-utils.ts).
+  // @design: BUG-114: Resolve effective git ref via shared fallback chain (diff-utils.ts).
   const effectiveRef = await resolveEffectiveRef(workdir, storyGitRef, story.id);
 
   if (!effectiveRef) {

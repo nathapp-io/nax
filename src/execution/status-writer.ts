@@ -66,7 +66,7 @@ export class StatusWriter {
   private _runStatus: RunStateSnapshot["runStatus"] = "running";
   private _prd: PRD | null = null;
   private _currentStory: RunStateSnapshot["currentStory"] = null;
-  private _consecutiveWriteFailures = 0; // BUG-2: Track consecutive write failures
+  private _consecutiveWriteFailures = 0; // @design: BUG-2: Track consecutive write failures
   private _postRun: PostRunStatus | null = null;
 
   /**

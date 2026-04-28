@@ -96,7 +96,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   const agentResult = ctx.agentResult;
 
   // Calculate attempts (initial + escalations)
-  // BUG-067: priorFailures captures cross-tier attempts that story.escalations never records
+  // @design: BUG-067: priorFailures captures cross-tier attempts that story.escalations never records
   const escalationCount = story.escalations?.length || 0;
   const priorFailureCount = story.priorFailures?.length || 0;
   const attempts = priorFailureCount + Math.max(1, story.attempts || 1);

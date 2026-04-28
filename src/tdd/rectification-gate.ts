@@ -200,7 +200,7 @@ export async function runFullSuiteGate(
       );
     }
 
-    // BUG-059: Non-zero exit with 0 parsed failures could mean:
+    // @design: BUG-059: Non-zero exit with 0 parsed failures could mean:
     // (a) Environmental noise (linter warning) — safe to pass
     // (b) Bun crashed/OOM mid-run — truncated output, parser found nothing
     // Distinguish by checking if any tests were actually detected in the output.

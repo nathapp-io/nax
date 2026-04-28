@@ -130,7 +130,7 @@ export async function runExecutionPhase(
   // PERF-1: Precompute batch plan once from ready stories
   const readyStories = getAllReadyStories(prd);
 
-  // BUG-068: debug log to diagnose unexpected storyCount in batch routing
+  // @design: BUG-068: debug log to diagnose unexpected storyCount in batch routing
   logger?.debug("routing", "Ready stories for batch routing", {
     readyCount: readyStories.length,
     readyIds: readyStories.map((s) => s.id),

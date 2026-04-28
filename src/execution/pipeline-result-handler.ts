@@ -123,7 +123,7 @@ export async function handlePipelineSuccess(
       storyDurationMs: ctx.storyStartTime ? now - ctx.storyStartTime : undefined,
     });
 
-    // BUG-074: story:completed event is already emitted by completion stage
+    // @design: BUG-074: story:completed event is already emitted by completion stage
     // (src/pipeline/stages/completion.ts). Do NOT emit again here — it causes
     // duplicate hook messages (on-story-complete fires twice per story).
   }

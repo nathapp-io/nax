@@ -279,7 +279,7 @@ export async function runTddSession(
     }
   }
 
-  // BUG-21 Fix: Clean up orphaned child processes if agent failed
+  // @design: BUG-21 Fix: Clean up orphaned child processes if agent failed
   if (!result.success && result.pid) {
     await _sessionRunnerDeps.cleanupProcessTree(result.pid);
   }
@@ -301,7 +301,7 @@ export async function runTddSession(
     });
   }
 
-  // BUG-058: Auto-commit if agent left uncommitted changes
+  // @design: BUG-058: Auto-commit if agent left uncommitted changes
   await _sessionRunnerDeps.autoCommitIfDirty(workdir, "tdd", role, story.id);
 
   // Check isolation based on role and skipIsolation flag.

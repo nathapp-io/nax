@@ -40,7 +40,7 @@ export function validateRoutingDecision(
     throw new Error(`Invalid modelTier: ${modelTier} (not found in any agent's tier map)`);
   }
 
-  // BUG-045: Derive testStrategy from determineTestStrategy() — single source of truth.
+  // @design: BUG-045: Derive testStrategy from determineTestStrategy() — single source of truth.
   const tddStrategy: TddStrategy = config.tdd?.strategy ?? "auto";
   const testStrategy = determineTestStrategy(
     parsed.complexity as Complexity,

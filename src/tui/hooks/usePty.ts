@@ -52,6 +52,14 @@ const MAX_PTY_BUFFER_LINES = 500;
 const MAX_LINE_LENGTH = 10_000;
 
 /**
+ * Interval in ms at which accumulated stdout lines are flushed into React state.
+ *
+ * Batching reduces GC pressure from O(500) spread+slice on every chunk when
+ * the agent produces rapid output. 100ms gives ~10 renders/s — imperceptible lag.
+ */
+const PTY_FLUSH_INTERVAL_MS = 100;
+
+/**
  * Hook for managing PTY lifecycle.
  *
  * Spawns a PTY process, buffers output, and provides a handle for input/resize/kill.
@@ -83,7 +91,7 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
   const [handle, setHandle] = useState<PtyHandle | null>(null);
 
   // Spawn PTY process
-  // BUG-2: Destructure options to prevent infinite respawn loop due to object identity
+  // @design: BUG-2: Destructure options to prevent infinite respawn loop due to object identity
   const command = options?.command;
   const argsJson = JSON.stringify(options?.args);
   const cwd = options?.cwd;
@@ -106,7 +114,30 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
 
     setState((prev) => ({ ...prev, isRunning: true }));
 
-    // Stream stdout line-by-line into state buffer.
+    // Accumulate stdout lines here; the flush loop drains them into React state in batches.
+    const pendingLines: string[] = [];
+
+    // Self-scheduling flush loop — batches state updates to avoid O(500) spread+slice per chunk.
+    // @design: setTimeout (not setInterval) so the handle can be cancelled mid-flight via clearTimeout.
+    let cancelled = false;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleFlush = () => {
+      flushTimer = setTimeout(() => {
+        if (cancelled) return;
+        if (pendingLines.length > 0) {
+          const batch = pendingLines.splice(0);
+          setState((prev) => {
+            const newLines = [...prev.outputLines, ...batch];
+            const trimmed = newLines.length > MAX_PTY_BUFFER_LINES ? newLines.slice(-MAX_PTY_BUFFER_LINES) : newLines;
+            return { ...prev, outputLines: trimmed };
+          });
+        }
+        scheduleFlush();
+      }, PTY_FLUSH_INTERVAL_MS);
+    };
+    scheduleFlush();
+
+    // Stream stdout line-by-line into pendingLines; the flush loop drains to state.
     // void is explicit: proc.kill() closes stdout, which terminates the for-await loop.
     void (async () => {
       let currentLine = "";
@@ -120,14 +151,9 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
         }
 
         if (lines.length > 0) {
-          const truncatedLines = lines.map((line) =>
-            line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}…` : line,
+          pendingLines.push(
+            ...lines.map((line) => (line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}…` : line)),
           );
-          setState((prev) => {
-            const newLines = [...prev.outputLines, ...truncatedLines];
-            const trimmed = newLines.length > MAX_PTY_BUFFER_LINES ? newLines.slice(-MAX_PTY_BUFFER_LINES) : newLines;
-            return { ...prev, outputLines: trimmed };
-          });
         }
       }
     })().catch(() => {});
@@ -138,7 +164,7 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
         setState((prev) => ({ ...prev, isRunning: false, exitCode: code ?? undefined }));
       })
       .catch(() => {
-        // BUG-22: Guard against setState throws (e.g. on unmount)
+        // @design: BUG-22: Guard against setState throws (e.g. on unmount)
         setState((prev) => ({ ...prev, isRunning: false }));
       });
 
@@ -158,8 +184,10 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
 
     setHandle(ptyHandle);
 
-    // Cleanup on unmount
+    // Cleanup on unmount — cancel flush loop then kill process
     return () => {
+      cancelled = true;
+      if (flushTimer !== null) clearTimeout(flushTimer);
       proc.kill();
     };
   }, [command, argsJson, cwd, envJson]);

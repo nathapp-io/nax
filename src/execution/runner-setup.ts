@@ -81,7 +81,7 @@ export async function runSetupPhase(options: RunnerSetupOptions): Promise<Runner
     formatterMode: options.formatterMode ?? "normal",
     getTotalCost: options.getTotalCost,
     getIterations: options.getIterations,
-    // BUG-017: Pass getters for run.complete event on SIGTERM
+    // @design: BUG-017: Pass getters for run.complete event on SIGTERM
     getStoriesCompleted: options.getStoriesCompleted,
     getTotalStories: options.getTotalStories,
     agentGetFn: options.agentGetFn,
