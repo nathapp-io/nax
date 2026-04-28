@@ -2,6 +2,7 @@ import type { NaxConfig } from "../config";
 // Leaf import to avoid barrel cycle (same as in manager.ts):
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
 import type { MiddlewareChain } from "../runtime/agent-middleware";
+import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { AgentManager } from "./manager";
 import type { SendPromptFn } from "./manager";
 import type { IAgentManager } from "./manager-types";
@@ -12,6 +13,7 @@ export interface CreateAgentManagerOpts {
   runId?: string;
   sendPrompt?: SendPromptFn;
   runHop?: SessionRunHopFn;
+  dispatchEvents?: IDispatchEventBus;
 }
 
 /**

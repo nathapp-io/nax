@@ -1,74 +1,70 @@
-import { NaxError } from "../../errors";
-import type { AgentMiddleware, MiddlewareContext } from "../agent-middleware";
-import type { CostErrorEvent, CostEvent, ICostAggregator } from "../cost-aggregator";
+import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
+import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
 
-function extractTokens(
-  result: unknown,
-): { input: number; output: number; cacheRead?: number; cacheWrite?: number } | null {
-  if (!result || typeof result !== "object") return null;
-  const tu = (result as Record<string, unknown>).tokenUsage as Record<string, number> | undefined;
-  if (!tu) return null;
-  return {
-    input: tu.inputTokens ?? 0,
-    output: tu.outputTokens ?? 0,
-    cacheRead: tu.cacheReadInputTokens,
-    cacheWrite: tu.cacheCreationInputTokens,
-  };
-}
+export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAggregator, runId: string): () => void {
+  const offDispatch = bus.onDispatch((event: DispatchEvent) => {
+    const tu = event.tokenUsage;
+    const exactCostUsd = event.exactCostUsd;
 
-function extractCosts(result: unknown): { estimatedCostUsd: number; exactCostUsd?: number } | null {
-  if (!result || typeof result !== "object") return null;
-  const r = result as Record<string, unknown>;
-  const hasEstimatedCost = "estimatedCostUsd" in r;
-  const hasCost = "costUsd" in r;
-  const estimatedCostUsd = (r.estimatedCostUsd as number | undefined) ?? (r.costUsd as number | undefined) ?? 0;
-  const exactCostUsd = r.exactCostUsd as number | undefined;
-  if (!hasEstimatedCost && !hasCost && exactCostUsd == null) return null;
-  return { estimatedCostUsd, exactCostUsd };
-}
+    if (!tu && exactCostUsd == null) return;
 
-export function costMiddleware(aggregator: ICostAggregator, runId: string): AgentMiddleware {
-  return {
-    name: "cost",
-    async after(ctx: MiddlewareContext, result: unknown, durationMs: number): Promise<void> {
-      if (ctx.kind === "run" && ctx.sessionHandle === undefined && ctx.request?.executeHop) return;
+    const estimatedCostUsd = exactCostUsd ?? 0;
+    const costUsd = exactCostUsd ?? estimatedCostUsd;
+    const confidence: "exact" | "estimated" = exactCostUsd != null ? "exact" : "estimated";
 
-      const tokens = extractTokens(result);
-      const costs = extractCosts(result);
-      if (!tokens && !costs) return;
+    const costEvent: CostEvent = {
+      ts: event.timestamp,
+      runId,
+      agentName: event.agentName,
+      model: "unknown",
+      stage: event.stage,
+      storyId: event.storyId,
+      tokens: tu
+        ? {
+            input: tu.inputTokens ?? 0,
+            output: tu.outputTokens ?? 0,
+            cacheRead: tu.cacheReadInputTokens,
+            cacheWrite: tu.cacheCreationInputTokens,
+          }
+        : { input: 0, output: 0 },
+      estimatedCostUsd,
+      exactCostUsd,
+      costUsd,
+      confidence,
+      durationMs: event.durationMs,
+    };
+    aggregator.record(costEvent);
+  });
 
-      const estimatedCostUsd = costs?.estimatedCostUsd ?? 0;
-      const exactCostUsd = costs?.exactCostUsd;
-      const costUsd = exactCostUsd ?? estimatedCostUsd;
-      const confidence: "exact" | "estimated" = exactCostUsd != null ? "exact" : "estimated";
+  const offError = bus.onDispatchError((event: DispatchErrorEvent) => {
+    const errorEvent: CostErrorEvent = {
+      ts: event.timestamp,
+      runId,
+      agentName: event.agentName,
+      stage: event.stage,
+      storyId: event.storyId,
+      errorCode: event.errorCode,
+      durationMs: event.durationMs,
+    };
+    aggregator.recordError(errorEvent);
+  });
 
-      const event: CostEvent = {
-        ts: Date.now(),
-        runId,
-        agentName: ctx.agentName,
-        model: ((result as Record<string, unknown>).model as string | undefined) ?? "unknown",
-        stage: ctx.stage,
-        storyId: ctx.storyId,
-        tokens: tokens ?? { input: 0, output: 0 },
-        estimatedCostUsd,
-        exactCostUsd,
-        costUsd,
-        confidence,
-        durationMs,
-      };
-      aggregator.record(event);
-    },
-    async onError(ctx: MiddlewareContext, err: unknown, durationMs: number): Promise<void> {
-      const event: CostErrorEvent = {
-        ts: Date.now(),
-        runId,
-        agentName: ctx.agentName,
-        stage: ctx.stage,
-        storyId: ctx.storyId,
-        errorCode: err instanceof NaxError ? err.code : "UNKNOWN",
-        durationMs,
-      };
-      aggregator.recordError(event);
-    },
+  const offCompleted = bus.onOperationCompleted((event: OperationCompletedEvent) => {
+    const summary: OperationSummaryEvent = {
+      runId,
+      operation: event.operation,
+      hopCount: event.hopCount,
+      fallbackTriggered: event.fallbackTriggered,
+      totalCostUsd: event.totalCostUsd,
+      totalElapsedMs: event.totalElapsedMs,
+      finalStatus: event.finalStatus,
+    };
+    aggregator.recordOperationSummary(summary);
+  });
+
+  return () => {
+    offDispatch();
+    offError();
+    offCompleted();
   };
 }

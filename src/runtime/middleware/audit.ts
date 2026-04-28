@@ -1,88 +1,50 @@
-import type { AgentResult } from "../../agents/types";
-import { NaxError } from "../../errors";
-import type { AgentMiddleware, MiddlewareContext } from "../agent-middleware";
+import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus } from "../dispatch-events";
 import type { IPromptAuditor, PromptAuditEntry, PromptAuditErrorEntry } from "../prompt-auditor";
-import { formatSessionName } from "../session-name";
 
-function extractOutput(result: unknown): string {
-  if (!result || typeof result !== "object") return "";
-  return ((result as Record<string, unknown>).output as string | undefined) ?? "";
-}
-
-function sessionNameFromCompleteOptions(ctx: MiddlewareContext): string | undefined {
-  const opts = ctx.completeOptions;
-  if (!opts) return undefined;
-  if (opts.sessionName) return opts.sessionName;
-  if (!opts.workdir || !opts.featureName) return undefined;
-  return formatSessionName({
-    workdir: opts.workdir,
-    featureName: opts.featureName,
-    storyId: opts.storyId,
-    role: opts.sessionRole,
-    pipelineStage: opts.pipelineStage,
+export function attachAuditSubscriber(bus: IDispatchEventBus, auditor: IPromptAuditor, runId: string): () => void {
+  const offDispatch = bus.onDispatch((event: DispatchEvent) => {
+    const entry: PromptAuditEntry = {
+      ts: event.timestamp,
+      runId,
+      agentName: event.agentName,
+      stage: event.stage,
+      storyId: event.storyId,
+      permissionProfile: event.resolvedPermissions.mode,
+      prompt: event.prompt,
+      response: event.response,
+      durationMs: event.durationMs,
+      callType: event.kind === "session-turn" ? "run" : "complete",
+      workdir: event.workdir,
+      projectDir: event.projectDir,
+      featureName: event.featureName,
+      sessionName: event.sessionName,
+      ...(event.kind === "session-turn" && {
+        sessionId: event.protocolIds.sessionId ?? null,
+        turn: event.turn,
+      }),
+    };
+    auditor.record(entry);
   });
-}
 
-export function auditMiddleware(auditor: IPromptAuditor, runId: string): AgentMiddleware {
-  return {
-    name: "audit",
-    async after(ctx: MiddlewareContext, result: unknown, durationMs: number): Promise<void> {
-      if (ctx.kind === "run" && ctx.sessionHandle === undefined && ctx.request?.executeHop) return;
+  const offError = bus.onDispatchError((event: DispatchErrorEvent) => {
+    const entry: PromptAuditErrorEntry = {
+      ts: event.timestamp,
+      runId,
+      agentName: event.agentName,
+      stage: event.stage,
+      storyId: event.storyId,
+      errorCode: event.errorCode,
+      errorMessage: event.errorMessage,
+      durationMs: event.durationMs,
+      callType: event.origin === "completeAs" ? "complete" : "run",
+      permissionProfile: event.resolvedPermissions.mode,
+      prompt: event.prompt,
+    };
+    auditor.recordError(entry);
+  });
 
-      const runOpts = ctx.request?.runOptions;
-      const prompt = ctx.prompt ?? runOpts?.prompt;
-      if (!prompt) return;
-
-      const agentResult = (result ?? {}) as Partial<AgentResult>;
-      const { protocolIds } = agentResult;
-      const sessionName = ctx.sessionHandle?.id ?? sessionNameFromCompleteOptions(ctx);
-      const internalRoundTrips =
-        result && typeof result === "object" && "internalRoundTrips" in result
-          ? (result as { internalRoundTrips: number }).internalRoundTrips
-          : undefined;
-
-      const entry: PromptAuditEntry = {
-        ts: Date.now(),
-        runId,
-        agentName: ctx.agentName,
-        stage: ctx.stage,
-        storyId: ctx.storyId,
-        permissionProfile: ctx.resolvedPermissions.mode,
-        prompt,
-        response: extractOutput(result),
-        durationMs,
-        callType: ctx.kind,
-        workdir: runOpts?.workdir ?? ctx.completeOptions?.workdir,
-        projectDir: runOpts?.projectDir,
-        featureName: runOpts?.featureName ?? ctx.completeOptions?.featureName,
-        ...(sessionName !== undefined && { sessionName }),
-        ...(protocolIds?.recordId !== undefined && { recordId: protocolIds.recordId }),
-        ...(protocolIds?.sessionId !== undefined && { sessionId: protocolIds.sessionId }),
-        ...(internalRoundTrips !== undefined && { turn: internalRoundTrips }),
-      };
-      auditor.record(entry);
-    },
-    async onError(ctx: MiddlewareContext, err: unknown, durationMs: number): Promise<void> {
-      const runOpts = ctx.request?.runOptions;
-      const prompt = ctx.prompt ?? runOpts?.prompt;
-      const errorMessage = err instanceof Error ? err.message : typeof err === "string" ? err : undefined;
-      const entry: PromptAuditErrorEntry = {
-        ts: Date.now(),
-        runId,
-        agentName: ctx.agentName,
-        stage: ctx.stage,
-        storyId: ctx.storyId,
-        errorCode: err instanceof NaxError ? err.code : "UNKNOWN",
-        durationMs,
-        callType: ctx.kind,
-        permissionProfile: ctx.resolvedPermissions.mode,
-        ...(errorMessage !== undefined && { errorMessage }),
-        ...(prompt !== undefined && { prompt }),
-        ...(runOpts?.workdir !== undefined && { workdir: runOpts.workdir }),
-        ...(runOpts?.projectDir !== undefined && { projectDir: runOpts.projectDir }),
-        ...(runOpts?.featureName !== undefined && { featureName: runOpts.featureName }),
-      };
-      auditor.recordError(entry);
-    },
+  return () => {
+    offDispatch();
+    offError();
   };
 }
