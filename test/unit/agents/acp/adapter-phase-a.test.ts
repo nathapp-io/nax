@@ -481,6 +481,62 @@ describe("sendTurn()", () => {
     const drift = Math.abs(result.exactCostUsd! - result.estimatedCostUsd) / result.estimatedCostUsd;
     expect(drift).toBeLessThan(0.5);
   });
+
+  test("re-establishes session and retries once on NO_SESSION (exitCode 4)", async () => {
+    let sessionCreateCount = 0;
+    let promptCallCount = 0;
+
+    const deadPromptFn = async () => {
+      promptCallCount++;
+      return { messages: [{ role: "assistant", content: "NO_SESSION" }], stopReason: "error", exitCode: 4 };
+    };
+    const livePromptFn = async () => {
+      promptCallCount++;
+      return { messages: [{ role: "assistant", content: "Fixed output" }], stopReason: "end_turn" };
+    };
+
+    let isFirstSession = true;
+    const createSessionFn = async (_opts: any) => {
+      sessionCreateCount++;
+      const fn = isFirstSession ? deadPromptFn : livePromptFn;
+      isFirstSession = false;
+      return makeSession({ promptFn: fn });
+    };
+    const loadSessionFn = async (_name: string, _agent: string, _perm: string) => {
+      sessionCreateCount++;
+      const fn = isFirstSession ? deadPromptFn : livePromptFn;
+      isFirstSession = false;
+      return makeSession({ promptFn: fn });
+    };
+
+    const handle = await openHandle(makeSession({ promptFn: deadPromptFn }), { createSessionFn, loadSessionFn });
+
+    const result = await adapter.sendTurn(handle, "do the work", {
+      interactionHandler: { onInteraction: async () => null },
+    });
+
+    expect(result.output).toBe("Fixed output");
+    expect(promptCallCount).toBe(2);
+  });
+
+  test("throws on error when NO_SESSION occurs twice (no infinite retry)", async () => {
+    const alwaysDeadPromptFn = async () => ({
+      messages: [{ role: "assistant", content: "NO_SESSION" }],
+      stopReason: "error",
+      exitCode: 4,
+    });
+
+    const handle = await openHandle(makeSession({ promptFn: alwaysDeadPromptFn }), {
+      createSessionFn: async () => makeSession({ promptFn: alwaysDeadPromptFn }),
+      loadSessionFn: async () => makeSession({ promptFn: alwaysDeadPromptFn }),
+    });
+
+    await expect(
+      adapter.sendTurn(handle, "do the work", {
+        interactionHandler: { onInteraction: async () => null },
+      }),
+    ).rejects.toThrow();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -113,6 +113,22 @@ describe("sendPrompt()", () => {
     });
   });
 
+  test("throws SESSION_TERMINAL_STATE when session is COMPLETED (closed without re-open)", async () => {
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
+      sendTurn: mock(async () => MOCK_TURN),
+      closeSession: mock(async () => {}),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const handle = await sm.openSession("nax-terminal-test", makeOpenRequest());
+    await sm.sendPrompt(handle, "first prompt");
+    await sm.closeSession(handle);
+
+    await expect(sm.sendPrompt(handle, "after close")).rejects.toMatchObject({
+      code: "SESSION_TERMINAL_STATE",
+    });
+  });
+
   test("forwards maxTurns to adapter.sendTurn", async () => {
     let capturedMaxTurns: number | undefined;
     const adapter = makeAgentAdapter({

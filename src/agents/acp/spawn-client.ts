@@ -230,6 +230,7 @@ export class SpawnAcpSession implements AcpSession {
           messages: [{ role: "assistant", content: errorContent }],
           stopReason: "error",
           retryable: parsedOnError.retryable,
+          exitCode,
         };
       }
 

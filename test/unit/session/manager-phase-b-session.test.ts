@@ -229,7 +229,7 @@ describe("closeSession()", () => {
     expect(sm.descriptor(name)?.state).toBe("COMPLETED");
   });
 
-  test("clears busy flag so a post-close sendPrompt does not throw SESSION_BUSY", async () => {
+  test("clears busy flag so a post-close sendPrompt throws SESSION_TERMINAL_STATE, not SESSION_BUSY", async () => {
     let resolveFirst!: () => void;
     let callCount = 0;
     const MOCK_TURN = {
@@ -258,8 +258,10 @@ describe("closeSession()", () => {
     resolveFirst();
     await firstTurn;
 
-    // Busy guard cleared — second sendPrompt must not throw SESSION_BUSY
-    const second = await sm.sendPrompt(handle, "second");
-    expect(second.output).toBe("hello world");
+    // Busy guard cleared (no SESSION_BUSY) — SESSION_TERMINAL_STATE fires instead,
+    // confirming the session is COMPLETED and must be re-opened before reuse.
+    await expect(sm.sendPrompt(handle, "second")).rejects.toMatchObject({
+      code: "SESSION_TERMINAL_STATE",
+    });
   });
 });

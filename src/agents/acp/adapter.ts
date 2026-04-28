@@ -91,6 +91,8 @@ export interface AcpSessionResponse {
   exactCostUsd?: number;
   /** True if acpx signalled the error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). */
   retryable?: boolean;
+  /** acpx exit code — present only on error responses (exitCode !== 0). */
+  exitCode?: number;
 }
 
 export interface AcpSession {
@@ -344,11 +346,20 @@ export class AcpSessionHandleImpl implements SessionHandle {
 
   // ACP-internal fields — opaque to callers above the adapter boundary.
   readonly _client: AcpClient;
-  readonly _session: AcpSession;
+  /**
+   * Mutable. Holds the live acpx session pointer. Re-assigned by `sendTurn` on
+   * NO_SESSION (exit code 4) recovery so a subsequent `closeSession` targets the
+   * recreated server-side session, not the dead one. The handle's identity
+   * (`id`, `_sessionName`) is preserved across recovery — SessionManager's
+   * descriptor sees no lifecycle event. See `sendTurn` NO_SESSION block for the
+   * ADR-019 boundary rationale (transport-level reconnect, not lifecycle).
+   */
+  _session: AcpSession;
   readonly _sessionName: string;
   readonly _resumed: boolean;
   readonly _timeoutSeconds: number;
   readonly _modelDef: ModelDef;
+  readonly _permissionMode: string;
 
   constructor(opts: {
     id: string;
@@ -360,6 +371,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     resumed: boolean;
     timeoutSeconds: number;
     modelDef: ModelDef;
+    permissionMode: string;
   }) {
     this.id = opts.id;
     this.agentName = opts.agentName;
@@ -370,6 +382,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     this._resumed = opts.resumed;
     this._timeoutSeconds = opts.timeoutSeconds;
     this._modelDef = opts.modelDef;
+    this._permissionMode = opts.permissionMode;
   }
 }
 
@@ -810,6 +823,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         resumed: ensured.resumed,
         timeoutSeconds,
         modelDef,
+        permissionMode: resolvedPermissions.mode,
       });
     } catch (error) {
       if (session) {
@@ -822,7 +836,8 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const impl = handle as AcpSessionHandleImpl;
-    const { _session: session, _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
+    const { _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
+    let sessionRecreated = false;
     const { interactionHandler, signal } = opts;
     const MAX_TURNS = opts.maxTurns ?? 10;
 
@@ -847,7 +862,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       turnCount++;
       getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
-      const turnResult = await runSessionPrompt(session, currentPrompt, timeoutSeconds * 1000, signal);
+      const turnResult = await runSessionPrompt(impl._session, currentPrompt, timeoutSeconds * 1000, signal);
 
       if (turnResult.timedOut) {
         timedOut = true;
@@ -860,6 +875,36 @@ export class AcpAgentAdapter implements AgentAdapter {
 
       lastResponse = turnResult.response;
       if (!lastResponse) break;
+
+      // NO_SESSION recovery: acpx session expired server-side (exit code 4).
+      // Re-establish and retry this turn once — don't count the dead attempt.
+      //
+      // ADR-019 boundary note: ADR-019 §2 makes SessionManager the owner of session
+      // lifecycle (open/close, descriptor state, turn count). This recovery
+      // intentionally does NOT involve SessionManager — it is a transport-level
+      // reconnect of the underlying acpx session, analogous to a TCP reconnect under
+      // an HTTP keep-alive. The SessionManager-facing identity (`handle.id`,
+      // `_sessionName`) is unchanged; descriptor state stays `RUNNING`; only the
+      // opaque `_session` pointer is swapped. If future recovery work needs to
+      // reset descriptor state or invalidate turn count, that belongs in
+      // SessionManager.runInSession (catch a typed RetryableSessionError from the
+      // adapter and call `openSession` again at the orchestrator layer).
+      if (lastResponse.exitCode === 4 && !sessionRecreated) {
+        sessionRecreated = true;
+        getSafeLogger()?.info("acp-adapter", "NO_SESSION detected — re-establishing session", { sessionName });
+        try {
+          const ensured = await ensureAcpSession(impl._client, impl._sessionName, impl.agentName, impl._permissionMode);
+          impl._session = ensured.session;
+          turnCount--;
+          continue;
+        } catch (err) {
+          getSafeLogger()?.warn("acp-adapter", "Session re-establishment failed after NO_SESSION", {
+            sessionName,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          // Fall through to error throw at end of loop
+        }
+      }
 
       if (lastResponse.cumulative_token_usage) {
         totalTokenUsage = addTokenUsage(totalTokenUsage, this._mapper.toInternal(lastResponse.cumulative_token_usage));

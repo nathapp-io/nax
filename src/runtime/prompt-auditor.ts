@@ -1,5 +1,12 @@
-import { mkdirSync } from "node:fs";
+// Bun-native carve-out: appendFile + mkdir.
+// Bun has no append API on Bun.write / FileSink (writer truncates), so node:fs/promises
+// is the pragmatic choice for incremental JSONL persistence. Top-level import avoids
+// per-call dynamic-import cost. See .claude/rules/forbidden-patterns.md (appendFile
+// is not in the banned list; documented carve-out from the broader Bun-native rule).
+import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { getSafeLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 
 export interface PromptAuditEntry {
   readonly ts: number;
@@ -56,14 +63,24 @@ export function createNoOpPromptAuditor(): IPromptAuditor {
   };
 }
 
-/** Injectable deps — swap `write` in tests to avoid real disk I/O. */
+/** Injectable deps — swap in tests to avoid real disk I/O. */
 export const _promptAuditorDeps = {
   write: (path: string, data: string): Promise<number> => Bun.write(path, data),
+  appendLine: (path: string, data: string): Promise<void> => appendFile(path, data, "utf8"),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Human-readable txt content builder
 // ─────────────────────────────────────────────────────────────────────────────
+
+function deriveTxtFilename(entry: PromptAuditEntry): string {
+  if (entry.sessionName) {
+    return `${entry.ts}-${entry.sessionName}.txt`;
+  }
+  const parts: string[] = [String(entry.ts), entry.callType ?? "call", entry.stage ?? "unknown"];
+  if (entry.storyId) parts.push(entry.storyId);
+  return `${parts.join("-")}.txt`;
+}
 
 function buildTxtContent(entry: PromptAuditEntry): string {
   const ts = new Date(entry.ts).toISOString();
@@ -96,72 +113,51 @@ function buildTxtContent(entry: PromptAuditEntry): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class PromptAuditor implements IPromptAuditor {
-  private readonly _entries: (PromptAuditEntry | PromptAuditErrorEntry)[] = [];
-  private _draining = false;
-  private readonly _inFlightEntries: (PromptAuditEntry | PromptAuditErrorEntry)[] = [];
+  private _queue: Promise<void> = Promise.resolve();
+  private _dirCreated = false;
+  private readonly _jsonlPath: string;
+  private readonly _featureDir: string;
 
-  constructor(
-    private readonly _runId: string,
-    /** Base audit directory (e.g. <workdir>/.nax/prompt-audit). */
-    private readonly _flushDir: string,
-    /** Feature name — used as a subdirectory so each feature has its own folder. */
-    private readonly _featureName: string,
-  ) {}
+  constructor(runId: string, flushDir: string, featureName: string) {
+    this._featureDir = join(flushDir, featureName);
+    this._jsonlPath = join(this._featureDir, `${runId}.jsonl`);
+  }
 
   record(entry: PromptAuditEntry): void {
-    if (this._draining) {
-      this._inFlightEntries.push(entry);
-      return;
-    }
-    this._entries.push(entry);
+    this._enqueue(entry);
   }
 
   recordError(entry: PromptAuditErrorEntry): void {
-    if (this._draining) {
-      this._inFlightEntries.push(entry);
-      return;
+    this._enqueue(entry);
+  }
+
+  private _enqueue(entry: PromptAuditEntry | PromptAuditErrorEntry): void {
+    this._queue = this._queue
+      .then(() => this._writeEntry(entry))
+      .catch((err) => {
+        // Per-entry failures (disk full, permission denied) must not break the chain.
+        // Surface the failure so silent audit gaps are diagnosable.
+        getSafeLogger()?.warn("audit", "prompt-audit write failed", {
+          path: this._jsonlPath,
+          error: errorMessage(err),
+        });
+      });
+  }
+
+  private async _writeEntry(entry: PromptAuditEntry | PromptAuditErrorEntry): Promise<void> {
+    if (!this._dirCreated) {
+      await mkdir(this._featureDir, { recursive: true });
+      this._dirCreated = true;
     }
-    this._entries.push(entry);
+    await _promptAuditorDeps.appendLine(this._jsonlPath, `${JSON.stringify(entry)}\n`);
+
+    if (!("prompt" in entry) || !("response" in entry)) return;
+    const auditEntry = entry as PromptAuditEntry;
+    const filename = deriveTxtFilename(auditEntry);
+    await _promptAuditorDeps.write(join(this._featureDir, filename), buildTxtContent(auditEntry));
   }
 
   async flush(): Promise<void> {
-    this._draining = true;
-    try {
-      const entries = this._entries.splice(0);
-      if (entries.length === 0) return;
-
-      const featureDir = join(this._flushDir, this._featureName);
-      mkdirSync(featureDir, { recursive: true });
-
-      // ── JSONL (machine-readable) ───────────────────────────────────────────
-      const jsonlPath = join(featureDir, `${this._runId}.jsonl`);
-      await _promptAuditorDeps.write(jsonlPath, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
-
-      // ── Per-entry .txt (human-readable) ───────────────────────────────────
-      // Only PromptAuditEntry has prompt+response; error entries go to JSONL only.
-      for (const entry of entries) {
-        if (!("prompt" in entry) || !("response" in entry)) continue;
-        const auditEntry = entry as PromptAuditEntry;
-        if (!auditEntry.sessionName) continue;
-        const filename = `${auditEntry.ts}-${auditEntry.sessionName}.txt`;
-        await _promptAuditorDeps.write(join(featureDir, filename), buildTxtContent(auditEntry));
-      }
-
-      // Flush any entries that arrived during the async writes.
-      const lateEntries = this._inFlightEntries.splice(0);
-      if (lateEntries.length > 0) {
-        const allEntries = [...entries, ...lateEntries];
-        await _promptAuditorDeps.write(jsonlPath, `${allEntries.map((e) => JSON.stringify(e)).join("\n")}\n`);
-        for (const entry of lateEntries) {
-          if (!("prompt" in entry) || !("response" in entry)) continue;
-          const auditEntry = entry as PromptAuditEntry;
-          if (!auditEntry.sessionName) continue;
-          const filename = `${auditEntry.ts}-${auditEntry.sessionName}.txt`;
-          await _promptAuditorDeps.write(join(featureDir, filename), buildTxtContent(auditEntry));
-        }
-      }
-    } finally {
-      this._draining = false;
-    }
+    await this._queue;
   }
 }
