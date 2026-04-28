@@ -417,3 +417,7 @@ function detectProjectName(workdir: string, pkg: Record<string, unknown> | null)
 
   return "unknown";
 }
+
+// Re-exports for backward compatibility — planDecomposeCommand and runReplanLoop
+// were extracted to plan-decompose.ts to keep plan.ts under the 600-line limit.
+export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
