@@ -53,7 +53,7 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      const tddResult = await runThreeSessionTddFromCtx(ctx, {
+      const tddResult = await _executionDeps.runThreeSessionTddFromCtx(ctx, {
         agent,
         dryRun: false,
         lite: isLiteMode,
@@ -328,4 +328,5 @@ export const _executionDeps = {
   isAmbiguousOutput,
   checkStoryAmbiguity,
   failAndClose,
+  runThreeSessionTddFromCtx,
 };

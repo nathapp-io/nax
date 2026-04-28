@@ -13,6 +13,7 @@ import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../../test/helpers";
+import { fakeAgentManager } from "../../../../test/helpers/fake-agent-manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveStoryWorkdir — pure unit tests
@@ -67,6 +68,7 @@ function makeCtx(storyOverrides: Partial<UserStory> = {}): PipelineContext {
     projectDir: "/repo",
     hooks: {},
     prompt: "Do the thing",
+    agentManager: (() => { const a = _executionDeps.getAgent?.("claude"); return a ? fakeAgentManager(a, "claude") : fakeAgentManager(makeAgentAdapter({ name: "claude" })); })(),
   } as unknown as PipelineContext;
 }
 
@@ -88,7 +90,9 @@ test("execution stage passes repoRoot workdir when story.workdir is undefined", 
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.detectMergeConflict = () => false;
 
+  const spyAgent = _executionDeps.getAgent("claude");
   const ctx = makeCtx();
+  ctx.agentManager = fakeAgentManager(spyAgent);
   await executionStage.execute(ctx);
 
   expect(capturedWorkdir).toBe("/repo");
@@ -114,10 +118,13 @@ test("execution stage passes resolved package workdir when story.workdir is set"
 
   // workdir is resolved at context creation (Phase 3) — pass already-resolved path
   const story = makeStory({ workdir: "packages/api" });
+  const spyAgent = _executionDeps.getAgent("claude");
+  const baseCtx = makeCtx();
   const ctx: PipelineContext = {
-    ...makeCtx(),
+    ...baseCtx,
     story,
     workdir: join("/repo", "packages/api"),
+    agentManager: fakeAgentManager(spyAgent),
   };
   await executionStage.execute(ctx);
 

@@ -15,7 +15,7 @@ import type { AgentAdapter, AgentResult } from "../../src/agents/types";
  *
  * @see docs/adr/ADR-020-dispatch-boundary-ssot.md §D3
  */
-export function fakeAgentManager(adapter: AgentAdapter): IAgentManager {
+export function fakeAgentManager(adapter: AgentAdapter, defaultAgentName?: string): IAgentManager {
   const warnMismatch = (method: string, requested: string): void => {
     if (requested !== adapter.name) {
       getLogger().warn(
@@ -30,7 +30,7 @@ export function fakeAgentManager(adapter: AgentAdapter): IAgentManager {
     }
   };
   const mgr: IAgentManager = {
-    getDefault: () => adapter.name,
+    getDefault: () => defaultAgentName ?? adapter.name,
     isUnavailable: () => false,
     markUnavailable: () => {},
     reset: () => {},

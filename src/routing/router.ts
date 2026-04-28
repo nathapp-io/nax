@@ -11,7 +11,6 @@ import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
-import type { DispatchContext } from "../runtime/dispatch-context";
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy } from "./classify";
 import { classifyComplexity, determineTestStrategy } from "./classify";
@@ -21,11 +20,13 @@ import { classifyComplexity, determineTestStrategy } from "./classify";
 // ---------------------------------------------------------------------------
 
 /** Context passed to plugin routing strategies */
-export interface RoutingContext extends DispatchContext {
+export interface RoutingContext {
   /** Full configuration */
   config: NaxConfig;
   /** Optional codebase context summary */
   codebaseContext?: string;
+  /** Optional agent manager for LLM-based routing */
+  agentManager?: IAgentManager;
 }
 
 /**
@@ -142,9 +143,6 @@ export async function resolveRouting(
   config: NaxConfig,
   plugins?: PluginRegistry,
   agentManager?: IAgentManager,
-  sessionManager?: import("../session/types").ISessionManager,
-  runtime?: import("../runtime").NaxRuntime,
-  abortSignal?: AbortSignal,
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
 
@@ -163,16 +161,10 @@ export async function resolveRouting(
   }
 
   // 1. Plugin routers — highest priority
-  if (plugins && agentManager && sessionManager && runtime && abortSignal) {
+  if (plugins) {
     for (const pluginRouter of plugins.getRouters()) {
       try {
-        const decision = await pluginRouter.route(story, {
-          config,
-          agentManager,
-          sessionManager,
-          runtime,
-          abortSignal,
-        });
+        const decision = await pluginRouter.route(story, { config, agentManager });
         if (decision !== null) return decision;
       } catch (err) {
         logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
@@ -214,15 +206,7 @@ export async function routeStory(
   _workdir: string,
   plugins?: PluginRegistry,
 ): Promise<RoutingDecision> {
-  return resolveRouting(
-    story,
-    context.config,
-    plugins,
-    context.agentManager,
-    context.sessionManager,
-    context.runtime,
-    context.abortSignal,
-  );
+  return resolveRouting(story, context.config, plugins, context.agentManager);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,9 +275,6 @@ export async function tryLlmBatchRoute(
   stories: UserStory[],
   label = "routing",
   _deps = _tryLlmBatchRouteDeps,
-  sessionManager?: import("../session/types").ISessionManager,
-  runtime?: import("../runtime").NaxRuntime,
-  abortSignal?: AbortSignal,
 ): Promise<void> {
   const mode = config.routing.llm?.mode ?? "hybrid";
   if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
@@ -303,7 +284,7 @@ export async function tryLlmBatchRoute(
   if (needsRouting.length === 0) return;
 
   const agentManager = _deps.agentManager;
-  if (!agentManager || !sessionManager || !runtime || !abortSignal) return;
+  if (!agentManager) return;
 
   const logger = getSafeLogger();
   try {
@@ -313,7 +294,7 @@ export async function tryLlmBatchRoute(
       mode,
     });
     const { routeBatch } = await import("./strategies/llm");
-    await routeBatch(needsRouting, { config, agentManager, sessionManager, runtime, abortSignal });
+    await routeBatch(needsRouting, { config, agentManager });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {

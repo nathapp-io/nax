@@ -18,6 +18,7 @@ import type { NaxConfig } from "../../../../src/config";
 import type { UserStory } from "../../../../src/prd";
 import { _isolationDeps } from "../../../../src/tdd/isolation";
 import { _sessionRunnerDeps, runTddSession } from "../../../../src/tdd/session-runner";
+import { fakeAgentManager } from "../../../helpers/fake-agent-manager";
 import { _gitDeps } from "../../../../src/utils/git";
 import { _executorDeps } from "../../../../src/verification/executor";
 
@@ -198,6 +199,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
     const result = await runTddSession(
       "test-writer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -228,6 +230,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
     const result = await runTddSession(
       "implementer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -257,6 +260,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
     const result = await runTddSession(
       "verifier",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -282,6 +286,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
     const result = await runTddSession(
       "test-writer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -323,7 +328,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
     const roles = ["test-writer", "implementer", "verifier"] as const;
 
     for (const role of roles) {
-      await runTddSession(role, adapter, story, config, ACP_WORKDIR, "balanced", "HEAD", undefined, true);
+      await runTddSession(role, adapter, fakeAgentManager(adapter), story, config, ACP_WORKDIR, "balanced", "HEAD", undefined, true);
     }
 
     expect(clients).toHaveLength(3);
@@ -360,6 +365,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
     const twResult = await runTddSession(
       "test-writer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -371,6 +377,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
     const implResult = await runTddSession(
       "implementer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -382,6 +389,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
     const verResult = await runTddSession(
       "verifier",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -431,6 +439,7 @@ describe("cost tracking across 3 ACP sessions", () => {
       const result = await runTddSession(
         role,
         adapter,
+    fakeAgentManager(adapter),
         story,
         config,
         ACP_WORKDIR,
@@ -464,6 +473,7 @@ describe("cost tracking across 3 ACP sessions", () => {
     const result = await runTddSession(
       "test-writer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -489,6 +499,7 @@ describe("cost tracking across 3 ACP sessions", () => {
     const result = await runTddSession(
       "test-writer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
