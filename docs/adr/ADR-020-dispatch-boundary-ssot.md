@@ -114,37 +114,49 @@ Introduce `DispatchEvent`, a discriminated union emitted by exactly **three** me
 
 ```typescript
 // src/runtime/dispatch-events.ts
-export type DispatchEvent =
-  | {
-      kind: "session-turn";
-      sessionName: string;
-      sessionRole: SessionRole;          // typed union — see D6
-      turn: number;
-      prompt: string;
-      agentName: string;
-      stage: PipelineStage;
-      featureName?: string;
-      storyId?: string;
-      protocolIds: { sessionId?: string; turnId?: string };
-      usage?: TokenUsage;
-      exactCostUsd?: number;
-      timestamp: number;
-      origin: "runAsSession" | "runTrackedSession";   // for diagnostics; not for routing
-    }
-  | {
-      kind: "complete";
-      sessionName: string;
-      sessionRole: SessionRole;
-      prompt: string;
-      agentName: string;
-      stage: PipelineStage;
-      featureName?: string;
-      storyId?: string;
-      usage?: TokenUsage;
-      exactCostUsd?: number;
-      timestamp: number;
-    };
+
+/**
+ * Fields every dispatch event carries, regardless of kind. New cross-cutting
+ * fields (e.g. traceId, resolvedPermissions) go here once; both variants and
+ * every subscriber pick them up via the compiler. Mirrors how DispatchContext
+ * (D3) deduplicates the per-context types.
+ */
+export interface DispatchEventBase {
+  readonly sessionName: string;
+  readonly sessionRole: SessionRole;        // typed union — see D6
+  readonly prompt: string;
+  readonly agentName: string;
+  readonly stage: PipelineStage;
+  readonly storyId?: string;
+  readonly featureName?: string;
+  readonly usage?: TokenUsage;
+  readonly exactCostUsd?: number;
+  readonly timestamp: number;
+}
+
+export interface SessionTurnDispatchEvent extends DispatchEventBase {
+  readonly kind: "session-turn";
+  readonly turn: number;
+  readonly protocolIds: { sessionId?: string; turnId?: string };
+  /** Diagnostic only — never branch subscriber logic on this. */
+  readonly origin: "runAsSession" | "runTrackedSession";
+}
+
+export interface CompleteDispatchEvent extends DispatchEventBase {
+  readonly kind: "complete";
+}
+
+export type DispatchEvent = SessionTurnDispatchEvent | CompleteDispatchEvent;
 ```
+
+**Why a base interface, not two flat variants:** ten of the twelve fields are shared. Inlining them into both arms duplicates the surface and forces every future cross-cutting field (traceId, resolvedPermissions, packageId, etc.) to be added in two places — exactly the same partial-form duplication that motivated `DispatchContext` in D3. Promoting the shared shape to `DispatchEventBase`:
+
+- adds one field once → both variants pick it up
+- keeps `kind` as the discriminant so subscribers still narrow normally (`if (e.kind === "session-turn") { e.turn ... }`)
+- mirrors the runtime topology — every dispatch shares "who/what/when/cost/usage"; only the per-kind tail differs (`turn` + `protocolIds` + `origin` for sessions, nothing extra for complete)
+- separates the two consumer concerns: emitters (manager.ts, session/manager-run.ts) construct the variant they own; subscribers (audit, cost, logging) read `DispatchEventBase` fields without caring about kind unless they need the discriminator
+
+`OperationCompletedEvent` (D5) stays standalone — no shared shape with `DispatchEvent` (different lifecycle, different consumers, no field overlap), so no base interface needed there.
 
 `AgentManager.runAs()` and `AgentManager.runWithFallback()` are **envelope** methods. They orchestrate fallback, retry, and permissions but **emit no `DispatchEvent`**. They emit `OperationCompletedEvent` (D5) for envelope telemetry only.
 
