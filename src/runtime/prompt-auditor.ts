@@ -1,5 +1,12 @@
-import { mkdirSync } from "node:fs";
+// Bun-native carve-out: appendFile + mkdir.
+// Bun has no append API on Bun.write / FileSink (writer truncates), so node:fs/promises
+// is the pragmatic choice for incremental JSONL persistence. Top-level import avoids
+// per-call dynamic-import cost. See .claude/rules/forbidden-patterns.md (appendFile
+// is not in the banned list; documented carve-out from the broader Bun-native rule).
+import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { getSafeLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 
 export interface PromptAuditEntry {
   readonly ts: number;
@@ -59,10 +66,7 @@ export function createNoOpPromptAuditor(): IPromptAuditor {
 /** Injectable deps — swap in tests to avoid real disk I/O. */
 export const _promptAuditorDeps = {
   write: (path: string, data: string): Promise<number> => Bun.write(path, data),
-  appendLine: async (path: string, data: string): Promise<void> => {
-    const { appendFile } = await import("node:fs/promises");
-    await appendFile(path, data, "utf8");
-  },
+  appendLine: (path: string, data: string): Promise<void> => appendFile(path, data, "utf8"),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -130,16 +134,19 @@ export class PromptAuditor implements IPromptAuditor {
   private _enqueue(entry: PromptAuditEntry | PromptAuditErrorEntry): void {
     this._queue = this._queue
       .then(() => this._writeEntry(entry))
-      .catch(() => {
-        // Swallow write errors to keep the queue healthy for subsequent entries.
-        // Individual entry failures (disk full, permission denied) must not break
-        // the chain — later entries should still attempt to persist.
+      .catch((err) => {
+        // Per-entry failures (disk full, permission denied) must not break the chain.
+        // Surface the failure so silent audit gaps are diagnosable.
+        getSafeLogger()?.warn("audit", "prompt-audit write failed", {
+          path: this._jsonlPath,
+          error: errorMessage(err),
+        });
       });
   }
 
   private async _writeEntry(entry: PromptAuditEntry | PromptAuditErrorEntry): Promise<void> {
     if (!this._dirCreated) {
-      mkdirSync(this._featureDir, { recursive: true });
+      await mkdir(this._featureDir, { recursive: true });
       this._dirCreated = true;
     }
     await _promptAuditorDeps.appendLine(this._jsonlPath, `${JSON.stringify(entry)}\n`);

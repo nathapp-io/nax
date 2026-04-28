@@ -27,8 +27,8 @@ describe("PromptAuditor", () => {
       _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appendedLines.push(d); };
       const aud = new PromptAuditor("r-001", flushDir, FEATURE);
       aud.record(makeEntry({ prompt: "immediate" }));
-      // wait for microtask queue to process the enqueued write
-      await new Promise((r) => setTimeout(r, 0));
+      // Drain the queue deterministically — flush() awaits the chain head.
+      await aud.flush();
       expect(appendedLines.length).toBeGreaterThan(0);
       expect(appendedLines[0]).toContain('"immediate"');
       _promptAuditorDeps.appendLine = orig;
