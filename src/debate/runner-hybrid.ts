@@ -54,7 +54,7 @@ export async function runRebuttalLoop(
   ctx: HybridCtx,
   proposals: SuccessfulProposal[],
   builder: DebatePromptBuilder,
-  sessionRolePrefix: string,
+  sessionRolePrefix: `debate-${string}`,
 ): Promise<RebuttalLoopResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
@@ -73,7 +73,7 @@ export async function runRebuttalLoop(
   const internalHandles: Array<import("../agents/types").SessionHandle | null> = [];
   for (let i = 0; i < proposals.length; i++) {
     const proposal = proposals[i];
-    const sessionRole = `${sessionRolePrefix}-${i}`;
+    const sessionRole = `${sessionRolePrefix}-${i}` as import("../runtime/session-role").SessionRole;
     if (proposal.handle) {
       internalHandles.push(null); // Caller owns this handle; we do not close it
     } else if (sessionManager) {
@@ -184,7 +184,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   try {
     for (let i = 0; i < resolved.length; i++) {
       const { debater, agentName } = resolved[i];
-      const sessionRole = `debate-hybrid-${i}`;
+      const sessionRole = `debate-hybrid-${i}` as import("../runtime/session-role").SessionRole;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
         const modelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);

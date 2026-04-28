@@ -104,7 +104,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
   try {
     for (let i = 0; i < resolved.length; i++) {
       const { debater, agentName } = resolved[i];
-      const roleKey = `debate-${ctx.stage}-${i}`;
+      const roleKey = `debate-${ctx.stage}-${i}` as import("../runtime/session-role").SessionRole;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
         const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);

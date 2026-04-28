@@ -104,11 +104,11 @@ export async function runPlan(
         workdir: opts.workdir,
         featureName: opts.feature,
         storyId: ctx.storyId,
-        role: `plan-${i}`,
+        role: `debate-plan-${i}`,
       });
       await sessionManager.runInSession(sessionName, debaterPrompt, {
         agentName,
-        role: `plan-${i}`,
+        role: `debate-plan-${i}`,
         workdir: opts.workdir,
         pipelineStage: "plan",
         modelDef,
@@ -209,7 +209,7 @@ export async function runPlan(
       { taskContext, outputFormat: "", stage: "plan" },
       { debaters: successful.map((p) => p.debater), sessionMode },
     );
-    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, rebuttalBuilder, "plan-hybrid");
+    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, rebuttalBuilder, "debate-plan-hybrid");
     critiqueOutputs = rebuttals.map((r) => r.output);
     rebuttalList = rebuttals;
     totalCostUsd += costUsd;

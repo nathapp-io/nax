@@ -296,9 +296,9 @@ describe("DebateRunner.runPlan()", () => {
     });
 
     expect(sessionRoles).toHaveLength(3);
-    expect(sessionRoles[0]).toBe("plan-0");
-    expect(sessionRoles[1]).toBe("plan-1");
-    expect(sessionRoles[2]).toBe("plan-2");
+    expect(sessionRoles[0]).toBe("debate-plan-0");
+    expect(sessionRoles[1]).toBe("debate-plan-1");
+    expect(sessionRoles[2]).toBe("debate-plan-2");
   });
 
   test("passes storyId through to each sessionManager.runInSession call", async () => {
@@ -392,8 +392,8 @@ describe("DebateRunner.runPlan()", () => {
     });
 
     expect(rebuttalCalls).toHaveLength(2);
-    expect(rebuttalCalls[0]?.handleId).toBe("plan-hybrid-0");
-    expect(rebuttalCalls[1]?.handleId).toBe("plan-hybrid-1");
+    expect(rebuttalCalls[0]?.handleId).toBe("debate-plan-hybrid-0");
+    expect(rebuttalCalls[1]?.handleId).toBe("debate-plan-hybrid-1");
     expect(closedHandleIds).toHaveLength(2);
     expect(result.rebuttals).toBeDefined();
     expect(result.rebuttals).toHaveLength(2);
@@ -593,7 +593,7 @@ describe("DebateRunner.runPlan()", () => {
 
     const sm = makeSessionManager({
       runInSession: mock(async (_name: string, _prompt: string, opts: any) => {
-        const index = Number((opts?.role ?? "").replace("plan-", ""));
+        const index = Number((opts?.role ?? "").match(/(\d+)$/)?.[1] ?? NaN);
         startedOrder.push(index);
         await new Promise<void>((resolve) => {
           resolvers[index] = resolve;

@@ -1,4 +1,4 @@
 export { cancellationMiddleware } from "./cancellation";
-export { loggingMiddleware } from "./logging";
-export { costMiddleware } from "./cost";
-export { auditMiddleware } from "./audit";
+export { attachLoggingSubscriber } from "./logging";
+export { attachCostSubscriber } from "./cost";
+export { attachAuditSubscriber } from "./audit";

@@ -1,5 +1,4 @@
 import type { AgentRunRequest } from "../agents/manager-types";
-import type { CompleteOptions } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ResolvedPermissions } from "../config/permissions";
 
@@ -8,15 +7,11 @@ export interface MiddlewareContext {
   readonly agentName: string;
   readonly kind: "run" | "complete" | "plan";
   readonly request: AgentRunRequest | null;
-  readonly completeOptions?: CompleteOptions;
-  readonly prompt: string | null;
   readonly config: NaxConfig;
   readonly signal?: AbortSignal;
   readonly resolvedPermissions: ResolvedPermissions;
   readonly storyId?: string;
   readonly stage?: string;
-  /** Session handle when this is a caller-managed-session call (runAsSession). Absent for runAs/completeAs. */
-  readonly sessionHandle?: import("../agents/types").SessionHandle;
 }
 
 export interface AgentMiddleware {

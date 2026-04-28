@@ -83,6 +83,8 @@ export interface AgentRunRequest {
 export interface RunAsSessionOpts {
   storyId?: string;
   pipelineStage?: import("../config/permissions").PipelineStage;
+  /** Session role — forwarded to DispatchEvent.sessionRole for audit/cost correlation. */
+  sessionRole?: import("../runtime/session-role").SessionRole;
   signal?: AbortSignal;
   /** Mid-turn interaction callback (context-tool calls, agent questions). */
   interactionHandler?: import("./interaction-handler").InteractionHandler;

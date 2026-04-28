@@ -7,6 +7,9 @@
  * See: docs/specs/SPEC-session-manager-integration.md
  */
 import type { ProtocolIds } from "../runtime/protocol-types";
+import type { SessionRole } from "../runtime/session-role";
+export type { SessionRole, CanonicalSessionRole } from "../runtime/session-role";
+export { isSessionRole, KNOWN_SESSION_ROLES } from "../runtime/session-role";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State machine — 7 states
@@ -45,36 +48,10 @@ export const SESSION_TRANSITIONS: Record<SessionState, SessionState[]> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Session roles
+// Session roles — re-exported from SSOT (src/runtime/session-role.ts)
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Purpose suffix that appears in the ACP session name.
- * "main" maps to no suffix (the default execution session).
- *
- * Registry: docs/architecture/adapter-wiring.md §2
- */
-export type SessionRole =
-  | "main" // Default implementation session (no suffix in name)
-  | "test-writer" // TDD test-writing session
-  | "implementer" // Rectification / autofix sessions
-  | "verifier" // TDD verification session
-  | "plan" // Planning stage
-  | "decompose" // Story decomposition (complete())
-  | "acceptance-gen" // Acceptance test generation (complete())
-  | "refine" // AC criteria refinement (complete())
-  | "fix-gen" // Fix story generation (complete())
-  | "auto" // Auto-approve interaction (complete())
-  | "diagnose" // Acceptance failure diagnosis (run())
-  | "source-fix" // Acceptance source fix (run())
-  | "test-fix" // Acceptance test fix (run())
-  | "reviewer-semantic" // Semantic review — keepOpen: true
-  | "reviewer-adversarial" // Adversarial review — keepOpen: true
-  | "reviewer" // Dialogue reviewer session
-  | "synthesis" // Debate synthesis resolver
-  | "judge" // Debate custom judge resolver
-  | `debate-${string}` // Debate stateful debater roles
-  | `plan-hybrid-${number}`; // Plan-stage hybrid rebuttal roles
+// SessionRole, CanonicalSessionRole, KNOWN_SESSION_ROLES, isSessionRole
+// are re-exported at the top of this file from src/runtime/session-role.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SessionDescriptor
@@ -88,7 +65,7 @@ export interface SessionDescriptor {
   /** nax-internal session ID: `sess-<uuid>` */
   id: string;
   /** Purpose of this session */
-  role: string;
+  role: import("../runtime/session-role").SessionRole;
   /** Current lifecycle state */
   state: SessionState;
   /** Agent name (e.g. "claude", "codex") */
@@ -136,7 +113,7 @@ export interface SessionDescriptor {
 
 /** Options for creating a new session */
 export interface CreateSessionOptions {
-  role: string;
+  role: SessionRole;
   agent: string;
   workdir: string;
   projectDir?: string;
@@ -187,7 +164,7 @@ export interface OpenSessionRequest {
   /** Agent name (e.g. "claude"). */
   agentName: string;
   /** Logical role of the session for naming/descriptor correlation. */
-  role?: string;
+  role?: SessionRole;
   /** Working directory for the session. */
   workdir: string;
   /** Pipeline stage — used by SessionManager to call resolvePermissions. */
@@ -242,7 +219,7 @@ export interface NameForRequest {
   /** Story ID (sanitised into the name). */
   storyId?: string;
   /** Session role suffix. Preferred when available. */
-  role?: string;
+  role?: SessionRole;
   /**
    * Pipeline stage used as the role suffix.
    * Used only when role is absent. "run" → no suffix.

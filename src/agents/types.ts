@@ -73,6 +73,12 @@ export interface AgentResult {
    * with no swaps. Undefined when the result does not go through AgentManager.
    */
   agentFallbacks?: import("./manager-types").AgentFallbackRecord[];
+  /**
+   * Number of internal round-trips (session.prompt() calls) made by the adapter.
+   * Populated by ACP adapter via TurnResult.internalRoundTrips when AgentResult
+   * is derived from a session turn. Used by DispatchEvent.turn field.
+   */
+  internalRoundTrips?: number;
 }
 
 /**
@@ -112,7 +118,7 @@ export interface AgentRunOptions {
   /** Story ID for ACP session naming and logging */
   storyId?: string;
   /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
-  sessionRole?: import("../session/types").SessionRole;
+  sessionRole?: import("../runtime/session-role").SessionRole;
   /** Max turns in multi-turn interaction loop when interactionBridge is active (default: 10) */
   maxInteractionTurns?: number;
   /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */
@@ -238,7 +244,7 @@ export interface CompleteOptions {
   /** Story ID for ACP session naming — combined with featureName to form session key */
   storyId?: string;
   /** Session role for disambiguation when the same story has multiple concurrent sessions */
-  sessionRole?: string;
+  sessionRole?: import("../runtime/session-role").SessionRole;
   /** Abort signal for cancellation middleware support on complete() calls. */
   signal?: AbortSignal;
   /**
@@ -306,6 +312,8 @@ export interface SessionHandle {
   readonly id: string;
   /** Agent name this session was opened for. */
   readonly agentName: string;
+  /** Session role — populated when the caller knows the role at open time. */
+  readonly role?: import("../runtime/session-role").SessionRole;
   /** Protocol-specific IDs for SessionManager correlation. */
   readonly protocolIds?: ProtocolIds;
 }
