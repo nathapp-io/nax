@@ -251,6 +251,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
  * Keyed by the resolved absolute path of the root .nax/config.json.
  * @internal
  */
+const ROOT_CONFIG_CACHE_MAX = 20;
 const _rootConfigCache = new Map<string, Promise<NaxConfig>>();
 
 /** Clear the root config cache (for testing). @internal */
@@ -286,10 +287,15 @@ export async function loadConfigForWorkdir(
   const profileKey = (cliOverrides?.profile as string | undefined) ?? "";
   const cacheKey = profileKey ? `${resolvedRootConfigPath}:${profileKey}` : resolvedRootConfigPath;
 
-  // Cache root config load — avoids repeated I/O for each package in a monorepo run
+  // Cache root config load — avoids repeated I/O for each package in a monorepo run.
+  // LRU eviction: evict oldest entry when cap is reached to bound memory in long-lived processes.
   let rootConfigPromise = _rootConfigCache.get(cacheKey);
   if (!rootConfigPromise) {
     rootConfigPromise = loadConfig(rootNaxDir, cliOverrides);
+    if (_rootConfigCache.size >= ROOT_CONFIG_CACHE_MAX) {
+      const firstKey = _rootConfigCache.keys().next().value;
+      if (firstKey !== undefined) _rootConfigCache.delete(firstKey);
+    }
     _rootConfigCache.set(cacheKey, rootConfigPromise);
   }
   const rootConfig = await rootConfigPromise;

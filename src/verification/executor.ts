@@ -55,6 +55,13 @@ export function normalizeEnvironment(
  *
  * Prevents zombie processes by sending SIGTERM, waiting for grace period,
  * then SIGKILL to entire process group.
+ *
+ * @design Shell trust boundary: `command` is passed verbatim to `/bin/sh -c`
+ * because test commands legitimately need shell features (pipes, redirects,
+ * env substitution). The command originates from `config.quality.commands.test`
+ * in `.nax/config.json`, which is a **trusted** file — equivalent in trust to a
+ * Makefile or shell script. Users are responsible for its contents. Do not pass
+ * user-supplied or agent-generated strings here without explicit validation.
  */
 export async function executeWithTimeout(
   command: string,

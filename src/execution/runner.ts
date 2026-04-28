@@ -18,8 +18,10 @@ import { PluginProviderCache } from "../context/engine";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
+import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { countStories, isComplete } from "../prd";
+import type { PRD } from "../prd/types";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
 import { stopHeartbeat } from "./crash-recovery";
@@ -110,14 +112,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let storiesCompleted = 0;
   let totalCost = 0;
   let runCompleted = false;
-  // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
-  const allStoryMetrics: any[] = [];
+  const allStoryMetrics: StoryMetrics[] = [];
 
   const pluginProviderCache = new PluginProviderCache();
 
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
-  // biome-ignore lint/suspicious/noExplicitAny: PRD type initialized during setup
-  let prd: any | undefined;
+  let prd: PRD | undefined;
 
   // ── Phase 1: Setup ──────────────────────────────────────────────────────────
   const setupResult = await runSetupPhase({

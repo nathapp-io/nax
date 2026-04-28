@@ -167,12 +167,17 @@ async function executeHook(
     };
   }
 
-  // Warn if shell operators detected
+  // Warn if shell operators detected.
+  // @design: hooks are spawned via Bun.spawn(argv) — no shell interpretation.
+  // Operators like | ; & are passed as literal arguments, not metacharacters.
+  // The warning exists to surface likely misconfiguration (e.g. user expecting
+  // pipe behavior) rather than an active injection risk.
   const logger = getLogger();
   if (hasShellOperators(hookDef.command)) {
     logger.warn("hooks", "[SECURITY] Hook command contains shell operators", {
       command: hookDef.command,
-      warning: "Shell operators may enable injection attacks. Consider using simple commands only.",
+      warning:
+        "Hook runs in argv mode (no shell). Operators like | ; & are treated as literal arguments, not metacharacters. If you need shell features, wrap the hook in a shell script.",
     });
   }
 
