@@ -308,18 +308,25 @@ export const acceptanceSetupStage: PipelineStage = {
           ? `\n[FRAMEWORK OVERRIDE: Use ${ctx.config.acceptance.testFramework} as the test framework regardless of what you detect.]`
           : "";
 
-        const genResult = (await _acceptanceSetupDeps.callOp(ctx, packageDir, acceptanceGenerateOp, {
-          featureName: featureName ?? "",
-          criteriaList,
-          frameworkOverrideLine,
-          targetTestFilePath: testPath,
-          ...("implementationContext" in ctx && ctx.implementationContext
-            ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
-            : {}),
-          ...("previousFailure" in ctx && ctx.previousFailure
-            ? { previousFailure: ctx.previousFailure as string }
-            : {}),
-        })) as { testCode: string | null };
+        const groupStoryId = group.stories[0]?.id;
+        const genResult = (await _acceptanceSetupDeps.callOp(
+          ctx,
+          packageDir,
+          acceptanceGenerateOp,
+          {
+            featureName: featureName ?? "",
+            criteriaList,
+            frameworkOverrideLine,
+            targetTestFilePath: testPath,
+            ...("implementationContext" in ctx && ctx.implementationContext
+              ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
+              : {}),
+            ...("previousFailure" in ctx && ctx.previousFailure
+              ? { previousFailure: ctx.previousFailure as string }
+              : {}),
+          },
+          groupStoryId,
+        )) as { testCode: string | null };
 
         let testCode = genResult.testCode;
         if (!testCode) {

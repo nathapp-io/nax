@@ -213,6 +213,28 @@ describe("acceptance-setup: testFramework appears in generate callOp input", () 
     expect(capturedFrameworkOverrideLine).toBe("");
   });
 
+  test("acceptanceGenerateOp callOp receives storyId from first group story", async () => {
+    wireBasicDeps();
+    let capturedGenerateStoryId: string | undefined = "not-set";
+
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input, storyId) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId: sid } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId: sid }));
+      }
+      if (op.name === "acceptance-generate") {
+        capturedGenerateStoryId = storyId;
+        return { testCode: 'import { test } from "bun:test"; test("AC-1", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+
+    const ctx = makeCtx();
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(capturedGenerateStoryId).toBe("US-001");
+  });
+
   test("stage runs without error when both testStrategy and testFramework are set", async () => {
     wireBasicDeps();
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
