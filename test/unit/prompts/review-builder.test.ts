@@ -124,3 +124,36 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
     });
   });
 });
+
+describe("ReviewPromptBuilder.jsonRetryCondensed()", () => {
+  test("default threshold (error) — uncaps error severity, caps below at 3", () => {
+    const result = ReviewPromptBuilder.jsonRetryCondensed();
+    expect(result).toContain("Include ALL findings with severity \"error\"");
+    expect(result).toContain("at most 3 additional findings");
+    expect(result).toContain("Output ONLY a complete, valid JSON object");
+  });
+
+  test("threshold=warning — uncaps error AND warning, caps below at advisoryCap", () => {
+    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "warning" });
+    expect(result).toContain('Include ALL findings with severity "error" and "warning"');
+    expect(result).toContain("at most 3 additional findings");
+  });
+
+  test("threshold=info — no severity-based truncation", () => {
+    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "info" });
+    expect(result).toContain("Include ALL findings — do not drop any by severity.");
+    expect(result).not.toContain("at most 3 additional findings");
+    expect(result).toContain("prioritize the highest-severity findings first");
+  });
+
+  test("custom advisoryCap is honored", () => {
+    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 5 });
+    expect(result).toContain("at most 5 additional findings");
+  });
+
+  test("blocking findings are never capped — only below-threshold count is bounded", () => {
+    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 0 });
+    expect(result).toContain("Include ALL findings with severity \"error\"");
+    expect(result).toContain("at most 0 additional findings");
+  });
+});

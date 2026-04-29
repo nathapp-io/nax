@@ -238,6 +238,7 @@ export async function runSemanticReview(
         priorFailures,
         excludePatterns,
         featureCtxBlock,
+        blockingThreshold,
       });
     } catch (err) {
       logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -392,7 +393,16 @@ export async function runSemanticReview(
     const isTruncated = looksLikeTruncatedJson(rawResponse);
     if (isTruncated || !parseLLMResponse(rawResponse)) {
       retryAttempted = true;
-      const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
+      const retryPrompt = isTruncated
+        ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold })
+        : ReviewPromptBuilder.jsonRetry();
+      if (isTruncated) {
+        logger?.warn("semantic", "JSON parse retry — original response truncated", {
+          storyId: story.id,
+          originalByteSize: rawResponse.length,
+          blockingThreshold: blockingThreshold ?? "error",
+        });
+      }
       logger?.info("semantic", "JSON parse failed, retrying (1/1)", {
         storyId: story.id,
         rawHead: rawResponse.slice(0, 200),

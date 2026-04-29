@@ -197,6 +197,7 @@ export async function runAdversarialReview(
         excludePatterns: adversarialConfig.excludePatterns,
         featureCtxBlock,
         priorAdversarialFindings,
+        blockingThreshold,
       });
     } catch (err) {
       logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
@@ -368,7 +369,16 @@ export async function runAdversarialReview(
     const isTruncated = looksLikeTruncatedJson(rawResponse);
     if (isTruncated || !parseAdversarialResponse(rawResponse)) {
       retryAttempted = true;
-      const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
+      const retryPrompt = isTruncated
+        ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold })
+        : ReviewPromptBuilder.jsonRetry();
+      if (isTruncated) {
+        logger?.warn("adversarial", "JSON parse retry — original response truncated", {
+          storyId: story.id,
+          originalByteSize: rawResponse.length,
+          blockingThreshold: blockingThreshold ?? "error",
+        });
+      }
       logger?.info("adversarial", "JSON parse failed, retrying (1/1)", {
         storyId: story.id,
         rawHead: rawResponse.slice(0, 200),

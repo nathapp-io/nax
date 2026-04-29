@@ -145,10 +145,34 @@ ${SEMANTIC_OUTPUT_SCHEMA}`;
   /**
    * Follow-up prompt when the previous response was truncated mid-JSON.
    * Asking the same question again produces the same long output; instead
-   * ask for a condensed summary capped at maxFindings to fit within limits.
+   * ask for a severity-aware condensed summary so blocking findings are
+   * never dropped — only advisory (below-threshold) findings are capped.
+   *
+   * - `blockingThreshold` matches the project review config; findings at or
+   *   above it must be reported in full.
+   * - `advisoryCap` bounds findings strictly below the threshold (default 3).
    */
-  static jsonRetryCondensed(maxFindings = 3): string {
-    return `Your previous response was truncated and could not be parsed as valid JSON.\nRespond with a condensed summary: at most ${maxFindings} findings, highest severity first.\nOutput ONLY a complete, valid JSON object. It must start with { and end with }.\nSchema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string}]}`;
+  static jsonRetryCondensed(opts?: {
+    blockingThreshold?: "error" | "warning" | "info";
+    advisoryCap?: number;
+  }): string {
+    const threshold = opts?.blockingThreshold ?? "error";
+    const advisoryCap = opts?.advisoryCap ?? 3;
+    const blockingList =
+      threshold === "error"
+        ? '"error"'
+        : threshold === "warning"
+          ? '"error" and "warning"'
+          : '"error", "warning", and "info"';
+    const blockingClause =
+      threshold === "info"
+        ? "Include ALL findings — do not drop any by severity."
+        : `Include ALL findings with severity ${blockingList} (these are blocking — do not drop them).`;
+    const advisoryClause =
+      threshold === "info"
+        ? "If your response would still exceed limits, prioritize the highest-severity findings first."
+        : `Below that, include at most ${advisoryCap} additional findings (highest severity first).`;
+    return `Your previous response was truncated and could not be parsed as valid JSON.\nRespond with a condensed summary:\n- ${blockingClause}\n- ${advisoryClause}\nOutput ONLY a complete, valid JSON object. It must start with { and end with }.\nSchema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string}]}`;
   }
 }
 
