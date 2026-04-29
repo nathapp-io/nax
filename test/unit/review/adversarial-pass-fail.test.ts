@@ -13,7 +13,7 @@ import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
 import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents/manager-types";
-import { makeMockAgentManager } from "../../helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -55,7 +55,35 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       agentFallbacks: [] as unknown[],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+    runWithFallbackFn: async (request) => {
+      const result = {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [] as unknown[],
+      };
+      return { result, fallbacks: [], bundle: request.bundle };
+    },
+    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    runAsFn: async () => ({
+      success: true,
+      exitCode: 0,
+      output: llmResponse,
+      rateLimited: false,
+      durationMs: 100,
+      estimatedCostUsd: cost,
+      agentFallbacks: [] as unknown[],
+    }),
+    completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    getAgentFn: () => makeAgentAdapter(),
   });
+}
+
+function makeRuntime(agentManager: IAgentManager) {
+  return makeMockRuntime({ agentManager });
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
@@ -177,6 +205,27 @@ function setupHappyPathDeps(statContent = STAT_OUTPUT) {
   _diffUtilsDeps.spawn = makeSpawnMock(statContent);
 }
 
+async function callRunAdversarialReview(llmResponse: string): Promise<import("../../../src/review/types").ReviewCheckResult> {
+  const agentManager = makeAgentManager(llmResponse);
+  const runtime = makeMockRuntime({ agentManager });
+  return runAdversarialReview(
+    "/tmp/wd",
+    "abc123",
+    STORY,
+    ADVERSARIAL_CONFIG,
+    agentManager,
+    undefined, // naxConfig
+    undefined, // featureName
+    undefined, // priorFailures
+    undefined, // blockingThreshold
+    undefined, // featureContextMarkdown
+    undefined, // contextBundle
+    undefined, // projectDir
+    undefined, // naxIgnoreIndex
+    runtime,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // AC-1: Pass — LLM returns passed:true with no findings
 // ---------------------------------------------------------------------------
@@ -190,30 +239,12 @@ describe("runAdversarialReview — pass", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=true when LLM returns passed:true", async () => {
-    const agentManager = makeAgentManager(PASSING_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(PASSING_RESPONSE);
     expect(result.success).toBe(true);
   });
 
   test("check field is 'adversarial'", async () => {
-    const agentManager = makeAgentManager(PASSING_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(PASSING_RESPONSE);
     expect(result.check).toBe("adversarial");
   });
 });
@@ -231,30 +262,12 @@ describe("runAdversarialReview — fail with error finding", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=false when LLM returns findings with severity 'error'", async () => {
-    const agentManager = makeAgentManager(FAILING_ERROR_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(FAILING_ERROR_RESPONSE);
     expect(result.success).toBe(false);
   });
 
   test("findings array is populated on failure", async () => {
-    const agentManager = makeAgentManager(FAILING_ERROR_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(FAILING_ERROR_RESPONSE);
     expect(result.findings).toBeDefined();
     expect(result.findings!.length).toBeGreaterThan(0);
   });
@@ -273,16 +286,7 @@ describe("runAdversarialReview — fail with warn finding", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=true with advisory findings when LLM returns 'warn' severity (advisory at default threshold)", async () => {
-    const agentManager = makeAgentManager(FAILING_WARN_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(FAILING_WARN_RESPONSE);
     expect(result.success).toBe(true);
     expect(result.advisoryFindings).toBeDefined();
     expect(result.advisoryFindings![0].message).toBe("Token never invalidated on logout");
@@ -302,44 +306,17 @@ describe("runAdversarialReview — non-blocking only findings", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=true when all findings are unverifiable", async () => {
-    const agentManager = makeAgentManager(UNVERIFIABLE_ONLY_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(UNVERIFIABLE_ONLY_RESPONSE);
     expect(result.success).toBe(true);
   });
 
   test("returns success=true when all findings are info severity", async () => {
-    const agentManager = makeAgentManager(INFO_ONLY_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(INFO_ONLY_RESPONSE);
     expect(result.success).toBe(true);
   });
 
   test("returns success=false when LLM says passed:true but includes error findings (findings take precedence)", async () => {
-    const agentManager = makeAgentManager(PASSED_TRUE_WITH_ERROR_RESPONSE);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(PASSED_TRUE_WITH_ERROR_RESPONSE);
     expect(result.success).toBe(false);
     expect(result.findings).toBeDefined();
     expect(result.findings!.length).toBeGreaterThan(0);
@@ -437,30 +414,12 @@ describe("runAdversarialReview — fail-open on unparseable JSON", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=true when LLM returns garbage JSON with no passed:false signal", async () => {
-    const agentManager = makeAgentManager("this is not json at all");
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview("this is not json at all");
     expect(result.success).toBe(true);
   });
 
   test("output contains 'fail-open' on garbage JSON", async () => {
-    const agentManager = makeAgentManager("this is not json at all");
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview("this is not json at all");
     expect(result.output).toContain("fail-open");
   });
 });
@@ -479,16 +438,7 @@ describe("runAdversarialReview — fail-closed on truncated JSON with passed:fal
 
   test("returns success=false when raw response has passed:false but is malformed JSON", async () => {
     const truncatedResponse = '{ "passed": false, "findings": [{ "severity": "error"';
-    const agentManager = makeAgentManager(truncatedResponse);
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
-    );
-
+    const result = await callRunAdversarialReview(truncatedResponse);
     expect(result.success).toBe(false);
   });
 });
@@ -551,6 +501,9 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
       completeFn: async () => {
         throw new Error("LLM connection timeout");
       },
+      runWithFallbackFn: async () => {
+        throw new Error("LLM connection timeout");
+      },
     });
 
     const result = await runAdversarialReview(
@@ -559,6 +512,15 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       throwingManager,
+      undefined, // naxConfig
+      undefined, // featureName
+      undefined, // priorFailures
+      undefined, // blockingThreshold
+      undefined, // featureContextMarkdown
+      undefined, // contextBundle
+      undefined, // projectDir
+      undefined, // naxIgnoreIndex
+      makeRuntime(throwingManager),
     );
 
     expect(result.success).toBe(true);
@@ -573,6 +535,9 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
       completeFn: async () => {
         throw new Error("LLM connection timeout");
       },
+      runWithFallbackFn: async () => {
+        throw new Error("LLM connection timeout");
+      },
     });
 
     const result = await runAdversarialReview(
@@ -581,6 +546,15 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       throwingManager,
+      undefined, // naxConfig
+      undefined, // featureName
+      undefined, // priorFailures
+      undefined, // blockingThreshold
+      undefined, // featureContextMarkdown
+      undefined, // contextBundle
+      undefined, // projectDir
+      undefined, // naxIgnoreIndex
+      makeRuntime(throwingManager),
     );
 
     expect(result.output).toContain("skipped");
