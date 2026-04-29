@@ -13,6 +13,7 @@ import type { SemanticStory } from "../../../src/review/types";
 import type { AgentResult } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents/manager-types";
 import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -54,6 +55,7 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       agentFallbacks: [] as unknown[],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+    runWithFallbackFn: async () => ({ result: { success: true as const, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] as unknown[] }, fallbacks: [] }),
   });
 }
 
@@ -124,7 +126,7 @@ function setupHappyPathDeps(statContent = STAT_OUTPUT) {
 // AC-11: Category field in findings
 // ---------------------------------------------------------------------------
 
-describe.skip("runAdversarialReview — finding category and metadata", () => {
+describe("runAdversarialReview — finding category and metadata", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -134,6 +136,7 @@ describe.skip("runAdversarialReview — finding category and metadata", () => {
 
   test("finding has ruleId 'adversarial'", async () => {
     const agentManager = makeAgentManager(CATEGORY_FINDING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -141,6 +144,7 @@ describe.skip("runAdversarialReview — finding category and metadata", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.findings).toBeDefined();
@@ -149,6 +153,7 @@ describe.skip("runAdversarialReview — finding category and metadata", () => {
 
   test("finding has source 'adversarial-review'", async () => {
     const agentManager = makeAgentManager(CATEGORY_FINDING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -156,6 +161,7 @@ describe.skip("runAdversarialReview — finding category and metadata", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.findings![0].source).toBe("adversarial-review");
@@ -163,6 +169,7 @@ describe.skip("runAdversarialReview — finding category and metadata", () => {
 
   test("finding carries category field from LLM response", async () => {
     const agentManager = makeAgentManager(CATEGORY_FINDING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -170,6 +177,7 @@ describe.skip("runAdversarialReview — finding category and metadata", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.findings![0].category).toBe("test-gap");
@@ -180,7 +188,7 @@ describe.skip("runAdversarialReview — finding category and metadata", () => {
 // AC-12: Embedded diffMode triggers collectDiff spawn call
 // ---------------------------------------------------------------------------
 
-describe.skip("runAdversarialReview — embedded diffMode", () => {
+describe("runAdversarialReview — embedded diffMode", () => {
   let spawnMock: ReturnType<typeof makeSpawnMock>;
 
   beforeEach(() => {
@@ -199,6 +207,7 @@ describe.skip("runAdversarialReview — embedded diffMode", () => {
       diffMode: "embedded",
     };
     const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     await runAdversarialReview(
       "/tmp/wd",
@@ -206,6 +215,7 @@ describe.skip("runAdversarialReview — embedded diffMode", () => {
       STORY,
       embeddedConfig,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(spawnMock).toHaveBeenCalled();
@@ -217,6 +227,7 @@ describe.skip("runAdversarialReview — embedded diffMode", () => {
       diffMode: "embedded",
     };
     const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     await runAdversarialReview(
       "/tmp/wd",
@@ -224,6 +235,7 @@ describe.skip("runAdversarialReview — embedded diffMode", () => {
       STORY,
       embeddedConfig,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     const callCount = (spawnMock as ReturnType<typeof mock>).mock.calls.length;
@@ -245,6 +257,7 @@ describe.skip("runAdversarialReview — cost propagation", () => {
 
   test("result.cost is populated from LLM estimatedCostUsd", async () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE, 0.042);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -252,6 +265,7 @@ describe.skip("runAdversarialReview — cost propagation", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.cost).toBe(0.042);
@@ -259,6 +273,7 @@ describe.skip("runAdversarialReview — cost propagation", () => {
 
   test("result.cost is 0 when estimatedCostUsd is 0", async () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE, 0);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -266,6 +281,7 @@ describe.skip("runAdversarialReview — cost propagation", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.cost).toBe(0);
@@ -288,8 +304,9 @@ describe.skip("runAdversarialReview — review audit gate", () => {
     const auditCalls: unknown[] = [];
     _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
     const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(auditCalls).toHaveLength(0);
   });
@@ -298,9 +315,10 @@ describe.skip("runAdversarialReview — review audit gate", () => {
     const auditCalls: unknown[] = [];
     _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
     const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager, naxConfig);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager, naxConfig, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(true);
@@ -311,9 +329,10 @@ describe.skip("runAdversarialReview — review audit gate", () => {
     const auditCalls: unknown[] = [];
     _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
     const agentManager = makeAgentManager("not json at all");
+    const runtime = makeMockRuntime({ agentManager });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager, naxConfig);
+    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager, naxConfig, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(false);
