@@ -12,6 +12,7 @@
 
 import type { IAgentManager } from "../../agents";
 import { resolveModelForAgent } from "../../config";
+import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import { buildHopCallback } from "../../operations/build-hop-callback";
 import type { UserStory } from "../../prd";
@@ -127,16 +128,12 @@ export function splitFindingsByScope(
 /**
  * Run a test-writer session to fix review findings scoped to test files (#409).
  * Returns the cost incurred, or 0 if the agent is unavailable.
- *
- * @param keepOpen - Whether to keep the ACP session open after this call so subsequent
- *   autofix cycles can resume it (default: true). Pass false only on the final call.
  */
 export async function runTestWriterRectification(
   ctx: PipelineContext,
   testWriterChecks: ReviewCheckResult[],
   story: UserStory,
   agentManager: IAgentManager,
-  keepOpen = true,
 ): Promise<number> {
   const logger = getLogger();
   const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story);
@@ -146,6 +143,13 @@ export async function runTestWriterRectification(
   if (!defaultAgent) {
     logger.warn("autofix", "Test-writer rectification skipped -- no default agent", { storyId: ctx.story.id });
     return 0;
+  }
+  if (!ctx.runtime) {
+    throw new NaxError(
+      "runtime required — legacy agentManager.run path removed (ADR-019 Wave 3, issue #762)",
+      "DISPATCH_NO_RUNTIME",
+      { stage: "rectification", storyId: ctx.story.id },
+    );
   }
   const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
   const modelDef = resolveModelForAgent(ctx.rootConfig.models, defaultAgent, modelTier, defaultAgent);
@@ -164,36 +168,29 @@ export async function runTestWriterRectification(
     sessionRole: "test-writer" as const,
   };
   try {
-    if (ctx.runtime) {
-      // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
-      // Each call opens a fresh session; keepOpen is not used in the runtime path.
-      const executeHop = buildHopCallback(
-        {
-          sessionManager: ctx.runtime.sessionManager,
-          agentManager: ctx.runtime.agentManager,
-          story,
-          config: ctx.config,
-          projectDir: ctx.projectDir,
-          featureName: ctx.prd.feature ?? "",
-          workdir: ctx.workdir,
-          effectiveTier: modelTier,
-          defaultAgent,
-          pipelineStage: "rectification",
-        },
-        ctx.sessionId,
-        runOptions,
-      );
-      const outcome = await agentManager.runWithFallback(
-        { runOptions, signal: ctx.runtime.signal, executeHop },
+    // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
+    // Each call opens a fresh session; middleware (audit, cost, cancellation) fires uniformly.
+    const executeHop = buildHopCallback(
+      {
+        sessionManager: ctx.runtime.sessionManager,
+        agentManager: ctx.runtime.agentManager,
+        story,
+        config: ctx.config,
+        projectDir: ctx.projectDir,
+        featureName: ctx.prd.feature ?? "",
+        workdir: ctx.workdir,
+        effectiveTier: modelTier,
         defaultAgent,
-      );
-      return outcome.result.estimatedCostUsd ?? 0;
-    }
-    // Legacy keepOpen path — used when no runtime is available (standalone callers).
-    const twResult = await agentManager.run({
-      runOptions: { ...runOptions, keepOpen },
-    });
-    return twResult.estimatedCostUsd ?? 0;
+        pipelineStage: "rectification",
+      },
+      ctx.sessionId,
+      runOptions,
+    );
+    const outcome = await agentManager.runWithFallback(
+      { runOptions, signal: ctx.runtime.signal, executeHop },
+      defaultAgent,
+    );
+    return outcome.result.estimatedCostUsd ?? 0;
   } catch {
     logger.warn("autofix", "Test-writer rectification failed -- proceeding with implementer", {
       storyId: ctx.story.id,

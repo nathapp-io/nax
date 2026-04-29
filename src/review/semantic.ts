@@ -10,17 +10,14 @@
 import type { IAgentManager } from "../agents";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
-import { resolveModelForAgent } from "../config/schema-types";
 import { filterContextByRole } from "../context";
-import { createContextToolRuntime } from "../context/engine";
 import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { callOp } from "../operations/call";
+import { callOp as _callOp } from "../operations/call";
 import { semanticReviewOp } from "../operations/semantic-review";
-import type { UserStory } from "../prd";
 import { ReviewPromptBuilder } from "../prompts";
-import { formatSessionName } from "../session/naming";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
@@ -32,11 +29,9 @@ import {
   type LLMResponse,
   formatFindings,
   isBlockingSeverity,
-  parseLLMResponse,
   sanitizeRefModeFindings,
   toReviewFindings,
 } from "./semantic-helpers";
-import { looksLikeTruncatedJson } from "./truncation";
 import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
@@ -46,6 +41,7 @@ export type { SemanticStory };
 export const _semanticDeps = {
   createDebateRunner: (opts: DebateRunnerOptions): DebateRunner => new DebateRunner(opts),
   writeReviewAudit,
+  callOp: _callOp,
 };
 
 /**
@@ -139,7 +135,11 @@ export async function runSemanticReview(
     }
   }
 
-  if (!agentManager) {
+  // ADR-019: runtime is the canonical source for agentManager. The parameter
+  // is kept for backward compatibility but ignored — callers should pass
+  // runtime.agentManager instead.
+  const effectiveAgentManager = runtime?.agentManager ?? agentManager;
+  if (!effectiveAgentManager) {
     logger?.warn("semantic", "No agent available for semantic review — skipping", {
       storyId: story.id,
       modelTier: semanticConfig.modelTier,
@@ -185,7 +185,7 @@ export async function runSemanticReview(
       naxConfig,
       runtime,
       workdir,
-      agentManager,
+      agentManager: effectiveAgentManager,
       featureName,
       story,
       resolverSession,
@@ -201,281 +201,110 @@ export async function runSemanticReview(
     });
   }
 
-  // ADR-019 Pattern A: when a NaxRuntime is available, dispatch via callOp so the
-  // hop routes through AgentManager.runWithFallback + buildHopCallback, firing the
-  // middleware chain (audit, cost, cancellation) and managing session lifecycle
-  // explicitly via openSession + runAsSession × N + closeSession. The semanticReviewOp
-  // hopBody handles the same-session JSON-parse retry.
-  //
-  // Falls back to the legacy keepOpen path when no runtime is available (standalone
-  // callers, tests that only pass agentManager).
-  let parsed: LLMResponse | null;
+  // ADR-019 Pattern A: dispatch via callOp so the hop routes through
+  // AgentManager.runWithFallback + buildHopCallback, firing the middleware chain
+  // (audit, cost, cancellation) and managing session lifecycle explicitly via
+  // openSession + runAsSession × N + closeSession. The semanticReviewOp hopBody
+  // handles the same-session JSON-parse retry.
+  if (!runtime) {
+    throw new NaxError(
+      "runtime required — legacy agentManager.run path removed (ADR-019 Wave 3, issue #762)",
+      "DISPATCH_NO_RUNTIME",
+      { stage: "review-semantic", storyId: story.id },
+    );
+  }
+
   // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
-  // costAggregator directly. ReviewCheckResult.cost will be 0 for pipeline-managed
+  // costAggregator directly. ReviewCheckResult.cost is 0 for pipeline-managed
   // reviews; per-stage cost roll-up is the trade-off for ADR-019 session-lifecycle
   // ownership. Track in follow-up if per-check cost breakdown is needed.
-  let llmCost = 0;
+  const llmCost = 0;
 
-  if (runtime) {
-    const callCtx = {
-      runtime,
-      packageView: runtime.packages.resolve(workdir),
-      packageDir: workdir,
-      agentName: agentManager.getDefault(),
-      storyId: story.id,
-      featureName,
-      contextBundle,
-    };
-    let opResult: import("../operations/semantic-review").SemanticReviewOutput;
-    try {
-      opResult = await callOp(callCtx, semanticReviewOp, {
-        story,
-        semanticConfig,
-        mode: diffMode,
-        diff,
-        storyGitRef: effectiveRef,
-        stat,
-        priorFailures,
-        excludePatterns,
-        featureCtxBlock,
-        blockingThreshold,
-      });
-    } catch (err) {
-      logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-      return {
-        check: "semantic",
-        success: true,
-        failOpen: true,
-        command: "",
-        exitCode: 0,
-        output: `skipped: LLM call failed — ${String(err)}`,
-        durationMs: Date.now() - startTime,
-      };
-    }
-    if (opResult.failOpen) {
-      logger?.warn("semantic", "Retry exhausted — fail-open", { storyId: story.id });
-      if (naxConfig?.review?.audit?.enabled) {
-        void _semanticDeps.writeReviewAudit({
-          reviewer: "semantic",
-          sessionName: "",
-          workdir,
-          storyId: story.id,
-          featureName,
-          parsed: false,
-          looksLikeFail: false,
-          result: null,
-        });
-      }
-      return {
-        check: "semantic",
-        success: true,
-        failOpen: true,
-        command: "",
-        exitCode: 0,
-        output: "semantic review: could not parse LLM response (fail-open)",
-        durationMs: Date.now() - startTime,
-      };
-    }
-    if (opResult.looksLikeFail) {
-      logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
-        storyId: story.id,
-      });
-      if (naxConfig?.review?.audit?.enabled) {
-        void _semanticDeps.writeReviewAudit({
-          reviewer: "semantic",
-          sessionName: "",
-          workdir,
-          storyId: story.id,
-          featureName,
-          parsed: false,
-          looksLikeFail: true,
-          result: null,
-        });
-      }
-      return {
-        check: "semantic",
-        success: false,
-        command: "",
-        exitCode: 1,
-        output:
-          "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
-        durationMs: Date.now() - startTime,
-      };
-    }
-    parsed = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
-  } else {
-    // @deprecated Legacy keepOpen path — runtime is always present under executeUnified().
-    // TODO(ADR-019): Remove this branch once all callers thread runtime (tracked in dogfood findings 2026-04-27).
-    logger?.warn("semantic", "LLM call via legacy agentManager.run — runtime not threaded, middleware skipped", {
-      storyId: story.id,
+  const callCtx = {
+    runtime,
+    packageView: runtime.packages.resolve(workdir),
+    packageDir: workdir,
+    agentName: effectiveAgentManager.getDefault(),
+    storyId: story.id,
+    featureName,
+    contextBundle,
+  };
+  let opResult: import("../operations/semantic-review").SemanticReviewOutput;
+  try {
+    opResult = await _semanticDeps.callOp(callCtx, semanticReviewOp, {
+      story,
+      semanticConfig,
+      mode: diffMode,
+      diff,
+      storyGitRef: effectiveRef,
+      stat,
+      priorFailures,
+      excludePatterns,
+      featureCtxBlock,
+      blockingThreshold,
     });
-    // Legacy keepOpen path — used when no runtime is available (standalone callers).
-    const reviewerSessionName = formatSessionName({
-      workdir,
-      featureName,
-      storyId: story.id,
-      role: "reviewer-semantic",
-    });
-    const contextToolStory: UserStory = {
-      id: story.id,
-      title: story.title,
-      description: story.description,
-      acceptanceCriteria: story.acceptanceCriteria,
-      tags: [],
-      dependencies: [],
-      status: "in-progress",
-      passes: false,
-      escalations: [],
-      attempts: 0,
+  } catch (err) {
+    logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+    return {
+      check: "semantic",
+      success: true,
+      failOpen: true,
+      command: "",
+      exitCode: 0,
+      output: `skipped: LLM call failed — ${String(err)}`,
+      durationMs: Date.now() - startTime,
     };
-    const defaultAgent = agentManager.getDefault();
-    const adapter = agentManager.getAgent(defaultAgent);
-    const legacyCloser = adapter as
-      | (import("../agents/types").AgentAdapter & {
-          closePhysicalSession?: (handle: string, runWorkdir: string, options?: { force?: boolean }) => Promise<void>;
-        })
-      | undefined;
-    let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
-    try {
-      if (naxConfig?.models) {
-        resolvedModelDef = resolveModelForAgent(naxConfig.models, defaultAgent, semanticConfig.modelTier, defaultAgent);
-      }
-    } catch {
-      // Use default model if resolution fails
-    }
-
-    const runOpts = {
-      workdir,
-      timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
-      modelTier: semanticConfig.modelTier,
-      modelDef: resolvedModelDef,
-      pipelineStage: "review",
-      config: naxConfig ?? DEFAULT_CONFIG,
-      featureName,
-      storyId: story.id,
-      sessionRole: "reviewer-semantic",
-      contextPullTools: contextBundle?.pullTools,
-      contextToolRuntime: contextBundle
-        ? createContextToolRuntime({
-            bundle: contextBundle,
-            story: contextToolStory,
-            config: naxConfig ?? DEFAULT_CONFIG,
-            repoRoot: workdir,
-          })
-        : undefined,
-    } as const;
-
-    let rawResponse: string;
-    let retryAttempted = false;
-    try {
-      const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
-      rawResponse = runResult.output;
-      llmCost = runResult.estimatedCostUsd ?? 0;
-      logger?.debug("semantic", "LLM call complete (legacy)", {
-        storyId: story.id,
-        responseLen: rawResponse.length,
-        estimatedCostUsd: llmCost,
-      });
-    } catch (err) {
-      logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
-      void legacyCloser?.closePhysicalSession?.(reviewerSessionName, workdir);
-      return {
-        check: "semantic",
-        success: true,
-        failOpen: true,
-        command: "",
-        exitCode: 0,
-        output: `skipped: LLM call failed — ${String(err)}`,
-        durationMs: Date.now() - startTime,
-      };
-    }
-
-    const isTruncated = looksLikeTruncatedJson(rawResponse);
-    if (isTruncated || !parseLLMResponse(rawResponse)) {
-      retryAttempted = true;
-      const retryPrompt = isTruncated
-        ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold })
-        : ReviewPromptBuilder.jsonRetry();
-      if (isTruncated) {
-        logger?.warn("semantic", "JSON parse retry — original response truncated", {
-          storyId: story.id,
-          originalByteSize: rawResponse.length,
-          blockingThreshold: blockingThreshold ?? "error",
-        });
-      }
-      logger?.info("semantic", "JSON parse failed, retrying (1/1)", {
-        storyId: story.id,
-        rawHead: rawResponse.slice(0, 200),
-        responseLen: rawResponse.length,
-        isTruncated,
-      });
-      try {
-        const retryResult = await agentManager.run({
-          runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
-        });
-        rawResponse = retryResult.output;
-        llmCost += retryResult.estimatedCostUsd ?? 0;
-        if (parseLLMResponse(rawResponse)) {
-          logger?.info("semantic", "JSON retry succeeded", { storyId: story.id, responseLen: rawResponse.length });
-        }
-      } catch (err) {
-        logger?.warn("semantic", "JSON retry call failed", { storyId: story.id, cause: String(err) });
-      }
-    }
-
-    void legacyCloser?.closePhysicalSession?.(reviewerSessionName, workdir);
-
-    const legacyParsed = parseLLMResponse(rawResponse);
-    if (!legacyParsed) {
-      const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
-      if (naxConfig?.review?.audit?.enabled) {
-        void _semanticDeps.writeReviewAudit({
-          reviewer: "semantic",
-          sessionName: reviewerSessionName,
-          workdir,
-          storyId: story.id,
-          featureName,
-          parsed: false,
-          looksLikeFail,
-          result: null,
-        });
-      }
-      if (looksLikeFail) {
-        logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
-          storyId: story.id,
-          retryAttempted,
-          rawHead: rawResponse.slice(0, 200),
-        });
-        return {
-          check: "semantic",
-          success: false,
-          command: "",
-          exitCode: 1,
-          output:
-            "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
-          durationMs: Date.now() - startTime,
-          cost: llmCost,
-        };
-      }
-      logger?.warn("semantic", "Retry exhausted — fail-open", {
-        storyId: story.id,
-        retries: retryAttempted ? 1 : 0,
-        rawHead: rawResponse.slice(0, 200),
-        responseLen: rawResponse.length,
-      });
-      return {
-        check: "semantic",
-        success: true,
-        failOpen: true,
-        command: "",
-        exitCode: 0,
-        output: "semantic review: could not parse LLM response (fail-open)",
-        durationMs: Date.now() - startTime,
-        cost: llmCost,
-      };
-    }
-    parsed = legacyParsed;
   }
+  if (opResult.failOpen) {
+    logger?.warn("semantic", "Retry exhausted — fail-open", { storyId: story.id });
+    if (naxConfig?.review?.audit?.enabled) {
+      void _semanticDeps.writeReviewAudit({
+        reviewer: "semantic",
+        sessionName: "",
+        workdir,
+        storyId: story.id,
+        featureName,
+        parsed: false,
+        looksLikeFail: false,
+        result: null,
+      });
+    }
+    return {
+      check: "semantic",
+      success: true,
+      failOpen: true,
+      command: "",
+      exitCode: 0,
+      output: "semantic review: could not parse LLM response (fail-open)",
+      durationMs: Date.now() - startTime,
+    };
+  }
+  if (opResult.looksLikeFail) {
+    logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+      storyId: story.id,
+    });
+    if (naxConfig?.review?.audit?.enabled) {
+      void _semanticDeps.writeReviewAudit({
+        reviewer: "semantic",
+        sessionName: "",
+        workdir,
+        storyId: story.id,
+        featureName,
+        parsed: false,
+        looksLikeFail: true,
+        result: null,
+      });
+    }
+    return {
+      check: "semantic",
+      success: false,
+      command: "",
+      exitCode: 1,
+      output: "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
+      durationMs: Date.now() - startTime,
+    };
+  }
+  const parsed: LLMResponse = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
 
   const sanitizedFindings = await substantiateSemanticEvidence(
     sanitizeRefModeFindings(parsed.findings, diffMode),

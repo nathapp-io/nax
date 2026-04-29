@@ -1,29 +1,21 @@
 /**
  * Unit tests for the JSON retry logic in src/review/semantic.ts
  *
- * Tests cover:
- * - Retry succeeds: initial response unparseable, retry returns valid JSON
- * - Retry failure: retry call throws, falls through to fail-open
- * - agent.run called twice when initial response is unparseable
- * - Retry call uses keepOpen: false
- * - Cost accumulated from both initial and retry calls
- * - Logging: info on parse fail + retry, info on retry success, warn on exhaustion
+ * ADR-019: Retry moved inside semanticReviewOp.hopBody. runSemanticReview
+ * calls callOp once; retry is invisible at this level. Tests verify
+ * observable outcomes (fail-open, looksLikeFail, success) and logging.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { AgentResult } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents/manager-types";
-import type { AgentAdapter } from "../../../src/agents/types";
 import * as loggerModule from "../../../src/logger";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeAgentAdapter, makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
+// ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const STORY: SemanticStory = {
   id: "US-002",
@@ -45,97 +37,7 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
 
 const PASSING_LLM_RESPONSE = JSON.stringify({ passed: true, findings: [] });
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
-}
-
-/**
- * Build a mock AgentAdapter whose run() returns a different response per call.
- * responses[0] is returned on the first call, responses[1] on the second, etc.
- * The last entry is reused for any additional calls beyond the array length.
- */
-function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapter {
-  let callIndex = 0;
-  const agentResultFor = (output: string): AgentResult => ({
-    success: true,
-    exitCode: 0,
-    output,
-    rateLimited: false,
-    durationMs: 100,
-    estimatedCostUsd: costPerCall,
-  });
-  return makeAgentAdapter({
-    name: "mock",
-    displayName: "Mock Multi-Call Agent",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: [],
-      maxContextTokens: 128_000,
-      features: new Set(),
-    } as unknown as AgentAdapter["capabilities"],
-    isInstalled: mock(async () => true),
-    run: mock(async () => {
-      const response = responses[callIndex] ?? responses[responses.length - 1];
-      callIndex++;
-      return agentResultFor(response);
-    }),
-    closeSession: mock(async () => {}),
-    closePhysicalSession: mock(async () => {}),
-    buildCommand: mock(() => []),
-    plan: mock(async () => { throw new Error("not used"); }),
-    decompose: mock(async () => { throw new Error("not used"); }),
-    complete: mock(async (_prompt: string) => {
-      throw new Error("complete() must NOT be called in non-debate path");
-    }),
-  });
-}
-
-/**
- * Build an IAgentManager wrapping a multi-call agent adapter.
- * Tests assert on agentManager.getAgent("claude").run.mock.calls directly
- * since semantic.ts calls agentManager.run() which delegates to adapter.run().
- */
-function makeMultiCallAgentManager(responses: string[], costPerCall = 0.5): IAgentManager {
-  const adapter = makeMultiCallAgent(responses, costPerCall);
-
-  let callIndex = 0;
-  const getResponse = () => {
-    const response = responses[callIndex] ?? responses[responses.length - 1];
-    callIndex++;
-    return response;
-  };
-
-  return makeMockAgentManager({
-    getDefaultAgent: "claude",
-    getAgentFn: () => adapter,
-    runFn: async (_agentName: string, opts: unknown) => {
-      const result = await adapter.run(opts as Parameters<typeof adapter.run>[0]);
-      return { ...result, agentFallbacks: [] };
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Logger mock helpers
-// ---------------------------------------------------------------------------
+// ─── Logger mock helpers ─────────────────────────────────────────────────────
 
 interface LogCall {
   stage: string;
@@ -167,20 +69,20 @@ function makeLogger(): MockLogger {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Saved deps
-// ---------------------------------------------------------------------------
+// ─── Saved deps ──────────────────────────────────────────────────────────────
 
 let origSpawn: typeof _diffUtilsDeps.spawn;
 let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
 let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 let origWriteReviewAudit: typeof _semanticDeps.writeReviewAudit;
+let origCallOp: typeof _semanticDeps.callOp;
 
 function saveAllDeps() {
   origSpawn = _diffUtilsDeps.spawn;
   origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
   origGetMergeBase = _diffUtilsDeps.getMergeBase;
   origWriteReviewAudit = _semanticDeps.writeReviewAudit;
+  origCallOp = _semanticDeps.callOp;
 }
 
 function restoreAllDeps() {
@@ -188,20 +90,48 @@ function restoreAllDeps() {
   _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
   _diffUtilsDeps.getMergeBase = origGetMergeBase;
   _semanticDeps.writeReviewAudit = origWriteReviewAudit;
+  _semanticDeps.callOp = origCallOp;
 }
 
 function setupHappyPathDeps() {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-  _diffUtilsDeps.spawn = makeSpawnMock("src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)");
-  _semanticDeps.writeReviewAudit = mock(async () => {});
+  _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
+    exited: Promise.resolve(0),
+    stdout: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)"));
+        controller.close();
+      },
+    }),
+    stderr: new ReadableStream({ start(controller) { controller.close(); } }),
+    kill: () => {},
+  })) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
-// ---------------------------------------------------------------------------
-// JSON retry — success path
-// ---------------------------------------------------------------------------
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-describe("runSemanticReview — JSON retry succeeds", () => {
+function makeAgentManager(llmResponse: string): ReturnType<typeof makeMockAgentManager> {
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: 0,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    }),
+  });
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+describe("runSemanticReview — JSON retry outcomes", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -209,8 +139,13 @@ describe("runSemanticReview — JSON retry succeeds", () => {
 
   afterEach(restoreAllDeps);
 
-  test("uses valid JSON from retry when initial response is unparseable", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_LLM_RESPONSE]);
+  test("returns success when callOp returns valid findings", async () => {
+    _semanticDeps.callOp = mock(async () => ({
+      passed: true,
+      findings: [],
+    }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runSemanticReview(
       "/tmp/wd",
@@ -218,64 +153,23 @@ describe("runSemanticReview — JSON retry succeeds", () => {
       STORY,
       DEFAULT_SEMANTIC_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
     );
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("Semantic review passed");
   });
 
-  test("agent.run called twice when initial response is unparseable", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_LLM_RESPONSE]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
-  });
-
-  test("initial call uses keepOpen: true so retry has conversation history (session closes by end of runReview, ADR-008)", async () => {
-    const agentManager = makeMultiCallAgentManager([PASSING_LLM_RESPONSE]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[0][0] as Record<string, unknown>).keepOpen).toBe(true);
-  });
-
-  test("retry call uses keepOpen: false to close the session", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_LLM_RESPONSE]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[1][0] as Record<string, unknown>).keepOpen).toBe(false);
-  });
-
-  test("agent.closePhysicalSession called once to close the session after runReview completes", async () => {
-    const agentManager = makeMultiCallAgentManager([PASSING_LLM_RESPONSE]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-
-  test("agent.closePhysicalSession called even when retry was needed (retry-exhausted path)", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_LLM_RESPONSE]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-
-  test("agent.run called once when initial response is valid JSON", async () => {
-    const agentManager = makeMultiCallAgentManager([PASSING_LLM_RESPONSE]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-
-  test("cost accumulated from both initial and retry calls", async () => {
-    const agentManager = makeMultiCallAgentManager(["not json", PASSING_LLM_RESPONSE], 0.5);
+  test("returns fail-open when callOp returns failOpen", async () => {
+    _semanticDeps.callOp = mock(async () => ({
+      passed: true,
+      findings: [],
+      failOpen: true,
+    }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runSemanticReview(
       "/tmp/wd",
@@ -283,75 +177,24 @@ describe("runSemanticReview — JSON retry succeeds", () => {
       STORY,
       DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-    );
-
-    expect(result.cost).toBeCloseTo(1.0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// JSON retry — failure paths
-// ---------------------------------------------------------------------------
-
-describe("runSemanticReview — JSON retry failure paths", () => {
-  beforeEach(() => {
-    saveAllDeps();
-    setupHappyPathDeps();
-  });
-
-  afterEach(restoreAllDeps);
-
-  test("falls through to fail-open when retry call throws", async () => {
-    let callIndex = 0;
-    const runMock = mock(async () => {
-      callIndex++;
-      if (callIndex === 1) {
-        return { success: true, exitCode: 0, output: "not json at all", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult;
-      }
-      throw new Error("retry connection failure");
-    });
-    const adapter: AgentAdapter = makeAgentAdapter({
-      name: "mock",
-      displayName: "Mock Agent",
-      binary: "mock",
-      capabilities: {
-        supportedTiers: [],
-        maxContextTokens: 128_000,
-        features: new Set(),
-      } as unknown as AgentAdapter["capabilities"],
-      isInstalled: mock(async () => true),
-      run: runMock,
-      closeSession: mock(async () => {}),
-      closePhysicalSession: mock(async () => {}),
-      buildCommand: mock(() => []),
-      plan: mock(async () => { throw new Error("not used"); }),
-      decompose: mock(async () => { throw new Error("not used"); }),
-      complete: mock(async (_prompt: string) => { throw new Error("not used"); }),
-    });
-    const agentManager = makeMockAgentManager({
-      getDefaultAgent: "claude",
-      getAgentFn: () => adapter,
-      runFn: async (_agentName: string, opts: unknown) => {
-        const result = await runMock(opts);
-        return { ...result, agentFallbacks: [] };
-      },
-    });
-
-    const result = await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
     );
 
     expect(result.success).toBe(true);
+    expect(result.failOpen).toBe(true);
     expect(result.output).toContain("fail-open");
   });
 
-  test("fails closed when retry also returns truncated JSON with passed:false", async () => {
-    const truncated = '{ "passed": false, "findings": [{ "severity": "error"';
-    const agentManager = makeMultiCallAgentManager(["not json", truncated]);
+  test("returns failure when callOp returns looksLikeFail", async () => {
+    _semanticDeps.callOp = mock(async () => ({
+      passed: false,
+      findings: [],
+      looksLikeFail: true,
+    }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runSemanticReview(
       "/tmp/wd",
@@ -359,18 +202,62 @@ describe("runSemanticReview — JSON retry failure paths", () => {
       STORY,
       DEFAULT_SEMANTIC_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
     );
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("passed:false");
   });
+
+  test("returns failure with blocking findings when callOp returns findings", async () => {
+    _semanticDeps.callOp = mock(async () => ({
+      passed: false,
+      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "Bug", suggestion: "Fix" }],
+    }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    const result = await runSemanticReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings![0].ruleId).toBe("semantic");
+  });
+
+  test("returns fail-open when callOp throws", async () => {
+    _semanticDeps.callOp = mock(async () => { throw new Error("LLM call failed"); });
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    const result = await runSemanticReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.failOpen).toBe(true);
+    expect(result.output).toContain("skipped");
+  });
 });
 
-// ---------------------------------------------------------------------------
-// Logging behaviour
-// ---------------------------------------------------------------------------
-
-describe("runSemanticReview — retry logging", () => {
+describe("runSemanticReview — logging", () => {
   let loggerSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
@@ -383,62 +270,170 @@ describe("runSemanticReview — retry logging", () => {
     loggerSpy?.mockRestore();
   });
 
-  test("logs info 'JSON parse failed, retrying (1/1)' with rawHead when initial parse fails", async () => {
+  test("logs info 'Semantic review passed' on success", async () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const badOutput = "this is not json at all";
-    const agentManager = makeMultiCallAgentManager([badOutput, PASSING_LLM_RESPONSE]);
+    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    await runSemanticReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
+    );
 
-    const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
-    expect(parseFailLog).toBeDefined();
-    expect(parseFailLog?.stage).toBe("semantic");
-    expect(parseFailLog?.data?.rawHead).toContain("not json");
-    expect(parseFailLog?.data?.responseLen).toBe(badOutput.length);
-  });
-
-  test("logs info 'JSON retry succeeded' when retry parse passes", async () => {
-    const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
-
-    const agentManager = makeMultiCallAgentManager(["not json", PASSING_LLM_RESPONSE]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    const successLog = logger.infoCalls.find((c) => c.message.includes("JSON retry succeeded"));
+    const successLog = logger.infoCalls.find((c) => c.message.includes("Semantic review passed"));
     expect(successLog).toBeDefined();
-    expect(successLog?.stage).toBe("semantic");
-    expect(successLog?.data?.responseLen).toBeGreaterThan(0);
+    expect(successLog?.stage).toBe("review");
   });
 
-  test("does not log 'JSON retry succeeded' when initial parse succeeds (no retry needed)", async () => {
+  test("logs warn 'Retry exhausted — fail-open' when callOp returns failOpen", async () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const agentManager = makeMultiCallAgentManager([PASSING_LLM_RESPONSE]);
+    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [], failOpen: true }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
-
-    const retryLog = logger.infoCalls.find((c) => c.message.includes("retry"));
-    expect(retryLog).toBeUndefined();
-  });
-
-  test("logs warn 'Retry exhausted — fail-open' with retries:1 and rawHead when both attempts fail", async () => {
-    const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
-
-    const badOutput = "still not json after retry";
-    const agentManager = makeMultiCallAgentManager(["not json", badOutput]);
-
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    await runSemanticReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
+    );
 
     const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(exhaustLog).toBeDefined();
     expect(exhaustLog?.stage).toBe("semantic");
-    expect(exhaustLog?.data?.retries).toBe(1);
-    expect(exhaustLog?.data?.rawHead).toContain("not json");
-    expect(exhaustLog?.data?.responseLen).toBe(badOutput.length);
+  });
+
+  test("logs warn 'LLM returned truncated JSON' when callOp returns looksLikeFail", async () => {
+    const logger = makeLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    _semanticDeps.callOp = mock(async () => ({ passed: false, findings: [], looksLikeFail: true }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    await runSemanticReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
+    );
+
+    const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated JSON"));
+    expect(truncatedLog).toBeDefined();
+    expect(truncatedLog?.stage).toBe("semantic");
+  });
+
+  test("does not log 'Retry exhausted' when callOp returns success", async () => {
+    const logger = makeLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    await runSemanticReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined,
+      undefined, runtime,
+    );
+
+    const retryLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
+    expect(retryLog).toBeUndefined();
+  });
+});
+
+describe("semanticReviewOp.hopBody — retry behaviour", () => {
+  test("calls ctx.send twice when first response is unparseable", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: "not json at all", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    const result = await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
+
+    expect(sendCalls).toHaveLength(2);
+    expect(result.output).toBe(PASSING_LLM_RESPONSE);
+  });
+
+  test("calls ctx.send once when first response is valid JSON", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    const result = await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
+
+    expect(sendCalls).toHaveLength(1);
+    expect(result.output).toBe(PASSING_LLM_RESPONSE);
+  });
+
+  test("accumulates cost from both initial and retry calls", async () => {
+    let callCount = 0;
+    const mockSend = mock(async (_prompt: string) => {
+      callCount++;
+      return {
+        output: callCount === 1 ? "not json" : PASSING_LLM_RESPONSE,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+        estimatedCostUsd: 0.5,
+      };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    const result = await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
+
+    expect(result.estimatedCostUsd).toBe(1.0);
   });
 });

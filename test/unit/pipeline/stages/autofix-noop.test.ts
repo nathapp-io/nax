@@ -16,12 +16,15 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+import { makeMockRuntime } from "../../../helpers/runtime";
+import { makeSessionManager } from "../../../helpers/mock-session-manager";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
+  const runtime = makeMockRuntime({});
   return {
     config: {
       ...DEFAULT_CONFIG,
@@ -44,6 +47,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp",
     projectDir: "/tmp",
     hooks: {} as unknown as PipelineContext["hooks"],
+    runtime,
     ...overrides,
   };
 }
@@ -86,6 +90,15 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     }),
     completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
     getAgent: () => undefined,
+    runAsSession: mock(async (_agentName: string, _handle: unknown, prompt: string, _options: unknown) => {
+      const result = await mockRun({ prompt });
+      return {
+        output: result.output ?? "",
+        estimatedCostUsd: result.estimatedCostUsd ?? 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      };
+    }),
   } as any;
 }
 

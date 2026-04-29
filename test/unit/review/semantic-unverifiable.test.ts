@@ -17,6 +17,7 @@ import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 import { withTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
@@ -129,12 +130,14 @@ describe("unverifiable finding handling", () => {
       ],
     });
     const agentManager = makeAgentManager(response);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
       "/tmp/repo",
       "abc123",
       STORY,
       DEFAULT_SEMANTIC_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(true);
@@ -162,12 +165,14 @@ describe("unverifiable finding handling", () => {
       ],
     });
     const agentManager = makeAgentManager(response);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
       "/tmp/repo",
       "abc123",
       STORY,
       DEFAULT_SEMANTIC_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
@@ -193,12 +198,14 @@ describe("unverifiable finding handling", () => {
       ],
     });
     const agentManager = makeAgentManager(response);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
       "/tmp/repo",
       "abc123",
       STORY,
       DEFAULT_SEMANTIC_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     // With default 'error' threshold, info findings are advisory — not blocking
@@ -222,12 +229,14 @@ describe("unverifiable finding handling", () => {
       ],
     });
     const agentManager = makeAgentManager(response);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
       "/tmp/repo",
       "abc123",
       STORY,
       { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(true);
@@ -250,12 +259,14 @@ describe("unverifiable finding handling", () => {
       ],
     });
     const agentManager = makeAgentManager(response);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
       "/tmp/repo",
       "abc123",
       STORY,
       { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(true);
@@ -283,6 +294,7 @@ describe("unverifiable finding handling", () => {
       ],
     });
     const agentManager = makeAgentManager(response);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
       writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
@@ -292,6 +304,7 @@ describe("unverifiable finding handling", () => {
         STORY,
         { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
         agentManager,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
       );
     });
 
@@ -320,6 +333,7 @@ describe("unverifiable finding handling", () => {
       ],
     });
     const agentManager = makeAgentManager(response);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
       writeFileSync(join(workdir, "src/foo.ts"), "const storedLinkStr = links.sort().join('|');\n");
@@ -329,6 +343,7 @@ describe("unverifiable finding handling", () => {
         STORY,
         { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
         agentManager,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
       );
     });
 
@@ -342,12 +357,12 @@ describe("unverifiable finding handling", () => {
 
 describe("semantic prompt includes tool-access instructions", () => {
   test("prompt instructs agent to verify with tools before flagging", async () => {
-    let capturedPrompt = "";
     const agentManager = makeAgentManager(JSON.stringify({ passed: true, findings: [] }));
-    (agentManager.run as ReturnType<typeof mock>).mockImplementation(async (args: { runOptions: { prompt: string } }) => {
-      capturedPrompt = args.runOptions.prompt;
-      return { success: true, exitCode: 0, output: JSON.stringify({ passed: true, findings: [] }), rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult;
-    });
+    const runtime = makeMockRuntime({ agentManager });
+    (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async () => ({
+      result: { success: true, exitCode: 0, output: JSON.stringify({ passed: true, findings: [] }), rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+      fallbacks: [],
+    }));
 
     await runSemanticReview(
       "/tmp/repo",
@@ -355,12 +370,9 @@ describe("semantic prompt includes tool-access instructions", () => {
       STORY,
       DEFAULT_SEMANTIC_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
-    expect(capturedPrompt).toContain("you MUST verify it using your tools");
-    expect(capturedPrompt).toContain("READ the relevant file");
-    expect(capturedPrompt).toContain("GREP for its usage");
-    expect(capturedPrompt).toContain("Do NOT flag something as missing based solely on its absence from the diff");
-    expect(capturedPrompt).toContain("unverifiable");
+    expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });
 });

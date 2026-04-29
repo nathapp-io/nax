@@ -5,6 +5,7 @@ import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+import { makeMockRuntime } from "../../../helpers/runtime";
 
 function makeFailedReviewResult(checks: Partial<ReviewCheckResult>[]) {
   const fullChecks = checks.map((c) => ({
@@ -44,6 +45,17 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     }),
     completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
     getAgent: () => undefined,
+    runAsSession: mock(async (_agentName: string, _handle: unknown, prompt: string, _options: unknown) => {
+      const result = await mockRun({ prompt });
+      // ADR-019: runAsSession returns TurnResult; loop continuation is controlled
+      // by recheckReview()/verify(), not by throwing on agent failure.
+      return {
+        output: result.output ?? "",
+        estimatedCostUsd: result.estimatedCostUsd ?? 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      };
+    }),
   } as any;
 }
 
@@ -69,6 +81,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp",
     projectDir: "/tmp",
     hooks: { hooks: {} } as any,
+    runtime: makeMockRuntime({}),
     ...overrides,
   };
 }

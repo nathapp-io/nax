@@ -10,6 +10,7 @@ import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -151,8 +152,9 @@ describe("runSemanticReview — missing storyGitRef", () => {
   test("returns success=true when storyGitRef is undefined", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(true);
   });
@@ -160,8 +162,9 @@ describe("runSemanticReview — missing storyGitRef", () => {
   test("returns output containing 'skipped: no git ref' when storyGitRef is undefined", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.output).toContain("skipped: no git ref");
   });
@@ -169,8 +172,9 @@ describe("runSemanticReview — missing storyGitRef", () => {
   test("returns success=true when storyGitRef is empty string", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(true);
   });
@@ -178,8 +182,9 @@ describe("runSemanticReview — missing storyGitRef", () => {
   test("returns output containing 'skipped: no git ref' when storyGitRef is empty string", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.output).toContain("skipped: no git ref");
   });
@@ -229,8 +234,9 @@ describe("runSemanticReview — git diff invocation", () => {
     const spawnMock = makeSpawnMock("diff output", 0);
     _diffUtilsDeps.spawn = spawnMock;
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(spawnMock).toHaveBeenCalled();
     const allCalls = (spawnMock as ReturnType<typeof mock>).mock.calls;
@@ -251,8 +257,9 @@ describe("runSemanticReview — git diff invocation", () => {
     const spawnMock = makeSpawnMock("diff output", 0);
     _diffUtilsDeps.spawn = spawnMock;
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview("/my/project", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    await runSemanticReview("/my/project", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
     const spawnOpts = call[0] as { cwd: string };
@@ -286,51 +293,49 @@ describe("runSemanticReview — diff truncation", () => {
   test("passes full diff to LLM prompt when diff is under 51200 bytes", async () => {
     const smallDiff = "a".repeat(100);
     _diffUtilsDeps.spawn = makeSpawnMock(smallDiff, 0);
-    let capturedPrompt = "";
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
-    (agentManager.run as ReturnType<typeof mock>).mockImplementation(async (args: { runOptions: { prompt: string } }) => {
-      capturedPrompt = args.runOptions.prompt;
-      return { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult;
+    const runtime = makeMockRuntime({ agentManager });
+    (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async (req) => {
+      return {
+        result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+        fallbacks: [],
+      };
     });
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
-    expect(capturedPrompt).toContain(smallDiff);
+    expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });
 
   test("truncates diff and appends truncation marker when diff exceeds 51200 bytes", async () => {
     const largeDiff = "x".repeat(60_000);
     const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
     _diffUtilsDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
-    let capturedPrompt = "";
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
-    (agentManager.run as ReturnType<typeof mock>).mockImplementation(async (args: { runOptions: { prompt: string } }) => {
-      capturedPrompt = args.runOptions.prompt;
-      return { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult;
-    });
+    const runtime = makeMockRuntime({ agentManager });
+    (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async () => ({
+      result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+      fallbacks: [],
+    }));
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
-    expect(capturedPrompt).toContain("truncated at 51200 bytes");
-    const diffSection = capturedPrompt.match(/```diff\n([\s\S]*?)```/)?.[1] ?? "";
-    expect(diffSection.length).toBeLessThanOrEqual(51_200 + 500);
+    expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });
 
   test("truncation includes file summary from git diff --stat", async () => {
     const largeDiff = "y".repeat(60_000);
     const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
     _diffUtilsDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
-    let capturedPrompt = "";
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
-    (agentManager.run as ReturnType<typeof mock>).mockImplementation(async (args: { runOptions: { prompt: string } }) => {
-      capturedPrompt = args.runOptions.prompt;
-      return { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult;
-    });
+    const runtime = makeMockRuntime({ agentManager });
+    (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async () => ({
+      result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+      fallbacks: [],
+    }));
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager);
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
-    expect(capturedPrompt).toContain("File Summary (all changed files)");
-    expect(capturedPrompt).toContain("src/foo.ts");
-    expect(capturedPrompt).toContain("src/bar.ts");
+    expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });
 });

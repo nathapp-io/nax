@@ -17,6 +17,7 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+import { makeMockRuntime } from "../../../helpers/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -116,10 +117,20 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     }),
     completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
     getAgent: () => undefined,
+    runAsSession: mock(async (_agentName: string, _handle: unknown, prompt: string, _options: unknown) => {
+      const result = await mockRun({ prompt });
+      return {
+        output: result.output ?? "",
+        estimatedCostUsd: result.estimatedCostUsd ?? 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      };
+    }),
   } as any;
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
+  const runtime = makeMockRuntime({});
   return {
     config: makeDialogueConfig(true),
     rootConfig: makeDialogueConfig(true),
@@ -140,6 +151,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     workdir: "/tmp",
     hooks: {},
+    runtime,
     ...overrides,
   // biome-ignore lint/suspicious/noExplicitAny: test context
   } as any;

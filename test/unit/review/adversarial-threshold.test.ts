@@ -17,6 +17,7 @@ import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -84,6 +85,7 @@ function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
       agentFallbacks: [] as unknown[],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+    runWithFallbackFn: async () => ({ result: { success: true as const, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] as unknown[] }, fallbacks: [] }),
   });
 }
 
@@ -131,7 +133,9 @@ afterEach(() => {
 
 describe("runAdversarialReview — blockingThreshold defaults to 'error'", () => {
   test("warning finding goes to advisoryFindings, not findings, by default", async () => {
-    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(WARNING_ONLY_RESPONSE));
+    const agentManager = makeAgentManager(WARNING_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
@@ -140,7 +144,9 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
   });
 
   test("error finding blocks by default", async () => {
-    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(ERROR_ONLY_RESPONSE));
+    const agentManager = makeAgentManager(ERROR_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(false);
     expect(result.findings!.length).toBe(1);
@@ -148,7 +154,9 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
   });
 
   test("mixed: error blocks, warning advisory by default", async () => {
-    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(MIXED_RESPONSE));
+    const agentManager = makeAgentManager(MIXED_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(false);
     expect(result.findings!.length).toBe(1);
@@ -158,7 +166,9 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
   });
 
   test("info finding goes to advisoryFindings by default", async () => {
-    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(INFO_ONLY_RESPONSE));
+    const agentManager = makeAgentManager(INFO_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
@@ -172,9 +182,11 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
 
 describe("runAdversarialReview — blockingThreshold: 'warning'", () => {
   test("warning finding blocks when threshold is 'warning'", async () => {
+    const agentManager = makeAgentManager(WARNING_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runAdversarialReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(WARNING_ONLY_RESPONSE),
-      undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
@@ -183,9 +195,11 @@ describe("runAdversarialReview — blockingThreshold: 'warning'", () => {
   });
 
   test("info finding remains advisory when threshold is 'warning'", async () => {
+    const agentManager = makeAgentManager(INFO_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runAdversarialReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(INFO_ONLY_RESPONSE),
-      undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(true);
@@ -194,9 +208,11 @@ describe("runAdversarialReview — blockingThreshold: 'warning'", () => {
   });
 
   test("both error and warning block when threshold is 'warning'", async () => {
+    const agentManager = makeAgentManager(MIXED_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runAdversarialReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(MIXED_RESPONSE),
-      undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
@@ -211,9 +227,11 @@ describe("runAdversarialReview — blockingThreshold: 'warning'", () => {
 
 describe("runAdversarialReview — blockingThreshold: 'info'", () => {
   test("info finding blocks when threshold is 'info'", async () => {
+    const agentManager = makeAgentManager(INFO_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runAdversarialReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(INFO_ONLY_RESPONSE),
-      undefined, undefined, undefined, "info",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, "info", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
@@ -228,18 +246,22 @@ describe("runAdversarialReview — blockingThreshold: 'info'", () => {
 
 describe("runAdversarialReview — advisoryFindings absent when no advisory findings", () => {
   test("advisoryFindings is undefined when all findings block", async () => {
+    const agentManager = makeAgentManager(MIXED_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runAdversarialReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(MIXED_RESPONSE),
-      undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.advisoryFindings).toBeUndefined();
   });
 
   test("advisoryFindings is undefined when passed=true with no findings", async () => {
+    const agentManager = makeAgentManager(JSON.stringify({ passed: true, findings: [] }));
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runAdversarialReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG,
-      makeAgentManager(JSON.stringify({ passed: true, findings: [] })),
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.advisoryFindings).toBeUndefined();
