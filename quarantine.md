@@ -41,7 +41,9 @@ All quarantined tests share the same pattern:
 
 | File | Tests Quarantined | Root Cause |
 |------|-------------------|------------|
-| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 7 tests: `returns cost`, `throws`, `modelTier`, `keepOpen` x2, `sessionRole` tests | DISPATCH_NO_RUNTIME — T2-pipeline migration incomplete; brace issue; reattempts needed |
+| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 7 tests | T2-pipeline migration incomplete; brace issue; reattempts needed |
+| `test/unit/pipeline/stages/autofix-budget-prompts.test.ts` | 8 tests: all global budget, prompt escalation, #412 prompt selection tests | Need `runAsSession` — ADR-019 pipeline uses session-based dispatch |
+| `test/unit/pipeline/stages/autofix-dialogue.test.ts` | 8 tests: all CLARIFY relay, clarification cap, clarify error resilience tests | Need `runAsSession` — ADR-019 pipeline uses session-based dispatch |
 
 ## Pattern: T2-pipeline Migration
 
