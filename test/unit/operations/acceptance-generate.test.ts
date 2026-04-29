@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { makeTestRuntime } from "../../helpers";
-import type { AcceptanceGenerateInput } from "../../../src/operations/acceptance-generate";
+import { join } from "node:path";
 import { acceptanceGenerateOp } from "../../../src/operations/acceptance-generate";
+import type { AcceptanceGenerateInput } from "../../../src/operations/acceptance-generate";
+import type { VerifyContext } from "../../../src/operations/types";
+import { makeTestRuntime } from "../../helpers";
+import { withTempDir } from "../../helpers/temp";
 
 const SAMPLE_INPUT: AcceptanceGenerateInput = {
   featureName: "my-feature",
@@ -14,6 +17,20 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(acceptanceGenerateOp.config) };
+}
+
+function makeVerifyCtx(overrides: {
+  readFile?: (path: string) => Promise<string | null>;
+  fileExists?: (path: string) => Promise<boolean>;
+} = {}): VerifyContext<ReturnType<typeof acceptanceGenerateOp.config.select>> {
+  const runtime = makeTestRuntime();
+  const view = runtime.packages.repo();
+  return {
+    packageView: view,
+    config: view.select(acceptanceGenerateOp.config),
+    readFile: overrides.readFile ?? (async () => null),
+    fileExists: overrides.fileExists ?? (async () => false),
+  };
 }
 
 describe("acceptanceGenerateOp shape", () => {
@@ -66,5 +83,71 @@ describe("acceptanceGenerateOp.parse()", () => {
     const output = "```\nimport { describe } from 'bun:test';\ndescribe('feature', () => {});\n```";
     const result = acceptanceGenerateOp.parse(output, SAMPLE_INPUT, ctx);
     expect(result.testCode).toContain("import");
+  });
+});
+
+describe("acceptanceGenerateOp.verify()", () => {
+  test("returns parsed unchanged when testCode is non-null (stdout had real code)", async () => {
+    const ctx = makeVerifyCtx();
+    const parsed = { testCode: "describe('x', () => {})" };
+    const result = await acceptanceGenerateOp.verify!(parsed, SAMPLE_INPUT, ctx);
+    expect(result).toEqual(parsed);
+  });
+
+  test("reads disk file when parsed.testCode is null", async () => {
+    await withTempDir(async (dir) => {
+      const testPath = join(dir, "acceptance.test.ts");
+      const diskCode = "```typescript\ndescribe('x', () => { test('y', () => expect(1).toBe(1)); });\n```";
+      await Bun.write(testPath, diskCode);
+
+      const input = { ...SAMPLE_INPUT, targetTestFilePath: testPath };
+      const ctx = makeVerifyCtx({
+        readFile: async (p) => {
+          const f = Bun.file(p);
+          return (await f.exists()) ? await f.text() : null;
+        },
+      });
+
+      const result = await acceptanceGenerateOp.verify!({ testCode: null }, input, ctx);
+      expect(result?.testCode).toContain("describe");
+    });
+  });
+
+  test("Tier 2: returns disk content when it looks like test source (no fenced block)", async () => {
+    await withTempDir(async (dir) => {
+      const testPath = join(dir, "acceptance.test.ts");
+      const diskCode = "import { describe, test, expect } from 'bun:test';\ndescribe('x', () => { test('y', () => expect(1).toBe(1)); });";
+      await Bun.write(testPath, diskCode);
+
+      const input = { ...SAMPLE_INPUT, targetTestFilePath: testPath };
+      const ctx = makeVerifyCtx({
+        readFile: async (p) => {
+          const f = Bun.file(p);
+          return (await f.exists()) ? await f.text() : null;
+        },
+      });
+
+      const result = await acceptanceGenerateOp.verify!({ testCode: null }, input, ctx);
+      expect(result?.testCode).toBe(diskCode);
+    });
+  });
+
+  test("returns null when disk file is missing", async () => {
+    const ctx = makeVerifyCtx({ readFile: async () => null });
+    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
+    expect(result).toBeNull();
+  });
+
+  test("returns null when disk content is stub-shaped", async () => {
+    const stubCode = "describe('x', () => { test('y', () => expect(true).toBe(false)); });";
+    const ctx = makeVerifyCtx({ readFile: async () => stubCode });
+    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
+    expect(result).toBeNull();
+  });
+
+  test("returns null when disk content has no test markers", async () => {
+    const ctx = makeVerifyCtx({ readFile: async () => "just some random text" });
+    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
+    expect(result).toBeNull();
   });
 });
