@@ -136,14 +136,15 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(prompt).toContain("UNRESOLVED:");
   });
 
-  test("instructs agent to fix ALL issues and commit", () => {
+  test("instructs agent to fix ALL issues, verify, and commit", () => {
     const prompt = RectifierPromptBuilder.firstAttemptDelta(
       [makeCheck("lint", "error")],
       2,
     );
 
     expect(prompt).toContain("Fix ALL issues listed");
-    expect(prompt).toContain("Commit your fixes when done");
+    expect(prompt).toContain("re-run the failing check(s) to verify they pass before committing");
+    expect(prompt).toContain("Commit your changes when all checks pass");
   });
 
   test("does NOT include story title or acceptance criteria sections", () => {
