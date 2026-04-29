@@ -1,0 +1,1108 @@
+diff --git a/src/pipeline/stages/autofix-adversarial.ts b/src/pipeline/stages/autofix-adversarial.ts
+index 6455eca1..9df9c7a3 100644
+--- a/src/pipeline/stages/autofix-adversarial.ts
++++ b/src/pipeline/stages/autofix-adversarial.ts
+@@ -12,6 +12,7 @@
+ 
+ import type { IAgentManager } from "../../agents";
+ import { resolveModelForAgent } from "../../config";
++import { NaxError } from "../../errors";
+ import { getLogger } from "../../logger";
+ import { buildHopCallback } from "../../operations/build-hop-callback";
+ import type { UserStory } from "../../prd";
+@@ -127,16 +128,12 @@ export function splitFindingsByScope(
+ /**
+  * Run a test-writer session to fix review findings scoped to test files (#409).
+  * Returns the cost incurred, or 0 if the agent is unavailable.
+- *
+- * @param keepOpen - Whether to keep the ACP session open after this call so subsequent
+- *   autofix cycles can resume it (default: true). Pass false only on the final call.
+  */
+ export async function runTestWriterRectification(
+   ctx: PipelineContext,
+   testWriterChecks: ReviewCheckResult[],
+   story: UserStory,
+   agentManager: IAgentManager,
+-  keepOpen = true,
+ ): Promise<number> {
+   const logger = getLogger();
+   const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story);
+@@ -147,6 +144,13 @@ export async function runTestWriterRectification(
+     logger.warn("autofix", "Test-writer rectification skipped -- no default agent", { storyId: ctx.story.id });
+     return 0;
+   }
++  if (!ctx.runtime) {
++    throw new NaxError(
++      "runtime required — legacy agentManager.run path removed (ADR-019 Wave 3, issue #762)",
++      "DISPATCH_NO_RUNTIME",
++      { stage: "rectification", storyId: ctx.story.id },
++    );
++  }
+   const modelTier = ctx.rootConfig.tdd?.sessionTiers?.testWriter ?? "balanced";
+   const modelDef = resolveModelForAgent(ctx.rootConfig.models, defaultAgent, modelTier, defaultAgent);
+   const runOptions = {
+@@ -164,36 +168,29 @@ export async function runTestWriterRectification(
+     sessionRole: "test-writer" as const,
+   };
+   try {
+-    if (ctx.runtime) {
+-      // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
+-      // Each call opens a fresh session; keepOpen is not used in the runtime path.
+-      const executeHop = buildHopCallback(
+-        {
+-          sessionManager: ctx.runtime.sessionManager,
+-          agentManager: ctx.runtime.agentManager,
+-          story,
+-          config: ctx.config,
+-          projectDir: ctx.projectDir,
+-          featureName: ctx.prd.feature ?? "",
+-          workdir: ctx.workdir,
+-          effectiveTier: modelTier,
+-          defaultAgent,
+-          pipelineStage: "rectification",
+-        },
+-        ctx.sessionId,
+-        runOptions,
+-      );
+-      const outcome = await agentManager.runWithFallback(
+-        { runOptions, signal: ctx.runtime.signal, executeHop },
++    // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
++    // Each call opens a fresh session; middleware (audit, cost, cancellation) fires uniformly.
++    const executeHop = buildHopCallback(
++      {
++        sessionManager: ctx.runtime.sessionManager,
++        agentManager: ctx.runtime.agentManager,
++        story,
++        config: ctx.config,
++        projectDir: ctx.projectDir,
++        featureName: ctx.prd.feature ?? "",
++        workdir: ctx.workdir,
++        effectiveTier: modelTier,
+         defaultAgent,
+-      );
+-      return outcome.result.estimatedCostUsd ?? 0;
+-    }
+-    // Legacy keepOpen path — used when no runtime is available (standalone callers).
+-    const twResult = await agentManager.run({
+-      runOptions: { ...runOptions, keepOpen },
+-    });
+-    return twResult.estimatedCostUsd ?? 0;
++        pipelineStage: "rectification",
++      },
++      ctx.sessionId,
++      runOptions,
++    );
++    const outcome = await agentManager.runWithFallback(
++      { runOptions, signal: ctx.runtime.signal, executeHop },
++      defaultAgent,
++    );
++    return outcome.result.estimatedCostUsd ?? 0;
+   } catch {
+     logger.warn("autofix", "Test-writer rectification failed -- proceeding with implementer", {
+       storyId: ctx.story.id,
+diff --git a/src/pipeline/stages/autofix-agent.ts b/src/pipeline/stages/autofix-agent.ts
+index 3d4b350c..a915b6b9 100644
+--- a/src/pipeline/stages/autofix-agent.ts
++++ b/src/pipeline/stages/autofix-agent.ts
+@@ -7,6 +7,7 @@
+ 
+ import type { SessionHandle } from "../../agents/types";
+ import { resolveModelForAgent } from "../../config";
++import { NaxError } from "../../errors";
+ import { getLogger } from "../../logger";
+ import { RectifierPromptBuilder } from "../../prompts";
+ import type { ReviewCheckResult } from "../../review/types";
+@@ -121,7 +122,15 @@ export async function runAgentRectification(
+     logger.error("autofix", "Agent manager unavailable — cannot run agent rectification", { storyId: ctx.story.id });
+     return { succeeded: false, cost: 0 };
+   }
++  if (!ctx.runtime) {
++    throw new NaxError(
++      "runtime required — legacy agentManager.run path removed (ADR-019 Wave 3, issue #762)",
++      "DISPATCH_NO_RUNTIME",
++      { stage: "rectification", storyId: ctx.story.id },
++    );
++  }
+   const { agentManager } = ctx;
++  const { runtime } = ctx;
+ 
+   // #409 #669: Split findings by file scope.
+   // Test-file findings cannot be fixed by the implementer (isolation constraint) —
+@@ -309,85 +318,62 @@ export async function runAgentRectification(
+         modelTier,
+         defaultAgent,
+       );
+-      const isLastAttempt = currentAttempt >= maxAttempts;
+-      const runOptions = {
+-        prompt,
+-        workdir: ctx.workdir,
+-        modelTier,
+-        modelDef,
+-        timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+-        pipelineStage: "rectification" as const,
+-        config: ctx.config,
+-        projectDir: ctx.projectDir,
+-        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+-        featureName: ctx.prd.feature,
+-        storyId: ctx.story.id,
+-        sessionRole: "implementer" as const,
+-      };
+       let result: import("../../agents").AgentResult;
+       try {
+-        if (ctx.runtime) {
+-          // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
+-          // once and reuse across attempts so conversation history persists.
+-          // openSession is idempotent on a live handle (session/manager.ts:354)
+-          // so the first attempt of cycle 0 attaches to the execution-stage
+-          // session when one is still open, otherwise opens fresh.
+-          if (!heldHandle) {
+-            heldHandle = await ctx.runtime.sessionManager.openSession(implementerSession, {
+-              agentName: defaultAgent,
+-              role: "implementer",
+-              workdir: ctx.workdir,
+-              pipelineStage: "rectification",
+-              modelDef,
+-              timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+-              featureName: ctx.prd.feature,
+-              storyId: ctx.story.id,
+-              signal: ctx.runtime.signal,
+-              onPidSpawned: ctx.runtime.onPidSpawned,
+-            });
+-          }
+-          // ADR-020 single-emission invariant: each runAsSession emits one
+-          // session-turn event, regardless of handle reuse across attempts.
+-          const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
+-            storyId: ctx.story.id,
+-            featureName: ctx.prd.feature,
++        // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
++        // once and reuse across attempts so conversation history persists.
++        // openSession is idempotent on a live handle (session/manager.ts:354)
++        // so the first attempt of cycle 0 attaches to the execution-stage
++        // session when one is still open, otherwise opens fresh.
++        if (!heldHandle) {
++          heldHandle = await runtime.sessionManager.openSession(implementerSession, {
++            agentName: defaultAgent,
++            role: "implementer",
+             workdir: ctx.workdir,
+-            projectDir: ctx.projectDir,
+             pipelineStage: "rectification",
+-            sessionRole: "implementer",
+-            signal: ctx.runtime.signal,
+-            maxTurns: ctx.config.agent?.maxInteractionTurns,
+-          });
+-          // Synthesize AgentResult so the downstream UNRESOLVED/CLARIFY/no-op
+-          // detection paths keep working unchanged. runAsSession throws on
+-          // failure, so a returned TurnResult always means success=true.
+-          result = {
+-            success: true,
+-            exitCode: 0,
+-            output: turn.output,
+-            rateLimited: false,
+-            durationMs: 0,
+-            estimatedCostUsd: turn.estimatedCostUsd,
+-            ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+-            ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+-            ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
+-          };
+-          sessionConfirmedOpen = true;
+-        } else {
+-          // Legacy keepOpen path — used when no runtime is available (standalone callers).
+-          result = await agentManager.run({
+-            runOptions: { ...runOptions, keepOpen: !isLastAttempt },
++            modelDef,
++            timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
++            featureName: ctx.prd.feature,
++            storyId: ctx.story.id,
++            signal: runtime.signal,
++            onPidSpawned: runtime.onPidSpawned,
+           });
+-          sessionConfirmedOpen = true;
+         }
++        // ADR-020 single-emission invariant: each runAsSession emits one
++        // session-turn event, regardless of handle reuse across attempts.
++        const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
++          storyId: ctx.story.id,
++          featureName: ctx.prd.feature,
++          workdir: ctx.workdir,
++          projectDir: ctx.projectDir,
++          pipelineStage: "rectification",
++          sessionRole: "implementer",
++          signal: runtime.signal,
++          maxTurns: ctx.config.agent?.maxInteractionTurns,
++        });
++        // Synthesize AgentResult so the downstream UNRESOLVED/CLARIFY/no-op
++        // detection paths keep working unchanged. runAsSession throws on
++        // failure, so a returned TurnResult always means success=true.
++        result = {
++          success: true,
++          exitCode: 0,
++          output: turn.output,
++          rateLimited: false,
++          durationMs: 0,
++          estimatedCostUsd: turn.estimatedCostUsd,
++          ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
++          ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
++          ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
++        };
++        sessionConfirmedOpen = true;
+       } catch (err) {
+         sessionConfirmedOpen = false;
+         // Discard the held handle so the next attempt reopens — the previous
+         // session may be in a terminal/cancelled state after the throw.
+-        if (heldHandle && ctx.runtime) {
++        if (heldHandle) {
+           const stale = heldHandle;
+           heldHandle = undefined;
+-          await ctx.runtime.sessionManager.closeSession(stale).catch(() => {});
++          await runtime.sessionManager.closeSession(stale).catch(() => {});
+         }
+         throw err;
+       }
+@@ -596,10 +582,10 @@ export async function runAgentRectification(
+       // ADR-008 §6: close the held implementer session at loop exit (success,
+       // exhaustion, or unhandled error). Best-effort — failures here must not
+       // mask the loop outcome.
+-      if (heldHandle && ctx.runtime) {
++      if (heldHandle) {
+         const stale = heldHandle;
+         heldHandle = undefined;
+-        await ctx.runtime.sessionManager.closeSession(stale).catch(() => {});
++        await runtime.sessionManager.closeSession(stale).catch(() => {});
+       }
+     });
+ 
+diff --git a/src/review/adversarial.ts b/src/review/adversarial.ts
+index baeb535e..2991ebaf 100644
+--- a/src/review/adversarial.ts
++++ b/src/review/adversarial.ts
+@@ -14,30 +14,22 @@
+  */
+ 
+ import type { IAgentManager } from "../agents";
+-import { DEFAULT_CONFIG } from "../config";
+ import type { NaxConfig } from "../config";
+-import { resolveModelForAgent } from "../config/schema-types";
+ import { filterContextByRole } from "../context";
+-import { createContextToolRuntime } from "../context/engine";
++import { NaxError } from "../errors";
+ import { getSafeLogger } from "../logger";
+ import { adversarialReviewOp } from "../operations/adversarial-review";
+ import { callOp } from "../operations/call";
+-import type { UserStory } from "../prd";
+-import { AdversarialReviewPromptBuilder } from "../prompts/builders/adversarial-review-builder";
+-import { ReviewPromptBuilder } from "../prompts/builders/review-builder";
+-import { formatSessionName } from "../session/naming";
+ import type { NaxIgnoreIndex } from "../utils/path-filters";
+ import {
+   type AdversarialLLMFinding,
+   type AdversarialLLMResponse,
+   formatFindings,
+   isBlockingSeverity,
+-  parseAdversarialResponse,
+   toAdversarialReviewFindings,
+ } from "./adversarial-helpers";
+ import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
+ import { writeReviewAudit } from "./review-audit";
+-import { looksLikeTruncatedJson } from "./truncation";
+ import type { AdversarialFindingsCache, AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
+ 
+ /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
+@@ -162,114 +154,36 @@ export async function runAdversarialReview(
+     if (filtered.trim()) featureCtxBlock = `${filtered}\n\n---\n\n`;
+   }
+ 
+-  // ADR-019 Pattern A: when a NaxRuntime is available, dispatch via callOp so the
+-  // hop routes through AgentManager.runWithFallback + buildHopCallback, firing the
+-  // middleware chain and managing session lifecycle explicitly. The adversarialReviewOp
+-  // hopBody handles the same-session JSON-parse retry.
+-  //
+-  // Falls back to the legacy keepOpen path when no runtime is available.
+-  let parsed: AdversarialLLMResponse | null;
++  // ADR-019 Pattern A: dispatch via callOp so the hop routes through
++  // AgentManager.runWithFallback + buildHopCallback, firing the middleware chain
++  // and managing session lifecycle explicitly. The adversarialReviewOp hopBody
++  // handles the same-session JSON-parse retry.
++  if (!runtime) {
++    throw new NaxError(
++      "runtime required — legacy agentManager.run path removed (ADR-019 Wave 3, issue #762)",
++      "DISPATCH_NO_RUNTIME",
++      { stage: "review-adversarial", storyId: story.id },
++    );
++  }
++
+   // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
+-  // costAggregator. ReviewCheckResult.cost will be 0 for pipeline-managed reviews.
+-  let llmCost = 0;
++  // costAggregator. ReviewCheckResult.cost is 0 for pipeline-managed reviews.
++  const llmCost = 0;
+ 
+-  if (runtime) {
+-    const callCtx = {
+-      runtime,
+-      packageView: runtime.packages.resolve(workdir),
+-      packageDir: workdir,
+-      agentName: agentManager.getDefault(),
+-      storyId: story.id,
+-      featureName,
+-      contextBundle,
+-    };
+-    let opResult: import("../operations/adversarial-review").AdversarialReviewOutput;
+-    try {
+-      opResult = await callOp(callCtx, adversarialReviewOp, {
+-        story,
+-        adversarialConfig,
+-        mode: diffMode,
+-        diff,
+-        storyGitRef: effectiveRef,
+-        stat,
+-        priorFailures,
+-        testInventory,
+-        excludePatterns: adversarialConfig.excludePatterns,
+-        featureCtxBlock,
+-        priorAdversarialFindings,
+-        blockingThreshold,
+-      });
+-    } catch (err) {
+-      logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+-      return {
+-        check: "adversarial",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: `skipped: LLM call failed — ${String(err)}`,
+-        durationMs: Date.now() - startTime,
+-      };
+-    }
+-    if (opResult.failOpen) {
+-      logger?.warn("adversarial", "Retry exhausted — fail-open", { storyId: story.id });
+-      if (naxConfig?.review?.audit?.enabled) {
+-        void _adversarialDeps.writeReviewAudit({
+-          reviewer: "adversarial",
+-          sessionName: "",
+-          workdir,
+-          storyId: story.id,
+-          featureName,
+-          parsed: false,
+-          looksLikeFail: false,
+-          result: null,
+-        });
+-      }
+-      return {
+-        check: "adversarial",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: "adversarial review: could not parse LLM response (fail-open)",
+-        durationMs: Date.now() - startTime,
+-      };
+-    }
+-    if (opResult.looksLikeFail) {
+-      logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
+-        storyId: story.id,
+-      });
+-      if (naxConfig?.review?.audit?.enabled) {
+-        void _adversarialDeps.writeReviewAudit({
+-          reviewer: "adversarial",
+-          sessionName: "",
+-          workdir,
+-          storyId: story.id,
+-          featureName,
+-          parsed: false,
+-          looksLikeFail: true,
+-          result: null,
+-        });
+-      }
+-      return {
+-        check: "adversarial",
+-        success: false,
+-        command: "",
+-        exitCode: 1,
+-        output:
+-          "adversarial review: LLM response truncated but indicated failure (passed:false found in partial response)",
+-        durationMs: Date.now() - startTime,
+-      };
+-    }
+-    parsed = { passed: opResult.passed, findings: opResult.findings as AdversarialLLMFinding[] };
+-  } else {
+-    // @deprecated Legacy keepOpen path — runtime is always present under executeUnified().
+-    // TODO(ADR-019): Remove this branch once all callers thread runtime (tracked in dogfood findings 2026-04-27).
+-    logger?.warn("adversarial", "LLM call via legacy agentManager.run — runtime not threaded, middleware skipped", {
+-      storyId: story.id,
+-    });
+-    // Legacy keepOpen path — used when no runtime is available (standalone callers).
+-    const basePrompt = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(story, adversarialConfig, {
++  const callCtx = {
++    runtime,
++    packageView: runtime.packages.resolve(workdir),
++    packageDir: workdir,
++    agentName: agentManager.getDefault(),
++    storyId: story.id,
++    featureName,
++    contextBundle,
++  };
++  let opResult: import("../operations/adversarial-review").AdversarialReviewOutput;
++  try {
++    opResult = await callOp(callCtx, adversarialReviewOp, {
++      story,
++      adversarialConfig,
+       mode: diffMode,
+       diff,
+       storyGitRef: effectiveRef,
+@@ -277,193 +191,76 @@ export async function runAdversarialReview(
+       priorFailures,
+       testInventory,
+       excludePatterns: adversarialConfig.excludePatterns,
++      featureCtxBlock,
+       priorAdversarialFindings,
++      blockingThreshold,
+     });
+-    const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
+-
+-    const defaultAgent = agentManager.getDefault();
+-    let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
+-    try {
+-      if (naxConfig?.models) {
+-        resolvedModelDef = resolveModelForAgent(
+-          naxConfig.models,
+-          defaultAgent,
+-          adversarialConfig.modelTier,
+-          defaultAgent,
+-        );
+-      }
+-    } catch {
+-      // Use default model if resolution fails
+-    }
+-
+-    const adversarialSessionName = formatSessionName({
+-      workdir,
+-      featureName,
+-      storyId: story.id,
+-      role: "reviewer-adversarial",
+-    });
+-    const contextToolStory: UserStory = {
+-      id: story.id,
+-      title: story.title,
+-      description: story.description,
+-      acceptanceCriteria: story.acceptanceCriteria,
+-      tags: [],
+-      dependencies: [],
+-      status: "in-progress",
+-      passes: false,
+-      escalations: [],
+-      attempts: 0,
++  } catch (err) {
++    logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
++    return {
++      check: "adversarial",
++      success: true,
++      failOpen: true,
++      command: "",
++      exitCode: 0,
++      output: `skipped: LLM call failed — ${String(err)}`,
++      durationMs: Date.now() - startTime,
+     };
+-    const runOpts = {
+-      workdir,
+-      timeoutSeconds: adversarialConfig.timeoutMs ? Math.ceil(adversarialConfig.timeoutMs / 1000) : 600,
+-      modelTier: adversarialConfig.modelTier,
+-      modelDef: resolvedModelDef,
+-      pipelineStage: "review",
+-      config: naxConfig ?? DEFAULT_CONFIG,
+-      featureName,
+-      storyId: story.id,
+-      sessionRole: "reviewer-adversarial",
+-      contextPullTools: contextBundle?.pullTools,
+-      contextToolRuntime: contextBundle
+-        ? createContextToolRuntime({
+-            bundle: contextBundle,
+-            story: contextToolStory,
+-            config: naxConfig ?? DEFAULT_CONFIG,
+-            repoRoot: workdir,
+-          })
+-        : undefined,
+-    } as const;
+-
+-    const adapter = agentManager.getAgent(defaultAgent);
+-    const legacyCloser = adapter as
+-      | (import("../agents/types").AgentAdapter & {
+-          closePhysicalSession?: (handle: string, runWorkdir: string, options?: { force?: boolean }) => Promise<void>;
+-        })
+-      | undefined;
+-    let rawResponse: string;
+-    let retryAttempted = false;
+-    try {
+-      const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
+-      rawResponse = runResult.output;
+-      llmCost = runResult.estimatedCostUsd ?? 0;
+-      logger?.debug("adversarial", "LLM call complete (legacy)", {
+-        storyId: story.id,
+-        responseLen: rawResponse.length,
+-        estimatedCostUsd: llmCost,
+-      });
+-    } catch (err) {
+-      logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+-      void legacyCloser?.closePhysicalSession?.(adversarialSessionName, workdir);
+-      return {
+-        check: "adversarial",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: `skipped: LLM call failed — ${String(err)}`,
+-        durationMs: Date.now() - startTime,
+-      };
+-    }
+-
+-    const isTruncated = looksLikeTruncatedJson(rawResponse);
+-    if (isTruncated || !parseAdversarialResponse(rawResponse)) {
+-      retryAttempted = true;
+-      const retryPrompt = isTruncated
+-        ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold })
+-        : ReviewPromptBuilder.jsonRetry();
+-      if (isTruncated) {
+-        logger?.warn("adversarial", "JSON parse retry — original response truncated", {
+-          storyId: story.id,
+-          originalByteSize: rawResponse.length,
+-          blockingThreshold: blockingThreshold ?? "error",
+-        });
+-      }
+-      logger?.info("adversarial", "JSON parse failed, retrying (1/1)", {
+-        storyId: story.id,
+-        rawHead: rawResponse.slice(0, 200),
+-        responseLen: rawResponse.length,
+-        isTruncated,
+-      });
+-      try {
+-        const retryResult = await agentManager.run({
+-          runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
+-        });
+-        rawResponse = retryResult.output;
+-        llmCost += retryResult.estimatedCostUsd ?? 0;
+-        if (parseAdversarialResponse(rawResponse)) {
+-          logger?.info("adversarial", "JSON retry succeeded", { storyId: story.id, responseLen: rawResponse.length });
+-        }
+-      } catch (err) {
+-        logger?.warn("adversarial", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+-      }
+-    }
+-
+-    void legacyCloser?.closePhysicalSession?.(adversarialSessionName, workdir);
+-
+-    const legacyParsed = parseAdversarialResponse(rawResponse);
+-    if (!legacyParsed) {
+-      const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+-      if (naxConfig?.review?.audit?.enabled) {
+-        void _adversarialDeps.writeReviewAudit({
+-          reviewer: "adversarial",
+-          sessionName: adversarialSessionName,
+-          workdir,
+-          storyId: story.id,
+-          featureName,
+-          parsed: false,
+-          looksLikeFail,
+-          result: null,
+-        });
+-      }
+-      if (looksLikeFail) {
+-        logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
+-          storyId: story.id,
+-          retryAttempted,
+-          rawHead: rawResponse.slice(0, 200),
+-        });
+-        return {
+-          check: "adversarial",
+-          success: false,
+-          command: "",
+-          exitCode: 1,
+-          output:
+-            "adversarial review: LLM response truncated but indicated failure (passed:false found in partial response)",
+-          durationMs: Date.now() - startTime,
+-          cost: llmCost,
+-        };
+-      }
+-      logger?.warn("adversarial", "Retry exhausted — fail-open", {
++  }
++  if (opResult.failOpen) {
++    logger?.warn("adversarial", "Retry exhausted — fail-open", { storyId: story.id });
++    if (naxConfig?.review?.audit?.enabled) {
++      void _adversarialDeps.writeReviewAudit({
++        reviewer: "adversarial",
++        sessionName: "",
++        workdir,
+         storyId: story.id,
+-        retries: retryAttempted ? 1 : 0,
+-        rawHead: rawResponse.slice(0, 200),
+-        responseLen: rawResponse.length,
++        featureName,
++        parsed: false,
++        looksLikeFail: false,
++        result: null,
+       });
+-      return {
+-        check: "adversarial",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: "adversarial review: could not parse LLM response (fail-open)",
+-        durationMs: Date.now() - startTime,
+-        cost: llmCost,
+-      };
+     }
+-    parsed = legacyParsed;
++    return {
++      check: "adversarial",
++      success: true,
++      failOpen: true,
++      command: "",
++      exitCode: 0,
++      output: "adversarial review: could not parse LLM response (fail-open)",
++      durationMs: Date.now() - startTime,
++    };
++  }
++  if (opResult.looksLikeFail) {
++    logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
++      storyId: story.id,
++    });
+     if (naxConfig?.review?.audit?.enabled) {
+       void _adversarialDeps.writeReviewAudit({
+         reviewer: "adversarial",
+-        sessionName: adversarialSessionName,
++        sessionName: "",
+         workdir,
+         storyId: story.id,
+         featureName,
+-        parsed: true,
+-        looksLikeFail: false,
+-        result: legacyParsed,
++        parsed: false,
++        looksLikeFail: true,
++        result: null,
+       });
+     }
++    return {
++      check: "adversarial",
++      success: false,
++      command: "",
++      exitCode: 1,
++      output:
++        "adversarial review: LLM response truncated but indicated failure (passed:false found in partial response)",
++      durationMs: Date.now() - startTime,
++    };
+   }
++  const parsed: AdversarialLLMResponse = {
++    passed: opResult.passed,
++    findings: opResult.findings as AdversarialLLMFinding[],
++  };
+ 
+   const threshold = blockingThreshold ?? "error";
+   const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+diff --git a/src/review/semantic.ts b/src/review/semantic.ts
+index 9b1c20ce..aef13e53 100644
+--- a/src/review/semantic.ts
++++ b/src/review/semantic.ts
+@@ -10,17 +10,14 @@
+ import type { IAgentManager } from "../agents";
+ import { DEFAULT_CONFIG } from "../config";
+ import type { NaxConfig } from "../config";
+-import { resolveModelForAgent } from "../config/schema-types";
+ import { filterContextByRole } from "../context";
+-import { createContextToolRuntime } from "../context/engine";
+ import { DebateRunner } from "../debate";
+ import type { DebateRunnerOptions } from "../debate";
++import { NaxError } from "../errors";
+ import { getSafeLogger } from "../logger";
+ import { callOp } from "../operations/call";
+ import { semanticReviewOp } from "../operations/semantic-review";
+-import type { UserStory } from "../prd";
+ import { ReviewPromptBuilder } from "../prompts";
+-import { formatSessionName } from "../session/naming";
+ import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
+ import type { NaxIgnoreIndex } from "../utils/path-filters";
+ import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
+@@ -32,11 +29,9 @@ import {
+   type LLMResponse,
+   formatFindings,
+   isBlockingSeverity,
+-  parseLLMResponse,
+   sanitizeRefModeFindings,
+   toReviewFindings,
+ } from "./semantic-helpers";
+-import { looksLikeTruncatedJson } from "./truncation";
+ import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
+ 
+ // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
+@@ -201,281 +196,110 @@ export async function runSemanticReview(
+     });
+   }
+ 
+-  // ADR-019 Pattern A: when a NaxRuntime is available, dispatch via callOp so the
+-  // hop routes through AgentManager.runWithFallback + buildHopCallback, firing the
+-  // middleware chain (audit, cost, cancellation) and managing session lifecycle
+-  // explicitly via openSession + runAsSession × N + closeSession. The semanticReviewOp
+-  // hopBody handles the same-session JSON-parse retry.
+-  //
+-  // Falls back to the legacy keepOpen path when no runtime is available (standalone
+-  // callers, tests that only pass agentManager).
+-  let parsed: LLMResponse | null;
++  // ADR-019 Pattern A: dispatch via callOp so the hop routes through
++  // AgentManager.runWithFallback + buildHopCallback, firing the middleware chain
++  // (audit, cost, cancellation) and managing session lifecycle explicitly via
++  // openSession + runAsSession × N + closeSession. The semanticReviewOp hopBody
++  // handles the same-session JSON-parse retry.
++  if (!runtime) {
++    throw new NaxError(
++      "runtime required — legacy agentManager.run path removed (ADR-019 Wave 3, issue #762)",
++      "DISPATCH_NO_RUNTIME",
++      { stage: "review-semantic", storyId: story.id },
++    );
++  }
++
+   // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
+-  // costAggregator directly. ReviewCheckResult.cost will be 0 for pipeline-managed
++  // costAggregator directly. ReviewCheckResult.cost is 0 for pipeline-managed
+   // reviews; per-stage cost roll-up is the trade-off for ADR-019 session-lifecycle
+   // ownership. Track in follow-up if per-check cost breakdown is needed.
+-  let llmCost = 0;
++  const llmCost = 0;
+ 
+-  if (runtime) {
+-    const callCtx = {
+-      runtime,
+-      packageView: runtime.packages.resolve(workdir),
+-      packageDir: workdir,
+-      agentName: agentManager.getDefault(),
+-      storyId: story.id,
+-      featureName,
+-      contextBundle,
++  const callCtx = {
++    runtime,
++    packageView: runtime.packages.resolve(workdir),
++    packageDir: workdir,
++    agentName: agentManager.getDefault(),
++    storyId: story.id,
++    featureName,
++    contextBundle,
++  };
++  let opResult: import("../operations/semantic-review").SemanticReviewOutput;
++  try {
++    opResult = await callOp(callCtx, semanticReviewOp, {
++      story,
++      semanticConfig,
++      mode: diffMode,
++      diff,
++      storyGitRef: effectiveRef,
++      stat,
++      priorFailures,
++      excludePatterns,
++      featureCtxBlock,
++      blockingThreshold,
++    });
++  } catch (err) {
++    logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
++    return {
++      check: "semantic",
++      success: true,
++      failOpen: true,
++      command: "",
++      exitCode: 0,
++      output: `skipped: LLM call failed — ${String(err)}`,
++      durationMs: Date.now() - startTime,
+     };
+-    let opResult: import("../operations/semantic-review").SemanticReviewOutput;
+-    try {
+-      opResult = await callOp(callCtx, semanticReviewOp, {
+-        story,
+-        semanticConfig,
+-        mode: diffMode,
+-        diff,
+-        storyGitRef: effectiveRef,
+-        stat,
+-        priorFailures,
+-        excludePatterns,
+-        featureCtxBlock,
+-        blockingThreshold,
+-      });
+-    } catch (err) {
+-      logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+-      return {
+-        check: "semantic",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: `skipped: LLM call failed — ${String(err)}`,
+-        durationMs: Date.now() - startTime,
+-      };
+-    }
+-    if (opResult.failOpen) {
+-      logger?.warn("semantic", "Retry exhausted — fail-open", { storyId: story.id });
+-      if (naxConfig?.review?.audit?.enabled) {
+-        void _semanticDeps.writeReviewAudit({
+-          reviewer: "semantic",
+-          sessionName: "",
+-          workdir,
+-          storyId: story.id,
+-          featureName,
+-          parsed: false,
+-          looksLikeFail: false,
+-          result: null,
+-        });
+-      }
+-      return {
+-        check: "semantic",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: "semantic review: could not parse LLM response (fail-open)",
+-        durationMs: Date.now() - startTime,
+-      };
+-    }
+-    if (opResult.looksLikeFail) {
+-      logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
++  }
++  if (opResult.failOpen) {
++    logger?.warn("semantic", "Retry exhausted — fail-open", { storyId: story.id });
++    if (naxConfig?.review?.audit?.enabled) {
++      void _semanticDeps.writeReviewAudit({
++        reviewer: "semantic",
++        sessionName: "",
++        workdir,
+         storyId: story.id,
++        featureName,
++        parsed: false,
++        looksLikeFail: false,
++        result: null,
+       });
+-      if (naxConfig?.review?.audit?.enabled) {
+-        void _semanticDeps.writeReviewAudit({
+-          reviewer: "semantic",
+-          sessionName: "",
+-          workdir,
+-          storyId: story.id,
+-          featureName,
+-          parsed: false,
+-          looksLikeFail: true,
+-          result: null,
+-        });
+-      }
+-      return {
+-        check: "semantic",
+-        success: false,
+-        command: "",
+-        exitCode: 1,
+-        output:
+-          "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
+-        durationMs: Date.now() - startTime,
+-      };
+     }
+-    parsed = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
+-  } else {
+-    // @deprecated Legacy keepOpen path — runtime is always present under executeUnified().
+-    // TODO(ADR-019): Remove this branch once all callers thread runtime (tracked in dogfood findings 2026-04-27).
+-    logger?.warn("semantic", "LLM call via legacy agentManager.run — runtime not threaded, middleware skipped", {
+-      storyId: story.id,
+-    });
+-    // Legacy keepOpen path — used when no runtime is available (standalone callers).
+-    const reviewerSessionName = formatSessionName({
+-      workdir,
+-      featureName,
+-      storyId: story.id,
+-      role: "reviewer-semantic",
+-    });
+-    const contextToolStory: UserStory = {
+-      id: story.id,
+-      title: story.title,
+-      description: story.description,
+-      acceptanceCriteria: story.acceptanceCriteria,
+-      tags: [],
+-      dependencies: [],
+-      status: "in-progress",
+-      passes: false,
+-      escalations: [],
+-      attempts: 0,
++    return {
++      check: "semantic",
++      success: true,
++      failOpen: true,
++      command: "",
++      exitCode: 0,
++      output: "semantic review: could not parse LLM response (fail-open)",
++      durationMs: Date.now() - startTime,
+     };
+-    const defaultAgent = agentManager.getDefault();
+-    const adapter = agentManager.getAgent(defaultAgent);
+-    const legacyCloser = adapter as
+-      | (import("../agents/types").AgentAdapter & {
+-          closePhysicalSession?: (handle: string, runWorkdir: string, options?: { force?: boolean }) => Promise<void>;
+-        })
+-      | undefined;
+-    let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
+-    try {
+-      if (naxConfig?.models) {
+-        resolvedModelDef = resolveModelForAgent(naxConfig.models, defaultAgent, semanticConfig.modelTier, defaultAgent);
+-      }
+-    } catch {
+-      // Use default model if resolution fails
+-    }
+-
+-    const runOpts = {
+-      workdir,
+-      timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
+-      modelTier: semanticConfig.modelTier,
+-      modelDef: resolvedModelDef,
+-      pipelineStage: "review",
+-      config: naxConfig ?? DEFAULT_CONFIG,
+-      featureName,
++  }
++  if (opResult.looksLikeFail) {
++    logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+       storyId: story.id,
+-      sessionRole: "reviewer-semantic",
+-      contextPullTools: contextBundle?.pullTools,
+-      contextToolRuntime: contextBundle
+-        ? createContextToolRuntime({
+-            bundle: contextBundle,
+-            story: contextToolStory,
+-            config: naxConfig ?? DEFAULT_CONFIG,
+-            repoRoot: workdir,
+-          })
+-        : undefined,
+-    } as const;
+-
+-    let rawResponse: string;
+-    let retryAttempted = false;
+-    try {
+-      const runResult = await agentManager.run({ runOptions: { prompt, ...runOpts, keepOpen: true } });
+-      rawResponse = runResult.output;
+-      llmCost = runResult.estimatedCostUsd ?? 0;
+-      logger?.debug("semantic", "LLM call complete (legacy)", {
+-        storyId: story.id,
+-        responseLen: rawResponse.length,
+-        estimatedCostUsd: llmCost,
+-      });
+-    } catch (err) {
+-      logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+-      void legacyCloser?.closePhysicalSession?.(reviewerSessionName, workdir);
+-      return {
+-        check: "semantic",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: `skipped: LLM call failed — ${String(err)}`,
+-        durationMs: Date.now() - startTime,
+-      };
+-    }
+-
+-    const isTruncated = looksLikeTruncatedJson(rawResponse);
+-    if (isTruncated || !parseLLMResponse(rawResponse)) {
+-      retryAttempted = true;
+-      const retryPrompt = isTruncated
+-        ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold })
+-        : ReviewPromptBuilder.jsonRetry();
+-      if (isTruncated) {
+-        logger?.warn("semantic", "JSON parse retry — original response truncated", {
+-          storyId: story.id,
+-          originalByteSize: rawResponse.length,
+-          blockingThreshold: blockingThreshold ?? "error",
+-        });
+-      }
+-      logger?.info("semantic", "JSON parse failed, retrying (1/1)", {
++    });
++    if (naxConfig?.review?.audit?.enabled) {
++      void _semanticDeps.writeReviewAudit({
++        reviewer: "semantic",
++        sessionName: "",
++        workdir,
+         storyId: story.id,
+-        rawHead: rawResponse.slice(0, 200),
+-        responseLen: rawResponse.length,
+-        isTruncated,
++        featureName,
++        parsed: false,
++        looksLikeFail: true,
++        result: null,
+       });
+-      try {
+-        const retryResult = await agentManager.run({
+-          runOptions: { prompt: retryPrompt, ...runOpts, keepOpen: false },
+-        });
+-        rawResponse = retryResult.output;
+-        llmCost += retryResult.estimatedCostUsd ?? 0;
+-        if (parseLLMResponse(rawResponse)) {
+-          logger?.info("semantic", "JSON retry succeeded", { storyId: story.id, responseLen: rawResponse.length });
+-        }
+-      } catch (err) {
+-        logger?.warn("semantic", "JSON retry call failed", { storyId: story.id, cause: String(err) });
+-      }
+     }
+-
+-    void legacyCloser?.closePhysicalSession?.(reviewerSessionName, workdir);
+-
+-    const legacyParsed = parseLLMResponse(rawResponse);
+-    if (!legacyParsed) {
+-      const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+-      if (naxConfig?.review?.audit?.enabled) {
+-        void _semanticDeps.writeReviewAudit({
+-          reviewer: "semantic",
+-          sessionName: reviewerSessionName,
+-          workdir,
+-          storyId: story.id,
+-          featureName,
+-          parsed: false,
+-          looksLikeFail,
+-          result: null,
+-        });
+-      }
+-      if (looksLikeFail) {
+-        logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+-          storyId: story.id,
+-          retryAttempted,
+-          rawHead: rawResponse.slice(0, 200),
+-        });
+-        return {
+-          check: "semantic",
+-          success: false,
+-          command: "",
+-          exitCode: 1,
+-          output:
+-            "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
+-          durationMs: Date.now() - startTime,
+-          cost: llmCost,
+-        };
+-      }
+-      logger?.warn("semantic", "Retry exhausted — fail-open", {
+-        storyId: story.id,
+-        retries: retryAttempted ? 1 : 0,
+-        rawHead: rawResponse.slice(0, 200),
+-        responseLen: rawResponse.length,
+-      });
+-      return {
+-        check: "semantic",
+-        success: true,
+-        failOpen: true,
+-        command: "",
+-        exitCode: 0,
+-        output: "semantic review: could not parse LLM response (fail-open)",
+-        durationMs: Date.now() - startTime,
+-        cost: llmCost,
+-      };
+-    }
+-    parsed = legacyParsed;
++    return {
++      check: "semantic",
++      success: false,
++      command: "",
++      exitCode: 1,
++      output: "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
++      durationMs: Date.now() - startTime,
++    };
+   }
++  const parsed: LLMResponse = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
+ 
+   const sanitizedFindings = await substantiateSemanticEvidence(
+     sanitizeRefModeFindings(parsed.findings, diffMode),

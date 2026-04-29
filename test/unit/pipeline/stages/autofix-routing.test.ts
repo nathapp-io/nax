@@ -13,7 +13,7 @@ import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
-import { makeMockAgentManager as _makeMockAgentManager } from "../../../helpers";
+import { makeMockAgentManager as _makeMockAgentManager, makeMockRuntime } from "../../../helpers";
 
 function makeReviewResult(success: boolean) {
   return { success, checks: [], summary: "" } as any;
@@ -36,6 +36,10 @@ function makeMockAgentManager() {
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
+  // ADR-019: derive runtime from agentManager so callOp dispatch flows through
+  // the same mock the test set up. Override `runtime` explicitly when a test
+  // needs a different shape.
+  const agentManager = overrides.agentManager ?? makeMockAgentManager();
   return {
     config: {
       ...DEFAULT_CONFIG,
@@ -57,7 +61,8 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp",
     projectDir: "/tmp",
     hooks: { hooks: {} } as any,
-    agentManager: makeMockAgentManager(),
+    agentManager,
+    runtime: overrides.runtime ?? makeMockRuntime({ agentManager }),
     ...overrides,
   };
 }
