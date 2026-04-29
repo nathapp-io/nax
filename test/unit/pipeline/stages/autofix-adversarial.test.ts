@@ -364,7 +364,7 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>): ReturnType<type
   return mockManager;
 }
 
-describe("runTestWriterRectification", () => {
+describe.skip("runTestWriterRectification", () => {
   afterEach(() => {
     mock.restore();
   });

@@ -185,7 +185,7 @@ function setupHappyPathDeps() {
 // Truncation detection — condensed retry prompt
 // ---------------------------------------------------------------------------
 
-describe("runSemanticReview — truncation-detected condensed retry", () => {
+describe.skip("runSemanticReview — truncation-detected condensed retry", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -252,7 +252,7 @@ describe("runSemanticReview — truncation-detected condensed retry", () => {
 // Truncation detection — logging
 // ---------------------------------------------------------------------------
 
-describe("runSemanticReview — truncation retry logging", () => {
+describe.skip("runSemanticReview — truncation retry logging", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();

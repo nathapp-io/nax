@@ -7,6 +7,7 @@
 
 import type { SessionHandle } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
+import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import { RectifierPromptBuilder } from "../../prompts";
 import type { ReviewCheckResult } from "../../review/types";
@@ -121,7 +122,15 @@ export async function runAgentRectification(
     logger.error("autofix", "Agent manager unavailable — cannot run agent rectification", { storyId: ctx.story.id });
     return { succeeded: false, cost: 0 };
   }
+  if (!ctx.runtime) {
+    throw new NaxError(
+      "runtime required — legacy agentManager.run path removed (ADR-019 Wave 3, issue #762)",
+      "DISPATCH_NO_RUNTIME",
+      { stage: "rectification", storyId: ctx.story.id },
+    );
+  }
   const { agentManager } = ctx;
+  const { runtime } = ctx;
 
   // #409 #669: Split findings by file scope.
   // Test-file findings cannot be fixed by the implementer (isolation constraint) —
@@ -309,85 +318,62 @@ export async function runAgentRectification(
         modelTier,
         defaultAgent,
       );
-      const isLastAttempt = currentAttempt >= maxAttempts;
-      const runOptions = {
-        prompt,
-        workdir: ctx.workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-        pipelineStage: "rectification" as const,
-        config: ctx.config,
-        projectDir: ctx.projectDir,
-        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-        featureName: ctx.prd.feature,
-        storyId: ctx.story.id,
-        sessionRole: "implementer" as const,
-      };
       let result: import("../../agents").AgentResult;
       try {
-        if (ctx.runtime) {
-          // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
-          // once and reuse across attempts so conversation history persists.
-          // openSession is idempotent on a live handle (session/manager.ts:354)
-          // so the first attempt of cycle 0 attaches to the execution-stage
-          // session when one is still open, otherwise opens fresh.
-          if (!heldHandle) {
-            heldHandle = await ctx.runtime.sessionManager.openSession(implementerSession, {
-              agentName: defaultAgent,
-              role: "implementer",
-              workdir: ctx.workdir,
-              pipelineStage: "rectification",
-              modelDef,
-              timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-              featureName: ctx.prd.feature,
-              storyId: ctx.story.id,
-              signal: ctx.runtime.signal,
-              onPidSpawned: ctx.runtime.onPidSpawned,
-            });
-          }
-          // ADR-020 single-emission invariant: each runAsSession emits one
-          // session-turn event, regardless of handle reuse across attempts.
-          const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
-            storyId: ctx.story.id,
-            featureName: ctx.prd.feature,
+        // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
+        // once and reuse across attempts so conversation history persists.
+        // openSession is idempotent on a live handle (session/manager.ts:354)
+        // so the first attempt of cycle 0 attaches to the execution-stage
+        // session when one is still open, otherwise opens fresh.
+        if (!heldHandle) {
+          heldHandle = await runtime.sessionManager.openSession(implementerSession, {
+            agentName: defaultAgent,
+            role: "implementer",
             workdir: ctx.workdir,
-            projectDir: ctx.projectDir,
             pipelineStage: "rectification",
-            sessionRole: "implementer",
-            signal: ctx.runtime.signal,
-            maxTurns: ctx.config.agent?.maxInteractionTurns,
+            modelDef,
+            timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+            featureName: ctx.prd.feature,
+            storyId: ctx.story.id,
+            signal: runtime.signal,
+            onPidSpawned: runtime.onPidSpawned,
           });
-          // Synthesize AgentResult so the downstream UNRESOLVED/CLARIFY/no-op
-          // detection paths keep working unchanged. runAsSession throws on
-          // failure, so a returned TurnResult always means success=true.
-          result = {
-            success: true,
-            exitCode: 0,
-            output: turn.output,
-            rateLimited: false,
-            durationMs: 0,
-            estimatedCostUsd: turn.estimatedCostUsd,
-            ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
-            ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
-            ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
-          };
-          sessionConfirmedOpen = true;
-        } else {
-          // Legacy keepOpen path — used when no runtime is available (standalone callers).
-          result = await agentManager.run({
-            runOptions: { ...runOptions, keepOpen: !isLastAttempt },
-          });
-          sessionConfirmedOpen = true;
         }
+        // ADR-020 single-emission invariant: each runAsSession emits one
+        // session-turn event, regardless of handle reuse across attempts.
+        const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
+          storyId: ctx.story.id,
+          featureName: ctx.prd.feature,
+          workdir: ctx.workdir,
+          projectDir: ctx.projectDir,
+          pipelineStage: "rectification",
+          sessionRole: "implementer",
+          signal: runtime.signal,
+          maxTurns: ctx.config.agent?.maxInteractionTurns,
+        });
+        // Synthesize AgentResult so the downstream UNRESOLVED/CLARIFY/no-op
+        // detection paths keep working unchanged. runAsSession throws on
+        // failure, so a returned TurnResult always means success=true.
+        result = {
+          success: true,
+          exitCode: 0,
+          output: turn.output,
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCostUsd: turn.estimatedCostUsd,
+          ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+          ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+          ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
+        };
+        sessionConfirmedOpen = true;
       } catch (err) {
         sessionConfirmedOpen = false;
         // Discard the held handle so the next attempt reopens — the previous
         // session may be in a terminal/cancelled state after the throw.
-        if (heldHandle && ctx.runtime) {
+        if (heldHandle) {
           const stale = heldHandle;
           heldHandle = undefined;
-          await ctx.runtime.sessionManager.closeSession(stale).catch(() => {});
+          await runtime.sessionManager.closeSession(stale).catch(() => {});
         }
         throw err;
       }
@@ -596,10 +582,10 @@ export async function runAgentRectification(
       // ADR-008 §6: close the held implementer session at loop exit (success,
       // exhaustion, or unhandled error). Best-effort — failures here must not
       // mask the loop outcome.
-      if (heldHandle && ctx.runtime) {
+      if (heldHandle) {
         const stale = heldHandle;
         heldHandle = undefined;
-        await ctx.runtime.sessionManager.closeSession(stale).catch(() => {});
+        await runtime.sessionManager.closeSession(stale).catch(() => {});
       }
     });
 
