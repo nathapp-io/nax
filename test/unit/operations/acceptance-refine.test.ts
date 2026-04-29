@@ -7,6 +7,10 @@ const SAMPLE_INPUT: AcceptanceRefineInput = {
   criteria: ["User can log in", "User can log out"],
   codebaseContext: "# Context\nRelevant files...",
   storyId: "US-001",
+  testStrategy: "component",
+  testFramework: "react-testing-library",
+  storyTitle: "Login flow",
+  storyDescription: "Allow users to authenticate with email and password",
 };
 
 function makeBuildCtx() {
@@ -40,6 +44,14 @@ describe("acceptanceRefineOp.build()", () => {
     const ctx = makeBuildCtx();
     const result = acceptanceRefineOp.build(SAMPLE_INPUT, ctx);
     expect(result.task.content).toContain("User can log in");
+  });
+  test("task section includes strategy/framework/story context", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceRefineOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).toContain("TEST STRATEGY: component");
+    expect(result.task.content).toContain("react-testing-library");
+    expect(result.task.content).toContain("Title: Login flow");
+    expect(result.task.content).toContain("Description: Allow users to authenticate");
   });
 });
 

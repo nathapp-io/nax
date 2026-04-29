@@ -268,7 +268,15 @@ export const acceptanceSetupStage: PipelineStage = {
               ctx,
               ctx.workdir,
               acceptanceRefineOp,
-              { criteria: story.acceptanceCriteria, codebaseContext: "", storyId: story.id },
+              {
+                criteria: story.acceptanceCriteria,
+                codebaseContext: "",
+                storyId: story.id,
+                testStrategy: ctx.config.acceptance.testStrategy,
+                testFramework: ctx.config.acceptance.testFramework,
+                storyTitle: story.title,
+                storyDescription: story.description,
+              },
               story.id,
             ) as Promise<RefinedCriterion[]>
           )

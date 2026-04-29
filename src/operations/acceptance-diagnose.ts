@@ -1,5 +1,6 @@
 import { acceptanceConfigSelector } from "../config";
 import { AcceptancePromptBuilder } from "../prompts";
+import type { SemanticVerdict } from "../acceptance/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
 
@@ -7,6 +8,7 @@ export interface AcceptanceDiagnoseInput {
   testOutput: string;
   testFileContent: string;
   sourceFiles: Array<{ path: string; content: string }>;
+  semanticVerdicts?: SemanticVerdict[];
   previousFailure?: string;
 }
 
@@ -38,6 +40,7 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
       testOutput: input.testOutput,
       testFileContent: input.testFileContent,
       sourceFiles: input.sourceFiles,
+      semanticVerdicts: input.semanticVerdicts,
       previousFailure: input.previousFailure,
     });
     return {
