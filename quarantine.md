@@ -41,8 +41,7 @@ All quarantined tests share the same pattern:
 
 | File | Tests Quarantined | Root Cause |
 |------|-------------------|------------|
-| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 3 tests: `keepOpen` tests, `sessionRole` test | keepOpen/sessionRole removed in ADR-019; ADR-019 uses fresh sessions |
-| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 4 tests: `returns cost`, `throws`, `modelTier` tests | DISPATCH_NO_RUNTIME — makeCtx missing runtime; mock setup needs update for runWithFallback |
+| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 7 tests: `returns cost`, `throws`, `modelTier`, `keepOpen` x2, `sessionRole` tests | DISPATCH_NO_RUNTIME — T2-pipeline migration incomplete; brace issue; reattempts needed |
 
 ## Pattern: T2-pipeline Migration
 
