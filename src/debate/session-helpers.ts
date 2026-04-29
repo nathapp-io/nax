@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "..
 import type { PipelineStage } from "../config/permissions";
 import type { ModelDef } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import { formatSessionName } from "../session/naming";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
@@ -64,7 +65,7 @@ export interface ResolverContext {
 /** Input type for DebateSessionOptions — ResolverContext without labeledProposals (added by sub-modules after proposals collected). */
 export type ResolverContextInput = Omit<ResolverContext, "labeledProposals">;
 
-export interface DebateSessionOptions {
+export interface DebateSessionOptions extends DispatchContext {
   storyId: string;
   stage: string;
   stageConfig: DebateStageConfig;
@@ -72,10 +73,6 @@ export interface DebateSessionOptions {
   workdir?: string;
   featureName?: string;
   timeoutSeconds?: number;
-  /** AgentManager threaded from the pipeline stage — ensures unavailability state survives across debate calls. */
-  agentManager?: IAgentManager;
-  /** Session manager for caller-managed session lifecycle (ADR-019 §4). */
-  sessionManager?: import("../session/types").ISessionManager;
   /** Optional ReviewerSession for debate+dialogue mode (US-001/US-002) */
   reviewerSession?: import("../review/dialogue").ReviewerSession;
   /** Outer resolver context (without labeledProposals) — sub-modules complete it */
@@ -192,13 +189,13 @@ export async function resolveOutcome(
   config: NaxConfig | undefined,
   storyId: string,
   timeoutMs: number,
-  workdir?: string,
-  featureName?: string,
-  reviewerSession?: import("../review/dialogue").ReviewerSession,
-  resolverContext?: ResolverContext,
-  promptSuffix?: string,
-  debaters?: Debater[],
-  agentManager?: IAgentManager,
+  workdir: string | undefined,
+  featureName: string | undefined,
+  reviewerSession: import("../review/dialogue").ReviewerSession | undefined,
+  resolverContext: ResolverContext | undefined,
+  promptSuffix: string | undefined,
+  debaters: Debater[] | undefined,
+  agentManager: IAgentManager,
 ): Promise<ResolveOutcome> {
   const resolverConfig = stageConfig.resolver;
   const logger = _debateSessionDeps.getSafeLogger();

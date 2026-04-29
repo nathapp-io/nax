@@ -469,14 +469,15 @@ describe("runAdversarialReview — truncation-detected condensed retry", () => {
     expect(retryPrompt).not.toContain("truncated");
   });
 
-  test("condensed retry prompt caps findings — prompt mentions a number limit", async () => {
+  test("condensed retry prompt caps below-threshold findings but never blocking ones", async () => {
     const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, PASSING_RESPONSE]);
 
     await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
 
     const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
     const retryPrompt = (calls[1][0] as Record<string, unknown>).prompt as string;
-    expect(retryPrompt).toMatch(/\d+ finding/);
+    expect(retryPrompt).toMatch(/Include ALL findings with severity/);
+    expect(retryPrompt).toMatch(/at most \d+ additional findings/);
   });
 
   test("succeeds when condensed retry returns valid JSON after cap-length truncation", async () => {

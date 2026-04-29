@@ -5,7 +5,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
-import { resolveDefaultAgent, wrapAdapterAsManager } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { createContextToolRuntime } from "../context/engine";
@@ -117,13 +117,14 @@ export interface TddSessionBinding {
   sessionManager: ISessionManager;
   sessionId: string;
   /** When provided, routes the session through IAgentManager.run() for fallback support. */
-  agentManager?: import("../agents/manager-types").IAgentManager;
+  agentManager: import("../agents/manager-types").IAgentManager;
 }
 
 /** Run a single TDD session */
 export async function runTddSession(
   role: TddSessionRole,
   agent: AgentAdapter,
+  agentManager: import("../agents/manager-types").IAgentManager,
   story: UserStory,
   config: NaxConfig,
   workdir: string,
@@ -246,11 +247,8 @@ export async function runTddSession(
   // Run the agent. When a sessionBinding is provided, route through
   // SessionManager.runInSession so state transitions (CREATED → RUNNING →
   // COMPLETED/FAILED) and bindHandle happen automatically (#541, #589).
-  // ADR-013 Phase 1: runInSession now takes IAgentManager. Use the binding's
-  // agentManager when present; otherwise wrap adapter for a no-fallback path.
-  // Absent binding path stays compatible with tests that skip SessionManager.
   const effectiveManager: import("../agents/manager-types").IAgentManager =
-    sessionBinding?.agentManager ?? wrapAdapterAsManager(agent);
+    sessionBinding?.agentManager ?? agentManager;
 
   const result = sessionBinding
     ? await sessionBinding.sessionManager.runInSession(sessionBinding.sessionId, effectiveManager, {

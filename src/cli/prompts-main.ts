@@ -12,6 +12,7 @@ import { runPipeline } from "../pipeline";
 import type { PipelineContext } from "../pipeline";
 import { constitutionStage, contextStage, promptStage, routingStage } from "../pipeline/stages";
 import { loadPRD } from "../prd";
+import { createRuntime } from "../runtime";
 // buildFrontmatter lives in prompts-shared to avoid circular import with prompts-tdd.
 // Import for local use + re-export to preserve the public API via prompts.ts.
 import { buildFrontmatter } from "./prompts-shared";
@@ -72,6 +73,9 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
 
   const prd = await loadPRD(prdPath);
 
+  // Create a minimal runtime for PipelineContext conformance (prompts command doesn't dispatch agents)
+  const runtime = createRuntime(config, workdir);
+
   // Filter stories
   const stories = storyId ? prd.userStories.filter((s) => s.id === storyId) : prd.userStories;
 
@@ -114,6 +118,10 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
       workdir,
       featureDir,
       hooks: { hooks: {} }, // Empty hooks config
+      agentManager: runtime.agentManager,
+      sessionManager: runtime.sessionManager,
+      runtime,
+      abortSignal: runtime.signal,
     };
 
     // Run the prompt assembly pipeline

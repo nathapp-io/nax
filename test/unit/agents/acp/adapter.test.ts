@@ -29,7 +29,7 @@ export interface AcpSessionResponse {
 
 export interface MockAcpSession {
   prompt(text: string): Promise<AcpSessionResponse>;
-  close(): Promise<void>;
+  close(opts?: { forceTerminate?: boolean }): Promise<void>;
   cancelActivePrompt(): Promise<void>;
 }
 
@@ -47,7 +47,7 @@ export interface MockAcpClient {
 
 export function makeSession(overrides: {
   promptFn?: (text: string) => Promise<AcpSessionResponse>;
-  closeFn?: () => Promise<void>;
+  closeFn?: (opts?: { forceTerminate?: boolean }) => Promise<void>;
   cancelFn?: () => Promise<void>;
 } = {}): MockAcpSession {
   return {
@@ -261,6 +261,50 @@ describe("complete()", () => {
     await expect(
       new AcpAgentAdapter("claude").complete("Unknown fail", { workdir: ACP_WORKDIR }),
     ).rejects.toThrow(/unexpected internal error/);
+  });
+
+  // SIGINT-orphan fix — see docs/findings/2026-04-29-sigint-cleanup-rectification-and-adversarial-loops.md
+  test("forwards onPidSpawned from CompleteOptions to createClient", async () => {
+    let capturedOnPidSpawned: ((pid: number) => void) | undefined;
+    const session = makeSession();
+    _acpAdapterDeps.createClient = mock(
+      (_cmd: string, _cwd: string, _timeout?: number, onPidSpawned?: (pid: number) => void) => {
+        capturedOnPidSpawned = onPidSpawned;
+        return makeClient(session) as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+      },
+    );
+
+    const tracker = mock((_pid: number) => {});
+    await new AcpAgentAdapter("claude").complete("track-me", {
+      workdir: ACP_WORKDIR,
+      onPidSpawned: tracker,
+    });
+    expect(capturedOnPidSpawned).toBe(tracker);
+  });
+
+  test("force-terminates the session on successful completion (kills queue-owner)", async () => {
+    let capturedCloseOpts: { forceTerminate?: boolean } | undefined;
+    const session = makeSession({
+      closeFn: async (opts) => { capturedCloseOpts = opts; },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await new AcpAgentAdapter("claude").complete("hello", { workdir: ACP_WORKDIR });
+    expect(capturedCloseOpts?.forceTerminate).toBe(true);
+  });
+
+  test("force-terminates the session on error path as well", async () => {
+    let capturedCloseOpts: { forceTerminate?: boolean } | undefined;
+    const session = makeSession({
+      promptFn: async (_: string) => ({ messages: [], stopReason: "error" }),
+      closeFn: async (opts) => { capturedCloseOpts = opts; },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await expect(
+      new AcpAgentAdapter("claude").complete("fail", { workdir: ACP_WORKDIR }),
+    ).rejects.toBeInstanceOf(CompleteError);
+    expect(capturedCloseOpts?.forceTerminate).toBe(true);
   });
 });
 

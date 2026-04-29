@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
@@ -64,6 +65,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -88,6 +90,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -113,6 +116,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -146,6 +150,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -183,6 +188,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -201,6 +207,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -222,6 +229,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -298,6 +306,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -332,6 +341,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -362,6 +372,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -400,6 +411,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -473,6 +485,7 @@ describe("runThreeSessionTdd", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -527,6 +540,7 @@ describe("test-writer skip on review escalation", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story: storyWithReviewEscalation,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -571,6 +585,7 @@ describe("test-writer skip on review escalation", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story: freshStory,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -621,6 +636,7 @@ describe("test-writer skip on review escalation", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story: storyWithEscalationFailure,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",

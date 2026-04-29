@@ -17,6 +17,7 @@ import { isAmbiguousOutput, _executionDeps } from "../../../../src/pipeline/stag
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../../helpers";
+import { fakeAgentManager } from "../../../helpers/fake-agent-manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -83,6 +84,7 @@ function makeCtx(config: ReturnType<typeof makeNaxConfig>, interaction?: Interac
     prompt: "Do something",
     hooks: {} as PipelineContext["hooks"],
     interaction,
+    agentManager: (() => { const a = _executionDeps.getAgent?.("claude"); return a ? fakeAgentManager(a, "claude") : fakeAgentManager(makeAgentAdapter({ name: "claude" })); })(),
   } as unknown as PipelineContext;
 }
 

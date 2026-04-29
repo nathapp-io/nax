@@ -10,6 +10,7 @@ import type { NaxConfig } from "../config";
 import type { ModelDef } from "../config";
 import { NaxError } from "../errors";
 import { DebatePromptBuilder } from "../prompts";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import { type HybridCtx, runRebuttalLoop } from "./runner-hybrid";
@@ -25,14 +26,11 @@ import {
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 
-interface PlanCtx {
+interface PlanCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
   readonly config: NaxConfig;
-  readonly agentManager?: IAgentManager;
-  readonly sessionManager?: import("../session/types").ISessionManager;
-  readonly signal?: AbortSignal;
 }
 
 export async function runPlan(
@@ -104,18 +102,18 @@ export async function runPlan(
         workdir: opts.workdir,
         featureName: opts.feature,
         storyId: ctx.storyId,
-        role: `plan-${i}`,
+        role: `debate-plan-${i}`,
       });
       await sessionManager.runInSession(sessionName, debaterPrompt, {
         agentName,
-        role: `plan-${i}`,
+        role: `debate-plan-${i}`,
         workdir: opts.workdir,
         pipelineStage: "plan",
         modelDef,
         timeoutSeconds: opts.timeoutSeconds ?? 600,
         featureName: opts.feature,
         storyId: ctx.storyId,
-        signal: ctx.signal,
+        signal: ctx.abortSignal,
       });
       const output = await _debateSessionDeps.readFile(tempOutputPath);
       return { debater: rd, agentName, output, cost: 0 };
@@ -204,12 +202,14 @@ export async function runPlan(
       timeoutSeconds: opts.timeoutSeconds ?? 600,
       agentManager,
       sessionManager: ctx.sessionManager,
+      runtime: ctx.runtime,
+      abortSignal: ctx.abortSignal,
     };
     const rebuttalBuilder = new DebatePromptBuilder(
       { taskContext, outputFormat: "", stage: "plan" },
       { debaters: successful.map((p) => p.debater), sessionMode },
     );
-    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, rebuttalBuilder, "plan-hybrid");
+    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, rebuttalBuilder, "debate-plan-hybrid");
     critiqueOutputs = rebuttals.map((r) => r.output);
     rebuttalList = rebuttals;
     totalCostUsd += costUsd;

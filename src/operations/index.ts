@@ -1,4 +1,4 @@
-export { callOp } from "./call";
+export { callOp, _runPostParseForTest } from "./call";
 export { planOp } from "./plan";
 export type { PlanOpInput } from "./plan";
 export { decomposeOp } from "./decompose";
@@ -32,6 +32,7 @@ export type {
   LlmReviewFinding,
   Operation,
   RunOperation,
+  VerifyContext,
 } from "./types";
 export { writeTddTestOp } from "./write-test";
 export type { TddRunOp } from "./write-test";

@@ -12,6 +12,7 @@ import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
 import { _sessionRunnerDeps } from "../../../src/tdd/session-runner";
 import { makeNaxConfig } from "../../helpers";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 function makeStory(): UserStory {
   return {
@@ -106,6 +107,7 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
 
     const result = await runThreeSessionTdd({
       agent: agent as never,
+      agentManager: fakeAgentManager(agent as never),
       story: makeStory(),
       config: makeConfig(),
       workdir: "/tmp/fake",
@@ -124,6 +126,7 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
 
     const result = await runThreeSessionTdd({
       agent: agent as never,
+      agentManager: fakeAgentManager(agent as never),
       story: makeStory(),
       config: makeConfig(),
       workdir: "/tmp/fake",
@@ -138,6 +141,7 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
 
     const result = await runThreeSessionTdd({
       agent: agent as never,
+      agentManager: fakeAgentManager(agent as never),
       story: makeStory(),
       config: makeConfig(),
       workdir: "/tmp/fake",

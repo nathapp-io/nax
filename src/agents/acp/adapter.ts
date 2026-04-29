@@ -177,11 +177,16 @@ export class AcpAgentAdapter implements AgentAdapter {
       const cmdStr = `acpx --model ${model} ${agentName}`;
       const timeoutSeconds = Math.ceil(timeoutMs / 1000);
       const promptRetries = _options?.config?.agent?.acp?.promptRetries;
-      const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, undefined, promptRetries);
+      const client = _acpAdapterDeps.createClient(
+        cmdStr,
+        workdir,
+        timeoutSeconds,
+        _options?.onPidSpawned,
+        promptRetries,
+      );
       await client.start();
 
       let session: import("./adapter-session-types").AcpSession | null = null;
-      let hadError = false;
       try {
         const completeSessionName =
           _options?.sessionName ??
@@ -247,12 +252,13 @@ export class AcpAgentAdapter implements AgentAdapter {
           costUsd: 0,
           source: "fallback",
         };
-      } catch (err) {
-        hadError = true;
-        throw err;
       } finally {
         if (session) {
-          await session.close({ forceTerminate: hadError }).catch(() => {});
+          // Always force-terminate on the complete-path: each complete() opens its
+          // own session and never reuses it, so the queue-owner has no work to amortize.
+          // Graceful close leaves the queue-owner alive until TTL — long enough to be
+          // orphaned if the user quits nax (or hits Ctrl+C) before the TTL elapses.
+          await session.close({ forceTerminate: true }).catch(() => {});
         }
         await client.close().catch(() => {});
       }

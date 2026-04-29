@@ -18,6 +18,7 @@ import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD } from "../../../../src/prd";
 import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "../../../../test/helpers";
+import { fakeAgentManager } from "../../../../test/helpers/fake-agent-manager";
 
 const WORKDIR = `/tmp/nax-test-exec-${randomUUID()}`;
 
@@ -28,6 +29,7 @@ const WORKDIR = `/tmp/nax-test-exec-${randomUUID()}`;
 const originalGetAgent = _executionDeps.getAgent;
 const originalValidateAgentForTier = _executionDeps.validateAgentForTier;
 const originalDetectMergeConflict = _executionDeps.detectMergeConflict;
+const originalRunThreeSessionTddFromCtx = _executionDeps.runThreeSessionTddFromCtx;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -79,6 +81,7 @@ function makeCtx(
     projectDir: WORKDIR,
     prompt: "Your tdd-simple task: write tests first, then implement.",
     hooks: {} as PipelineContext["hooks"],
+    agentManager: (() => { const a = _executionDeps.getAgent?.("claude"); return a ? fakeAgentManager(a, "claude") : fakeAgentManager(makeAgentAdapter({ name: "claude" })); })(),
     ...overrides,
   } as unknown as PipelineContext;
 }
@@ -103,6 +106,7 @@ afterEach(() => {
   _executionDeps.getAgent = originalGetAgent;
   _executionDeps.validateAgentForTier = originalValidateAgentForTier;
   _executionDeps.detectMergeConflict = originalDetectMergeConflict;
+  _executionDeps.runThreeSessionTddFromCtx = originalRunThreeSessionTddFromCtx;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,27 +243,26 @@ describe("executionStage — test-after strategy (no regression)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("executionStage — three-session-tdd strategy (no regression)", () => {
-  test("does NOT route through agentManager.run() for three-session-tdd", async () => {
+  test("routes through runThreeSessionTddFromCtx (not single-session path)", async () => {
     const agent = makeAgent(true);
     _executionDeps.getAgent = mock(() => agent as unknown as ReturnType<typeof _executionDeps.getAgent>);
 
-    const ctx = makeCtx("three-session-tdd");
-    // Inject a mock manager to detect if the single-session path is taken
-    let managerRunCalled = false;
-    (ctx as unknown as Record<string, unknown>).agentManager = makeMockAgentManager({
-      runWithFallbackFn: async () => {
-        managerRunCalled = true;
-        return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
-      },
+    let tddCalled = false;
+    _executionDeps.runThreeSessionTddFromCtx = mock(async () => {
+      tddCalled = true;
+      return {
+        success: true,
+        sessions: [],
+        totalCost: 0,
+        needsHumanReview: false,
+        lite: false,
+      };
     });
 
-    try {
-      await executionStage.execute(ctx);
-    } catch {
-      // TDD orchestrator may throw without real infrastructure
-    }
+    const ctx = makeCtx("three-session-tdd");
+    await executionStage.execute(ctx);
 
-    // The single-session effectiveManager.run() must NOT be called for three-session-tdd
-    expect(managerRunCalled).toBe(false);
+    // Must route through the TDD orchestrator, not the single-session path
+    expect(tddCalled).toBe(true);
   });
 });

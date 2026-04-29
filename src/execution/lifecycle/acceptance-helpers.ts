@@ -7,6 +7,7 @@
  */
 
 import path from "node:path";
+import { isStubTestContent } from "../../acceptance/heuristics";
 import { getSafeLogger } from "../../logger";
 import type { PipelineContext } from "../../pipeline/types";
 import type { PRD } from "../../prd/types";
@@ -15,12 +16,9 @@ import type { AcceptanceLoopResult } from "./acceptance-loop";
 
 // ─── Stub detection ─────────────────────────────────────────────────────────
 
+/** @alias isStubTestContent — preserved for callers within this subsystem. */
 export function isStubTestFile(content: string): boolean {
-  // Must have a placeholder assertion to be a candidate stub
-  if (!/expect\s*\(\s*true\s*\)\s*\.\s*toBe\s*\(\s*(?:false|true)\s*\)/.test(content)) return false;
-  // Not a stub if real (non-boolean) assertions exist — e.g. expect(result).toBe(3).
-  // [^\s)] anchors to a real non-whitespace arg; \b prevents matching truthy/falsy-prefixed names.
-  return !/expect\s*\(\s*(?!(?:true|false)\b)[^\s)]/.test(content);
+  return isStubTestContent(content);
 }
 
 // ─── Test-level failure detection ───────────────────────────────────────────

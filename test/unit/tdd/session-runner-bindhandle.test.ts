@@ -9,6 +9,7 @@ import type { UserStory } from "../../../src/prd";
 import type { ISessionManager, SessionDescriptor } from "../../../src/session/types";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
 import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig } from "../../helpers";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 function makeStory(): UserStory {
   return {
@@ -155,6 +156,7 @@ describe("session-runner bindHandle (#541)", () => {
     await runTddSession(
       "implementer",
       agent as never,
+      fakeAgentManager(agent),
       makeStory(),
       makeConfig(),
       "/tmp/fake",
@@ -191,6 +193,7 @@ describe("session-runner bindHandle (#541)", () => {
     await runTddSession(
       "test-writer",
       agent as never,
+      fakeAgentManager(agent),
       makeStory(),
       makeConfig(),
       "/tmp/fake",
@@ -222,6 +225,7 @@ describe("session-runner bindHandle (#541)", () => {
     const result = await runTddSession(
       "verifier",
       agent as never,
+      fakeAgentManager(agent),
       makeStory(),
       makeConfig(),
       "/tmp/fake",

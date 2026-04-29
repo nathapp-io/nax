@@ -1,17 +1,61 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { getLogger, initLogger, resetLogger } from "../../../../src/logger";
+import { initLogger, getLogger, resetLogger } from "../../../../src/logger";
 import type { LogEntry } from "../../../../src/logger/types";
-import type { MiddlewareContext } from "../../../../src/runtime/agent-middleware";
-import { loggingMiddleware } from "../../../../src/runtime/middleware/logging";
+import { DispatchEventBus } from "../../../../src/runtime/dispatch-events";
+import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
+import { attachLoggingSubscriber } from "../../../../src/runtime/middleware/logging";
 
-function makeCtx(overrides: Partial<MiddlewareContext> = {}): MiddlewareContext {
+const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
+
+function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {
-    runId: "r-001",
+    kind: "session-turn",
+    sessionName: "nax-abc-feat-s1-main",
+    sessionRole: "main",
+    prompt: "hello",
+    response: "world",
     agentName: "claude",
-    kind: "run",
-    request: null,
-    prompt: null,
-    resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
+    stage: "run",
+    storyId: "s-42",
+    resolvedPermissions: PERMS,
+    turn: 1,
+    protocolIds: { sessionId: "sess-1" },
+    origin: "runAsSession",
+    durationMs: 350,
+    timestamp: 1000,
+    ...overrides,
+  };
+}
+
+function makeCompleteEvent(overrides: Partial<CompleteDispatchEvent> = {}): CompleteDispatchEvent {
+  return {
+    kind: "complete",
+    sessionName: "nax-abc-feat-s1-plan",
+    sessionRole: "plan",
+    prompt: "plan this",
+    response: "planned",
+    agentName: "codex",
+    stage: "plan",
+    storyId: "s-42",
+    resolvedPermissions: PERMS,
+    durationMs: 80,
+    timestamp: 2000,
+    ...overrides,
+  };
+}
+
+function makeErrorEvent(overrides: Partial<DispatchErrorEvent> = {}): DispatchErrorEvent {
+  return {
+    kind: "error",
+    origin: "runAsSession",
+    agentName: "claude",
+    stage: "run",
+    storyId: "s-42",
+    errorCode: "SESSION_ERROR",
+    errorMessage: "session lost",
+    durationMs: 100,
+    timestamp: 3000,
+    resolvedPermissions: PERMS,
     ...overrides,
   };
 }
@@ -22,11 +66,11 @@ async function parseLastEntry(logFile: string): Promise<LogEntry> {
   return JSON.parse(lines[lines.length - 1]) as LogEntry;
 }
 
-describe("loggingMiddleware", () => {
+describe("attachLoggingSubscriber", () => {
   let logFile: string;
 
   beforeEach(() => {
-    logFile = `${import.meta.dir}/test-logging-mw-${Date.now()}.jsonl`;
+    logFile = `${import.meta.dir}/test-logging-sub-${Date.now()}.jsonl`;
     initLogger({ level: "debug", filePath: logFile, useChalk: false, headless: true });
   });
 
@@ -40,199 +84,85 @@ describe("loggingMiddleware", () => {
     }
   });
 
-  describe("before()", () => {
-    test("is no-op when logger is not initialized", async () => {
-      resetLogger();
-      const mw = loggingMiddleware();
-      const ctx = makeCtx();
-      await expect(mw.before?.(ctx)).resolves.toBeUndefined();
-    });
+  test("logs Agent call complete on session-turn dispatch", async () => {
+    const bus = new DispatchEventBus();
+    attachLoggingSubscriber(bus, "r-001");
 
-    test("logs structured entry with agentName, stage, kind, runId, storyId", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx({
-        agentName: "codex",
-        kind: "complete",
-        stage: "run",
-        storyId: "s-42",
-        runId: "r-001",
-      });
+    bus.emitDispatch(makeSessionTurnEvent({ agentName: "codex", stage: "verify", durationMs: 350 }));
+    await getLogger().flush();
 
-      await mw.before?.(ctx);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.level).toBe("info");
-      expect(entry.stage).toBe("middleware");
-      expect(entry.message).toBe("Agent call start");
-      expect(entry.data).toMatchObject({
-        agentName: "codex",
-        kind: "complete",
-        stage: "run",
-        storyId: "s-42",
-        runId: "r-001",
-      });
-    });
-
-    test("receives correct context fields for a run call", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx({
-        agentName: "claude",
-        kind: "run",
-        stage: "verify",
-        storyId: "s-99",
-      });
-
-      await mw.before?.(ctx);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.data).toMatchObject({
-        agentName: "claude",
-        kind: "run",
-        stage: "verify",
-        storyId: "s-99",
-      });
+    const entry = await parseLastEntry(logFile);
+    expect(entry.level).toBe("info");
+    expect(entry.message).toBe("Agent call complete");
+    expect(entry.data).toMatchObject({
+      agentName: "codex",
+      kind: "session-turn",
+      stage: "verify",
+      durationMs: 350,
+      storyId: "s-42",
+      runId: "r-001",
     });
   });
 
-  describe("after()", () => {
-    test("is no-op when logger is not initialized", async () => {
-      resetLogger();
-      const mw = loggingMiddleware();
-      const ctx = makeCtx();
-      await expect(mw.after?.(ctx, { success: true }, 100)).resolves.toBeUndefined();
-    });
+  test("logs Agent call complete on complete dispatch", async () => {
+    const bus = new DispatchEventBus();
+    attachLoggingSubscriber(bus, "r-001");
 
-    test("logs structured entry with agentName, durationMs, stage, kind", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx({
-        agentName: "codex",
-        kind: "run",
-        stage: "verify",
-      });
+    bus.emitDispatch(makeCompleteEvent({ agentName: "claude", stage: "plan" }));
+    await getLogger().flush();
 
-      await mw.after?.(ctx, { output: "result" }, 350);
-      await getLogger().flush();
+    const entry = await parseLastEntry(logFile);
+    expect(entry.level).toBe("info");
+    expect(entry.message).toBe("Agent call complete");
+    expect(entry.data?.agentName).toBe("claude");
+    expect(entry.data?.kind).toBe("complete");
+  });
 
-      const entry = await parseLastEntry(logFile);
-      expect(entry.level).toBe("info");
-      expect(entry.message).toBe("Agent call complete");
-      expect(entry.data).toMatchObject({
-        agentName: "codex",
-        durationMs: 350,
-        kind: "run",
-        stage: "verify",
-      });
-    });
+  test("logs Agent call failed on dispatch error", async () => {
+    const bus = new DispatchEventBus();
+    attachLoggingSubscriber(bus, "r-001");
 
-    test("handles empty result object", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx();
+    bus.emitDispatchError(makeErrorEvent({ agentName: "claude", stage: "run", durationMs: 100 }));
+    await getLogger().flush();
 
-      await mw.after?.(ctx, {}, 0);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.message).toBe("Agent call complete");
+    const entry = await parseLastEntry(logFile);
+    expect(entry.level).toBe("warn");
+    expect(entry.message).toBe("Agent call failed");
+    expect(entry.data).toMatchObject({
+      agentName: "claude",
+      stage: "run",
+      durationMs: 100,
+      error: "session lost",
+      storyId: "s-42",
+      runId: "r-001",
     });
   });
 
-  describe("onError()", () => {
-    test("is no-op when logger is not initialized", async () => {
-      resetLogger();
-      const mw = loggingMiddleware();
-      const ctx = makeCtx();
-      await expect(mw.onError?.(ctx, new Error("boom"), 25)).resolves.toBeUndefined();
-    });
-
-    test("logs warn-level entry with error message", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx({
-        agentName: "claude",
-        kind: "complete",
-        stage: "run",
-      });
-      const err = new Error("boom");
-
-      await mw.onError?.(ctx, err, 100);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.level).toBe("warn");
-      expect(entry.message).toBe("Agent call failed");
-      expect(entry.data).toMatchObject({
-        error: "boom",
-        agentName: "claude",
-        durationMs: 100,
-        kind: "complete",
-        stage: "run",
-      });
-    });
-
-    test("handles string error", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx({ agentName: "claude" });
-
-      await mw.onError?.(ctx, "plain string" as unknown, 5);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.data?.error).toBe("plain string");
-    });
-
-    test("handles unknown error shape", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx({ agentName: "claude" });
-
-      await mw.onError?.(ctx, { code: "ERR_X" }, 15);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.data?.error).toEqual("[object Object]");
-    });
-
-    test("handles null error", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx();
-
-      await mw.onError?.(ctx, null, 0);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.data?.error).toBe("null");
-    });
-
-    test("handles Error subclass with message extraction", async () => {
-      const mw = loggingMiddleware();
-      const ctx = makeCtx({ agentName: "claude" });
-
-      class CustomError extends Error {
-        constructor(message: string) {
-          super(message);
-          this.name = "CustomError";
-        }
-      }
-
-      await mw.onError?.(ctx, new CustomError("something went wrong"), 75);
-      await getLogger().flush();
-
-      const entry = await parseLastEntry(logFile);
-      expect(entry.data?.error).toBe("something went wrong");
-    });
+  test("is a no-op when logger is not initialized", () => {
+    resetLogger();
+    const bus = new DispatchEventBus();
+    attachLoggingSubscriber(bus, "r-001");
+    expect(() => bus.emitDispatch(makeSessionTurnEvent())).not.toThrow();
+    expect(() => bus.emitDispatchError(makeErrorEvent())).not.toThrow();
   });
 
-  describe("middleware interface", () => {
-    test("has name field set to 'logging'", () => {
-      const mw = loggingMiddleware();
-      expect(mw.name).toBe("logging");
-    });
+  test("unsubscribe stops logging", async () => {
+    const bus = new DispatchEventBus();
 
-    test("has before, after, and onError hooks", () => {
-      const mw = loggingMiddleware();
-      expect(typeof mw.before).toBe("function");
-      expect(typeof mw.after).toBe("function");
-      expect(typeof mw.onError).toBe("function");
-    });
+    // Emit once before unsubscribing to create the log file
+    const unsub = attachLoggingSubscriber(bus, "r-001");
+    bus.emitDispatch(makeSessionTurnEvent());
+    await getLogger().flush();
+
+    const contentBefore = await Bun.file(logFile).text();
+    const linesBefore = contentBefore.trim().split("\n").filter(Boolean).length;
+
+    unsub();
+    bus.emitDispatch(makeSessionTurnEvent());
+    await getLogger().flush();
+
+    const contentAfter = await Bun.file(logFile).text();
+    const linesAfter = contentAfter.trim().split("\n").filter(Boolean).length;
+    expect(linesAfter).toBe(linesBefore);
   });
 });

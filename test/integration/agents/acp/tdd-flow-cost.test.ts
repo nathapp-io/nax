@@ -16,6 +16,7 @@ import type { NaxConfig } from "../../../../src/config";
 import type { UserStory } from "../../../../src/prd";
 import { _isolationDeps } from "../../../../src/tdd/isolation";
 import { _sessionRunnerDeps, runTddSession } from "../../../../src/tdd/session-runner";
+import { fakeAgentManager } from "../../../helpers/fake-agent-manager";
 import { _gitDeps } from "../../../../src/utils/git";
 import { _executorDeps } from "../../../../src/verification/executor";
 
@@ -209,6 +210,7 @@ describe("cost tracking across 3 ACP sessions", () => {
       const result = await runTddSession(
         role,
         adapter,
+    fakeAgentManager(adapter),
         story,
         config,
         ACP_WORKDIR,
@@ -242,6 +244,7 @@ describe("cost tracking across 3 ACP sessions", () => {
     const result = await runTddSession(
       "test-writer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,
@@ -267,6 +270,7 @@ describe("cost tracking across 3 ACP sessions", () => {
     const result = await runTddSession(
       "test-writer",
       adapter,
+    fakeAgentManager(adapter),
       story,
       config,
       ACP_WORKDIR,

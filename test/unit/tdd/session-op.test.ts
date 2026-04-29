@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _sessionRunnerDeps } from "../../../src/tdd/session-runner";
 import { implementTddOp, runTddSessionOp, verifyTddOp, writeTddTestOp } from "../../../src/tdd/session-op";
 import { makeAgentAdapter, makeNaxConfig, makeStory } from "../../helpers";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 let savedDeps: Record<string, unknown>;
 beforeEach(() => {
@@ -40,6 +41,7 @@ describe("runTddSessionOp", () => {
     });
     const options = {
       agent: makeAgentAdapter(),
+      agentManager: fakeAgentManager(makeAgentAdapter()),
       story: makeStory(),
       config,
       workdir: "/tmp/fake",

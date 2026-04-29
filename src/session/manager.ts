@@ -12,6 +12,8 @@ import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import type { IDispatchEventBus } from "../runtime/dispatch-events";
+import { DispatchEventBus } from "../runtime/dispatch-events";
 import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import { _sessionManagerDeps, resolveProjectDirFromScratchDir } from "./manager-deps";
@@ -65,21 +67,31 @@ export class SessionManager implements ISessionManager {
   private readonly _liveHandles = new Map<string, SessionHandle>();
   private _getAdapter: (name: string) => AgentAdapter | undefined;
   private _config: NaxConfig | undefined;
+  private _dispatchEvents: IDispatchEventBus;
+  private _defaultAgent: string;
 
   constructor(opts?: {
     getAdapter?: (name: string) => AgentAdapter | undefined;
     config?: NaxConfig;
+    dispatchEvents?: IDispatchEventBus;
+    defaultAgent?: string;
   }) {
     this._getAdapter = opts?.getAdapter ?? (() => undefined);
     this._config = opts?.config;
+    this._dispatchEvents = opts?.dispatchEvents ?? new DispatchEventBus();
+    this._defaultAgent = opts?.defaultAgent ?? "claude";
   }
 
   configureRuntime(opts: {
     getAdapter?: (name: string) => AgentAdapter | undefined;
     config?: NaxConfig;
+    dispatchEvents?: IDispatchEventBus;
+    defaultAgent?: string;
   }): void {
     if (opts.getAdapter) this._getAdapter = opts.getAdapter;
     if (opts.config) this._config = opts.config;
+    if (opts.dispatchEvents) this._dispatchEvents = opts.dispatchEvents;
+    if (opts.defaultAgent) this._defaultAgent = opts.defaultAgent;
   }
 
   /**
@@ -568,6 +580,9 @@ export class SessionManager implements ISessionManager {
         bindHandle: (sid, handle, protocolIds) => this.bindHandle(sid, handle, protocolIds),
         handoff: (sid, agent, reason) => this.handoff(sid, agent, reason),
         persistDescriptor: (desc) => this._persistDescriptor(desc),
+        dispatchEvents: this._dispatchEvents,
+        defaultAgent: this._defaultAgent,
+        nameFor: (req) => this.nameFor(req),
       },
       id,
       runner,

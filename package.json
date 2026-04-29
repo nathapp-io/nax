@@ -26,6 +26,8 @@
     "check:test-sizes": "bun run scripts/check-test-sizes.ts",
     "check:test-mocks": "bun scripts/check-inline-test-mocks.ts --strict",
     "check:process-cwd": "bash scripts/check-process-cwd.sh",
+    "check:no-adapter-wrap": "bash scripts/check-no-adapter-wrap.sh",
+    "check:dispatch-context": "bash scripts/check-dispatch-context.sh",
     "prepublishOnly": "bun run build",
     "test:full": "FULL=1 NAX_PRECHECK=1 bun test test/ --timeout=60000"
   },

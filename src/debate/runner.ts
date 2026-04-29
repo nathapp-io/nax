@@ -282,10 +282,11 @@ export class DebateRunner {
       featureName: this.featureName,
       timeoutSeconds: this.timeoutSeconds,
       agentManager: this.ctx.runtime.agentManager,
-      sessionManager: this.sessionManager,
+      sessionManager: this.sessionManager ?? this.ctx.runtime.sessionManager,
+      runtime: this.ctx.runtime,
+      abortSignal: this.ctx.runtime.signal,
       reviewerSession: this.reviewerSession,
       resolverContextInput: this.resolverContextInput,
-      signal: this.ctx.runtime?.signal,
     };
   }
 
@@ -296,8 +297,9 @@ export class DebateRunner {
       stageConfig: this.stageConfig,
       config: this.config,
       agentManager: this.ctx.runtime.agentManager,
-      sessionManager: this.sessionManager,
-      signal: this.ctx.runtime?.signal,
+      sessionManager: this.sessionManager ?? this.ctx.runtime.sessionManager,
+      runtime: this.ctx.runtime,
+      abortSignal: this.ctx.runtime.signal,
     };
   }
 }

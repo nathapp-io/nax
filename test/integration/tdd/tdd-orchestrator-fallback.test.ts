@@ -6,6 +6,7 @@ import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
@@ -110,6 +111,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: configWithAutoStrategy,
       workdir: "/tmp/test",
@@ -135,6 +137,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -164,6 +167,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: configWithStrictStrategy,
       workdir: "/tmp/test",
@@ -189,6 +193,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
@@ -221,6 +226,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: configWithLiteStrategy,
       workdir: "/tmp/test",

@@ -11,6 +11,7 @@ import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
 import { extractTestCode, generateSkeletonTests } from "./generator-helpers";
+import { hasLikelyTestContent } from "./heuristics";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
   resolveAcceptanceTestFile as defaultResolveAcceptanceTestFile,
@@ -62,15 +63,6 @@ export const _generatorPRDDeps = {
     await Bun.write(path, content);
   },
 };
-
-function hasLikelyTestContent(content: string): boolean {
-  return (
-    /\b(?:describe|test|it|expect)\s*\(/.test(content) ||
-    /func\s+Test\w+\s*\(/.test(content) ||
-    /def\s+test_\w+/.test(content) ||
-    /#\[test\]/.test(content)
-  );
-}
 
 export const acceptanceTestFilename = defaultAcceptanceTestFilename;
 export const resolveAcceptanceTestFile = defaultResolveAcceptanceTestFile;

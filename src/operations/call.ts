@@ -5,7 +5,7 @@ import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
 import { composeSections, join } from "../prompts/compose";
 import { buildHopCallback } from "./build-hop-callback";
-import type { CallContext, CompleteOperation, Operation, RunOperation } from "./types";
+import type { BuildContext, CallContext, CompleteOperation, Operation, RunOperation, VerifyContext } from "./types";
 
 function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[], opName: string): ConfigSelector<C> {
   if (Array.isArray(s)) {
@@ -70,8 +70,10 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
       ...(stageTimeoutMs !== undefined ? { timeoutMs: stageTimeoutMs } : {}),
+      onPidSpawned: ctx.runtime.onPidSpawned,
     });
-    return op.parse(raw.output, input, buildCtx);
+    const parsedComplete = op.parse(raw.output, input, buildCtx);
+    return runPostParse(op, parsedComplete, input, buildCtx);
   }
 
   // kind:"run" — ADR-019 §5: route through runWithFallback + buildHopCallback.
@@ -149,5 +151,57 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       agentName: dispatchAgent,
     });
   }
-  return op.parse(rawOutput, input, buildCtx);
+  const parsedRun = op.parse(rawOutput, input, buildCtx);
+  return runPostParse(op, parsedRun, input, buildCtx);
+}
+
+async function runPostParse<I, O, C>(
+  op: Operation<I, O, C>,
+  parsed: O,
+  input: I,
+  buildCtx: BuildContext<C>,
+): Promise<O> {
+  if (!op.verify && !op.recover) return parsed;
+
+  const verifyCtx: VerifyContext<C> = {
+    packageView: buildCtx.packageView,
+    config: buildCtx.config,
+    readFile: async (p) => {
+      try {
+        return await Bun.file(p).text();
+      } catch {
+        return null;
+      }
+    },
+    fileExists: async (p) => Bun.file(p).exists(),
+  };
+
+  let final: O | null = parsed;
+
+  if (op.verify) {
+    final = await op.verify(parsed, input, verifyCtx);
+  }
+
+  if (final === null && op.recover) {
+    final = await op.recover(input, verifyCtx);
+  }
+
+  return (final ?? parsed) as O;
+}
+
+/**
+ * Exported for unit testing only — exercises runPostParse without a full callOp setup.
+ * Accepts a structural subtype of Operation (only verify/recover needed) and casts
+ * internally. Safe because runPostParse only reads verify and recover from op.
+ */
+export async function _runPostParseForTest<I, O, C>(
+  op: {
+    readonly verify?: (parsed: O, input: I, ctx: VerifyContext<C>) => Promise<O | null>;
+    readonly recover?: (input: I, ctx: VerifyContext<C>) => Promise<O | null>;
+  },
+  parsed: O,
+  input: I,
+  buildCtx: BuildContext<C>,
+): Promise<O> {
+  return runPostParse(op as unknown as Operation<I, O, C>, parsed, input, buildCtx);
 }
