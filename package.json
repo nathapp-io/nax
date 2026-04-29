@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.64.0-canary.10",
+  "version": "0.64.0-canary.11",
   "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
