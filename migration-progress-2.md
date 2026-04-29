@@ -12,7 +12,7 @@ Branch: chore/adr-019-test-migration-batch-2
 ## Pending (Wave 1: review tests)
 
 - [x] test/unit/review/semantic-debate.test.ts (T2-review) — quarantined 1 AC3 test
-- [x] test/unit/review/semantic-prompt-response.test.ts (T2-review) — quarantined 4 describe blocks (18 tests)
+- [x] test/unit/review/semantic-prompt-response.test.ts (T2-review) — quarantined 5 describe blocks (26 tests)
 - [ ] test/unit/review/semantic-retry.test.ts              (T2-review)
 - [ ] test/unit/review/semantic-retry-truncation.test.ts   (T2-review)
 - [ ] test/unit/review/semantic-threshold.test.ts          (T2-review)
