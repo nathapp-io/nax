@@ -25,7 +25,7 @@ Branch: chore/adr-019-test-migration-batch-2
 ## Pending (Wave 2: pipeline stages)
 
 - [x] test/unit/pipeline/stages/autofix-adversarial.test.ts (T2-pipeline) — quarantined (7 tests need rework; brace issue during migration)
-- [ ] test/unit/pipeline/stages/autofix-budget-prompts.test.ts
+- [x] test/unit/pipeline/stages/autofix-budget-prompts.test.ts (T2-pipeline) — quarantined (all 8 tests need runAsSession)
 - [ ] test/unit/pipeline/stages/autofix-dialogue.test.ts
 - [ ] test/unit/pipeline/stages/autofix-noop.test.ts
 - [ ] test/unit/pipeline/stages/autofix-session-wiring.test.ts
