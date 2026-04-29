@@ -9,12 +9,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentResult } from "../../../src/agents/types";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
+import { withTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -260,7 +263,7 @@ describe("unverifiable finding handling", () => {
     expect(result.advisoryFindings?.[0].message).toContain("Cannot verify from diff alone");
   });
 
-  test("ref mode preserves verified error findings as blocking", async () => {
+  test("ref mode preserves verified error findings when observed evidence exists on disk", async () => {
     const response = JSON.stringify({
       passed: false,
       findings: [
@@ -274,23 +277,66 @@ describe("unverifiable finding handling", () => {
             command: "sed -n '1,80p' src/foo.ts",
             file: "src/foo.ts",
             line: 5,
-            observed: "Function body is empty.",
+            observed: "export function foo() {}",
           },
         },
       ],
     });
     const agentManager = makeAgentManager(response);
-    const result = await runSemanticReview(
-      "/tmp/repo",
-      "abc123",
-      STORY,
-      { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
-      agentManager,
-    );
+    const result = await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
+      return runSemanticReview(
+        workdir,
+        "abc123",
+        STORY,
+        { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+        agentManager,
+      );
+    });
 
     expect(result.success).toBe(false);
     expect(result.findings?.length).toBe(1);
     expect(result.findings?.[0].message).toBe("AC not implemented");
+  });
+
+  test("ref mode downgrades fabricated verifiedBy evidence to unverifiable", async () => {
+    const response = JSON.stringify({
+      passed: false,
+      findings: [
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 5,
+          issue: "AC not implemented",
+          suggestion: "Replace the bogus Set comparison.",
+          verifiedBy: {
+            command: "sed -n '1,80p' src/foo.ts",
+            file: "src/foo.ts",
+            line: 5,
+            observed: "new Set(array.sort().join('|'))",
+          },
+        },
+      ],
+    });
+    const agentManager = makeAgentManager(response);
+    const result = await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "const storedLinkStr = links.sort().join('|');\n");
+      return runSemanticReview(
+        workdir,
+        "abc123",
+        STORY,
+        { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+        agentManager,
+      );
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.findings).toBeUndefined();
+    expect(result.advisoryFindings?.length).toBe(1);
+    expect(result.advisoryFindings?.[0].severity).toBe("info");
+    expect(result.advisoryFindings?.[0].message).toBe("AC not implemented");
   });
 });
 
