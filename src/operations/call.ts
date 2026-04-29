@@ -67,6 +67,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       storyId: ctx.storyId,
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
+      onPidSpawned: ctx.runtime.onPidSpawned,
     });
     return op.parse(raw.output, input, buildCtx);
   }
