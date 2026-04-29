@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { type HardeningContext, _hardeningDeps, runHardeningPass } from "../../../src/acceptance/hardening";
 import type { NaxConfig } from "../../../src/config";
 import type { PRD } from "../../../src/prd/types";
+import { makeMockAgentManager } from "../../helpers";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -27,32 +28,15 @@ const TEST_CONFIG = {
 } as unknown as NaxConfig;
 
 function makeCtx(overrides: Partial<HardeningContext> = {}): HardeningContext {
+  const agentManager = makeMockAgentManager();
+  const runtimeAgentManager = makeMockAgentManager();
   return {
     prd: makePRD(),
     prdPath: "/tmp/prd.json",
     featureDir: "/tmp/features/test",
     workdir: "/tmp/workdir",
     config: TEST_CONFIG,
-    agentManager: {
-      getDefault: () => "claude",
-      complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" })),
-      run: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] })),
-      completeAs: mock(async () => ({ output: "", costUsd: 0, source: "fallback" })),
-      runAs: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] })),
-      runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] })),
-      completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0, source: "fallback" }, fallbacks: [] })),
-      getAgent: mock(() => undefined),
-      isUnavailable: mock(() => false),
-      markUnavailable: mock(() => {}),
-      reset: mock(() => {}),
-      validateCredentials: mock(async () => {}),
-      events: { on: mock(() => {}) } as any,
-      resolveFallbackChain: mock(() => []),
-      shouldSwap: mock(() => false),
-      nextCandidate: mock(() => null),
-      plan: mock(async () => ({ specContent: "" })),
-      decompose: mock(async () => ({ stories: [] })),
-    } as any,
+    agentManager: agentManager as any,
     sessionManager: {
       openSession: mock(async () => ({ id: "test-session", role: "test" } as any)),
       closeSession: mock(async () => {}),
@@ -70,11 +54,7 @@ function makeCtx(overrides: Partial<HardeningContext> = {}): HardeningContext {
         }),
         repo: () => ({ select: () => TEST_CONFIG }),
       },
-      agentManager: {
-        getDefault: () => "claude",
-        completeAs: mock(async () => ({ output: "", costUsd: 0, source: "fallback" })),
-        runWithFallback: mock(async () => ({ result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] })),
-      },
+      agentManager: runtimeAgentManager,
       sessionManager: {
         openSession: mock(async () => ({ id: "test-session", role: "test" } as any)),
         closeSession: mock(async () => {}),
