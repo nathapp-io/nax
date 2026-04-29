@@ -45,6 +45,19 @@ const UNRESOLVED_REGEX = /^UNRESOLVED:\s*(.+)$/ms;
  */
 const MAX_CONSECUTIVE_NOOP_REPROMPTS = 1;
 
+/**
+ * Review checks whose verdict depends on LLM judgment of the diff.
+ *
+ * On a no-op turn (HEAD did not advance) the diff is unchanged, so re-running
+ * these checks against the same input would yield the same result — and incur
+ * fresh LLM cost (~$0.01–0.10 + ~10–30s per call). The autofix verify path uses
+ * this to skip recheck when ALL failing checks are LLM-driven. Mechanical
+ * checks (typecheck/lint/test/build) are NOT in this set because their verdicts
+ * CAN flip without a new commit (cache invalidation, transient diagnostics,
+ * post-stage state propagation).
+ */
+const LLM_REVIEW_CHECKS = new Set<ReviewCheckResult["check"]>(["semantic", "adversarial"]);
+
 function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
   return (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
 }
@@ -472,7 +485,16 @@ export async function runAgentRectification(
       //   - Filesystem state from a previous pipeline stage took time to propagate
       // Reprompting in those cases burns full rectification attempts (~75s each)
       // on already-passing checks. The check is the source of truth, not the git ref.
-      const passed = await _autofixDeps.recheckReview(ctx);
+      //
+      // Cost optimization: on no-op the diff is unchanged, so LLM-driven checks
+      // (semantic, adversarial) will return the same verdict on re-run. Skip the
+      // recheck entirely when ALL failing checks are LLM-driven — there is nothing
+      // a re-run can reveal. When at least one mechanical check (typecheck/lint/
+      // test/build) is failing, run recheck — those CAN flip without a new commit.
+      const failingChecks = (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
+      const hasMechanicalFailure = failingChecks.some((c) => !LLM_REVIEW_CHECKS.has(c.check));
+      const recheckWorthwhile = !result.noOp || hasMechanicalFailure;
+      const passed = recheckWorthwhile ? await _autofixDeps.recheckReview(ctx) : false;
       if (passed) {
         if (result.noOp) {
           logger.info(
