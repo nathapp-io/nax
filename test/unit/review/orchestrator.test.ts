@@ -29,13 +29,17 @@ withDepsRestore(_orchestratorDeps, ["spawn", "runSemanticReview", "runAdversaria
 withDepsRestore(_reviewSemanticDeps, ["runSemanticReview"]);
 withDepsRestore(_reviewAdversarialDeps, ["runAdversarialReview"]);
 
-function makeReviewConfig(pluginMode?: "per-story" | "deferred"): ReviewConfig {
+function makeReviewConfig(
+  pluginMode?: "per-story" | "deferred",
+  gateLLMChecksOnMechanicalPass = true,
+): ReviewConfig {
   // pluginMode is added by DR-001 — cast until the type is updated
   return {
     enabled: true,
     checks: [],
     commands: {},
     pluginMode,
+    gateLLMChecksOnMechanicalPass,
   } as unknown as ReviewConfig;
 }
 
@@ -203,12 +207,16 @@ function makeSemanticCheckResult(passed: boolean): ReviewCheckResult {
   };
 }
 
-function makeConfigWithSemantic(mechanicalChecks: string[] = ["lint"]): ReviewConfig {
+function makeConfigWithSemantic(
+  mechanicalChecks: string[] = ["lint"],
+  gateLLMChecksOnMechanicalPass = true,
+): ReviewConfig {
   return {
     enabled: true,
     checks: [...mechanicalChecks, "semantic"],
     commands: { lint: "biome check" },
     pluginMode: "deferred",
+    gateLLMChecksOnMechanicalPass,
   } as unknown as ReviewConfig;
 }
 
@@ -219,50 +227,59 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     _reviewAdversarialDeps.runAdversarialReview = mock(async () => makeSemanticCheckResult(true));
   });
 
-  test("semantic review runs even when mechanical check fails", async () => {
-    // Simulate lint failure via dirty tree (forces runner to fail before running checks)
-    // Then override runner so lint actually fails
-    _runnerDeps.getUncommittedFiles = mock(async () => []);
-    // No lint command configured so it will be skipped — use a failing typecheck instead
-    const config: ReviewConfig = {
-      enabled: true,
-      checks: ["semantic"],
-      commands: {},
-      pluginMode: "deferred",
-    } as unknown as ReviewConfig;
-
-    // With no mechanical checks, semantic should still run
+  test("mechanical failure gates semantic check by default and marks it skipped", async () => {
+    _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
     const orchestrator = new ReviewOrchestrator();
-    const result = await orchestrator.review(config, "/tmp/workdir", minimalExecConfig);
 
-    expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
-    expect(result.success).toBe(true);
+    const result = await orchestrator.review(
+      makeConfigWithSemantic(["lint"], true),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    expect(_reviewSemanticDeps.runSemanticReview).not.toHaveBeenCalled();
+    const semanticCheck = result.builtIn.checks.find((c) => c.check === "semantic");
+    expect(semanticCheck).toBeDefined();
+    expect(semanticCheck?.skipped).toBe(true);
+    expect(semanticCheck?.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
-  test("mechanicalFailedOnly is true when mechanical fails but semantic passes", async () => {
-    // Dirty tree on the first call (mechanical run) → mechanical fails.
-    // Clean on the second call (LLM run) → LLM proceeds and runs semantic.
+  test("gate disabled runs semantic check even when mechanical fails", async () => {
     let callCount = 0;
     _runnerDeps.getUncommittedFiles = mock(async () => {
-      callCount++;
+      callCount += 1;
       return callCount === 1 ? ["src/changed.ts"] : [];
     });
     const orchestrator = new ReviewOrchestrator();
 
     const result = await orchestrator.review(
-      makeConfigWithSemantic(["lint"]),
+      makeConfigWithSemantic(["lint"], false),
       "/tmp/workdir",
       minimalExecConfig,
     );
 
-    // Mechanical failed (dirty tree), semantic mocked to pass
-    expect(result.success).toBe(false);
-    expect(result.mechanicalFailedOnly).toBe(true);
-    // Semantic should have been attempted despite mechanical failure
     expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    const semanticCheck = result.builtIn.checks.find((c) => c.check === "semantic");
+    expect(semanticCheck?.skipped).toBeUndefined();
+    expect(result.mechanicalFailedOnly).toBe(true);
+    expect(result.success).toBe(false);
   });
 
-  test("mechanicalFailedOnly is false when semantic also fails", async () => {
+  test("mechanicalFailedOnly is undefined when semantic is gated", async () => {
+    _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
+    const orchestrator = new ReviewOrchestrator();
+
+    const result = await orchestrator.review(
+      makeConfigWithSemantic(["lint"], true),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    expect(result.mechanicalFailedOnly).toBeUndefined();
+  });
+
+  test("mechanicalFailedOnly is false when gate disabled and semantic fails", async () => {
     // Same call-counter trick: dirty for mechanical, clean for LLM so semantic actually runs.
     let callCount = 0;
     _runnerDeps.getUncommittedFiles = mock(async () => {
@@ -273,7 +290,7 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     const orchestrator = new ReviewOrchestrator();
 
     const result = await orchestrator.review(
-      makeConfigWithSemantic(["lint"]),
+      makeConfigWithSemantic(["lint"], false),
       "/tmp/workdir",
       minimalExecConfig,
     );
@@ -313,6 +330,21 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     const checkNames = result.builtIn.checks.map((c) => c.check);
     expect(checkNames).toContain("semantic");
     expect(result.success).toBe(true);
+  });
+
+  test("mechanical pass runs semantic check normally when gate enabled", async () => {
+    _runnerDeps.getUncommittedFiles = mock(async () => []);
+    const orchestrator = new ReviewOrchestrator();
+
+    const result = await orchestrator.review(
+      makeConfigWithSemantic([], true),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    const semanticCheck = result.builtIn.checks.find((c) => c.check === "semantic");
+    expect(semanticCheck?.skipped).toBeUndefined();
   });
 });
 

@@ -104,6 +104,53 @@ describe("autofixStage", () => {
     if (result.action === "retry") expect(result.fromStage).toBe("review");
   });
 
+  test("recheck pass: skipped checks are not added to retrySkipChecks", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runQualityCommand = async () => ({
+      commandName: "lintFix",
+      command: "",
+      success: true,
+      exitCode: 0,
+      output: "",
+      durationMs: 0,
+      timedOut: false,
+    });
+    _autofixDeps.recheckReview = async (mockCtx: PipelineContext) => {
+      mockCtx.reviewResult = {
+        success: true,
+        checks: [
+          {
+            check: "typecheck",
+            success: true,
+            command: "tsc --noEmit",
+            exitCode: 0,
+            output: "",
+            durationMs: 10,
+          },
+          {
+            check: "semantic",
+            success: true,
+            skipped: true,
+            command: "gated",
+            exitCode: 0,
+            output: "skipped",
+            durationMs: 0,
+          },
+        ],
+      } as any;
+      return true;
+    };
+
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("retry");
+    expect(ctx.retrySkipChecks?.has("typecheck")).toBe(true);
+    expect(ctx.retrySkipChecks?.has("semantic")).toBe(false);
+  });
+
   test("escalates when recheck still fails and agent rectification also fails", async () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "lint error", durationMs: 0, timedOut: false });

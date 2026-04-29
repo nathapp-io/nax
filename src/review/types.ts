@@ -57,6 +57,8 @@ export interface ReviewCheckResult {
   check: ReviewCheckName;
   /** Pass or fail */
   success: boolean;
+  /** True when this check was intentionally not run (for example, gated by mechanical failures). */
+  skipped?: boolean;
   /** Command that was run */
   command: string;
   /** Exit code */
@@ -176,6 +178,11 @@ export interface AdversarialFindingsCache {
 export interface ReviewConfig {
   /** Enable review phase */
   enabled: boolean;
+  /**
+   * When true (default), semantic/adversarial checks run only after all enabled
+   * mechanical checks pass.
+   */
+  gateLLMChecksOnMechanicalPass?: boolean;
   /** List of checks to run */
   checks: ReviewCheckName[];
   /** Custom commands per check */

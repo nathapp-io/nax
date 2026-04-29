@@ -5,6 +5,7 @@
  */
 
 export * from "./adversarial";
+export * from "./categorization";
 export * from "./diff-utils";
 export * from "./types";
 export * from "./runner";
