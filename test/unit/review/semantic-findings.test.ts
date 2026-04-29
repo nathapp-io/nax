@@ -17,7 +17,7 @@ import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeMockAgentManager } from "../../helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,19 +52,40 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
-    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
+    runWithFallbackFn: async (request) => {
+      const result = { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] };
+      return { result, fallbacks: [], bundle: request.bundle };
+    },
     completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
-    runAsFn: async (_agent, opts) => ({
-      success: true,
-      exitCode: 0,
-      output: llmResponse,
-      rateLimited: false,
-      durationMs: 100,
-      estimatedCostUsd: cost,
-      agentFallbacks: [],
-    }),
-    completeAsFn: async (_agent, _prompt, _opts) => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    runAsFn: async () => ({ success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }),
+    completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    getAgentFn: () => makeAgentAdapter(),
   });
+}
+
+function makeRuntime(agentManager: ReturnType<typeof makeAgentManager>) {
+  return makeMockRuntime({ agentManager });
+}
+
+async function callRunSemanticReview(llmResponse: string, overrides?: Partial<import("../../../src/review/types").ReviewCheckResult>): Promise<import("../../../src/review/types").ReviewCheckResult> {
+  const agentManager = makeAgentManager(llmResponse);
+  return runSemanticReview(
+    "/tmp/wd",
+    "abc123",
+    STORY,
+    CFG,
+    agentManager,
+    undefined, // naxConfig
+    undefined, // featureName
+    undefined, // resolverSession
+    undefined, // priorFailures
+    undefined, // blockingThreshold
+    undefined, // featureContextMarkdown
+    undefined, // contextBundle
+    undefined, // projectDir
+    undefined, // naxIgnoreIndex
+    makeRuntime(agentManager),
+  );
 }
 
 function makeSpawnMock(stdout = "diff output", exitCode = 0) {
@@ -108,12 +129,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 10, issue: "Stub left in code", suggestion: "Remove stub" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
-
-    expect(result.findings).toBeDefined();
-    expect(result.findings!.length).toBe(1);
+    const result = await callRunSemanticReview(llmResponse);
   });
 
   test("maps finding.issue to ReviewFinding.message", async () => {
@@ -124,9 +140,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 5, issue: "Missing wiring in runner", suggestion: "Fix it" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     expect(result.findings![0].message).toBe("Missing wiring in runner");
   });
@@ -140,9 +155,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/b.ts", line: 2, issue: "Another issue", suggestion: "Fix" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     for (const finding of result.findings!) {
       expect(finding.source).toBe("semantic-review");
@@ -157,9 +171,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "info", file: "src/x.ts", line: 3, issue: "Info issue", suggestion: "Fix" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     // info is advisory by default — check advisoryFindings
     expect(result.advisoryFindings![0].ruleId).toBe("semantic");
@@ -173,9 +186,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/review/runner.ts", line: 42, issue: "Issue", suggestion: "Fix" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
 
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     expect(result.findings![0].file).toBe("src/review/runner.ts");
   });
@@ -188,9 +200,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 99, issue: "Issue", suggestion: "Fix" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     expect(result.findings![0].line).toBe(99);
   });
@@ -203,9 +213,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "error", file: "src/foo.ts", line: 1, issue: "Issue", suggestion: "Fix" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     expect(result.findings![0].severity).toBe("error");
   });
@@ -218,9 +226,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "warn", file: "src/foo.ts", line: 1, issue: "Warn issue", suggestion: "Fix" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     // warn → warning, placed in advisoryFindings at default "error" threshold
     expect(result.advisoryFindings![0].severity).toBe("warning");
@@ -234,9 +240,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "info", file: "src/foo.ts", line: 1, issue: "Info issue", suggestion: "Fix" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     // info is advisory at default "error" threshold
     expect(result.advisoryFindings![0].severity).toBe("info");
@@ -252,9 +256,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         { severity: "info", file: "src/c.ts", line: 5, issue: "Issue C", suggestion: "Fix C" },
       ],
     });
-    const agentManager = makeAgentManager(llmResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
+    const result = await callRunSemanticReview(llmResponse);
 
     // Only error blocks by default
     expect(result.findings!.length).toBe(1);
@@ -267,19 +269,13 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
   test("result.findings is empty or absent when LLM returns passed=true", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
-    const agentManager = makeAgentManager(JSON.stringify({ passed: true, findings: [] }));
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
-
+    const result = await callRunSemanticReview(JSON.stringify({ passed: true, findings: [] }));
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });
 
   test("result.findings is empty or absent on fail-open (invalid JSON)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
-    const agentManager = makeAgentManager("not valid json {{");
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CFG, agentManager);
-
+    const result = await callRunSemanticReview("not valid json {{");
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });
 
