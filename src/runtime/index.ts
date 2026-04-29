@@ -69,6 +69,14 @@ export interface NaxRuntime {
   readonly packages: PackageRegistry;
   readonly logger: Logger;
   readonly signal: AbortSignal;
+  /**
+   * Optional PID registration callback used by complete-path adapter calls
+   * (plan, decompose, classify-route, acceptance-generate, debate-*) so any
+   * acpx subprocess they spawn lands on the run's PidRegistry. Without it
+   * Ctrl+C mid-call leaves orphan acpx subprocesses (and their queue-owner
+   * children) past run teardown.
+   */
+  readonly onPidSpawned?: (pid: number) => void;
   close(): Promise<void>;
 }
 
@@ -84,6 +92,13 @@ export interface CreateRuntimeOptions {
    * promptAuditor is provided.
    */
   featureName?: string;
+  /**
+   * PID registration callback. Threaded into complete-path adapter calls via
+   * `callOp` so plan/decompose/etc. acpx invocations are tracked by the run's
+   * PidRegistry. Run-path callers (execution stage, cli/plan) wire their own
+   * callback directly into `AgentRunOptions` and do not depend on this field.
+   */
+  onPidSpawned?: (pid: number) => void;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
@@ -169,6 +184,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     get signal() {
       return controller.signal;
     },
+    onPidSpawned: opts?.onPidSpawned,
     async close() {
       if (closed) return;
       closed = true;
