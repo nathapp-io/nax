@@ -17,6 +17,7 @@ import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -261,6 +262,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
+    const runtime = makeMockRuntime({ agentManager });
 
     await runSemanticReview(
       WORKDIR,
@@ -269,6 +271,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       SEMANTIC_CONFIG,
       agentManager,
       DEBATE_REVIEW_ENABLED_CONFIG,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(_semanticDeps.createDebateRunner).toHaveBeenCalled();
@@ -278,13 +281,17 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
     _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
 
+    const agentManager = makeAgentManager(PROPOSAL_PASS);
+    const runtime = makeMockRuntime({ agentManager });
+
     await runSemanticReview(
       WORKDIR,
       STORY_GIT_REF,
       STORY,
       SEMANTIC_CONFIG,
-      makeAgentManager(PROPOSAL_PASS),
+      agentManager,
       DEBATE_REVIEW_ENABLED_CONFIG,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(runMock).toHaveBeenCalledTimes(1);
@@ -298,6 +305,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
+    const runtime = makeMockRuntime({ agentManager });
 
     await runSemanticReview(
       WORKDIR,
@@ -306,6 +314,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       SEMANTIC_CONFIG,
       agentManager,
       DEBATE_REVIEW_ENABLED_CONFIG,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(agentManager.complete as ReturnType<typeof mock>).not.toHaveBeenCalled();
@@ -318,6 +327,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     _semanticDeps.createDebateRunner = createDebateMock;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
+    const runtime = makeMockRuntime({ agentManager });
 
     await runSemanticReview(
       WORKDIR,
@@ -326,9 +336,10 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       SEMANTIC_CONFIG,
       agentManager,
       { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
-    expect(agentManager.run as ReturnType<typeof mock>).toHaveBeenCalledTimes(1);
+    expect(agentManager.runWithFallback as ReturnType<typeof mock>).toHaveBeenCalledTimes(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
