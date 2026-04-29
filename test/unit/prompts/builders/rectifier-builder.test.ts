@@ -136,14 +136,14 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(prompt).toContain("UNRESOLVED:");
   });
 
-  test("instructs agent to fix ALL issues, verify, and commit", () => {
+  test("instructs agent to fix in priority order, verify, and commit", () => {
     const prompt = RectifierPromptBuilder.firstAttemptDelta(
       [makeCheck("lint", "error")],
       2,
     );
 
-    expect(prompt).toContain("Fix ALL issues listed");
-    expect(prompt).toContain("re-run the failing check(s) to verify they pass before committing");
+    expect(prompt).toContain("Fix in priority order");
+    expect(prompt).toContain("re-run the failing check(s) at that level to verify they pass before moving on");
     expect(prompt).toContain("Commit your changes when all checks pass");
   });
 

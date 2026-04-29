@@ -167,3 +167,261 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements."
 `;
+
+exports[`RectifierPromptBuilder.firstAttemptDelta single-category: renders only the matching priority bucket 1`] = `
+"Review failed after your implementation. Fix the following issues (3 attempts available before escalation):
+
+**Order matters: fix Priority 1 first; later priorities may need redo if earlier ones change the code.**
+
+## Priority 2 — Lint/style
+
+Fix after compile errors. Often automated.
+
+### lint (exit 1)
+
+\`\`\`
+lint output
+\`\`\`
+
+
+Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.
+
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+`;
+
+exports[`RectifierPromptBuilder.firstAttemptDelta two-categories: renders in fixed priority order, not input order 1`] = `
+"Review failed after your implementation. Fix the following issues (3 attempts available before escalation):
+
+**Order matters: fix Priority 1 first; later priorities may need redo if earlier ones change the code.**
+
+## Priority 1 — Compile/build
+
+Must fix first. Fixes here may resolve later items automatically.
+
+### typecheck (exit 1)
+
+\`\`\`
+typecheck output
+\`\`\`
+
+## Priority 4 — Semantic
+
+Story-alignment concerns. Re-read the story before editing.
+
+### semantic (exit 1)
+
+\`\`\`
+semantic output
+\`\`\`
+
+
+Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.
+
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+`;
+
+exports[`RectifierPromptBuilder.firstAttemptDelta all-categories: renders all five buckets with expected grouping 1`] = `
+"Review failed after your implementation. Fix the following issues (3 attempts available before escalation):
+
+**Order matters: fix Priority 1 first; later priorities may need redo if earlier ones change the code.**
+
+## Priority 1 — Compile/build
+
+Must fix first. Fixes here may resolve later items automatically.
+
+### build (exit 2)
+
+\`\`\`
+build output
+\`\`\`
+
+### typecheck (exit 1)
+
+\`\`\`
+typecheck output
+\`\`\`
+
+## Priority 2 — Lint/style
+
+Fix after compile errors. Often automated.
+
+### lint (exit 1)
+
+\`\`\`
+lint output
+\`\`\`
+
+## Priority 3 — Behavior
+
+Fix after compile passes. Indicates implementation does not match assertion.
+
+### test (exit 1)
+
+\`\`\`
+test output
+\`\`\`
+
+## Priority 4 — Semantic
+
+Story-alignment concerns. Re-read the story before editing.
+
+### semantic (exit 1)
+
+\`\`\`
+semantic output
+\`\`\`
+
+Structured findings:
+
+- [error] src/foo.ts:42 — Implementation does not satisfy AC#3
+
+## Priority 5 — Architectural
+
+Lowest priority. Fix only after all above pass.
+
+### adversarial (exit 1)
+
+\`\`\`
+adversarial output
+\`\`\`
+
+
+Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.
+
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+`;
+
+exports[`RectifierPromptBuilder.continuation single-category: renders only the matching priority bucket 1`] = `
+"Your previous fix attempt did not resolve all issues. Here are the remaining failures:
+
+**Order matters: fix Priority 1 first; later priorities may need redo if earlier ones change the code.**
+
+## Priority 2 — Lint/style
+
+Fix after compile errors. Often automated.
+
+### lint (exit 1)
+
+\`\`\`
+lint output
+\`\`\`
+
+
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+`;
+
+exports[`RectifierPromptBuilder.continuation two-categories: renders in fixed priority order, not input order 1`] = `
+"Your previous fix attempt did not resolve all issues. Here are the remaining failures:
+
+**Order matters: fix Priority 1 first; later priorities may need redo if earlier ones change the code.**
+
+## Priority 1 — Compile/build
+
+Must fix first. Fixes here may resolve later items automatically.
+
+### typecheck (exit 1)
+
+\`\`\`
+typecheck output
+\`\`\`
+
+## Priority 4 — Semantic
+
+Story-alignment concerns. Re-read the story before editing.
+
+### semantic (exit 1)
+
+\`\`\`
+semantic output
+\`\`\`
+
+
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+`;
+
+exports[`RectifierPromptBuilder.continuation all-categories: renders all five buckets with expected grouping 1`] = `
+"Your previous fix attempt did not resolve all issues. Here are the remaining failures:
+
+**Order matters: fix Priority 1 first; later priorities may need redo if earlier ones change the code.**
+
+## Priority 1 — Compile/build
+
+Must fix first. Fixes here may resolve later items automatically.
+
+### build (exit 2)
+
+\`\`\`
+build output
+\`\`\`
+
+### typecheck (exit 1)
+
+\`\`\`
+typecheck output
+\`\`\`
+
+## Priority 2 — Lint/style
+
+Fix after compile errors. Often automated.
+
+### lint (exit 1)
+
+\`\`\`
+lint output
+\`\`\`
+
+## Priority 3 — Behavior
+
+Fix after compile passes. Indicates implementation does not match assertion.
+
+### test (exit 1)
+
+\`\`\`
+test output
+\`\`\`
+
+## Priority 4 — Semantic
+
+Story-alignment concerns. Re-read the story before editing.
+
+### semantic (exit 1)
+
+\`\`\`
+semantic output
+\`\`\`
+
+Structured findings:
+
+- [error] src/foo.ts:42 — Implementation does not satisfy AC#3
+
+## Priority 5 — Architectural
+
+Lowest priority. Fix only after all above pass.
+
+### adversarial (exit 1)
+
+\`\`\`
+adversarial output
+\`\`\`
+
+
+**Rethink your approach.** The same strategy has failed multiple times. Consider a fundamentally different fix.
+
+
+**URGENT: This is your final attempt.** If you cannot fix all issues, emit \`UNRESOLVED: <reason>\` to escalate.
+
+
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+`;

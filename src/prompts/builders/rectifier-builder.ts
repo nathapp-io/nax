@@ -14,7 +14,7 @@
 
 import type { RectificationConfig } from "../../config";
 import type { UserStory } from "../../prd";
-import type { ReviewCheckResult } from "../../review/types";
+import type { ReviewCheckName, ReviewCheckResult } from "../../review/types";
 import { formatFailureSummary } from "../../verification/parser";
 import type { TestFailure } from "../../verification/types";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
@@ -40,6 +40,121 @@ export type { FailureRecord, ReviewFinding };
  */
 export type RectifierTrigger = "tdd-test-failure" | "tdd-suite-failure" | "verify-failure" | "review-findings";
 
+type RectificationPriority = "compile-build" | "lint" | "behavior" | "semantic" | "architectural";
+
+interface PriorityBucket {
+  priority: number;
+  heading: string;
+  guidance: string;
+}
+
+const PRIORITY_BUCKETS: Readonly<Record<RectificationPriority, PriorityBucket>> = {
+  "compile-build": {
+    priority: 1,
+    heading: "Compile/build",
+    guidance: "Must fix first. Fixes here may resolve later items automatically.",
+  },
+  lint: {
+    priority: 2,
+    heading: "Lint/style",
+    guidance: "Fix after compile errors. Often automated.",
+  },
+  behavior: {
+    priority: 3,
+    heading: "Behavior",
+    guidance: "Fix after compile passes. Indicates implementation does not match assertion.",
+  },
+  semantic: {
+    priority: 4,
+    heading: "Semantic",
+    guidance: "Story-alignment concerns. Re-read the story before editing.",
+  },
+  architectural: {
+    priority: 5,
+    heading: "Architectural",
+    guidance: "Lowest priority. Fix only after all above pass.",
+  },
+};
+
+const PRIORITY_ORDER: Readonly<RectificationPriority[]> = [
+  "compile-build",
+  "lint",
+  "behavior",
+  "semantic",
+  "architectural",
+];
+
+function priorityForCheck(checkName: ReviewCheckName): RectificationPriority {
+  switch (checkName) {
+    case "typecheck":
+    case "build":
+      return "compile-build";
+    case "lint":
+      return "lint";
+    case "test":
+      return "behavior";
+    case "semantic":
+      return "semantic";
+    case "adversarial":
+      return "architectural";
+    default:
+      return assertNever(checkName);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled review check category: ${String(value)}`);
+}
+
+function renderCheckBlock(check: ReviewCheckResult): string {
+  const parts: string[] = [];
+  parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
+  const truncated = check.output.length > 4000;
+  const output = truncated
+    ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
+    : check.output;
+  parts.push(`\`\`\`\n${output}\n\`\`\`\n`);
+
+  if (check.findings?.length) {
+    parts.push("Structured findings:\n");
+    for (const f of check.findings) {
+      parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
+    }
+  }
+
+  return parts.join("\n");
+}
+
+function renderPrioritizedFailures(failedChecks: Readonly<ReviewCheckResult[]>): string {
+  const grouped: Readonly<Record<RectificationPriority, Readonly<ReviewCheckResult[]>>> = {
+    "compile-build": failedChecks.filter((check) => priorityForCheck(check.check) === "compile-build"),
+    lint: failedChecks.filter((check) => priorityForCheck(check.check) === "lint"),
+    behavior: failedChecks.filter((check) => priorityForCheck(check.check) === "behavior"),
+    semantic: failedChecks.filter((check) => priorityForCheck(check.check) === "semantic"),
+    architectural: failedChecks.filter((check) => priorityForCheck(check.check) === "architectural"),
+  };
+
+  const sections: string[] = [
+    "**Order matters: fix Priority 1 first; later priorities may need redo if earlier ones change the code.**\n",
+  ];
+
+  for (const priority of PRIORITY_ORDER) {
+    const checks = grouped[priority];
+    if (checks.length === 0) {
+      continue;
+    }
+
+    const bucket = PRIORITY_BUCKETS[priority];
+    sections.push(`## Priority ${bucket.priority} — ${bucket.heading}\n`);
+    sections.push(`${bucket.guidance}\n`);
+    for (const check of checks) {
+      sections.push(renderCheckBlock(check));
+    }
+  }
+
+  return sections.join("\n");
+}
+
 // biome-ignore lint/complexity/noStaticOnlyClass: Static-method namespace for prompt builders (ADR-018)
 export class RectifierPromptBuilder {
   /**
@@ -58,23 +173,10 @@ export class RectifierPromptBuilder {
       `Review failed after your implementation. Fix the following issues (${attemptWord} available before escalation):\n`,
     );
 
-    for (const check of failedChecks) {
-      parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
-      const truncated = check.output.length > 4000;
-      const output = truncated
-        ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
-        : check.output;
-      parts.push(`\`\`\`\n${output}\n\`\`\`\n`);
-      if (check.findings?.length) {
-        parts.push("Structured findings:\n");
-        for (const f of check.findings) {
-          parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
-        }
-      }
-    }
+    parts.push(renderPrioritizedFailures(failedChecks));
 
     parts.push(
-      "\nFix ALL issues listed. After fixing, re-run the failing check(s) to verify they pass before committing. Do NOT change test files or test behavior. Commit your changes when all checks pass.",
+      "\nFix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.",
     );
     parts.push(CONTRADICTION_ESCAPE_HATCH);
 
@@ -98,20 +200,7 @@ export class RectifierPromptBuilder {
 
     parts.push("Your previous fix attempt did not resolve all issues. Here are the remaining failures:\n");
 
-    for (const check of failedChecks) {
-      parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
-      const truncated = check.output.length > 4000;
-      const output = truncated
-        ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
-        : check.output;
-      parts.push(`\`\`\`\n${output}\n\`\`\`\n`);
-      if (check.findings?.length) {
-        parts.push("Structured findings:\n");
-        for (const f of check.findings) {
-          parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
-        }
-      }
-    }
+    parts.push(renderPrioritizedFailures(failedChecks));
 
     if (attempt >= rethinkAtAttempt) {
       parts.push(
