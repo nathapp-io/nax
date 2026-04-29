@@ -138,9 +138,19 @@ describe("acceptanceGenerateOp.verify()", () => {
     expect(result).toBeNull();
   });
 
-  test("returns null when disk content is stub-shaped", async () => {
+  test("returns null when disk content is stub-shaped (raw, no fence)", async () => {
     const stubCode = "describe('x', () => { test('y', () => expect(true).toBe(false)); });";
     const ctx = makeVerifyCtx({ readFile: async () => stubCode });
+    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
+    expect(result).toBeNull();
+  });
+
+  test("Tier 1: returns null when fenced block contains stub-shaped code (stub guard)", async () => {
+    // extractTestCode extracts the content inside the fence — but since it's
+    // stub-shaped the Tier-1 guard (!isStubTestContent) must reject it.
+    const fencedStub =
+      "```typescript\ndescribe('x', () => { test('y', () => expect(true).toBe(false)); });\n```";
+    const ctx = makeVerifyCtx({ readFile: async () => fencedStub });
     const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
     expect(result).toBeNull();
   });
