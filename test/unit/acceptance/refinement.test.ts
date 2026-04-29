@@ -1,32 +1,22 @@
 /**
- * Tests for src/acceptance/refinement.ts — AC refinement module (ACC-001)
+ * Tests for src/acceptance/refinement.ts — AC refinement parser (ACC-001)
  *
  * Covers:
- * - refineAcceptanceCriteria returns RefinedCriterion[] with original and refined fields
- * - buildRefinementPrompt includes all criteria and codebase context
  * - parseRefinementResponse handles valid JSON response correctly
  * - parseRefinementResponse falls back to original text on malformed JSON
  * - Criteria marked testable:false are preserved but flagged
- * - Module uses _refineDeps.agentManager for LLM calls, not direct Bun.spawn
  */
 
 import { describe, expect, test } from "bun:test";
-import { withDepsRestore } from "../../helpers/deps";
-import {
-  _refineDeps,
-  parseRefinementResponse,
-  refineAcceptanceCriteria,
-} from "../../../src/acceptance/refinement";
+import { parseRefinementResponse } from "../../../src/acceptance/refinement";
 import { AcceptancePromptBuilder } from "../../../src/prompts";
+import type { RefinedCriterion } from "../../../src/acceptance/types";
 
 const buildRefinementPrompt = (
   criteria: string[],
   ctx: string,
   opts?: Parameters<AcceptancePromptBuilder["buildRefinementPrompt"]>[2],
 ) => new AcceptancePromptBuilder().buildRefinementPrompt(criteria, ctx, opts);
-import type { RefinedCriterion } from "../../../src/acceptance/types";
-import type { CompleteResult } from "../../../src/agents/types";
-import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -43,32 +33,19 @@ const SAMPLE_CRITERIA = [
 const CODEBASE_CONTEXT = "File tree:\nsrc/\n  acceptance/\n    refinement.ts\n";
 
 /** Build a valid LLM JSON response for the given criteria, wrapped as CompleteResult */
-function makeLLMResponse(criteria: string[], storyId: string, testable = true): CompleteResult {
+function makeLLMResponse(criteria: string[], storyId: string, testable = true): { output: string } {
   const items: RefinedCriterion[] = criteria.map((c) => ({
     original: c,
     refined: `Verify that: ${c}`,
     testable,
     storyId,
   }));
-  return { output: JSON.stringify(items), costUsd: 0, source: "fallback" };
+  return { output: JSON.stringify(items) };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-withDepsRestore(_refineDeps, ["agentManager"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
-
-describe("_refineDeps", () => {
-  test("is exported from refinement module", () => {
-    expect(_refineDeps).toBeDefined();
-  });
-
-  test("has agentManager field (defaults to undefined)", () => {
-    expect(_refineDeps).toHaveProperty("agentManager");
-  });
-});
 
 describe("buildRefinementPrompt", () => {
   test("includes all criteria strings in the output", () => {
@@ -226,263 +203,40 @@ describe("parseRefinementResponse", () => {
   });
 });
 
-describe("refineAcceptanceCriteria — agentManager integration", () => {
-  test("calls agentManager.complete() exactly once per call", async () => {
-    const config = makeNaxConfig();
-    let callCount = 0;
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => {
-        callCount++;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-      },
-    });
-
-    await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(callCount).toBe(1);
+describe("buildRefinementPrompt — strategy-specific instructions", () => {
+  test("includes component strategy instructions when testStrategy is 'component'", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "component" });
+    expect(prompt).toContain("TEST STRATEGY: component");
+    expect(prompt).toContain("rendered output visible on screen");
   });
 
-  test("uses config.acceptance.model tier to resolve adapter model", async () => {
-    const config = makeNaxConfig({ models: { claude: { fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" }, balanced: { provider: "anthropic", model: "claude-sonnet-4-5" }, powerful: { provider: "anthropic", model: "claude-opus-4-5" } } }, agent: { default: "claude" as const }, acceptance: { model: "balanced" } });
-    let receivedModel: string | undefined;
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string, _prompt: string, options: any) => {
-        receivedModel = options?.model;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-      },
-    });
-
-    await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(receivedModel).toBe("claude-sonnet-4-5");
+  test("includes cli strategy instructions when testStrategy is 'cli'", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "cli" });
+    expect(prompt).toContain("TEST STRATEGY: cli");
+    expect(prompt).toContain("stdout");
   });
 
-  test("does NOT call Bun.spawn directly — uses agentManager.complete()", async () => {
-    const config = makeNaxConfig();
-    const spawnCalls: unknown[] = [];
-    const originalSpawn = Bun.spawn;
-
-    (Bun as { spawn: unknown }).spawn = (...args: unknown[]) => {
-      spawnCalls.push(args);
-      return originalSpawn(...(args as Parameters<typeof originalSpawn>));
-    };
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
-    });
-
-    await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    (Bun as { spawn: unknown }).spawn = originalSpawn;
-
-    expect(spawnCalls).toHaveLength(0);
+  test("includes e2e strategy instructions when testStrategy is 'e2e'", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "e2e" });
+    expect(prompt).toContain("TEST STRATEGY: e2e");
+    expect(prompt).toContain("HTTP response");
   });
 
-  test("returns RefinedCriterion[] with original field matching input", async () => {
-    const config = makeNaxConfig();
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
-    });
-
-    const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(Array.isArray(result.criteria)).toBe(true);
-    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
-    for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
-      expect(result.criteria[i].original).toBe(SAMPLE_CRITERIA[i]);
-    }
+  test("omits strategy instructions when testStrategy is omitted", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "");
+    expect(prompt).not.toContain("TEST STRATEGY:");
   });
 
-  test("returns RefinedCriterion[] with refined field from LLM response", async () => {
-    const config = makeNaxConfig();
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID),
+  test("includes testFramework in prompt when provided", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "", {
+      testStrategy: "component",
+      testFramework: "ink-testing-library",
     });
-
-    const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    for (const item of result.criteria) {
-      expect(typeof item.refined).toBe("string");
-      expect(item.refined.length).toBeGreaterThan(0);
-    }
+    expect(prompt).toContain("ink-testing-library");
   });
 
-  test("passes a plain string prompt to agentManager.complete() (not SDK format)", async () => {
-    const config = makeNaxConfig();
-    let capturedPrompt: unknown;
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string, prompt: string) => {
-        capturedPrompt = prompt;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-      },
-    });
-
-    await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(typeof capturedPrompt).toBe("string");
-  });
-
-  test("prompt passed to agentManager.complete() contains all criteria", async () => {
-    const config = makeNaxConfig();
-    let capturedPrompt = "";
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string, prompt: string) => {
-        capturedPrompt = prompt;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-      },
-    });
-
-    await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    for (const criterion of SAMPLE_CRITERIA) {
-      expect(capturedPrompt).toContain(criterion);
-    }
-  });
-
-  test("prompt passed to agentManager.complete() contains codebase context", async () => {
-    const config = makeNaxConfig();
-    let capturedPrompt = "";
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string, prompt: string) => {
-        capturedPrompt = prompt;
-        return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
-      },
-    });
-
-    await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(capturedPrompt).toContain(CODEBASE_CONTEXT);
-  });
-
-  test("preserves criteria with testable:false in the result", async () => {
-    const config = makeNaxConfig();
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false),
-    });
-
-    const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
-    for (const item of result.criteria) {
-      expect(item.testable).toBe(false);
-    }
-  });
-
-  test("assigns storyId from context to all RefinedCriterion items", async () => {
-    const config = makeNaxConfig();
-    const customStoryId = "STORY-XYZ";
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => makeLLMResponse(SAMPLE_CRITERIA, customStoryId),
-    });
-
-    const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: customStoryId,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    for (const item of result.criteria) {
-      expect(item.storyId).toBe(customStoryId);
-    }
-  });
-
-  test("handles empty criteria list without using agentManager", async () => {
-    const config = makeNaxConfig();
-    // _refineDeps.agentManager is undefined (restored by withDepsRestore)
-    // Empty criteria short-circuits before agentManager check
-    const result = await refineAcceptanceCriteria([], {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(result.criteria).toHaveLength(0);
-  });
-
-  test("falls back to original text when agentManager.complete() returns malformed JSON", async () => {
-    const config = makeNaxConfig();
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => ({ output: "not valid json at all {{{", costUsd: 0, source: "fallback" } satisfies CompleteResult),
-    });
-
-    const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
-    for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
-      expect(result.criteria[i].original).toBe(SAMPLE_CRITERIA[i]);
-      expect(result.criteria[i].refined).toBe(SAMPLE_CRITERIA[i]);
-    }
-  });
-
-  test("falls back gracefully when agentManager.complete() throws", async () => {
-    const config = makeNaxConfig();
-
-    _refineDeps.agentManager = makeMockAgentManager({
-      completeFn: async (_agent: string) => {
-        throw new Error("adapter network error");
-      },
-    });
-
-    const result = await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
-      storyId: STORY_ID,
-      codebaseContext: CODEBASE_CONTEXT,
-      config,
-    });
-
-    expect(Array.isArray(result.criteria)).toBe(true);
-    expect(result.criteria).toHaveLength(SAMPLE_CRITERIA.length);
-    for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
-      expect(result.criteria[i].original).toBe(SAMPLE_CRITERIA[i]);
-    }
+  test("defaults to framework-only hint for unknown strategy", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "snapshot", testFramework: "jest" });
+    expect(prompt).toContain("TEST FRAMEWORK: jest");
   });
 });

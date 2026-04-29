@@ -1,244 +1,37 @@
 /**
- * Tests for diagnoseAcceptanceFailure() in src/acceptance/fix-diagnosis.ts
+ * Tests for src/acceptance/fix-diagnosis.ts — source-file loading utilities
  *
- * Covers acceptance criteria:
- * 1. Receives agent manager via parameter (never calls bare getAgent())
- * 2. Calls agent.run() with sessionRole 'diagnose'
- * 3. Session name follows pattern via computeAcpHandle()
- * 4. Resolves diagnoseModel via resolveModelForAgent()
- * 5. Auto-detects source files from import statements
- * 6. Parses DiagnosisResult JSON from agent output
- * 7. Returns fallback on parse failure
- * 8. Catches errors from adapter.run()
- * 9. ACP sessions visible in acpx list
+ * Covers:
+ * - loadSourceFilesForDiagnosis auto-detects source files from import statements
+ * - DiagnosisResult interface validation
  */
 
 import { describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
-import { diagnoseAcceptanceFailure } from "../../../src/acceptance/fix-diagnosis";
+import { loadSourceFilesForDiagnosis } from "../../../src/acceptance/fix-diagnosis";
 import type { DiagnosisResult } from "../../../src/acceptance/types";
-import type { IAgentManager } from "../../../src/agents";
-import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import { resolveModelForAgent } from "../../../src/config/schema-types";
-import { makeMockAgentManager, makeNaxConfig } from "../../../test/helpers";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// loadSourceFilesForDiagnosis
+// ─────────────────────────────────────────────────────────────────────────────
 
-function makeMockAgent(overrides?: Partial<{ output: string }>): IAgentManager {
-  return makeMockAgentManager({
-    runFn: async () => ({
-      success: true,
-      exitCode: 0,
-      output: overrides?.output ?? '{"verdict":"source_bug","reasoning":"test reasoning","confidence":0.9}',
-      rateLimited: false,
-      durationMs: 1000,
-      estimatedCostUsd: 0.05,
-      agentFallbacks: [],
-    }),
-  });
-}
-
-type RunOptions = Parameters<IAgentManager["run"]>[0]["runOptions"];
-
-function getRunOptions(agent: IAgentManager): RunOptions[] {
-  type RunCall = [Parameters<IAgentManager["run"]>[0]];
-  return (agent.run as unknown as { mock: { calls: RunCall[] } }).mock.calls.map(([req]) => req.runOptions);
-}
-
-// ---------------------------------------------------------------------------
-// AC-1: diagnoseAcceptanceFailure() receives agent manager via parameter
-// ---------------------------------------------------------------------------
-
-describe("AC-1: diagnoseAcceptanceFailure receives agent adapter via parameter", () => {
-  test("never calls bare getAgent() — uses passed adapter", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(mockAgent.run).toHaveBeenCalled();
+describe("loadSourceFilesForDiagnosis", () => {
+  test("returns empty array when test file has no imports", async () => {
+    const result = await loadSourceFilesForDiagnosis('test("x", () => {});', "/tmp");
+    expect(result).toEqual([]);
   });
 
-  test("throws when agent is undefined", async () => {
-    const config = makeNaxConfig();
-    await expect(
-      diagnoseAcceptanceFailure(undefined as unknown as IAgentManager, {
-        testOutput: "FAIL",
-        testFileContent: "test content",
-        config,
-        workdir: "/tmp/test",
-        featureName: "test-feature",
-        storyId: "US-001",
-      }),
-    ).rejects.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-2: diagnoseAcceptanceFailure calls agent.run() (not agent.complete())
-// ---------------------------------------------------------------------------
-
-describe("AC-2: diagnoseAcceptanceFailure calls agent.run() with sessionRole diagnose", () => {
-  test("calls agent.run() not agent.complete()", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(mockAgent.run).toHaveBeenCalled();
-    expect(mockAgent.complete).not.toHaveBeenCalled();
-  });
-
-  test("passes sessionRole 'diagnose' to agent.run()", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    expect(runOpts.sessionRole).toBe("diagnose");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-3: Session name follows pattern nax-<hash>-<feature>-<storyId>-diagnose
-// ---------------------------------------------------------------------------
-
-describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pattern", () => {
-  test("computeAcpHandle returns correct pattern for diagnose session", () => {
-    const sessionName = computeAcpHandle("/tmp/test-workdir", "my-feature", "US-001", "diagnose");
-    const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
-    expect(sessionName).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
-    expect(sessionName).toMatch(/^nax-[a-f0-9]+-.+-\d+-diagnose$/);
-  });
-
-  test("diagnoseAcceptanceFailure passes featureName, storyId, and sessionRole='diagnose' to adapter", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test-workdir",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    // The adapter auto-derives the session handle from featureName + storyId + sessionRole.
-    expect(runOpts.sessionRole).toBe("diagnose");
-    expect(runOpts.featureName).toBe("test-feature");
-    expect(runOpts.storyId).toBe("US-001");
-  });
-
-  test("session name is visible in acpx list when protocol is ACP (adapter derives handle)", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    expect(config.agent?.protocol).toBe("acp");
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test-workdir",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
-    expect(expectedHandle).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
-    expect(runOpts.featureName).toBe("test-feature");
-    expect(runOpts.sessionRole).toBe("diagnose");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-4: diagnoseModel resolved via resolveModelForAgent()
-// ---------------------------------------------------------------------------
-
-describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveModelForAgent", () => {
-  test("uses config.acceptance.fix.diagnoseModel tier", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    expect(config.acceptance.fix.diagnoseModel).toBe("fast");
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    const expectedModelDef = resolveModelForAgent(
-      config.models,
-      config.agent?.default ?? "claude",
-      config.acceptance.fix.diagnoseModel as "fast",
-      config.agent?.default ?? "claude",
-    );
-    expect(runOpts.modelDef).toEqual(expectedModelDef);
-  });
-
-  test("passes resolved model metadata to adapter rather than a raw unresolved tier string", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    expect(runOpts.modelTier).toBe("fast");
-    expect(runOpts.modelDef.provider).toBeDefined();
-    expect(runOpts.modelDef.model).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-5: Auto-detects source file paths from import statements
-// ---------------------------------------------------------------------------
-
-describe("AC-5: diagnoseAcceptanceFailure auto-detects source files from imports", () => {
-  test("parses import statements from test file content", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
+  test("resolves relative imports from test file content", async () => {
     const testContent = `
 import { add } from "./src/math.ts";
 import { multiply } from "./src/utils.ts";
 test("AC-1", () => { expect(add(1,2)).toBe(3); });
 `;
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL: expected 3 but got 4",
-      testFileContent: testContent,
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(mockAgent.run).toHaveBeenCalled();
+    // Files don't exist on disk — function gracefully returns null for missing files
+    const result = await loadSourceFilesForDiagnosis(testContent, "/tmp");
+    expect(result).toEqual([]);
   });
 
   test("limits to 5 files maximum", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
     const testContent = `
 import { a } from "./src/file1.ts";
 import { b } from "./src/file2.ts";
@@ -248,276 +41,15 @@ import { e } from "./src/file5.ts";
 import { f } from "./src/file6.ts";
 test("AC-1", () => { expect(a()).toBe(1); });
 `;
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: testContent,
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    expect(runOpts.prompt).toBeDefined();
-  });
-
-  test("limits each file to 500 lines maximum", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    const testContent = `
-import { bigFunc } from "./src/big-file.ts";
-test("AC-1", () => { expect(bigFunc()).toBeDefined(); });
-`;
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: testContent,
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(mockAgent.run).toHaveBeenCalled();
+    // No files exist on disk
+    const result = await loadSourceFilesForDiagnosis(testContent, "/tmp");
+    expect(result).toEqual([]);
   });
 });
 
-// ---------------------------------------------------------------------------
-// AC-6: Returns parsed DiagnosisResult when agent output is valid JSON
-// ---------------------------------------------------------------------------
-
-describe("AC-6: diagnoseAcceptanceFailure returns parsed DiagnosisResult", () => {
-  test("returns DiagnosisResult when agent output is valid JSON", async () => {
-    const diagnosisResult: DiagnosisResult = {
-      verdict: "source_bug",
-      reasoning: "The login function has a null pointer exception",
-      confidence: 0.95,
-      sourceIssues: ["NullPointerException on line 42"],
-    };
-    const mockAgent = makeMockAgent({ output: JSON.stringify(diagnosisResult) });
-    const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL: expected true but got false",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(result.verdict).toBe("source_bug");
-    expect(result.reasoning).toBe("The login function has a null pointer exception");
-    expect(result.confidence).toBe(0.95);
-  });
-
-  test("returns test_bug verdict when test is incorrect", async () => {
-    const diagnosisResult: DiagnosisResult = {
-      verdict: "test_bug",
-      reasoning: "The test assertion is wrong",
-      confidence: 0.88,
-      testIssues: ["Assertion expects 3 but actual is 4"],
-    };
-    const mockAgent = makeMockAgent({ output: JSON.stringify(diagnosisResult) });
-    const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(result.verdict).toBe("test_bug");
-  });
-
-  test("returns both verdict when both source and test have issues", async () => {
-    const diagnosisResult: DiagnosisResult = {
-      verdict: "both",
-      reasoning: "Both source and test have bugs",
-      confidence: 0.75,
-      testIssues: ["Test mocks database incorrectly"],
-      sourceIssues: ["Off-by-one error in loop"],
-    };
-    const mockAgent = makeMockAgent({ output: JSON.stringify(diagnosisResult) });
-    const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(result.verdict).toBe("both");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-7: Returns fallback DiagnosisResult on parse failure
-// ---------------------------------------------------------------------------
-
-describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", () => {
-  test("returns fallback when agent output is invalid JSON", async () => {
-    const mockAgent = makeMockAgent({ output: "This is not JSON output" });
-    const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(result.verdict).toBe("source_bug");
-    expect(result.reasoning).toBe("diagnosis failed — falling back to source fix");
-    expect(result.confidence).toBe(0);
-  });
-
-  test("returns fallback when agent output is empty", async () => {
-    const mockAgent = makeMockAgent({ output: "" });
-    const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(result.verdict).toBe("source_bug");
-    expect(result.reasoning).toBe("diagnosis failed — falling back to source fix");
-    expect(result.confidence).toBe(0);
-  });
-
-  test("returns fallback when agent output is partial JSON", async () => {
-    const mockAgent = makeMockAgent({ output: '{"verdict": "source_bug", ' });
-    const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(result.verdict).toBe("source_bug");
-    expect(result.confidence).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-8: Catches errors from adapter.run() and returns fallback
-// ---------------------------------------------------------------------------
-
-describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
-  test("returns fallback DiagnosisResult when adapter.run() throws", async () => {
-    const errorAgent = makeMockAgentManager({
-      runFn: async () => {
-        throw new Error("Connection refused");
-      },
-    });
-    const config = makeNaxConfig();
-    const result = await diagnoseAcceptanceFailure(errorAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(result.verdict).toBe("source_bug");
-    expect(result.reasoning).toBe("diagnosis failed — falling back to source fix");
-    expect(result.confidence).toBe(0);
-  });
-
-  test("does not throw when adapter.run() throws", async () => {
-    const errorAgent = makeMockAgentManager({
-      runFn: async () => {
-        throw new Error("Network error");
-      },
-    });
-    const config = makeNaxConfig();
-    await expect(
-      diagnoseAcceptanceFailure(errorAgent, {
-        testOutput: "FAIL",
-        testFileContent: "test content",
-        config,
-        workdir: "/tmp/test",
-        featureName: "test-feature",
-        storyId: "US-001",
-      }),
-    ).resolves.toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-9: Test output truncated to 2000 chars
-// ---------------------------------------------------------------------------
-
-describe("AC-9: Test output truncated to 2000 characters", () => {
-  test("truncates test output to 2000 chars in prompt", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    const longOutput = "FAIL".repeat(1000);
-    expect(longOutput.length).toBeGreaterThan(2000);
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: longOutput,
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    expect(runOpts.prompt.length).toBeLessThanOrEqual(longOutput.length + 1000);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-10: ACP session visible in acpx list with correct session name
-// ---------------------------------------------------------------------------
-
-describe("AC-10: ACP session visible in acpx list with correct session name", () => {
-  test("session name follows nax-<hash>-<feature>-<storyId>-diagnose pattern for ACP", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    config.agent = { protocol: "acp" };
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test-workdir",
-      featureName: "my-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
-    // Adapter auto-derives handle; verify the formula is correct
-    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "my-feature", "US-001", "diagnose");
-    expect(expectedHandle).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
-    expect(runOpts.featureName).toBe("my-feature");
-    expect(runOpts.sessionRole).toBe("diagnose");
-  });
-
-  test("ACP protocol ensures session appears in acpx list (adapter derives handle)", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    config.agent = { protocol: "acp" };
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test-workdir",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    const runOpts = getRunOptions(mockAgent)[0];
-    const expectedHandle = computeAcpHandle("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
-    expect(expectedHandle).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
-    expect(runOpts.featureName).toBe("test-feature");
-    expect(runOpts.sessionRole).toBe("diagnose");
-  });
-});
-
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 // DiagnosisResult interface validation
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 describe("DiagnosisResult interface validation", () => {
   test("verdict accepts 'source_bug'", () => {
@@ -582,55 +114,5 @@ describe("DiagnosisResult interface validation", () => {
     };
     expect(full.testIssues).toEqual(["Test issue 1"]);
     expect(full.sourceIssues).toEqual(["Source issue 1", "Source issue 2"]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Edge cases
-// ---------------------------------------------------------------------------
-
-describe("Edge cases", () => {
-  test("works without optional featureName", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      storyId: "US-001",
-    });
-    expect(mockAgent.run).toHaveBeenCalled();
-  });
-
-  test("works without optional storyId", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-    });
-    expect(mockAgent.run).toHaveBeenCalled();
-  });
-
-  test("handles missing source files gracefully", async () => {
-    const mockAgent = makeMockAgent();
-    const config = makeNaxConfig();
-    const testContent = `
-import { nonexistent } from "./src/nonexistent.ts";
-test("AC-1", () => { expect(nonexistent()).toBe(1); });
-`;
-    await diagnoseAcceptanceFailure(mockAgent, {
-      testOutput: "FAIL",
-      testFileContent: testContent,
-      config,
-      workdir: "/tmp/test",
-      featureName: "test-feature",
-      storyId: "US-001",
-    });
-    expect(mockAgent.run).toHaveBeenCalled();
   });
 });

@@ -5,23 +5,8 @@
  * testable assertions using an LLM call via adapter.complete().
  */
 
-import type { IAgentManager } from "../agents";
-import { resolveConfiguredModel } from "../config";
-import { getLogger } from "../logger";
-import { AcceptancePromptBuilder } from "../prompts";
-import { errorMessage } from "../utils/errors";
 import { extractJsonFromMarkdown, stripTrailingCommas } from "../utils/llm-json";
-import type { RefineResult, RefinedCriterion, RefinementContext } from "./types";
-
-/**
- * Injectable dependencies — allows tests to mock adapter.complete()
- * without needing the claude binary.
- *
- * @internal
- */
-export const _refineDeps = {
-  agentManager: undefined as IAgentManager | undefined,
-};
+import type { RefinedCriterion } from "./types";
 
 /**
  * Parse the LLM JSON response into RefinedCriterion[].
@@ -55,87 +40,6 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
     }));
   } catch {
     return fallbackCriteria(criteria);
-  }
-}
-
-/**
- * Refine raw acceptance criteria strings into concrete, testable assertions.
- *
- * @param criteria - Raw AC strings from PRD
- * @param context - Refinement context (storyId, codebase context, config)
- * @returns Promise resolving to array of refined criteria
- */
-export async function refineAcceptanceCriteria(criteria: string[], context: RefinementContext): Promise<RefineResult> {
-  if (criteria.length === 0) {
-    return { criteria: [], costUsd: 0 };
-  }
-
-  const {
-    storyId,
-    featureName,
-    workdir,
-    codebaseContext,
-    config,
-    testStrategy,
-    testFramework,
-    storyTitle,
-    storyDescription,
-  } = context;
-  const logger = getLogger();
-
-  const manager = context.agentManager ?? _refineDeps.agentManager;
-  if (!manager) {
-    logger.warn("refinement", "No agentManager threaded — falling back to original criteria", {
-      storyId,
-    });
-    return { criteria: fallbackCriteria(criteria, storyId), costUsd: 0 };
-  }
-  const defaultAgent = manager.getDefault();
-  const resolvedModel = resolveConfiguredModel(
-    config.models,
-    defaultAgent,
-    config.acceptance?.model ?? "fast",
-    defaultAgent,
-  );
-  const prompt = new AcceptancePromptBuilder().buildRefinementPrompt(criteria, codebaseContext, {
-    testStrategy,
-    testFramework,
-    storyTitle,
-    storyDescription,
-  });
-
-  let response: string;
-
-  try {
-    const completeOpts = {
-      jsonMode: true,
-      maxTokens: 4096,
-      model: resolvedModel.modelDef.model,
-      config,
-      featureName,
-      storyId,
-      workdir,
-      sessionRole: "refine",
-      timeoutMs: config.acceptance?.timeoutMs ?? 120_000,
-    } as const;
-    const completeResult = context.agentManager
-      ? (await manager.completeWithFallback(prompt, completeOpts)).result
-      : await manager.complete(prompt, completeOpts);
-    const costUsd = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
-    response = typeof completeResult === "string" ? completeResult : completeResult.output;
-
-    const parsed = parseRefinementResponse(response, criteria);
-    return {
-      criteria: parsed.map((item) => ({ ...item, storyId: item.storyId || storyId })),
-      costUsd,
-    };
-  } catch (error) {
-    const reason = errorMessage(error);
-    logger.warn("refinement", "adapter.complete() failed, falling back to original criteria", {
-      storyId,
-      error: reason,
-    });
-    return { criteria: fallbackCriteria(criteria, storyId), costUsd: 0 };
   }
 }
 

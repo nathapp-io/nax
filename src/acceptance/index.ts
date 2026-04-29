@@ -7,25 +7,18 @@
 export type {
   AcceptanceCriterion,
   GenerateAcceptanceTestsOptions,
-  GenerateFromPRDOptions,
   AcceptanceTestResult,
   RefinedCriterion,
   RefinementContext,
 } from "./types";
 
-export {
-  parseRefinementResponse,
-  refineAcceptanceCriteria,
-  _refineDeps,
-} from "./refinement";
+export { parseRefinementResponse } from "./refinement";
 
 export {
   parseAcceptanceCriteria,
   buildAcceptanceTestPrompt,
   generateAcceptanceTests,
-  generateFromPRD,
   generateSkeletonTests,
-  _generatorPRDDeps,
 } from "./generator";
 
 export type {
