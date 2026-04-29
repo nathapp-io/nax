@@ -5,10 +5,9 @@
  * Imports _autofixDeps from autofix.ts (safe — autofix.ts lazily imports this module).
  */
 
+import type { SessionHandle } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
 import { getLogger } from "../../logger";
-import { buildHopCallback } from "../../operations/build-hop-callback";
-import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
 import type { ReviewCheckResult } from "../../review/types";
 import { formatSessionName } from "../../session/naming";
@@ -188,9 +187,11 @@ export async function runAgentRectification(
   // (e.g. UNRESOLVED signal, lint-only fix), passed LLM checks are skipped.
   let autofixBeforeRef: string | undefined;
 
-  // Session continuity: the implementer session is open only on the very first autofix call
-  // (consumed === 0). On subsequent cycles (after a review retry), the previous loop's last
-  // execute used keepOpen: false, so the session was closed before we re-enter.
+  // ADR-008 §6 / ADR-018 §7 Pattern B: hold the implementer session open across
+  // all attempts in this rectification cycle so the agent retains conversation
+  // history between attempts. consumed === 0 means execution.ts is the upstream
+  // owner; openSession is idempotent on a live handle (session/manager.ts:354)
+  // so we attach to the existing session when present, otherwise open fresh.
   const implementerSession = formatSessionName({
     workdir: ctx.workdir,
     featureName: ctx.prd.feature,
@@ -216,6 +217,11 @@ export async function runAgentRectification(
   let currentAttempt = 0;
   let currentConsecutiveNoOps = 0;
   let currentCheckSignatureChanged = false;
+
+  // Held-open implementer session for the duration of the loop. Opened lazily
+  // on first execute() to avoid paying openSession cost when the agent fails
+  // before any attempt runs (e.g. validation errors). Closed in finally below.
+  let heldHandle: SessionHandle | undefined;
 
   const outcome = await runRetryLoop<AutofixFailure, AutofixAttemptResult>({
     stage: "rectification",
@@ -321,31 +327,52 @@ export async function runAgentRectification(
       let result: import("../../agents").AgentResult;
       try {
         if (ctx.runtime) {
-          // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
-          // Each attempt opens a fresh session (openSession → runAsSession → closeSession).
-          // No cross-attempt session continuity; session lifecycle managed by buildHopCallback.
-          const executeHop = buildHopCallback(
-            {
-              sessionManager: ctx.runtime.sessionManager,
-              agentManager: ctx.runtime.agentManager,
-              story: ctx.story,
-              config: ctx.config,
-              projectDir: ctx.projectDir,
-              featureName: ctx.prd.feature ?? "",
+          // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
+          // once and reuse across attempts so conversation history persists.
+          // openSession is idempotent on a live handle (session/manager.ts:354)
+          // so the first attempt of cycle 0 attaches to the execution-stage
+          // session when one is still open, otherwise opens fresh.
+          if (!heldHandle) {
+            heldHandle = await ctx.runtime.sessionManager.openSession(implementerSession, {
+              agentName: defaultAgent,
+              role: "implementer",
               workdir: ctx.workdir,
-              effectiveTier: modelTier,
-              defaultAgent,
               pipelineStage: "rectification",
-            },
-            ctx.sessionId,
-            runOptions,
-          );
-          const outcome = await agentManager.runWithFallback(
-            { runOptions, signal: ctx.runtime.signal, executeHop },
-            defaultAgent,
-          );
-          result = outcome.result;
-          sessionConfirmedOpen = false;
+              modelDef,
+              timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+              featureName: ctx.prd.feature,
+              storyId: ctx.story.id,
+              signal: ctx.runtime.signal,
+              onPidSpawned: ctx.runtime.onPidSpawned,
+            });
+          }
+          // ADR-020 single-emission invariant: each runAsSession emits one
+          // session-turn event, regardless of handle reuse across attempts.
+          const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
+            storyId: ctx.story.id,
+            featureName: ctx.prd.feature,
+            workdir: ctx.workdir,
+            projectDir: ctx.projectDir,
+            pipelineStage: "rectification",
+            sessionRole: "implementer",
+            signal: ctx.runtime.signal,
+            maxTurns: ctx.config.agent?.maxInteractionTurns,
+          });
+          // Synthesize AgentResult so the downstream UNRESOLVED/CLARIFY/no-op
+          // detection paths keep working unchanged. runAsSession throws on
+          // failure, so a returned TurnResult always means success=true.
+          result = {
+            success: true,
+            exitCode: 0,
+            output: turn.output,
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCostUsd: turn.estimatedCostUsd,
+            ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+            ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+            ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
+          };
+          sessionConfirmedOpen = true;
         } else {
           // Legacy keepOpen path — used when no runtime is available (standalone callers).
           result = await agentManager.run({
@@ -354,7 +381,14 @@ export async function runAgentRectification(
           sessionConfirmedOpen = true;
         }
       } catch (err) {
-        sessionConfirmedOpen = false; // Session state unknown — next attempt uses full prompt
+        sessionConfirmedOpen = false;
+        // Discard the held handle so the next attempt reopens — the previous
+        // session may be in a terminal/cancelled state after the throw.
+        if (heldHandle && ctx.runtime) {
+          const stale = heldHandle;
+          heldHandle = undefined;
+          await ctx.runtime.sessionManager.closeSession(stale).catch(() => {});
+        }
         throw err;
       }
 
@@ -548,15 +582,26 @@ export async function runAgentRectification(
         newFailure: initialFailure,
       };
     },
-  }).catch((error: unknown) => {
-    if (error instanceof Error && error.message === "AUTOFIX_AGENT_NOT_FOUND") {
-      return { outcome: "exhausted", attempts: 0, finalFailure: initialFailure } as const;
-    }
-    if (error instanceof Error && error.message === "AUTOFIX_UNRESOLVED") {
-      return { outcome: "exhausted", attempts: 0, finalFailure: initialFailure } as const;
-    }
-    throw error;
-  });
+  })
+    .catch((error: unknown) => {
+      if (error instanceof Error && error.message === "AUTOFIX_AGENT_NOT_FOUND") {
+        return { outcome: "exhausted", attempts: 0, finalFailure: initialFailure } as const;
+      }
+      if (error instanceof Error && error.message === "AUTOFIX_UNRESOLVED") {
+        return { outcome: "exhausted", attempts: 0, finalFailure: initialFailure } as const;
+      }
+      throw error;
+    })
+    .finally(async () => {
+      // ADR-008 §6: close the held implementer session at loop exit (success,
+      // exhaustion, or unhandled error). Best-effort — failures here must not
+      // mask the loop outcome.
+      if (heldHandle && ctx.runtime) {
+        const stale = heldHandle;
+        heldHandle = undefined;
+        await ctx.runtime.sessionManager.closeSession(stale).catch(() => {});
+      }
+    });
 
   const succeeded = outcome.outcome === "fixed";
   return { succeeded, cost: autofixCostAccum, unresolvedReason };
