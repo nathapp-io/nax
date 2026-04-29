@@ -199,6 +199,29 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     });
     expect(capturedInput?.previousFailure).toBe("PREVIOUS_MARKER");
   });
+
+  test("normal path passes semanticVerdicts to callOp input", async () => {
+    let capturedInput: any;
+    _applyFixDeps.callOp = async (_callCtx, _op, input) => {
+      capturedInput = input;
+      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as any;
+    };
+
+    const semanticVerdicts: SemanticVerdict[] = [
+      { storyId: "US-001", passed: false, timestamp: "2026-01-01T00:00:00Z", acCount: 2, findings: [] },
+    ];
+
+    await resolveAcceptanceDiagnosis({
+      ctx: makeAcceptanceCtx(true),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      totalACs: 10,
+      strategy: "diagnose-first",
+      semanticVerdicts,
+      diagnosisOpts: makeDiagnosisOpts(),
+    });
+
+    expect(capturedInput?.semanticVerdicts).toEqual(semanticVerdicts);
+  });
 });
 
 // ─── applyFix() ─────────────────────────────────────────────────────────────
