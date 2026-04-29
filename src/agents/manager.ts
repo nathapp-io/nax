@@ -541,7 +541,10 @@ export class AgentManager implements IAgentManager {
         durationMs: Date.now() - start,
         timestamp: Date.now(),
         turn: result.internalRoundTrips ?? 1,
-        protocolIds: { sessionId: handle.protocolIds?.sessionId ?? null },
+        protocolIds: {
+          sessionId: handle.protocolIds?.sessionId ?? null,
+          recordId: handle.protocolIds?.recordId ?? null,
+        },
         origin: "runAsSession",
       };
       this._dispatchEvents.emitDispatch(event);

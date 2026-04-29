@@ -60,6 +60,14 @@ function makeHandle(agentName = "claude", id = "nax-test-handle"): SessionHandle
   return { id, agentName };
 }
 
+function makeHandleWithIds(
+  agentName = "claude",
+  id = "nax-test-handle",
+  protocolIds?: { sessionId: string | null; recordId: string | null },
+): SessionHandle {
+  return { id, agentName, ...(protocolIds && { protocolIds }) };
+}
+
 // ─── runAsSession ────────────────────────────────────────────────────────────
 
 describe("runAsSession — dispatch emission", () => {
@@ -89,6 +97,29 @@ describe("runAsSession — dispatch emission", () => {
     expect(received[0]?.featureName).toBe("my-feat");
     expect(received[0]?.workdir).toBe("/tmp/repo");
     expect(received[0]?.prompt).toBe("test-prompt");
+  });
+
+  test("forwards handle.protocolIds.recordId into session-turn event", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => makeTurnResult("hello")),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    const handle = makeHandleWithIds("claude", "nax-test-handle", {
+      sessionId: "sess-abc",
+      recordId: "rec-xyz",
+    });
+    await manager.runAsSession("claude", handle, "p", { pipelineStage: "run", storyId: "US-001" });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.protocolIds.sessionId).toBe("sess-abc");
+    expect(received[0]?.protocolIds.recordId).toBe("rec-xyz");
   });
 
   test("emits DispatchErrorEvent on sendPrompt throw, then re-throws", async () => {

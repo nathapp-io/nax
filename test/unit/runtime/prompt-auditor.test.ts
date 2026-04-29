@@ -214,6 +214,52 @@ describe("PromptAuditor", () => {
     });
   });
 
+  test("write failure does not break the queue — subsequent entries still write", async () => {
+    await withTempDir(async (dir) => {
+      const appends: string[] = [];
+      const origAppend = _promptAuditorDeps.appendLine;
+      let calls = 0;
+      _promptAuditorDeps.appendLine = async (_p: string, d: string) => {
+        calls++;
+        if (calls === 1) {
+          const err = new Error("disk full") as NodeJS.ErrnoException;
+          err.code = "ENOSPC";
+          err.errno = -28;
+          err.syscall = "write";
+          throw err;
+        }
+        appends.push(d);
+      };
+      const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+      aud.record(makeEntry({ ts: 1, prompt: "first (will fail)" }));
+      aud.record(makeEntry({ ts: 2, prompt: "second (should succeed)" }));
+      await aud.flush();
+      expect(appends).toHaveLength(1);
+      expect(appends[0]).toContain("second");
+      _promptAuditorDeps.appendLine = origAppend;
+    });
+  });
+
+  test("txt-phase failure does not block JSONL — JSONL line is still persisted", async () => {
+    await withTempDir(async (dir) => {
+      const appends: string[] = [];
+      const origAppend = _promptAuditorDeps.appendLine;
+      const origWrite = _promptAuditorDeps.write;
+      _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appends.push(d); };
+      _promptAuditorDeps.write = async () => {
+        throw new Error("txt write failed");
+      };
+      const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+      aud.record(makeEntry({ ts: 100, prompt: "txt-fail" }));
+      await aud.flush();
+      // JSONL was appended before txt write was attempted.
+      expect(appends).toHaveLength(1);
+      expect(appends[0]).toContain("txt-fail");
+      _promptAuditorDeps.appendLine = origAppend;
+      _promptAuditorDeps.write = origWrite;
+    });
+  });
+
   test("recordError() entries appear in JSONL but produce no txt file", async () => {
     await withTempDir(async (dir) => {
       const appends: string[] = [];

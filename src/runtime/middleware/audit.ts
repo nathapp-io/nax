@@ -20,6 +20,7 @@ export function attachAuditSubscriber(bus: IDispatchEventBus, auditor: IPromptAu
       sessionName: event.sessionName,
       ...(event.kind === "session-turn" && {
         sessionId: event.protocolIds.sessionId ?? null,
+        recordId: event.protocolIds.recordId ?? null,
         turn: event.turn,
       }),
     };
