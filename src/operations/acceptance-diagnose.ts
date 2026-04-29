@@ -1,6 +1,6 @@
+import type { SemanticVerdict } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
 import { AcceptancePromptBuilder } from "../prompts";
-import type { SemanticVerdict } from "../acceptance/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
 
