@@ -259,6 +259,13 @@ export interface CompleteOptions {
    * Defaults to "complete" when not provided.
    */
   pipelineStage?: import("../config/permissions").PipelineStage;
+  /**
+   * PID registration callback for crash-recovery bookkeeping. Mirrors the run-path
+   * `OpenSessionOpts.onPidSpawned`. Without this, complete-path acpx invocations
+   * (plan, decompose, classify-route, acceptance-generate, debate-*) leak their
+   * PIDs past PidRegistry — `Ctrl+C` mid-call leaves orphan acpx subprocesses.
+   */
+  onPidSpawned?: (pid: number) => void;
 }
 
 /**
