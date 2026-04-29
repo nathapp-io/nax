@@ -125,5 +125,5 @@ ${errors}
 
 Fix ALL errors listed above. Do NOT change test files or test behavior.
 Do NOT add new features — only fix the quality check errors.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+After fixing, re-run the failing check(s) to verify they pass, then commit your changes.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 }

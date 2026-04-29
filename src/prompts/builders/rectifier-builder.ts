@@ -73,7 +73,9 @@ export class RectifierPromptBuilder {
       }
     }
 
-    parts.push("\nFix ALL issues listed. Do NOT change test files or test behavior. Commit your fixes when done.");
+    parts.push(
+      "\nFix ALL issues listed. After fixing, re-run the failing check(s) to verify they pass before committing. Do NOT change test files or test behavior. Commit your changes when all checks pass.",
+    );
     parts.push(CONTRADICTION_ESCAPE_HATCH);
 
     return parts.join("\n");
@@ -174,10 +176,12 @@ Commit your fixes when done.${scopeConstraint}`;
     const parts: string[] = [];
 
     parts.push(
-      "**Your previous turn produced no file changes.**\n\n" +
+      "**Your previous turn produced no committed file changes.**\n\n" +
         "You must take one of these two actions:\n" +
-        "1. **Edit source files** to address the review findings listed below, OR\n" +
-        "2. **Emit `UNRESOLVED: <reason>`** if the findings are contradictory or cannot be fixed\n\n",
+        "1. **Edit project files** (source code, `package.json`, `tsconfig.json`, config files, etc.) to address the review findings listed below, then **commit** the changes, OR\n" +
+        "2. **Emit `UNRESOLVED: <reason>`** if the findings are contradictory or cannot be fixed\n\n" +
+        "**Important:** Running `bun install` / `npm install` alone does not count — if a package is missing, add it to `package.json` AND commit. Staged-but-uncommitted changes also do not count.\n\n" +
+        "After editing, re-run the failing check(s) to verify they pass, then commit.\n\n",
     );
 
     if (noOpCount >= maxNoOpReprompts) {
