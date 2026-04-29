@@ -26,6 +26,7 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | Resolving permissions outside `SessionManager.openSession` / `AgentManager.completeAs` | Pass `pipelineStage` upward; resource opener resolves once | ADR-019 §3 |
 | `wrapAdapterAsManager` (production or test imports from `src/agents/utils`) | `createRuntime(config, workdir).agentManager` for production; `fakeAgentManager(adapter)` for tests | ADR-020 §D3 — privatized; all dispatch must flow through the middleware chain |
 | `fakeAgentManager` in `src/` production code | `createRuntime(config, workdir).agentManager` | Test-only helper (see Test-Only Helpers below) |
+| Manual disk-recovery ladder in pipeline stages after `callOp` (reading disk to recover null/empty parse output — Tier-1/2/3 patterns) | Declare `verify`/`recover` on the op | Recovery logic belongs with the op (one place to maintain), not duplicated in every stage that calls it. ADR-020 §D4. |
 | Passing `undefined` (or omitting) `onPidSpawned` when constructing an ACP client / opening a session / building `AgentRunOptions` / `CompleteOptions` | Forward the runtime's callback: `onPidSpawned: ctx.runtime.onPidSpawned` (ops via `callOp`) or `(pid) => pidRegistry.register(pid)` (pipeline stages with direct registry access) | Untracked acpx subprocesses orphan past run teardown — Ctrl+C leaves zombie acpx + agent server processes. Issue #792, commit `e65e78b9`. |
 
 ## Prompt Builder Convention
