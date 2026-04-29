@@ -353,7 +353,14 @@ export class SessionManager implements ISessionManager {
   async openSession(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
     const liveHandle = this._liveHandles.get(name);
     if (liveHandle && liveHandle.agentName === opts.agentName) {
-      return liveHandle;
+      const liveDesc = this._findByName(name);
+      if (!liveDesc || (liveDesc.state !== "COMPLETED" && liveDesc.state !== "FAILED")) {
+        return liveHandle;
+      }
+      // Stale handle: keepOpen left it in _liveHandles but runTrackedSession
+      // already transitioned the descriptor to a terminal state. Remove the
+      // stale entry so the full open path runs and resets the descriptor.
+      this._liveHandles.delete(name);
     }
 
     const adapter = this._getAdapter(opts.agentName);

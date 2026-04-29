@@ -192,6 +192,40 @@ describe("openSession()", () => {
     await sm.openSession(name, makeOpenRequest());
     expect(sm.descriptor(name)?.state).toBe("RUNNING");
   });
+
+  test("resets live-handle with terminal descriptor to RUNNING (keepOpen scenario)", async () => {
+    // Reproduces the bug where TDD session-runner sets keepOpen=true so
+    // session-run-hop skips closeSession (handle stays in _liveHandles) but
+    // runTrackedSession still transitions the descriptor to COMPLETED.
+    // A later openSession call on the same name must not return the stale handle.
+    let openCallCount = 0;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => {
+        openCallCount++;
+        return { id: name, agentName: "claude" } as SessionHandle;
+      }),
+      closeSession: mock(async () => {}),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const name = "nax-keepopen-stale-test";
+
+    // Open session — handle is now in _liveHandles, descriptor is RUNNING
+    await sm.openSession(name, makeOpenRequest());
+    expect(sm.descriptor(name)?.state).toBe("RUNNING");
+    expect(openCallCount).toBe(1);
+
+    // Simulate runTrackedSession completing without closeSession (keepOpen path):
+    // descriptor goes COMPLETED but handle stays in _liveHandles
+    const desc = sm.descriptor(name);
+    sm.transition(desc!.id, "COMPLETED");
+    expect(sm.descriptor(name)?.state).toBe("COMPLETED");
+
+    // openSession must NOT return the stale live handle; it must open fresh and
+    // reset the descriptor to RUNNING
+    await sm.openSession(name, makeOpenRequest());
+    expect(sm.descriptor(name)?.state).toBe("RUNNING");
+    expect(openCallCount).toBe(2);
+  });
 });
 
 // ─── closeSession() ───────────────────────────────────────────────────────────
