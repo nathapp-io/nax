@@ -1,3 +1,10 @@
+/**
+ * TDD ops are minimal role tags consumed by runTddSession (src/tdd/session-runner.ts),
+ * not full Operation<I, O, C> shapes. See ADR-020 Wave 3 §Step 5 — verify/recover
+ * hooks live on Operation, so TDD's session-side recovery (when needed) belongs
+ * in the orchestrator, not here. Migration to true callOp ops is deferred per
+ * ADR-018 §5.3 amendment.
+ */
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import type { ContextBundle } from "../context/engine";
