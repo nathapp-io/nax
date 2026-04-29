@@ -124,7 +124,7 @@ export interface TestFixParams {
 // ─── Builder ──────────────────────────────────────────────────────────────────
 
 export class AcceptancePromptBuilder {
-  /** Prompt for generateFromPRD() — agent writes file directly to targetTestFilePath. */
+  /** Prompt for acceptanceGenerateOp — agent writes file directly to targetTestFilePath. */
   buildGeneratorFromPRDPrompt(p: GeneratorFromPRDParams): string {
     const frameworkLine = p.frameworkOverrideLine ? `\n${p.frameworkOverrideLine}` : "";
     const implSection =
@@ -194,7 +194,7 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
 }`;
   }
 
-  /** Prompt for executeSourceFix() — instructs agent to fix source implementation. */
+  /** Prompt for acceptanceFixSourceOp — instructs agent to fix source implementation. */
   buildSourceFixPrompt(p: SourceFixParams): string {
     let prompt = `ACCEPTANCE TEST FAILURE:\n${p.testOutput}\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
@@ -249,7 +249,7 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
   }
 
   /**
-   * Prompt for diagnoseAcceptanceFailure() — pre-processes raw data and assembles
+   * Prompt for acceptanceDiagnoseOp — pre-processes raw data and assembles
    * the full diagnosis prompt via buildDiagnosisPromptTemplate().
    */
   buildDiagnosisPrompt(p: DiagnosisPromptParams): string {
@@ -280,7 +280,7 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
   }
 
   /**
-   * Prompt for refineAcceptanceCriteria() — converts raw ACs into concrete
+   * Prompt for acceptanceRefineOp — converts raw ACs into concrete
    * machine-verifiable assertions, with optional strategy-specific instructions.
    */
   buildRefinementPrompt(criteria: string[], codebaseContext: string, options?: RefinementPromptOptions): string {
@@ -360,7 +360,7 @@ Assert about HTTP responses, status codes, and API endpoint output.${framework}
     }
   }
 
-  /** Prompt for executeTestFix() — instructs agent to fix failing test assertions. */
+  /** Prompt for acceptanceFixTestOp — instructs agent to fix failing test assertions. */
   buildTestFixPrompt(p: TestFixParams): string {
     let prompt = "ACCEPTANCE TEST BUG — surgical fix required.\n\n";
     prompt += `FAILING ACS: ${p.failedACs.join(", ")}\n\n`;
