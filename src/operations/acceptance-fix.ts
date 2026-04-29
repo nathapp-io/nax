@@ -1,4 +1,4 @@
-import { acceptanceConfigSelector } from "../config";
+import { acceptanceFixConfigSelector } from "../config";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { RunOperation } from "./types";
 
@@ -22,14 +22,15 @@ export interface AcceptanceFixOutput {
   applied: true;
 }
 
-type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select>;
+type AcceptanceFixConfig = ReturnType<typeof acceptanceFixConfigSelector.select>;
 
-export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, AcceptanceFixOutput, AcceptanceConfig> = {
+export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, AcceptanceFixOutput, AcceptanceFixConfig> = {
   kind: "run",
   name: "acceptance-fix-source",
   stage: "acceptance",
   session: { role: "source-fix", lifetime: "fresh" },
-  config: acceptanceConfigSelector,
+  config: acceptanceFixConfigSelector,
+  timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
       testOutput: input.testOutput,
@@ -47,12 +48,13 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
   },
 };
 
-export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, AcceptanceFixOutput, AcceptanceConfig> = {
+export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, AcceptanceFixOutput, AcceptanceFixConfig> = {
   kind: "run",
   name: "acceptance-fix-test",
   stage: "acceptance",
   session: { role: "test-fix", lifetime: "fresh" },
-  config: acceptanceConfigSelector,
+  config: acceptanceFixConfigSelector,
+  timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildTestFixPrompt({
       testOutput: input.testOutput,
