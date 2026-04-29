@@ -127,7 +127,11 @@ export async function runAdversarialReview(
     testInventory = await computeTestInventory(workdir, effectiveRef, testFilePatterns, { naxIgnoreIndex, packageDir });
   }
 
-  if (!agentManager) {
+  // ADR-019: runtime is the canonical source for agentManager. The parameter
+  // is kept for backward compatibility but ignored — callers should pass
+  // runtime.agentManager instead.
+  const effectiveAgentManager = runtime?.agentManager ?? agentManager;
+  if (!effectiveAgentManager) {
     logger?.warn("adversarial", "No agent available for adversarial review — skipping", {
       storyId: story.id,
       modelTier: adversarialConfig.modelTier,
@@ -175,7 +179,7 @@ export async function runAdversarialReview(
     runtime,
     packageView: runtime.packages.resolve(workdir),
     packageDir: workdir,
-    agentName: agentManager.getDefault(),
+    agentName: effectiveAgentManager.getDefault(),
     storyId: story.id,
     featureName,
     contextBundle,

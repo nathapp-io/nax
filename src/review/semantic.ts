@@ -135,7 +135,11 @@ export async function runSemanticReview(
     }
   }
 
-  if (!agentManager) {
+  // ADR-019: runtime is the canonical source for agentManager. The parameter
+  // is kept for backward compatibility but ignored — callers should pass
+  // runtime.agentManager instead.
+  const effectiveAgentManager = runtime?.agentManager ?? agentManager;
+  if (!effectiveAgentManager) {
     logger?.warn("semantic", "No agent available for semantic review — skipping", {
       storyId: story.id,
       modelTier: semanticConfig.modelTier,
@@ -181,7 +185,7 @@ export async function runSemanticReview(
       naxConfig,
       runtime,
       workdir,
-      agentManager,
+      agentManager: effectiveAgentManager,
       featureName,
       story,
       resolverSession,
@@ -220,7 +224,7 @@ export async function runSemanticReview(
     runtime,
     packageView: runtime.packages.resolve(workdir),
     packageDir: workdir,
-    agentName: agentManager.getDefault(),
+    agentName: effectiveAgentManager.getDefault(),
     storyId: story.id,
     featureName,
     contextBundle,
