@@ -45,6 +45,19 @@ const UNRESOLVED_REGEX = /^UNRESOLVED:\s*(.+)$/ms;
  */
 const MAX_CONSECUTIVE_NOOP_REPROMPTS = 1;
 
+/**
+ * Review checks whose verdict depends on LLM judgment of the diff.
+ *
+ * On a no-op turn (HEAD did not advance) the diff is unchanged, so re-running
+ * these checks against the same input would yield the same result — and incur
+ * fresh LLM cost (~$0.01–0.10 + ~10–30s per call). The autofix verify path uses
+ * this to skip recheck when ALL failing checks are LLM-driven. Mechanical
+ * checks (typecheck/lint/test/build) are NOT in this set because their verdicts
+ * CAN flip without a new commit (cache invalidation, transient diagnostics,
+ * post-stage state propagation).
+ */
+const LLM_REVIEW_CHECKS = new Set<ReviewCheckResult["check"]>(["semantic", "adversarial"]);
+
 function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
   return (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
 }
@@ -464,7 +477,41 @@ export async function runAgentRectification(
       };
     },
     verify: async (result) => {
-      // If too many consecutive no-ops, escalate by failing
+      // Re-run checks first — BEFORE any no-op branching.
+      // #808: A "no-op" agent turn (no new commit) does not always mean the failure
+      // is unresolved. Common cases where checks now pass without a new commit:
+      //   - The initial diagnostic was transient (stale typecheck cache cleared on re-run)
+      //   - A prior commit on this branch already covers the fix
+      //   - Filesystem state from a previous pipeline stage took time to propagate
+      // Reprompting in those cases burns full rectification attempts (~75s each)
+      // on already-passing checks. The check is the source of truth, not the git ref.
+      //
+      // Cost optimization: on no-op the diff is unchanged, so LLM-driven checks
+      // (semantic, adversarial) will return the same verdict on re-run. Skip the
+      // recheck entirely when ALL failing checks are LLM-driven — there is nothing
+      // a re-run can reveal. When at least one mechanical check (typecheck/lint/
+      // test/build) is failing, run recheck — those CAN flip without a new commit.
+      const failingChecks = (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
+      const hasMechanicalFailure = failingChecks.some((c) => !LLM_REVIEW_CHECKS.has(c.check));
+      const recheckWorthwhile = !result.noOp || hasMechanicalFailure;
+      const passed = recheckWorthwhile ? await _autofixDeps.recheckReview(ctx) : false;
+      if (passed) {
+        if (result.noOp) {
+          logger.info(
+            "autofix",
+            `[OK] Checks pass without new commit on attempt ${consumed + currentAttempt} (transient or already resolved)`,
+            { storyId: ctx.story.id },
+          );
+        } else {
+          logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${consumed + currentAttempt}`, {
+            storyId: ctx.story.id,
+          });
+        }
+        return { passed: true };
+      }
+
+      // Checks still failing — handle no-op cases.
+      // If too many consecutive no-ops, escalate by failing.
       if (result.consecutiveNoOps > MAX_CONSECUTIVE_NOOP_REPROMPTS) {
         logger.warn("autofix", "No source changes (no-op limit reached) — counting as consumed attempt", {
           storyId: ctx.story.id,
@@ -485,11 +532,11 @@ export async function runAgentRectification(
         };
       }
 
-      // Check if this attempt was a no-op and we should continue
+      // Checks still failing AND agent made no commit → no-op reprompt path.
       if (result.noOp) {
         logger.info(
           "autofix",
-          "No source changes — re-prompting with stronger directive (counts as consumed attempt)",
+          "No source changes and checks still failing — re-prompting with stronger directive (counts as consumed attempt)",
           {
             storyId: ctx.story.id,
             noOpCount: `${result.consecutiveNoOps}/${MAX_CONSECUTIVE_NOOP_REPROMPTS}`,
@@ -501,15 +548,6 @@ export async function runAgentRectification(
           passed: false,
           newFailure: initialFailure,
         };
-      }
-
-      // Re-run checks to see if they pass
-      const passed = await _autofixDeps.recheckReview(ctx);
-      if (passed) {
-        logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${consumed + currentAttempt}`, {
-          storyId: ctx.story.id,
-        });
-        return { passed: true };
       }
 
       const updatedFailed = collectFailedChecks(ctx);
