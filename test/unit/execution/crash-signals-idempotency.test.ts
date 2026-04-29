@@ -30,7 +30,7 @@ async function fireSignal(signal: NodeJS.Signals): Promise<void> {
   }
 }
 
-describe.skip("crash-signals idempotency", () => {
+describe("crash-signals idempotency", () => {
   let cleanup: (() => void) | undefined;
   let originalExit: typeof process.exit;
   let exitCalls: number[] = [];

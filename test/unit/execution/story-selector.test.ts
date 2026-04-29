@@ -37,7 +37,7 @@ function createCompletedStory(id: string, dependencies: string[] = []): UserStor
   };
 }
 
-describe.skip("selectIndependentBatch", () => {
+describe("selectIndependentBatch", () => {
   test("returns an empty array when stories is empty", () => {
     const result = selectIndependentBatch([], 10);
     expect(result).toEqual([]);
@@ -137,7 +137,7 @@ describe.skip("selectIndependentBatch", () => {
   });
 });
 
-describe.skip("groupStoriesByDependencies", () => {
+describe("groupStoriesByDependencies", () => {
   test("returns single batch for stories with no dependencies", () => {
     const stories = [
       createStory("US-001", []),

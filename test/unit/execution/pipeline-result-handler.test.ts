@@ -125,7 +125,7 @@ afterEach(() => {
   mock.restore();
 });
 
-describe.skip("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
+describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
   test("populates outputFiles on story when storyGitRef is set", async () => {
     const story = makeStory("US-001");
     const ctx = makeCtx(story, { storyGitRef: "abc123" });
@@ -246,7 +246,7 @@ describe.skip("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
 // EXEC-002: worktree merge on success
 // ---------------------------------------------------------------------------
 
-describe.skip("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
+describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
   test("calls mergeEngine.merge() when storyIsolation === 'worktree'", async () => {
     const story = makeStory("US-001");
     const ctx = makeCtx(story, { config: WORKTREE_CONFIG });

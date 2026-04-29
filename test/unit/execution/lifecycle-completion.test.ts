@@ -131,7 +131,7 @@ function makeOpts(
 // RL-002 AC#1: on-complete hook fires after handleRunCompletion()
 // ---------------------------------------------------------------------------
 
-describe.skip("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () => {
+describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () => {
   const origRunCompletionDeps = { ..._runCompletionDeps };
 
   beforeEach(() => {
@@ -229,7 +229,7 @@ describe.skip("RL-002 AC#1: on-complete hook fires after handleRunCompletion()",
 // RL-002 AC#3: Hook payload reflects final success status
 // ---------------------------------------------------------------------------
 
-describe.skip("RL-002 AC#3: run:completed payload reflects final success status", () => {
+describe("RL-002 AC#3: run:completed payload reflects final success status", () => {
   test("run:completed event has correct story counts (not placeholder 0/0/0)", async () => {
     const stories = [
       makeStory("US-001", "passed"),
@@ -315,7 +315,7 @@ beforeEach(() => {
     mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression;
 });
 
-describe.skip("handleRunCompletion - smart-skip deferred regression (RL-006)", () => {
+describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => {
   test("skips regression when all stories have fullSuiteGatePassed=true in sequential mode", async () => {
     const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
     const prd = makePRD([
@@ -464,7 +464,7 @@ describe.skip("handleRunCompletion - smart-skip deferred regression (RL-006)", (
 // handleRunCompletion - deferred regression gate
 // ---------------------------------------------------------------------------
 
-describe.skip("handleRunCompletion - deferred regression gate", () => {
+describe("handleRunCompletion - deferred regression gate", () => {
   test("calls runDeferredRegression when mode is 'deferred' and test command exists", async () => {
     const story = makeStory("US-001", "passed");
     const prd = makePRD([{ id: story.id, status: story.status }]);
@@ -572,7 +572,7 @@ const MOCK_REGRESSION_FAILURE: DeferredRegressionResult = {
   affectedStories: ["US-001"],
 };
 
-describe.skip("handleRunCompletion - regression-failed story marking (RL-004)", () => {
+describe("handleRunCompletion - regression-failed story marking (RL-004)", () => {
   test("marks affected story as 'regression-failed' when regression gate fails", async () => {
     const story = makeStory("US-001", "passed");
     const prd = makePRD([{ id: story.id, status: story.status }]);
@@ -652,7 +652,7 @@ describe.skip("handleRunCompletion - regression-failed story marking (RL-004)", 
   });
 });
 
-describe.skip("handleRunCompletion - run status on regression failure (RL-004)", () => {
+describe("handleRunCompletion - run status on regression failure (RL-004)", () => {
   test("sets run status to 'failed' when regression gate fails", async () => {
     const story = makeStory("US-001", "passed");
     const prd = makePRD([{ id: story.id, status: story.status }]);

@@ -271,7 +271,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       SEMANTIC_CONFIG,
       agentManager,
       DEBATE_REVIEW_ENABLED_CONFIG,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(_semanticDeps.createDebateRunner).toHaveBeenCalled();
@@ -291,7 +291,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       SEMANTIC_CONFIG,
       agentManager,
       DEBATE_REVIEW_ENABLED_CONFIG,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(runMock).toHaveBeenCalledTimes(1);
@@ -314,13 +314,13 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       SEMANTIC_CONFIG,
       agentManager,
       DEBATE_REVIEW_ENABLED_CONFIG,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(agentManager.complete as ReturnType<typeof mock>).not.toHaveBeenCalled();
   });
 
-  test.skip("AC3: agent.run() called once when debate is disabled — QUARANTINED: DISPATCH_NO_RUNTIME at line 332 despite runtime being defined", async () => {
+  test("AC3: agent.run() called once when debate is disabled — QUARANTINED: DISPATCH_NO_RUNTIME at line 332 despite runtime being defined", async () => {
     const createDebateMock = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
     }));
@@ -336,7 +336,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       SEMANTIC_CONFIG,
       agentManager,
       { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(agentManager.runWithFallback as ReturnType<typeof mock>).toHaveBeenCalledTimes(1);

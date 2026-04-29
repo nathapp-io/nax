@@ -85,7 +85,7 @@ function makeConfig(
 // runDeferredRegression tests
 // ---------------------------------------------------------------------------
 
-describe.skip("runDeferredRegression", () => {
+describe("runDeferredRegression", () => {
   test("returns success immediately when mode is 'disabled'", async () => {
     const { runDeferredRegression } = await import(
       "../../../src/execution/lifecycle/run-regression"
@@ -199,7 +199,7 @@ const origRegressionDeps = {
   parseTestOutput: _regressionDeps.parseTestOutput,
 };
 
-describe.skip("runDeferredRegression - behavioral tests (with mocked deps)", () => {
+describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
   beforeEach(() => {
     _regressionDeps.runRectificationLoop = mock(async () => false);
   });
