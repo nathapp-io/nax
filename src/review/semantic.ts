@@ -26,6 +26,7 @@ import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
+import { substantiateSemanticEvidence } from "./semantic-evidence";
 import {
   type LLMFinding,
   type LLMResponse,
@@ -466,7 +467,12 @@ export async function runSemanticReview(
     parsed = legacyParsed;
   }
 
-  const sanitizedFindings = sanitizeRefModeFindings(parsed.findings, diffMode);
+  const sanitizedFindings = await substantiateSemanticEvidence(
+    sanitizeRefModeFindings(parsed.findings, diffMode),
+    diffMode,
+    workdir,
+    story.id,
+  );
   const sanitizedParsed: LLMResponse = { ...parsed, findings: sanitizedFindings };
 
   // Split findings by blocking threshold
