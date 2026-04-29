@@ -131,6 +131,35 @@ describe("ReviewConfig semantic field", () => {
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
   });
+
+  test("gateLLMChecksOnMechanicalPass defaults to true", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      review: {
+        ...DEFAULT_CONFIG.review,
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.review.gateLLMChecksOnMechanicalPass).toBe(true);
+    }
+  });
+
+  test("gateLLMChecksOnMechanicalPass accepts false override", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      review: {
+        ...DEFAULT_CONFIG.review,
+        gateLLMChecksOnMechanicalPass: false,
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.review.gateLLMChecksOnMechanicalPass).toBe(false);
+    }
+  });
 });
 
 describe("ReviewConfigSchema semantic validation", () => {

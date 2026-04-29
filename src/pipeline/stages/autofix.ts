@@ -113,7 +113,9 @@ export const autofixStage: PipelineStage = {
       if (recheckPassed) {
         // #136: Skip checks that already passed — mechanical fix only touched lint/format.
         // Semantic/debate review doesn't need to re-run after a lint-only fix.
-        const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
+        const passedChecks = (ctx.reviewResult?.checks ?? [])
+          .filter((c) => c.success && !c.skipped)
+          .map((c) => c.check);
         if (passedChecks.length > 0) {
           ctx.retrySkipChecks = new Set(passedChecks);
           logger.debug("autofix", "Skipping already-passed checks on retry", {
@@ -189,7 +191,7 @@ export const autofixStage: PipelineStage = {
       // #136: Skip checks that already passed — only re-run checks that originally failed.
       // Agent rectification fixes mechanical issues (lint/typecheck); passing checks like
       // semantic (~45s) don't need to re-run unless they were the failing check.
-      const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
+      const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success && !c.skipped).map((c) => c.check);
       if (passedChecks.length > 0) {
         ctx.retrySkipChecks = new Set(passedChecks);
         logger.debug("autofix", "Skipping already-passed checks on retry", {

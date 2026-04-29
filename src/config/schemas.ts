@@ -183,6 +183,7 @@ export const NaxConfigSchema = z
     }),
     review: ReviewConfigSchema.default({
       enabled: true,
+      gateLLMChecksOnMechanicalPass: true,
       checks: ["typecheck", "lint"],
       commands: {},
       pluginMode: "per-story",

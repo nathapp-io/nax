@@ -10,6 +10,7 @@ import { resolveModelForAgent } from "../../config";
 import { NaxError } from "../../errors";
 import { getLogger } from "../../logger";
 import { RectifierPromptBuilder } from "../../prompts";
+import { LLM_REVIEW_CHECKS } from "../../review";
 import type { ReviewCheckResult } from "../../review/types";
 import { formatSessionName } from "../../session/naming";
 import { buildProgressivePromptPreamble, runRetryLoop } from "../../verification/shared-rectification-loop";
@@ -45,19 +46,6 @@ const UNRESOLVED_REGEX = /^UNRESOLVED:\s*(.+)$/ms;
  * changes after the stronger directive, the second no-op counts as a real attempt.
  */
 const MAX_CONSECUTIVE_NOOP_REPROMPTS = 1;
-
-/**
- * Review checks whose verdict depends on LLM judgment of the diff.
- *
- * On a no-op turn (HEAD did not advance) the diff is unchanged, so re-running
- * these checks against the same input would yield the same result — and incur
- * fresh LLM cost (~$0.01–0.10 + ~10–30s per call). The autofix verify path uses
- * this to skip recheck when ALL failing checks are LLM-driven. Mechanical
- * checks (typecheck/lint/test/build) are NOT in this set because their verdicts
- * CAN flip without a new commit (cache invalidation, transient diagnostics,
- * post-stage state propagation).
- */
-const LLM_REVIEW_CHECKS = new Set<ReviewCheckResult["check"]>(["semantic", "adversarial"]);
 
 function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
   return (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
@@ -504,7 +492,9 @@ export async function runAgentRectification(
           attemptsRemaining: maxAttempts - currentAttempt,
         });
         // Skip LLM checks that already passed — they'll return the same result on the unchanged diff.
-        const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
+        const passedChecks = (ctx.reviewResult?.checks ?? [])
+          .filter((c) => c.success && !c.skipped)
+          .map((c) => c.check);
         if (passedChecks.length > 0) {
           ctx.retrySkipChecks = new Set(passedChecks);
           logger.debug("autofix", "No source changes — skipping already-passed checks on recheck", {

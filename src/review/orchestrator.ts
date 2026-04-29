@@ -20,6 +20,7 @@ import type { PluginRegistry } from "../plugins";
 import { errorMessage } from "../utils/errors";
 import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 import { runAdversarialReview } from "./adversarial";
+import { ORDERED_LLM_REVIEW_CHECKS, ORDERED_MECHANICAL_REVIEW_CHECKS } from "./categorization";
 import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
 import { runSemanticReview } from "./semantic";
@@ -217,14 +218,12 @@ export class ReviewOrchestrator {
         runtime,
       );
     } else {
-      // Always split: mechanical checks first, then LLM checks independently.
-      // This prevents mechanical failures (e.g. lint in a test file the agent cannot touch)
-      // from blocking semantic/adversarial review — and signals to autofix that the code
-      // is functionally correct when LLM checks pass despite mechanical failures.
-      const mechanicalCheckNames = reviewConfig.checks.filter((c) => c !== "semantic" && c !== "adversarial");
-      const llmCheckNames = reviewConfig.checks.filter(
-        (c): c is "semantic" | "adversarial" => c === "semantic" || c === "adversarial",
+      // Split checks into ordered mechanical + LLM groups.
+      const mechanicalCheckNames = ORDERED_MECHANICAL_REVIEW_CHECKS.filter((check) =>
+        reviewConfig.checks.includes(check),
       );
+      const llmCheckNames = ORDERED_LLM_REVIEW_CHECKS.filter((check) => reviewConfig.checks.includes(check));
+      const gateLLMChecksOnMechanicalPass = reviewConfig.gateLLMChecksOnMechanicalPass ?? true;
 
       // Step 1: Run mechanical checks (fail-fast preserved within mechanical)
       const mechanicalConfig = { ...reviewConfig, checks: mechanicalCheckNames };
@@ -258,7 +257,21 @@ export class ReviewOrchestrator {
       const llmStart = Date.now();
       let llmCheckResults: ReviewCheckResult[];
 
-      if (activeLlmCheckNames.length === 0) {
+      if (gateLLMChecksOnMechanicalPass && !mechanicalResult.success && llmCheckNames.length > 0) {
+        logger?.debug("review", "Gating LLM checks due to mechanical failure", {
+          storyId,
+          gatedChecks: llmCheckNames,
+        });
+        llmCheckResults = llmCheckNames.map((check) => ({
+          check,
+          success: true,
+          skipped: true,
+          command: "gated",
+          exitCode: 0,
+          output: "Skipped: gated until all mechanical checks pass",
+          durationMs: 0,
+        }));
+      } else if (activeLlmCheckNames.length === 0) {
         // All LLM checks already passed — skip Step 2 entirely.
         logger?.debug("review", "Skipping LLM checks (all already passed in previous review pass)", { storyId });
         llmCheckResults = [];
@@ -354,11 +367,12 @@ export class ReviewOrchestrator {
 
       const allChecks = [...mechanicalResult.checks, ...llmCheckResults];
       const mechanicalPassed = mechanicalResult.success;
-      const llmPassed = llmCheckResults.every((c) => c.success);
+      const ranLlmChecks = llmCheckResults.filter((c) => !c.skipped);
+      const llmPassed = ranLlmChecks.every((c) => c.success);
       const failureReason = buildFailureReason(allChecks);
 
       // Build per-reviewer finding summary from LLM check results
-      const reviewSummary = buildReviewSummary(llmCheckResults);
+      const reviewSummary = buildReviewSummary(ranLlmChecks);
 
       builtIn = {
         success: mechanicalPassed && llmPassed,
@@ -369,10 +383,10 @@ export class ReviewOrchestrator {
       };
 
       // Write unified verdict file (fire-and-forget) when LLM checks ran
-      if (llmCheckResults.length > 0 && storyId) {
+      if (ranLlmChecks.length > 0 && storyId) {
         const threshold = reviewConfig.blockingThreshold ?? "error";
         const verdictReviewers: Record<string, { blocking: number; advisory: number; passed: boolean }> = {};
-        const semCheck = llmCheckResults.find((c) => c.check === "semantic");
+        const semCheck = ranLlmChecks.find((c) => c.check === "semantic");
         if (semCheck) {
           verdictReviewers.semantic = {
             blocking: semCheck.findings?.length ?? 0,
@@ -380,7 +394,7 @@ export class ReviewOrchestrator {
             passed: semCheck.success,
           };
         }
-        const advCheck = llmCheckResults.find((c) => c.check === "adversarial");
+        const advCheck = ranLlmChecks.find((c) => c.check === "adversarial");
         if (advCheck) {
           verdictReviewers.adversarial = {
             blocking: advCheck.findings?.length ?? 0,
@@ -398,7 +412,7 @@ export class ReviewOrchestrator {
       }
 
       // Signal to autofix that code is functionally correct (LLM passed) despite mechanical failure
-      mechanicalFailedOnly = !mechanicalPassed && llmPassed;
+      mechanicalFailedOnly = ranLlmChecks.length > 0 ? !mechanicalPassed && llmPassed : undefined;
     }
 
     if (!builtIn.success) {
@@ -558,7 +572,7 @@ export class ReviewOrchestrator {
             issue: f.message,
           })),
         };
-      } else if (advCheck.success) {
+      } else if (advCheck.success && !advCheck.skipped) {
         ctx.priorAdversarialFindings = undefined;
       }
     } else if (retrySkipChecks?.has("adversarial")) {
