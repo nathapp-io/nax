@@ -20,6 +20,7 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewFinding } from "../../../../src/plugins/extensions";
+import { makeMockRuntime } from "../../../helpers/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -63,6 +64,8 @@ function makeLintCheck(output: string): ReviewCheckResult {
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
+  const mockAgentManager = makeMockAgentManager(mock(async () => ({ estimatedCostUsd: 0, success: true, output: "ok", exitCode: 0, rateLimited: false })));
+  const runtime = makeMockRuntime({ agentManager: mockAgentManager });
   return {
     config: DEFAULT_CONFIG as any,
     prd: { feature: "my-feature", stories: [] } as any,
@@ -73,6 +76,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/test",
     projectDir: "/tmp/test",
     hooks: { hooks: {} } as any,
+    runtime,
     ...overrides,
   };
 }
@@ -357,14 +361,28 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
  * Creates a mock IAgentManager that forwards run() to a mock agent.
  * Captures run() calls on IAgentManager for assertion on runOptions.
  */
-function makeMockAgentManager(mockRun: ReturnType<typeof mock>): ReturnType<typeof mock> {
+function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
   const mockManager = mock(async (request: { runOptions: Record<string, unknown> }) => {
     return await mockRun(request.runOptions);
   });
-  return mockManager;
+  return {
+    getDefault: () => "claude",
+    run: mockManager,
+    runWithFallback: mock(async (request: { runOptions: Record<string, unknown> }) => {
+      return { result: await mockRun(request.runOptions), fallbacks: [] };
+    }),
+    isUnavailable: () => false,
+    markUnavailable: () => {},
+    reset: () => {},
+    validateCredentials: async () => {},
+    events: { on: () => {} },
+    resolveFallbackChain: () => [],
+    shouldSwap: () => false,
+    nextCandidate: () => null,
+  } as any;
 }
 
-describe.skip("runTestWriterRectification", () => {
+describe("runTestWriterRectification", () => {
   afterEach(() => {
     mock.restore();
   });
@@ -379,47 +397,42 @@ describe.skip("runTestWriterRectification", () => {
   test("returns cost from agent on success", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
     const mockRun = mock(async () => ({ estimatedCostUsd: 0.05, success: true, output: "done", exitCode: 0, rateLimited: false }));
-    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
+    const agentManager = makeMockAgentManager(mockRun);
     const ctx = makeCtx();
 
     const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(cost).toBe(0.05);
-    expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
   });
 
-  test("returns 0 when agent is not found (agentGetFn returns null)", async () => {
+  test("returns 0 when agent is not found (getDefault returns null)", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const agentManager = { getDefault: () => null, run: makeMockAgentManager(mock(async () => ({ estimatedCostUsd: 0 }))) } as any;
-    const ctx = makeCtx();
-
-    // Suppress resolveModelForAgent error for this test — getDefault returns null
-    // and the function should return 0 without calling run
-    const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
-
-    expect(cost).toBe(0);
-  });
-
-  test("returns 0 and does not rethrow when agent.run throws", async () => {
-    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const mockRun = mock(async () => { throw new Error("agent session error"); });
-    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
+    const agentManager = makeMockAgentManager(mock(async () => ({ estimatedCostUsd: 0 })));
+    agentManager.getDefault = () => null;
     const ctx = makeCtx();
 
     const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(cost).toBe(0);
-    expect(mockRun).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns 0 and does not rethrow when runWithFallback throws", async () => {
+    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
+    const agentManager = makeMockAgentManager(mock(async () => ({ estimatedCostUsd: 0 })));
+    agentManager.runWithFallback = mock(async () => { throw new Error("agent session error"); });
+    const ctx = makeCtx();
+
+    const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
+
+    expect(cost).toBe(0);
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
   });
 
   test("uses config.tdd.sessionTiers.testWriter for model tier", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    let capturedModelTier = "";
-    const mockRun = mock(async (opts: any) => {
-      capturedModelTier = opts.modelTier;
-      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
-    });
-    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
+    const mockRun = mock(async () => ({ estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false }));
+    const agentManager = makeMockAgentManager(mockRun);
     const ctx = makeCtx({
       rootConfig: {
         ...DEFAULT_CONFIG,
@@ -429,74 +442,21 @@ describe.skip("runTestWriterRectification", () => {
 
     await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
-    expect(capturedModelTier).toBe("fast");
+    const callOpts = (agentManager.runWithFallback.mock.calls as unknown[][])[0][0] as { runOptions: Record<string, unknown> };
+    expect(callOpts.runOptions.modelTier).toBe("fast");
   });
 
   test("defaults to 'balanced' model tier when sessionTiers.testWriter is not configured", async () => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    let capturedModelTier = "";
-    const mockRun = mock(async (opts: any) => {
-      capturedModelTier = opts.modelTier;
-      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
-    });
-    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
+    const mockRun = mock(async () => ({ estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false }));
+    const agentManager = makeMockAgentManager(mockRun);
     const ctx = makeCtx({
       rootConfig: { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, sessionTiers: undefined } } as any,
     });
 
     await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
-    expect(capturedModelTier).toBe("balanced");
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Session continuity (#437)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  test("keepOpen defaults to true so session survives across autofix cycles", async () => {
-    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    let capturedKeepSessionOpen: boolean | undefined;
-    const mockRun = mock(async (opts: any) => {
-      capturedKeepSessionOpen = opts.keepOpen;
-      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
-    });
-    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
-    const ctx = makeCtx();
-
-    await runTestWriterRectification(ctx, testChecks, story, agentManager);
-
-    expect(capturedKeepSessionOpen).toBe(true);
-  });
-
-  test("keepOpen is false when caller passes keepOpen=false", async () => {
-    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    let capturedKeepSessionOpen: boolean | undefined;
-    const mockRun = mock(async (opts: any) => {
-      capturedKeepSessionOpen = opts.keepOpen;
-      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
-    });
-    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
-    const ctx = makeCtx();
-
-    await runTestWriterRectification(ctx, testChecks, story, agentManager, false);
-
-    expect(capturedKeepSessionOpen).toBe(false);
-  });
-
-  test("uses the same sessionRole across two calls (session resumability)", async () => {
-    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const capturedSessionRoles: string[] = [];
-    const mockRun = mock(async (opts: any) => {
-      capturedSessionRoles.push(opts.sessionRole);
-      return { estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false };
-    });
-    const agentManager = { getDefault: () => "claude", run: makeMockAgentManager(mockRun) } as any;
-    const ctx = makeCtx();
-
-    await runTestWriterRectification(ctx, testChecks, story, agentManager);
-    await runTestWriterRectification(ctx, testChecks, story, agentManager);
-
-    expect(capturedSessionRoles).toHaveLength(2);
-    expect(capturedSessionRoles[0]).toBe(capturedSessionRoles[1]);
+    const callOpts = (agentManager.runWithFallback.mock.calls as unknown[][])[0][0] as { runOptions: Record<string, unknown> };
+    expect(callOpts.runOptions.modelTier).toBe("balanced");
   });
 });

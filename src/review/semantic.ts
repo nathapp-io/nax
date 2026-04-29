@@ -15,7 +15,7 @@ import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { callOp } from "../operations/call";
+import { callOp as _callOp } from "../operations/call";
 import { semanticReviewOp } from "../operations/semantic-review";
 import { ReviewPromptBuilder } from "../prompts";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
@@ -41,6 +41,7 @@ export type { SemanticStory };
 export const _semanticDeps = {
   createDebateRunner: (opts: DebateRunnerOptions): DebateRunner => new DebateRunner(opts),
   writeReviewAudit,
+  callOp: _callOp,
 };
 
 /**
@@ -226,7 +227,7 @@ export async function runSemanticReview(
   };
   let opResult: import("../operations/semantic-review").SemanticReviewOutput;
   try {
-    opResult = await callOp(callCtx, semanticReviewOp, {
+    opResult = await _semanticDeps.callOp(callCtx, semanticReviewOp, {
       story,
       semanticConfig,
       mode: diffMode,

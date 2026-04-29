@@ -19,7 +19,7 @@ import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { adversarialReviewOp } from "../operations/adversarial-review";
-import { callOp } from "../operations/call";
+import { callOp as _callOp } from "../operations/call";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import {
   type AdversarialLLMFinding,
@@ -35,6 +35,7 @@ import type { AdversarialFindingsCache, AdversarialReviewConfig, ReviewCheckResu
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
 export const _adversarialDeps = {
   writeReviewAudit,
+  callOp: _callOp,
 };
 
 /**
@@ -181,7 +182,7 @@ export async function runAdversarialReview(
   };
   let opResult: import("../operations/adversarial-review").AdversarialReviewOutput;
   try {
-    opResult = await callOp(callCtx, adversarialReviewOp, {
+    opResult = await _adversarialDeps.callOp(callCtx, adversarialReviewOp, {
       story,
       adversarialConfig,
       mode: diffMode,

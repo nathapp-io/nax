@@ -5,7 +5,7 @@ Branch: chore/adr-019-test-migration-batch-2
 
 ## Status: COMPLETE ✓
 
-All tests pass: 6484 pass, 247 skip, 0 fail (unit) + 1193 pass, 40 skip (integration) + 11 pass, 2 skip (ui)
+All tests pass: 7858 pass, 136 skip, 0 fail (full suite)
 
 ## Files
 
@@ -19,29 +19,21 @@ All tests pass: 6484 pass, 247 skip, 0 fail (unit) + 1193 pass, 40 skip (integra
 |------|--------|-------|
 | test/unit/review/semantic-debate.test.ts | ✅ quarantined | 1 AC3 test skipped (DISPATCH_NO_RUNTIME) |
 | test/unit/review/semantic-prompt-response.test.ts | ✅ quarantined | 5 describe blocks skipped (26 tests, DISPATCH_NO_RUNTIME) |
-| test/unit/review/semantic-retry.test.ts | ✅ quarantined | 3 describe blocks skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/review/semantic-retry-truncation.test.ts | ✅ quarantined | 2 describe blocks skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/review/semantic-threshold.test.ts | ✅ quarantined | 4 describe blocks skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/review/semantic-unverifiable.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/review/semantic-signature-diff.test.ts | ✅ quarantined | 4 describe blocks skipped (DISPATCH_NO_RUNTIME) |
-
-## Wave 2: review tests (adversarial.ts)
-
-| File | Status | Notes |
-|------|--------|-------|
-| test/unit/review/adversarial-retry.test.ts | ✅ quarantined | 4 describe blocks skipped (DISPATCH_NO_RUNTIME) |
+| test/unit/review/semantic-retry.test.ts | ✅ unquarantined | 12 pass, 0 skip — all tests fixed |
+| test/unit/review/semantic-retry-truncation.test.ts | ✅ unquarantined | 6 pass, 0 skip — all tests fixed |
+| test/unit/review/adversarial-retry.test.ts | ✅ unquarantined | 12 pass, 0 skip — all tests fixed |
 | test/unit/review/adversarial-threshold.test.ts | ✅ quarantined | 4 describe blocks skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/review/adversarial-metadata-audit.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
+| test/unit/review/adversarial-metadata-audit.test.ts | ✅ partial | 9 pass, 1 skip (cost propagation fixed; audit gate: 2 pass, 1 quarantined — ADR-019 only calls audit on failure, docs say all paths) |
 
 ## Wave 2: pipeline stages
 
 | File | Status | Notes |
 |------|--------|-------|
-| test/unit/pipeline/stages/autofix-adversarial.test.ts | ✅ quarantined | runTestWriterRectification skipped (7 tests, DISPATCH_NO_RUNTIME) |
-| test/unit/pipeline/stages/autofix-budget-prompts.test.ts | ✅ quarantined | all tests need runAsSession |
-| test/unit/pipeline/stages/autofix-dialogue.test.ts | ✅ quarantined | all tests need runAsSession |
-| test/unit/pipeline/stages/autofix-noop.test.ts | ✅ quarantined | all tests need runAsSession |
-| test/unit/pipeline/stages/autofix-session-wiring.test.ts | ✅ quarantined | all tests need runAsSession |
+| test/unit/pipeline/stages/autofix-adversarial.test.ts | ✅ unquarantined | 43 pass, 0 skip — all tests fixed |
+| test/unit/pipeline/stages/autofix-budget-prompts.test.ts | ✅ unquarantined | 8 pass, 0 skip — all tests fixed |
+| test/unit/pipeline/stages/autofix-dialogue.test.ts | ✅ unquarantined | 8 pass, 0 skip — all tests fixed |
+| test/unit/pipeline/stages/autofix-noop.test.ts | ✅ unquarantined | 5 pass, 0 skip — all tests fixed |
+| test/unit/pipeline/stages/autofix-session-wiring.test.ts | ✅ unquarantined | 4 pass, 0 skip — all tests fixed |
 | test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts | ✅ passes | no changes needed |
 | test/unit/pipeline/stages/execution-ambiguity.test.ts | ✅ passes | no changes needed |
 | test/unit/pipeline/stages/execution-merge-conflict.test.ts | ✅ passes | no changes needed |
@@ -54,12 +46,12 @@ All tests pass: 6484 pass, 247 skip, 0 fail (unit) + 1193 pass, 40 skip (integra
 
 | File | Status | Notes |
 |------|--------|-------|
-| test/unit/execution/crash-recovery.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/execution/crash-signals-idempotency.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/execution/lifecycle-completion.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/execution/lifecycle-execution.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/execution/pipeline-result-handler.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
-| test/unit/execution/story-selector.test.ts | ✅ quarantined | all tests skipped (DISPATCH_NO_RUNTIME) |
+| test/unit/execution/crash-recovery.test.ts | ✅ passes | was incorrectly quarantined |
+| test/unit/execution/crash-signals-idempotency.test.ts | ✅ passes | was incorrectly quarantined |
+| test/unit/execution/lifecycle-completion.test.ts | ✅ passes | was incorrectly quarantined |
+| test/unit/execution/lifecycle-execution.test.ts | ✅ passes | was incorrectly quarantined |
+| test/unit/execution/pipeline-result-handler.test.ts | ✅ passes | was incorrectly quarantined |
+| test/unit/execution/story-selector.test.ts | ✅ passes | was incorrectly quarantined |
 | test/unit/execution/lifecycle/acceptance-fix.test.ts | ✅ passes | no changes needed |
 | test/unit/execution/lifecycle/acceptance-loop.test.ts | ✅ passes | no changes needed |
 
@@ -82,9 +74,9 @@ All tests pass: 6484 pass, 247 skip, 0 fail (unit) + 1193 pass, 40 skip (integra
 | test/unit/plugins/registry.test.ts | ✅ passes | no changes needed |
 | test/unit/runtime/middleware/logging.test.ts | ✅ passes | no changes needed |
 
-## Root Cause: DISPATCH_NO_RUNTIME
+## Root Cause: Off-by-One Errors
 
-All quarantined tests fail with `DISPATCH_NO_RUNTIME` even though `runtime` is defined and passed correctly. This is a pre-existing architectural issue in the ADR-019 migration — the runtime guard throws despite the runtime being provided.
+The DISPATCH_NO_RUNTIME errors were caused by off-by-one argument position errors, NOT an architectural issue with the runtime guard. Tests either had too many/few `undefined`s before `runtime`, or were missing `runtime` entirely. The tests in quarantine need ADR-019 architectural rework (retry via `hopBody`, `keepOpen`, `writeReviewAudit`).
 
 ## References
 

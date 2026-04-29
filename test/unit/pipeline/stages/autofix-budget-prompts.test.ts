@@ -45,6 +45,17 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     }),
     completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
     getAgent: () => undefined,
+    runAsSession: mock(async (_agentName: string, _handle: unknown, prompt: string, _options: unknown) => {
+      const result = await mockRun({ prompt });
+      // ADR-019: runAsSession returns TurnResult; loop continuation is controlled
+      // by recheckReview()/verify(), not by throwing on agent failure.
+      return {
+        output: result.output ?? "",
+        estimatedCostUsd: result.estimatedCostUsd ?? 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      };
+    }),
   } as any;
 }
 
@@ -79,7 +90,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 // #106: Global autofix budget — ctx.autofixAttempt persists across cycles
 // ---------------------------------------------------------------------------
 
-describe.skip("autofixStage — global budget (#106)", () => {
+describe("autofixStage — global budget (#106)", () => {
   test("ctx.autofixAttempt persists across cycles", async () => {
     let agentSpawnCount = 0;
     const mockRun = mock(async () => {
@@ -135,7 +146,7 @@ describe.skip("autofixStage — global budget (#106)", () => {
 // Prompt escalation: rethink and urgency injection
 // ---------------------------------------------------------------------------
 
-describe.skip("autofixStage — prompt escalation", () => {
+describe("autofixStage — prompt escalation", () => {
   test("injects rethink prompt on configured autofix attempt", async () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
@@ -244,7 +255,7 @@ describe.skip("autofixStage — prompt escalation", () => {
 // #412: buildPrompt behavior tests
 // ---------------------------------------------------------------------------
 
-describe.skip("autofixStage — #412 prompt selection", () => {
+describe("autofixStage — #412 prompt selection", () => {
   test("#412: attempt===1 && sessionConfirmedOpen===true uses firstAttemptDelta (not full prompt, not continuation)", async () => {
     const prompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {

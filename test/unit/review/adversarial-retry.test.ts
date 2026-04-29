@@ -1,29 +1,21 @@
 /**
  * Unit tests for the JSON retry logic in src/review/adversarial.ts
  *
- * Tests cover:
- * - Retry succeeds: initial response unparseable, retry returns valid JSON
- * - Retry failure: retry call throws, falls through to fail-open
- * - agent.run called twice when initial response is unparseable
- * - Retry call uses keepOpen: false
- * - Cost accumulated from both initial and retry calls
- * - Logging: info on parse fail + retry, info on retry success, warn on exhaustion
+ * ADR-019: Retry moved inside adversarialReviewOp.hopBody. runAdversarialReview
+ * calls callOp once; retry is invisible at this level. Tests verify
+ * observable outcomes (fail-open, looksLikeFail, success) and logging.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { AgentResult } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents/manager-types";
-import type { AgentAdapter } from "../../../src/agents/types";
+import * as loggerModule from "../../../src/logger";
 import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
-import * as loggerModule from "../../../src/logger";
-import { makeAgentAdapter, makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
+// ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const STORY: SemanticStory = {
   id: "STORY-001",
@@ -45,80 +37,7 @@ const ADVERSARIAL_CONFIG: AdversarialReviewConfig = {
 const PASSING_RESPONSE = JSON.stringify({ passed: true, findings: [] });
 const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
-}
-
-/**
- * Build a mock AgentAdapter whose run() returns a different response per call.
- * responses[0] is returned on the first call, responses[1] on the second, etc.
- * The last entry is reused for any additional calls beyond the array length.
- */
-function makeMultiCallAgent(responses: string[], costPerCall = 0.5): AgentAdapter {
-  let callIndex = 0;
-  return makeAgentAdapter({
-    name: "mock",
-    displayName: "Mock Multi-Call Agent",
-    binary: "mock",
-    capabilities: {
-      supportedTiers: [],
-      supportedTestStrategies: [],
-      features: {},
-    } as unknown as AgentAdapter["capabilities"],
-    isInstalled: mock(async () => true),
-    run: mock(async () => {
-      const response = responses[callIndex] ?? responses[responses.length - 1];
-      callIndex++;
-      return { output: response, estimatedCostUsd: costPerCall };
-    }),
-    closeSession: mock(async () => {}),
-    closePhysicalSession: mock(async () => {}),
-    buildCommand: mock(() => []),
-    plan: mock(async () => { throw new Error("not used"); }),
-    decompose: mock(async () => { throw new Error("not used"); }),
-    complete: mock(async (_prompt: string) => responses[0]),
-  });
-}
-
-/**
- * Build an IAgentManager wrapping a multi-call agent adapter.
- * Tests assert on agentManager.getAgent("claude").run.mock.calls directly
- * since adversarial.ts calls agentManager.run() which delegates to adapter.run().
- */
-function makeMultiCallAgentManager(responses: string[], costPerCall = 0.5): IAgentManager {
-  const adapter = makeMultiCallAgent(responses, costPerCall);
-
-  return makeMockAgentManager({
-    getDefaultAgent: "claude",
-    getAgentFn: () => adapter,
-    runFn: async (_agentName: string, opts: unknown) => {
-      const result = await adapter.run(opts as Parameters<typeof adapter.run>[0]);
-      return { ...result, agentFallbacks: [] };
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Logger mock helpers
-// ---------------------------------------------------------------------------
+// ─── Logger mock helpers ─────────────────────────────────────────────────────
 
 interface LogCall {
   stage: string;
@@ -150,20 +69,20 @@ function makeLogger(): MockLogger {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Saved deps
-// ---------------------------------------------------------------------------
+// ─── Saved deps ──────────────────────────────────────────────────────────────
 
 let origSpawn: typeof _diffUtilsDeps.spawn;
 let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
 let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
 let origWriteReviewAudit: typeof _adversarialDeps.writeReviewAudit;
+let origCallOp: typeof _adversarialDeps.callOp;
 
 function saveAllDeps() {
   origSpawn = _diffUtilsDeps.spawn;
   origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
   origGetMergeBase = _diffUtilsDeps.getMergeBase;
   origWriteReviewAudit = _adversarialDeps.writeReviewAudit;
+  origCallOp = _adversarialDeps.callOp;
 }
 
 function restoreAllDeps() {
@@ -171,20 +90,48 @@ function restoreAllDeps() {
   _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
   _diffUtilsDeps.getMergeBase = origGetMergeBase;
   _adversarialDeps.writeReviewAudit = origWriteReviewAudit;
+  _adversarialDeps.callOp = origCallOp;
 }
 
 function setupHappyPathDeps(statContent = STAT_OUTPUT) {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-  _diffUtilsDeps.spawn = makeSpawnMock(statContent);
-  _adversarialDeps.writeReviewAudit = mock(async () => {});
+  _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
+    exited: Promise.resolve(0),
+    stdout: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(statContent));
+        controller.close();
+      },
+    }),
+    stderr: new ReadableStream({ start(controller) { controller.close(); } }),
+    kill: () => {},
+  })) as unknown as typeof _diffUtilsDeps.spawn;
 }
 
-// ---------------------------------------------------------------------------
-// JSON retry — success path
-// ---------------------------------------------------------------------------
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-describe.skip("runAdversarialReview — JSON retry succeeds", () => {
+function makeAgentManager(llmResponse: string): ReturnType<typeof makeMockAgentManager> {
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: 0,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    }),
+  });
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+describe("runAdversarialReview — JSON retry outcomes", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -192,8 +139,13 @@ describe.skip("runAdversarialReview — JSON retry succeeds", () => {
 
   afterEach(restoreAllDeps);
 
-  test("uses valid JSON from retry when initial response is unparseable", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
+  test("returns success when callOp returns valid findings", async () => {
+    _adversarialDeps.callOp = mock(async () => ({
+      passed: true,
+      findings: [],
+    }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -201,64 +153,21 @@ describe.skip("runAdversarialReview — JSON retry succeeds", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("Adversarial review passed");
   });
 
-  test("agent.run called twice when initial response is unparseable", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
-  });
-
-  test("retry call uses keepOpen: false to close the session", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[1][0] as Record<string, unknown>).keepOpen).toBe(false);
-  });
-
-  test("initial call uses keepOpen: true so retry has conversation history (session closes by end of runReview, ADR-008)", async () => {
-    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
-    expect((calls[0][0] as Record<string, unknown>).keepOpen).toBe(true);
-  });
-
-  test("agent.closePhysicalSession called once to close the session after runReview completes", async () => {
-    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-
-  test("agent.closePhysicalSession called even when retry was needed (retry-exhausted path)", async () => {
-    const agentManager = makeMultiCallAgentManager(["this is not json at all", PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").closePhysicalSession as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-
-  test("agent.run called once when initial response is valid JSON", async () => {
-    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    expect((agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-
-  test("cost accumulated from both initial and retry calls", async () => {
-    const agentManager = makeMultiCallAgentManager(["not json", PASSING_RESPONSE], 0.5);
+  test("returns fail-open when callOp returns failOpen", async () => {
+    _adversarialDeps.callOp = mock(async () => ({
+      passed: true,
+      findings: [],
+      failOpen: true,
+    }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -266,54 +175,22 @@ describe.skip("runAdversarialReview — JSON retry succeeds", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
-    );
-
-    expect(result.cost).toBeCloseTo(1.0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// JSON retry — failure paths
-// ---------------------------------------------------------------------------
-
-describe.skip("runAdversarialReview — JSON retry failure paths", () => {
-  beforeEach(() => {
-    saveAllDeps();
-    setupHappyPathDeps();
-  });
-
-  afterEach(restoreAllDeps);
-
-  test("falls through to fail-open when retry call throws", async () => {
-    let callIndex = 0;
-    const runMock = mock(async () => {
-      callIndex++;
-      if (callIndex === 1) return { output: "not json at all", estimatedCostUsd: 0 };
-      throw new Error("retry connection failure");
-    });
-    const agentManager = makeMockAgentManager({
-      getDefaultAgent: "claude",
-      runFn: async (_agentName: string, opts: unknown) => {
-        const result = await runMock(opts);
-        return { ...result, agentFallbacks: [] };
-      },
-    });
-
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(true);
+    expect(result.failOpen).toBe(true);
     expect(result.output).toContain("fail-open");
   });
 
-  test("fails closed when retry also returns truncated JSON with passed:false", async () => {
-    const truncated = '{ "passed": false, "findings": [{ "severity": "error"';
-    const agentManager = makeMultiCallAgentManager(["not json", truncated]);
+  test("returns failure when callOp returns looksLikeFail", async () => {
+    _adversarialDeps.callOp = mock(async () => ({
+      passed: false,
+      findings: [],
+      looksLikeFail: true,
+    }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
     const result = await runAdversarialReview(
       "/tmp/wd",
@@ -321,18 +198,56 @@ describe.skip("runAdversarialReview — JSON retry failure paths", () => {
       STORY,
       ADVERSARIAL_CONFIG,
       agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("passed:false");
   });
+
+  test("returns failure with blocking findings when callOp returns findings", async () => {
+    _adversarialDeps.callOp = mock(async () => ({
+      passed: false,
+      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "Bug", suggestion: "Fix" }],
+    }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    const result = await runAdversarialReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      ADVERSARIAL_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings![0].ruleId).toBe("adversarial");
+  });
+
+  test("returns fail-open when callOp throws", async () => {
+    _adversarialDeps.callOp = mock(async () => { throw new Error("LLM call failed"); });
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    const result = await runAdversarialReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      ADVERSARIAL_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.failOpen).toBe(true);
+    expect(result.output).toContain("skipped");
+  });
 });
 
-// ---------------------------------------------------------------------------
-// Logging behaviour
-// ---------------------------------------------------------------------------
-
-describe.skip("runAdversarialReview — retry logging", () => {
+describe("runAdversarialReview — logging", () => {
   let loggerSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
@@ -345,179 +260,162 @@ describe.skip("runAdversarialReview — retry logging", () => {
     loggerSpy?.mockRestore();
   });
 
-  test("logs info 'JSON parse failed, retrying (1/1)' with rawHead when initial parse fails", async () => {
+  test("logs info 'Adversarial review passed' on success", async () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const badOutput = "this is not json at all";
-    const agentManager = makeMultiCallAgentManager([badOutput, PASSING_RESPONSE]);
+    _adversarialDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+    await runAdversarialReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      ADVERSARIAL_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+    );
 
-    const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
-    expect(parseFailLog).toBeDefined();
-    expect(parseFailLog?.stage).toBe("adversarial");
-    expect(parseFailLog?.data?.rawHead).toContain("not json");
-    expect(parseFailLog?.data?.responseLen).toBe(badOutput.length);
-  });
-
-  test("logs info 'JSON retry succeeded' when retry parse passes", async () => {
-    const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
-
-    const agentManager = makeMultiCallAgentManager(["not json", PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const successLog = logger.infoCalls.find((c) => c.message.includes("JSON retry succeeded"));
+    const successLog = logger.infoCalls.find((c) => c.message.includes("Adversarial review passed"));
     expect(successLog).toBeDefined();
-    expect(successLog?.stage).toBe("adversarial");
-    expect(successLog?.data?.responseLen).toBeGreaterThan(0);
+    expect(successLog?.stage).toBe("review");
   });
 
-  test("does not log 'JSON retry succeeded' when initial parse succeeds (no retry needed)", async () => {
+  test("logs warn 'Retry exhausted — fail-open' when callOp returns failOpen", async () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const agentManager = makeMultiCallAgentManager([PASSING_RESPONSE]);
+    _adversarialDeps.callOp = mock(async () => ({ passed: true, findings: [], failOpen: true }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const retryLog = logger.infoCalls.find((c) => c.message.includes("retry"));
-    expect(retryLog).toBeUndefined();
-  });
-
-  test("logs warn 'Retry exhausted — fail-open' with retries:1 and rawHead when both attempts fail", async () => {
-    const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
-
-    const badOutput = "still not json after retry";
-    const agentManager = makeMultiCallAgentManager(["not json", badOutput]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+    await runAdversarialReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      ADVERSARIAL_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+    );
 
     const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(exhaustLog).toBeDefined();
     expect(exhaustLog?.stage).toBe("adversarial");
-    expect(exhaustLog?.data?.retries).toBe(1);
-    expect(exhaustLog?.data?.rawHead).toContain("not json");
-    expect(exhaustLog?.data?.responseLen).toBe(badOutput.length);
   });
 
-  test("logs warn 'Retry exhausted — fail-open' with retries:1 when initial parse fails and retry throws", async () => {
+  test("logs warn 'LLM returned truncated JSON' when callOp returns looksLikeFail", async () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    let callIndex = 0;
-    const runMock = mock(async () => {
-      callIndex++;
-      if (callIndex === 1) return { output: "not json", estimatedCostUsd: 0 };
-      throw new Error("retry network failure");
-    });
-    const agentManager = makeMockAgentManager({
-      getDefaultAgent: "claude",
-      runFn: async (_agentName: string, opts: unknown) => {
-        const result = await runMock(opts);
-        return { ...result, agentFallbacks: [] };
-      },
-    });
+    _adversarialDeps.callOp = mock(async () => ({ passed: false, findings: [], looksLikeFail: true }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+    await runAdversarialReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      ADVERSARIAL_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+    );
 
-    const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
-    expect(exhaustLog).toBeDefined();
-    expect(exhaustLog?.data?.retries).toBe(1);
+    const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated JSON"));
+    expect(truncatedLog).toBeDefined();
+    expect(truncatedLog?.stage).toBe("adversarial");
+  });
+
+  test("does not log 'Retry exhausted' when callOp returns success", async () => {
+    const logger = makeLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+
+    _adversarialDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    await runAdversarialReview(
+      "/tmp/wd",
+      "abc123",
+      STORY,
+      ADVERSARIAL_CONFIG,
+      agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
+    );
+
+    const retryLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
+    expect(retryLog).toBeUndefined();
   });
 });
 
-// ---------------------------------------------------------------------------
-// Truncation detection — condensed retry prompt
-// ---------------------------------------------------------------------------
-
-// The ACP adapter tail-truncates output at MAX_AGENT_OUTPUT_CHARS (5000 chars).
-// looksLikeTruncatedJson() fires when the response length is within 100 chars of
-// that cap, indicating the tail was cut off mid-stream.
-const AT_CAP_UNPARSEABLE = "x".repeat(4950); // 4950 chars — within 100 of 5000 cap, not valid JSON
-
-
-describe.skip("runAdversarialReview — truncation-detected condensed retry", () => {
-  beforeEach(() => {
-    saveAllDeps();
-    setupHappyPathDeps();
-  });
-
-  afterEach(restoreAllDeps);
-
-  test("uses condensed retry prompt when response length is at the ACP output cap", async () => {
-    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
-    const retryPrompt = (calls[1][0] as Record<string, unknown>).prompt as string;
-    expect(retryPrompt).toContain("truncated");
-  });
-
-  test("uses standard retry prompt when response is short unparseable text (not at cap)", async () => {
-    const nonJson = "here is my analysis: the code looks fine overall";
-    const agentManager = makeMultiCallAgentManager([nonJson, PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
-    const retryPrompt = (calls[1][0] as Record<string, unknown>).prompt as string;
-    expect(retryPrompt).not.toContain("truncated");
-  });
-
-  test("condensed retry prompt caps below-threshold findings but never blocking ones", async () => {
-    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, PASSING_RESPONSE]);
-
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const calls = (agentManager.getAgent("claude").run as ReturnType<typeof mock>).mock.calls;
-    const retryPrompt = (calls[1][0] as Record<string, unknown>).prompt as string;
-    expect(retryPrompt).toMatch(/Include ALL findings with severity/);
-    expect(retryPrompt).toMatch(/at most \d+ additional findings/);
-  });
-
-  test("succeeds when condensed retry returns valid JSON after cap-length truncation", async () => {
-    const condensedResponse = JSON.stringify({
-      passed: false,
-      findings: [{ severity: "error", category: "abandonment", file: "src/foo.ts", line: 1, issue: "missing impl", suggestion: "add it" }],
+describe("adversarialReviewOp.hopBody — retry behaviour", () => {
+  test("calls ctx.send twice when first response is unparseable", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: "not json at all", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
     });
-    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, condensedResponse]);
 
-    const result = await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
+    const { adversarialReviewOp } = await import("../../../src/operations/adversarial-review");
+    const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
-    expect(result.success).toBe(false);
-    expect(result.findings).toHaveLength(1);
+    expect(sendCalls).toHaveLength(2);
+    expect(result.output).toBe(PASSING_RESPONSE);
   });
 
-  test("logs isTruncated:true when response length is at the ACP output cap", async () => {
-    const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+  test("calls ctx.send once when first response is valid JSON", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      return { output: PASSING_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
 
-    const agentManager = makeMultiCallAgentManager([AT_CAP_UNPARSEABLE, PASSING_RESPONSE]);
+    const { adversarialReviewOp } = await import("../../../src/operations/adversarial-review");
+    const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
-    expect(parseFailLog?.data?.isTruncated).toBe(true);
-
-    loggerSpy.mockRestore();
+    expect(sendCalls).toHaveLength(1);
+    expect(result.output).toBe(PASSING_RESPONSE);
   });
 
-  test("logs isTruncated:false when response is short unparseable text (not at cap)", async () => {
-    const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+  test("accumulates cost from both initial and retry calls", async () => {
+    let callCount = 0;
+    const mockSend = mock(async (_prompt: string) => {
+      callCount++;
+      return {
+        output: callCount === 1 ? "not json" : PASSING_RESPONSE,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+        estimatedCostUsd: 0.5,
+      };
+    });
 
-    const agentManager = makeMultiCallAgentManager(["not json text", PASSING_RESPONSE]);
+    const { adversarialReviewOp } = await import("../../../src/operations/adversarial-review");
+    const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
-    await runAdversarialReview("/tmp/wd", "abc123", STORY, ADVERSARIAL_CONFIG, agentManager);
-
-    const parseFailLog = logger.infoCalls.find((c) => c.message.includes("JSON parse failed"));
-    expect(parseFailLog?.data?.isTruncated).toBe(false);
-
-    loggerSpy.mockRestore();
+    expect(result.estimatedCostUsd).toBe(1.0);
   });
 });

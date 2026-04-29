@@ -16,12 +16,15 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+import { makeMockRuntime } from "../../../helpers/runtime";
+import { makeSessionManager } from "../../../helpers/mock-session-manager";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
+  const runtime = makeMockRuntime({});
   return {
     config: {
       ...DEFAULT_CONFIG,
@@ -44,6 +47,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp",
     projectDir: "/tmp",
     hooks: {} as unknown as PipelineContext["hooks"],
+    runtime,
     ...overrides,
   };
 }
@@ -86,6 +90,15 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
     }),
     completeWithFallback: mock(async () => ({ result: { output: "", costUsd: 0 }, fallbacks: [] })),
     getAgent: () => undefined,
+    runAsSession: mock(async (_agentName: string, _handle: unknown, prompt: string, _options: unknown) => {
+      const result = await mockRun({ prompt });
+      return {
+        output: result.output ?? "",
+        estimatedCostUsd: result.estimatedCostUsd ?? 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      };
+    }),
   } as any;
 }
 
@@ -115,7 +128,7 @@ afterEach(() => {
 // No-op short-circuit — attempt not consumed
 // ---------------------------------------------------------------------------
 
-describe.skip("runAgentRectification — no-op short-circuit", () => {
+describe("runAgentRectification — no-op short-circuit", () => {
   test("no-op turn is not counted as a consumed attempt", async () => {
     const capturedPrompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
@@ -264,7 +277,7 @@ describe.skip("runAgentRectification — no-op short-circuit", () => {
 // attemptsRemaining in failure logs
 // ---------------------------------------------------------------------------
 
-describe.skip("runAgentRectification — attemptsRemaining in logs", () => {
+describe("runAgentRectification — attemptsRemaining in logs", () => {
   test("loop exhaustion reports attemptsUsed and globalBudgetUsed", async () => {
     const mockRun = mock(async () => ({ success: false, estimatedCostUsd: 0, output: "", exitCode: 1, rateLimited: false }));
     const agentManager = makeMockAgentManager(mockRun);
