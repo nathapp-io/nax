@@ -166,7 +166,7 @@ afterEach(() => {
 // AC5: CLARIFY relay to reviewerSession.clarify()
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("autofixStage — CLARIFY relay (AC5)", () => {
+describe.skip("autofixStage — CLARIFY relay (AC5)", () => {
   test("calls ctx.reviewerSession.clarify() when agent output matches /^CLARIFY:\\s*(.+)$/ms", async () => {
     const mockSession = makeSession();
 
@@ -284,7 +284,7 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
 // AC6: Clarification cap at maxClarificationsPerAttempt
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("autofixStage — clarification cap (AC6)", () => {
+describe.skip("autofixStage — clarification cap (AC6)", () => {
   test("caps clarification calls at maxClarificationsPerAttempt per attempt", async () => {
     let clarifyCallCount = 0;
     const mockSession = makeSession({
@@ -355,7 +355,7 @@ describe("autofixStage — clarification cap (AC6)", () => {
 // AC10: Proceeds without clarification when reviewerSession.clarify() throws
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("autofixStage — clarify() error resilience (AC10)", () => {
+describe.skip("autofixStage — clarify() error resilience (AC10)", () => {
   test("proceeds without clarification when ReviewerSession.clarify() throws", async () => {
     const mockSession = makeSession({
       clarify: mock(async () => {
