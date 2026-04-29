@@ -16,6 +16,7 @@ import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -132,9 +133,11 @@ afterEach(() => {
 // Default threshold ("error")
 // ---------------------------------------------------------------------------
 
-describe.skip("runSemanticReview — blockingThreshold defaults to 'error'", () => {
+describe("runSemanticReview — blockingThreshold defaults to 'error'", () => {
   test("warning finding goes to advisoryFindings, not findings, by default", async () => {
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(WARNING_ONLY_RESPONSE));
+    const agentManager = makeAgentManager(WARNING_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
@@ -148,7 +151,9 @@ describe.skip("runSemanticReview — blockingThreshold defaults to 'error'", () 
       passed: false,
       findings: [{ severity: "error", file: "src/a.ts", line: 1, issue: "An error", suggestion: "Fix" }],
     });
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(errorOnly));
+    const agentManager = makeAgentManager(errorOnly);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(false);
     expect(result.findings).toBeDefined();
@@ -156,7 +161,9 @@ describe.skip("runSemanticReview — blockingThreshold defaults to 'error'", () 
   });
 
   test("mixed: error goes to findings, warning to advisoryFindings by default", async () => {
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(MIXED_RESPONSE));
+    const agentManager = makeAgentManager(MIXED_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(false);
     expect(result.findings!.length).toBe(1);
@@ -166,7 +173,9 @@ describe.skip("runSemanticReview — blockingThreshold defaults to 'error'", () 
   });
 
   test("info finding goes to advisoryFindings by default", async () => {
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(INFO_ONLY_RESPONSE));
+    const agentManager = makeAgentManager(INFO_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, BASE_CFG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
@@ -178,11 +187,13 @@ describe.skip("runSemanticReview — blockingThreshold defaults to 'error'", () 
 // "warning" threshold
 // ---------------------------------------------------------------------------
 
-describe.skip("runSemanticReview — blockingThreshold: 'warning'", () => {
+describe("runSemanticReview — blockingThreshold: 'warning'", () => {
   test("warning finding blocks when threshold is 'warning'", async () => {
+    const agentManager = makeAgentManager(WARNING_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(WARNING_ONLY_RESPONSE),
-      undefined, undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
@@ -191,9 +202,11 @@ describe.skip("runSemanticReview — blockingThreshold: 'warning'", () => {
   });
 
   test("info finding remains advisory when threshold is 'warning'", async () => {
+    const agentManager = makeAgentManager(INFO_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(INFO_ONLY_RESPONSE),
-      undefined, undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(true);
@@ -202,9 +215,11 @@ describe.skip("runSemanticReview — blockingThreshold: 'warning'", () => {
   });
 
   test("both error and warning block when threshold is 'warning'", async () => {
+    const agentManager = makeAgentManager(MIXED_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(MIXED_RESPONSE),
-      undefined, undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
@@ -217,11 +232,13 @@ describe.skip("runSemanticReview — blockingThreshold: 'warning'", () => {
 // "info" threshold
 // ---------------------------------------------------------------------------
 
-describe.skip("runSemanticReview — blockingThreshold: 'info'", () => {
+describe("runSemanticReview — blockingThreshold: 'info'", () => {
   test("info finding blocks when threshold is 'info'", async () => {
+    const agentManager = makeAgentManager(INFO_ONLY_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(INFO_ONLY_RESPONSE),
-      undefined, undefined, undefined, undefined, "info",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, undefined, "info", undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.success).toBe(false);
