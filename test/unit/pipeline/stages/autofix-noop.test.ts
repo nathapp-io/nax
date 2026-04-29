@@ -237,9 +237,13 @@ describe("runAgentRectification — no-op short-circuit", () => {
       return `ref-${captureCallCount}`; // iteration 2+: changed
     });
 
-    // After iteration 1's no-op is detected, iteration 2 will check if the review passes.
-    // Since iteration 2 produces changes and we want the test to succeed, recheck should return true.
-    _autofixDeps.recheckReview = mock(async () => true);
+    // Iter 1 recheck (no-op): false → reprompt.
+    // Iter 2 recheck (after change): true → success.
+    let recheckCallCount = 0;
+    _autofixDeps.recheckReview = mock(async () => {
+      recheckCallCount++;
+      return recheckCallCount >= 2;
+    });
 
     const ctx = makeCtx({
       agentManager,
@@ -257,6 +261,44 @@ describe("runAgentRectification — no-op short-circuit", () => {
     const result = await _autofixDeps.runAgentRectification(ctx, undefined, undefined, "/tmp");
 
     expect(result.succeeded).toBe(true);
+    // Two iterations: iter 1 was no-op + reprompt, iter 2 had real change.
+    expect(capturedPrompts.length).toBe(2);
+  });
+
+  // #808: When the agent's first turn is a no-op but the failing check now
+  // passes anyway (transient diagnostic, prior commit already covers it,
+  // post-stage filesystem state finally settled), we must NOT send the no-op
+  // reprompt — that wastes a full rectification attempt on already-passing
+  // checks. The check is the source of truth, not the git ref.
+  test("no-op turn but checks pass: succeed immediately without reprompt", async () => {
+    const capturedPrompts: string[] = [];
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      capturedPrompts.push(opts.prompt as string);
+      return { success: true, estimatedCostUsd: 0, output: "transient — already passing" };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+
+    // First turn is a no-op (HEAD does not advance).
+    _autofixDeps.captureGitRef = mock(async () => "ref-unchanged");
+
+    // But re-running the failing check now passes (transient/pre-resolved).
+    _autofixDeps.recheckReview = mock(async () => true);
+
+    const ctx = makeCtx({
+      agentManager,
+      reviewResult: {
+        success: false,
+        checks: [makeFailedCheck("typecheck")],
+      } as unknown as PipelineContext["reviewResult"],
+    });
+
+    const result = await _autofixDeps.runAgentRectification(ctx, undefined, undefined, "/tmp");
+
+    expect(result.succeeded).toBe(true);
+    // Exactly one prompt — no reprompt was sent.
+    expect(capturedPrompts.length).toBe(1);
+    // The "no committed file changes" reprompt text must NOT appear.
+    expect(capturedPrompts[0]).not.toContain("no committed file changes");
   });
 });
 

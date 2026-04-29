@@ -185,3 +185,44 @@ describe("RectifierPromptBuilder.regressionFailure()", () => {
     expect(result).toMatchSnapshot();
   });
 });
+
+// ─── noOpReprompt — language-agnostic guidance ────────────────────────────────
+
+describe("RectifierPromptBuilder.noOpReprompt", () => {
+  const FAILED_CHECK = {
+    check: "typecheck" as const,
+    success: false,
+    command: "tsc --noEmit",
+    exitCode: 2,
+    output: "error TS2688: Cannot find type definition file for 'bun-types'.",
+    durationMs: 1234,
+  };
+
+  test("contains the core no-op directive and UNRESOLVED escape hatch", () => {
+    const result = RectifierPromptBuilder.noOpReprompt([FAILED_CHECK], 0, 1);
+    expect(result).toContain("no committed file changes");
+    expect(result).toContain("UNRESOLVED");
+    expect(result).toContain("commit");
+  });
+
+  test("does not bake in TypeScript/Node-specific file or command names", () => {
+    // nax orchestrates polyglot monorepos. The no-op reprompt must not name
+    // language-specific manifests (package.json/tsconfig.json) or single
+    // ecosystems' install commands as authoritative — that misleads agents
+    // working in Go/Python/Rust packages. See monorepo-awareness.md §B and
+    // the precedent in #543 (acceptance/escalated test command).
+    const result = RectifierPromptBuilder.noOpReprompt([FAILED_CHECK], 0, 1);
+    expect(result).not.toContain("`package.json`");
+    expect(result).not.toContain("`tsconfig.json`");
+    // The phrase "bun install / npm install" alone (no other examples) was the
+    // shape of the bug — the fix lists install commands across ecosystems.
+    expect(result).toMatch(/go mod tidy|pip install|cargo/);
+  });
+
+  test("emits a warning when the no-op limit is reached", () => {
+    const beforeLimit = RectifierPromptBuilder.noOpReprompt([FAILED_CHECK], 0, 1);
+    const atLimit = RectifierPromptBuilder.noOpReprompt([FAILED_CHECK], 1, 1);
+    expect(beforeLimit).not.toContain("WARNING");
+    expect(atLimit).toContain("WARNING");
+  });
+});

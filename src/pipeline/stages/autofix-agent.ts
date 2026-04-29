@@ -464,7 +464,32 @@ export async function runAgentRectification(
       };
     },
     verify: async (result) => {
-      // If too many consecutive no-ops, escalate by failing
+      // Re-run checks first — BEFORE any no-op branching.
+      // #808: A "no-op" agent turn (no new commit) does not always mean the failure
+      // is unresolved. Common cases where checks now pass without a new commit:
+      //   - The initial diagnostic was transient (stale typecheck cache cleared on re-run)
+      //   - A prior commit on this branch already covers the fix
+      //   - Filesystem state from a previous pipeline stage took time to propagate
+      // Reprompting in those cases burns full rectification attempts (~75s each)
+      // on already-passing checks. The check is the source of truth, not the git ref.
+      const passed = await _autofixDeps.recheckReview(ctx);
+      if (passed) {
+        if (result.noOp) {
+          logger.info(
+            "autofix",
+            `[OK] Checks pass without new commit on attempt ${consumed + currentAttempt} (transient or already resolved)`,
+            { storyId: ctx.story.id },
+          );
+        } else {
+          logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${consumed + currentAttempt}`, {
+            storyId: ctx.story.id,
+          });
+        }
+        return { passed: true };
+      }
+
+      // Checks still failing — handle no-op cases.
+      // If too many consecutive no-ops, escalate by failing.
       if (result.consecutiveNoOps > MAX_CONSECUTIVE_NOOP_REPROMPTS) {
         logger.warn("autofix", "No source changes (no-op limit reached) — counting as consumed attempt", {
           storyId: ctx.story.id,
@@ -485,11 +510,11 @@ export async function runAgentRectification(
         };
       }
 
-      // Check if this attempt was a no-op and we should continue
+      // Checks still failing AND agent made no commit → no-op reprompt path.
       if (result.noOp) {
         logger.info(
           "autofix",
-          "No source changes — re-prompting with stronger directive (counts as consumed attempt)",
+          "No source changes and checks still failing — re-prompting with stronger directive (counts as consumed attempt)",
           {
             storyId: ctx.story.id,
             noOpCount: `${result.consecutiveNoOps}/${MAX_CONSECUTIVE_NOOP_REPROMPTS}`,
@@ -501,15 +526,6 @@ export async function runAgentRectification(
           passed: false,
           newFailure: initialFailure,
         };
-      }
-
-      // Re-run checks to see if they pass
-      const passed = await _autofixDeps.recheckReview(ctx);
-      if (passed) {
-        logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${consumed + currentAttempt}`, {
-          storyId: ctx.story.id,
-        });
-        return { passed: true };
       }
 
       const updatedFailed = collectFailedChecks(ctx);
