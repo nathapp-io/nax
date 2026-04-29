@@ -7,10 +7,10 @@
  */
 
 import type { IAgentManager } from "../agents";
+import type { SessionHandle } from "../agents/types";
 import type { ModelTier, NaxConfig } from "../config";
 import { type rectificationGateConfigSelector, resolveModelForAgent } from "../config";
 import type { getLogger } from "../logger";
-import { buildHopCallback } from "../operations/build-hop-callback";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
@@ -270,6 +270,12 @@ async function runRectificationLoop(
     role: "implementer",
   });
 
+  // ADR-008 §6 / ADR-018 §7 Pattern B: hold the implementer session open across
+  // all attempts in this rectification cycle so the agent retains conversation
+  // history between attempts. Opened lazily on first execute(), closed in the
+  // .finally() at loop exit.
+  let heldHandle: SessionHandle | undefined;
+
   const initialFailure: TddRectificationFailure = {
     testSummary,
     testOutput,
@@ -322,29 +328,55 @@ async function runRectificationLoop(
 
       let rectifyResult: import("../agents").AgentResult;
       if (runtime) {
-        // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
-        // Each attempt opens a fresh session; keepOpen is not used in the runtime path.
-        const executeHop = buildHopCallback(
-          {
-            sessionManager: runtime.sessionManager,
-            agentManager: runtime.agentManager,
-            story,
-            config: config as unknown as NaxConfig,
-            projectDir,
-            featureName: featureName ?? "",
+        // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session once
+        // and reuse across attempts. openSession is idempotent (session/manager.ts:354)
+        // so we attach to any session opened upstream by execution.ts when one
+        // is still alive.
+        if (!heldHandle) {
+          heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
+            agentName: defaultAgent,
+            role: "implementer",
             workdir,
-            effectiveTier: implementerTier,
-            defaultAgent,
             pipelineStage: "rectification",
-          },
-          sessionId,
-          runOptions,
-        );
-        const outcome = await agentManager.runWithFallback(
-          { runOptions, signal: runtime.signal, executeHop },
-          defaultAgent,
-        );
-        rectifyResult = outcome.result;
+            modelDef: runOptions.modelDef,
+            timeoutSeconds: config.execution.sessionTimeoutSeconds,
+            featureName,
+            storyId: story.id,
+            signal: runtime.signal,
+            onPidSpawned: runtime.onPidSpawned,
+          });
+        }
+        // ADR-020 single-emission invariant: each runAsSession emits one
+        // session-turn event for audit/cost subscribers, regardless of handle
+        // reuse across attempts.
+        try {
+          const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
+            storyId: story.id,
+            featureName,
+            workdir,
+            projectDir,
+            pipelineStage: "rectification",
+            sessionRole: "implementer",
+            signal: runtime.signal,
+            maxTurns: config.agent?.maxInteractionTurns,
+          });
+          rectifyResult = {
+            success: true,
+            exitCode: 0,
+            output: turn.output,
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCostUsd: turn.estimatedCostUsd,
+            ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+            ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+            ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
+          };
+        } catch (err) {
+          const stale = heldHandle;
+          heldHandle = undefined;
+          await runtime.sessionManager.closeSession(stale).catch(() => {});
+          throw err;
+        }
       } else {
         // Legacy keepOpen path — used when no runtime is available (standalone callers).
         rectifyResult = await agentManager.run({
@@ -429,6 +461,13 @@ async function runRectificationLoop(
         },
       };
     },
+  }).finally(async () => {
+    // ADR-008 §6: close the held implementer session at loop exit. Best-effort.
+    if (heldHandle && runtime) {
+      const stale = heldHandle;
+      heldHandle = undefined;
+      await runtime.sessionManager.closeSession(stale).catch(() => {});
+    }
   });
 
   const fixed = outcome.outcome === "fixed";
