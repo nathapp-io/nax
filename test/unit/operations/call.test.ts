@@ -20,6 +20,12 @@ const echoOp: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CO
   parse: (output) => output.trim(),
 };
 
+const timedEchoOp: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+  ...echoOp,
+  name: "timed-echo-test",
+  timeoutMs: () => 123_000,
+};
+
 const runEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
   kind: "run",
   name: "run-echo-test",
@@ -31,6 +37,24 @@ const runEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONF
     task: { id: "task", content: input.text, overridable: false },
   }),
   parse: (output) => output.trim(),
+};
+
+const timedRunEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+  ...runEchoOp,
+  name: "timed-run-echo-test",
+  timeoutMs: () => 123_000,
+};
+
+const invalidTimedEchoOp: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+  ...echoOp,
+  name: "invalid-timed-echo-test",
+  timeoutMs: () => 0,
+};
+
+const invalidTimedRunEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+  ...runEchoOp,
+  name: "invalid-timed-run-echo-test",
+  timeoutMs: () => Number.NaN,
 };
 
 describe("callOp — kind:complete", () => {
@@ -50,6 +74,47 @@ describe("callOp — kind:complete", () => {
 
     expect(agentManager.completeAs).toHaveBeenCalledTimes(1);
     expect(result).toBe("echoed");
+  });
+
+  test("passes op timeoutMs to completeAs", async () => {
+    const completeResult: CompleteResult = { output: "echoed", costUsd: 0, source: "exact" };
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
+    const runtime = makeTestRuntime({ agentManager });
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+      },
+      timedEchoOp,
+      { text: "hello world" },
+    );
+
+    const completeArgs = (agentManager.completeAs as ReturnType<typeof mock>).mock.calls[0]?.[2] as
+      | { timeoutMs?: number }
+      | undefined;
+    expect(completeArgs?.timeoutMs).toBe(123_000);
+  });
+
+  test("throws CALL_OP_INVALID_TIMEOUT on non-positive timeoutMs", async () => {
+    const completeResult: CompleteResult = { output: "echoed", costUsd: 0, source: "exact" };
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
+    const runtime = makeTestRuntime({ agentManager });
+
+    await expect(
+      callOp(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp",
+          agentName: "claude",
+        },
+        invalidTimedEchoOp,
+        { text: "hello world" },
+      ),
+    ).rejects.toThrow("invalid timeoutMs");
   });
 });
 
@@ -151,5 +216,74 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
 
     expect(thrown).not.toBeNull();
     expect(thrown?.message).toContain("agent returned no output");
+  });
+
+  test("uses op timeoutMs for run timeoutSeconds", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "ran via fallback",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "opencode",
+        storyId: "US-001",
+      },
+      timedRunEchoOp,
+      { text: "hello world" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as
+      | { runOptions?: { timeoutSeconds?: number } }
+      | undefined;
+    expect(reqArg?.runOptions?.timeoutSeconds).toBe(123);
+  });
+
+  test("throws CALL_OP_INVALID_TIMEOUT on non-finite run timeoutMs", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "ran via fallback",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    await expect(
+      callOp(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp",
+          agentName: "opencode",
+          storyId: "US-001",
+        },
+        invalidTimedRunEchoOp,
+        { text: "hello world" },
+      ),
+    ).rejects.toThrow("invalid timeoutMs");
   });
 });

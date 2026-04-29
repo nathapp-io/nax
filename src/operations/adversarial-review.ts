@@ -71,6 +71,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   stage: "review",
   session: { role: "reviewer-adversarial", lifetime: "fresh" },
   config: reviewConfigSelector,
+  timeoutMs: (input) => input.adversarialConfig.timeoutMs,
   hopBody: adversarialReviewHopBody,
   build(input, _ctx) {
     const base = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(

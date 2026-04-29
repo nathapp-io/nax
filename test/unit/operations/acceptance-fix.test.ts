@@ -44,6 +44,11 @@ describe("acceptanceFixSourceOp shape", () => {
   test("stage is acceptance", () => {
     expect(acceptanceFixSourceOp.stage).toBe("acceptance");
   });
+  test("timeoutMs resolves from execution.sessionTimeoutSeconds", () => {
+    const ctx = makeSourceCtx();
+    const timeoutMs = acceptanceFixSourceOp.timeoutMs?.(SOURCE_INPUT, ctx);
+    expect(timeoutMs).toBe((ctx.config.execution.sessionTimeoutSeconds ?? 0) * 1000);
+  });
 });
 
 describe("acceptanceFixSourceOp.build()", () => {
@@ -92,6 +97,11 @@ describe("acceptanceFixTestOp shape", () => {
   });
   test("stage is acceptance", () => {
     expect(acceptanceFixTestOp.stage).toBe("acceptance");
+  });
+  test("timeoutMs resolves from execution.sessionTimeoutSeconds", () => {
+    const ctx = makeTestCtx();
+    const timeoutMs = acceptanceFixTestOp.timeoutMs?.(TEST_INPUT, ctx);
+    expect(timeoutMs).toBe((ctx.config.execution.sessionTimeoutSeconds ?? 0) * 1000);
   });
 });
 

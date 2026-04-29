@@ -74,6 +74,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   stage: "review",
   session: { role: "reviewer-semantic", lifetime: "fresh" },
   config: reviewConfigSelector,
+  timeoutMs: (input) => input.semanticConfig.timeoutMs,
   hopBody: semanticReviewHopBody,
   build(input, _ctx) {
     const base = new ReviewPromptBuilder().buildSemanticReviewPrompt(input.story, input.semanticConfig, {

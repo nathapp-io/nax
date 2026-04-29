@@ -56,6 +56,12 @@ interface OperationBase<I, O, C> {
    */
   readonly parse: (output: string, input: I, ctx: BuildContext<C>) => O;
   /**
+   * Optional operation-specific timeout resolver in milliseconds.
+   * callOp uses this as the single timeout source and converts to seconds
+   * only at runOptions boundaries for run-kind operations.
+   */
+  readonly timeoutMs?: (input: I, ctx: BuildContext<C>) => number | undefined;
+  /**
    * Optional. Validate parsed output against on-disk artifacts. Returning
    * non-null wins; returning null means "parsed output insufficient — fall
    * through to recover (if defined) or return the original parsed value".

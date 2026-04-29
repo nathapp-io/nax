@@ -152,7 +152,7 @@ export function buildHopCallback(
       pipelineStage: stage,
     });
     const modelDef = resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
-    const timeoutSeconds = config.execution.sessionTimeoutSeconds;
+    const timeoutSeconds = resolvedRunOptions.timeoutSeconds ?? config.execution.sessionTimeoutSeconds;
 
     // openSession errors propagate naturally — no handle, no closeSession needed
     const handle = await sessionManager.openSession(sessionName, {

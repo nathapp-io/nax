@@ -14,6 +14,18 @@ function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[
   return s as ConfigSelector<C>;
 }
 
+function resolveTimeoutMs<I, O, C>(op: Operation<I, O, C>, input: I, buildCtx: BuildContext<C>): number | undefined {
+  const timeoutMs = op.timeoutMs?.(input, buildCtx);
+  if (timeoutMs === undefined) return undefined;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new NaxError(`callOp[${op.name}]: invalid timeoutMs (${String(timeoutMs)})`, "CALL_OP_INVALID_TIMEOUT", {
+      stage: op.stage,
+      timeoutMs,
+    });
+  }
+  return timeoutMs;
+}
+
 /**
  * Synthesize a minimal UserStory for callOp use cases that don't carry a real
  * one (CLI ad-hoc calls, debate runners, simple op invocations). Only the `id`
@@ -47,6 +59,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const buildCtx = { packageView: ctx.packageView, config: slicedConfig };
   const sections = composeSections(op.build(input, buildCtx));
   const prompt = join(sections);
+  const timeoutMs = resolveTimeoutMs(op, input, buildCtx);
 
   const config = ctx.runtime.configLoader.current();
   const defaultAgent = ctx.runtime.agentManager.getDefault();
@@ -67,6 +80,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       storyId: ctx.storyId,
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       onPidSpawned: ctx.runtime.onPidSpawned,
     });
     const parsedComplete = op.parse(raw.output, input, buildCtx);
@@ -85,7 +99,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     workdir: ctx.packageDir,
     modelTier: effectiveTier,
     modelDef: resolved.modelDef,
-    timeoutSeconds: config.execution.sessionTimeoutSeconds,
+    timeoutSeconds: timeoutMs !== undefined ? Math.ceil(timeoutMs / 1000) : config.execution.sessionTimeoutSeconds,
     pipelineStage: op.stage,
     config,
     sessionRole,
