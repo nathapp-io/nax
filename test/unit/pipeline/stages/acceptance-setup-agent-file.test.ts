@@ -1,15 +1,16 @@
 /**
- * acceptance-setup: ACP agent-written file preservation (3-tier recovery)
+ * acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)
  *
- * When the ACP agent writes the acceptance test file directly via tool calls,
- * `extractTestCode(rawOutput)` returns null (conversational summary). The
- * skeleton fallback performs 3-tier recovery on the on-disk file:
+ * Since ADR-020 Wave 3 the 3-tier disk-recovery ladder no longer lives in the
+ * stage.  Recovery (Tier-1/2) is now performed by acceptanceGenerateOp.verify
+ * inside callOp.  The stage only sees the result:
  *
- *   Tier 1 — extractTestCode(existing) non-null: re-extract code from the file
- *             and use it as testCode (common for files with import{} or describe()).
- *   Tier 2 — hasLikelyTestContent(existing): file looks like tests but extraction
- *             found no code block → backup to .llm-recovery.bak + preserve full file.
- *   Tier 3 — file exists but no test keywords → backup + fall to skeleton.
+ *   testCode non-null  → write it directly, no backup.
+ *   testCode null      → op exhausted all recovery → write skeleton, no backup.
+ *
+ * The old "tier 2 backup" and "tier 3 backup" paths are intentionally absent
+ * from the stage; they are tested in
+ * test/unit/operations/acceptance-generate.test.ts (verify hook coverage).
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -54,8 +55,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   };
 }
 
-// Tier 1 fixture: has `import {` — extractTestCode matches the importMatch pattern
-// and returns the full content as testCode (non-null → tier 1 fires).
+// Real acceptance test content (has import + describe → extractTestCode matches).
 const REAL_ACCEPTANCE_TEST = `import { describe, test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -74,9 +74,7 @@ describe("test-feature - Acceptance Tests", () => {
 });
 `;
 
-// Tier 2 fixture: bare test() calls with no import{} and no describe() wrapper —
-// extractTestCode returns null (no importMatch, no describeMatch, no fence) but
-// hasLikelyTestContent returns true (has `test(`). Triggers backup + full-file preserve.
+// Bare test content recovered by verify Tier-2 (has test() calls, no import{}/describe()).
 const BARE_TIER2_TEST = `test("AC-1: const name declared", () => {
   expect(true).toBe(true); // real assertion placeholder
 });
@@ -86,8 +84,7 @@ test("AC-2: tests pass", () => {
 });
 `;
 
-// Tier 3 fixture: conversational text — extractTestCode returns null and
-// hasLikelyTestContent returns false. Triggers backup + skeleton fallback.
+// Non-test conversational output — verify hook returns null for this.
 const NON_TEST_CONTENT =
   "The acceptance tests have been written. Please verify that the implementation satisfies all the criteria.";
 
@@ -103,18 +100,13 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Shared mock builder for the "ACP agent wrote to disk, callOp returned null" path.
-// fileExists call-order contract:
-//   call 1 — fingerprint backup guard (shouldGenerate=true path); returns false so
-//             no pre-generation backup/delete fires for the test path.
-//   call 2 — 3-tier recovery guard inside the skeleton fallback; returns true so
-//             the recovery logic reads the agent-written file.
-// If a new fileExists(testPath) call is added upstream, update callCount accordingly.
+// Helper: wire deps so callOp returns the given testCode for acceptance-generate.
+// No disk-reading needed — recovery now lives inside callOp/verify (ADR-020 Wave 3).
 // ---------------------------------------------------------------------------
 
-function makeNullCallOpDeps(
+function makeCallOpDeps(
   writtenFiles: Array<{ path: string; content: string }>,
-  agentFileContent: string,
+  testCodeResult: string | null,
 ) {
   _acceptanceSetupDeps.readMeta = async () => null;
   _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
@@ -122,16 +114,11 @@ function makeNullCallOpDeps(
       const { criteria, storyId } = input as { criteria: string[]; storyId: string };
       return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
     }
-    if (op.name === "acceptance-generate") return { testCode: null };
+    if (op.name === "acceptance-generate") return { testCode: testCodeResult };
     throw new Error(`unexpected op: ${op.name}`);
   };
-  let callCount = 0;
-  _acceptanceSetupDeps.fileExists = async (p) => {
-    if (!p.endsWith(".nax-acceptance.test.ts")) return false;
-    callCount++;
-    return callCount > 1;
-  };
-  _acceptanceSetupDeps.readFile = async () => agentFileContent;
+  // fileExists used only by fingerprint pre-backup guard (returns false → no pre-gen backup).
+  _acceptanceSetupDeps.fileExists = async () => false;
   _acceptanceSetupDeps.writeFile = async (p, c) => {
     writtenFiles.push({ path: p, content: c });
   };
@@ -141,83 +128,65 @@ function makeNullCallOpDeps(
 }
 
 // ---------------------------------------------------------------------------
-// ACP agent-written file: 3-tier recovery
+// ACP agent-written file handling (ADR-020 Wave 3)
 // ---------------------------------------------------------------------------
 
-describe("acceptance-setup: ACP agent-written file preservation", () => {
-  test("tier 1 — extractTestCode finds code in agent file (import match); file written back, no backup", async () => {
+describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", () => {
+  test("callOp returns real test code (verify extracted it); written directly, no backup", async () => {
     const writtenFiles: Array<{ path: string; content: string }> = [];
-    makeNullCallOpDeps(writtenFiles, REAL_ACCEPTANCE_TEST);
+    // Simulate: verify hook extracted code from agent-written file and returned it via callOp.
+    makeCallOpDeps(writtenFiles, REAL_ACCEPTANCE_TEST);
 
     await acceptanceSetupStage.execute(makeCtx());
 
-    // Tier 1: extractTestCode(REAL_ACCEPTANCE_TEST) is non-null (matches import{...} pattern).
-    // testCode is set to the extracted content, which equals REAL_ACCEPTANCE_TEST trimmed.
-    // The file IS written back with the real content.
     const testFileWrites = writtenFiles.filter((f) => f.path.endsWith(".nax-acceptance.test.ts"));
     expect(testFileWrites).toHaveLength(1);
-    expect(testFileWrites[0]!.content).toContain("const name");
+    // Content is the real acceptance test, not a skeleton placeholder.
+    expect(testFileWrites[0]!.content).toContain("const name\\s*=");
+    expect(testFileWrites[0]!.content).not.toContain("expect(true).toBe(false)");
 
-    // No .llm-recovery.bak created at tier 1
+    // No .llm-recovery.bak — backup is not done at stage level.
     const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
     expect(backupWrites).toHaveLength(0);
   });
 
-  test("tier 2 — bare test file (no import/describe); backup created, full content preserved", async () => {
+  test("callOp returns bare test file (verify tier-2 recovery); written directly, no backup", async () => {
     const writtenFiles: Array<{ path: string; content: string }> = [];
-    makeNullCallOpDeps(writtenFiles, BARE_TIER2_TEST);
+    // Simulate: verify hook found bare test content (Tier-2) and returned it via callOp.
+    makeCallOpDeps(writtenFiles, BARE_TIER2_TEST);
 
     await acceptanceSetupStage.execute(makeCtx());
-
-    // Tier 2: extractTestCode(BARE_TIER2_TEST) returns null (no import{}, no describe()),
-    // but hasLikelyTestContent returns true (has `test(`).
-    // A .llm-recovery.bak backup is written first, then the full file is preserved.
-    const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
-    expect(backupWrites).toHaveLength(1);
-    expect(backupWrites[0]!.content).toBe(BARE_TIER2_TEST);
 
     const testFileWrites = writtenFiles.filter((f) => f.path.endsWith(".nax-acceptance.test.ts"));
     expect(testFileWrites).toHaveLength(1);
     expect(testFileWrites[0]!.content).toBe(BARE_TIER2_TEST);
+
+    // No backup at stage level — backup was stage-side behavior removed in ADR-020 Wave 3.
+    const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
+    expect(backupWrites).toHaveLength(0);
   });
 
-  test("tier 3 — non-test content; backup created, skeleton written", async () => {
+  test("callOp returns null (verify exhausted, non-test content); skeleton written, no backup", async () => {
     const writtenFiles: Array<{ path: string; content: string }> = [];
-    makeNullCallOpDeps(writtenFiles, NON_TEST_CONTENT);
+    // Simulate: verify hook found non-test content and returned null → callOp returns null.
+    makeCallOpDeps(writtenFiles, null);
+    // readFile would return NON_TEST_CONTENT but stage no longer reads disk after callOp.
+    void NON_TEST_CONTENT;
 
     await acceptanceSetupStage.execute(makeCtx());
-
-    // Tier 3: extractTestCode returns null, hasLikelyTestContent returns false.
-    // A .llm-recovery.bak backup is created, then the skeleton is written.
-    const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
-    expect(backupWrites).toHaveLength(1);
-    expect(backupWrites[0]!.content).toBe(NON_TEST_CONTENT);
 
     const testFileWrites = writtenFiles.filter((f) => f.path.endsWith(".nax-acceptance.test.ts"));
     expect(testFileWrites).toHaveLength(1);
     expect(testFileWrites[0]!.content).toContain("expect(true).toBe(false)");
+
+    // No backup at stage level.
+    const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
+    expect(backupWrites).toHaveLength(0);
   });
 
-  test("no file — file does not exist after callOp; skeleton written, no backup", async () => {
+  test("callOp returns null (file never written by agent); skeleton written, no backup", async () => {
     const writtenFiles: Array<{ path: string; content: string }> = [];
-
-    _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
-      if (op.name === "acceptance-refine") {
-        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
-        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
-      }
-      if (op.name === "acceptance-generate") return { testCode: null };
-      throw new Error(`unexpected op: ${op.name}`);
-    };
-    // Agent did not write the file — fileExists always returns false
-    _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.writeFile = async (p, c) => {
-      writtenFiles.push({ path: p, content: c });
-    };
-    _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    makeCallOpDeps(writtenFiles, null);
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -253,8 +222,7 @@ describe("acceptance-setup: ACP agent-written file preservation", () => {
 
     // testCode is set from callOp — written as-is, no skeleton substitution
     const testContentWrites = writtenContents.filter((c) => c.includes("describe(") || c.includes("test("));
-    expect(testContentWrites.some((c) => c.includes("const name"))).toBe(true);
+    expect(testContentWrites.some((c) => c.includes("const name\\s*="))).toBe(true);
     expect(testContentWrites.every((c) => !c.includes("expect(true).toBe(false)"))).toBe(true);
   });
 });
-
