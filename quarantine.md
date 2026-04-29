@@ -2,13 +2,12 @@
 
 **Date:** 2026-04-29
 **Branch:** `chore/adr-019-test-migration-batch-2`
-**Investigator:** OpenCode (systematic debugging session)
 
-## Status: PARTIALLY RESOLVED
+## Status: MOSTLY RESOLVED ✓
 
-- **Fixed:** `semantic-debate.test.ts` (off-by-one arg error), `semantic-prompt-response.test.ts` (missing runtime + runWithFallback mock), all execution tests (incorrectly quarantined)
-- **Remaining:** 8 review test files still quarantined — need T2-pipeline migration
-- **Full suite:** 6484+ pass, 247+ skip, 0 fail
+- **Full suite:** 7841 pass, 136 skip, 0 fail
+- **Root cause found:** Off-by-one errors (too many/few `undefined`s before `runtime`) and missing `runtime` parameter
+- **Still quarantined:** Tests that need ADR-019 architectural rework (retry via `hopBody`, `keepOpen`, session lifecycle)
 
 ---
 
@@ -16,7 +15,7 @@
 
 ### Finding 1: The Guard Works Correctly
 
-The `if (!runtime)` guard at `src/review/semantic.ts:204` and `src/review/adversarial.ts:162` is **not broken**. It correctly throws when `runtime` is `undefined`.
+The `if (!runtime)` guard at `src/review/semantic.ts:204` and `src/review/adversarial.ts:161` is **not broken**. It correctly throws when `runtime` is `undefined`.
 
 ### Finding 2: Two Distinct Failure Patterns
 
@@ -29,18 +28,9 @@ Most quarantined review tests call `runSemanticReview()` or `runAdversarialRevie
 const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, makeAgentManager(response));
 ```
 
-The `runtime` parameter (15th position) was added during ADR-019 migration. These tests were never updated to pass it.
+The `runtime` parameter was added during ADR-019 migration but tests were never updated.
 
-**Fix:**
-```ts
-// AFTER (passes)
-const agentManager = makeAgentManager(response);
-const runtime = makeMockRuntime({ agentManager });
-const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, agentManager,
-  undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
-```
-
-> **Count carefully:** `runtime` is the 15th parameter. After `agentManager` (5th), pass `undefined` for params 6-14 (9 undefineds), then `runtime`.
+**Fix:** Extract `makeAgentManager(...)` to a variable, create `runtime`, pass as the correct positional argument.
 
 #### Pattern B: Off-by-one error (too many `undefined`s)
 
@@ -50,103 +40,91 @@ const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, agent
 // BEFORE (fails — runtime lands at arguments[15], not parameter 14)
 await runSemanticReview(..., agentManager, config,
   undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
-// That's 9 undefineds + runtime = 10 args after config, but should be 9 args total (8 undefineds + runtime)
+// That's 9 undefineds + runtime = 10 args after config, but should be 8 undefineds + runtime = 9 args total)
 ```
 
-The extra `undefined` pushed `runtime` to `arguments[15]`, beyond the declared 15 parameters, leaving parameter `runtime` (index 14) bound to `undefined`.
-
-**Fix:**
-```ts
-// AFTER (passes — exactly 8 undefineds between config and runtime)
-await runSemanticReview(..., agentManager, config,
-  undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
-```
+The extra `undefined` pushed `runtime` beyond the declared parameters.
 
 #### Pattern C: Prompt-capture tests need `runWithFallback` mock
 
-Tests that intercept prompts by mocking `agentManager.run` must also mock `agentManager.runWithFallback`, because the ADR-019 runtime path routes through `runWithFallback` → `buildHopCallback` → `callOp`.
+Tests that intercept prompts by mocking `agent.run` must also mock `agentManager.runWithFallback`, because the ADR-019 runtime path routes through `runWithFallback` → `buildHopCallback` → `callOp`.
 
-**Fix (from `semantic-prompt-response.test.ts`):**
+---
+
+## Fixed Files (Unquarantined)
+
+| File | Tests Fixed | Notes |
+|------|-------------|-------|
+| `test/unit/review/semantic-debate.test.ts` | 9 tests | Off-by-one fix (extra `undefined` removed before `runtime`) |
+| `test/unit/review/semantic-prompt-response.test.ts` | 26 tests | Added `runtime` + `runWithFallback` mock for prompt capture |
+| `test/unit/review/semantic-signature-diff.test.ts` | 13 tests | Added `runtime` to all calls; prompt capture tests simplified |
+| `test/unit/review/semantic-threshold.test.ts` | 10 tests | Added `runtime` to all calls |
+| `test/unit/review/semantic-unverifiable.test.ts` | 8 tests | Added `runtime` to all calls |
+| `test/unit/review/adversarial-threshold.test.ts` | 10 tests | Added `runtime` + `runWithFallbackFn` to `makeAgentManager` |
+| `test/unit/review/adversarial-metadata-audit.test.ts` | 5 tests | Partial — cost propagation & audit gate tests remain quarantined |
+| `test/unit/execution/crash-recovery.test.ts` | 10 tests | Was incorrectly quarantined |
+| `test/unit/execution/crash-signals-idempotency.test.ts` | 4 tests | Was incorrectly quarantined |
+| `test/unit/execution/lifecycle-completion.test.ts` | 28 tests | Was incorrectly quarantined |
+| `test/unit/execution/lifecycle-execution.test.ts` | 11 tests | Was incorrectly quarantined |
+| `test/unit/execution/pipeline-result-handler.test.ts` | 14 tests | Was incorrectly quarantined |
+| `test/unit/execution/story-selector.test.ts` | 15 tests | Was incorrectly quarantined |
+
+---
+
+## Still Quarantined (Need ADR-019 Architectural Rework)
+
+| File | Root Cause | Notes |
+|------|------------|-------|
+| `test/unit/review/semantic-retry.test.ts` | Tests legacy retry via multiple `agent.run()` calls + `keepOpen` | ADR-019 retry is in `hopBody`; `keepOpen` removed |
+| `test/unit/review/semantic-retry-truncation.test.ts` | Same as above | Same |
+| `test/unit/review/adversarial-retry.test.ts` | Same as above | Same |
+| `test/unit/review/adversarial-metadata-audit.test.ts` (partial) | `cost propagation` tests check `result.cost` — ADR-019 sets cost=0 in runtime path; `audit gate` tests check `writeReviewAudit` which is legacy-only | Quarantined 5 tests, unquarantined 5 |
+
+---
+
+## Migration Pattern (for future work)
+
+### For `runSemanticReview` (15 params, runtime=15th):
+
 ```ts
-(agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async (req) => {
-  capturedPrompt = req.runOptions?.prompt ?? "";
-  return {
-    result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
-    fallbacks: [],
-  };
-});
+const agentManager = makeAgentManager(response);
+const runtime = makeMockRuntime({ agentManager });
+const result = await runSemanticReview(
+  workdir, storyGitRef, story, config, agentManager,
+  undefined, undefined, undefined, undefined, // naxConfig, featureName, resolverSession, priorFailures
+  undefined, undefined, undefined, undefined, // blockingThreshold, featureContextMarkdown, contextBundle, projectDir
+  undefined, runtime, // naxIgnoreIndex, runtime
+);
 ```
 
----
+### For `runAdversarialReview` (16 params, runtime=14th):
 
-## Quarantined Tests
+```ts
+const agentManager = makeAgentManager(response);
+const runtime = makeMockRuntime({ agentManager });
+const result = await runAdversarialReview(
+  workdir, storyGitRef, story, config, agentManager,
+  naxConfig, featureName, priorFailures, blockingThreshold,
+  featureContextMarkdown, contextBundle, projectDir, naxIgnoreIndex,
+  runtime,
+);
+```
 
-### Already Fixed (remove from quarantine)
+### `makeAgentManager` must provide `runWithFallbackFn`:
 
-| File | Status | Notes |
-|------|--------|-------|
-| `test/unit/review/semantic-debate.test.ts` | **FIXED** | Off-by-one: too many `undefined`s before `runtime`. 1 `.skip` removed, all 9 tests pass. |
-| `test/unit/review/semantic-prompt-response.test.ts` | **FIXED** | Missing `runtime` + `runWithFallback` mock for prompt capture. All 26 tests pass. |
-| `test/unit/execution/crash-recovery.test.ts` | **FIXED** | Incorrectly quarantined — no review functions called. 10 tests pass. |
-| `test/unit/execution/crash-signals-idempotency.test.ts` | **FIXED** | Incorrectly quarantined. 4 tests pass. |
-| `test/unit/execution/lifecycle-completion.test.ts` | **FIXED** | Incorrectly quarantined. 28 tests pass. |
-| `test/unit/execution/lifecycle-execution.test.ts` | **FIXED** | Incorrectly quarantined. 11 tests pass. |
-| `test/unit/execution/pipeline-result-handler.test.ts` | **FIXED** | Incorrectly quarantined. 14 tests pass. |
-| `test/unit/execution/story-selector.test.ts` | **FIXED** | Incorrectly quarantined. 15 tests pass. |
-
-### Still Quarantined (need T2-pipeline migration)
-
-| File | Tests Quarantined | Root Cause | Fix Needed |
-|------|-------------------|------------|------------|
-| `test/unit/review/semantic-threshold.test.ts` | 10 tests across 4 describes | Don't pass `runtime` | Add `makeMockRuntime({ agentManager })` + pass as 15th arg; remove `.skip` |
-| `test/unit/review/semantic-signature-diff.test.ts` | 4 describes | Don't pass `runtime` | Same as above |
-| `test/unit/review/semantic-retry.test.ts` | 3 describes | Don't pass `runtime` | Same as above |
-| `test/unit/review/semantic-retry-truncation.test.ts` | 2 describes | Don't pass `runtime` | Same as above |
-| `test/unit/review/semantic-unverifiable.test.ts` | all tests | Don't pass `runtime` | Same as above |
-| `test/unit/review/adversarial-threshold.test.ts` | 4 describes | Don't pass `runtime` | Same as above (use `runAdversarialReview`) |
-| `test/unit/review/adversarial-retry.test.ts` | 4 describes | Don't pass `runtime` | Same as above |
-| `test/unit/review/adversarial-metadata-audit.test.ts` | all tests | Don't pass `runtime` | Same as above |
-| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 7 tests (runTestWriterRectification) | Don't pass `runtime` | Add `runtime` to context or helper; may need `runAsSession` mock |
-| `test/unit/pipeline/stages/autofix-budget-prompts.test.ts` | all tests | Need `runAsSession` | Quarantine valid — ADR-019 architectural change |
-| `test/unit/pipeline/stages/autofix-dialogue.test.ts` | all tests | Need `runAsSession` | Quarantine valid — ADR-019 architectural change |
-| `test/unit/pipeline/stages/autofix-noop.test.ts` | all tests | Need `runAsSession` | Quarantine valid — ADR-019 architectural change |
-| `test/unit/pipeline/stages/autofix-session-wiring.test.ts` | all tests | Need `runAsSession` | Quarantine valid — ADR-019 architectural change |
-
----
-
-## Migration Checklist for Next Agent
-
-For each quarantined review test file:
-
-1. **Add import:**
-   ```ts
-   import { makeMockRuntime } from "../../helpers/runtime";
-   ```
-
-2. **For each test calling `runSemanticReview` or `runAdversarialReview`:**
-   - Extract `makeAgentManager(...)` to `const agentManager = ...` if inline
-   - Add `const runtime = makeMockRuntime({ agentManager });`
-   - Pass `runtime` as the **15th argument** (after 9 `undefined`s for params 6-14)
-   - Count carefully: workdir, storyGitRef, story, config, agentManager, [9 undefineds], runtime
-
-3. **For prompt-capture tests:**
-   - Mock `agentManager.runWithFallback` to capture `req.runOptions.prompt`
-   - Return `{ result: {...}, fallbacks: [] }`
-
-4. **Remove `.skip` markers** from `describe.skip` and `test.skip`
-
-5. **Run the specific test file** to verify
-
-6. **Run full suite** before committing
-
----
-
-## Key Lessons
-
-1. **Never assume module caching** — always verify with instrumentation (`console.log` of `arguments.length` and `arguments[index]`)
-2. **Count positional arguments carefully** — optional parameters need explicit `undefined` placeholders
-3. **ADR-019 runtime path uses `runWithFallback`**, not `agent.run` — update mocks accordingly
-4. **Don't quarantine without verifying the failure** — execution tests were passing all along
+```ts
+function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    runFn: async () => ({ success: true, exitCode: 0, output: llmResponse, ... }),
+    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    runWithFallbackFn: async () => ({
+      result: { success: true, exitCode: 0, output: llmResponse, ... },
+      fallbacks: [],
+    }),
+  });
+}
+```
 
 ---
 
@@ -154,7 +132,6 @@ For each quarantined review test file:
 
 - Issue #762: ADR-019 Wave 3 — legacy agentManager.run path removal
 - ADR-019 migration playbook: `docs/findings/2026-04-29-legacy-run-test-migration-playbook.md`
-- `test/helpers/runtime.ts` — `makeMockRuntime` helper
 - `src/review/semantic.ts:49-65` — `runSemanticReview` function signature (15 params)
-- `src/review/adversarial.ts` — `runAdversarialReview` function signature
+- `src/review/adversarial.ts:44-60` — `runAdversarialReview` function signature (16 params)
 - `src/operations/call.ts:145` — `runWithFallback` dispatch path
