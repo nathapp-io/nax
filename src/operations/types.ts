@@ -55,6 +55,41 @@ interface OperationBase<I, O, C> {
    * Migration Anti-Patterns AP-3.
    */
   readonly parse: (output: string, input: I, ctx: BuildContext<C>) => O;
+  /**
+   * Optional operation-specific timeout resolver in milliseconds.
+   * callOp uses this as the single timeout source and converts to seconds
+   * only at runOptions boundaries for run-kind operations.
+   */
+  readonly timeoutMs?: (input: I, ctx: BuildContext<C>) => number | undefined;
+  /**
+   * Optional. Validate parsed output against on-disk artifacts. Returning
+   * non-null wins; returning null means "parsed output insufficient — fall
+   * through to recover (if defined) or return the original parsed value".
+   *
+   * Use when the agent's contract is "stdout has the answer, but disk has
+   * the canonical artifact" (e.g. ACP test-writer: stdout is conversational,
+   * disk has the test file). See ADR-020 §D4.
+   */
+  readonly verify?: (parsed: O, input: I, ctx: VerifyContext<C>) => Promise<O | null>;
+  /**
+   * Optional. Recover output from on-disk artifacts when parse + verify
+   * both produced "no useful result." Last resort before the caller sees
+   * the null/empty value. See ADR-020 §D4.
+   */
+  readonly recover?: (input: I, ctx: VerifyContext<C>) => Promise<O | null>;
+}
+
+/**
+ * Read-only context for verify/recover hooks. Mirrors BuildContext<C>'s narrow
+ * surface plus filesystem reads. No agent calls, no writes, no runtime
+ * mutation — both hooks operate on disk artifacts the agent may have
+ * produced as side effects.
+ *
+ * @see docs/adr/ADR-020-dispatch-boundary-ssot.md §D4
+ */
+export interface VerifyContext<C> extends BuildContext<C> {
+  readonly readFile: (path: string) => Promise<string | null>;
+  readonly fileExists: (path: string) => Promise<boolean>;
 }
 
 /**

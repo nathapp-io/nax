@@ -12,6 +12,7 @@ import type { UserStory } from "../../../src/prd";
 import { SessionManager } from "../../../src/session/manager";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
 import { makeNaxConfig } from "../../helpers";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 function makeStory(): UserStory {
   return {
@@ -95,6 +96,7 @@ describe("runTddSession — tokenUsage (#590)", () => {
     const outcome = await runTddSession(
       "implementer",
       agent as never,
+      fakeAgentManager(agent as never),
       makeStory(),
       makeConfig(),
       "/tmp/fake",
@@ -115,6 +117,7 @@ describe("runTddSession — tokenUsage (#590)", () => {
     const outcome = await runTddSession(
       "verifier",
       agent as never,
+      fakeAgentManager(agent as never),
       makeStory(),
       makeConfig(),
       "/tmp/fake",
@@ -136,6 +139,7 @@ describe("runTddSession — state transitions via runInSession (#589)", () => {
     await runTddSession(
       "implementer",
       agent as never,
+      fakeAgentManager(agent as never),
       makeStory(),
       makeConfig(),
       "/tmp/fake",
@@ -164,6 +168,7 @@ describe("runTddSession — state transitions via runInSession (#589)", () => {
     await runTddSession(
       "implementer",
       agent as never,
+      fakeAgentManager(agent as never),
       makeStory(),
       makeConfig(),
       "/tmp/fake",

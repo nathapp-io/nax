@@ -13,8 +13,18 @@ export type {
 } from "./prompt-auditor";
 export type { PackageView, PackageRegistry } from "./packages";
 export { createPackageRegistry } from "./packages";
+export type { DispatchContext } from "./dispatch-context";
 export type { AgentMiddleware, MiddlewareContext } from "./agent-middleware";
 export { MiddlewareChain } from "./agent-middleware";
+export type {
+  IDispatchEventBus,
+  DispatchEvent,
+  SessionTurnDispatchEvent,
+  CompleteDispatchEvent,
+  DispatchErrorEvent,
+  OperationCompletedEvent,
+} from "./dispatch-events";
+export { DispatchEventBus } from "./dispatch-events";
 
 import { join } from "node:path";
 import type { IAgentManager } from "../agents";
@@ -31,8 +41,15 @@ import { SessionManager } from "../session";
 import { MiddlewareChain } from "./agent-middleware";
 import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
 import type { ICostAggregator } from "./cost-aggregator";
+import { DispatchEventBus } from "./dispatch-events";
+import type { IDispatchEventBus } from "./dispatch-events";
 import { createAgentManager } from "./internal/agent-manager-factory";
-import { auditMiddleware, cancellationMiddleware, costMiddleware, loggingMiddleware } from "./middleware";
+import {
+  attachAuditSubscriber,
+  attachCostSubscriber,
+  attachLoggingSubscriber,
+  cancellationMiddleware,
+} from "./middleware";
 import { createPackageRegistry } from "./packages";
 import type { PackageRegistry } from "./packages";
 import { PromptAuditor, createNoOpPromptAuditor } from "./prompt-auditor";
@@ -48,9 +65,18 @@ export interface NaxRuntime {
   readonly sessionManager: ISessionManager;
   readonly costAggregator: ICostAggregator;
   readonly promptAuditor: IPromptAuditor;
+  readonly dispatchEvents: IDispatchEventBus;
   readonly packages: PackageRegistry;
   readonly logger: Logger;
   readonly signal: AbortSignal;
+  /**
+   * Optional PID registration callback used by complete-path adapter calls
+   * (plan, decompose, classify-route, acceptance-generate, debate-*) so any
+   * acpx subprocess they spawn lands on the run's PidRegistry. Without it
+   * Ctrl+C mid-call leaves orphan acpx subprocesses (and their queue-owner
+   * children) past run teardown.
+   */
+  readonly onPidSpawned?: (pid: number) => void;
   close(): Promise<void>;
 }
 
@@ -66,6 +92,13 @@ export interface CreateRuntimeOptions {
    * promptAuditor is provided.
    */
   featureName?: string;
+  /**
+   * PID registration callback. Threaded into complete-path adapter calls via
+   * `callOp` so plan/decompose/etc. acpx invocations are tracked by the run's
+   * PidRegistry. Run-path callers (execution stage, cli/plan) wire their own
+   * callback directly into `AgentRunOptions` and do not depend on this field.
+   */
+  onPidSpawned?: (pid: number) => void;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
@@ -77,6 +110,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   }
 
   const configLoader = createConfigLoader(config);
+  const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
 
   const costDir = join(workdir, ".nax", "cost");
   const costAggregator = opts?.costAggregator ?? new CostAggregator(runId, costDir);
@@ -99,18 +133,17 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     promptAuditor = createNoOpPromptAuditor();
   }
 
+  const defaultAgent = config.agent?.default ?? "claude";
+
   let agentManager: IAgentManager | undefined;
-  const middleware = MiddlewareChain.from([
-    cancellationMiddleware(),
-    loggingMiddleware(),
-    costMiddleware(costAggregator, runId),
-    auditMiddleware(promptAuditor, runId),
-  ]);
+  const middleware = MiddlewareChain.from([cancellationMiddleware()]);
   const sessionManager = opts?.sessionManager ?? new SessionManager();
   if (sessionManager instanceof SessionManager) {
     sessionManager.configureRuntime({
       config,
       getAdapter: (name) => agentManager?.getAgent(name),
+      dispatchEvents,
+      defaultAgent,
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {
@@ -118,6 +151,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     runId,
     sendPrompt: (handle, prompt, sendOpts) => sessionManager.sendPrompt(handle, prompt, sendOpts),
     runHop: createSessionRunHop(sessionManager),
+    dispatchEvents,
   };
   if (opts?.agentManager instanceof AgentManager) {
     opts.agentManager.configureRuntime(agentManagerOpts);
@@ -125,6 +159,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   } else {
     agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
   }
+
+  const offLogging = attachLoggingSubscriber(dispatchEvents, runId);
+  const offCost = attachCostSubscriber(dispatchEvents, costAggregator, runId);
+  const offAudit = attachAuditSubscriber(dispatchEvents, promptAuditor, runId);
+
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
 
@@ -139,15 +178,20 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     sessionManager,
     costAggregator,
     promptAuditor,
+    dispatchEvents,
     packages,
     logger,
     get signal() {
       return controller.signal;
     },
+    onPidSpawned: opts?.onPidSpawned,
     async close() {
       if (closed) return;
       closed = true;
       controller.abort();
+      offLogging();
+      offCost();
+      offAudit();
       const results = await Promise.allSettled([promptAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {

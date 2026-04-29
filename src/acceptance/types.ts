@@ -4,11 +4,11 @@
  * Types for generating acceptance tests from spec.md acceptance criteria.
  */
 
-import type { IAgentManager } from "../agents/manager-types";
 import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
+import type { DispatchContext } from "../runtime/dispatch-context";
 
 /**
- * Return value of refineAcceptanceCriteria — criteria plus cost metadata.
+ * Return value of acceptance refinement — criteria plus cost metadata.
  */
 export interface RefineResult {
   criteria: RefinedCriterion[];
@@ -30,9 +30,9 @@ export interface RefinedCriterion {
 }
 
 /**
- * Context passed to refineAcceptanceCriteria.
+ * Context passed to acceptance refinement.
  */
-export interface RefinementContext {
+export interface RefinementContext extends DispatchContext {
   /** Story ID for attribution on each RefinedCriterion */
   storyId: string;
   /** Feature name for ACP session naming */
@@ -51,8 +51,6 @@ export interface RefinementContext {
   storyTitle?: string;
   /** Story description — additional context so the refiner avoids guessing function names */
   storyDescription?: string;
-  /** AgentManager for completeWithFallback — when provided, replaces direct adapter.complete() */
-  agentManager?: IAgentManager;
 }
 
 /**
@@ -91,40 +89,6 @@ export interface AcceptanceCriterion {
  * };
  * ```
  */
-/**
- * Options for generating acceptance tests from PRD stories and refined criteria.
- */
-export interface GenerateFromPRDOptions {
-  /** Feature name for context */
-  featureName: string;
-  /** Working directory for context scanning */
-  workdir: string;
-  /** Feature directory where acceptance-refined.json is written */
-  featureDir: string;
-  /** Codebase context (file tree, dependencies, test patterns) */
-  codebaseContext: string;
-  /** Model tier to use for test generation */
-  modelTier: ModelTier;
-  /** Resolved model definition */
-  modelDef: ModelDef;
-  /** Global config for quality settings */
-  config: NaxConfig;
-  /** Test strategy to use for template selection (default: 'unit') */
-  testStrategy?: AcceptanceTestStrategy;
-  /** Test framework for component/snapshot strategies (e.g. 'ink-testing-library', 'react') */
-  testFramework?: string;
-  /** AgentManager for completeWithFallback — when provided, replaces direct createManager().complete() */
-  agentManager?: IAgentManager;
-  /** Target language for test generation (e.g. 'go', 'python', 'rust') — defaults to TypeScript */
-  language?: string;
-  /** Implementation context — files to include in the prompt so the generator writes tests against the real API */
-  implementationContext?: Array<{ path: string; content: string }>;
-  /** Previous failure message — included in prompt to help generator avoid the same mistake */
-  previousFailure?: string;
-  /** Override the target test file path in the generator prompt — used by hardening pass for suggested test files */
-  targetTestFile?: string;
-}
-
 export interface GenerateAcceptanceTestsOptions {
   /** Full spec.md content */
   specContent: string;

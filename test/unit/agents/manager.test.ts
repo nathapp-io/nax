@@ -256,22 +256,14 @@ describe("AgentManager — middleware envelope", () => {
     expect(typeof capturedPerms!["mode"]).toBe("string");
   });
 
-  test("middleware onError() is called when adapter throws", async () => {
-    const errors: unknown[] = [];
-    const mw: AgentMiddleware = { name: "spy", onError: async (_ctx, err) => { errors.push(err); } };
-    const manager = makeMiddlewareManager(mw);
+  test("runAs() re-throws adapter errors (middleware onError no longer invoked — ADR-020 Wave 1)", async () => {
+    const manager = makeMiddlewareManager();
     await expect(
       manager.runAs("nonexistent-agent-xyz", { runOptions: { prompt: "test" } as never })
     ).rejects.toThrow();
-    expect(errors.length).toBeGreaterThan(0);
   });
 
-  test("after() context reflects fallback agent name and prompt after agent swap", async () => {
-    const afterCalls: MiddlewareContext[] = [];
-    const mw: AgentMiddleware = {
-      name: "spy",
-      after: async (ctx) => { afterCalls.push(ctx); },
-    };
+  test("fallback still works after agent swap (agentFallbacks in result)", async () => {
     const config = NaxConfigSchema.parse({
       agent: {
         default: "claude",
@@ -279,17 +271,15 @@ describe("AgentManager — middleware envelope", () => {
       },
     }) as NaxConfig;
     const manager = new AgentManager(config, undefined, {
-      middleware: MiddlewareChain.from([mw]),
       runId: "r-fallback-test",
     });
 
     let callCount = 0;
-    await manager.runAs("claude", {
+    const result = await manager.runAs("claude", {
       runOptions: { prompt: "original-prompt", workdir: "/tmp", modelTier: "fast", modelDef: { provider: "anthropic", model: "m", env: {} }, timeoutSeconds: 10, config } as never,
       executeHop: async (_agentName, _bundle, _failure) => {
         callCount += 1;
         if (callCount === 1) {
-          // Primary hop — claude fails with availability failure; return a bundle so shouldSwap allows the swap
           return {
             result: {
               success: false, exitCode: 1, output: "unavailable", rateLimited: false, durationMs: 10, estimatedCostUsd: 0,
@@ -299,7 +289,6 @@ describe("AgentManager — middleware envelope", () => {
             prompt: "original-prompt",
           };
         }
-        // Fallback hop — codex succeeds
         return {
           result: { success: true, exitCode: 0, output: "fallback-done", rateLimited: false, durationMs: 20, estimatedCostUsd: 0.001 },
           bundle: undefined,
@@ -308,23 +297,22 @@ describe("AgentManager — middleware envelope", () => {
       },
     });
 
-    expect(afterCalls).toHaveLength(1);
-    expect(afterCalls[0].agentName).toBe("codex");
-    expect(afterCalls[0].prompt).toBe("swap-handoff-prompt");
+    expect(result.output).toBe("fallback-done");
+    expect(result.agentFallbacks).toBeDefined();
+    expect(result.agentFallbacks?.length).toBeGreaterThan(0);
   });
 
-  test("completeAs() threads signal into middleware context", async () => {
-    let capturedSignal: AbortSignal | undefined;
+  test("completeAs() does not call middleware (ADR-020 Wave 1 — uses dispatch events)", async () => {
+    const calls: string[] = [];
     const mw: AgentMiddleware = {
       name: "spy",
-      before: async (ctx: MiddlewareContext) => { capturedSignal = ctx.signal; },
+      before: async () => { calls.push("before"); },
     };
     const manager = makeMiddlewareManager(mw);
-    const controller = new AbortController();
     try {
-      await manager.completeAs("claude", "prompt", { signal: controller.signal } as never);
+      await manager.completeAs("claude", "prompt", {} as never);
     } catch {}
-    expect(capturedSignal).toBe(controller.signal);
+    expect(calls).toHaveLength(0);
   });
 
   test("completeAs() middleware context has undefined signal when not provided", async () => {

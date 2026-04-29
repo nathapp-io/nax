@@ -13,9 +13,10 @@ import type { NaxConfig } from "./types";
 
 export const reviewConfigSelector = pickSelector("review", "review", "debate");
 export const planConfigSelector = pickSelector("plan", "plan", "debate");
-export const decomposeConfigSelector = pickSelector("decompose", "agent");
+export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
 export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance");
+export const acceptanceFixConfigSelector = pickSelector("acceptance-fix", "acceptance", "execution");
 export const tddConfigSelector = pickSelector("tdd", "tdd", "execution");
 export const debateConfigSelector = pickSelector("debate", "debate");
 export const routingConfigSelector = pickSelector("routing", "routing");

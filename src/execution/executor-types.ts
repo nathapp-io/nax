@@ -13,6 +13,7 @@ import type { RoutingResult } from "../pipeline/types";
 import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import type { ISessionManager } from "../session";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import type { StoryBatch } from "./batching";
@@ -20,7 +21,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
-export interface SequentialExecutionContext {
+export interface SequentialExecutionContext extends DispatchContext {
   prdPath: string;
   workdir: string;
   config: NaxConfig;
@@ -33,12 +34,6 @@ export interface SequentialExecutionContext {
   eventEmitter?: PipelineEventEmitter;
   statusWriter: StatusWriter;
   logFilePath?: string;
-  /** Run-level SessionManager shared across all iterations in this run. */
-  sessionManager?: ISessionManager;
-  /** Per-run AgentManager (ADR-012). Set by runner.ts after registry creation. */
-  agentManager?: import("../agents").IAgentManager;
-  /** NaxRuntime created in setup phase — threaded into preRunCtx for callOp support. */
-  runtime?: import("../runtime").NaxRuntime;
   /**
    * Per-run plugin-provider cache (Finding 5 / issue #473).
    * Threaded from runner.ts into IterationRunner so the same instances are
@@ -53,11 +48,6 @@ export interface SequentialExecutionContext {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — register child PIDs so they can be killed on SIGTERM. */
   pidRegistry?: PidRegistry;
-  /**
-   * Shutdown abort signal (Issue 5 fix). Fires on first fatal signal; threaded
-   * into PipelineContext.abortSignal → AgentRunOptions.abortSignal.
-   */
-  abortSignal?: AbortSignal;
   /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
   parallelCount?: number;
   /** Run-scoped pre-resolved .naxignore index (refreshed when package set changes). */

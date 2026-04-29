@@ -241,6 +241,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       agentManager,
       pluginProviderCache,
       runtime,
+      abortSignal: shutdownController.signal,
     });
 
     const { durationMs, acceptancePassed } = completionResult;

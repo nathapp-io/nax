@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["test/unit/runtime/dispatch-context.test.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["bun-types"]
+  }
+}

@@ -20,6 +20,7 @@ import type { PipelineEventEmitter } from "../../pipeline/events";
 import type { AgentGetFn, PipelineContext } from "../../pipeline/types";
 import type { PluginRegistry } from "../../plugins";
 import type { PRD } from "../../prd/types";
+import type { DispatchContext } from "../../runtime/dispatch-context";
 import type { NaxIgnoreIndex } from "../../utils/path-filters";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
@@ -40,7 +41,7 @@ export {
   _regenerateDeps,
 } from "./acceptance-helpers";
 
-export interface AcceptanceLoopContext {
+export interface AcceptanceLoopContext extends DispatchContext {
   config: NaxConfig;
   prd: PRD;
   prdPath: string;
@@ -57,10 +58,6 @@ export interface AcceptanceLoopContext {
   statusWriter: StatusWriter;
   /** Protocol-aware agent resolver — passed from registry at run start */
   agentGetFn?: AgentGetFn;
-  /** Per-run AgentManager — used for diagnosis and fix execution */
-  agentManager?: import("../../agents").IAgentManager;
-  /** NaxRuntime — used by callOp in acceptance fix/diagnose operations */
-  runtime?: import("../../runtime").NaxRuntime;
   /** Pre-resolved .naxignore matcher cache shared across run stages */
   naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
@@ -143,8 +140,10 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       plugins: ctx.pluginRegistry,
       agentGetFn: ctx.agentGetFn,
       agentManager: ctx.agentManager,
+      sessionManager: ctx.sessionManager,
       acceptanceTestPaths: ctx.acceptanceTestPaths,
       runtime: ctx.runtime,
+      abortSignal: ctx.abortSignal,
     };
 
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");

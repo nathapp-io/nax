@@ -11,6 +11,7 @@ import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { AgentResult } from "../agents/types";
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
+import type { DispatchContext } from "../runtime/dispatch-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared types
@@ -49,7 +50,7 @@ export interface StoryRunOutcome {
  * Execution context passed to per-story runners. Kept intentionally
  * narrow — runners should not depend on the full PipelineContext.
  */
-export interface SessionRunnerContext {
+export interface SessionRunnerContext extends DispatchContext {
   /**
    * Pre-created session descriptor id (CREATED state) when session bookkeeping
    * is active. Optional for backward compatibility with pipeline tests that
@@ -57,10 +58,6 @@ export interface SessionRunnerContext {
    * back to a direct runner call and skips lifecycle bookkeeping.
    */
   sessionId?: string;
-  /** Session manager — owns state transitions, handle binding, persistence. Paired with sessionId. */
-  sessionManager?: import("./types").ISessionManager;
-  /** Agent manager for fallback-on-availability-failure. Optional for direct-adapter runners. */
-  agentManager?: IAgentManager;
   /** Pre-resolved primary agent adapter. */
   agent: AgentAdapter;
   /** Default agent name (for model resolution across hops). */

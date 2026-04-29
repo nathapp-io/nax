@@ -24,6 +24,7 @@ export const planOp: CompleteOperation<PlanOpInput, PRD, PlanConfig> = {
   stage: "plan",
   jsonMode: false,
   config: planConfigSelector,
+  timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
   build(input, _ctx) {
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(
       input.specContent,

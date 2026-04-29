@@ -6,6 +6,7 @@ import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
@@ -146,6 +147,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -185,6 +187,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: configNoRectification,
       workdir: tmpDir,
@@ -205,6 +208,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -229,6 +233,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -252,6 +257,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -281,6 +287,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -311,6 +318,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -333,6 +341,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -360,6 +369,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -385,6 +395,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     ]);
     await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,
@@ -421,6 +432,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: configNoRectification,
       workdir: tmpDir,
@@ -448,6 +460,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
     const result = await runThreeSessionTdd({
       agent,
+      agentManager: fakeAgentManager(agent),
       story,
       config: DEFAULT_CONFIG,
       workdir: tmpDir,

@@ -5,20 +5,18 @@
  * Passing criteria are promoted from suggestedCriteria → acceptanceCriteria.
  */
 
-import { resolveDefaultAgent } from "../agents";
-import type { IAgentManager } from "../agents";
 import type { AgentAdapter } from "../agents/types";
-import { type ModelDef, resolveConfiguredModel } from "../config";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
+import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "../operations";
+import type { CallContext } from "../operations/types";
 import { savePRD } from "../prd";
 import type { PRD } from "../prd/types";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
-import { buildAcceptanceRunCommand } from "./generator";
-import { generateFromPRD } from "./generator";
-import { refineAcceptanceCriteria } from "./refinement";
+import { buildAcceptanceRunCommand, generateSkeletonTests } from "./generator";
 import { resolveSuggestedPackageFeatureTestPath } from "./test-path";
-import type { RefinedCriterion } from "./types";
+import type { AcceptanceCriterion, RefinedCriterion } from "./types";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -27,25 +25,21 @@ export interface HardeningResult {
   promoted: string[];
   /** Suggested ACs that failed — discarded */
   discarded: string[];
-  /** Total cost of the hardening pass (USD) */
-  costUsd: number;
 }
 
-export interface HardeningContext {
+export interface HardeningContext extends DispatchContext {
   prd: PRD;
   prdPath: string;
   featureDir: string;
   workdir: string;
   config: NaxConfig;
   agentGetFn?: (name: string) => AgentAdapter | undefined;
-  agentManager?: IAgentManager;
 }
 
 // ─── Injectable deps ────────────────────────────────────────────────────────
 
 export const _hardeningDeps = {
-  refine: refineAcceptanceCriteria,
-  generate: generateFromPRD,
+  callOp: _callOp as typeof _callOp,
   savePRD: savePRD,
   spawn: Bun.spawn as typeof Bun.spawn,
   writeFile: async (p: string, c: string) => {
@@ -57,7 +51,7 @@ export const _hardeningDeps = {
 
 export async function runHardeningPass(ctx: HardeningContext): Promise<HardeningResult> {
   const logger = getSafeLogger();
-  const result: HardeningResult = { promoted: [], discarded: [], costUsd: 0 };
+  const result: HardeningResult = { promoted: [], discarded: [] };
 
   // 1. Collect stories with suggestedCriteria
   const storiesWithSuggested = ctx.prd.userStories.filter((s) => s.suggestedCriteria && s.suggestedCriteria.length > 0);
@@ -70,22 +64,28 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
   });
 
   try {
-    // 2. Refine suggested criteria
+    // 2. Refine suggested criteria via acceptanceRefineOp
     const allRefined: RefinedCriterion[] = [];
     for (const story of storiesWithSuggested) {
       const criteria = story.suggestedCriteria ?? [];
-      const refineResult = await _hardeningDeps.refine(criteria, {
+      const callCtx: CallContext = {
+        runtime: ctx.runtime,
+        packageView: ctx.runtime.packages.resolve(ctx.workdir),
+        packageDir: ctx.workdir,
         storyId: story.id,
         featureName: ctx.prd.feature,
-        workdir: ctx.workdir,
+        agentName: ctx.agentManager.getDefault(),
+      };
+      const refined = await _hardeningDeps.callOp(callCtx, acceptanceRefineOp, {
+        criteria,
         codebaseContext: "",
-        config: ctx.config,
+        storyId: story.id,
+        testStrategy: ctx.config.acceptance?.testStrategy,
+        testFramework: ctx.config.acceptance?.testFramework,
         storyTitle: story.title,
         storyDescription: story.description,
-        agentManager: ctx.agentManager,
       });
-      allRefined.push(...refineResult.criteria);
-      result.costUsd += refineResult.costUsd;
+      allRefined.push(...refined);
     }
 
     // 3. Resolve test path
@@ -97,43 +97,49 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       language,
     );
 
-    // 4. Resolve model
-    let modelDef: ModelDef;
-    let modelTier = "fast";
-    try {
-      const resolvedModel = resolveConfiguredModel(
-        ctx.config.models,
-        resolveDefaultAgent(ctx.config),
-        ctx.config.acceptance?.model ?? "fast",
-        resolveDefaultAgent(ctx.config),
-      );
-      modelDef = resolvedModel.modelDef;
-      modelTier = resolvedModel.modelTier ?? "fast";
-    } catch {
-      modelDef = { provider: "anthropic", model: "claude-haiku-4-5-20251001" };
-    }
+    // 4. Generate test file via acceptanceGenerateOp
+    const criteriaList = allRefined.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
+    const frameworkOverrideLine = ctx.config.acceptance?.testFramework
+      ? `\n[FRAMEWORK OVERRIDE: Use ${ctx.config.acceptance.testFramework} as the test framework regardless of what you detect.]`
+      : "";
 
-    // 5. Generate test file
-    const genResult = await _hardeningDeps.generate(storiesWithSuggested, allRefined, {
+    const genCallCtx: CallContext = {
+      runtime: ctx.runtime,
+      packageView: ctx.runtime.packages.resolve(ctx.workdir),
+      packageDir: ctx.workdir,
+      storyId: storiesWithSuggested[0]?.id,
       featureName: ctx.prd.feature,
-      workdir: ctx.workdir,
-      featureDir: ctx.featureDir,
-      codebaseContext: "",
-      modelTier,
-      modelDef,
-      config: ctx.config,
-      language,
-      targetTestFile: suggestedTestPath,
-      agentManager: ctx.agentManager,
+      agentName: ctx.agentManager.getDefault(),
+    };
+    const genResult = await _hardeningDeps.callOp(genCallCtx, acceptanceGenerateOp, {
+      featureName: ctx.prd.feature,
+      criteriaList,
+      frameworkOverrideLine,
+      targetTestFilePath: suggestedTestPath,
     });
-    result.costUsd += genResult.costUsd ?? 0;
 
-    // 6. Write test file if returned as code (ACP writes directly)
-    if (genResult.testCode) {
-      await _hardeningDeps.writeFile(suggestedTestPath, genResult.testCode);
+    // 5. Write test file if returned as code (ACP writes directly)
+    let testCode = genResult.testCode;
+    if (!testCode) {
+      // Fall back to skeleton tests when the op returns no code
+      const skeletonCriteria: AcceptanceCriterion[] = allRefined.map((c, i) => ({
+        id: `AC-${i + 1}`,
+        text: c.refined,
+        lineNumber: i + 1,
+      }));
+      testCode = generateSkeletonTests(
+        ctx.prd.feature,
+        skeletonCriteria,
+        ctx.config.acceptance?.testFramework,
+        language,
+      );
+      logger?.warn("acceptance", "Hardening generate op returned no test code — using skeleton", {
+        storyId: storiesWithSuggested[0].id,
+      });
     }
+    await _hardeningDeps.writeFile(suggestedTestPath, testCode);
 
-    // 7. Run tests
+    // 6. Run tests
     const testCmd = buildAcceptanceRunCommand(
       suggestedTestPath,
       ctx.config.project?.testFramework,
@@ -152,13 +158,13 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     ]);
     const output = `${stdout}\n${stderr}`;
 
-    // 8. Parse results and promote/discard
+    // 7. Parse results and promote/discard
     const failedACs = parseTestFailures(output);
     const failedSet = new Set(failedACs.map((ac) => ac.toUpperCase()));
 
     // Group allRefined by storyId so the mapping loop is driven by the refined
     // criteria (not the original suggestedCriteria). This prevents AC index drift
-    // if refineAcceptanceCriteria ever changes the criterion count (#336 gap 4).
+    // if acceptanceRefineOp ever changes the criterion count (#336 gap 4).
     const refinedByStory = new Map<string, RefinedCriterion[]>();
     for (const r of allRefined) {
       const list = refinedByStory.get(r.storyId) ?? [];
@@ -196,7 +202,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       story.suggestedCriteria = toDiscard.length > 0 ? toDiscard : undefined;
     }
 
-    // 9. Save PRD with promotions
+    // 8. Save PRD with promotions
     if (result.promoted.length > 0) {
       await _hardeningDeps.savePRD(ctx.prd, ctx.prdPath);
     }
@@ -205,7 +211,6 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       storyId: storiesWithSuggested[0].id,
       promoted: result.promoted.length,
       discarded: result.discarded.length,
-      costUsd: result.costUsd,
     });
   } catch (err) {
     logger?.warn("acceptance", "Hardening pass failed (non-blocking)", {

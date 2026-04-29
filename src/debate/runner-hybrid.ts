@@ -7,6 +7,8 @@
 import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
+import type { DispatchContext } from "../runtime/dispatch-context";
+import type { SessionRole } from "../runtime/session-role";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
 import { runStatefulTurn } from "./runner-stateful";
@@ -30,7 +32,7 @@ export interface RebuttalLoopResult {
   costUsd: number;
 }
 
-export interface HybridCtx {
+export interface HybridCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
@@ -38,11 +40,8 @@ export interface HybridCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
-  readonly agentManager?: IAgentManager;
-  readonly sessionManager?: import("../session/types").ISessionManager;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
-  readonly signal?: AbortSignal;
 }
 
 /**
@@ -54,7 +53,7 @@ export async function runRebuttalLoop(
   ctx: HybridCtx,
   proposals: SuccessfulProposal[],
   builder: DebatePromptBuilder,
-  sessionRolePrefix: string,
+  sessionRolePrefix: `debate-${string}`,
 ): Promise<RebuttalLoopResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
@@ -73,7 +72,7 @@ export async function runRebuttalLoop(
   const internalHandles: Array<import("../agents/types").SessionHandle | null> = [];
   for (let i = 0; i < proposals.length; i++) {
     const proposal = proposals[i];
-    const sessionRole = `${sessionRolePrefix}-${i}`;
+    const sessionRole = `${sessionRolePrefix}-${i}` as SessionRole;
     if (proposal.handle) {
       internalHandles.push(null); // Caller owns this handle; we do not close it
     } else if (sessionManager) {
@@ -94,7 +93,7 @@ export async function runRebuttalLoop(
         timeoutSeconds: ctx.timeoutSeconds,
         featureName: ctx.featureName,
         storyId: ctx.storyId,
-        signal: ctx.signal,
+        signal: ctx.abortSignal,
       });
       internalHandles.push(handle);
     } else {
@@ -184,7 +183,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   try {
     for (let i = 0; i < resolved.length; i++) {
       const { debater, agentName } = resolved[i];
-      const sessionRole = `debate-hybrid-${i}`;
+      const sessionRole = `debate-hybrid-${i}` as SessionRole;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
         const modelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
@@ -203,7 +202,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
           timeoutSeconds: ctx.timeoutSeconds,
           featureName: ctx.featureName,
           storyId: ctx.storyId,
-          signal: ctx.signal,
+          signal: ctx.abortSignal,
         });
         openHandles.push(handle);
       } else {

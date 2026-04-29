@@ -16,6 +16,7 @@ import type { TddSessionBinding } from "../../../src/tdd/session-runner";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
 import type { TddSessionRole } from "../../../src/tdd/types";
 import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -97,6 +98,7 @@ async function runSession(
   await runTddSession(
     role,
     makeAgentAdapter({ name: "claude" }) as never,
+    fakeAgentManager(makeAgentAdapter({ name: "claude" }) as never),
     makeStory(),
     config,
     "/tmp/fake",

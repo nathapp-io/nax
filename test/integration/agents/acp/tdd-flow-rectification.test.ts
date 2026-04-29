@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { withDepsRestore } from "../../../helpers/deps";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
-import { wrapAdapterAsManager } from "../../../../src/agents";
+import { fakeAgentManager } from "../../../helpers/fake-agent-manager";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../../src/agents/acp/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
@@ -161,7 +161,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       story,
       disabledConfig,
       ACP_WORKDIR,
-      wrapAdapterAsManager(adapter),
+      fakeAgentManager(adapter),
       "balanced",
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
@@ -193,7 +193,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       story,
       rectificationConfig,
       ACP_WORKDIR,
-      wrapAdapterAsManager(adapter),
+      fakeAgentManager(adapter),
       "balanced",
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
@@ -244,7 +244,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       story,
       rectificationConfig,
       ACP_WORKDIR,
-      wrapAdapterAsManager(adapter),
+      fakeAgentManager(adapter),
       "balanced",
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
@@ -281,7 +281,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       story,
       rectificationConfig,
       ACP_WORKDIR,
-      wrapAdapterAsManager(adapter),
+      fakeAgentManager(adapter),
       "balanced",
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock

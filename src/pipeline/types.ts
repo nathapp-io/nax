@@ -15,6 +15,7 @@ import type { StoryMetrics } from "../metrics/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
 import type { AdversarialFindingsCache, ReviewResult } from "../review/types";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import type { FailureCategory } from "../tdd/types";
 import type { VerifyResult } from "../verification/orchestrator-types";
 
@@ -57,7 +58,7 @@ export interface RoutingResult {
  */
 export type AgentGetFn = (name: string) => import("../agents/types").AgentAdapter | undefined;
 
-export interface PipelineContext {
+export interface PipelineContext extends DispatchContext {
   /**
    * Effective config for this story's package.
    * When story.workdir is set, this is root config merged with package config.
@@ -111,12 +112,6 @@ export interface PipelineContext {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — passed through to agent.run() for child process registration. */
   pidRegistry?: PidRegistry;
-  /**
-   * Shutdown abort signal (Issue 5 fix).
-   * Fires on first fatal signal. Threaded into AgentRunOptions.abortSignal so
-   * in-flight adapter retry loops can stop spawning new work during teardown.
-   */
-  abortSignal?: AbortSignal;
   /** Interaction chain (optional, for human-in-the-loop triggers) */
   interaction?: InteractionChain;
   /** Constitution result (set by constitutionStage) */
@@ -135,20 +130,7 @@ export interface PipelineContext {
   contextBundle?: import("../context/engine").ContextBundle;
   /** Shared per-run pull-tool call counter for context-engine tool budgets. */
   contextToolRunCounter?: import("../context/engine").RunCallCounter;
-  /** In-process session registry for story-level scratch aggregation and session lifecycle. */
-  sessionManager?: import("../session").ISessionManager;
-  /**
-   * Per-run AgentManager (ADR-012). Owns default-agent resolution, per-run
-   * unavailable-agent state, and cross-agent fallback policy. Phase 1: still
-   * pass-through; Phase 5 drives the full swap loop.
-   */
-  agentManager?: import("../agents").IAgentManager;
-  /**
-   * Per-run NaxRuntime (ADR-018 Wave 1).
-   * Owns AgentManager, SessionManager, ConfigLoader, PackageRegistry,
-   * CostAggregator, PromptAuditor, signal. Set once in run-setup.ts.
-   */
-  runtime?: import("../runtime").NaxRuntime;
+  // agentManager, sessionManager, runtime, abortSignal inherited from DispatchContext
   /**
    * Package-scoped view for the current story's package (ADR-018 Wave 1).
    * Use this for all op config slicing — ctx.packageView.select(selector).

@@ -262,10 +262,10 @@ export function createReviewerSession(
   async function getOrOpenHandle(semanticConfig: SemanticReviewConfig): Promise<SessionHandle> {
     if (_handle !== null) return _handle;
     const { modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
-    const sessionName = sessionManager.nameFor({ workdir, featureName, storyId, role: "reviewer" });
+    const sessionName = sessionManager.nameFor({ workdir, featureName, storyId, role: "reviewer-semantic" });
     _handle = await sessionManager.openSession(sessionName, {
       agentName: agentManager.getDefault(),
-      role: "reviewer",
+      role: "reviewer-semantic",
       workdir,
       pipelineStage: "review",
       modelDef,

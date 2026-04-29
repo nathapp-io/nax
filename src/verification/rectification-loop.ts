@@ -9,12 +9,12 @@
 
 import type { IAgentManager } from "../agents";
 import { estimateCostByDuration } from "../agents/cost";
+import type { SessionHandle } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { getSafeLogger } from "../logger";
-import { buildHopCallback } from "../operations/build-hop-callback";
 import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
@@ -53,8 +53,8 @@ export interface RectificationLoopOptions {
   testOutput: string;
   promptPrefix?: string;
   featureName?: string;
-  /** AgentManager — routes all agent calls through IAgentManager. Falls back to createManager when absent. */
-  agentManager?: IAgentManager;
+  /** AgentManager — routes all agent calls through IAgentManager. */
+  agentManager: IAgentManager;
   /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
   projectDir?: string;
   /**
@@ -199,6 +199,12 @@ export async function runRectificationLoop(
   let costAccum = 0;
   let currentAttempt = 0;
 
+  // ADR-008 §6 / ADR-018 §7 Pattern B: hold the implementer session open across
+  // all attempts in this rectification cycle so the agent retains conversation
+  // history between attempts. Opened lazily on first execute(), closed in the
+  // .finally() at loop exit.
+  let heldHandle: SessionHandle | undefined;
+
   // Initial failure snapshot for the retry loop
   const initialFailure: RectificationFailure = {
     testOutput,
@@ -304,29 +310,57 @@ export async function runRectificationLoop(
 
       let agentResult: import("../agents").AgentResult;
       if (runtime) {
-        // ADR-019 Pattern A: dispatch via buildHopCallback → runWithFallback.
-        // Each attempt opens a fresh session; keepOpen is not used in the runtime path.
-        const executeHop = buildHopCallback(
-          {
-            sessionManager: runtime.sessionManager,
-            agentManager: runtime.agentManager,
-            story,
-            config,
-            projectDir,
-            featureName: featureName ?? "",
+        // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
+        // once and reuse across attempts. openSession is idempotent on a live
+        // handle (session/manager.ts:354) so we attach to any session opened
+        // upstream by execution.ts when one is still alive.
+        if (!heldHandle) {
+          heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
+            agentName: defaultAgent,
+            role: "implementer",
             workdir,
-            effectiveTier: modelTier,
-            defaultAgent,
             pipelineStage: "rectification",
-          },
-          sessionId,
-          runOptions,
-        );
-        const outcome = await agentManager.runWithFallback(
-          { runOptions, signal: runtime.signal, executeHop },
-          defaultAgent,
-        );
-        agentResult = outcome.result;
+            modelDef,
+            timeoutSeconds: config.execution.sessionTimeoutSeconds,
+            featureName,
+            storyId: story.id,
+            signal: runtime.signal,
+            onPidSpawned: runtime.onPidSpawned,
+          });
+        }
+        // ADR-020 single-emission invariant: each runAsSession emits one
+        // session-turn event for audit/cost subscribers, regardless of handle
+        // reuse across attempts.
+        try {
+          const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
+            storyId: story.id,
+            featureName,
+            workdir,
+            projectDir,
+            pipelineStage: "rectification",
+            sessionRole: "implementer",
+            signal: runtime.signal,
+            maxTurns: config.agent?.maxInteractionTurns,
+          });
+          agentResult = {
+            success: true,
+            exitCode: 0,
+            output: turn.output,
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCostUsd: turn.estimatedCostUsd,
+            ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+            ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+            ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
+          };
+        } catch (err) {
+          // Discard the held handle on error — the previous session may be in
+          // a terminal/cancelled state. Next attempt will reopen.
+          const stale = heldHandle;
+          heldHandle = undefined;
+          await runtime.sessionManager.closeSession(stale).catch(() => {});
+          throw err;
+        }
       } else {
         // Legacy keepOpen path — used when no runtime is available (standalone callers).
         agentResult = await agentManager.run({
@@ -445,6 +479,15 @@ export async function runRectificationLoop(
         },
       };
     },
+  }).finally(async () => {
+    // ADR-008 §6: close the held implementer session at loop exit. Best-effort —
+    // failures here must not mask the loop outcome. Tier escalation below opens
+    // a fresh session via runAs, so we close before that branch fires.
+    if (heldHandle && runtime) {
+      const stale = heldHandle;
+      heldHandle = undefined;
+      await runtime.sessionManager.closeSession(stale).catch(() => {});
+    }
   });
 
   const succeeded = outcome.outcome === "fixed";

@@ -7,6 +7,9 @@ const SAMPLE_INPUT: AcceptanceDiagnoseInput = {
   testOutput: "FAIL: expected 1 but got 2",
   testFileContent: "test('x', () => expect(fn()).toBe(1))",
   sourceFiles: [{ path: "src/fn.ts", content: "export function fn() { return 2; }" }],
+  semanticVerdicts: [
+    { storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 2, findings: [] },
+  ],
 };
 
 function makeBuildCtx() {
@@ -48,6 +51,12 @@ describe("acceptanceDiagnoseOp.build()", () => {
     const ctx = makeBuildCtx();
     const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
     expect(result.task.content).toContain("fn()");
+  });
+  test("task section includes semantic verdict hints when provided", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).toContain("SEMANTIC VERDICTS");
+    expect(result.task.content).toContain("likely test bug");
   });
 });
 

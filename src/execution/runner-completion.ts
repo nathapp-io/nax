@@ -16,6 +16,7 @@ import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import { isComplete } from "../prd";
 import type { PRD } from "../prd";
+import type { DispatchContext } from "../runtime/dispatch-context";
 import type { ISessionManager } from "../session";
 import { autoCommitIfDirty } from "../utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
@@ -26,7 +27,7 @@ import { hookCtx } from "./story-context";
 /**
  * Options for the completion phase.
  */
-export interface RunnerCompletionOptions {
+export interface RunnerCompletionOptions extends DispatchContext {
   config: NaxConfig;
   hooks: LoadedHooksConfig;
   feature: string;
@@ -52,14 +53,8 @@ export interface RunnerCompletionOptions {
   agentGetFn?: AgentGetFn;
   /** Path to prd.json — required for acceptance fix story writes */
   prdPath: string;
-  /** Run-level SessionManager shared across this run. */
-  sessionManager?: ISessionManager;
-  /** Per-run AgentManager (ADR-012). Reserved for future use in completion phase. */
-  agentManager?: import("../agents").IAgentManager;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed in handleRunCompletion. */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
-  /** NaxRuntime created in setup phase — closed at end of completion phase. */
-  runtime?: import("../runtime").NaxRuntime;
 }
 
 /**
@@ -154,7 +149,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         statusWriter: options.statusWriter,
         agentGetFn: options.agentGetFn,
         agentManager: options.agentManager,
+        sessionManager: options.sessionManager,
         runtime: options.runtime,
+        abortSignal: options.abortSignal,
         acceptanceTestPaths,
       });
 
@@ -208,6 +205,8 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     skipRegression: regressionAlreadyPassed,
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
+    runtime: options.runtime,
+    abortSignal: options.abortSignal,
   });
 
   const { durationMs, runCompletedAt, finalCounts } = completionResult;

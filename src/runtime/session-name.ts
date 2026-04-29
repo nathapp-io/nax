@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
+import type { SessionRole } from "./session-role";
 
 export interface SessionNameRequest {
   workdir: string;
   featureName?: string;
   storyId?: string;
-  role?: string;
+  role?: SessionRole;
   pipelineStage?: string;
 }
 

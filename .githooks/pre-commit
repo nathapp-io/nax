@@ -16,4 +16,10 @@ bun run lint
 echo "[pre-commit] Running process.cwd() check..."
 bun run check:process-cwd
 
+echo "[pre-commit] Running adapter wrap check..."
+bun run check:no-adapter-wrap
+
+echo "[pre-commit] Running dispatch context check..."
+bun run check:dispatch-context
+
 echo "[pre-commit] OK"

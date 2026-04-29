@@ -1,9 +1,9 @@
 /**
  * ACS-005: acceptance-setup stage — testStrategy / testFramework wiring
  *
- * testStrategy is now internalized inside the callOp implementation and not
- * visible in the mock input. Tests verify:
+ * Tests verify:
  *   - callOp is invoked when testStrategy is set (stage completes without error)
+ *   - testStrategy/testFramework/story context are forwarded to acceptance-refine op input
  *   - testFramework appears as frameworkOverrideLine in the generate callOp input
  */
 
@@ -152,6 +152,39 @@ describe("acceptance-setup: testStrategy config is consumed (callOp invoked)", (
     await acceptanceSetupStage.execute(ctx);
 
     expect(callOpCalled).toBe(true);
+  });
+
+  test("refine call receives strategy/framework/story context", async () => {
+    wireBasicDeps();
+    let capturedRefineInput:
+      | {
+          testStrategy?: string;
+          testFramework?: string;
+          storyTitle?: string;
+          storyDescription?: string;
+        }
+      | undefined;
+
+    _acceptanceSetupDeps.callOp = async (_ctx, _pkg, op, input) => {
+      if (op.name === "acceptance-refine") {
+        capturedRefineInput = input as typeof capturedRefineInput;
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return { testCode: 'import { test } from "bun:test"; test("AC-1", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+
+    const ctx = makeCtx({ testStrategy: "component", testFramework: "ink-testing-library" });
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(capturedRefineInput).toBeDefined();
+    expect(capturedRefineInput?.testStrategy).toBe("component");
+    expect(capturedRefineInput?.testFramework).toBe("ink-testing-library");
+    expect(capturedRefineInput?.storyTitle).toBe("Story US-001");
+    expect(capturedRefineInput?.storyDescription).toBe("desc");
   });
 });
 

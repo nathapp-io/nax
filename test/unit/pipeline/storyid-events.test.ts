@@ -13,6 +13,7 @@ import { getLogger, initLogger, resetLogger } from "../../../src/logger";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd/types";
 import { makeAgentAdapter } from "../../../test/helpers";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
@@ -102,6 +103,7 @@ function makeCtx(
     workdir: WORKDIR,
     projectDir: WORKDIR,
     prd: { feature: "test", userStories: [mockStory] },
+    agentManager: fakeAgentManager(mockAgent),
     hooks: {} as any,
   } as PipelineContext;
 }
@@ -204,6 +206,7 @@ describe("storyId is present in JSONL event payloads", () => {
 
       await runThreeSessionTdd({
         agent: mockAgent,
+        agentManager: fakeAgentManager(mockAgent),
         story: mockStory,
         config: makeCtx().config,
         workdir: WORKDIR,

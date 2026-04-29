@@ -1,38 +1,31 @@
 import { getSafeLogger } from "../../logger";
-import type { AgentMiddleware, MiddlewareContext } from "../agent-middleware";
+import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus } from "../dispatch-events";
 
-export function loggingMiddleware(): AgentMiddleware {
-  return {
-    name: "logging",
-    async before(ctx: MiddlewareContext): Promise<void> {
-      getSafeLogger()?.info("middleware", "Agent call start", {
-        storyId: ctx.storyId,
-        runId: ctx.runId,
-        agentName: ctx.agentName,
-        kind: ctx.kind,
-        stage: ctx.stage,
-      });
-    },
-    async after(ctx: MiddlewareContext, _result: unknown, durationMs: number): Promise<void> {
-      getSafeLogger()?.info("middleware", "Agent call complete", {
-        storyId: ctx.storyId,
-        runId: ctx.runId,
-        agentName: ctx.agentName,
-        kind: ctx.kind,
-        stage: ctx.stage,
-        durationMs,
-      });
-    },
-    async onError(ctx: MiddlewareContext, err: unknown, durationMs: number): Promise<void> {
-      getSafeLogger()?.warn("middleware", "Agent call failed", {
-        storyId: ctx.storyId,
-        runId: ctx.runId,
-        agentName: ctx.agentName,
-        kind: ctx.kind,
-        stage: ctx.stage,
-        durationMs,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    },
+export function attachLoggingSubscriber(bus: IDispatchEventBus, runId: string): () => void {
+  const offDispatch = bus.onDispatch((event: DispatchEvent) => {
+    getSafeLogger()?.info("middleware", "Agent call complete", {
+      storyId: event.storyId,
+      runId,
+      agentName: event.agentName,
+      kind: event.kind,
+      stage: event.stage,
+      durationMs: event.durationMs,
+    });
+  });
+
+  const offError = bus.onDispatchError((event: DispatchErrorEvent) => {
+    getSafeLogger()?.warn("middleware", "Agent call failed", {
+      storyId: event.storyId,
+      runId,
+      agentName: event.agentName,
+      stage: event.stage,
+      durationMs: event.durationMs,
+      error: event.errorMessage,
+    });
+  });
+
+  return () => {
+    offDispatch();
+    offError();
   };
 }

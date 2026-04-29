@@ -7,11 +7,15 @@
  */
 
 import type { AgentResult } from "../agents/types";
+import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import type { DispatchErrorEvent, IDispatchEventBus, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
 import type { ProtocolIds } from "../runtime/protocol-types";
+import { errorMessage } from "../utils/errors";
 import { _sessionManagerDeps } from "./manager-deps";
 import type {
+  NameForRequest,
   SessionDescriptor,
   SessionManagedRunRequest,
   SessionRunClient,
@@ -26,6 +30,9 @@ export interface SessionManagerState {
   bindHandle(id: string, handle: string, protocolIds: ProtocolIds): SessionDescriptor;
   handoff(id: string, agent: string, reason?: string): SessionDescriptor;
   persistDescriptor(descriptor: SessionDescriptor): void;
+  dispatchEvents: IDispatchEventBus;
+  defaultAgent: string;
+  nameFor(req: NameForRequest): string;
 }
 
 /**
@@ -39,6 +46,7 @@ export async function runTrackedSession(
   runner: SessionRunClient,
   request: SessionManagedRunRequest,
 ): Promise<AgentResult> {
+  const startedAt = Date.now();
   const pre = state.sessions.get(id);
   if (!pre) {
     throw new NaxError(`Session "${id}" not found in registry`, "SESSION_NOT_FOUND", {
@@ -76,6 +84,10 @@ export async function runTrackedSession(
   const maxNonRetriable = config?.execution?.sessionErrorMaxRetries ?? 1;
   let sessionRetries = 0;
 
+  const stage = request.runOptions.pipelineStage ?? "run";
+  const resolvedPermissions =
+    request.runOptions.resolvedPermissions ?? resolvePermissions(request.runOptions.config, stage);
+
   let result: AgentResult;
   while (true) {
     try {
@@ -84,6 +96,19 @@ export async function runTrackedSession(
       if (state.sessions.get(id)?.state === "RUNNING") {
         state.transition(id, "FAILED");
       }
+      state.dispatchEvents.emitDispatchError({
+        kind: "error",
+        origin: "runTrackedSession",
+        agentName: pre.agent ?? state.defaultAgent,
+        stage,
+        storyId: pre.storyId,
+        errorCode: err instanceof NaxError ? err.code : "DISPATCH_ERROR",
+        errorMessage: errorMessage(err),
+        prompt: request.runOptions.prompt,
+        durationMs: Date.now() - startedAt,
+        timestamp: Date.now(),
+        resolvedPermissions,
+      } satisfies DispatchErrorEvent);
       throw err;
     }
 
@@ -132,6 +157,35 @@ export async function runTrackedSession(
   if (current?.state === "RUNNING") {
     state.transition(id, result.success ? "COMPLETED" : "FAILED");
   }
+
+  const sessionName = state.nameFor({
+    workdir: pre.workdir,
+    featureName: pre.featureName,
+    storyId: pre.storyId,
+    role: pre.role,
+  });
+
+  const event: SessionTurnDispatchEvent = {
+    kind: "session-turn",
+    sessionName,
+    sessionRole: pre.role,
+    prompt: request.runOptions.prompt,
+    response: result.output,
+    agentName: pre.agent ?? state.defaultAgent,
+    stage,
+    storyId: pre.storyId,
+    featureName: pre.featureName,
+    workdir: pre.workdir,
+    resolvedPermissions,
+    turn: (result as { internalRoundTrips?: number }).internalRoundTrips ?? 0,
+    protocolIds: { sessionId: result.protocolIds?.sessionId ?? null },
+    origin: "runTrackedSession",
+    tokenUsage: result.tokenUsage,
+    exactCostUsd: result.exactCostUsd,
+    durationMs: Date.now() - startedAt,
+    timestamp: Date.now(),
+  };
+  state.dispatchEvents.emitDispatch(event);
 
   return result;
 }

@@ -1,5 +1,6 @@
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
+import { getSafeLogger } from "../logger";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure, TestInventory } from "../prompts";
 import { looksLikeTruncatedJson } from "../review/truncation";
@@ -24,6 +25,8 @@ export interface AdversarialReviewInput {
   featureCtxBlock?: string;
   /** Prior adversarial findings to carry forward into this review round (issue #736). */
   priorAdversarialFindings?: AdversarialFindingsCache;
+  /** Severity threshold from review config — drives the JSON-retry condensation prompt. */
+  blockingThreshold?: "error" | "warning" | "info";
 }
 
 export interface AdversarialReviewOutput extends LlmReviewOutput {
@@ -45,7 +48,16 @@ const adversarialReviewHopBody: HopBody<AdversarialReviewInput> = async (initial
   const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
   if (!isTruncated && parsed && parseLlmReviewShape(parsed)) return first;
 
-  const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
+  const retryPrompt = isTruncated
+    ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: ctx.input.blockingThreshold })
+    : ReviewPromptBuilder.jsonRetry();
+  if (isTruncated) {
+    getSafeLogger()?.warn("adversarial", "JSON parse retry — original response truncated", {
+      storyId: ctx.input.story.id,
+      originalByteSize: first.output.length,
+      blockingThreshold: ctx.input.blockingThreshold ?? "error",
+    });
+  }
   const retry: TurnResult = await ctx.send(retryPrompt);
   return {
     ...retry,
@@ -59,6 +71,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   stage: "review",
   session: { role: "reviewer-adversarial", lifetime: "fresh" },
   config: reviewConfigSelector,
+  timeoutMs: (input) => input.adversarialConfig.timeoutMs,
   hopBody: adversarialReviewHopBody,
   build(input, _ctx) {
     const base = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(

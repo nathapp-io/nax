@@ -1,5 +1,6 @@
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
+import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure } from "../prompts";
 import { looksLikeTruncatedJson } from "../review/truncation";
@@ -21,6 +22,8 @@ export interface SemanticReviewInput {
   excludePatterns?: string[];
   /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
   featureCtxBlock?: string;
+  /** Severity threshold from review config — drives the JSON-retry condensation prompt. */
+  blockingThreshold?: "error" | "warning" | "info";
 }
 
 export interface SemanticReviewOutput extends LlmReviewOutput {
@@ -48,7 +51,16 @@ const semanticReviewHopBody: HopBody<SemanticReviewInput> = async (initialPrompt
   const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
   if (!isTruncated && parsed && parseLlmReviewShape(parsed)) return first;
 
-  const retryPrompt = isTruncated ? ReviewPromptBuilder.jsonRetryCondensed() : ReviewPromptBuilder.jsonRetry();
+  const retryPrompt = isTruncated
+    ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: ctx.input.blockingThreshold })
+    : ReviewPromptBuilder.jsonRetry();
+  if (isTruncated) {
+    getSafeLogger()?.warn("semantic", "JSON parse retry — original response truncated", {
+      storyId: ctx.input.story.id,
+      originalByteSize: first.output.length,
+      blockingThreshold: ctx.input.blockingThreshold ?? "error",
+    });
+  }
   const retry: TurnResult = await ctx.send(retryPrompt);
   return {
     ...retry,
@@ -62,6 +74,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   stage: "review",
   session: { role: "reviewer-semantic", lifetime: "fresh" },
   config: reviewConfigSelector,
+  timeoutMs: (input) => input.semanticConfig.timeoutMs,
   hopBody: semanticReviewHopBody,
   build(input, _ctx) {
     const base = new ReviewPromptBuilder().buildSemanticReviewPrompt(input.story, input.semanticConfig, {

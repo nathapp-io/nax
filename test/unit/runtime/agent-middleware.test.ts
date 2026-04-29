@@ -8,7 +8,6 @@ function makeCtx(overrides: Partial<MiddlewareContext> = {}): MiddlewareContext 
     agentName: "claude",
     kind: "run",
     request: null,
-    prompt: null,
     config: DEFAULT_CONFIG,
     resolvedPermissions: { mode: "approve-reads", skipPermissions: false },
     ...overrides,

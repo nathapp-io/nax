@@ -21,7 +21,7 @@
  */
 
 import path from "node:path";
-import { buildAcceptanceRunCommand, extractTestCode, generateSkeletonTests } from "../../acceptance/generator";
+import { buildAcceptanceRunCommand, generateSkeletonTests } from "../../acceptance/generator";
 import { groupStoriesByPackage } from "../../acceptance/test-path";
 import type { AcceptanceCriterion, RefinedCriterion } from "../../acceptance/types";
 import type { AgentAdapter } from "../../agents/types";
@@ -32,24 +32,10 @@ import { getSafeLogger } from "../../logger";
 import { acceptanceGenerateOp } from "../../operations/acceptance-generate";
 import { acceptanceRefineOp } from "../../operations/acceptance-refine";
 import { callOp as _callOp } from "../../operations/call";
-import { errorMessage } from "../../utils/errors";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // ─── Local helpers ──────────────────────────────────────────────────────────
-
-/**
- * Returns true when the content looks like a test file.
- * Mirrors the check in generator.ts without creating a circular import.
- */
-function hasLikelyTestContent(content: string): boolean {
-  return (
-    /\b(?:describe|test|it|expect)\s*\(/.test(content) ||
-    /func\s+Test\w+\s*\(/.test(content) ||
-    /def\s+test_\w+/.test(content) ||
-    /#\[test\]/.test(content)
-  );
-}
 
 /**
  * Metadata stored alongside the acceptance test file.
@@ -282,7 +268,15 @@ export const acceptanceSetupStage: PipelineStage = {
               ctx,
               ctx.workdir,
               acceptanceRefineOp,
-              { criteria: story.acceptanceCriteria, codebaseContext: "", storyId: story.id },
+              {
+                criteria: story.acceptanceCriteria,
+                codebaseContext: "",
+                storyId: story.id,
+                testStrategy: ctx.config.acceptance.testStrategy,
+                testFramework: ctx.config.acceptance.testFramework,
+                storyTitle: story.title,
+                storyDescription: story.description,
+              },
               story.id,
             ) as Promise<RefinedCriterion[]>
           )
@@ -347,96 +341,28 @@ export const acceptanceSetupStage: PipelineStage = {
           groupStoryId,
         )) as { testCode: string | null };
 
-        let testCode = genResult.testCode;
-        if (!testCode) {
-          // ACP agents write the file via tool calls and return only a conversational
-          // summary, so extractTestCode(rawOutput) returns null. Before falling back
-          // to a skeleton, attempt 3-tier recovery from the on-disk file:
-          //
-          //   Tier 1 — extractTestCode(existing): agent embedded a fenced code block
-          //            inside the file → use the extracted block as testCode.
-          //   Tier 2 — hasLikelyTestContent(existing): file looks like test source
-          //            (describe/test/expect calls) → backup to .llm-recovery.bak
-          //            and preserve the full file.
-          //   Tier 3 — file exists but is unrecognised → backup + log error + fall
-          //            through to skeleton.
-          const backupPath = `${testPath}.llm-recovery.bak`;
-          if (await _acceptanceSetupDeps.fileExists(testPath)) {
-            try {
-              const existing = await _acceptanceSetupDeps.readFile(testPath);
-
-              // Tier 1: re-parse the on-disk file for a fenced code block.
-              const extracted = extractTestCode(existing);
-              if (extracted) {
-                testCode = extracted;
-                getSafeLogger()?.info(
-                  "acceptance-setup",
-                  "Agent wrote fenced code block to disk — using extracted code",
-                  { storyId: groupStoryId, testPath },
-                );
-              } else if (existing.trim().length > 0 && hasLikelyTestContent(existing)) {
-                // Tier 2: file looks like a test file — backup and preserve as-is.
-                let backupCreated = false;
-                try {
-                  await _acceptanceSetupDeps.writeFile(backupPath, existing);
-                  backupCreated = true;
-                } catch (backupErr) {
-                  getSafeLogger()?.warn(
-                    "acceptance-setup",
-                    "Failed to create .llm-recovery.bak — preserving agent file anyway",
-                    { storyId: groupStoryId, testPath, backupPath, error: errorMessage(backupErr) },
-                  );
-                }
-                testCode = existing;
-                getSafeLogger()?.info(
-                  "acceptance-setup",
-                  "Agent wrote acceptance test directly — preserving file with backup",
-                  { storyId: groupStoryId, testPath, backupPath, backupCreated },
-                );
-              } else {
-                // Tier 3: file exists but is not recognisable test code — backup + skeleton.
-                if (existing.trim().length > 0) {
-                  try {
-                    await _acceptanceSetupDeps.writeFile(backupPath, existing);
-                  } catch (backupErr) {
-                    getSafeLogger()?.warn(
-                      "acceptance-setup",
-                      "Failed to create .llm-recovery.bak for unrecognised file",
-                      { storyId: groupStoryId, testPath, backupPath, error: errorMessage(backupErr) },
-                    );
-                  }
-                }
-                getSafeLogger()?.error(
-                  "acceptance-setup",
-                  "Agent-written file not recognised as test code — falling back to skeleton",
-                  { storyId: groupStoryId, testPath, backupPath, fileSize: existing.length },
-                );
-              }
-            } catch (err) {
-              getSafeLogger()?.warn(
-                "acceptance-setup",
-                "Failed to read agent-written file — falling back to skeleton",
-                { storyId: groupStoryId, testPath, error: errorMessage(err) },
-              );
-            }
-          }
-
-          if (!testCode) {
-            const skeletonCriteria: AcceptanceCriterion[] = groupRefined.map((c, i) => ({
-              id: `AC-${i + 1}`,
-              text: c.refined,
-              lineNumber: i + 1,
-            }));
-            testCode = generateSkeletonTests(
-              featureName,
-              skeletonCriteria,
-              ctx.config.acceptance.testFramework,
-              language,
-            );
-          }
-        }
+        // verify+recover already ran inside callOp (ADR-020 Wave 3).
+        const testCode = genResult.testCode;
         if (testCode) {
           await _acceptanceSetupDeps.writeFile(testPath, testCode);
+        } else {
+          // Stage decision: op exhausted recovery — fall back to skeleton.
+          const skeletonCriteria: AcceptanceCriterion[] = groupRefined.map((c, i) => ({
+            id: `AC-${i + 1}`,
+            text: c.refined,
+            lineNumber: i + 1,
+          }));
+          const skeletonCode = generateSkeletonTests(
+            featureName,
+            skeletonCriteria,
+            ctx.config.acceptance.testFramework,
+            language,
+          );
+          await _acceptanceSetupDeps.writeFile(testPath, skeletonCode);
+          getSafeLogger()?.warn("acceptance-setup", "agent did not produce test content; using skeleton", {
+            storyId: groupStoryId,
+            testPath,
+          });
         }
       }
 

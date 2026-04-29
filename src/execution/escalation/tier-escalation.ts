@@ -241,7 +241,7 @@ export interface EscalationHandlerContext {
   /** Cost of the failed attempt being escalated (BUG-067: accumulated across escalations) */
   attemptCost?: number;
   /** Per-run AgentManager — threaded for LLM batch re-routing after escalation */
-  agentManager?: import("../../agents").IAgentManager;
+  agentManager: import("../../agents").IAgentManager;
 }
 
 export interface EscalationHandlerResult {

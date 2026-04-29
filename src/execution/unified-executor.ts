@@ -147,7 +147,9 @@ export async function executeUnified(
         hooks: ctx.hooks,
         agentGetFn: ctx.agentGetFn,
         agentManager: ctx.agentManager,
+        sessionManager: ctx.sessionManager,
         runtime: ctx.runtime,
+        abortSignal: ctx.abortSignal,
       };
       await runPipeline(preRunPipeline, preRunCtx, ctx.eventEmitter);
     }
@@ -246,7 +248,9 @@ export async function executeUnified(
                 featureDir: ctx.featureDir,
                 agentGetFn: ctx.agentGetFn,
                 agentManager: ctx.agentManager,
+                sessionManager: ctx.sessionManager,
                 pidRegistry: ctx.pidRegistry,
+                runtime: ctx.runtime,
                 abortSignal: ctx.abortSignal,
               },
               eventEmitter: ctx.eventEmitter,
@@ -283,6 +287,10 @@ export async function executeUnified(
                 allStoryMetrics,
                 storyGitRef: null,
                 interactionChain: ctx.interactionChain,
+                agentManager: ctx.agentManager,
+                sessionManager: ctx.sessionManager,
+                runtime: ctx.runtime,
+                abortSignal: ctx.abortSignal,
               },
               pipelineResult,
             );
@@ -563,7 +571,9 @@ export async function executeUnified(
           hooks: ctx.hooks,
           agentGetFn: ctx.agentGetFn,
           agentManager: ctx.agentManager,
+          sessionManager: ctx.sessionManager,
           runtime: ctx.runtime,
+          abortSignal: ctx.abortSignal,
           acceptanceTestPaths: preRunCtx?.acceptanceTestPaths,
         } satisfies PipelineContext,
         ctx.eventEmitter,
