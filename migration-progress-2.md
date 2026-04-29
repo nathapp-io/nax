@@ -30,12 +30,12 @@ Branch: chore/adr-019-test-migration-batch-2
 - [x] test/unit/pipeline/stages/autofix-noop.test.ts (T2-pipeline) — quarantined (all 5 tests need runAsSession)
 - [x] test/unit/pipeline/stages/autofix-session-wiring.test.ts (T2-pipeline) — quarantined (all 5 tests need runAsSession)
 - [x] test/unit/pipeline/stages/execution-agent-swap-metrics.test.ts (T2-pipeline) — passes without changes
-- [ ] test/unit/pipeline/stages/execution-ambiguity.test.ts
-- [ ] test/unit/pipeline/stages/execution-merge-conflict.test.ts
-- [ ] test/unit/pipeline/stages/execution-tdd-simple.test.ts
-- [ ] test/unit/pipeline/stages/review.test.ts
-- [ ] test/unit/pipeline/stages/verify-crash-detection.test.ts
-- [ ] test/unit/pipeline/verify-smart-runner.test.ts
+- [x] test/unit/pipeline/stages/execution-ambiguity.test.ts (T2-pipeline) — passes without changes
+- [x] test/unit/pipeline/stages/execution-merge-conflict.test.ts (T2-pipeline) — passes without changes
+- [x] test/unit/pipeline/stages/execution-tdd-simple.test.ts (T2-pipeline) — passes without changes
+- [x] test/unit/pipeline/stages/review.test.ts (T2-pipeline) — passes without changes
+- [x] test/unit/pipeline/stages/verify-crash-detection.test.ts (T2-pipeline) — passes without changes
+- [x] test/unit/pipeline/verify-smart-runner.test.ts (T2-pipeline) — passes without changes
 
 ## Pending (Wave 3: execution & lifecycle)
 
