@@ -37,7 +37,19 @@ All quarantined tests share the same pattern:
 - `test/unit/review/semantic-debate.test.ts` — remove `.skip` from AC3 test
 - `test/unit/review/semantic-prompt-response.test.ts` — remove quarantine markers
 
-## Related Issues
+## Wave 2: Pipeline stage tests
+
+| File | Tests Quarantined | Root Cause |
+|------|-------------------|------------|
+| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 3 tests: `keepOpen` tests, `sessionRole` test | keepOpen/sessionRole removed in ADR-019; ADR-019 uses fresh sessions |
+| `test/unit/pipeline/stages/autofix-adversarial.test.ts` | 4 tests: `returns cost`, `throws`, `modelTier` tests | DISPATCH_NO_RUNTIME — makeCtx missing runtime; mock setup needs update for runWithFallback |
+
+## Pattern: T2-pipeline Migration
+
+1. Import `makeMockRuntime` from `../../helpers/runtime`
+2. Update `makeCtx()` to include `runtime: makeMockRuntime({ agentManager: overrides.agentManager })`
+3. Update test mocks from `agent.run` to `agent.runWithFallback` with `{ result: {...}, fallbacks: [] }` shape
+4. For tests asserting on `keepOpen` or `sessionRole` — these are architectural changes in ADR-019, quarantine them
 
 - Issue #762: ADR-019 Wave 3 — legacy agentManager.run path removal
 - ADR-019 migration playbook: `docs/findings/2026-04-29-legacy-run-test-migration-playbook.md`
