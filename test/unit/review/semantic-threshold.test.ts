@@ -251,11 +251,13 @@ describe("runSemanticReview — blockingThreshold: 'info'", () => {
 // advisoryFindings absent when no advisory findings
 // ---------------------------------------------------------------------------
 
-describe.skip("runSemanticReview — advisoryFindings absent when no advisory findings", () => {
+describe("runSemanticReview — advisoryFindings absent when no advisory findings", () => {
   test("advisoryFindings is undefined when all findings block", async () => {
+    const agentManager = makeAgentManager(MIXED_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG, makeAgentManager(MIXED_RESPONSE),
-      undefined, undefined, undefined, undefined, "warning",
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, undefined, "warning", undefined, undefined, undefined, undefined, runtime,
     );
 
     // Both findings are blocking at "warning" threshold
@@ -263,9 +265,11 @@ describe.skip("runSemanticReview — advisoryFindings absent when no advisory fi
   });
 
   test("advisoryFindings is undefined when passed=true with no findings", async () => {
+    const agentManager = makeAgentManager(JSON.stringify({ passed: true, findings: [] }));
+    const runtime = makeMockRuntime({ agentManager });
     const result = await runSemanticReview(
-      "/tmp/wd", "abc123", STORY, BASE_CFG,
-      makeAgentManager(JSON.stringify({ passed: true, findings: [] })),
+      "/tmp/wd", "abc123", STORY, BASE_CFG, agentManager,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
     );
 
     expect(result.advisoryFindings).toBeUndefined();
