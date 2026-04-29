@@ -32,7 +32,7 @@ export interface DispatchEventBase {
 export interface SessionTurnDispatchEvent extends DispatchEventBase {
   readonly kind: "session-turn";
   readonly turn: number;
-  readonly protocolIds: { sessionId?: string | null; turnId?: string };
+  readonly protocolIds: { sessionId?: string | null; recordId?: string | null; turnId?: string };
   /** Diagnostic only — never branch subscriber logic on this. */
   readonly origin: "runAsSession" | "runTrackedSession";
 }

@@ -25,7 +25,7 @@ function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {})
     projectDir: "/tmp/p",
     resolvedPermissions: PERMS,
     turn: 2,
-    protocolIds: { sessionId: "sess-1" },
+    protocolIds: { sessionId: "sess-1", recordId: "rec-1" },
     origin: "runAsSession",
     durationMs: 150,
     timestamp: 1000,
@@ -84,6 +84,7 @@ describe("attachAuditSubscriber", () => {
     expect(recorded[0].callType).toBe("run");
     expect(recorded[0].sessionName).toBe("nax-abc-feat-s1-main");
     expect(recorded[0].sessionId).toBe("sess-1");
+    expect(recorded[0].recordId).toBe("rec-1");
     expect(recorded[0].turn).toBe(2);
     expect(recorded[0].permissionProfile).toBe("approve-reads");
     expect(recorded[0].durationMs).toBe(150);
@@ -110,6 +111,19 @@ describe("attachAuditSubscriber", () => {
     expect(recorded[0].sessionName).toBe("nax-abc-feat-s1-plan");
     expect(recorded[0].turn).toBeUndefined();
     expect(recorded[0].sessionId).toBeUndefined();
+    expect(recorded[0].recordId).toBeUndefined();
+  });
+
+  test("session-turn dispatch with missing recordId records null", () => {
+    const recorded: PromptAuditEntry[] = [];
+    const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachAuditSubscriber(bus, auditor, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ protocolIds: { sessionId: "sess-x" } }));
+
+    expect(recorded[0].sessionId).toBe("sess-x");
+    expect(recorded[0].recordId).toBeNull();
   });
 
   test("records PromptAuditErrorEntry on dispatch error", () => {

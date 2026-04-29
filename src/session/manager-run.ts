@@ -178,7 +178,10 @@ export async function runTrackedSession(
     workdir: pre.workdir,
     resolvedPermissions,
     turn: (result as { internalRoundTrips?: number }).internalRoundTrips ?? 0,
-    protocolIds: { sessionId: result.protocolIds?.sessionId ?? null },
+    protocolIds: {
+      sessionId: result.protocolIds?.sessionId ?? null,
+      recordId: result.protocolIds?.recordId ?? null,
+    },
     origin: "runTrackedSession",
     tokenUsage: result.tokenUsage,
     exactCostUsd: result.exactCostUsd,
