@@ -97,6 +97,7 @@ export class SpawnAcpSession implements AcpSession {
   private readonly permissionMode: string;
   private readonly env: Record<string, string | undefined>;
   private readonly onPidSpawned?: (pid: number) => void;
+  private readonly onPidExited?: (pid: number) => void;
   private activeProc: { pid: number; kill(signal?: number): void } | null = null;
   /** Volatile Claude Code session ID (acpxSessionId) — updated on reconnect. */
   readonly id?: string;
@@ -113,6 +114,7 @@ export class SpawnAcpSession implements AcpSession {
     permissionMode: string;
     env: Record<string, string | undefined>;
     onPidSpawned?: (pid: number) => void;
+    onPidExited?: (pid: number) => void;
     id?: string;
     recordId?: string;
   }) {
@@ -125,6 +127,7 @@ export class SpawnAcpSession implements AcpSession {
     this.permissionMode = opts.permissionMode;
     this.env = opts.env;
     this.onPidSpawned = opts.onPidSpawned;
+    this.onPidExited = opts.onPidExited;
     this.id = opts.id;
     this.recordId = opts.recordId;
   }
@@ -168,6 +171,16 @@ export class SpawnAcpSession implements AcpSession {
     this.activeProc = proc;
     const processPid = proc.pid;
     this.onPidSpawned?.(processPid);
+    let exitNotified = false;
+    const notifyExit = (): void => {
+      if (exitNotified) return;
+      exitNotified = true;
+      try {
+        this.onPidExited?.(processPid);
+      } catch {
+        // unregister is best-effort — never let it surface from prompt()
+      }
+    };
 
     try {
       try {
@@ -250,6 +263,7 @@ export class SpawnAcpSession implements AcpSession {
       }
     } finally {
       this.activeProc = null;
+      notifyExit();
     }
   }
 
@@ -376,6 +390,7 @@ export class SpawnAcpClient implements AcpClient {
   private readonly promptRetries: number;
   private readonly env: Record<string, string | undefined>;
   private readonly onPidSpawned?: (pid: number) => void;
+  private readonly onPidExited?: (pid: number) => void;
 
   constructor(
     cmdStr: string,
@@ -383,6 +398,7 @@ export class SpawnAcpClient implements AcpClient {
     timeoutSeconds?: number,
     onPidSpawned?: (pid: number) => void,
     promptRetries?: number,
+    onPidExited?: (pid: number) => void,
   ) {
     // Parse: "acpx --model <model> <agentName>"
     const parts = cmdStr.split(/\s+/);
@@ -401,6 +417,7 @@ export class SpawnAcpClient implements AcpClient {
     this.promptRetries = promptRetries ?? 0;
     this.env = buildAllowedEnv();
     this.onPidSpawned = onPidSpawned;
+    this.onPidExited = onPidExited;
   }
 
   async start(): Promise<void> {
@@ -460,6 +477,7 @@ export class SpawnAcpClient implements AcpClient {
       permissionMode: opts.permissionMode,
       env: this.env,
       onPidSpawned: this.onPidSpawned,
+      onPidExited: this.onPidExited,
       id: sessionId,
       recordId,
     });
@@ -486,6 +504,7 @@ export class SpawnAcpClient implements AcpClient {
       permissionMode,
       env: this.env,
       onPidSpawned: this.onPidSpawned,
+      onPidExited: this.onPidExited,
       id: sessionId,
       recordId,
     });
@@ -523,6 +542,7 @@ export function createSpawnAcpClient(
   timeoutSeconds?: number,
   onPidSpawned?: (pid: number) => void,
   promptRetries?: number,
+  onPidExited?: (pid: number) => void,
 ): AcpClient {
-  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries);
+  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited);
 }

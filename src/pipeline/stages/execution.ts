@@ -175,6 +175,7 @@ export const executionStage: PipelineStage = {
       projectDir: ctx.projectDir,
       maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
       onPidSpawned: pidRegistry ? (pid: number) => pidRegistry.register(pid) : undefined,
+      onPidExited: pidRegistry ? (pid: number) => pidRegistry.unregister(pid) : undefined,
       abortSignal: ctx.abortSignal,
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,

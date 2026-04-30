@@ -6,7 +6,16 @@
  * - Write .nax-pids file for persistence across crashes
  * - Support killAll() for crash signal handlers
  * - Support cleanupStale() for startup cleanup
- * - Use process groups (setsid) on Linux, direct kill on macOS
+ *
+ * Safety: signals are sent to a single PID, never to a process group. The previous
+ * Linux code path used `kill -TERM -<pid>` (negative pid = process group) under the
+ * assumption every spawned acpx was a session leader. That assumption fails for
+ * per-call acpx invocations (not setsid'd) and, combined with PID recycling between
+ * the existence check and the signal, could SIGTERM unrelated process groups —
+ * including the user's desktop session. Direct PID-only signaling avoids that
+ * blast radius. If a single descendant survives this signal, the OS reaps it when
+ * nax exits; orphan acpx queue-owners are addressed independently by
+ * `complete()` calling `session.close({ forceTerminate: true })`.
  */
 
 import { existsSync } from "node:fs";
@@ -46,19 +55,18 @@ export class PidRegistry {
   private readonly workdir: string;
   private readonly pidsFilePath: string;
   private readonly pids: Set<number> = new Set();
-  private readonly platform: NodeJS.Platform;
   private frozen = false;
 
   /**
    * Create a new PID registry for the given workdir.
    *
    * @param workdir - Working directory where .nax-pids will be stored
-   * @param platform - Optional platform override (for testing)
+   * @param _platform - Reserved for backward compatibility; signals are now
+   *   sent identically across platforms (single PID, not process group).
    */
-  constructor(workdir: string, platform?: NodeJS.Platform) {
+  constructor(workdir: string, _platform?: NodeJS.Platform) {
     this.workdir = workdir;
     this.pidsFilePath = `${workdir}/${PID_REGISTRY_FILE}`;
-    this.platform = platform ?? process.platform;
   }
 
   /**
@@ -143,10 +151,12 @@ export class PidRegistry {
    * Kill all registered processes.
    *
    * Called by crash signal handlers to cleanup spawned agent processes.
-   * Uses process groups (setsid) on Linux, direct kill on macOS.
+   * Signals each registered PID directly (single process, never a process group).
    *
-   * On Linux: kill -TERM -<pid> kills the entire process group
-   * On macOS: kill -TERM <pid> kills the process directly
+   * Process-group kill (`kill -TERM -<pid>`) is intentionally avoided: with PID
+   * recycling between the existence check and the signal, a recycled PID that
+   * happens to be a session leader would receive SIGTERM across its entire
+   * group — potentially including the user's desktop session.
    */
   async killAll(): Promise<void> {
     const logger = getSafeLogger();
@@ -177,8 +187,16 @@ export class PidRegistry {
   /**
    * Cleanup stale PIDs from previous runs.
    *
-   * Called at runner startup before lock acquisition.
-   * Reads .nax-pids file and kills any still-running processes.
+   * Called at runner startup before lock acquisition. Reads `.nax-pids` only to
+   * record what was left over for diagnostics, then truncates the file.
+   *
+   * IMPORTANT: this method does NOT signal any of the recorded PIDs. Stale PIDs
+   * from a previous run have almost certainly been recycled by the kernel, and
+   * signaling a recycled PID would target an unrelated process — most often
+   * something belonging to the user's desktop session. Orphan acpx processes
+   * from a prior crashed run are reaped by acpx's own queue-owner TTL and by
+   * `complete()` always closing its session with `forceTerminate: true`. The
+   * file is treated as a leak indicator, not a kill list.
    */
   async cleanupStale(): Promise<void> {
     const logger = getSafeLogger();
@@ -209,16 +227,15 @@ export class PidRegistry {
       }
 
       const stalePids = lines.map((entry) => entry.pid);
-      logger?.info("pid-registry", `Cleaning up ${stalePids.length} stale PIDs from previous run`, {
-        pids: stalePids,
-      });
+      logger?.info(
+        "pid-registry",
+        `Found ${stalePids.length} stale PID entries from previous run; clearing file without signaling (PIDs likely recycled)`,
+        { pids: stalePids },
+      );
 
-      const killPromises = stalePids.map((pid) => this.killPid(pid));
-      await Promise.allSettled(killPromises);
-
-      // Clear the registry file after cleanup
+      // Clear the registry file. Do NOT call killPid on these — see method docs.
       await Bun.write(this.pidsFilePath, "");
-      logger?.info("pid-registry", "Stale PIDs cleanup completed");
+      logger?.info("pid-registry", "Stale PIDs file cleared");
     } catch (err) {
       logger?.warn("pid-registry", "Failed to cleanup stale PIDs", {
         error: (err as Error).message,
@@ -229,16 +246,27 @@ export class PidRegistry {
   /**
    * Kill a single PID.
    *
-   * Uses process groups on Linux (kill -TERM -<pid>), direct kill on macOS (kill -TERM <pid>).
-   * Ignores ESRCH (process not found) errors.
+   * Signals the specific PID only — never a process group. Reject pid<=1 to
+   * make the bad-input case impossible (kill 0 = caller's group, kill 1 = init,
+   * kill -1 = "every process the caller can signal"). Ignores ESRCH (process
+   * not found) errors.
    *
    * @param pid - Process ID to kill
    */
   private async killPid(pid: number): Promise<void> {
     const logger = getSafeLogger();
 
+    if (!Number.isInteger(pid) || pid <= 1) {
+      logger?.warn("pid-registry", `Refusing to signal non-positive or reserved PID ${pid}`, { pid });
+      return;
+    }
+
     try {
-      // Check if process exists first
+      // Check if process exists first. Note: this is best-effort — there is an
+      // inherent TOCTOU between this check and the kill below. The pid<=1 guard
+      // and the explicit single-PID (non-group) signaling bound the worst case
+      // to "we signal a recycled, unrelated process" rather than "we slaughter
+      // an entire process group containing the user's desktop session."
       const checkProc = Bun.spawn(["kill", "-0", String(pid)], {
         stdout: "pipe",
         stderr: "pipe",
@@ -251,11 +279,9 @@ export class PidRegistry {
         return;
       }
 
-      // On Linux, use process groups (kill -TERM -<pid>)
-      // On macOS, use direct kill (kill -TERM <pid>)
-      const killArgs = this.platform === "linux" ? ["kill", "-TERM", `-${pid}`] : ["kill", "-TERM", String(pid)];
-
-      const killProc = Bun.spawn(killArgs, {
+      // Signal a single PID. Do NOT use `-${pid}` (process-group kill) —
+      // see class header for rationale.
+      const killProc = Bun.spawn(["kill", "-TERM", String(pid)], {
         stdout: "pipe",
         stderr: "pipe",
       });

@@ -35,6 +35,7 @@ export function createSessionRunHop(sessionManager: ISessionManager): SessionRun
       storyId: options.storyId,
       signal: options.abortSignal,
       onPidSpawned: options.onPidSpawned,
+      onPidExited: options.onPidExited,
       onSessionEstablished: options.onSessionEstablished,
     });
 

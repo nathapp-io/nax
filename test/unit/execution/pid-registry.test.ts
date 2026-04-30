@@ -130,25 +130,29 @@ describe("PidRegistry", () => {
     expect(registry.getPids()).toEqual([]);
   });
 
-  test("cleanupStale() reads and kills PIDs from previous run", async () => {
-    // Simulate a previous run that left PIDs in the file
+  test("cleanupStale() truncates the PID file without signaling recycled PIDs", async () => {
+    // Simulate a previous run that left PIDs in the file. We deliberately
+    // include `1` (init/systemd on Linux) — under the prior `kill -TERM -<pid>`
+    // path this would have sent SIGTERM to PGID 1 / "all processes", taking
+    // down the user's session. cleanupStale must NOT signal it; it must just
+    // record the leak and clear the file.
     const entry1 = JSON.stringify({
-      pid: 99999, // Non-existent PID
+      pid: 1, // Reserved — must never be signaled
       spawnedAt: new Date().toISOString(),
       workdir: TEST_WORKDIR,
     });
     const entry2 = JSON.stringify({
-      pid: 88888, // Non-existent PID
+      pid: 99999,
       spawnedAt: new Date().toISOString(),
       workdir: TEST_WORKDIR,
     });
     await Bun.write(PID_FILE, `${entry1}\n${entry2}\n`);
 
-    // Create new registry and cleanup stale PIDs
     const registry = new PidRegistry(TEST_WORKDIR);
     await registry.cleanupStale();
 
-    // Check file is cleared
+    // File is cleared, but no signaling occurred (verified by the absence of a
+    // delivered SIGTERM — implicit: this test process is still alive).
     const content = await Bun.file(PID_FILE).text();
     expect(content.trim()).toBe("");
   });
@@ -189,25 +193,31 @@ describe("PidRegistry", () => {
     expect(content.trim()).toBe("");
   });
 
-  test("platform-specific kill command: Linux uses process groups", async () => {
-    const registry = new PidRegistry(TEST_WORKDIR, "linux");
+  test("killAll() signals each PID directly, never as a process group", async () => {
+    // Single-PID signaling (no leading `-`) is the safety property. Both
+    // platforms now go through the same code path; the second constructor arg
+    // is preserved only for backward compat with prior call sites and is
+    // intentionally a no-op.
+    const linuxRegistry = new PidRegistry(TEST_WORKDIR, "linux");
+    await linuxRegistry.register(99999);
+    await linuxRegistry.killAll();
+    expect(linuxRegistry.getPids()).toEqual([]);
 
-    // Register a non-existent PID
-    await registry.register(99999);
-
-    // Should not throw (process doesn't exist, but kill command should be correct)
-    await registry.killAll();
-
-    expect(registry.getPids()).toEqual([]);
+    const darwinRegistry = new PidRegistry(TEST_WORKDIR, "darwin");
+    await darwinRegistry.register(99998);
+    await darwinRegistry.killAll();
+    expect(darwinRegistry.getPids()).toEqual([]);
   });
 
-  test("platform-specific kill command: macOS uses direct PID", async () => {
-    const registry = new PidRegistry(TEST_WORKDIR, "darwin");
+  test("killAll() refuses to signal pid <= 1 (kill 0 = caller's group, kill 1 = init, kill -1 = all)", async () => {
+    const registry = new PidRegistry(TEST_WORKDIR);
 
-    // Register a non-existent PID
-    await registry.register(99999);
-
-    // Should not throw (process doesn't exist, but kill command should be correct)
+    // These would have been catastrophic under the prior process-group code
+    // path. We assert they are silently dropped — and crucially, this test
+    // process surviving the call is itself the assertion.
+    await registry.register(0);
+    await registry.register(1);
+    await registry.register(-5);
     await registry.killAll();
 
     expect(registry.getPids()).toEqual([]);

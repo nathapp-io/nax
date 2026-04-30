@@ -33,8 +33,9 @@ export const _acpAdapterDeps = {
     timeoutSeconds?: number,
     onPidSpawned?: (pid: number) => void,
     promptRetries?: number,
+    onPidExited?: (pid: number) => void,
   ): AcpClient {
-    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries);
+    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited);
   },
 };
 

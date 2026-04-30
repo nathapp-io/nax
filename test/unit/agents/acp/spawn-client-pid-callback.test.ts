@@ -63,6 +63,7 @@ describe("SpawnAcpSession — onPidSpawned callback", () => {
       cwd: "/tmp/test",
       model: "claude-haiku",
       timeoutSeconds: 30,
+      promptRetries: 0,
       permissionMode: "approve-all",
       env: {},
       onPidSpawned,
@@ -119,6 +120,76 @@ describe("SpawnAcpSession — onPidSpawned callback", () => {
     const session = makeSession(undefined);
     const result = await session.prompt("do something");
     expect(result.stopReason).toBe("end_turn");
+  });
+
+  test("onPidExited fires after prompt() resolves and pairs with onPidSpawned", async () => {
+    const events: string[] = [];
+    const session = new SpawnAcpSession({
+      agentName: "claude",
+      sessionName: "test-session",
+      cwd: "/tmp/test",
+      model: "claude-haiku",
+      timeoutSeconds: 30,
+      promptRetries: 0,
+      permissionMode: "approve-all",
+      env: {},
+      onPidSpawned: (pid) => events.push(`spawn:${pid}`),
+      onPidExited: (pid) => events.push(`exit:${pid}`),
+    });
+
+    await session.prompt("do something");
+
+    expect(events).toEqual([`spawn:${FIXED_PID}`, `exit:${FIXED_PID}`]);
+  });
+
+  test("onPidExited fires exactly once even when prompt() throws", async () => {
+    // Make the spawned proc fail with a non-zero exit
+    _spawnClientDeps.spawn = mock(() => ({
+      ...makeSpawnResult(1, ""),
+      pid: FIXED_PID,
+    }));
+
+    const exits: number[] = [];
+    const session = new SpawnAcpSession({
+      agentName: "claude",
+      sessionName: "test-session",
+      cwd: "/tmp/test",
+      model: "claude-haiku",
+      timeoutSeconds: 30,
+      promptRetries: 0,
+      permissionMode: "approve-all",
+      env: {},
+      onPidExited: (pid) => exits.push(pid),
+    });
+
+    // prompt() with non-zero exit returns an error response (doesn't throw),
+    // but we still expect the exit callback to fire exactly once.
+    await session.prompt("test");
+    expect(exits).toEqual([FIXED_PID]);
+  });
+
+  test("onPidExited tolerates a throwing callback without breaking prompt()", async () => {
+    let exitCalls = 0;
+    const session = new SpawnAcpSession({
+      agentName: "claude",
+      sessionName: "test-session",
+      cwd: "/tmp/test",
+      model: "claude-haiku",
+      timeoutSeconds: 30,
+      promptRetries: 0,
+      permissionMode: "approve-all",
+      env: {},
+      onPidExited: () => {
+        exitCalls++;
+        throw new Error("registry write failed");
+      },
+    });
+
+    // Even if onPidExited throws, prompt() must still resolve normally —
+    // unregistration is best-effort.
+    const result = await session.prompt("do something");
+    expect(result.stopReason).toBe("end_turn");
+    expect(exitCalls).toBe(1);
   });
 });
 

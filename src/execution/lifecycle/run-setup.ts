@@ -185,6 +185,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     agentManager: options.agentManager,
     featureName: options.feature,
     onPidSpawned: (pid: number) => pidRegistry.register(pid),
+    onPidExited: (pid: number) => pidRegistry.unregister(pid),
   });
 
   // Cleanup stale PIDs from previous crashed runs

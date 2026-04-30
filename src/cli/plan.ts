@@ -268,6 +268,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
             maxInteractionTurns: config?.agent?.maxInteractionTurns,
             featureName: options.feature,
             onPidSpawned: (pid: number) => pidRegistry.register(pid),
+            onPidExited: (pid: number) => pidRegistry.unregister(pid),
             sessionRole: "plan",
             pipelineStage: "plan",
           },

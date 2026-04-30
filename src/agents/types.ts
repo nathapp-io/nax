@@ -108,6 +108,13 @@ export interface AgentRunOptions {
   /** Callback fired immediately after spawning the agent process — caller registers the PID. */
   onPidSpawned?: (pid: number) => void;
   /**
+   * Callback fired when a previously-spawned PID exits naturally (success or failure).
+   * Mirrors `onPidSpawned` to keep PidRegistry symmetric — without this, dead PIDs
+   * accumulate in the registry across a run and on Ctrl+C the kill path may signal
+   * recycled, unrelated processes (potentially their entire process groups).
+   */
+  onPidExited?: (pid: number) => void;
+  /**
    * Explicit ACP session handle override. When set, the adapter uses this
    * name instead of auto-deriving from featureName/storyId/sessionRole.
    * Use only when a non-standard session name is required (e.g. generation-scoped
@@ -266,6 +273,11 @@ export interface CompleteOptions {
    * PIDs past PidRegistry — `Ctrl+C` mid-call leaves orphan acpx subprocesses.
    */
   onPidSpawned?: (pid: number) => void;
+  /**
+   * Unregistration callback fired when a complete-path acpx subprocess exits.
+   * Required to keep PidRegistry from accumulating dead PIDs over the life of a run.
+   */
+  onPidExited?: (pid: number) => void;
 }
 
 /**
@@ -342,6 +354,11 @@ export interface OpenSessionOpts {
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /** PID registration callback for crash-recovery bookkeeping. */
   onPidSpawned?: (pid: number) => void;
+  /**
+   * PID unregistration callback. Called when an acpx subprocess associated with this
+   * session exits naturally — keeps PidRegistry from accumulating dead PIDs.
+   */
+  onPidExited?: (pid: number) => void;
   /** Abort signal — if already aborted, openSession rejects immediately. */
   signal?: AbortSignal;
   /**

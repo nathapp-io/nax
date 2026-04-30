@@ -383,6 +383,7 @@ export class SessionManager implements ISessionManager {
       modelDef: opts.modelDef,
       timeoutSeconds: opts.timeoutSeconds,
       onPidSpawned: opts.onPidSpawned,
+      onPidExited: opts.onPidExited,
       onSessionEstablished: opts.onSessionEstablished,
       signal: opts.signal,
       resume,

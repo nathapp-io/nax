@@ -77,6 +77,13 @@ export interface NaxRuntime {
    * children) past run teardown.
    */
   readonly onPidSpawned?: (pid: number) => void;
+  /**
+   * PID unregistration callback paired with `onPidSpawned`. Adapters call this
+   * when a previously-registered acpx subprocess exits naturally so the run's
+   * PidRegistry does not accumulate dead PIDs (which on Ctrl+C would otherwise
+   * be re-killed against recycled, unrelated processes).
+   */
+  readonly onPidExited?: (pid: number) => void;
   close(): Promise<void>;
 }
 
@@ -99,6 +106,11 @@ export interface CreateRuntimeOptions {
    * callback directly into `AgentRunOptions` and do not depend on this field.
    */
   onPidSpawned?: (pid: number) => void;
+  /**
+   * PID unregistration callback paired with `onPidSpawned`. Threaded the same
+   * way; adapters call it when the registered acpx subprocess exits naturally.
+   */
+  onPidExited?: (pid: number) => void;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
@@ -185,6 +197,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       return controller.signal;
     },
     onPidSpawned: opts?.onPidSpawned,
+    onPidExited: opts?.onPidExited,
     async close() {
       if (closed) return;
       closed = true;

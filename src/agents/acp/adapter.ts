@@ -183,6 +183,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         timeoutSeconds,
         _options?.onPidSpawned,
         promptRetries,
+        _options?.onPidExited,
       );
       await client.start();
 
@@ -351,13 +352,21 @@ export class AcpAgentAdapter implements AgentAdapter {
       promptRetries,
       onSessionEstablished,
       onPidSpawned,
+      onPidExited,
     } = opts;
     const { signal } = opts;
 
     throwIfAborted(signal, "Run aborted — shutdown in progress");
 
     const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds, onPidSpawned, promptRetries);
+    const client = _acpAdapterDeps.createClient(
+      cmdStr,
+      workdir,
+      timeoutSeconds,
+      onPidSpawned,
+      promptRetries,
+      onPidExited,
+    );
     let session: import("./adapter-session-types").AcpSession | undefined;
 
     try {
