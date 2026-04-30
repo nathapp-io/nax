@@ -4,6 +4,23 @@ import type { LLMFinding } from "./semantic-helpers";
 import type { SemanticReviewConfig } from "./types";
 
 const OBSERVED_PREVIEW_CHARS = 160;
+const ISSUE_PREVIEW_CHARS = 200;
+
+/**
+ * Stable telemetry marker for the substring-substantiation downgrade.
+ * Surfaced on every "Downgraded unsubstantiated semantic error finding" log
+ * line so audit / dashboards can measure how often this filter suppresses
+ * findings (#826).
+ */
+export const SEMANTIC_FINDING_DOWNGRADED_EVENT = "review.semantic.finding.downgraded";
+
+/**
+ * Injectable deps so tests can capture log calls without poking the logger
+ * singleton. Production code should never override this.
+ */
+export const _evidenceDeps = {
+  getLogger: getSafeLogger,
+};
 
 export async function substantiateSemanticEvidence(
   findings: LLMFinding[],
@@ -25,10 +42,12 @@ async function substantiateFinding(finding: LLMFinding, workdir: string, storyId
   const contents = await readSafeFile(workdir, file);
   if (contents !== null && normalizedIncludes(contents, observed)) return finding;
 
-  getSafeLogger()?.warn("review", "Downgraded unsubstantiated semantic error finding", {
+  _evidenceDeps.getLogger()?.warn("review", "Downgraded unsubstantiated semantic error finding", {
     storyId,
+    event: SEMANTIC_FINDING_DOWNGRADED_EVENT,
     file,
     line: finding.verifiedBy?.line ?? finding.line,
+    issue: finding.issue?.slice(0, ISSUE_PREVIEW_CHARS),
     observed: observed.slice(0, OBSERVED_PREVIEW_CHARS),
   });
 

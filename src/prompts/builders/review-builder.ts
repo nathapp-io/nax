@@ -27,6 +27,7 @@ For each acceptance criterion, verify the current codebase implements it correct
 - Do NOT flag something as missing based solely on its absence from the diff — it may already exist in the codebase. Check the actual file first.
 - If you cannot verify a claim even after checking, use "unverifiable" severity instead of "error".
 - Every "error" finding must include verifiedBy evidence from the current codebase. If you cannot provide verifiedBy, downgrade the finding to "unverifiable".
+- The \`verifiedBy.observed\` field MUST be a **verbatim** 1-3 line code excerpt copy-pasted from the file — not a description. Paste the actual source lines (or a substring of them) that prove your claim. A description like "function X does not check Y" is not a verifiable observation; quote the lines that demonstrate the omission instead. If you cannot quote an exact excerpt that proves your point, downgrade the finding to "unverifiable".
 
 Flag issues only when you have confirmed:
 1. An AC is not implemented or partially implemented (verified by reading the actual files)
@@ -50,7 +51,7 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
         "command": "command used to inspect the current codebase",
         "file": "path/to/file",
         "line": 42,
-        "observed": "specific code fact observed"
+        "observed": "verbatim 1-3 line code excerpt copy-pasted from the file (not a description)"
       }
     }
   ]

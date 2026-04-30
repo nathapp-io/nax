@@ -122,6 +122,15 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
       const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain("Do NOT flag: style issues");
     });
+
+    // #826 — observed must be a verbatim excerpt, not a description, so the
+    // substring substantiator in semantic-evidence.ts can verify it on disk.
+    test("requires verifiedBy.observed to be a verbatim code excerpt", () => {
+      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
+      expect(result).toContain("verbatim");
+      expect(result).toMatch(/observed.*(verbatim|copy-pasted|exact)/i);
+      expect(result).toContain("not a description");
+    });
   });
 });
 
