@@ -9,6 +9,8 @@ import type { InteractionChain } from "./chain";
 import type { InteractionFallback, InteractionRequest, InteractionResponse, TriggerName } from "./types";
 import { TRIGGER_METADATA } from "./types";
 
+export type InteractionConfig = Pick<NaxConfig, "interaction">;
+
 /** Trigger context data for template substitution */
 export interface TriggerContext {
   featureName: string;
@@ -25,7 +27,7 @@ export interface TriggerContext {
 /**
  * Check if a trigger is enabled in config
  */
-export function isTriggerEnabled(trigger: TriggerName, config: NaxConfig): boolean {
+export function isTriggerEnabled(trigger: TriggerName, config: InteractionConfig): boolean {
   const triggerConfig = config.interaction?.triggers?.[trigger];
   if (triggerConfig === undefined) return false;
   if (typeof triggerConfig === "boolean") return triggerConfig;
@@ -37,7 +39,7 @@ export function isTriggerEnabled(trigger: TriggerName, config: NaxConfig): boole
  */
 export function getTriggerConfig(
   trigger: TriggerName,
-  config: NaxConfig,
+  config: InteractionConfig,
 ): { fallback: InteractionFallback; timeout: number } {
   const metadata = TRIGGER_METADATA[trigger];
   const triggerConfig = config.interaction?.triggers?.[trigger];
@@ -80,7 +82,7 @@ function substituteTemplate(template: string, context: TriggerContext): string {
 export function createTriggerRequest(
   trigger: TriggerName,
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
 ): InteractionRequest {
   const metadata = TRIGGER_METADATA[trigger];
   const { fallback, timeout } = getTriggerConfig(trigger, config);
@@ -111,7 +113,7 @@ export function createTriggerRequest(
 export async function executeTrigger(
   trigger: TriggerName,
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<InteractionResponse> {
   const request = createTriggerRequest(trigger, context, config);
@@ -124,7 +126,7 @@ export async function executeTrigger(
  */
 export async function checkSecurityReview(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<boolean> {
   if (!isTriggerEnabled("security-review", config)) return true;
@@ -138,7 +140,7 @@ export async function checkSecurityReview(
  */
 export async function checkCostExceeded(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<boolean> {
   if (!isTriggerEnabled("cost-exceeded", config)) return true;
@@ -152,7 +154,7 @@ export async function checkCostExceeded(
  */
 export async function checkMergeConflict(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<boolean> {
   if (!isTriggerEnabled("merge-conflict", config)) return true;
@@ -166,7 +168,7 @@ export async function checkMergeConflict(
  */
 export async function checkCostWarning(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<"continue" | "escalate"> {
   if (!isTriggerEnabled("cost-warning", config)) return "continue";
@@ -180,7 +182,7 @@ export async function checkCostWarning(
  */
 export async function checkMaxRetries(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<"continue" | "skip"> {
   if (!isTriggerEnabled("max-retries", config)) return "continue";
@@ -194,7 +196,7 @@ export async function checkMaxRetries(
  */
 export async function checkPreMerge(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<boolean> {
   if (!isTriggerEnabled("pre-merge", config)) return true;
@@ -208,7 +210,7 @@ export async function checkPreMerge(
  */
 export async function checkStoryAmbiguity(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<boolean> {
   if (!isTriggerEnabled("story-ambiguity", config)) return true;
@@ -222,7 +224,7 @@ export async function checkStoryAmbiguity(
  */
 export async function checkReviewGate(
   context: TriggerContext,
-  config: NaxConfig,
+  config: InteractionConfig,
   chain: InteractionChain,
 ): Promise<boolean> {
   if (!isTriggerEnabled("review-gate", config)) return true;
