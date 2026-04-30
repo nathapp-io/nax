@@ -343,7 +343,7 @@ export class ReviewOrchestrator {
             naxIgnoreIndex,
             runtime,
           }),
-_orchestratorDeps.runAdversarialReview({
+          _orchestratorDeps.runAdversarialReview({
             workdir,
             storyGitRef,
             story: semanticStory,
