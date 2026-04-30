@@ -11,7 +11,7 @@
 import { pickSelector, reshapeSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
-export const reviewConfigSelector = pickSelector("review", "review", "debate");
+export const reviewConfigSelector = pickSelector("review", "review", "debate", "models", "execution");
 export const planConfigSelector = pickSelector("plan", "plan", "debate");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
@@ -20,9 +20,9 @@ export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance")
 export const acceptanceFixConfigSelector = pickSelector("acceptance-fix", "acceptance", "execution");
 // acceptance generator take more time to generate the test code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
 export const acceptanceGenConfigSelector = pickSelector("acceptance-gen", "acceptance", "execution");
-export const tddConfigSelector = pickSelector("tdd", "tdd", "execution");
-export const debateConfigSelector = pickSelector("debate", "debate");
-export const routingConfigSelector = pickSelector("routing", "routing");
+export const tddConfigSelector = pickSelector("tdd", "tdd", "execution", "quality", "agent", "models");
+export const debateConfigSelector = pickSelector("debate", "debate", "models");
+export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
 export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({
   timeout: c.execution?.verificationTimeoutSeconds,
@@ -37,3 +37,16 @@ export const rectificationGateConfigSelector = pickSelector(
   "quality",
   "review",
 );
+
+export const agentManagerConfigSelector = pickSelector("agent-manager", "agent", "execution");
+export const interactionConfigSelector = pickSelector("interaction", "interaction");
+export const precheckConfigSelector = pickSelector(
+  "precheck",
+  "precheck",
+  "quality",
+  "execution",
+  "prompts",
+  "review",
+  "project",
+);
+export const qualityConfigSelector = pickSelector("quality", "quality", "execution");

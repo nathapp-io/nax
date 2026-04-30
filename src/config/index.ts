@@ -56,6 +56,10 @@ export {
   routingConfigSelector,
   verifyConfigSelector,
   rectificationGateConfigSelector,
+  agentManagerConfigSelector,
+  interactionConfigSelector,
+  precheckConfigSelector,
+  qualityConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";
