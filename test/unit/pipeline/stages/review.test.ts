@@ -112,7 +112,7 @@ describe("reviewStage — pluginMode deferred path", () => {
     await reviewStage.execute(ctx);
 
     const calledConfig = orchestratorMock.mock.calls[0]?.[0];
-    expect(calledConfig?.pluginMode).toBe("deferred");
+    expect(calledConfig?.reviewConfig?.pluginMode).toBe("deferred");
     reviewOrchestrator.review = original;
   });
 

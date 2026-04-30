@@ -38,27 +38,46 @@ export const _adversarialDeps = {
   callOp: _callOp,
 };
 
+export interface RunAdversarialReviewOptions {
+  workdir: string;
+  storyGitRef: string | undefined;
+  story: SemanticStory;
+  adversarialConfig: AdversarialReviewConfig;
+  agentManager: IAgentManager | undefined;
+  naxConfig?: NaxConfig;
+  featureName?: string;
+  priorFailures?: Array<{ stage: string; modelTier: string }>;
+  blockingThreshold?: "error" | "warning" | "info";
+  featureContextMarkdown?: string;
+  contextBundle?: import("../context/engine").ContextBundle;
+  projectDir?: string;
+  naxIgnoreIndex?: NaxIgnoreIndex;
+  runtime?: import("../runtime").NaxRuntime;
+  priorAdversarialFindings?: AdversarialFindingsCache;
+}
+
 /**
  * Run an adversarial review using an LLM against the story diff.
  * Ships off by default — enabled only when "adversarial" is in review.checks.
  */
-export async function runAdversarialReview(
-  workdir: string,
-  storyGitRef: string | undefined,
-  story: SemanticStory,
-  adversarialConfig: AdversarialReviewConfig,
-  agentManager: IAgentManager | undefined,
-  naxConfig?: NaxConfig,
-  featureName?: string,
-  priorFailures?: Array<{ stage: string; modelTier: string }>,
-  blockingThreshold?: "error" | "warning" | "info",
-  featureContextMarkdown?: string,
-  contextBundle?: import("../context/engine").ContextBundle,
-  projectDir?: string,
-  naxIgnoreIndex?: NaxIgnoreIndex,
-  runtime?: import("../runtime").NaxRuntime,
-  priorAdversarialFindings?: AdversarialFindingsCache,
-): Promise<ReviewCheckResult> {
+export async function runAdversarialReview(opts: RunAdversarialReviewOptions): Promise<ReviewCheckResult> {
+  const {
+    workdir,
+    storyGitRef,
+    story,
+    adversarialConfig,
+    agentManager,
+    naxConfig,
+    featureName,
+    priorFailures,
+    blockingThreshold,
+    featureContextMarkdown,
+    contextBundle,
+    projectDir,
+    naxIgnoreIndex,
+    runtime,
+    priorAdversarialFindings,
+  } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
 
