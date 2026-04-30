@@ -61,8 +61,14 @@ function splitByStructuredFindings(
     return { testFindings: null, sourceFindings: null };
   }
 
-  const testFs = check.findings.filter((f) => isTestFile(f.file ?? "", testFilePatterns));
-  const sourceFs = check.findings.filter((f) => !isTestFile(f.file ?? "", testFilePatterns));
+  // Issue #829: adversarial `test-gap` findings flag a source-file unit that lacks
+  // a test, so `file` points at the source. The remediation is to create a test
+  // file — implementer scope cannot satisfy that. Route by category for `test-gap`.
+  const isTestScoped = (file: string | undefined, category: string | undefined): boolean =>
+    category === "test-gap" || isTestFile(file ?? "", testFilePatterns);
+
+  const testFs = check.findings.filter((f) => isTestScoped(f.file, f.category));
+  const sourceFs = check.findings.filter((f) => !isTestScoped(f.file, f.category));
 
   const toCheck = (findings: typeof testFs): ReviewCheckResult | null => {
     if (findings.length === 0) return null;
