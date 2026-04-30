@@ -31,7 +31,7 @@ const STORY: SemanticStory = {
 };
 
 const CFG: SemanticReviewConfig = {
-  modelTier: "balanced",
+  model: "balanced",
   diffMode: "embedded",
   resetRefOnRerun: false,
   rules: [],

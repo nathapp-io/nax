@@ -190,7 +190,7 @@ export const NaxConfigSchema = z
       audit: { enabled: false },
       blockingThreshold: "error",
       semantic: {
-        modelTier: "balanced",
+        model: "balanced",
         diffMode: "ref",
         resetRefOnRerun: false,
         rules: [],

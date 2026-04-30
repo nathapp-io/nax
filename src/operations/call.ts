@@ -14,6 +14,16 @@ function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[
   return s as ConfigSelector<C>;
 }
 
+function resolveOpModel<I, O, C>(
+  op: Operation<I, O, C>,
+  input: I,
+  buildCtx: BuildContext<C>,
+): ConfiguredModel | undefined {
+  const m = (op as { model?: ConfiguredModel | ((i: I, ctx: BuildContext<C>) => ConfiguredModel | undefined) }).model;
+  if (typeof m === "function") return m(input, buildCtx);
+  return m;
+}
+
 function resolveTimeoutMs<I, O, C>(op: Operation<I, O, C>, input: I, buildCtx: BuildContext<C>): number | undefined {
   const timeoutMs = op.timeoutMs?.(input, buildCtx);
   if (timeoutMs === undefined) return undefined;
@@ -63,7 +73,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
 
   const config = ctx.runtime.configLoader.current();
   const defaultAgent = ctx.runtime.agentManager.getDefault();
-  const opModel: ConfiguredModel = (op as { model?: ConfiguredModel }).model ?? "balanced";
+  const opModel: ConfiguredModel = resolveOpModel(op, input, buildCtx) ?? "balanced";
   // resolved.agent honors `{ agent, model }` pin (cross-agent overrides);
   // resolved.modelTier is undefined when an explicit non-tier model is pinned.
   const resolved = resolveConfiguredModel(config.models, ctx.agentName, opModel, defaultAgent);

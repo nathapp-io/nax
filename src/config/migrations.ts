@@ -71,3 +71,61 @@ export function migrateLegacyTestPattern(raw: Record<string, unknown>, logger: L
 
   return { ...raw, execution: migratedExecution, context: migratedContext };
 }
+
+/**
+ * Alias the deprecated `review.semantic.modelTier` and `review.adversarial.modelTier`
+ * (string tier label) to `review.{semantic,adversarial}.model` (ConfiguredModel).
+ *
+ * Behaviour per block:
+ * - If `modelTier` is absent → no-op for that block.
+ * - If both `modelTier` and `model` are set → both are kept dropped except `model`
+ *   (canonical wins); we do NOT throw — `model` is a strict superset and the user
+ *   has already adopted the new key.
+ * - If only `modelTier` is present → alias: `model = modelTier`, drop `modelTier`.
+ *
+ * In all migrated cases the `modelTier` key is removed from the output to keep
+ * the deprecated field out of Zod-parsed config (Zod is in `.strip()` mode so it
+ * would silently drop, but we drop here to log + keep one place to maintain).
+ */
+export function migrateLegacyReviewModelKey(
+  raw: Record<string, unknown>,
+  logger: Logger | null,
+): Record<string, unknown> {
+  type Block = { modelTier?: unknown; model?: unknown; [k: string]: unknown };
+  type RawReview = { semantic?: Block; adversarial?: Block; [k: string]: unknown };
+
+  const review = raw.review as RawReview | undefined;
+  if (!review) return raw;
+
+  const semantic = migrateBlock(review.semantic, "review.semantic", logger);
+  const adversarial = migrateBlock(review.adversarial, "review.adversarial", logger);
+  if (semantic === review.semantic && adversarial === review.adversarial) return raw;
+
+  return {
+    ...raw,
+    review: {
+      ...review,
+      ...(semantic !== undefined ? { semantic } : {}),
+      ...(adversarial !== undefined ? { adversarial } : {}),
+    },
+  };
+
+  function migrateBlock(block: Block | undefined, path: string, log: Logger | null): Block | undefined {
+    if (!block || block.modelTier === undefined) return block;
+    const { modelTier, ...rest } = block;
+    if (block.model !== undefined) {
+      log?.warn(
+        "config",
+        `${path}.modelTier is deprecated and ignored — ${path}.model is set and wins. Remove ${path}.modelTier.`,
+        { legacyKey: `${path}.modelTier`, canonicalKey: `${path}.model` },
+      );
+      return rest;
+    }
+    log?.warn(
+      "config",
+      `${path}.modelTier is deprecated — migrate to ${path}.model (accepts the same tier string or a { agent, model } pin). Migration shim applied.`,
+      { legacyKey: `${path}.modelTier`, canonicalKey: `${path}.model`, value: modelTier },
+    );
+    return { ...rest, model: modelTier };
+  }
+}

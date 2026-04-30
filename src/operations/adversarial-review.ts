@@ -71,6 +71,8 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   stage: "review",
   session: { role: "reviewer-adversarial", lifetime: "fresh" },
   config: reviewConfigSelector,
+  // Issue #725 — per-call tier from user-configured AdversarialReviewConfig.model.
+  model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
   hopBody: adversarialReviewHopBody,
   build(input, _ctx) {

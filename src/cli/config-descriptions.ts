@@ -136,7 +136,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "review.commands.test": "Custom test command for review",
   "review.commands.build": "Custom build command for review",
   "review.semantic": "Semantic review configuration (code quality analysis)",
-  "review.semantic.modelTier": "Model tier for semantic review (default: balanced)",
+  "review.semantic.model":
+    'Model selector for semantic review. Accepts a tier string ("fast" | "balanced" | "powerful") or an explicit object like { agent: "codex", model: "gpt-5.4" }.',
+  "review.adversarial.model":
+    "Model selector for adversarial review. Accepts a tier string or an explicit { agent, model } pin.",
   "review.semantic.diffMode":
     "How the semantic reviewer accesses the git diff. 'ref' (default) passes only the git ref and file list — the reviewer fetches the full diff via tools. 'embedded' includes the diff in the prompt (truncated at 50KB).",
   "review.semantic.resetRefOnRerun":

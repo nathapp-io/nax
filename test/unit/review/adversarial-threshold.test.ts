@@ -31,7 +31,7 @@ const STORY: SemanticStory = {
 };
 
 const BASE_CFG: AdversarialReviewConfig = {
-  modelTier: "balanced",
+  model: "balanced",
   diffMode: "ref",
   rules: [],
   timeoutMs: 180_000,

@@ -9,7 +9,7 @@ import type { SemanticVerdict } from "../acceptance/types";
 import type { IAgentManager } from "../agents";
 import type { SessionHandle } from "../agents/types";
 import type { NaxConfig } from "../config";
-import { resolveModelForAgent } from "../config/schema-types";
+import { resolveConfiguredModel } from "../config/schema-types";
 import type { DebateResolverContext } from "../debate/types";
 import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
@@ -241,13 +241,13 @@ export function createReviewerSession(
   );
 
   function resolveRunParams(semanticConfig: SemanticReviewConfig) {
-    const modelTier = semanticConfig.modelTier;
     const defaultAgent = agentManager.getDefault();
-    const modelDef = resolveModelForAgent(_config.models, defaultAgent, modelTier, defaultAgent);
+    const resolved = resolveConfiguredModel(_config.models, defaultAgent, semanticConfig.model, defaultAgent);
+    const modelTier = resolved.modelTier ?? "balanced";
     const timeoutSeconds = semanticConfig.timeoutMs
       ? Math.ceil(semanticConfig.timeoutMs / 1000)
       : (_config.execution?.sessionTimeoutSeconds ?? 3600);
-    return { modelTier, modelDef, timeoutSeconds };
+    return { modelTier, modelDef: resolved.modelDef, timeoutSeconds };
   }
 
   function buildEffectivePrompt(prompt: string): string {
@@ -371,7 +371,7 @@ export function createReviewerSession(
       const effectiveSemanticConfig =
         lastSemanticConfig ??
         ({
-          modelTier: "balanced",
+          model: "balanced",
           diffMode: "embedded",
           resetRefOnRerun: false,
           rules: [],

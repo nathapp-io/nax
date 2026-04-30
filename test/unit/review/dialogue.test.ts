@@ -43,7 +43,7 @@ const STORY: SemanticStory = {
 };
 
 const SEMANTIC_CONFIG: SemanticReviewConfig = {
-  modelTier: "balanced",
+  model: "balanced",
   diffMode: "embedded",
   resetRefOnRerun: false,
   rules: [],

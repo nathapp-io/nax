@@ -47,22 +47,34 @@ describe("ReviewCheckName type", () => {
 });
 
 describe("SemanticReviewConfig", () => {
-  test("SemanticReviewConfig has modelTier field of type ModelTier", () => {
+  test("SemanticReviewConfig has model field of type ConfiguredModel (tier label)", () => {
     const config: SemanticReviewConfig = {
-      modelTier: "balanced",
+      model: "balanced",
       diffMode: "embedded",
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       excludePatterns: [],
     };
-    expect(config.modelTier).toBe("balanced");
-    expect(typeof config.modelTier).toBe("string");
+    expect(config.model).toBe("balanced");
+    expect(typeof config.model).toBe("string");
+  });
+
+  test("SemanticReviewConfig.model accepts an explicit { agent, model } pin", () => {
+    const config: SemanticReviewConfig = {
+      model: { agent: "codex", model: "gpt-5.4" },
+      diffMode: "embedded",
+      resetRefOnRerun: false,
+      rules: [],
+      timeoutMs: 600_000,
+      excludePatterns: [],
+    };
+    expect(config.model).toEqual({ agent: "codex", model: "gpt-5.4" });
   });
 
   test("SemanticReviewConfig has rules field of type string[]", () => {
     const config: SemanticReviewConfig = {
-      modelTier: "balanced",
+      model: "balanced",
       diffMode: "embedded",
       resetRefOnRerun: false,
       rules: ["rule1", "rule2"],
@@ -74,22 +86,18 @@ describe("SemanticReviewConfig", () => {
   });
 
   test("SemanticReviewConfig accepts all ModelTier values", () => {
-    const tiers: Array<"fast" | "balanced" | "powerful"> = [
-      "fast",
-      "balanced",
-      "powerful",
-    ];
+    const tiers: Array<"fast" | "balanced" | "powerful"> = ["fast", "balanced", "powerful"];
 
     tiers.forEach((tier) => {
       const config: SemanticReviewConfig = {
-        modelTier: tier,
+        model: tier,
         diffMode: "embedded",
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
         excludePatterns: [],
       };
-      expect(config.modelTier).toBe(tier);
+      expect(config.model).toBe(tier);
     });
   });
 });
@@ -101,7 +109,7 @@ describe("ReviewConfig semantic field", () => {
       review: {
         ...DEFAULT_CONFIG.review,
         semantic: {
-          modelTier: "balanced" as const,
+          model: "balanced" as const,
           rules: [],
         },
       },
@@ -110,7 +118,7 @@ describe("ReviewConfig semantic field", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.review.semantic).toEqual({
-        modelTier: "balanced",
+        model: "balanced",
         diffMode: "ref",
         resetRefOnRerun: false,
         rules: [],
@@ -163,13 +171,13 @@ describe("ReviewConfig semantic field", () => {
 });
 
 describe("ReviewConfigSchema semantic validation", () => {
-  test("semantic.modelTier defaults to 'balanced'", () => {
+  test("semantic.model defaults to 'balanced'", () => {
     const config = {
       ...DEFAULT_CONFIG,
       review: {
         ...DEFAULT_CONFIG.review,
         semantic: {
-          modelTier: "balanced",
+          model: "balanced",
           rules: [],
         },
       },
@@ -177,7 +185,7 @@ describe("ReviewConfigSchema semantic validation", () => {
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.review.semantic?.modelTier).toBe("balanced");
+      expect(result.data.review.semantic?.model).toBe("balanced");
     }
   });
 
@@ -187,7 +195,7 @@ describe("ReviewConfigSchema semantic validation", () => {
       review: {
         ...DEFAULT_CONFIG.review,
         semantic: {
-          modelTier: "balanced",
+          model: "balanced",
           rules: [],
         },
       },
@@ -199,14 +207,14 @@ describe("ReviewConfigSchema semantic validation", () => {
     }
   });
 
-  test("semantic can omit modelTier and get default", () => {
+  test("semantic can omit model and get default", () => {
     const config = {
       ...DEFAULT_CONFIG,
       review: {
         ...DEFAULT_CONFIG.review,
         checks: ["semantic"],
         semantic: {
-          modelTier: "balanced",
+          model: "balanced",
           rules: [],
         },
       },
@@ -214,7 +222,7 @@ describe("ReviewConfigSchema semantic validation", () => {
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.review.semantic?.modelTier).toBe("balanced");
+      expect(result.data.review.semantic?.model).toBe("balanced");
     }
   });
 
@@ -224,7 +232,7 @@ describe("ReviewConfigSchema semantic validation", () => {
       review: {
         ...DEFAULT_CONFIG.review,
         semantic: {
-          modelTier: "powerful",
+          model: "powerful",
           rules: ["no-mutations", "immutable-defaults"],
         },
       },
@@ -245,8 +253,8 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
     expect(DEFAULT_CONFIG.review.semantic).toBeDefined();
   });
 
-  test("DEFAULT_CONFIG.review.semantic.modelTier equals 'balanced'", () => {
-    expect(DEFAULT_CONFIG.review.semantic?.modelTier).toBe("balanced");
+  test("DEFAULT_CONFIG.review.semantic.model equals 'balanced'", () => {
+    expect(DEFAULT_CONFIG.review.semantic?.model).toBe("balanced");
   });
 
   test("DEFAULT_CONFIG.review.semantic.rules equals empty array", () => {
@@ -255,7 +263,7 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
 
   test("DEFAULT_CONFIG.review.semantic has correct defaults", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
-      modelTier: "balanced",
+      model: "balanced",
       diffMode: "ref",
       resetRefOnRerun: false,
       rules: [],
@@ -280,7 +288,7 @@ describe("Semantic check in review.checks with semantic config", () => {
     if (result.success) {
       // After parsing, semantic should have defaults
       expect(result.data.review.semantic).toBeDefined();
-      expect(result.data.review.semantic?.modelTier).toBe("balanced");
+      expect(result.data.review.semantic?.model).toBe("balanced");
       expect(result.data.review.semantic?.rules).toEqual([]);
     }
   });

@@ -11,7 +11,7 @@ const SAMPLE_STORY = {
 };
 
 const SAMPLE_CONFIG = {
-  modelTier: "balanced" as const,
+  model: "balanced" as const,
   diffMode: "ref" as const,
   resetRefOnRerun: false,
   rules: [],
