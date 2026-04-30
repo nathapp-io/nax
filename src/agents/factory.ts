@@ -1,4 +1,6 @@
 import type { NaxConfig } from "../config";
+
+type AgentManagerConfig = Pick<NaxConfig, "agent" | "execution">;
 // Leaf import to avoid barrel cycle (same as in manager.ts):
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
 import type { MiddlewareChain } from "../runtime/agent-middleware";
@@ -22,6 +24,6 @@ export interface CreateAgentManagerOpts {
  * (CLI entry point). Mid-run code must receive IAgentManager via context/DI —
  * never call this factory directly. See docs/specs/SPEC-agent-manager-lifetime.md §2.1.
  */
-export function createAgentManager(config: NaxConfig, opts?: CreateAgentManagerOpts): IAgentManager {
+export function createAgentManager(config: AgentManagerConfig, opts?: CreateAgentManagerOpts): IAgentManager {
   return new AgentManager(config, undefined, opts);
 }
