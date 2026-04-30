@@ -244,7 +244,7 @@ export async function runAgentRectification(
     maxAttempts,
     failure: initialFailure,
     previousAttempts: [],
-    shouldAbort: () => failOpenAborted,
+    shouldAbort: (_failure, _attempt) => failOpenAborted,
     buildPrompt: (failure, previous) => {
       currentAttempt = previous.length + 1;
       const lastResult = previous[previous.length - 1]?.result;
