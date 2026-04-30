@@ -28,7 +28,7 @@ const STORY: SemanticStory = {
 };
 
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
-  modelTier: "balanced",
+  model: "balanced",
   diffMode: "embedded",
   resetRefOnRerun: false,
   rules: [],
@@ -172,7 +172,7 @@ describe("runSemanticReview — LLM prompt construction", () => {
 
   test("prompt includes custom rules from semanticConfig.rules", async () => {
     const config: SemanticReviewConfig = {
-      modelTier: "balanced",
+      model: "balanced",
       diffMode: "embedded",
       resetRefOnRerun: false,
       timeoutMs: 60_000,

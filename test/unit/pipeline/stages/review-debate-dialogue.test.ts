@@ -352,7 +352,7 @@ describe("regression — pure dialogue (no debate) path unchanged", () => {
     // Add semanticConfig so the session.review() path is triggered
     (ctx.config as unknown as Record<string, unknown>).review = {
       ...(ctx.config.review as object),
-      semantic: { modelTier: "balanced", rules: [], timeoutMs: 60000, excludePatterns: [] },
+      semantic: { model: "balanced", rules: [], timeoutMs: 60000, excludePatterns: [] },
     };
     // Provide a fake agent so the session path isn't skipped
     ctx.agentGetFn = mock(() => ({ complete: mock(async () => ({})) })) as unknown as typeof ctx.agentGetFn;

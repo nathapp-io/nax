@@ -314,7 +314,7 @@ export class ReviewOrchestrator {
           acceptanceCriteria: story?.acceptanceCriteria ?? [],
         };
         const semanticCfg = reviewConfig.semantic ?? {
-          modelTier: "balanced" as const,
+          model: "balanced" as const,
           diffMode: "ref" as const,
           resetRefOnRerun: false,
           rules: [] as string[],

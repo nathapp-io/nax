@@ -27,7 +27,7 @@ const STORY: SemanticStory = {
 };
 
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
-  modelTier: "balanced",
+  model: "balanced",
   diffMode: "embedded",
   resetRefOnRerun: false,
   rules: [],

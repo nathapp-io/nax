@@ -139,7 +139,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   const diffMode = semanticConfig.diffMode ?? "ref";
   logger?.info("review", "Running semantic check", {
     storyId: story.id,
-    modelTier: semanticConfig.modelTier,
+    model: semanticConfig.model,
     diffMode,
     configProvided: !!naxConfig,
   });
@@ -191,7 +191,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   if (!effectiveAgentManager) {
     logger?.warn("semantic", "No agent available for semantic review — skipping", {
       storyId: story.id,
-      modelTier: semanticConfig.modelTier,
+      model: semanticConfig.model,
     });
     return {
       check: "semantic",

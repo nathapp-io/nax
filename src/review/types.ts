@@ -26,8 +26,12 @@ export interface SemanticStory {
 
 /** Semantic review configuration */
 export interface SemanticReviewConfig {
-  /** Model tier for semantic review (default: 'balanced') */
-  modelTier: import("../config/schema-types").ModelTier;
+  /**
+   * Model selector for semantic review (default: 'balanced').
+   * Accepts a tier label ("fast" | "balanced" | "powerful") or an explicit
+   * `{ agent, model }` pin for cross-agent overrides.
+   */
+  model: import("../config/schema-types").ConfiguredModel;
   /**
    * How the semantic reviewer accesses the git diff.
    * "embedded": pre-collected diff truncated at 50KB and embedded in prompt.
@@ -133,8 +137,11 @@ export interface ReviewDialogueConfig {
 
 /** Adversarial review configuration (when 'adversarial' is in checks) */
 export interface AdversarialReviewConfig {
-  /** Model tier for adversarial review (default: 'balanced') */
-  modelTier: import("../config/schema-types").ModelTier;
+  /**
+   * Model selector for adversarial review (default: 'balanced').
+   * Accepts a tier label or an explicit `{ agent, model }` pin.
+   */
+  model: import("../config/schema-types").ConfiguredModel;
   /**
    * "ref" (default): reviewer self-serves the full diff via git tools — no 50KB cap,
    *   test files included.

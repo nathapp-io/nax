@@ -321,7 +321,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         acceptanceCriteria: story?.acceptanceCriteria ?? [],
       };
       const semanticCfg = config.semantic ?? {
-        modelTier: "balanced" as const,
+        model: "balanced" as const,
         diffMode: "ref" as const,
         resetRefOnRerun: false,
         rules: [] as string[],
@@ -365,7 +365,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         acceptanceCriteria: story?.acceptanceCriteria ?? [],
       };
       const adversarialCfg = config.adversarial ?? {
-        modelTier: "balanced" as const,
+        model: "balanced" as const,
         diffMode: "ref" as const,
         rules: [] as string[],
         timeoutMs: 600_000,

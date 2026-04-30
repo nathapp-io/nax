@@ -4,10 +4,16 @@
  */
 
 import { z } from "zod";
-import { ModelTierSchema } from "./schemas-model";
+import { ConfiguredModelSchema } from "./schemas-model";
 
 const SemanticReviewConfigSchema = z.object({
-  modelTier: ModelTierSchema.default("balanced"),
+  /**
+   * Model selector for semantic review. Tier label or `{ agent, model }` pin.
+   * Renamed from `modelTier` (schema-types ConfiguredModel widening). Legacy
+   * `modelTier` keys are migrated by `migrateLegacyReviewModelKey` in the
+   * config loader and rejected if both keys are present.
+   */
+  model: ConfiguredModelSchema.default("balanced"),
   /**
    * How the semantic reviewer accesses the git diff.
    * "embedded": pre-collected diff truncated at 50KB and embedded in prompt.
@@ -40,7 +46,11 @@ export const ReviewDialogueConfigSchema = z.object({
  * Destructive heuristics: finds what is missing or broken, not what is present.
  */
 export const AdversarialReviewConfigSchema = z.object({
-  modelTier: ModelTierSchema.default("balanced"),
+  /**
+   * Model selector for adversarial review. Tier label or `{ agent, model }` pin.
+   * See SemanticReviewConfigSchema.model for migration notes.
+   */
+  model: ConfiguredModelSchema.default("balanced"),
   /**
    * "ref" (default): reviewer self-serves the full diff via git tools — no 50KB cap,
    *   test files included. Instructs reviewer to run git diff commands.

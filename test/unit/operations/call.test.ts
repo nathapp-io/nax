@@ -287,3 +287,156 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     ).rejects.toThrow("invalid timeoutMs");
   });
 });
+
+// Issue #725 — RunOperation.model / CompleteOperation.model accept either a
+// literal ConfiguredModel or a resolver `(input, ctx) => ConfiguredModel`. The
+// resolver form is what unblocks per-call tier selection from input config
+// (e.g. semanticReviewOp reads `input.semanticConfig.model`). Without these
+// tests a future refactor could silently drop the resolver path and we'd be
+// back to "balanced is hardcoded".
+describe("callOp — op.model resolver (issue #725)", () => {
+  test("CompleteOperation: literal model is forwarded to completeAs.model", async () => {
+    const completeResult: CompleteResult = { output: "ok", costUsd: 0, source: "exact" };
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
+    const runtime = makeTestRuntime({ agentManager });
+
+    const opWithLiteralModel: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      ...echoOp,
+      name: "literal-model-op",
+      model: "fast",
+    };
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude" },
+      opWithLiteralModel,
+      { text: "hi" },
+    );
+
+    const completeArgs = (agentManager.completeAs as ReturnType<typeof mock>).mock.calls[0]?.[2] as
+      | { model?: string }
+      | undefined;
+    // The fast tier of the default models config resolves to a real ModelDef.model — assert
+    // that something was passed (the exact id depends on DEFAULT_CONFIG.models, not on our
+    // resolver). What we want to pin is that the resolver fired and produced a definition.
+    expect(typeof completeArgs?.model).toBe("string");
+    expect(completeArgs?.model).not.toBe("");
+  });
+
+  test("CompleteOperation: resolver function is invoked with input and resolves to ConfiguredModel", async () => {
+    const completeResult: CompleteResult = { output: "ok", costUsd: 0, source: "exact" };
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
+    const runtime = makeTestRuntime({ agentManager });
+
+    const resolverCalls: Array<{ text: string }> = [];
+    const opWithResolver: CompleteOperation<
+      { text: string; pickFast: boolean },
+      string,
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    > = {
+      ...echoOp,
+      name: "resolver-model-op",
+      model: (input) => {
+        resolverCalls.push({ text: input.text });
+        return input.pickFast ? "fast" : "powerful";
+      },
+    };
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude" },
+      opWithResolver,
+      { text: "case-1", pickFast: true },
+    );
+
+    expect(resolverCalls).toHaveLength(1);
+    expect(resolverCalls[0]).toEqual({ text: "case-1" });
+    // Sanity: the chosen tier flows downstream (agentManager.completeAs got *some* model id).
+    const completeArgs = (agentManager.completeAs as ReturnType<typeof mock>).mock.calls[0]?.[2] as
+      | { model?: string }
+      | undefined;
+    expect(typeof completeArgs?.model).toBe("string");
+  });
+
+  test("RunOperation: resolver returning undefined falls back to 'balanced'", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "ran",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const opWithUndefinedResolver: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      ...runEchoOp,
+      name: "undefined-resolver-op",
+      model: () => undefined,
+    };
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      opWithUndefinedResolver,
+      { text: "hi" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as
+      | { runOptions?: { modelTier?: string } }
+      | undefined;
+    expect(reqArg?.runOptions?.modelTier).toBe("balanced");
+  });
+
+  test("RunOperation: resolver tier flows into runOptions.modelTier", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "ran",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const opWithFastResolver: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      ...runEchoOp,
+      name: "fast-resolver-op",
+      model: () => "fast",
+    };
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      opWithFastResolver,
+      { text: "hi" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as
+      | { runOptions?: { modelTier?: string } }
+      | undefined;
+    expect(reqArg?.runOptions?.modelTier).toBe("fast");
+  });
+});

@@ -128,7 +128,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   const diffMode = adversarialConfig.diffMode ?? "ref";
   logger?.info("review", "Running adversarial check", {
     storyId: story.id,
-    modelTier: adversarialConfig.modelTier,
+    model: adversarialConfig.model,
     diffMode,
   });
 
@@ -183,7 +183,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   if (!effectiveAgentManager) {
     logger?.warn("adversarial", "No agent available for adversarial review — skipping", {
       storyId: story.id,
-      modelTier: adversarialConfig.modelTier,
+      model: adversarialConfig.model,
     });
     return {
       check: "adversarial",

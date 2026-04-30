@@ -49,7 +49,7 @@ describe("operation timeout resolvers", () => {
           acceptanceCriteria: ["AC-1"],
         },
         semanticConfig: {
-          modelTier: "balanced",
+          model: "balanced",
           diffMode: "ref",
           resetRefOnRerun: false,
           rules: [],
@@ -75,7 +75,7 @@ describe("operation timeout resolvers", () => {
           acceptanceCriteria: ["AC-1"],
         },
         adversarialConfig: {
-          modelTier: "balanced",
+          model: "balanced",
           diffMode: "ref",
           rules: [],
           timeoutMs: 654_000,

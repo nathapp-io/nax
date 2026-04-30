@@ -115,15 +115,18 @@ export type HopBody<I> = (initialPrompt: string, ctx: HopBodyContext<I>) => Prom
 
 export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "run";
-  /** Reserved for future model-tier override; not yet consumed by callOp (Wave 3). */
-  readonly mode?: string;
   /**
-   * Model selection for this op. Accepts either a tier label
-   * ("fast" | "balanced" | "powerful") or an explicit `{ agent, model }`
-   * pin (for cross-agent or shorthand-aliased model overrides). Resolved via
-   * `resolveConfiguredModel` in callOp. Defaults to "balanced" when omitted.
+   * Model selection for this op. Accepts either:
+   * - a `ConfiguredModel` literal (tier label like "fast"/"balanced"/"powerful"
+   *   or an explicit `{ agent, model }` pin), or
+   * - a resolver `(input, ctx) => ConfiguredModel | undefined` that derives the
+   *   selection from per-call input or per-package config (e.g. semantic /
+   *   adversarial review ops carry their tier on `input.semanticConfig.model`).
+   *
+   * A resolver returning `undefined` falls back to "balanced". Callop resolves
+   * the final selection via `resolveConfiguredModel`.
    */
-  readonly model?: ConfiguredModel;
+  readonly model?: OperationModel<I, C>;
   readonly session: {
     readonly role: SessionRole;
     readonly lifetime: "fresh" | "warm";
@@ -145,12 +148,22 @@ export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "complete";
   readonly jsonMode?: boolean;
   /**
-   * Model selection for this call. Accepts a tier label or an explicit
-   * `{ agent, model }` pin. Resolved via `resolveConfiguredModel` in callOp.
-   * Defaults to "balanced" when omitted.
+   * Model selection for this call. Accepts a `ConfiguredModel` literal or a
+   * resolver `(input, ctx) => ConfiguredModel | undefined`. Resolver returning
+   * `undefined` falls back to "balanced". Resolved via `resolveConfiguredModel`
+   * in callOp.
    */
-  readonly model?: ConfiguredModel;
+  readonly model?: OperationModel<I, C>;
 }
+
+/**
+ * Operation model selector — literal value or resolver function.
+ *
+ * Resolver form lets ops derive the selection from per-call input or per-package
+ * config (e.g. `(input) => input.semanticConfig.model`). Mirrors the shape of
+ * `OperationBase.timeoutMs` so per-op runtime customization is uniform.
+ */
+export type OperationModel<I, C> = ConfiguredModel | ((input: I, ctx: BuildContext<C>) => ConfiguredModel | undefined);
 
 export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;
 

@@ -74,6 +74,10 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   stage: "review",
   session: { role: "reviewer-semantic", lifetime: "fresh" },
   config: reviewConfigSelector,
+  // Issue #725 — per-call tier from user-configured SemanticReviewConfig.model.
+  // Without this resolver callOp would fall through to its "balanced" default and
+  // silently ignore the user's review.semantic.model setting.
+  model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
   hopBody: semanticReviewHopBody,
   build(input, _ctx) {
