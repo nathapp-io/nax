@@ -536,9 +536,10 @@ Two-phase approach when review fails:
 ### Review Audit Trail
 
 `src/review/review-audit.ts`:
-- Fire-and-forget JSON audit writer for semantic and adversarial reviewer output
+- Runtime-owned JSON audit writer for semantic and adversarial reviewer decisions
 - Directory: `.nax/review-audit/<featureName>/<epochMs>-<sessionName>.json`
-- Tracks parse success, `looksLikeFail` heuristic, and structured result
+- Captures sessionName/sessionId/recordId from reviewer dispatch events
+- Tracks parse success, `looksLikeFail`, fail-open, threshold, and structured result
 - Errors warn but never throw — audit failures cannot interrupt a run
 
 ### Diff Utilities (SSOT)
@@ -1049,6 +1050,7 @@ export interface NaxRuntime {
   readonly sessionManager: ISessionManager;  // Layer 2 — session lifecycle primitive
   readonly costAggregator: ICostAggregator;  // middleware-owned sink; drains on close
   readonly promptAuditor: IPromptAuditor;    // middleware-owned sink; flushes on close
+  readonly reviewAuditor: IReviewAuditor;    // review decision audit; flushes on close
   readonly packages: PackageRegistry;        // root-equiv view when no workdir
   readonly logger: Logger;
   readonly signal: AbortSignal;              // scope-internal AbortController
@@ -1074,8 +1076,9 @@ export interface NaxRuntime {
 ### close() ordering
 
 `close()` is idempotent and drains in this order:
-`signal.abort()` → flush `promptAuditor` → drain `costAggregator`. Errors are
-swallowed and logged (drain must not block run completion).
+`signal.abort()` → flush `promptAuditor` / `reviewAuditor` → drain
+`costAggregator`. Errors are swallowed and logged (drain must not block run
+completion).
 
 ### Why a runtime container?
 

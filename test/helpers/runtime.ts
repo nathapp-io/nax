@@ -2,6 +2,7 @@ import type { IAgentManager } from "../../src/agents";
 import { DEFAULT_CONFIG } from "../../src/config";
 import type { NaxConfig } from "../../src/config";
 import { createRuntime, type CreateRuntimeOptions, type NaxRuntime } from "../../src/runtime";
+import type { IReviewAuditor } from "../../src/runtime";
 import type { ISessionManager } from "../../src/session/types";
 import { makeMockAgentManager } from "./mock-agent-manager";
 import { makeSessionManager } from "./mock-session-manager";
@@ -47,6 +48,7 @@ export function makeTestRuntime(opts?: TestRuntimeOptions): NaxRuntime {
 export interface MockRuntimeOptions {
   agentManager?: IAgentManager;
   sessionManager?: ISessionManager;
+  reviewAuditor?: IReviewAuditor;
   config?: NaxConfig;
   workdir?: string;
 }
@@ -55,6 +57,7 @@ export function makeMockRuntime(opts: MockRuntimeOptions = {}): NaxRuntime {
   return createRuntime(opts.config ?? DEFAULT_CONFIG, opts.workdir ?? "/tmp/test", {
     agentManager: opts.agentManager ?? makeMockAgentManager(),
     sessionManager: opts.sessionManager ?? makeSessionManager(),
+    reviewAuditor: opts.reviewAuditor,
     featureName: "_test",
   });
 }

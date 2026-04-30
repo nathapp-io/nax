@@ -12,6 +12,7 @@ describe("createRuntime", () => {
     expect(rt.packages).toBeDefined();
     expect(rt.costAggregator).toBeDefined();
     expect(rt.promptAuditor).toBeDefined();
+    expect(rt.reviewAuditor).toBeDefined();
     expect(rt.signal).toBeDefined();
     expect(rt.pidRegistry).toBeDefined();
   });
@@ -94,6 +95,33 @@ describe("createRuntime", () => {
     const config = makeNaxConfig({ agent: { promptAudit: { enabled: true, dir: "/custom/audit" } } });
     const rt = createRuntime(config, "/tmp/test", { featureName: "my-feature" });
     expect(rt.promptAuditor).toBeDefined();
+  });
+
+  test("reviewAuditor exists and is silent when review.audit.enabled is false", () => {
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test");
+    expect(() =>
+      rt.reviewAuditor.recordDecision({
+        reviewer: "semantic",
+        storyId: "US-001",
+        parsed: true,
+        passed: true,
+        result: { passed: true, findings: [] },
+      }),
+    ).not.toThrow();
+  });
+
+  test("reviewAuditor is real when review.audit.enabled is true", () => {
+    const config = makeNaxConfig({ review: { audit: { enabled: true } } });
+    const rt = createRuntime(config, "/tmp/test", { featureName: "my-feature" });
+    expect(() =>
+      rt.reviewAuditor.recordDecision({
+        reviewer: "adversarial",
+        storyId: "US-001",
+        parsed: true,
+        passed: true,
+        result: { passed: true, findings: [] },
+      }),
+    ).not.toThrow();
   });
 
   test("close() resolves when flush() throws", async () => {
@@ -181,6 +209,20 @@ describe("createRuntime", () => {
     const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor, costAggregator });
     await rt.close();
     expect(flushCalled).toBe(true);
+  });
+
+  test("close() flushes reviewAuditor", async () => {
+    let reviewFlushCalled = false;
+    const reviewAuditor = {
+      recordDispatch() {},
+      recordDecision() {},
+      async flush() { reviewFlushCalled = true; },
+    };
+    const rt = createRuntime(DEFAULT_CONFIG, "/tmp/test", { reviewAuditor });
+
+    await rt.close();
+
+    expect(reviewFlushCalled).toBe(true);
   });
 });
 

@@ -38,6 +38,36 @@ export const _adversarialDeps = {
   callOp: _callOp,
 };
 
+function recordAdversarialAudit(opts: {
+  runtime?: import("../runtime").NaxRuntime;
+  workdir: string;
+  projectDir?: string;
+  storyId: string;
+  featureName?: string;
+  parsed: boolean;
+  looksLikeFail?: boolean;
+  failOpen?: boolean;
+  passed?: boolean;
+  blockingThreshold?: "error" | "warning" | "info";
+  result: { passed: boolean; findings: unknown[] } | null;
+  advisoryFindings?: unknown[];
+}): void {
+  opts.runtime?.reviewAuditor.recordDecision({
+    reviewer: "adversarial",
+    workdir: opts.workdir,
+    projectDir: opts.projectDir,
+    storyId: opts.storyId,
+    featureName: opts.featureName,
+    parsed: opts.parsed,
+    looksLikeFail: opts.looksLikeFail,
+    failOpen: opts.failOpen,
+    passed: opts.passed,
+    blockingThreshold: opts.blockingThreshold,
+    result: opts.result,
+    advisoryFindings: opts.advisoryFindings,
+  });
+}
+
 export interface RunAdversarialReviewOptions {
   workdir: string;
   storyGitRef: string | undefined;
@@ -221,6 +251,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     });
   } catch (err) {
     logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+    recordAdversarialAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail: false,
+      failOpen: true,
+      passed: true,
+      blockingThreshold,
+      result: null,
+    });
     return {
       check: "adversarial",
       success: true,
@@ -233,18 +276,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   }
   if (opResult.failOpen) {
     logger?.warn("adversarial", "Retry exhausted — fail-open", { storyId: story.id });
-    if (naxConfig?.review?.audit?.enabled) {
-      void _adversarialDeps.writeReviewAudit({
-        reviewer: "adversarial",
-        sessionName: "",
-        workdir,
-        storyId: story.id,
-        featureName,
-        parsed: false,
-        looksLikeFail: false,
-        result: null,
-      });
-    }
+    recordAdversarialAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail: false,
+      failOpen: true,
+      passed: true,
+      blockingThreshold,
+      result: null,
+    });
     return {
       check: "adversarial",
       success: true,
@@ -259,18 +303,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     logger?.warn("adversarial", "LLM returned truncated JSON with passed:false — treating as failure", {
       storyId: story.id,
     });
-    if (naxConfig?.review?.audit?.enabled) {
-      void _adversarialDeps.writeReviewAudit({
-        reviewer: "adversarial",
-        sessionName: "",
-        workdir,
-        storyId: story.id,
-        featureName,
-        parsed: false,
-        looksLikeFail: true,
-        result: null,
-      });
-    }
+    recordAdversarialAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail: true,
+      failOpen: false,
+      passed: false,
+      blockingThreshold,
+      result: null,
+    });
     return {
       check: "adversarial",
       success: false,
@@ -325,6 +370,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         issue: f.issue,
       })),
     });
+    recordAdversarialAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      failOpen: false,
+      passed: false,
+      blockingThreshold: threshold,
+      result: { passed: false, findings: parsed.findings },
+      advisoryFindings,
+    });
     return {
       check: "adversarial",
       success: false,
@@ -345,6 +403,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       storyId: story.id,
       durationMs,
     });
+    recordAdversarialAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      failOpen: false,
+      passed: true,
+      blockingThreshold: threshold,
+      result: { passed: true, findings: parsed.findings },
+      advisoryFindings,
+    });
     return {
       check: "adversarial",
       success: true,
@@ -361,6 +432,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   if (parsed.passed) {
     logger?.info("review", "Adversarial review passed", { storyId: story.id, durationMs });
   }
+  recordAdversarialAudit({
+    runtime,
+    workdir,
+    projectDir,
+    storyId: story.id,
+    featureName,
+    parsed: true,
+    failOpen: false,
+    passed: parsed.passed,
+    blockingThreshold: threshold,
+    result: { passed: parsed.passed, findings: parsed.findings },
+    advisoryFindings,
+  });
   return {
     check: "adversarial",
     success: parsed.passed,
