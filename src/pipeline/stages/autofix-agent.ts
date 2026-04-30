@@ -227,6 +227,10 @@ export async function runAgentRectification(
   let currentAttempt = 0;
   let currentConsecutiveNoOps = 0;
   let currentCheckSignatureChanged = false;
+  // Set true when recheckReview fails solely due to adversarial fail-open (timeout).
+  // shouldAbort (below) reads this flag and exits before the next attempt is built,
+  // preventing a wasted implementer call with stale initialFailure findings. Issue #832.
+  let failOpenAborted = false;
 
   // Held-open implementer session for the duration of the loop. Opened lazily
   // on first execute() to avoid paying openSession cost when the agent fails
@@ -240,6 +244,7 @@ export async function runAgentRectification(
     maxAttempts,
     failure: initialFailure,
     previousAttempts: [],
+    shouldAbort: () => failOpenAborted,
     buildPrompt: (failure, previous) => {
       currentAttempt = previous.length + 1;
       const lastResult = previous[previous.length - 1]?.result;
@@ -584,12 +589,27 @@ export async function runAgentRectification(
         };
       }
 
-      logger.warn("autofix", "Agent rectification exhausted", {
-        storyId: ctx.story.id,
-        attemptsUsed: currentAttempt,
-        globalBudgetUsed: consumed + currentAttempt,
-        maxTotalAttempts: maxTotal,
-      });
+      // recheckReview returned false but collectFailedChecks found nothing — this happens
+      // exclusively when adversarial timed out (fail-open): ctx.reviewResult.success=false
+      // but all checks carry success=true. Re-prompting with stale initialFailure would
+      // send the implementer already-fixed findings. Set failOpenAborted so shouldAbort
+      // exits before the next attempt is built. Issue #832.
+      const isFailOpenOnly = (ctx.reviewResult?.checks ?? []).some((c) => c.failOpen);
+      if (isFailOpenOnly) {
+        failOpenAborted = true;
+      }
+      logger.warn(
+        "autofix",
+        isFailOpenOnly
+          ? "Adversarial timed out during recheck (fail-open) — aborting retry to avoid stale re-prompt"
+          : "Agent rectification exhausted — no failed checks detected after recheck",
+        {
+          storyId: ctx.story.id,
+          attemptsUsed: currentAttempt,
+          globalBudgetUsed: consumed + currentAttempt,
+          maxTotalAttempts: maxTotal,
+        },
+      );
       return {
         passed: false,
         newFailure: initialFailure,

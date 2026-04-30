@@ -209,7 +209,12 @@ export const autofixStage: PipelineStage = {
     // Zero-progress → escalate immediately (stuck rule: no point burning more budget).
     const maxTotal = ctx.config.quality.autofix?.maxTotalAttempts ?? 10;
     const totalUsed = ctx.autofixAttempt ?? 0;
-    const currentlyFailing = new Set((ctx.reviewResult?.checks ?? []).filter((c) => !c.success).map((c) => c.check));
+    // Treat fail-open checks as still-failing so they are not added to retrySkipChecks.
+    // An adversarial timeout is not a genuine pass — skipping it next cycle would let
+    // the story complete without a real adversarial review. Issue #832.
+    const currentlyFailing = new Set(
+      (ctx.reviewResult?.checks ?? []).filter((c) => !c.success || c.failOpen).map((c) => c.check),
+    );
     const nowPassing = [...failedCheckNames].filter((c) => !currentlyFailing.has(c));
 
     if (nowPassing.length > 0 && totalUsed < maxTotal) {
