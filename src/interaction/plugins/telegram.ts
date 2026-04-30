@@ -6,10 +6,12 @@
  */
 
 import { z } from "zod";
+import { getSafeLogger } from "../../logger";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /** Telegram message length limit (4096 max, keep buffer) */
 const MAX_MESSAGE_CHARS = 4000;
+const CALLBACK_API_TIMEOUT_MS = 4000;
 
 /** Zod schema for validating telegram plugin config */
 const TelegramConfigSchema = z.object({
@@ -40,12 +42,20 @@ interface TelegramUpdate {
  */
 export class TelegramInteractionPlugin implements InteractionPlugin {
   name = "telegram";
+  private readonly logger = getSafeLogger();
   private botToken: string | null = null;
   private chatId: string | null = null;
   private pendingMessages = new Map<string, number[]>(); // requestId -> messageId[]
   private lastUpdateId = 0;
   private backoffMs = 1000; // Exponential backoff for getUpdates (starts at 1s)
   private readonly maxBackoffMs = 30000; // Max 30 seconds between retries
+
+  private static readonly INTERACTIVE_REQUEST_TYPES = new Set<InteractionRequest["type"]>([
+    "confirm",
+    "choose",
+    "input",
+    "review",
+  ]);
 
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = TelegramConfigSchema.parse(config);
@@ -108,8 +118,10 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         sentIds.push(data.result.message_id);
       }
 
-      // Store ALL message IDs so we can match user replies to any of them
-      this.pendingMessages.set(request.id, sentIds);
+      // Store sent message IDs only for interactive requests that can receive a reply/callback.
+      if (TelegramInteractionPlugin.INTERACTIVE_REQUEST_TYPES.has(request.type)) {
+        this.pendingMessages.set(request.id, sentIds);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to send Telegram message: ${msg}`);
@@ -127,17 +139,40 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       const updates = await this.getUpdates();
 
       for (const update of updates) {
+        if (update.callback_query) {
+          // Always acknowledge callback queries to prevent Telegram client spinner loops
+          // when users tap stale/mismatched inline buttons.
+          void this.answerCallbackQuery(update.callback_query.id);
+        }
+
         const response = this.parseUpdate(requestId, update);
         if (response) {
-          // Answer callback query if present
           if (update.callback_query) {
-            await this.answerCallbackQuery(update.callback_query.id);
+            this.logger?.debug("interaction", "Telegram callback matched", {
+              requestId,
+              updateId: update.update_id,
+              action: response.action,
+              value: response.value,
+            });
           }
+
+          if (update.callback_query?.message?.message_id !== undefined) {
+            void this.clearInlineKeyboard(update.callback_query.message.message_id);
+          }
+
           // Clean up tracking entry before returning to avoid accumulating stale entries
           this.pendingMessages.delete(requestId);
           // Reset backoff on successful response
           this.backoffMs = 1000;
           return response;
+        }
+
+        if (update.callback_query) {
+          this.logger?.debug("interaction", "Telegram callback ignored (stale/mismatched)", {
+            requestId,
+            updateId: update.update_id,
+            callbackData: update.callback_query.data,
+          });
         }
       }
 
@@ -429,15 +464,50 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     if (!this.botToken) return;
 
     try {
-      await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callback_query_id: callbackQueryId,
-        }),
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
+      try {
+        await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            callback_query_id: callbackQueryId,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
     } catch {
       // Non-critical - fire-and-forget, no logging needed
+    }
+  }
+
+  /**
+   * Clear inline keyboard on a handled message so stale callbacks cannot be tapped repeatedly.
+   */
+  private async clearInlineKeyboard(messageId: number): Promise<void> {
+    if (!this.botToken || !this.chatId) return;
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
+      try {
+        await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: this.chatId,
+            message_id: messageId,
+            reply_markup: { inline_keyboard: [] },
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      // Non-critical cleanup: response already captured.
     }
   }
 

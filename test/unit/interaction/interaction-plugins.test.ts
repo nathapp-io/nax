@@ -365,6 +365,149 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     expect(response.action).toBe("choose");
     expect(response.value).toBe("option-b");
   });
+
+  test("receive() acknowledges callback queries even when requestId does not match", async () => {
+    const answeredCallbackIds: string[] = [];
+    let resolveOtherAck: (() => void) | null = null;
+    let resolveCurrentAck: (() => void) | null = null;
+    const otherAcked = new Promise<void>((resolve) => {
+      resolveOtherAck = resolve;
+    });
+    const currentAcked = new Promise<void>((resolve) => {
+      resolveCurrentAck = resolve;
+    });
+
+    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+
+      if (urlStr.includes("sendMessage")) {
+        return new Response(
+          JSON.stringify({ ok: true, result: { message_id: 12, chat: { id: 99999 } } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (urlStr.includes("getUpdates")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            result: [
+              {
+                update_id: 3,
+                callback_query: {
+                  id: "cq-other",
+                  data: "other-request:approve",
+                  message: { message_id: 12, chat: { id: 99999 } },
+                },
+              },
+              {
+                update_id: 4,
+                callback_query: {
+                  id: "cq-current",
+                  data: "tg-match-1:approve",
+                  message: { message_id: 12, chat: { id: 99999 } },
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (urlStr.includes("answerCallbackQuery")) {
+        const body = JSON.parse((init?.body as string) ?? "{}") as { callback_query_id?: string };
+        if (body.callback_query_id === "cq-other") {
+          answeredCallbackIds.push(body.callback_query_id);
+          resolveOtherAck?.();
+        }
+        if (body.callback_query_id === "cq-current") {
+          answeredCallbackIds.push(body.callback_query_id);
+          resolveCurrentAck?.();
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+
+      if (urlStr.includes("editMessageReplyMarkup")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+
+    await plugin.send(makeConfirmRequest("tg-match-1"));
+    const response = await plugin.receive("tg-match-1", 5000);
+    await Promise.all([otherAcked, currentAcked]);
+
+    expect(response.action).toBe("approve");
+    expect(answeredCallbackIds).toContain("cq-other");
+    expect(answeredCallbackIds).toContain("cq-current");
+  });
+
+  test("receive() clears inline keyboard on successful callback response", async () => {
+    const replyMarkupBodies: Array<Record<string, unknown>> = [];
+    let resolveMarkupClear: (() => void) | null = null;
+    const markupCleared = new Promise<void>((resolve) => {
+      resolveMarkupClear = resolve;
+    });
+
+    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+
+      if (urlStr.includes("sendMessage")) {
+        return new Response(
+          JSON.stringify({ ok: true, result: { message_id: 13, chat: { id: 99999 } } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (urlStr.includes("getUpdates")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            result: [
+              {
+                update_id: 5,
+                callback_query: {
+                  id: "cq-clear",
+                  data: "tg-clear-1:approve",
+                  message: { message_id: 13, chat: { id: 99999 } },
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (urlStr.includes("answerCallbackQuery")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+
+      if (urlStr.includes("editMessageReplyMarkup")) {
+        const body = JSON.parse((init?.body as string) ?? "{}") as Record<string, unknown>;
+        replyMarkupBodies.push(body);
+        resolveMarkupClear?.();
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+
+    await plugin.send(makeConfirmRequest("tg-clear-1"));
+    const response = await plugin.receive("tg-clear-1", 5000);
+    await markupCleared;
+
+    expect(response.action).toBe("approve");
+    expect(replyMarkupBodies).toHaveLength(1);
+    expect(replyMarkupBodies[0].message_id).toBe(13);
+    expect((replyMarkupBodies[0].reply_markup as { inline_keyboard: unknown[] }).inline_keyboard).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
