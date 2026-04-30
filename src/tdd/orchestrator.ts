@@ -253,9 +253,10 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     };
   }
 
-  // Full-Suite Gate (v0.11 Rectification)
-  // Pass initialRef so the gate can use git-diff to suppress pre-existing failures
-  // in files the story never touched (BUG-TC-001).
+  // Full-Suite Gate (v0.11 Rectification).
+  // Baseline must be green entering the run; the gate treats any post-implementer
+  // failure as story-caused (the file-modification filter from BUG-TC-001 was
+  // removed — see rectification-gate.ts header for the rationale).
   const implementerBinding = getTddSessionBinding?.("implementer");
   const { cost: fullSuiteGateCost, fullSuiteGatePassed } = await runFullSuiteGate(
     story,
@@ -267,7 +268,6 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     logger,
     featureName,
     projectDir,
-    initialRef,
     implementerBinding?.sessionManager,
     implementerBinding?.sessionId,
   );

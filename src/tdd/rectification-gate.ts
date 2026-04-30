@@ -13,12 +13,10 @@ import { type rectificationGateConfigSelector, resolveModelForAgent } from "../c
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
-import type { FailureRecord } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
 import { formatSessionName } from "../session/naming";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
-  type RectificationState,
   executeWithTimeout as _executeWithTimeout,
   parseTestOutput as _parseTestOutput,
   shouldRetryRectification as _shouldRetryRectification,
@@ -59,31 +57,15 @@ export const _rectificationGateDeps = {
 };
 
 /**
- * Return the set of files changed since `fromRef` via `git diff --name-only`.
- * Used to infer which failures the story is responsible for (BUG-TC-001).
- */
-async function getStoryChangedFiles(workdir: string, fromRef: string): Promise<ReadonlySet<string>> {
-  const result = await _rectificationGateDeps.executeWithTimeout(
-    `git diff --name-only --relative ${fromRef} HEAD`,
-    15,
-    undefined,
-    { cwd: workdir },
-  );
-  if (!result.output) return new Set();
-  return new Set(
-    result.output
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean),
-  );
-}
-
-/**
  * Run full test suite gate before verifier session (v0.11 Rectification).
  *
- * @param storyFromRef - git ref captured before the story started (initialRef).
- *   When provided, failures in test files the story never touched are suppressed
- *   to prevent pre-existing failures from consuming rectification attempts (BUG-TC-001).
+ * Pre-condition: the baseline test suite is green at the start of the run.
+ * Any failure observed here is treated as story-caused and routed to the
+ * rectification loop. The previous file-modification-based filter (BUG-TC-001 /
+ * PR #656) silently suppressed real regressions whenever a story changed source
+ * code that broke a sibling spec it didn't author (e.g. editing rag.service.ts
+ * breaking rag.service.spec.ts), so it has been removed. The deferred regression
+ * gate in execution/lifecycle/run-regression.ts is the run-level safety net.
  */
 export async function runFullSuiteGate(
   story: UserStory,
@@ -95,7 +77,6 @@ export async function runFullSuiteGate(
   logger: ReturnType<typeof getLogger>,
   featureName?: string,
   projectDir?: string,
-  storyFromRef?: string,
   sessionManager?: import("../session").ISessionManager,
   sessionId?: string,
   runtime?: import("../runtime").NaxRuntime,
@@ -142,43 +123,6 @@ export async function runFullSuiteGate(
         return { passed: true, cost: 0, fullSuiteGatePassed: false };
       }
 
-      // Filter out failures in files the story never touched (pre-existing pollution).
-      // Uses git diff since storyFromRef to identify story-owned files.
-      let filteredFailures = testSummary.failures;
-      if (storyFromRef) {
-        const storyFiles = await getStoryChangedFiles(workdir, storyFromRef);
-        if (storyFiles.size > 0) {
-          filteredFailures = testSummary.failures.filter((f) => storyFiles.has(f.file));
-        }
-      }
-      const wasFiltered = filteredFailures.length < testSummary.failures.length;
-
-      if (wasFiltered && filteredFailures.length === 0) {
-        const uniqueSuppressedFiles = [...new Set(testSummary.failures.map((f) => f.file))];
-        logger.info("tdd", "Full suite gate: all failures are pre-existing — accepting as pass", {
-          storyId: story.id,
-          suppressedFileCount: uniqueSuppressedFiles.length,
-          suppressedTestCount: testSummary.failures.length,
-          suppressedFiles: uniqueSuppressedFiles,
-        });
-        return { passed: true, cost: 0, fullSuiteGatePassed: true };
-      }
-
-      if (wasFiltered) {
-        logger.info("tdd", "Full suite gate: suppressed pre-existing failures", {
-          storyId: story.id,
-          total: testSummary.failures.length,
-          suppressed: testSummary.failures.length - filteredFailures.length,
-          remaining: filteredFailures.length,
-        });
-      }
-
-      // Preserve the original failed count when no structured failures were available to filter
-      const filteredSummary = {
-        ...testSummary,
-        failures: filteredFailures,
-        failed: wasFiltered ? filteredFailures.length : testSummary.failed,
-      };
       return await runRectificationLoop(
         story,
         config,
@@ -187,7 +131,7 @@ export async function runFullSuiteGate(
         implementerTier,
         lite,
         logger,
-        filteredSummary,
+        testSummary,
         rectificationConfig,
         effectiveTestCmd,
         fullSuiteTimeout,
