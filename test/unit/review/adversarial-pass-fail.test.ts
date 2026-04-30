@@ -208,22 +208,14 @@ function setupHappyPathDeps(statContent = STAT_OUTPUT) {
 async function callRunAdversarialReview(llmResponse: string): Promise<import("../../../src/review/types").ReviewCheckResult> {
   const agentManager = makeAgentManager(llmResponse);
   const runtime = makeMockRuntime({ agentManager });
-  return runAdversarialReview(
-    "/tmp/wd",
-    "abc123",
-    STORY,
-    ADVERSARIAL_CONFIG,
+  return runAdversarialReview({
+    workdir: "/tmp/wd",
+    storyGitRef: "abc123",
+    story: STORY,
+    adversarialConfig: ADVERSARIAL_CONFIG,
     agentManager,
-    undefined, // naxConfig
-    undefined, // featureName
-    undefined, // priorFailures
-    undefined, // blockingThreshold
-    undefined, // featureContextMarkdown
-    undefined, // contextBundle
-    undefined, // projectDir
-    undefined, // naxIgnoreIndex
     runtime,
-  );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -338,25 +330,25 @@ describe("runAdversarialReview — skip on no git ref", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=true when resolveEffectiveRef returns undefined", async () => {
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      undefined,
-      STORY,
-      ADVERSARIAL_CONFIG,
-      makeAgentManager(PASSING_RESPONSE),
-    );
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: makeAgentManager(PASSING_RESPONSE),
+    });
 
     expect(result.success).toBe(true);
   });
 
   test("output contains 'skipped' when resolveEffectiveRef returns undefined", async () => {
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      undefined,
-      STORY,
-      ADVERSARIAL_CONFIG,
-      makeAgentManager(PASSING_RESPONSE),
-    );
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: makeAgentManager(PASSING_RESPONSE),
+    });
 
     expect(result.output).toContain("skipped");
   });
@@ -377,25 +369,25 @@ describe("runAdversarialReview — skip when no stat", () => {
   afterEach(restoreAllDeps);
 
   test("returns success=true when diff stat is empty", async () => {
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      makeAgentManager(PASSING_RESPONSE),
-    );
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: makeAgentManager(PASSING_RESPONSE),
+    });
 
     expect(result.success).toBe(true);
   });
 
   test("output contains 'skipped: no changes detected' when stat is empty", async () => {
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      makeAgentManager(PASSING_RESPONSE),
-    );
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: makeAgentManager(PASSING_RESPONSE),
+    });
 
     expect(result.output).toContain("skipped: no changes detected");
   });
@@ -455,26 +447,38 @@ describe("runAdversarialReview — fail-open when modelResolver returns null", (
 
   afterEach(restoreAllDeps);
 
-  test("returns success=true when modelResolver returns null", async () => {
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      undefined,
-    );
+test("returns success=true when modelResolver returns null", async () => {
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: undefined,
+    });
 
     expect(result.success).toBe(true);
   });
 
   test("output contains 'skipped' when modelResolver returns null", async () => {
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      undefined,
-    );
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: undefined,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test("output contains 'skipped' when modelResolver returns null", async () => {
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: undefined,
+    });
 
     expect(result.output).toContain("skipped");
   });
@@ -506,22 +510,14 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
       },
     });
 
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      throwingManager,
-      undefined, // naxConfig
-      undefined, // featureName
-      undefined, // priorFailures
-      undefined, // blockingThreshold
-      undefined, // featureContextMarkdown
-      undefined, // contextBundle
-      undefined, // projectDir
-      undefined, // naxIgnoreIndex
-      makeRuntime(throwingManager),
-    );
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: throwingManager,
+      runtime: makeRuntime(throwingManager),
+    });
 
     expect(result.success).toBe(true);
   });
@@ -540,22 +536,14 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
       },
     });
 
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
-      throwingManager,
-      undefined, // naxConfig
-      undefined, // featureName
-      undefined, // priorFailures
-      undefined, // blockingThreshold
-      undefined, // featureContextMarkdown
-      undefined, // contextBundle
-      undefined, // projectDir
-      undefined, // naxIgnoreIndex
-      makeRuntime(throwingManager),
-    );
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager: throwingManager,
+      runtime: makeRuntime(throwingManager),
+    });
 
     expect(result.output).toContain("skipped");
   });

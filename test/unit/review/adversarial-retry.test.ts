@@ -147,14 +147,14 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("Adversarial review passed");
@@ -169,14 +169,14 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.failOpen).toBe(true);
@@ -192,14 +192,14 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("passed:false");
@@ -213,14 +213,14 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(false);
     expect(result.findings).toHaveLength(1);
@@ -232,14 +232,14 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.failOpen).toBe(true);
@@ -268,14 +268,14 @@ describe("runAdversarialReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     const successLog = logger.infoCalls.find((c) => c.message.includes("Adversarial review passed"));
     expect(successLog).toBeDefined();
@@ -290,14 +290,14 @@ describe("runAdversarialReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(exhaustLog).toBeDefined();
@@ -312,14 +312,14 @@ describe("runAdversarialReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated JSON"));
     expect(truncatedLog).toBeDefined();
@@ -334,14 +334,14 @@ describe("runAdversarialReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runAdversarialReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      ADVERSARIAL_CONFIG,
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     const retryLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(retryLog).toBeUndefined();
