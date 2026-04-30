@@ -382,7 +382,7 @@ export class ReviewOrchestrator {
           priorFailures,
           featureContextMarkdown,
           contextBundles,
-          projectDir: undefined,
+          projectDir,
           env,
           naxIgnoreIndex,
           runtime,
