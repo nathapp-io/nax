@@ -49,6 +49,7 @@ export {
   decomposeConfigSelector,
   rectifyConfigSelector,
   acceptanceConfigSelector,
+  acceptanceGenConfigSelector,
   acceptanceFixConfigSelector,
   tddConfigSelector,
   debateConfigSelector,

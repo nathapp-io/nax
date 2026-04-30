@@ -1,6 +1,6 @@
 import { extractTestCode } from "../acceptance/generator";
 import { hasLikelyTestContent, isStubTestContent } from "../acceptance/heuristics";
-import { acceptanceConfigSelector } from "../config";
+import { acceptanceGenConfigSelector } from "../config";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -17,7 +17,7 @@ export interface AcceptanceGenerateOutput {
   testCode: string | null;
 }
 
-type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select>;
+type AcceptanceConfig = ReturnType<typeof acceptanceGenConfigSelector.select>;
 
 export const acceptanceGenerateOp: CompleteOperation<
   AcceptanceGenerateInput,
@@ -28,8 +28,8 @@ export const acceptanceGenerateOp: CompleteOperation<
   name: "acceptance-generate",
   stage: "acceptance",
   jsonMode: false,
-  config: acceptanceConfigSelector,
-  timeoutMs: (_input, ctx) => ctx.config.acceptance.timeoutMs,
+  config: acceptanceGenConfigSelector,
+  timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildGeneratorFromPRDPrompt({
       featureName: input.featureName,
