@@ -1,9 +1,10 @@
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
-import type { ModelTier, NaxConfig, ResolvedConfiguredModel } from "../config";
+import type { ConfiguredModel, ModelTier, NaxConfig, ResolvedConfiguredModel } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
 import type { PipelineStage } from "../config/permissions";
+import type { ModelsConfig } from "../config/schema-types";
 import type { ModelDef } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import type { DispatchContext } from "../runtime/dispatch-context";
@@ -153,31 +154,23 @@ export function pipelineStageForDebate(stage: string): PipelineStage {
   }
 }
 
-export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, config: NaxConfig): ModelDef {
-  const configModels = config?.models ?? DEFAULT_CONFIG.models;
-  // Use optional chaining throughout: config may be partially-constructed in tests.
-  const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
-
+export function resolveModelDefForDebater(
+  debater: Debater,
+  model: ConfiguredModel,
+  modelsConfig: ModelsConfig,
+  defaultAgent: string,
+): ModelDef {
   try {
-    return resolveConfiguredModel(
-      configModels,
-      debater.agent,
-      { agent: debater.agent, model: debater.model ?? tier },
-      configDefaultAgent,
-    ).modelDef;
+    return resolveConfiguredModel(modelsConfig, debater.agent, model, defaultAgent).modelDef;
   } catch {
     // Fall through to secondary fallback strategies.
   }
 
   try {
-    return resolveConfiguredModel(
-      DEFAULT_CONFIG.models,
-      debater.agent,
-      { agent: debater.agent, model: debater.model ?? tier },
-      resolveDefaultAgent(DEFAULT_CONFIG),
-    ).modelDef;
+    return resolveConfiguredModel(DEFAULT_CONFIG.models, debater.agent, model, resolveDefaultAgent(DEFAULT_CONFIG))
+      .modelDef;
   } catch {
-    return resolveModelForAgent(configModels, debater.agent, "fast", configDefaultAgent);
+    return resolveModelForAgent(modelsConfig, debater.agent, "fast", defaultAgent);
   }
 }
 

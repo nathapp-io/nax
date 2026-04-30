@@ -5,9 +5,9 @@
  */
 
 import { join } from "node:path";
+import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
-import type { ModelDef } from "../config";
+import type { ConfiguredModel, ModelDef, NaxConfig } from "../config";
 import { NaxError } from "../errors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
@@ -30,7 +30,7 @@ interface PlanCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: NaxConfig;
+  readonly config: Pick<NaxConfig, "debate" | "models" | "agent">;
 }
 
 export async function runPlan(
@@ -88,7 +88,13 @@ export async function runPlan(
       const debaterPrompt = `${proposalBuilder.buildProposalPrompt(i)}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
       const modelTier = modelTierFromDebater(rd);
-      const modelDef: ModelDef = resolveModelDefForDebater(rd, modelTier, ctx.config);
+      const model: ConfiguredModel = { agent: rd.agent, model: rd.model ?? modelTier };
+      const modelDef: ModelDef = resolveModelDefForDebater(
+        rd,
+        model,
+        ctx.config.models,
+        resolveDefaultAgent(ctx.config),
+      );
 
       const sessionManager = ctx.sessionManager;
       if (!sessionManager) {
@@ -229,7 +235,8 @@ export async function runPlan(
     proposalOutputs,
     critiqueOutputs,
     ctx.stageConfig,
-    ctx.config,
+    // resolveOutcome's CompleteOptions.config stays NaxConfig per Phase 3 §3.3
+    ctx.config as NaxConfig,
     ctx.storyId,
     resolverTimeoutMs,
     opts.workdir,

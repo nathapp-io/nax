@@ -73,11 +73,12 @@ describe("ConfigSelector — Phase 1 selectors", () => {
   });
 
   describe("widened selectors", () => {
-    test("debateConfigSelector now includes models", () => {
+    test("debateConfigSelector now includes models and agent", () => {
       const slice = debateConfigSelector.select(DEFAULT_CONFIG);
       expect(slice).toHaveProperty("debate");
       expect(slice).toHaveProperty("models");
-      expect(Object.keys(slice).sort()).toEqual(["debate", "models"]);
+      expect(slice).toHaveProperty("agent");
+      expect(Object.keys(slice).sort()).toEqual(["agent", "debate", "models"]);
     });
 
     test("reviewConfigSelector now includes models and execution", () => {
@@ -141,6 +142,7 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       const slice = debateConfigSelector.select(DEFAULT_CONFIG);
       expect(slice.debate).toEqual(DEFAULT_CONFIG.debate);
       expect(slice.models).toEqual(DEFAULT_CONFIG.models);
+      expect(slice.agent).toEqual(DEFAULT_CONFIG.agent);
     });
 
     test("reviewConfigSelector preserves values", () => {
