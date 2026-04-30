@@ -282,6 +282,53 @@ describe("splitFindingsByScope — structured findings path", () => {
     const { sourceFindings } = splitFindingsByScope(check);
     expect(sourceFindings!.exitCode).toBe(check.exitCode);
   });
+
+  // Issue #829 — `test-gap` findings flag a source-file unit that lacks a test;
+  // the remediation belongs in test-writer scope, not implementer.
+  test("test-gap on source file → routes to testFindings, not sourceFindings", () => {
+    const finding = makeFinding("apps/api/src/rag/rag.service.ts", { category: "test-gap" });
+    const check = makeAdversarialCheck([finding]);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).not.toBeNull();
+    expect(testFindings!.findings).toHaveLength(1);
+    expect(sourceFindings).toBeNull();
+  });
+
+  test("non-test-gap on source file still routes to sourceFindings", () => {
+    const finding = makeFinding("src/foo.ts", { category: "abandonment" });
+    const check = makeAdversarialCheck([finding]);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).not.toBeNull();
+    expect(sourceFindings!.findings).toHaveLength(1);
+  });
+
+  test("mixed test-gap + non-test-gap on source files → split correctly", () => {
+    const findings = [
+      makeFinding("src/foo.ts", { category: "abandonment" }),
+      makeFinding("src/foo.ts", { category: "test-gap" }),
+      makeFinding("src/bar.test.ts", { category: "convention" }),
+    ];
+    const check = makeAdversarialCheck(findings);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(sourceFindings!.findings!.map((f) => f.category)).toEqual(["abandonment"]);
+    expect(testFindings!.findings!.map((f) => f.category)).toEqual(["test-gap", "convention"]);
+  });
+
+  test("test-gap with undefined file routes to testFindings", () => {
+    const finding: ReviewFinding = {
+      ruleId: "r",
+      severity: "error",
+      file: undefined as any,
+      line: 1,
+      message: "m",
+      category: "test-gap",
+    };
+    const check = makeAdversarialCheck([finding]);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).not.toBeNull();
+    expect(sourceFindings).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
