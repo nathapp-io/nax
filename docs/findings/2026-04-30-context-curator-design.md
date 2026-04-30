@@ -1,0 +1,356 @@
+# Context Curator — Design Notes
+
+**Date:** 2026-04-30
+**Status:** Design exploration — no code yet
+**Driver:** Koda dogfood; manual maintenance of `context.md` + `.nax/rules/` doesn't scale across runs.
+
+---
+
+## Problem
+
+After every nax run, the user (or operator) has to decide:
+
+- Did anything happen this run that should be added to `.nax/features/<id>/context.md`?
+- Did any review finding repeat enough times to warrant a new rule in `.nax/rules/*.md`?
+- Are any existing rules / `context.md` entries unused and should be dropped?
+
+Today this is fully manual. The signal is in the run artifacts (manifests, run logs, sessions) but no tool harvests it. As `context.md` and the rules directory grow, drift sets in: stale entries waste budget, missing entries cause repeated rectification cycles.
+
+## Proposal
+
+A **post-run curator** that:
+
+1. Walks the artifacts produced by a finished run.
+2. Distills them into a normalized observation log.
+3. Generates **proposals** (candidate adds / drops) into a review file.
+4. Never writes to `context.md` or `.nax/rules/` directly — the human reviews and accepts.
+
+Implemented as an `IPostRunAction` plugin (existing extension point in nax).
+
+### Why a review queue, not auto-apply
+
+Auto-merging into the canonical sources would corrupt them within a few runs. The keep/drop gate is the whole point — the tool's job is to surface candidates, not to decide.
+
+### v0 vs v1
+
+- **v0 — deterministic.** Frequency counts, manifest joins, status flags. Cheap, reproducible, no LLM cost. ~80% of the value lives here.
+- **v1 — LLM-distilled.** Summarises transcripts and prompt audits to extract higher-leverage rules. Defer until v0 ships and the keep/drop UX is validated.
+
+---
+
+## Step 1 — Metadata inventory
+
+Score every artifact on two axes: **signal about whether the agent's context was right** and **cheap to extract deterministically**.
+
+### Tier 1 — high signal, deterministic (use first)
+
+| Source | Path / event | Signal |
+|:---|:---|:---|
+| Context manifest | `<feature>/stories/<sid>/context-manifest-<stage>.json` | `includedChunks` / `excludedChunks` (with reason: `below-min-score` / `budget` / `stale` / `role-filter` / `dedupe`), `providerResults[].status` (`ok` / `empty` / `failed`), per-chunk `score` |
+| Review findings | `run.jsonl` event `review.finding` | Repeated check IDs across stories = candidate rule. Severity + origin (built-in / semantic / adversarial) |
+| Rectification cycles | `run.jsonl` event `rectify.attempt` | Cycle count, exit verdict, failing checks each cycle. >1 cycle = context likely missed something |
+| Escalation events | `run.jsonl` event `escalation` | `fast → balanced` or `balanced → powerful` triggers — model couldn't solve at tier, often a context problem |
+| Acceptance failures | `run.jsonl` event `acceptance.failed` | Failing AC IDs, retry count |
+| Pull tool calls | `run.jsonl` event `pull.tool` | `query_feature_context(keyword)` returning empty = missing `context.md` entry; `query_neighbor` repeats on same file = missing static link |
+| Story verdict | story status | `passed` / `failed` / `aborted`, plus terminal stage |
+| Stage timings | per-stage events | Repeated slow stages on same story type = candidate budget tune |
+
+### Tier 2 — medium signal, deterministic
+
+| Source | Signal |
+|:---|:---|
+| Session token counts | At budget ceiling and verdict failed → raise budget. At 30% and succeeded → lower budget. |
+| Co-changed file pairs | From git diff per story — paired but `code-neighbor` missed the link → candidate static rule. |
+| Chunk citation absence | Rule chunk loaded for 30 days with zero downstream session output mentioning its keywords → candidate drop. |
+
+### Tier 3 — high signal, requires LLM (defer to v1)
+
+| Source | Signal | Why deferred |
+|:---|:---|:---|
+| Prompt audit (full prompt text) | What the agent was actually told | Needs extraction + summarisation |
+| Agent transcripts | What the agent reasoned about | Same |
+| Commit messages from the run | What the agent thought it did | Cheap to read but ambiguous to interpret |
+
+### Tier 0 — drop (looks useful, isn't)
+
+- Wall-clock duration alone — noisy, depends on cold caches and network.
+- Token cost per run — cost ≠ context quality.
+- Raw error stack traces — high churn, low pattern signal.
+
+---
+
+## Step 2 — Structured collection schema
+
+nax already writes the artifacts, but as **per-stage** files. The curator needs a **per-run** flat event table to do frequency counts and cross-story joins. Two layers, plus an optional cross-run rollup.
+
+### Layer A — `observations.jsonl` (normalized event, one record per signal)
+
+```
+.nax/runs/<runId>/observations.jsonl
+```
+
+```typescript
+type Observation = {
+  // identity
+  runId: string;
+  featureId: string;
+  storyId: string;
+  stage: string;          // "execution" | "review" | "rectify" | ...
+  ts: string;             // ISO timestamp
+
+  kind:
+    | "chunk-included"
+    | "chunk-excluded"
+    | "provider-empty"
+    | "review-finding"
+    | "rectify-cycle"
+    | "escalation"
+    | "acceptance-fail"
+    | "pull-call"
+    | "co-change"
+    | "verdict";
+
+  // discriminated payload — only fields relevant to `kind`
+  payload: {
+    chunkId?: string;          // chunk-* and pull-call
+    providerId?: string;       // chunk-* and provider-empty
+    reason?: string;           // chunk-excluded: below-min-score | budget | stale | ...
+    score?: number;            // 0..1 — chunk-*
+    checkId?: string;          // review-finding
+    severity?: "low" | "med" | "high";
+    keyword?: string;          // pull-call (query_feature_context)
+    resultCount?: number;      // pull-call
+    fromTier?: string;         // escalation
+    toTier?: string;           // escalation
+    files?: string[];          // co-change
+    verdict?: "passed" | "failed" | "aborted";
+  };
+};
+```
+
+This shape is the contract. Every observation is one row. Heuristics become trivial group-bys:
+
+```bash
+# "Same review finding across N stories" → anti-pattern rule candidate
+jq -s 'map(select(.kind=="review-finding"))
+       | group_by(.payload.checkId)
+       | map({checkId: .[0].payload.checkId, count: length, stories: [.[].storyId]})
+       | map(select(.count >= 2))' observations.jsonl
+
+# "Pull tool returned empty for same keyword twice" → context.md candidate
+jq -s 'map(select(.kind=="pull-call" and .payload.resultCount==0))
+       | group_by(.payload.keyword)
+       | map(select(length >= 2))' observations.jsonl
+
+# "Chunk excluded as stale but story still passed" → drop candidate
+jq -s 'map(select(.kind=="chunk-excluded" and .payload.reason=="stale"))
+       | group_by(.payload.chunkId) ...' observations.jsonl
+```
+
+### Layer B — `run-summary.json` (per-run aggregate, optional)
+
+```
+.nax/runs/<runId>/run-summary.json
+```
+
+```typescript
+type RunSummary = {
+  runId: string;
+  featureId: string;
+  startedAt: string;
+  finishedAt: string;
+  storiesTotal: number;
+  storiesPassed: number;
+  storiesFailed: number;
+  totalRectifyCycles: number;
+  totalEscalations: number;
+  pullToolCalls: { tool: string; count: number; emptyCount: number }[];
+  providerHealth: { providerId: string; okCount: number; emptyCount: number; failedCount: number }[];
+};
+```
+
+Pre-aggregation of Layer A. Useful for dashboards / `nax curator status`, but always recomputable. Optimization, not source of truth.
+
+### Layer C — cross-run rollup (only when N runs accumulate)
+
+```
+.nax/curator/rollup.jsonl
+```
+
+Same `Observation` schema, append-one-per-run, `runId` retained. Lets the curator ask: "this review finding fired in 8 of the last 12 runs across 3 features" — that's the threshold for promoting a candidate to a rule proposal.
+
+---
+
+## Proposal output (what the curator writes)
+
+A single review file per run:
+
+```
+.nax/runs/<runId>/curator-proposals.md
+```
+
+Example:
+
+```markdown
+## Add to .nax/features/<id>/context.md
+- [ ] [HIGH] Postgres connection cap — seen in 3 stories, 1 rectify cycle
+- [ ] [MED] /v2/reviews batch endpoint — pull-tool query "review batch" returned empty 2×
+
+## Add to .nax/rules/api-data.md
+- [ ] [MED] "never N+1 on /v2/reviews" — review finding 4× this run
+
+## Drop from .nax/rules/web.md
+- [ ] [LOW] line 23–28 — never matched in 30 days of manifests
+```
+
+User triages with `nax curator apply <runId>` (interactive accept/reject), or just edits the file and runs a follow-up command that diffs accepted items into the canonical files. The curator never writes to `context.md` / `.nax/rules/` directly.
+
+---
+
+## Step 3 — Tier 1 feasibility audit (2026-04-30)
+
+Verified each Tier 1 source by greppping the nax source tree and inspecting koda's actual run artifacts at `~/Desktop/projects/nathapp/koda/.nax/`.
+
+### Sources that already exist (no nax change needed)
+
+| Source | Where it lives | Verified by |
+|:---|:---|:---|
+| Context manifest | `<projectDir>/.nax/features/<id>/stories/<sid>/context-manifest-<stage>.json` | `src/context/engine/manifest-store.ts`; koda has `context-manifest-{context,tdd-test-writer,tdd-implementer}.json` for US-001 |
+| Rectification cycles | `<feature>/runs/<ts>.jsonl` with `stage:"rectify"` or `stage:"autofix"` | `src/pipeline/stages/rectify.ts:49,106,112`, `src/pipeline/stages/autofix-agent.ts:104+` |
+| Escalation events | `<feature>/runs/<ts>.jsonl` with `stage:"escalation"`; also persisted on `UserStory.escalations[]` | `src/execution/escalation/tier-escalation.ts:133` `logger.warn("escalation", "Story exceeded tier budget, escalating", …)` |
+| Story verdict | `.nax/metrics.json` per-story (`failed`, `firstPassSuccess`, `attempts`, `finalTier`) — cross-run | `src/metrics/tracker.ts:254` saves to `<workdir>/.nax/metrics.json` |
+| Stage timings | `<feature>/runs/<ts>.jsonl` — every event carries `timestamp` + `stage` | Confirmed in koda jsonl: 30+ distinct stage tags including `pipeline`, `tdd-*`, `routing`, `static-rules`, `context-v2` |
+
+### Sources gated behind a flag (already exist — just enable)
+
+| Source | Status | How to enable |
+|:---|:---|:---|
+| **Review findings** | ✅ **`ReviewAuditor` already exists.** Originally flagged as a logger gap — that was wrong. `src/review/review-audit.ts` writes structured JSON per reviewer call to `.nax/review-audit/<featureName>/<epochMs>-<sessionName>.json`. Schema covers everything the curator needs: `reviewer` (semantic/adversarial), `storyId`, `parsed`, `result.passed`, `result.findings[]`, `advisoryFindings[]`, `blockingThreshold`, `failOpen`, plus session correlation IDs. Gated by `config.review.audit.enabled` (default `false`). Wired in `src/runtime/index.ts:140-142` — when disabled, falls back to `createNoOpReviewAuditor()`. Subscriber attached at `src/runtime/index.ts:179` via `attachReviewAuditSubscriber`. Confirmed working: koda has audit files for `memory-guardrails` from 2026-04-22. | Add to `.nax/config.json`: `"review": { "audit": { "enabled": true } }` |
+
+### Sources still missing (need nax logger gap fixed)
+
+| Source | Why missing | What needs to change |
+|:---|:---|:---|
+| **Pull tool calls** | `src/context/engine/pull-tools.ts` and `tool-runtime.ts` emit **zero log events** in `handleQueryNeighbor` / `handleQueryFeatureContext`. No flag-gated audit exists. | Either add `logger.info("pull-tool", "invoked", { storyId, tool, keyword, resultCount })` inside each handler, or build a `PullToolAuditor` mirroring `ReviewAuditor` (same shape, same flag pattern). |
+| **Acceptance verdict** | `src/acceptance/*.ts` logs progress but no structured pass/fail event. Stage tag is `"acceptance"` but determining outcome requires string-parsing messages. | Add `logger.info("acceptance", "verdict", { storyId, passed, failedACs, retries })` once per story at acceptance completion. |
+
+### Newly discovered sources (not in original design)
+
+| Source | Path | Use |
+|:---|:---|:---|
+| **Per-story metrics** | `.nax/metrics.json` — structured array, cross-run already | Strongest single source for Layer A. Has `firstPassSuccess`, `attempts`, `agentUsed`, `runtimeCrashes`, `tokensProduced`, `chunksKept` per story. |
+| **Prompt audit jsonl** | `.nax/prompt-audit/<feature>/<sessionId>.jsonl` | Tier 3 (LLM-distill) source: full prompts per session. Confirmed in koda. Out of scope for v0. |
+| **Cost jsonl** | `.nax/cost/<runId>.jsonl` | Per-call cost. Not directly useful for curator (Tier 0). |
+
+### Net feasibility for v0
+
+**6 of 8 Tier 1 sources are feasible today with zero changes to nax.** Five exist as-is; the sixth (review findings, the highest-leverage one for "anti-pattern rule" proposals) just needs a one-line config flip:
+
+```json
+"review": { "audit": { "enabled": true } }
+```
+
+Output lands at `.nax/review-audit/<featureName>/*.json`, structured per reviewer (semantic + adversarial) and ready to ingest as `Observation` records.
+
+The remaining 2 gaps:
+
+- **Pull tool calls** — `src/context/engine/pull-tools.ts` handlers emit nothing. Either add a `logger.info(...)` line per handler, or mirror the `ReviewAuditor` pattern with a `PullToolAuditor` (same flag-gated structure).
+- **Structured acceptance verdict** — `src/acceptance/*.ts` needs one structured `logger.info("acceptance", "verdict", { storyId, passed, failedACs })` event per story.
+
+Each of the 2 remaining gaps is a self-contained, no-behavior-change PR.
+
+### Implication for the design
+
+- **v0 can ship today** with 6 sources by enabling `review.audit.enabled` in koda's config + walking the existing artifacts. That covers 80–90% of the heuristics.
+- **The pull-tool gap matters less than originally claimed**, because pull tools are off by default in koda anyway. Adding the audit only becomes urgent once `context.v2.pull.enabled: true`.
+- **The acceptance gap matters most for failure-recovery proposals.** Worth fixing in v0 if it's a one-line change; defer otherwise.
+- **`metrics.json` + `review-audit/*.json` together are Layer A's primary inputs**, not the run jsonl. Both are already structured, normalized, and cross-run. The run jsonl supplements with timing and escalation events.
+
+## Step 4 — Auditor proliferation: unified design considered
+
+While auditing the gaps in Step 3, the question came up: **do we keep adding domain-specific auditors (`PullToolAuditor`, `AcceptanceAuditor`, `EscalationAuditor`, …) every time a new domain needs persisted observations, or unify them?**
+
+Current shape (from `src/runtime/index.ts`):
+
+```
+runtime
+  ├─ dispatchEvents          ← single in-process event bus
+  ├─ promptAuditor           ┐
+  ├─ reviewAuditor           ├─ each = class + subscriber + writer + config flag
+  ├─ costAggregator          ┘
+  └─ logger
+```
+
+Every auditor does the same three things: subscribe to the bus, transform events to a domain schema, write JSONL/JSON to a domain-specific path. The only thing that varies is schema and destination.
+
+### The proposed unified shape (sketch only, not committed)
+
+Two new runtime primitives, replacing the per-domain auditors:
+
+```
+runtime
+  ├─ dispatchEvents
+  ├─ eventLog                ← .nax/runs/<runId>/events.jsonl   (small, one line per event)
+  └─ blobStore               ← .nax/runs/<runId>/blobs/<ref>.txt (large, content-addressed)
+```
+
+Rationale: the current auditors conflate two concerns — **structured records** (small, queryable) and **opaque payloads** (large, retrieve-by-ref). `PromptAuditor` writes both `<runId>.jsonl` and per-session `.txt` files, paired by `ts`. Separating these into independent primitives matches the actual data shapes:
+
+| Domain | Today | After split |
+|:---|:---|:---|
+| Prompt audit | One class, writes `.jsonl` + `.txt` paired by `ts` | `prompt.complete` event with `payload.promptRef` → blob |
+| Review audit | Per-reviewer JSON, no blob | `review.decision` event with inlined small payload |
+| Pull tool | (none) | `pull.tool.invoked` event, inlined payload |
+| Acceptance verdict | (none) | `acceptance.verdict` event, blob if large |
+| Rectify / escalation | Logger only | Typed events, no blob |
+
+Adding a new domain becomes "dispatch a typed event," not "build a new auditor class."
+
+### Risk register for the unified design
+
+Before committing, evaluated against this codebase:
+
+| ID | Risk | Severity | Mitigation |
+|:---|:---|:---|:---|
+| **R1** | **YAGNI / premature unification.** Trigger was "we'd be adding a third auditor," but curator v0 only needs the second (`reviewAuditor`), which already exists. Pull-tool audit doesn't bind until `context.v2.pull.enabled: true`. Acceptance is one `logger.info` line. | **Highest** | Defer. Ship curator v0 against existing auditors. Revisit once a 3rd or 4th domain actually pushes against the seam. |
+| R2 | **Schema versioning blast radius.** Today each auditor's schema is local — breaking changes affect only that domain's consumers. After unification, schema changes touch every consumer of `events.jsonl`. | Major | Mandatory `schemaVersion` on every event; tolerant parsers; never reuse field names across versions. |
+| R3 | **Atomicity of blob + event pair.** Implicit ordering is `blobStore.put → eventLog.record({ ref })`. Process death between the two leaves orphan blobs or dangling refs. Same problem prompt-auditor.ts:6-8 already documents (2026-04-29 incident: `.txt` succeeded, `.jsonl` dropped) — unification doesn't fix or worsen it. | Major | GC sweep at runtime startup (delete unreferenced blobs older than X). |
+| R4 | **Single-stream ergonomic regression.** `ls .nax/review-audit/<feature>/` becomes `jq 'select(.kind=="review.decision")' events.jsonl`. Workflow regresses without a CLI shim. | Major | Ship `nax events --kind=...` view command; or keep per-domain folders as secondary projections during transition. |
+| R5 | **`dispatchEvents` contract is unverified.** Claim is that it's already a typed bus, but the actual interface (typed/loose, sync/async, tolerant of unknown kinds) hasn't been read. If loose, "every audit goes through here" is itself a refactor. | Medium | Read `src/runtime/index.ts` + dispatch types **before** committing to a design doc. |
+| R6 | **Subscriber failure visibility.** `Promise.allSettled` (`runtime/index.ts:211`) means audit failures are silent today. Acceptable per-domain; after unification, a silent EventLog failure breaks every downstream consumer. | Medium | Explicit health check at run-end: "recorded N events, expected ≥M". Fail loudly below threshold. |
+| R7 | **Plugin / external consumer drift.** `IReporter` and `IPostRunAction` plugins might read audit folders directly. Even if none does today, the contract is implicit. | Medium | Dual-write during transition. |
+| R8 | **Test debt.** `PromptAuditor` and `ReviewAuditor` each have tests. Migration needs regression coverage proving behavior preserved. | Minor | ~200–500 LOC of test code, on top of new-primitive tests. |
+| R9 | **Aborted-run blob cleanup.** Ctrl+C mid-run leaves orphan blobs. Same problem as today's prompt-audit `.txt` orphans. No regression. | Minor | Reuse existing cleanup story (none today; defer). |
+| R10 | **Performance under parallel stories.** Single `events.jsonl` per run, multiple stories appending. JSONL append is atomic per-line on POSIX; per-runId scoping bounds contention. | Minor | Not a real concern at current scale. |
+
+### Recommendation — defer unification
+
+The unified design is the right *eventual* shape, but R1 dominates: building EventLog/BlobStore now spends a week on a runtime refactor when a config flip + 2 small log lines unblock the curator. R5 also means the design isn't grounded enough to commit — primitives would be guessed, not verified against the existing bus contract.
+
+Order of operations:
+
+1. **Verify R5.** Read `dispatchEvents` types and current subscriber contracts. ~30 minutes. Confirms or kills the unification's foundation.
+2. **Ship curator v0** against existing `reviewAuditor` + `metrics.json` + run jsonl. Validate the keep/drop UX with real proposals.
+3. **Defer the unification decision** until pull-tool-audit (or a 4th domain) actually pushes. By then the per-domain folder UX will be known to matter (or not), and the bus contract will be on solid ground.
+
+Captured here so a future operator hitting the same fork can see the analysis without re-deriving it.
+
+---
+
+## Open questions / next steps
+
+1. **Decide the v0 cut.** Ship the 2 remaining logger emits (pull-tool, acceptance) now, or ship a partial curator first?
+2. **Confirm `metrics.json` shape covers what we need.** Walk the file end-to-end against the `Observation` schema.
+3. **Calibrate thresholds.** "≥2 stories", "30 days", etc. are guesses. Calibrate against real run data once enough metrics rows accumulate.
+4. **Storage location.** `.nax/runs/<runId>/` is current; cross-run rollup at `.nax/curator/rollup.jsonl` is new — confirm convention.
+5. **Plugin entry point.** `IPostRunAction` is the documented hook. Confirm it gets enough context (run artifacts path, config, logger) to do the walk.
+6. **Apply UX.** Interactive CLI (`nax curator apply`) vs. plain editing the proposals file — pick one before building.
+7. **Verify `dispatchEvents` contract** (R5 from Step 4) — only if the unified-auditor design is revisited.
+
+## References
+
+- [Context Engine guide](../guides/context-engine.md) — feature context, rules, manifests, pull tools
+- ADR-010 — Context Engine
+- `IPostRunAction` plugin extension point — see plugin loader in `src/plugins/`
+- Run log format — `src/logger/`
+- Manifest writer — `src/context/engine/`
