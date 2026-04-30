@@ -364,6 +364,36 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     expect(result.success).toBe(true);
   });
 
+  test("records review audit decision for semantic debate result", async () => {
+    const auditCalls: unknown[] = [];
+    _semanticDeps.createDebateRunner = mock(() => ({
+      run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
+    }));
+
+    const agentManager = makeAgentManager(PROPOSAL_PASS);
+    const runtime = makeMockRuntime({
+      agentManager,
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+    });
+
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager,
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime,
+    });
+
+    expect(result.success).toBe(false);
+    expect(auditCalls).toHaveLength(1);
+    expect((auditCalls[0] as any).reviewer).toBe("semantic");
+    expect((auditCalls[0] as any).parsed).toBe(true);
+    expect((auditCalls[0] as any).passed).toBe(false);
+    expect((auditCalls[0] as any).result.findings).toHaveLength(1);
+  });
+
   test("AC4: success=false when majority (2 of 3) proposals have passed=false", async () => {
     _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),

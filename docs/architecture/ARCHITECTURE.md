@@ -68,7 +68,7 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§33 Error Classes** — `NaxError` + 5 derived error classes
 - **§34 Session Manager** (ADR-011 + ADR-019) — `SessionManager` owns full session lifecycle: `openSession` / `sendPrompt` / `closeSession` / `runInSession` / `nameFor` / `handoff`, 7-state machine, scratch dir, runtime helpers (`failAndClose`)
 - **§35 Agent Manager** (ADR-012 + ADR-019) — `AgentManager` is a peer of `SessionManager`. Three entry points: `completeAs` (sessionless), `runAsSession` (caller-managed handle), `runWithFallback` (chain iteration via `executeHop` callback)
-- **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `packages`, `logger`, `signal`. Frozen middleware chain (audit → cost → cancellation → logging) wraps every `runAs` / `completeAs` call.
+- **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `reviewAuditor`, `packages`, `logger`, `signal`. Frozen middleware chain (audit → cost → cancellation → logging) wraps every `runAs` / `completeAs` call.
 - **§37 Operations & `callOp`** (ADR-018) — `Operation<I, O, C>` typed spec under `src/operations/`. `callOp(ctx, op, input)` slices config via `packageView.select`, composes prompts via `composeSections`, dispatches `kind:"complete"` to `completeAs` and `kind:"run"` to `runWithFallback` with `buildHopCallback`.
 
 ---
@@ -109,7 +109,7 @@ Deep reference for each subsystem — consult when working on a specific module.
 | Context Engine v2 | Stage-aware context assembly | `ContextOrchestrator.assemble(request)` → `ContextBundle` |
 | Session Manager | Session lifecycle + state machine | `sessionManager.openSession() / sendPrompt() / closeSession() / runInSession() / handoff()` |
 | Agent Manager | Agent default + availability fallback | `agentManager.getDefault() / completeAs() / runAsSession() / runWithFallback()` |
-| NaxRuntime | Single lifecycle container per run | `createRuntime(config, workdir)` → `{ agentManager, sessionManager, configLoader, costAggregator, promptAuditor, … }` |
+| NaxRuntime | Single lifecycle container per run | `createRuntime(config, workdir)` → `{ agentManager, sessionManager, configLoader, costAggregator, promptAuditor, reviewAuditor, … }` |
 | Operation | Typed semantic envelope for LLM work | `Operation<I, O, C>` + `callOp(ctx, op, input)` |
 
 ---

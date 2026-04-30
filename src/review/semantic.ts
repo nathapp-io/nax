@@ -44,6 +44,36 @@ export const _semanticDeps = {
   callOp: _callOp,
 };
 
+function recordSemanticAudit(opts: {
+  runtime?: import("../runtime").NaxRuntime;
+  workdir: string;
+  projectDir?: string;
+  storyId: string;
+  featureName?: string;
+  parsed: boolean;
+  looksLikeFail?: boolean;
+  failOpen?: boolean;
+  passed?: boolean;
+  blockingThreshold?: "error" | "warning" | "info";
+  result: { passed: boolean; findings: unknown[] } | null;
+  advisoryFindings?: unknown[];
+}): void {
+  opts.runtime?.reviewAuditor.recordDecision({
+    reviewer: "semantic",
+    workdir: opts.workdir,
+    projectDir: opts.projectDir,
+    storyId: opts.storyId,
+    featureName: opts.featureName,
+    parsed: opts.parsed,
+    looksLikeFail: opts.looksLikeFail,
+    failOpen: opts.failOpen,
+    passed: opts.passed,
+    blockingThreshold: opts.blockingThreshold,
+    result: opts.result,
+    advisoryFindings: opts.advisoryFindings,
+  });
+}
+
 export interface RunSemanticReviewOptions {
   workdir: string;
   storyGitRef: string | undefined;
@@ -264,6 +294,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     });
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });
+    recordSemanticAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail: false,
+      failOpen: true,
+      passed: true,
+      blockingThreshold,
+      result: null,
+    });
     return {
       check: "semantic",
       success: true,
@@ -276,18 +319,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   }
   if (opResult.failOpen) {
     logger?.warn("semantic", "Retry exhausted — fail-open", { storyId: story.id });
-    if (naxConfig?.review?.audit?.enabled) {
-      void _semanticDeps.writeReviewAudit({
-        reviewer: "semantic",
-        sessionName: "",
-        workdir,
-        storyId: story.id,
-        featureName,
-        parsed: false,
-        looksLikeFail: false,
-        result: null,
-      });
-    }
+    recordSemanticAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail: false,
+      failOpen: true,
+      passed: true,
+      blockingThreshold,
+      result: null,
+    });
     return {
       check: "semantic",
       success: true,
@@ -302,18 +346,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
       storyId: story.id,
     });
-    if (naxConfig?.review?.audit?.enabled) {
-      void _semanticDeps.writeReviewAudit({
-        reviewer: "semantic",
-        sessionName: "",
-        workdir,
-        storyId: story.id,
-        featureName,
-        parsed: false,
-        looksLikeFail: true,
-        result: null,
-      });
-    }
+    recordSemanticAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail: true,
+      failOpen: false,
+      passed: false,
+      blockingThreshold,
+      result: null,
+    });
     return {
       check: "semantic",
       success: false,
@@ -367,6 +412,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       })),
     });
     const output = `Semantic review failed:\n\n${formatFindings(blockingFindings)}`;
+    recordSemanticAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      failOpen: false,
+      passed: false,
+      blockingThreshold: threshold,
+      result: { passed: false, findings: sanitizedParsed.findings },
+      advisoryFindings,
+    });
     return {
       check: "semantic",
       success: false,
@@ -387,6 +445,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       storyId: story.id,
       durationMs,
     });
+    recordSemanticAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      failOpen: false,
+      passed: true,
+      blockingThreshold: threshold,
+      result: { passed: true, findings: sanitizedParsed.findings },
+      advisoryFindings,
+    });
     return {
       check: "semantic",
       success: true,
@@ -403,6 +474,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   if (sanitizedParsed.passed) {
     logger?.info("review", "Semantic review passed", { storyId: story.id, durationMs });
   }
+  recordSemanticAudit({
+    runtime,
+    workdir,
+    projectDir,
+    storyId: story.id,
+    featureName,
+    parsed: true,
+    failOpen: false,
+    passed: sanitizedParsed.passed,
+    blockingThreshold: threshold,
+    result: { passed: sanitizedParsed.passed, findings: sanitizedParsed.findings },
+    advisoryFindings,
+  });
   return {
     check: "semantic",
     success: sanitizedParsed.passed,

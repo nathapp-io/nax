@@ -23,6 +23,31 @@ import {
 import type { SemanticReviewConfig } from "./types";
 import type { ReviewCheckResult, SemanticStory } from "./types";
 
+function recordSemanticDebateAudit(opts: {
+  runtime: import("../runtime").NaxRuntime;
+  workdir: string;
+  storyId: string;
+  featureName?: string;
+  parsed: boolean;
+  passed: boolean;
+  blockingThreshold?: "error" | "warning" | "info";
+  result: { passed: boolean; findings: unknown[] } | null;
+  advisoryFindings?: unknown[];
+}): void {
+  opts.runtime.reviewAuditor.recordDecision({
+    reviewer: "semantic",
+    workdir: opts.workdir,
+    storyId: opts.storyId,
+    featureName: opts.featureName,
+    parsed: opts.parsed,
+    failOpen: false,
+    passed: opts.passed,
+    blockingThreshold: opts.blockingThreshold,
+    result: opts.result,
+    advisoryFindings: opts.advisoryFindings,
+  });
+}
+
 export interface SemanticDebateOptions {
   naxConfig: NaxConfig | undefined;
   runtime: import("../runtime").NaxRuntime | undefined;
@@ -140,6 +165,16 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
             storyId: story.id,
             durationMs,
           });
+          recordSemanticDebateAudit({
+            runtime: debateRuntime,
+            workdir,
+            storyId: story.id,
+            featureName,
+            parsed: true,
+            passed: false,
+            blockingThreshold,
+            result: { passed: false, findings },
+          });
           return {
             check: "semantic",
             success: false,
@@ -155,6 +190,16 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
           ? "Semantic review passed (debate+dialogue)"
           : "Semantic review passed (debate+dialogue, all findings non-blocking)";
         logger?.info("review", label, { storyId: story.id, durationMs });
+        recordSemanticDebateAudit({
+          runtime: debateRuntime,
+          workdir,
+          storyId: story.id,
+          featureName,
+          parsed: true,
+          passed: true,
+          blockingThreshold,
+          result: { passed: true, findings },
+        });
         return {
           check: "semantic",
           success: true,
@@ -206,6 +251,17 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
           storyId: story.id,
           durationMs,
         });
+        recordSemanticDebateAudit({
+          runtime: debateRuntime,
+          workdir,
+          storyId: story.id,
+          featureName,
+          parsed: true,
+          passed: false,
+          blockingThreshold: debateThreshold,
+          result: { passed: false, findings: debateFindings },
+          advisoryFindings: debateAdvisory,
+        });
         return {
           check: "semantic",
           success: false,
@@ -223,6 +279,17 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
         storyId: story.id,
         durationMs,
       });
+      recordSemanticDebateAudit({
+        runtime: debateRuntime,
+        workdir,
+        storyId: story.id,
+        featureName,
+        parsed: true,
+        passed: true,
+        blockingThreshold: debateThreshold,
+        result: { passed: true, findings: debateFindings },
+        advisoryFindings: debateAdvisory,
+      });
       return {
         check: "semantic",
         success: true,
@@ -235,6 +302,17 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
       };
     }
     logger?.info("review", "Semantic review passed (debate)", { storyId: story.id, durationMs });
+    recordSemanticDebateAudit({
+      runtime: debateRuntime,
+      workdir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      passed: true,
+      blockingThreshold: debateThreshold,
+      result: { passed: true, findings: debateFindings },
+      advisoryFindings: debateAdvisory,
+    });
     return {
       check: "semantic",
       success: true,

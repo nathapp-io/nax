@@ -238,7 +238,7 @@ When `mechanicalFailedOnly` is `false` or `undefined`, normal escalation behavio
 
 ## Review Audit Trail
 
-Every semantic and adversarial review writes a JSON audit file to `.nax/review-audit/` so operators can inspect exactly what each reviewer decided, regardless of pass/fail.
+When `review.audit.enabled` is true, every semantic and adversarial review writes a JSON audit file to `.nax/review-audit/` so operators can inspect exactly what each reviewer decided, regardless of pass/fail.
 
 ### Directory Layout
 
@@ -258,15 +258,20 @@ Every semantic and adversarial review writes a JSON audit file to `.nax/review-a
 | `featureName` | Feature name (determines subfolder) |
 | `reviewer` | `"semantic"` or `"adversarial"` |
 | `sessionName` | ACP session name — correlates with prompt-audit entries |
+| `sessionId` | ACP volatile session ID, when the reviewer session opened |
+| `recordId` | ACP stable record ID, when the reviewer session opened |
 | `parsed` | `true` if the LLM response parsed into valid review JSON |
 | `looksLikeFail` | (only when `parsed: false`) Whether the raw response contained `"passed":false` |
+| `failOpen` | Whether nax treated the reviewer failure as fail-open |
+| `passed` | Final review decision after threshold handling |
+| `blockingThreshold` | Severity threshold used for blocking vs advisory findings |
 | `result` | Structured `{ passed, findings }` or `null` when parse failed |
 
 ### Behavior
 
-- **Fire-and-forget** — errors warn via the logger but never throw, so an audit failure cannot interrupt a run
-- **Best-effort** — uses `_reviewAuditDeps` injectable deps for testability
-- **Automatic** — no configuration needed; audit files are written whenever semantic or adversarial review runs
+- **Runtime-owned** — `NaxRuntime.reviewAuditor` captures reviewer session metadata and flushes on runtime close
+- **Best-effort** — errors warn via the logger but never throw, so an audit failure cannot interrupt a run
+- **Config gated** — audit files are written whenever semantic or adversarial review runs and `review.audit.enabled` is true
 
 ---
 

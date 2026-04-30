@@ -174,6 +174,9 @@ export function buildHopCallback(
       const send = (turnPrompt: string): Promise<TurnResult> =>
         agentManager.runAsSession(agentName, handle, turnPrompt, {
           storyId: story.id,
+          featureName,
+          workdir,
+          projectDir,
           pipelineStage: stage,
           signal: resolvedRunOptions.abortSignal,
           contextPullTools,

@@ -289,7 +289,7 @@ describe("runAdversarialReview — cost propagation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// review.audit gate — writeReviewAudit only called when audit.enabled === true
+// review.audit gate — ReviewAuditor records final decisions
 // ---------------------------------------------------------------------------
 
 describe("runAdversarialReview — review audit gate", () => {
@@ -300,22 +300,28 @@ describe("runAdversarialReview — review audit gate", () => {
 
   afterEach(restoreAllDeps);
 
-  test("audit disabled (default) — writeReviewAudit not called on success", async () => {
+  test("audit disabled (default) — injected ReviewAuditor records success decisions", async () => {
     const auditCalls: unknown[] = [];
-    _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
     const agentManager = makeAgentManager(PASSING_RESPONSE);
-    const runtime = makeMockRuntime({ agentManager });
+    const runtime = makeMockRuntime({
+      agentManager,
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+    });
 
     await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, agentManager, runtime });
 
-    expect(auditCalls).toHaveLength(0);
+    expect(auditCalls).toHaveLength(1);
+    expect((auditCalls[0] as any).parsed).toBe(true);
+    expect((auditCalls[0] as any).passed).toBe(true);
   });
 
-  test.skip("audit enabled — writeReviewAudit called with parsed:true on success (BUG: ADR-019 migration incomplete — src/ should write audit on all paths per docs/guides/semantic-review.md)", async () => {
+  test("audit enabled — ReviewAuditor records parsed:true on success", async () => {
     const auditCalls: unknown[] = [];
-    _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
     const agentManager = makeAgentManager(PASSING_RESPONSE);
-    const runtime = makeMockRuntime({ agentManager });
+    const runtime = makeMockRuntime({
+      agentManager,
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+    });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
     await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, agentManager, naxConfig, runtime });
@@ -323,13 +329,16 @@ describe("runAdversarialReview — review audit gate", () => {
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(true);
     expect((auditCalls[0] as any).reviewer).toBe("adversarial");
+    expect((auditCalls[0] as any).result.passed).toBe(true);
   });
 
-  test("audit enabled — writeReviewAudit called with parsed:false on parse failure", async () => {
+  test("audit enabled — ReviewAuditor records parsed:false on parse failure", async () => {
     const auditCalls: unknown[] = [];
-    _adversarialDeps.writeReviewAudit = mock(async (entry) => { auditCalls.push(entry); });
     const agentManager = makeAgentManager("not json at all");
-    const runtime = makeMockRuntime({ agentManager });
+    const runtime = makeMockRuntime({
+      agentManager,
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+    });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
     await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, agentManager, naxConfig, runtime });

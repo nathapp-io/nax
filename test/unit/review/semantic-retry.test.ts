@@ -144,8 +144,12 @@ describe("runSemanticReview — JSON retry outcomes", () => {
       passed: true,
       findings: [],
     }));
+    const auditCalls: unknown[] = [];
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
-    const runtime = makeMockRuntime({ agentManager });
+    const runtime = makeMockRuntime({
+      agentManager,
+      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), async flush() {} },
+    });
 
     const result = await runSemanticReview({
       workdir: "/tmp/wd",
@@ -158,6 +162,10 @@ describe("runSemanticReview — JSON retry outcomes", () => {
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("Semantic review passed");
+    expect(auditCalls).toHaveLength(1);
+    expect((auditCalls[0] as any).reviewer).toBe("semantic");
+    expect((auditCalls[0] as any).parsed).toBe(true);
+    expect((auditCalls[0] as any).passed).toBe(true);
   });
 
   test("returns fail-open when callOp returns failOpen", async () => {
