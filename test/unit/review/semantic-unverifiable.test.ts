@@ -131,14 +131,14 @@ describe("unverifiable finding handling", () => {
     });
     const agentManager = makeAgentManager(response);
     const runtime = makeMockRuntime({ agentManager });
-    const result = await runSemanticReview(
-      "/tmp/repo",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/repo",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("advisory");
@@ -166,14 +166,14 @@ describe("unverifiable finding handling", () => {
     });
     const agentManager = makeAgentManager(response);
     const runtime = makeMockRuntime({ agentManager });
-    const result = await runSemanticReview(
-      "/tmp/repo",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/repo",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(false);
     // Only the blocking finding should be in the output
@@ -199,14 +199,14 @@ describe("unverifiable finding handling", () => {
     });
     const agentManager = makeAgentManager(response);
     const runtime = makeMockRuntime({ agentManager });
-    const result = await runSemanticReview(
-      "/tmp/repo",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/repo",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     // With default 'error' threshold, info findings are advisory — not blocking
     expect(result.success).toBe(true);
@@ -230,14 +230,14 @@ describe("unverifiable finding handling", () => {
     });
     const agentManager = makeAgentManager(response);
     const runtime = makeMockRuntime({ agentManager });
-    const result = await runSemanticReview(
-      "/tmp/repo",
-      "abc123",
-      STORY,
-      { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+    const result = await runSemanticReview({
+      workdir: "/tmp/repo",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.findings).toBeUndefined();
@@ -260,14 +260,14 @@ describe("unverifiable finding handling", () => {
     });
     const agentManager = makeAgentManager(response);
     const runtime = makeMockRuntime({ agentManager });
-    const result = await runSemanticReview(
-      "/tmp/repo",
-      "abc123",
-      STORY,
-      { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+    const result = await runSemanticReview({
+      workdir: "/tmp/repo",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.findings).toBeUndefined();
@@ -298,14 +298,14 @@ describe("unverifiable finding handling", () => {
     const result = await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
       writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
-      return runSemanticReview(
+      return runSemanticReview({
         workdir,
-        "abc123",
-        STORY,
-        { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+        storyGitRef: "abc123",
+        story: STORY,
+        semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
         agentManager,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-      );
+        runtime,
+      });
     });
 
     expect(result.success).toBe(false);
@@ -337,14 +337,14 @@ describe("unverifiable finding handling", () => {
     const result = await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
       writeFileSync(join(workdir, "src/foo.ts"), "const storedLinkStr = links.sort().join('|');\n");
-      return runSemanticReview(
+      return runSemanticReview({
         workdir,
-        "abc123",
-        STORY,
-        { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+        storyGitRef: "abc123",
+        story: STORY,
+        semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
         agentManager,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-      );
+        runtime,
+      });
     });
 
     expect(result.success).toBe(true);
@@ -364,14 +364,14 @@ describe("semantic prompt includes tool-access instructions", () => {
       fallbacks: [],
     }));
 
-    await runSemanticReview(
-      "/tmp/repo",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: "/tmp/repo",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });

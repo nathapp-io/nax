@@ -147,16 +147,14 @@ describe("runSemanticReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("Semantic review passed");
@@ -171,16 +169,14 @@ describe("runSemanticReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.failOpen).toBe(true);
@@ -196,16 +192,14 @@ describe("runSemanticReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("passed:false");
@@ -219,16 +213,14 @@ describe("runSemanticReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(false);
     expect(result.findings).toHaveLength(1);
@@ -240,16 +232,14 @@ describe("runSemanticReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     expect(result.success).toBe(true);
     expect(result.failOpen).toBe(true);
@@ -278,16 +268,14 @@ describe("runSemanticReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     const successLog = logger.infoCalls.find((c) => c.message.includes("Semantic review passed"));
     expect(successLog).toBeDefined();
@@ -302,16 +290,14 @@ describe("runSemanticReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     const exhaustLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(exhaustLog).toBeDefined();
@@ -326,16 +312,14 @@ describe("runSemanticReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated JSON"));
     expect(truncatedLog).toBeDefined();
@@ -350,16 +334,14 @@ describe("runSemanticReview — logging", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      DEFAULT_SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, undefined, undefined, undefined,
-      undefined, undefined, undefined, undefined,
-      undefined, runtime,
-    );
+      runtime,
+    });
 
     const retryLog = logger.warnCalls.find((c) => c.message.includes("Retry exhausted"));
     expect(retryLog).toBeUndefined();

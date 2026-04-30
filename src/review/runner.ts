@@ -305,23 +305,23 @@ export async function runReview(
         // excludePatterns omitted — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009)
       };
       const runSemantic = _reviewSemanticDeps.runSemanticReview;
-      const result = await runSemantic(
+      const result = await runSemantic({
         workdir,
         storyGitRef,
-        semanticStory,
-        semanticCfg,
+        story: semanticStory,
+        semanticConfig: semanticCfg,
         agentManager,
         naxConfig,
         featureName,
         resolverSession,
         priorFailures,
-        config.blockingThreshold,
+        blockingThreshold: config.blockingThreshold,
         featureContextMarkdown,
-        contextBundles?.semantic,
+        contextBundle: contextBundles?.semantic,
         projectDir,
         naxIgnoreIndex,
         runtime,
-      );
+      });
       checks.push(result);
       if (!result.success && !firstFailure) {
         firstFailure = `${checkName} failed`;

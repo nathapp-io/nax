@@ -69,23 +69,14 @@ function makeRuntime(agentManager: ReturnType<typeof makeAgentManager>) {
 
 async function callRunSemanticReview(llmResponse: string, overrides?: Partial<import("../../../src/review/types").ReviewCheckResult>): Promise<import("../../../src/review/types").ReviewCheckResult> {
   const agentManager = makeAgentManager(llmResponse);
-  return runSemanticReview(
-    "/tmp/wd",
-    "abc123",
-    STORY,
-    CFG,
+  return runSemanticReview({
+    workdir: "/tmp/wd",
+    storyGitRef: "abc123",
+    story: STORY,
+    semanticConfig: CFG,
     agentManager,
-    undefined, // naxConfig
-    undefined, // featureName
-    undefined, // resolverSession
-    undefined, // priorFailures
-    undefined, // blockingThreshold
-    undefined, // featureContextMarkdown
-    undefined, // contextBundle
-    undefined, // projectDir
-    undefined, // naxIgnoreIndex
-    makeRuntime(agentManager),
-  );
+    runtime: makeRuntime(agentManager),
+  });
 }
 
 function makeSpawnMock(stdout = "diff output", exitCode = 0) {
@@ -282,7 +273,12 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
   test("result.findings is empty or absent when storyGitRef is missing (skipped)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, CFG, undefined);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      semanticConfig: CFG,
+    });
 
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });

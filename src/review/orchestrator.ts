@@ -300,23 +300,23 @@ export class ReviewOrchestrator {
 
         logger?.debug("review", "Running semantic + adversarial in parallel", { storyId });
         const [semResult, advResult] = await Promise.all([
-          _orchestratorDeps.runSemanticReview(
+          _orchestratorDeps.runSemanticReview({
             workdir,
             storyGitRef,
-            semanticStory,
-            semanticCfg,
+            story: semanticStory,
+            semanticConfig: semanticCfg,
             agentManager,
             naxConfig,
             featureName,
             resolverSession,
             priorFailures,
-            reviewConfig.blockingThreshold,
+            blockingThreshold: reviewConfig.blockingThreshold,
             featureContextMarkdown,
-            contextBundles?.semantic,
+            contextBundle: contextBundles?.semantic,
             projectDir,
             naxIgnoreIndex,
             runtime,
-          ),
+          }),
           _orchestratorDeps.runAdversarialReview(
             workdir,
             storyGitRef,

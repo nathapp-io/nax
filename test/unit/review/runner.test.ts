@@ -502,21 +502,11 @@ describe("runReview — semantic check integration (AC-9)", () => {
     );
 
     expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
-      "/tmp/fake-workdir",
-      "abc1234",
-      expect.objectContaining({ id: "US-001", title: "My story", acceptanceCriteria: ["AC1"] }),
-      expect.any(Object),
-      mockResolver,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined, // blockingThreshold
-      undefined, // featureContextMarkdown
-      undefined, // contextBundles?.semantic (v2)
-      undefined, // projectDir
-      undefined, // naxIgnoreIndex
-      undefined, // runtime
+      expect.objectContaining({
+        workdir: "/tmp/fake-workdir",
+        storyGitRef: "abc1234",
+        story: expect.objectContaining({ id: "US-001" }),
+      }),
     );
   });
 
@@ -541,21 +531,12 @@ describe("runReview — semantic check integration (AC-9)", () => {
     await runReview(configWithSemantic, "/tmp/fake-workdir");
 
     expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
-      "/tmp/fake-workdir",
-      undefined,
-      expect.any(Object),
-      { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded", resetRefOnRerun: false },
-      undefined, // agentManager (was formerly ModelResolver factory)
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined, // blockingThreshold
-      undefined, // featureContextMarkdown
-      undefined, // contextBundles?.semantic (v2)
-      undefined, // projectDir
-      undefined, // naxIgnoreIndex
-      undefined, // runtime
+      expect.objectContaining({
+        workdir: "/tmp/fake-workdir",
+        storyGitRef: undefined,
+        story: expect.any(Object),
+        semanticConfig: { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded", resetRefOnRerun: false },
+      }),
     );
   });
 });

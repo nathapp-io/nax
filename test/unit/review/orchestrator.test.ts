@@ -474,8 +474,8 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
 
   test("defaults semantic diffMode to ref in parallel path when semantic config is omitted", async () => {
     let observedDiffMode: unknown;
-    _orchestratorDeps.runSemanticReview = mock(async (...args: Parameters<typeof _orchestratorDeps.runSemanticReview>) => {
-      observedDiffMode = args[3].diffMode;
+    _orchestratorDeps.runSemanticReview = mock(async (opts: Parameters<typeof _orchestratorDeps.runSemanticReview>[0]) => {
+      observedDiffMode = opts.semanticConfig?.diffMode;
       return makePassedCheck("semantic");
     });
     const orchestrator = new ReviewOrchestrator();
