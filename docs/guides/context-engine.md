@@ -116,6 +116,8 @@ Any `.md` file in that directory is picked up by `StaticRulesProvider` on every 
 
 With `allowLegacyClaudeMd: true`, `StaticRulesProvider` falls back to `CLAUDE.md` + `.claude/rules/` when `.nax/rules/` is empty. Default is `false` — once you've migrated, drop the flag to avoid drift.
 
+For authoring conventions — `paths:`, `appliesTo:`, `priority:`, the neutrality linter, and how to split monolithic rule files — see the [Static Rules Guide](./static-rules.md).
+
 ---
 
 ### 4. Configure per-stage budgets
