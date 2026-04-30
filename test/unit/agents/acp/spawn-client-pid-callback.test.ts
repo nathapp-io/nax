@@ -1,8 +1,8 @@
 /**
  * Tests for SpawnAcpSession / SpawnAcpClient — ADR-013 Phase 3
  *
- * Phase 3 replaces AgentRunOptions.pidRegistry with onPidSpawned?: (pid: number) => void.
- * The adapter fires the callback immediately after spawning, before awaiting the process.
+ * The adapter fires onPidSpawned immediately after spawning, before awaiting the process.
+ * Callbacks are injected by AgentManager/SessionManager from the runtime PidRegistry.
  *
  * Covered:
  *   - onPidSpawned fires when SpawnAcpSession.prompt() spawns a process

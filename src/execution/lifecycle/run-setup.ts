@@ -33,7 +33,6 @@ import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
-import type { PidRegistry } from "../pid-registry";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
 
@@ -102,7 +101,6 @@ export interface RunSetupOptions {
 
 export interface RunSetupResult {
   statusWriter: StatusWriter;
-  pidRegistry: PidRegistry;
   sessionManager: SessionManager;
   cleanupCrashHandlers: () => void;
   pluginRegistry: PluginRegistry;
@@ -355,7 +353,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
     return {
       statusWriter,
-      pidRegistry: runtime.pidRegistry,
       sessionManager,
       cleanupCrashHandlers,
       pluginRegistry,

@@ -148,13 +148,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     dispatchEvents,
   };
   if (opts?.agentManager instanceof AgentManager) {
-    opts.agentManager.configureRuntime(agentManagerOpts);
-    opts.agentManager.configureRuntime({ pidRegistry });
+    opts.agentManager.configureRuntime({ ...agentManagerOpts, pidRegistry });
     agentManager = opts.agentManager;
   } else {
     agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
   }
-  // Attach pidRegistry to the agentManager for the factory-created path.
   if (agentManager instanceof AgentManager) {
     agentManager.configureRuntime({ pidRegistry });
   }

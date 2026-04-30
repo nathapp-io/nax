@@ -13,6 +13,7 @@ describe("createRuntime", () => {
     expect(rt.costAggregator).toBeDefined();
     expect(rt.promptAuditor).toBeDefined();
     expect(rt.signal).toBeDefined();
+    expect(rt.pidRegistry).toBeDefined();
   });
 
   test("packages.repo() returns root-equivalent view", () => {
