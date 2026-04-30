@@ -7,7 +7,7 @@ export interface MiddlewareContext {
   readonly agentName: string;
   readonly kind: "run" | "complete" | "plan";
   readonly request: AgentRunRequest | null;
-  readonly config: NaxConfig;
+  readonly config: Pick<NaxConfig, "agent" | "execution">;
   readonly signal?: AbortSignal;
   readonly resolvedPermissions: ResolvedPermissions;
   readonly storyId?: string;

@@ -57,7 +57,7 @@ export interface AgentRegistry {
  * lifetime of the registry. Test adapters registered in _registryTestAdapters
  * take precedence and are returned as-is without ACP wrapping.
  */
-export function createAgentRegistry(config: NaxConfig): AgentRegistry {
+export function createAgentRegistry(config: Pick<NaxConfig, "agent">): AgentRegistry {
   const logger = getLogger();
   const acpCache = new Map<string, AcpAgentAdapter>();
 

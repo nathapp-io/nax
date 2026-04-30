@@ -3,6 +3,8 @@ import { createAgentManager as createAgentManagerFromFactory } from "../../agent
 import type { CreateAgentManagerOpts } from "../../agents/factory";
 import type { NaxConfig } from "../../config";
 
-export function createAgentManager(config: NaxConfig, opts?: CreateAgentManagerOpts): IAgentManager {
+type AgentManagerConfig = Pick<NaxConfig, "agent" | "execution">;
+
+export function createAgentManager(config: AgentManagerConfig, opts?: CreateAgentManagerOpts): IAgentManager {
   return createAgentManagerFromFactory(config, opts);
 }
