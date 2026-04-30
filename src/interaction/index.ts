@@ -55,7 +55,7 @@ export {
   checkStoryAmbiguity,
   checkReviewGate,
 } from "./triggers";
-export type { TriggerContext } from "./triggers";
+export type { TriggerContext, InteractionConfig } from "./triggers";
 
 // Initialization
 export { initInteractionChain } from "./init";
