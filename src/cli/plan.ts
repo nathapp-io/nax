@@ -13,7 +13,6 @@ import { join } from "node:path";
 import { resolveDefaultAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
-import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import { callOp, planOp } from "../operations";
@@ -242,7 +241,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         })
       : undefined;
     const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
-    const pidRegistry = new PidRegistry(workdir);
     const resolvedPerm = resolvePermissions(config, "plan");
     logger?.info("plan", "Starting interactive planning session", {
       agent: agentName,
@@ -267,7 +265,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
             modelDef: resolvedPlanModel.modelDef,
             maxInteractionTurns: config?.agent?.maxInteractionTurns,
             featureName: options.feature,
-            onPidSpawned: (pid: number) => pidRegistry.register(pid),
             sessionRole: "plan",
             pipelineStage: "plan",
           },
@@ -280,7 +277,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         });
       }
     } finally {
-      await pidRegistry.killAll().catch(() => {});
+      await rt.pidRegistry.killAll().catch(() => {});
       if (interactionChain) await interactionChain.destroy().catch(() => {});
       await rt.close().catch(() => {});
       logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });

@@ -62,8 +62,6 @@ export interface PlanOptions {
    * Used to persist the name to status.json for plan→run session continuity.
    */
   onAcpSessionCreated?: (sessionName: string) => Promise<void> | void;
-  /** Callback fired immediately after spawning the agent process — caller registers the PID. */
-  onPidSpawned?: (pid: number) => void;
 }
 
 /**

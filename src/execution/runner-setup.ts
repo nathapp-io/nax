@@ -43,7 +43,6 @@ export interface RunnerSetupOptions {
  */
 export interface RunnerSetupResult {
   statusWriter: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["statusWriter"];
-  pidRegistry: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["pidRegistry"];
   sessionManager: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["sessionManager"];
   cleanupCrashHandlers: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["cleanupCrashHandlers"];
   pluginRegistry: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["pluginRegistry"];

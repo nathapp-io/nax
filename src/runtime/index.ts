@@ -34,6 +34,7 @@ import type { NaxConfig } from "../config";
 import { createConfigLoader } from "../config";
 import type { ConfigLoader } from "../config";
 import { NaxError } from "../errors";
+import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import type { Logger } from "../logger";
 import type { ISessionManager } from "../session";
@@ -67,16 +68,9 @@ export interface NaxRuntime {
   readonly promptAuditor: IPromptAuditor;
   readonly dispatchEvents: IDispatchEventBus;
   readonly packages: PackageRegistry;
+  readonly pidRegistry: PidRegistry;
   readonly logger: Logger;
   readonly signal: AbortSignal;
-  /**
-   * Optional PID registration callback used by complete-path adapter calls
-   * (plan, decompose, classify-route, acceptance-generate, debate-*) so any
-   * acpx subprocess they spawn lands on the run's PidRegistry. Without it
-   * Ctrl+C mid-call leaves orphan acpx subprocesses (and their queue-owner
-   * children) past run teardown.
-   */
-  readonly onPidSpawned?: (pid: number) => void;
   close(): Promise<void>;
 }
 
@@ -93,12 +87,10 @@ export interface CreateRuntimeOptions {
    */
   featureName?: string;
   /**
-   * PID registration callback. Threaded into complete-path adapter calls via
-   * `callOp` so plan/decompose/etc. acpx invocations are tracked by the run's
-   * PidRegistry. Run-path callers (execution stage, cli/plan) wire their own
-   * callback directly into `AgentRunOptions` and do not depend on this field.
+   * Pre-built PidRegistry. When absent, createRuntime constructs a default
+   * PidRegistry(workdir). Supply one in tests to control lifecycle.
    */
-  onPidSpawned?: (pid: number) => void;
+  pidRegistry?: PidRegistry;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
@@ -134,6 +126,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   }
 
   const defaultAgent = config.agent?.default ?? "claude";
+  const pidRegistry = opts?.pidRegistry ?? new PidRegistry(workdir);
 
   let agentManager: IAgentManager | undefined;
   const middleware = MiddlewareChain.from([cancellationMiddleware()]);
@@ -144,6 +137,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       getAdapter: (name) => agentManager?.getAgent(name),
       dispatchEvents,
       defaultAgent,
+      pidRegistry,
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {
@@ -154,10 +148,13 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     dispatchEvents,
   };
   if (opts?.agentManager instanceof AgentManager) {
-    opts.agentManager.configureRuntime(agentManagerOpts);
+    opts.agentManager.configureRuntime({ ...agentManagerOpts, pidRegistry });
     agentManager = opts.agentManager;
   } else {
     agentManager = opts?.agentManager ?? createAgentManager(config, agentManagerOpts);
+  }
+  if (agentManager instanceof AgentManager) {
+    agentManager.configureRuntime({ pidRegistry });
   }
 
   const offLogging = attachLoggingSubscriber(dispatchEvents, runId);
@@ -180,11 +177,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     promptAuditor,
     dispatchEvents,
     packages,
+    pidRegistry,
     logger,
     get signal() {
       return controller.signal;
     },
-    onPidSpawned: opts?.onPidSpawned,
     async close() {
       if (closed) return;
       closed = true;

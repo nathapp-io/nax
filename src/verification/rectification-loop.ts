@@ -325,7 +325,6 @@ export async function runRectificationLoop(
             featureName,
             storyId: story.id,
             signal: runtime.signal,
-            onPidSpawned: runtime.onPidSpawned,
           });
         }
         // ADR-020 single-emission invariant: each runAsSession emits one

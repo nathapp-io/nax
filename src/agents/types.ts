@@ -105,8 +105,6 @@ export interface AgentRunOptions {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   };
-  /** Callback fired immediately after spawning the agent process — caller registers the PID. */
-  onPidSpawned?: (pid: number) => void;
   /**
    * Explicit ACP session handle override. When set, the adapter uses this
    * name instead of auto-deriving from featureName/storyId/sessionRole.
@@ -260,12 +258,15 @@ export interface CompleteOptions {
    */
   pipelineStage?: import("../config/permissions").PipelineStage;
   /**
-   * PID registration callback for crash-recovery bookkeeping. Mirrors the run-path
-   * `OpenSessionOpts.onPidSpawned`. Without this, complete-path acpx invocations
-   * (plan, decompose, classify-route, acceptance-generate, debate-*) leak their
-   * PIDs past PidRegistry — `Ctrl+C` mid-call leaves orphan acpx subprocesses.
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * PID registration callback attached by AgentManager when a PidRegistry is configured.
    */
   onPidSpawned?: (pid: number) => void;
+  /**
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * PID unregistration callback attached by AgentManager when a PidRegistry is configured.
+   */
+  onPidExited?: (pid: number) => void;
 }
 
 /**
@@ -342,6 +343,11 @@ export interface OpenSessionOpts {
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /** PID registration callback for crash-recovery bookkeeping. */
   onPidSpawned?: (pid: number) => void;
+  /**
+   * PID unregistration callback. Called when an acpx subprocess associated with this
+   * session exits naturally — keeps PidRegistry from accumulating dead PIDs.
+   */
+  onPidExited?: (pid: number) => void;
   /** Abort signal — if already aborted, openSession rejects immediately. */
   signal?: AbortSignal;
   /**

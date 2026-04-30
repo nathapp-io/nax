@@ -176,7 +176,6 @@ export async function runIteration(
     storyGitRef: storyGitRef ?? undefined,
     interaction: ctx.interactionChain ?? undefined,
     agentGetFn: ctx.agentGetFn,
-    pidRegistry: ctx.pidRegistry,
     abortSignal: ctx.abortSignal,
     sessionManager: ctx.sessionManager,
     agentManager: ctx.agentManager,

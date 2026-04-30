@@ -337,7 +337,6 @@ export async function runAgentRectification(
             featureName: ctx.prd.feature,
             storyId: ctx.story.id,
             signal: runtime.signal,
-            onPidSpawned: runtime.onPidSpawned,
           });
         }
         // ADR-020 single-emission invariant: each runAsSession emits one

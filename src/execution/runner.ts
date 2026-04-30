@@ -145,7 +145,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   const {
     statusWriter,
-    pidRegistry,
     sessionManager,
     cleanupCrashHandlers,
     pluginRegistry,
@@ -180,7 +179,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
         headless,
         parallel,
         agentGetFn,
-        pidRegistry,
         abortSignal: shutdownController.signal,
         interactionChain,
         sessionManager,

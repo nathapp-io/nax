@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import type { AgentRegistry } from "../../../src/agents/registry";
+import type { CompleteOptions } from "../../../src/agents/types";
+import { PidRegistry } from "../../../src/execution/pid-registry";
 import { makeNaxConfig } from "../../helpers";
 
 const availFailure = {
@@ -42,6 +44,61 @@ function makeRegistry(
     },
   } as unknown as AgentRegistry;
 }
+
+describe("AgentManager PID lifecycle — configureRuntime", () => {
+  test("attaches onPidSpawned and onPidExited to adapter.complete when pidRegistry is configured", async () => {
+    let capturedOptions: CompleteOptions | undefined;
+    const registry = {
+      getAgent: () => ({
+        complete: mock(async (_prompt: string, opts: CompleteOptions) => {
+          capturedOptions = opts;
+          return { output: "ok", costUsd: 0, source: "exact" as const };
+        }),
+      }),
+    } as unknown as AgentRegistry;
+
+    const m = new AgentManager(makeNaxConfig(), registry);
+    const pidRegistry = new PidRegistry("/tmp/test-pid-manager");
+    const registerSpy = mock((pid: number) => pidRegistry.register(pid));
+    const unregisterSpy = mock((pid: number) => pidRegistry.unregister(pid));
+    const patchedRegistry = {
+      ...pidRegistry,
+      register: registerSpy,
+      unregister: unregisterSpy,
+    } as unknown as PidRegistry;
+
+    m.configureRuntime({ pidRegistry: patchedRegistry });
+
+    await m.completeWithFallback("prompt", { config: makeNaxConfig() } as never);
+
+    expect(capturedOptions?.onPidSpawned).toBeDefined();
+    expect(capturedOptions?.onPidExited).toBeDefined();
+
+    capturedOptions?.onPidSpawned?.(99);
+    expect(registerSpy).toHaveBeenCalledWith(99);
+
+    capturedOptions?.onPidExited?.(99);
+    expect(unregisterSpy).toHaveBeenCalledWith(99);
+  });
+
+  test("does not attach lifecycle when no pidRegistry is configured", async () => {
+    let capturedOptions: CompleteOptions | undefined;
+    const registry = {
+      getAgent: () => ({
+        complete: mock(async (_prompt: string, opts: CompleteOptions) => {
+          capturedOptions = opts;
+          return { output: "ok", costUsd: 0, source: "exact" as const };
+        }),
+      }),
+    } as unknown as AgentRegistry;
+
+    const m = new AgentManager(makeNaxConfig(), registry);
+    await m.completeWithFallback("prompt", { config: makeNaxConfig() } as never);
+
+    expect(capturedOptions?.onPidSpawned).toBeUndefined();
+    expect(capturedOptions?.onPidExited).toBeUndefined();
+  });
+});
 
 describe("AgentManager.completeWithFallback (#567)", () => {
   test("returns output on success", async () => {

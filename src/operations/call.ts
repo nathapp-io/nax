@@ -81,7 +81,6 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-      onPidSpawned: ctx.runtime.onPidSpawned,
     });
     const parsedComplete = op.parse(raw.output, input, buildCtx);
     return runPostParse(op, parsedComplete, input, buildCtx);

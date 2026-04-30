@@ -10,6 +10,7 @@ import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
+import type { PidRegistry } from "../execution/pid-registry";
 import { getSafeLogger } from "../logger";
 // Leaf import to avoid barrel cycle:
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
@@ -73,6 +74,7 @@ export class AgentManager implements IAgentManager {
   private _sendPrompt: SendPromptFn | undefined;
   private _runHop: SessionRunHopFn | undefined;
   private _dispatchEvents: IDispatchEventBus;
+  private _pidRegistry: PidRegistry | undefined;
   readonly events: AgentManagerEvents;
 
   constructor(
@@ -108,12 +110,14 @@ export class AgentManager implements IAgentManager {
     sendPrompt?: SendPromptFn;
     runHop?: SessionRunHopFn;
     dispatchEvents?: IDispatchEventBus;
+    pidRegistry?: PidRegistry;
   }): void {
     if (opts.middleware) this._middleware = opts.middleware;
     if (opts.runId) this._runId = opts.runId;
     if (opts.sendPrompt) this._sendPrompt = opts.sendPrompt;
     if (opts.runHop) this._runHop = opts.runHop;
     if (opts.dispatchEvents) this._dispatchEvents = opts.dispatchEvents;
+    if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
   }
 
   getDefault(): string {
@@ -382,7 +386,14 @@ export class AgentManager implements IAgentManager {
 
         let result: CompleteResult;
         try {
-          result = await adapter.complete(prompt, options);
+          const optionsWithLifecycle: CompleteOptions = this._pidRegistry
+            ? {
+                ...options,
+                onPidSpawned: (pid: number) => this._pidRegistry?.register(pid),
+                onPidExited: (pid: number) => this._pidRegistry?.unregister(pid),
+              }
+            : options;
+          result = await adapter.complete(prompt, optionsWithLifecycle);
         } catch (err) {
           result = {
             output: "",

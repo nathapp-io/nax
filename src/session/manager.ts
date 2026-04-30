@@ -11,6 +11,7 @@ import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../ag
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
+import type { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { DispatchEventBus } from "../runtime/dispatch-events";
@@ -69,6 +70,7 @@ export class SessionManager implements ISessionManager {
   private _config: NaxConfig | undefined;
   private _dispatchEvents: IDispatchEventBus;
   private _defaultAgent: string;
+  private _pidRegistry: PidRegistry | undefined;
 
   constructor(opts?: {
     getAdapter?: (name: string) => AgentAdapter | undefined;
@@ -87,11 +89,13 @@ export class SessionManager implements ISessionManager {
     config?: NaxConfig;
     dispatchEvents?: IDispatchEventBus;
     defaultAgent?: string;
+    pidRegistry?: PidRegistry;
   }): void {
     if (opts.getAdapter) this._getAdapter = opts.getAdapter;
     if (opts.config) this._config = opts.config;
     if (opts.dispatchEvents) this._dispatchEvents = opts.dispatchEvents;
     if (opts.defaultAgent) this._defaultAgent = opts.defaultAgent;
+    if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
   }
 
   /**
@@ -382,7 +386,8 @@ export class SessionManager implements ISessionManager {
       resolvedPermissions,
       modelDef: opts.modelDef,
       timeoutSeconds: opts.timeoutSeconds,
-      onPidSpawned: opts.onPidSpawned,
+      onPidSpawned: this._pidRegistry ? (pid) => this._pidRegistry?.register(pid) : undefined,
+      onPidExited: this._pidRegistry ? (pid) => this._pidRegistry?.unregister(pid) : undefined,
       onSessionEstablished: opts.onSessionEstablished,
       signal: opts.signal,
       resume,

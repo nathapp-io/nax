@@ -249,7 +249,6 @@ export async function executeUnified(
                 agentGetFn: ctx.agentGetFn,
                 agentManager: ctx.agentManager,
                 sessionManager: ctx.sessionManager,
-                pidRegistry: ctx.pidRegistry,
                 runtime: ctx.runtime,
                 abortSignal: ctx.abortSignal,
               },
