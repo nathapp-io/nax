@@ -55,7 +55,7 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
         "src/routing.ts",
       ]);
 
-      const result = await runReview(typecheckConfig, "/tmp/fake-workdir");
+      const result = await runReview({ config: typecheckConfig, workdir: "/tmp/fake-workdir" });
 
       expect(result.success).toBe(false);
       expect(result.failureReason).toBeDefined();
@@ -68,7 +68,7 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
 
       // If typecheck were run it would fail (no real workdir), but we expect
       // an early return with zero checks executed.
-      const result = await runReview(typecheckConfig, "/tmp/fake-workdir");
+      const result = await runReview({ config: typecheckConfig, workdir: "/tmp/fake-workdir" });
 
       expect(result.checks).toHaveLength(0);
     });
@@ -77,7 +77,7 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
       const mockFn = mock(async (_workdir: string) => ["src/types.ts"]);
       _deps.getUncommittedFiles = mockFn;
 
-      await runReview(typecheckConfig, "/tmp/my-project");
+      await runReview({ config: typecheckConfig, workdir: "/tmp/my-project" });
 
       expect(mockFn).toHaveBeenCalledWith("/tmp/my-project");
     });
@@ -88,17 +88,21 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
       _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
 
       // typecheckCommand: null disables the check so no real process is spawned.
-      const result = await runReview(typecheckConfig, "/tmp/fake-workdir", {
-        typecheckCommand: null,
-        maxIterations: 5,
-        iterationDelayMs: 0,
-        costLimit: 10,
-        sessionTimeoutSeconds: 300,
-        verificationTimeoutSeconds: 60,
-        maxStoriesPerFeature: 20,
-        contextProviderTokenBudget: 2000,
-        rectification: { enabled: false, maxIterations: 3 },
-        regressionGate: { enabled: false },
+      const result = await runReview({
+        config: typecheckConfig,
+        workdir: "/tmp/fake-workdir",
+        executionConfig: {
+          typecheckCommand: null,
+          maxIterations: 5,
+          iterationDelayMs: 0,
+          costLimit: 10,
+          sessionTimeoutSeconds: 300,
+          verificationTimeoutSeconds: 60,
+          maxStoriesPerFeature: 20,
+          contextProviderTokenBudget: 2000,
+          rectification: { enabled: false, maxIterations: 3 },
+          regressionGate: { enabled: false },
+        },
       });
 
       expect(result.success).toBe(true);
@@ -108,7 +112,7 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
       const mockFn = mock(async (_workdir: string) => []);
       _deps.getUncommittedFiles = mockFn;
 
-      await runReview(noChecksConfig, "/tmp/clean-workdir");
+      await runReview({ config: noChecksConfig, workdir: "/tmp/clean-workdir" });
 
       expect(mockFn).toHaveBeenCalledWith("/tmp/clean-workdir");
     });
@@ -120,7 +124,7 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
       // Untracked files are invisible to this command — working tree is considered clean.
       _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
 
-      const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+      const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
 
       // Should succeed — no dirty tracked files, review can proceed
       expect(result.success).toBe(true);
@@ -142,25 +146,25 @@ describe("nax runtime file exclusions", () => {
 
   test(".nax/status.json is excluded from uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/status.json"]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
   test(".nax-verifier-verdict.json is excluded from uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax-verifier-verdict.json"]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
   test(".nax/features/*/prd.json is excluded from uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/features/ctx-simplify/prd.json"]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
   test(".nax/features/*/acp-sessions.json is excluded from uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/features/cli/acp-sessions.json"]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
@@ -168,7 +172,7 @@ describe("nax runtime file exclusions", () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       "apps/cli/nax/features/cli/acp-sessions.json",
     ]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
@@ -176,7 +180,7 @@ describe("nax runtime file exclusions", () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       ".nax/features/memory-guardrails/stories/US-001/context-manifest-review-semantic.json",
     ]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
@@ -184,7 +188,7 @@ describe("nax runtime file exclusions", () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       "apps/backend/nax/features/memory-guardrails/stories/US-001/context-manifest-verify.json",
     ]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
@@ -192,7 +196,7 @@ describe("nax runtime file exclusions", () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       ".nax/features/memory-guardrails/stories/US-001/rebuild-manifest.json",
     ]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
 
@@ -201,7 +205,7 @@ describe("nax runtime file exclusions", () => {
       ".nax/status.json",
       "src/config/types.ts",
     ]);
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(false);
     expect(result.failureReason).toContain("src/config/types.ts");
     expect(result.failureReason).not.toContain(".nax/status.json");
@@ -236,7 +240,7 @@ describe("runReview — build check (BUILD-001)", () => {
       } as unknown as ReturnType<typeof Bun.spawn>;
     });
 
-    const result = await runReview(buildConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: buildConfig, workdir: "/tmp/fake-workdir" });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);
@@ -258,7 +262,7 @@ describe("runReview — build check (BUILD-001)", () => {
       } as unknown as ReturnType<typeof Bun.spawn>;
     });
 
-    const result = await runReview(buildConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: buildConfig, workdir: "/tmp/fake-workdir" });
 
     expect(result.success).toBe(false);
     expect(result.checks).toHaveLength(1);
@@ -270,7 +274,7 @@ describe("runReview — build check (BUILD-001)", () => {
   test("build check is skipped when build is not in checks array", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
 
-    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(0);
@@ -296,7 +300,7 @@ describe("runReview — build check (BUILD-001)", () => {
       commands: {},
     };
 
-    const result = await runReview(configNoBuildCmd, "/tmp/fake-workdir", undefined, {});
+    const result = await runReview({ config: configNoBuildCmd, workdir: "/tmp/fake-workdir" });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(0); // skipped — no command configured
@@ -324,7 +328,7 @@ describe("runReview — build check (BUILD-001)", () => {
     };
     const qualityCommands = { build: "bun run build" };
 
-    const result = await runReview(configWithQualityBuild, "/tmp/fake-workdir", undefined, qualityCommands);
+    const result = await runReview({ config: configWithQualityBuild, workdir: "/tmp/fake-workdir", qualityCommands });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);
@@ -353,7 +357,7 @@ describe("runReview — build check (BUILD-001)", () => {
       commands: { build: "echo build", lint: "echo lint" },
     };
 
-    const result = await runReview(configWithMultipleChecks, "/tmp/fake-workdir");
+    const result = await runReview({ config: configWithMultipleChecks, workdir: "/tmp/fake-workdir" });
 
     expect(result.success).toBe(false);
     expect(result.checks).toHaveLength(1);
@@ -403,7 +407,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
     };
     _semanticDeps.runSemanticReview = mock(async () => mockSemanticResult);
 
-    await runReview(semanticConfig, "/tmp/fake-workdir");
+    await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir" });
 
     expect(_semanticDeps.runSemanticReview).toHaveBeenCalled();
   });
@@ -432,7 +436,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
     };
     _semanticDeps.runSemanticReview = mock(async () => mockSemanticResult);
 
-    await runReview(semanticConfig, "/tmp/fake-workdir");
+    await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir" });
 
     expect(spawnCalled).toBe(false);
   });
@@ -450,7 +454,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
     };
     _semanticDeps.runSemanticReview = mock(async () => mockSemanticResult);
 
-    const result = await runReview(semanticConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir" });
 
     expect(result.checks).toHaveLength(1);
     expect(result.checks[0].check).toBe("semantic");
@@ -469,7 +473,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
     };
     _semanticDeps.runSemanticReview = mock(async () => failingResult);
 
-    const result = await runReview(semanticConfig, "/tmp/fake-workdir");
+    const result = await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir" });
 
     expect(result.success).toBe(false);
   });
@@ -490,16 +494,14 @@ describe("runReview — semantic check integration (AC-9)", () => {
     const story = { id: "US-001", title: "My story", description: "Does something", acceptanceCriteria: ["AC1"] };
     const mockResolver = () => null;
 
-    await runReview(
-      semanticConfig,
-      "/tmp/fake-workdir",
-      undefined,
-      undefined,
-      "US-001",
-      "abc1234",
+    await runReview({
+      config: semanticConfig,
+      workdir: "/tmp/fake-workdir",
+      storyId: "US-001",
+      storyGitRef: "abc1234",
       story,
-      mockResolver,
-    );
+      agentManager: mockResolver,
+    });
 
     expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -528,7 +530,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       semantic: { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"], diffMode: "embedded" as const, resetRefOnRerun: false },
     };
 
-    await runReview(configWithSemantic, "/tmp/fake-workdir");
+    await runReview({ config: configWithSemantic, workdir: "/tmp/fake-workdir" });
 
     expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
       expect.objectContaining({

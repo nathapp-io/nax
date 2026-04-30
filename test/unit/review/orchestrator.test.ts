@@ -93,7 +93,7 @@ describe("ReviewOrchestrator — pluginMode deferred", () => {
     const registry = makeRegistry([reviewer]);
     const orchestrator = new ReviewOrchestrator();
 
-    await orchestrator.review(makeReviewConfig("deferred"), "/tmp/workdir", minimalExecConfig, registry);
+    await orchestrator.review({ reviewConfig: makeReviewConfig("deferred"), workdir: "/tmp/workdir", executionConfig: minimalExecConfig, plugins: registry });
 
     expect(reviewer.check).not.toHaveBeenCalled();
   });
@@ -102,12 +102,12 @@ describe("ReviewOrchestrator — pluginMode deferred", () => {
     const registry = makeRegistry([makeReviewer("semgrep", false)]);
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeReviewConfig("deferred"),
-      "/tmp/workdir",
-      minimalExecConfig,
-      registry,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeReviewConfig("deferred"),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+      plugins: registry,
+    });
 
     expect(result.success).toBe(true);
     expect(result.pluginFailed).toBe(false);
@@ -117,12 +117,12 @@ describe("ReviewOrchestrator — pluginMode deferred", () => {
     const registry = makeRegistry([makeReviewer("semgrep", false), makeReviewer("license", false)]);
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeReviewConfig("deferred"),
-      "/tmp/workdir",
-      minimalExecConfig,
-      registry,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeReviewConfig("deferred"),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+      plugins: registry,
+    });
 
     expect(result.pluginFailed).toBe(false);
   });
@@ -133,12 +133,12 @@ describe("ReviewOrchestrator — pluginMode deferred", () => {
     const registry = makeRegistry([makeReviewer("semgrep")]);
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeReviewConfig("deferred"),
-      "/tmp/workdir",
-      minimalExecConfig,
-      registry,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeReviewConfig("deferred"),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+      plugins: registry,
+    });
 
     expect(result.success).toBe(false);
     expect(result.pluginFailed).toBe(false);
@@ -155,7 +155,7 @@ describe("ReviewOrchestrator — pluginMode per-story (no regression)", () => {
     const registry = makeRegistry([reviewer]);
     const orchestrator = new ReviewOrchestrator();
 
-    await orchestrator.review(makeReviewConfig("per-story"), "/tmp/workdir", minimalExecConfig, registry);
+    await orchestrator.review({ reviewConfig: makeReviewConfig("per-story"), workdir: "/tmp/workdir", executionConfig: minimalExecConfig, plugins: registry });
 
     expect(reviewer.check).toHaveBeenCalledTimes(1);
   });
@@ -164,12 +164,12 @@ describe("ReviewOrchestrator — pluginMode per-story (no regression)", () => {
     const registry = makeRegistry([makeReviewer("semgrep", false)]);
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeReviewConfig("per-story"),
-      "/tmp/workdir",
-      minimalExecConfig,
-      registry,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeReviewConfig("per-story"),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+      plugins: registry,
+    });
 
     expect(result.success).toBe(false);
     expect(result.pluginFailed).toBe(true);
@@ -186,7 +186,7 @@ describe("ReviewOrchestrator — pluginMode undefined (no regression)", () => {
     const registry = makeRegistry([reviewer]);
     const orchestrator = new ReviewOrchestrator();
 
-    await orchestrator.review(makeReviewConfig(undefined), "/tmp/workdir", minimalExecConfig, registry);
+    await orchestrator.review({ reviewConfig: makeReviewConfig(undefined), workdir: "/tmp/workdir", executionConfig: minimalExecConfig, plugins: registry });
 
     expect(reviewer.check).toHaveBeenCalledTimes(1);
   });
@@ -231,11 +231,7 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeConfigWithSemantic(["lint"], true),
-      "/tmp/workdir",
-      minimalExecConfig,
-    );
+    const result = await orchestrator.review({ reviewConfig: makeConfigWithSemantic(["lint"], true), workdir: "/tmp/workdir", executionConfig: minimalExecConfig });
 
     expect(_reviewSemanticDeps.runSemanticReview).not.toHaveBeenCalled();
     const semanticCheck = result.builtIn.checks.find((c) => c.check === "semantic");
@@ -253,11 +249,11 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     });
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeConfigWithSemantic(["lint"], false),
-      "/tmp/workdir",
-      minimalExecConfig,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeConfigWithSemantic(["lint"], false),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
 
     expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
     const semanticCheck = result.builtIn.checks.find((c) => c.check === "semantic");
@@ -270,11 +266,7 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeConfigWithSemantic(["lint"], true),
-      "/tmp/workdir",
-      minimalExecConfig,
-    );
+    const result = await orchestrator.review({ reviewConfig: makeConfigWithSemantic(["lint"], true), workdir: "/tmp/workdir", executionConfig: minimalExecConfig });
 
     expect(result.mechanicalFailedOnly).toBeUndefined();
   });
@@ -289,11 +281,11 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     _reviewSemanticDeps.runSemanticReview = mock(async () => makeSemanticCheckResult(false));
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeConfigWithSemantic(["lint"], false),
-      "/tmp/workdir",
-      minimalExecConfig,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeConfigWithSemantic(["lint"], false),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
 
     expect(result.success).toBe(false);
     expect(result.mechanicalFailedOnly).toBe(false);
@@ -309,7 +301,7 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     } as unknown as ReviewConfig;
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(config, "/tmp/workdir", minimalExecConfig);
+    const result = await orchestrator.review({ reviewConfig: config, workdir: "/tmp/workdir", executionConfig: minimalExecConfig });
 
     expect(result.mechanicalFailedOnly).toBeUndefined();
   });
@@ -325,7 +317,7 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     } as unknown as ReviewConfig;
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(config, "/tmp/workdir", minimalExecConfig);
+    const result = await orchestrator.review({ reviewConfig: config, workdir: "/tmp/workdir", executionConfig: minimalExecConfig });
 
     const checkNames = result.builtIn.checks.map((c) => c.check);
     expect(checkNames).toContain("semantic");
@@ -336,11 +328,11 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     _runnerDeps.getUncommittedFiles = mock(async () => []);
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeConfigWithSemantic([], true),
-      "/tmp/workdir",
-      minimalExecConfig,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeConfigWithSemantic([], true),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
 
     expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
     const semanticCheck = result.builtIn.checks.find((c) => c.check === "semantic");
@@ -385,20 +377,12 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     const orchestrator = new ReviewOrchestrator();
     const retrySkipChecks = new Set(["semantic", "adversarial"]);
 
-    const result = await orchestrator.review(
-      makeParallelConfig(),
-      "/tmp/workdir",
-      minimalExecConfig,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+    const result = await orchestrator.review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
       retrySkipChecks,
-    );
+    });
 
     expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
     expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
@@ -412,20 +396,12 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     const orchestrator = new ReviewOrchestrator();
     const retrySkipChecks = new Set(["semantic"]);
 
-    await orchestrator.review(
-      makeParallelConfig(),
-      "/tmp/workdir",
-      minimalExecConfig,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+    await orchestrator.review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
       retrySkipChecks,
-    );
+    });
 
     expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
     expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
@@ -439,20 +415,12 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     const orchestrator = new ReviewOrchestrator();
     const retrySkipChecks = new Set(["adversarial"]);
 
-    await orchestrator.review(
-      makeParallelConfig(),
-      "/tmp/workdir",
-      minimalExecConfig,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+    await orchestrator.review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
       retrySkipChecks,
-    );
+    });
 
     expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
     expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
@@ -462,11 +430,11 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
   test("runs both reviewers when retrySkipChecks is empty", async () => {
     const orchestrator = new ReviewOrchestrator();
 
-    await orchestrator.review(
-      makeParallelConfig(),
-      "/tmp/workdir",
-      minimalExecConfig,
-    );
+    await orchestrator.review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
 
     expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
     expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
@@ -480,29 +448,34 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     });
     const orchestrator = new ReviewOrchestrator();
 
-    await orchestrator.review(makeParallelConfig(), "/tmp/workdir", minimalExecConfig);
+    await orchestrator.review({ reviewConfig: makeParallelConfig(), workdir: "/tmp/workdir", executionConfig: minimalExecConfig });
 
     expect(observedDiffMode).toBe("ref");
   });
 
-  test("runs both reviewers when retrySkipChecks does not include LLM checks", async () => {
+test("runs both reviewers when retrySkipChecks does not include LLM checks", async () => {
     const orchestrator = new ReviewOrchestrator();
     const retrySkipChecks = new Set(["lint", "build"]);
 
-    await orchestrator.review(
-      makeParallelConfig(),
-      "/tmp/workdir",
-      minimalExecConfig,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+    await orchestrator.review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
       retrySkipChecks,
-    );
+    });
+
+    expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
+  });
+
+  test("runs both reviewers when retrySkipChecks is empty", async () => {
+    const orchestrator = new ReviewOrchestrator();
+
+    await orchestrator.review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
 
     expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
     expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
@@ -513,11 +486,11 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     _orchestratorDeps.runAdversarialReview = mock(async () => makeFailedCheck("adversarial"));
     const orchestrator = new ReviewOrchestrator();
 
-    const result = await orchestrator.review(
-      makeParallelConfig(),
-      "/tmp/workdir",
-      minimalExecConfig,
-    );
+    const result = await orchestrator.review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
 
     expect(result.success).toBe(false);
     expect(result.failureReason).toBe("semantic failed, adversarial failed");

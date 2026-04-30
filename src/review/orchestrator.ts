@@ -127,32 +127,58 @@ function buildFailureReason(checks: ReviewCheckResult[]): string | undefined {
   return failedChecks.map(formatFailureReason).join(", ");
 }
 
+export interface OrchestratorReviewOptions {
+  reviewConfig: ReviewConfig;
+  workdir: string;
+  executionConfig: NaxConfig["execution"];
+  plugins?: PluginRegistry;
+  storyGitRef?: string;
+  scopePrefix?: string;
+  qualityCommands?: NaxConfig["quality"]["commands"];
+  storyId?: string;
+  story?: SemanticStory;
+  agentManager?: IAgentManager;
+  naxConfig?: NaxConfig;
+  retrySkipChecks?: Set<string>;
+  featureName?: string;
+  resolverSession?: import("./dialogue").ReviewerSession;
+  priorFailures?: Array<{ stage: string; modelTier: string }>;
+  featureContextMarkdown?: string;
+  contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle };
+  projectDir?: string;
+  env?: Record<string, string | undefined>;
+  naxIgnoreIndex?: NaxIgnoreIndex;
+  runtime?: import("../runtime").NaxRuntime;
+  priorAdversarialFindings?: AdversarialFindingsCache;
+}
+
 export class ReviewOrchestrator {
   /** Run built-in checks + plugin reviewers. Returns unified result. */
-  async review(
-    reviewConfig: ReviewConfig,
-    workdir: string,
-    executionConfig: NaxConfig["execution"],
-    plugins?: PluginRegistry,
-    storyGitRef?: string,
-    scopePrefix?: string,
-    qualityCommands?: NaxConfig["quality"]["commands"],
-    storyId?: string,
-    story?: SemanticStory,
-    agentManager?: IAgentManager,
-    naxConfig?: NaxConfig,
-    retrySkipChecks?: Set<string>,
-    featureName?: string,
-    resolverSession?: import("./dialogue").ReviewerSession,
-    priorFailures?: Array<{ stage: string; modelTier: string }>,
-    featureContextMarkdown?: string,
-    contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle },
-    projectDir?: string,
-    env?: Record<string, string | undefined>,
-    naxIgnoreIndex?: NaxIgnoreIndex,
-    runtime?: import("../runtime").NaxRuntime,
-    priorAdversarialFindings?: AdversarialFindingsCache,
-  ): Promise<OrchestratorReviewResult> {
+  async review(opts: OrchestratorReviewOptions): Promise<OrchestratorReviewResult> {
+    const {
+      reviewConfig,
+      workdir,
+      executionConfig,
+      plugins,
+      storyGitRef,
+      scopePrefix,
+      qualityCommands,
+      storyId,
+      story,
+      agentManager,
+      naxConfig,
+      retrySkipChecks,
+      featureName,
+      resolverSession,
+      priorFailures,
+      featureContextMarkdown,
+      contextBundles,
+      projectDir,
+      env,
+      naxIgnoreIndex,
+      runtime,
+      priorAdversarialFindings,
+    } = opts;
     const logger = getSafeLogger();
 
     // Detect which LLM-based reviewers are active (groundwork for Phase 4 parallel dispatch).
@@ -196,8 +222,8 @@ export class ReviewOrchestrator {
 
     if (!hasLLMChecks) {
       // No LLM checks configured — run everything flat (backward compatible)
-      builtIn = await runReview(
-        reviewConfig,
+      builtIn = await runReview({
+        config: reviewConfig,
         workdir,
         executionConfig,
         qualityCommands,
@@ -216,7 +242,7 @@ export class ReviewOrchestrator {
         env,
         naxIgnoreIndex,
         runtime,
-      );
+      });
     } else {
       // Split checks into ordered mechanical + LLM groups.
       const mechanicalCheckNames = ORDERED_MECHANICAL_REVIEW_CHECKS.filter((check) =>
@@ -227,8 +253,8 @@ export class ReviewOrchestrator {
 
       // Step 1: Run mechanical checks (fail-fast preserved within mechanical)
       const mechanicalConfig = { ...reviewConfig, checks: mechanicalCheckNames };
-      const mechanicalResult = await runReview(
-        mechanicalConfig,
+      const mechanicalResult = await runReview({
+        config: mechanicalConfig,
         workdir,
         executionConfig,
         qualityCommands,
@@ -247,7 +273,7 @@ export class ReviewOrchestrator {
         env,
         naxIgnoreIndex,
         runtime,
-      );
+      });
 
       // Step 2: Run LLM checks regardless of mechanical result (fail-fast within LLM).
       // #136: Filter out checks that already passed in a previous review pass — retrySkipChecks
@@ -317,31 +343,31 @@ export class ReviewOrchestrator {
             naxIgnoreIndex,
             runtime,
           }),
-          _orchestratorDeps.runAdversarialReview(
+          _orchestratorDeps.runAdversarialReview({
             workdir,
             storyGitRef,
-            semanticStory,
-            adversarialCfg,
+            story: semanticStory,
+            adversarialConfig: adversarialCfg,
             agentManager,
             naxConfig,
             featureName,
             priorFailures,
-            reviewConfig.blockingThreshold,
+            blockingThreshold: reviewConfig.blockingThreshold,
             featureContextMarkdown,
-            contextBundles?.adversarial,
+            contextBundle: contextBundles?.adversarial,
             projectDir,
             naxIgnoreIndex,
             runtime,
             priorAdversarialFindings,
-          ),
+          }),
         ]);
         llmCheckResults = [semResult, advResult];
       } else {
         // Sequential LLM run via runReview — one or both reviewers active, or parallel disabled.
         // retrySkipChecks is passed through so runner.ts skips already-passed checks.
         const llmConfig = { ...reviewConfig, checks: activeLlmCheckNames };
-        const llmResult = await runReview(
-          llmConfig,
+        const llmResult = await runReview({
+          config: llmConfig,
           workdir,
           executionConfig,
           qualityCommands,
@@ -356,12 +382,12 @@ export class ReviewOrchestrator {
           priorFailures,
           featureContextMarkdown,
           contextBundles,
-          undefined,
-          env,
+          projectDir,
+          env: undefined,
           naxIgnoreIndex,
           runtime,
           priorAdversarialFindings,
-        );
+        });
         llmCheckResults = llmResult.checks;
       }
 
@@ -526,35 +552,35 @@ export class ReviewOrchestrator {
         ? { semantic: semanticBundle ?? undefined, adversarial: adversarialBundle ?? undefined }
         : undefined;
 
-    const result = await this.review(
-      ctx.config.review,
-      ctx.workdir,
-      ctx.config.execution,
-      ctx.plugins,
-      ctx.storyGitRef,
-      ctx.story.workdir, // relative path for git diff scoping (unchanged)
-      ctx.config.quality?.commands,
-      ctx.story.id,
-      {
+    const result = await this.review({
+      reviewConfig: ctx.config.review,
+      workdir: ctx.workdir,
+      executionConfig: ctx.config.execution,
+      plugins: ctx.plugins,
+      storyGitRef: ctx.storyGitRef,
+      scopePrefix: ctx.story.workdir,
+      qualityCommands: ctx.config.quality?.commands,
+      storyId: ctx.story.id,
+      story: {
         id: ctx.story.id,
         title: ctx.story.title,
         description: ctx.story.description,
         acceptanceCriteria: ctx.story.acceptanceCriteria,
       },
       agentManager,
-      ctx.config,
+      naxConfig: ctx.config,
       retrySkipChecks,
-      ctx.prd.feature,
+      featureName: ctx.prd.feature,
       resolverSession,
-      ctx.story.priorFailures,
-      ctx.featureContextMarkdown,
+      priorFailures: ctx.story.priorFailures,
+      featureContextMarkdown: ctx.featureContextMarkdown,
       contextBundles,
-      ctx.projectDir,
-      ctx.worktreeDependencyContext?.env,
-      ctx.naxIgnoreIndex,
-      ctx.runtime,
-      ctx.priorAdversarialFindings,
-    );
+      projectDir: ctx.projectDir,
+      env: ctx.worktreeDependencyContext?.env,
+      naxIgnoreIndex: ctx.naxIgnoreIndex,
+      runtime: ctx.runtime,
+      priorAdversarialFindings: ctx.priorAdversarialFindings,
+    });
 
     // Update ctx.priorAdversarialFindings for the next review round (issue #736).
     // When adversarial fails with blocking findings, cache them so the next round's

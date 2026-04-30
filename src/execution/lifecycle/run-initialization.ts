@@ -30,7 +30,7 @@ export const _reconcileDeps = {
   getAgent: (_name: string): AgentAdapter | undefined => undefined,
   hasCommitsForStory: (workdir: string, storyId: string) => hasCommitsForStory(workdir, storyId),
   runReview: (reviewConfig: ReviewConfig, workdir: string, executionConfig: NaxConfig["execution"]) =>
-    runReview(reviewConfig, workdir, executionConfig),
+    runReview({ config: reviewConfig, workdir, executionConfig }),
   spawn,
 };
 
