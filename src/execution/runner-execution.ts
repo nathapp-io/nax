@@ -18,10 +18,8 @@ import { tryLlmBatchRoute } from "../routing";
 import { clearCache as clearLlmCache } from "../routing/strategies/llm";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { SessionManager } from "../session";
-import type { ISessionManager } from "../session";
 import { precomputeBatchPlan } from "./batching";
 import { getAllReadyStories } from "./helpers";
-import type { PidRegistry } from "./pid-registry";
 
 /**
  * Options for the execution phase.
@@ -48,8 +46,6 @@ export interface RunnerExecutionOptions extends DispatchContext {
   parallel?: number;
   /** Protocol-aware agent resolver — bound from agentManager.getAgent in runner.ts */
   agentGetFn?: AgentGetFn;
-  /** PID registry for crash recovery — passed to agent.run() to register child processes. */
-  pidRegistry?: PidRegistry;
   /** Interaction chain for cost/pre-merge triggers during sequential execution. */
   interactionChain?: InteractionChain | null;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). */
@@ -163,7 +159,6 @@ export async function runExecutionPhase(
       startTime: options.startTime,
       parallelCount: options.parallel,
       agentGetFn: options.agentGetFn,
-      pidRegistry: options.pidRegistry,
       abortSignal: options.abortSignal,
       interactionChain: options.interactionChain,
       agentManager: options.agentManager,

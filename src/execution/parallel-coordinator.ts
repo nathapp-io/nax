@@ -20,7 +20,6 @@ import { errorMessage } from "../utils/errors";
 import { WorktreeManager } from "../worktree/manager";
 import { MergeEngine, type StoryDependencies } from "../worktree/merge";
 import { executeParallelBatch } from "./parallel-worker";
-import type { PidRegistry } from "./pid-registry";
 import { groupStoriesByDependencies } from "./story-selector";
 
 /**
@@ -71,7 +70,6 @@ export async function executeParallel(
   parallel: number,
   eventEmitter?: PipelineEventEmitter,
   agentGetFn?: AgentGetFn,
-  pidRegistry?: PidRegistry,
   interactionChain?: InteractionChain | null,
   statusWriter?: PostRunStatusWriter,
   agentManager?: import("../agents").IAgentManager,
@@ -125,7 +123,6 @@ export async function executeParallel(
       plugins,
       storyStartTime: new Date().toISOString(),
       agentGetFn,
-      pidRegistry,
       interaction: interactionChain ?? undefined,
       // biome-ignore lint/style/noNonNullAssertion: executeParallel is exported but unused in production; callers always provide these fields
       agentManager: agentManager!,

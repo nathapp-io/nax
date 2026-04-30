@@ -33,7 +33,7 @@ import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
-import { PidRegistry } from "../pid-registry";
+import type { PidRegistry } from "../pid-registry";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
 
@@ -166,8 +166,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     pid: process.pid,
   });
 
-  // ── PID registry for orphan process cleanup (BUG-002) ───────
-  const pidRegistry = new PidRegistry(workdir);
+  // ── PID registry constructed by createRuntime (BUG-002) ────────
   const sessionManager = new SessionManager();
 
   // Shutdown controller — fires on first fatal signal. Threaded into
@@ -184,12 +183,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     sessionManager,
     agentManager: options.agentManager,
     featureName: options.feature,
-    onPidSpawned: (pid: number) => pidRegistry.register(pid),
-    onPidExited: (pid: number) => pidRegistry.unregister(pid),
   });
 
   // Cleanup stale PIDs from previous crashed runs
-  await pidRegistry.cleanupStale();
+  await runtime.pidRegistry.cleanupStale();
 
   // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
   const cleanupCrashHandlers = installCrashHandlers({
@@ -197,7 +194,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     getTotalCost,
     getIterations,
     jsonlFilePath: logFilePath,
-    pidRegistry,
+    pidRegistry: runtime.pidRegistry,
     abortController: shutdownController,
     // @design: BUG-017: Pass context for run.complete event on SIGTERM
     runId: options.runId,
@@ -358,7 +355,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
     return {
       statusWriter,
-      pidRegistry,
+      pidRegistry: runtime.pidRegistry,
       sessionManager,
       cleanupCrashHandlers,
       pluginRegistry,

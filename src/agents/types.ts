@@ -105,15 +105,6 @@ export interface AgentRunOptions {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   };
-  /** Callback fired immediately after spawning the agent process — caller registers the PID. */
-  onPidSpawned?: (pid: number) => void;
-  /**
-   * Callback fired when a previously-spawned PID exits naturally (success or failure).
-   * Mirrors `onPidSpawned` to keep PidRegistry symmetric — without this, dead PIDs
-   * accumulate in the registry across a run and on Ctrl+C the kill path may signal
-   * recycled, unrelated processes (potentially their entire process groups).
-   */
-  onPidExited?: (pid: number) => void;
   /**
    * Explicit ACP session handle override. When set, the adapter uses this
    * name instead of auto-deriving from featureName/storyId/sessionRole.
@@ -267,15 +258,13 @@ export interface CompleteOptions {
    */
   pipelineStage?: import("../config/permissions").PipelineStage;
   /**
-   * PID registration callback for crash-recovery bookkeeping. Mirrors the run-path
-   * `OpenSessionOpts.onPidSpawned`. Without this, complete-path acpx invocations
-   * (plan, decompose, classify-route, acceptance-generate, debate-*) leak their
-   * PIDs past PidRegistry — `Ctrl+C` mid-call leaves orphan acpx subprocesses.
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * PID registration callback attached by AgentManager when a PidRegistry is configured.
    */
   onPidSpawned?: (pid: number) => void;
   /**
-   * Unregistration callback fired when a complete-path acpx subprocess exits.
-   * Required to keep PidRegistry from accumulating dead PIDs over the life of a run.
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * PID unregistration callback attached by AgentManager when a PidRegistry is configured.
    */
   onPidExited?: (pid: number) => void;
 }

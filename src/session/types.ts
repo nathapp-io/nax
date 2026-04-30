@@ -179,10 +179,6 @@ export interface OpenSessionRequest {
   storyId?: string;
   /** Abort signal forwarded to the adapter. */
   signal?: AbortSignal;
-  /** PID registration callback forwarded to the adapter. */
-  onPidSpawned?: (pid: number) => void;
-  /** PID unregistration callback forwarded to the adapter — pairs with onPidSpawned. */
-  onPidExited?: (pid: number) => void;
   /** Eager protocol-id callback forwarded to the adapter. */
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
 }

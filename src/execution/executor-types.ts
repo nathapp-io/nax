@@ -14,11 +14,9 @@ import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
-import type { ISessionManager } from "../session";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import type { StoryBatch } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
-import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
 export interface SequentialExecutionContext extends DispatchContext {
@@ -46,8 +44,6 @@ export interface SequentialExecutionContext extends DispatchContext {
   interactionChain?: InteractionChain | null;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to standalone getAgent when absent. */
   agentGetFn?: AgentGetFn;
-  /** PID registry for crash recovery — register child PIDs so they can be killed on SIGTERM. */
-  pidRegistry?: PidRegistry;
   /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
   parallelCount?: number;
   /** Run-scoped pre-resolved .naxignore index (refreshed when package set changes). */
