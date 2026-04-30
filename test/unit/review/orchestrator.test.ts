@@ -453,7 +453,7 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     expect(observedDiffMode).toBe("ref");
   });
 
-test("runs both reviewers when retrySkipChecks does not include LLM checks", async () => {
+  test("runs both reviewers when retrySkipChecks does not include LLM checks", async () => {
     const orchestrator = new ReviewOrchestrator();
     const retrySkipChecks = new Set(["lint", "build"]);
 
@@ -462,19 +462,6 @@ test("runs both reviewers when retrySkipChecks does not include LLM checks", asy
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
       retrySkipChecks,
-    });
-
-    expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
-    expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
-  });
-
-  test("runs both reviewers when retrySkipChecks is empty", async () => {
-    const orchestrator = new ReviewOrchestrator();
-
-    await orchestrator.review({
-      reviewConfig: makeParallelConfig(),
-      workdir: "/tmp/workdir",
-      executionConfig: minimalExecConfig,
     });
 
     expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
@@ -495,5 +482,101 @@ test("runs both reviewers when retrySkipChecks does not include LLM checks", asy
     expect(result.success).toBe(false);
     expect(result.failureReason).toBe("semantic failed, adversarial failed");
     expect(result.builtIn.failureReason).toBe("semantic failed, adversarial failed");
+  });
+});
+
+function makeSequentialConfig(checks: Array<"semantic" | "adversarial">): ReviewConfig {
+  return {
+    enabled: true,
+    checks,
+    commands: {},
+    pluginMode: "deferred",
+    adversarial: {
+      enabled: true,
+      parallel: false,
+      maxConcurrentSessions: 2,
+    } as unknown as AdversarialReviewConfig,
+  } as unknown as ReviewConfig;
+}
+
+describe("ReviewOrchestrator — sequential LLM projectDir forwarding (#838)", () => {
+  beforeEach(() => {
+    _runnerDeps.getUncommittedFiles = mock(async () => []);
+    _orchestratorDeps.runSemanticReview = mock(async () => makePassedCheck("semantic"));
+    _orchestratorDeps.runAdversarialReview = mock(async () => makePassedCheck("adversarial"));
+  });
+
+  test("forwards defined projectDir to sequential semantic review", async () => {
+    let observedProjectDir: string | undefined;
+    _reviewSemanticDeps.runSemanticReview = mock(async (opts: Parameters<typeof _reviewSemanticDeps.runSemanticReview>[0]) => {
+      observedProjectDir = opts.projectDir;
+      return makePassedCheck("semantic");
+    });
+
+    const orchestrator = new ReviewOrchestrator();
+    const projectDir = "/tmp/project-root";
+
+    await orchestrator.review({
+      reviewConfig: makeSequentialConfig(["semantic"]),
+      workdir: "/tmp/project-root/packages/pkg-a",
+      projectDir,
+      executionConfig: minimalExecConfig,
+    });
+
+    expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
+    expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    expect(observedProjectDir).toBe(projectDir);
+  });
+
+  test("forwards defined projectDir to sequential adversarial review", async () => {
+    let observedProjectDir: string | undefined;
+    _reviewAdversarialDeps.runAdversarialReview = mock(async (opts: Parameters<typeof _reviewAdversarialDeps.runAdversarialReview>[0]) => {
+      observedProjectDir = opts.projectDir;
+      return makePassedCheck("adversarial");
+    });
+
+    const orchestrator = new ReviewOrchestrator();
+    const projectDir = "/tmp/project-root";
+
+    await orchestrator.review({
+      reviewConfig: makeSequentialConfig(["adversarial"]),
+      workdir: "/tmp/project-root/packages/pkg-a",
+      projectDir,
+      executionConfig: minimalExecConfig,
+    });
+
+    expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
+    expect(_reviewAdversarialDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
+    expect(observedProjectDir).toBe(projectDir);
+  });
+
+  test("preserves undefined projectDir in sequential review when not provided", async () => {
+    let observedSemanticProjectDir: string | undefined;
+    let observedAdversarialProjectDir: string | undefined;
+
+    _reviewSemanticDeps.runSemanticReview = mock(async (opts: Parameters<typeof _reviewSemanticDeps.runSemanticReview>[0]) => {
+      observedSemanticProjectDir = opts.projectDir;
+      return makePassedCheck("semantic");
+    });
+    _reviewAdversarialDeps.runAdversarialReview = mock(async (opts: Parameters<typeof _reviewAdversarialDeps.runAdversarialReview>[0]) => {
+      observedAdversarialProjectDir = opts.projectDir;
+      return makePassedCheck("adversarial");
+    });
+
+    const orchestrator = new ReviewOrchestrator();
+
+    await orchestrator.review({
+      reviewConfig: makeSequentialConfig(["semantic"]),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
+    await orchestrator.review({
+      reviewConfig: makeSequentialConfig(["adversarial"]),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+    });
+
+    expect(observedSemanticProjectDir).toBeUndefined();
+    expect(observedAdversarialProjectDir).toBeUndefined();
   });
 });
