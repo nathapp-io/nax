@@ -122,23 +122,14 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   async function callRunSemanticReview(response: string) {
     const agentManager = makeAgentManager(response);
     const runtime = makeMockRuntime({ agentManager });
-    return runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      STORY,
-      CONFIG,
+    return runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: CONFIG,
       agentManager,
-      undefined, // naxConfig
-      undefined, // featureName
-      undefined, // resolverSession
-      undefined, // priorFailures
-      undefined, // blockingThreshold
-      undefined, // featureContextMarkdown
-      undefined, // contextBundle
-      undefined, // projectDir
-      undefined, // naxIgnoreIndex
       runtime,
-    );
+    });
   }
 
   // Failure mode 2: preamble + fenced JSON (production log pattern)

@@ -44,26 +44,45 @@ export const _semanticDeps = {
   callOp: _callOp,
 };
 
+export interface RunSemanticReviewOptions {
+  workdir: string;
+  storyGitRef: string | undefined;
+  story: SemanticStory;
+  semanticConfig: SemanticReviewConfig;
+  agentManager: IAgentManager | undefined;
+  naxConfig?: NaxConfig;
+  featureName?: string;
+  resolverSession?: import("./dialogue").ReviewerSession;
+  priorFailures?: Array<{ stage: string; modelTier: string }>;
+  blockingThreshold?: "error" | "warning" | "info";
+  featureContextMarkdown?: string;
+  contextBundle?: import("../context/engine").ContextBundle;
+  projectDir?: string;
+  naxIgnoreIndex?: NaxIgnoreIndex;
+  runtime?: import("../runtime").NaxRuntime;
+}
+
 /**
  * Run a semantic review using an LLM against the story diff.
  */
-export async function runSemanticReview(
-  workdir: string,
-  storyGitRef: string | undefined,
-  story: SemanticStory,
-  semanticConfig: SemanticReviewConfig,
-  agentManager: IAgentManager | undefined,
-  naxConfig?: NaxConfig,
-  featureName?: string,
-  resolverSession?: import("./dialogue").ReviewerSession,
-  priorFailures?: Array<{ stage: string; modelTier: string }>,
-  blockingThreshold?: "error" | "warning" | "info",
-  featureContextMarkdown?: string,
-  contextBundle?: import("../context/engine").ContextBundle,
-  projectDir?: string,
-  naxIgnoreIndex?: NaxIgnoreIndex,
-  runtime?: import("../runtime").NaxRuntime,
-): Promise<ReviewCheckResult> {
+export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise<ReviewCheckResult> {
+  const {
+    workdir,
+    storyGitRef,
+    story,
+    semanticConfig,
+    agentManager,
+    naxConfig,
+    featureName,
+    resolverSession,
+    priorFailures,
+    blockingThreshold,
+    featureContextMarkdown,
+    contextBundle,
+    projectDir,
+    naxIgnoreIndex,
+    runtime,
+  } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
 

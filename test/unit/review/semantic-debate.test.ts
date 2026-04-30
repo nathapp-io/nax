@@ -264,15 +264,15 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
       agentManager,
-      DEBATE_REVIEW_ENABLED_CONFIG,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime,
+    });
 
     expect(_semanticDeps.createDebateRunner).toHaveBeenCalled();
   });
@@ -284,15 +284,15 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
       agentManager,
-      DEBATE_REVIEW_ENABLED_CONFIG,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime,
+    });
 
     expect(runMock).toHaveBeenCalledTimes(1);
     const [promptArg] = runMock.mock.calls[0];
@@ -307,15 +307,15 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
       agentManager,
-      DEBATE_REVIEW_ENABLED_CONFIG,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime,
+    });
 
     expect(agentManager.complete as ReturnType<typeof mock>).not.toHaveBeenCalled();
   });
@@ -329,15 +329,15 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
       agentManager,
-      { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime,
-    );
+      naxConfig: { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
+      runtime,
+    });
 
     expect(agentManager.runWithFallback as ReturnType<typeof mock>).toHaveBeenCalledTimes(1);
     expect(createDebateMock).not.toHaveBeenCalled();
@@ -352,14 +352,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
     }));
 
-    const result = await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
-      () => makeMockAgent(PROPOSAL_PASS),
-      DEBATE_REVIEW_ENABLED_CONFIG,
-    );
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+    });
 
     expect(result.success).toBe(true);
   });
@@ -369,14 +369,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
     }));
 
-    const result = await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
-      () => makeMockAgent(PROPOSAL_PASS),
-      DEBATE_REVIEW_ENABLED_CONFIG,
-    );
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+    });
 
     expect(result.success).toBe(false);
   });
@@ -390,14 +390,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
     }));
 
-    const result = await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
-      () => makeMockAgent(PROPOSAL_PASS),
-      DEBATE_REVIEW_ENABLED_CONFIG,
-    );
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+    });
 
     expect(result.findings).toBeDefined();
     expect((result.findings ?? []).length).toBeGreaterThan(0);
@@ -412,14 +412,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       run: mock(async () => DEBATE_DUPLICATE_FINDINGS_RESULT),
     }));
 
-    const result = await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
-      () => makeMockAgent(PROPOSAL_PASS),
-      DEBATE_REVIEW_ENABLED_CONFIG,
-    );
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+    });
 
     expect(result.findings).toBeDefined();
     // Both debaters report semantic.ts:10, but it should appear only once
@@ -434,14 +434,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       run: mock(async () => DEBATE_DUPLICATE_FINDINGS_RESULT),
     }));
 
-    const result = await runSemanticReview(
-      WORKDIR,
-      STORY_GIT_REF,
-      STORY,
-      SEMANTIC_CONFIG,
-      () => makeMockAgent(PROPOSAL_PASS),
-      DEBATE_REVIEW_ENABLED_CONFIG,
-    );
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+    });
 
     // PROPOSAL_FAIL_A has error finding (blocking), PROPOSAL_FAIL_B adds a warn finding (advisory at default threshold)
     const blockingFiles = (result.findings ?? []).map((f) => f.file);

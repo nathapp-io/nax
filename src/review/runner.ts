@@ -20,6 +20,32 @@ import type { AdversarialFindingsCache, ReviewCheckName, ReviewCheckResult, Revi
 // Re-export for test compatibility
 export { resolveLanguageCommand };
 
+export interface RunReviewOptions {
+  config: ReviewConfig;
+  workdir: string;
+  executionConfig?: ExecutionConfig;
+  qualityCommands?: QualityConfig["commands"];
+  storyId?: string;
+  storyGitRef?: string;
+  story?: SemanticStory;
+  agentManager?: IAgentManager;
+  naxConfig?: NaxConfig;
+  retrySkipChecks?: Set<string>;
+  featureName?: string;
+  resolverSession?: import("./dialogue").ReviewerSession;
+  priorFailures?: Array<{ stage: string; modelTier: string }>;
+  featureContextMarkdown?: string;
+  contextBundles?: {
+    semantic?: import("../context/engine").ContextBundle;
+    adversarial?: import("../context/engine").ContextBundle;
+  };
+  projectDir?: string;
+  env?: Record<string, string | undefined>;
+  naxIgnoreIndex?: NaxIgnoreIndex;
+  runtime?: import("../runtime").NaxRuntime;
+  priorAdversarialFindings?: AdversarialFindingsCache;
+}
+
 /**
  * Injectable dependency for the semantic review call — allows tests to
  * intercept runSemanticReview() without mock.module() (BUG-035 pattern).
@@ -203,31 +229,29 @@ export const _reviewGitDeps = {
 /**
  * Run all configured review checks
  */
-export async function runReview(
-  config: ReviewConfig,
-  workdir: string,
-  executionConfig?: ExecutionConfig,
-  qualityCommands?: QualityConfig["commands"],
-  storyId?: string,
-  storyGitRef?: string,
-  story?: SemanticStory,
-  agentManager?: IAgentManager,
-  naxConfig?: NaxConfig,
-  retrySkipChecks?: Set<string>,
-  featureName?: string,
-  resolverSession?: import("./dialogue").ReviewerSession,
-  priorFailures?: Array<{ stage: string; modelTier: string }>,
-  featureContextMarkdown?: string,
-  contextBundles?: {
-    semantic?: import("../context/engine").ContextBundle;
-    adversarial?: import("../context/engine").ContextBundle;
-  },
-  projectDir?: string,
-  env?: Record<string, string | undefined>,
-  naxIgnoreIndex?: NaxIgnoreIndex,
-  runtime?: import("../runtime").NaxRuntime,
-  priorAdversarialFindings?: AdversarialFindingsCache,
-): Promise<ReviewResult> {
+export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
+  const {
+    config,
+    workdir,
+    executionConfig,
+    qualityCommands,
+    storyId,
+    storyGitRef,
+    story,
+    agentManager,
+    naxConfig,
+    retrySkipChecks,
+    featureName,
+    resolverSession,
+    priorFailures,
+    featureContextMarkdown,
+    contextBundles,
+    projectDir,
+    env,
+    naxIgnoreIndex,
+    runtime,
+    priorAdversarialFindings,
+  } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
   const checks: ReviewCheckResult[] = [];
@@ -305,23 +329,23 @@ export async function runReview(
         // excludePatterns omitted — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009)
       };
       const runSemantic = _reviewSemanticDeps.runSemanticReview;
-      const result = await runSemantic(
+      const result = await runSemantic({
         workdir,
         storyGitRef,
-        semanticStory,
-        semanticCfg,
+        story: semanticStory,
+        semanticConfig: semanticCfg,
         agentManager,
         naxConfig,
         featureName,
         resolverSession,
         priorFailures,
-        config.blockingThreshold,
+        blockingThreshold: config.blockingThreshold,
         featureContextMarkdown,
-        contextBundles?.semantic,
+        contextBundle: contextBundles?.semantic,
         projectDir,
         naxIgnoreIndex,
         runtime,
-      );
+      });
       checks.push(result);
       if (!result.success && !firstFailure) {
         firstFailure = `${checkName} failed`;
@@ -350,23 +374,23 @@ export async function runReview(
         maxConcurrentSessions: 2,
       };
       const runAdversarial = _reviewAdversarialDeps.runAdversarialReview;
-      const result = await runAdversarial(
+      const result = await runAdversarial({
         workdir,
         storyGitRef,
-        adversarialStory,
-        adversarialCfg,
+        story: adversarialStory,
+        adversarialConfig: adversarialCfg,
         agentManager,
         naxConfig,
         featureName,
         priorFailures,
-        config.blockingThreshold,
+        blockingThreshold: config.blockingThreshold,
         featureContextMarkdown,
-        contextBundles?.adversarial,
+        contextBundle: contextBundles?.adversarial,
         projectDir,
         naxIgnoreIndex,
         runtime,
         priorAdversarialFindings,
-      );
+      });
       checks.push(result);
       if (!result.success && !firstFailure) {
         firstFailure = `${checkName} failed`;

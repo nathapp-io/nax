@@ -23,7 +23,7 @@ describe("Review Phase", () => {
       },
     };
 
-    const result = await runReview(config, tempDir);
+    const result = await runReview({ config, workdir: tempDir });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);
@@ -44,7 +44,7 @@ describe("Review Phase", () => {
       },
     };
 
-    const result = await runReview(config, tempDir);
+    const result = await runReview({ config, workdir: tempDir });
 
     expect(result.success).toBe(false);
     expect(result.checks).toHaveLength(1);
@@ -67,7 +67,7 @@ describe("Review Phase", () => {
       },
     };
 
-    const result = await runReview(config, tempDir);
+    const result = await runReview({ config, workdir: tempDir });
 
     expect(result.success).toBe(false);
     // Should only run typecheck and lint, not test (fail-fast)
@@ -90,7 +90,7 @@ describe("Review Phase", () => {
       },
     };
 
-    const result = await runReview(config, tempDir);
+    const result = await runReview({ config, workdir: tempDir });
 
     // Custom command from config.review.commands
     expect(result.checks[0].command).toBe("echo 'custom test command'");
@@ -105,7 +105,7 @@ describe("Review Phase", () => {
       commands: {},
     };
 
-    const result = await runReview(config, tempDir);
+    const result = await runReview({ config, workdir: tempDir });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(0);
@@ -123,7 +123,7 @@ describe("Review Phase", () => {
       },
     };
 
-    const result = await runReview(config, tempDir);
+    const result = await runReview({ config, workdir: tempDir });
 
     expect(result.success).toBe(true);
     expect(result.checks[0].output).toContain("Test output line 1");
@@ -141,7 +141,7 @@ describe("Review Phase", () => {
       },
     };
 
-    const result = await runReview(config, tempDir);
+    const result = await runReview({ config, workdir: tempDir });
 
     expect(result.success).toBe(true);
     expect(typeof result.checks[0].durationMs).toBe("number");

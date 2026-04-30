@@ -154,7 +154,14 @@ describe("runSemanticReview — missing storyGitRef", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(result.success).toBe(true);
   });
@@ -164,7 +171,14 @@ describe("runSemanticReview — missing storyGitRef", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(result.output).toContain("skipped: no git ref");
   });
@@ -174,7 +188,14 @@ describe("runSemanticReview — missing storyGitRef", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(result.success).toBe(true);
   });
@@ -184,7 +205,14 @@ describe("runSemanticReview — missing storyGitRef", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    const result = await runSemanticReview("/tmp/wd", "", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(result.output).toContain("skipped: no git ref");
   });
@@ -193,7 +221,12 @@ describe("runSemanticReview — missing storyGitRef", () => {
     const spawnMock = makeSpawnMock("", 0);
     _diffUtilsDeps.spawn = spawnMock;
 
-    await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, undefined);
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+    });
 
     expect(spawnMock).not.toHaveBeenCalled();
   });
@@ -201,7 +234,12 @@ describe("runSemanticReview — missing storyGitRef", () => {
   test("result.check is 'semantic' when storyGitRef is undefined", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, undefined);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+    });
 
     expect(result.check).toBe("semantic");
   });
@@ -236,7 +274,14 @@ describe("runSemanticReview — git diff invocation", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(spawnMock).toHaveBeenCalled();
     const allCalls = (spawnMock as ReturnType<typeof mock>).mock.calls;
@@ -259,7 +304,14 @@ describe("runSemanticReview — git diff invocation", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
-    await runSemanticReview("/my/project", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    await runSemanticReview({
+      workdir: "/my/project",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
     const spawnOpts = call[0] as { cwd: string };
@@ -302,7 +354,14 @@ describe("runSemanticReview — diff truncation", () => {
       };
     });
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });
@@ -318,7 +377,14 @@ describe("runSemanticReview — diff truncation", () => {
       fallbacks: [],
     }));
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });
@@ -334,7 +400,14 @@ describe("runSemanticReview — diff truncation", () => {
       fallbacks: [],
     }));
 
-    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, agentManager, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, runtime);
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(_diffUtilsDeps.spawn).toHaveBeenCalled();
   });

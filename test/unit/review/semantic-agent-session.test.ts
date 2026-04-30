@@ -104,69 +104,43 @@ function makeRuntime(agentManager: IAgentManager) {
 }
 
 async function callRunSemanticReview(agentManager: IAgentManager): Promise<import("../../../src/review/types").ReviewCheckResult> {
-  return runSemanticReview(
-    "/tmp/wd",
-    "abc123",
-    STORY,
-    DEFAULT_SEMANTIC_CONFIG,
+  return runSemanticReview({
+    workdir: "/tmp/wd",
+    storyGitRef: "abc123",
+    story: STORY,
+    semanticConfig: DEFAULT_SEMANTIC_CONFIG,
     agentManager,
-    undefined, // naxConfig
-    undefined, // featureName
-    undefined, // resolverSession
-    undefined, // priorFailures
-    undefined, // blockingThreshold
-    undefined, // featureContextMarkdown
-    undefined, // contextBundle
-    undefined, // projectDir
-    undefined, // naxIgnoreIndex
-    makeRuntime(agentManager),
-  );
+    runtime: makeRuntime(agentManager),
+  });
 }
 
 async function callRunSemanticReviewWithFeature(
   agentManager: IAgentManager,
   featureName?: string,
 ): Promise<import("../../../src/review/types").ReviewCheckResult> {
-  return runSemanticReview(
-    "/tmp/wd",
-    "abc123",
-    STORY,
-    DEFAULT_SEMANTIC_CONFIG,
+  return runSemanticReview({
+    workdir: "/tmp/wd",
+    storyGitRef: "abc123",
+    story: STORY,
+    semanticConfig: DEFAULT_SEMANTIC_CONFIG,
     agentManager,
-    undefined, // naxConfig
-    featureName, // featureName
-    undefined, // resolverSession
-    undefined, // priorFailures
-    undefined, // blockingThreshold
-    undefined, // featureContextMarkdown
-    undefined, // contextBundle
-    undefined, // projectDir
-    undefined, // naxIgnoreIndex
-    makeRuntime(agentManager),
-  );
+    featureName,
+    runtime: makeRuntime(agentManager),
+  });
 }
 
 async function callSemanticReviewWithRef(
   storyGitRef: string | undefined,
   agentManager: IAgentManager | undefined,
 ): Promise<import("../../../src/review/types").ReviewCheckResult> {
-  return runSemanticReview(
-    "/tmp/wd",
+  return runSemanticReview({
+    workdir: "/tmp/wd",
     storyGitRef,
-    STORY,
-    DEFAULT_SEMANTIC_CONFIG,
+    story: STORY,
+    semanticConfig: DEFAULT_SEMANTIC_CONFIG,
     agentManager,
-    undefined, // naxConfig
-    undefined, // featureName
-    undefined, // resolverSession
-    undefined, // priorFailures
-    undefined, // blockingThreshold
-    undefined, // featureContextMarkdown
-    undefined, // contextBundle
-    undefined, // projectDir
-    undefined, // naxIgnoreIndex
-    agentManager ? makeRuntime(agentManager) : undefined,
-  );
+    runtime: agentManager ? makeRuntime(agentManager) : undefined,
+  });
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
@@ -274,7 +248,12 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     _diffUtilsDeps.isGitRefValid = mock(async () => false);
     _diffUtilsDeps.getMergeBase = mock(async () => undefined);
 
-    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, undefined);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: undefined,
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+    });
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("skipped: no git ref");
@@ -285,7 +264,12 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
     _diffUtilsDeps.isGitRefValid = mock(async () => false);
     _diffUtilsDeps.getMergeBase = mock(async () => undefined);
 
-    const result = await runSemanticReview("/tmp/wd", "bad-sha", STORY, DEFAULT_SEMANTIC_CONFIG, undefined);
+    const result = await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "bad-sha",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+    });
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("skipped: no git ref");
@@ -380,23 +364,15 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
     const storyWithDifferentId: SemanticStory = { ...STORY, id: "US-999" };
 
-    await runSemanticReview(
-      "/tmp/wd",
-      "abc123",
-      storyWithDifferentId,
-      DEFAULT_SEMANTIC_CONFIG,
+    await runSemanticReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: storyWithDifferentId,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
       agentManager,
-      undefined, // naxConfig
-      "feat", // featureName
-      undefined, // resolverSession
-      undefined, // priorFailures
-      undefined, // blockingThreshold
-      undefined, // featureContextMarkdown
-      undefined, // contextBundle
-      undefined, // projectDir
-      undefined, // naxIgnoreIndex
-      makeRuntime(agentManager),
-    );
+      featureName: "feat",
+      runtime: makeRuntime(agentManager),
+    });
 
     expect(agentManager.runWithFallback).toHaveBeenCalled();
     const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as { runOptions: Record<string, unknown> };
