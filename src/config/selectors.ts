@@ -16,7 +16,10 @@ export const planConfigSelector = pickSelector("plan", "plan", "debate");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
 export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance");
+// acceptance fix take more time to fix the code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
 export const acceptanceFixConfigSelector = pickSelector("acceptance-fix", "acceptance", "execution");
+// acceptance generator take more time to generate the test code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
+export const acceptanceGenConfigSelector = pickSelector("acceptance-gen", "acceptance", "execution");
 export const tddConfigSelector = pickSelector("tdd", "tdd", "execution");
 export const debateConfigSelector = pickSelector("debate", "debate");
 export const routingConfigSelector = pickSelector("routing", "routing");
