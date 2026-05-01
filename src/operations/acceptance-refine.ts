@@ -1,6 +1,7 @@
 import { parseRefinementResponse } from "../acceptance/refinement";
 import type { RefinedCriterion } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
+import type { AcceptanceConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -15,8 +16,6 @@ export interface AcceptanceRefineInput {
 }
 
 export type AcceptanceRefineOutput = RefinedCriterion[];
-
-type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select>;
 
 export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, AcceptanceRefineOutput, AcceptanceConfig> = {
   kind: "complete",

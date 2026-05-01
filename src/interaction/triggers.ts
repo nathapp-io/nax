@@ -4,12 +4,10 @@
  * Wires 8 built-in triggers into the runner loop and hooks system.
  */
 
-import type { NaxConfig } from "../config";
+import type { InteractionConfig } from "@/config/selectors";
 import type { InteractionChain } from "./chain";
 import type { InteractionFallback, InteractionRequest, InteractionResponse, TriggerName } from "./types";
 import { TRIGGER_METADATA } from "./types";
-
-export type InteractionConfig = Pick<NaxConfig, "interaction">;
 
 /** Trigger context data for template substitution */
 export interface TriggerContext {

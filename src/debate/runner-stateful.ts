@@ -6,7 +6,8 @@
 
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { ConfiguredModel, ModelDef, NaxConfig } from "../config";
+import type { ConfiguredModel, ModelDef } from "../config";
+import type { CompleteConfig, DebateConfig } from "../config/selectors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -30,7 +31,9 @@ interface StatefulCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: Pick<NaxConfig, "debate" | "models" | "agent">;
+  readonly config: DebateConfig;
+  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
+  readonly completeConfig?: CompleteConfig;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
@@ -301,8 +304,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       proposalOutputs,
       critiqueOutputs,
       ctx.stageConfig,
-      // resolveOutcome's CompleteOptions.config stays NaxConfig per Phase 3 §3.3
-      ctx.config as NaxConfig,
+      ctx.completeConfig,
       ctx.storyId,
       ctx.timeoutSeconds * 1000,
       ctx.workdir,

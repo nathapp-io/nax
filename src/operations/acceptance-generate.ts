@@ -1,6 +1,7 @@
 import { extractTestCode } from "../acceptance/generator";
 import { hasLikelyTestContent, isStubTestContent } from "../acceptance/heuristics";
 import { acceptanceGenConfigSelector } from "../config";
+import type { AcceptanceGenConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -17,12 +18,10 @@ export interface AcceptanceGenerateOutput {
   testCode: string | null;
 }
 
-type AcceptanceConfig = ReturnType<typeof acceptanceGenConfigSelector.select>;
-
 export const acceptanceGenerateOp: CompleteOperation<
   AcceptanceGenerateInput,
   AcceptanceGenerateOutput,
-  AcceptanceConfig
+  AcceptanceGenConfig
 > = {
   kind: "complete",
   name: "acceptance-generate",

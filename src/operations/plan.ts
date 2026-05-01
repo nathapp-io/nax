@@ -1,5 +1,6 @@
 import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
+import type { PlanConfig } from "../config/selectors";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
@@ -15,8 +16,6 @@ export interface PlanOpInput {
   packageDetails?: PackageSummary[];
   projectProfile?: ProjectProfile;
 }
-
-type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 
 export const planOp: CompleteOperation<PlanOpInput, PRD, PlanConfig> = {
   kind: "complete",

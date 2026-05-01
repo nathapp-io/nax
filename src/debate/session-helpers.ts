@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "..
 import type { PipelineStage } from "../config/permissions";
 import type { ModelsConfig } from "../config/schema-types";
 import type { ModelDef } from "../config/schema-types";
+import type { CompleteConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { formatSessionName } from "../session/naming";
@@ -179,7 +180,8 @@ export async function resolveOutcome(
   proposalOutputs: string[],
   critiqueOutputs: string[],
   stageConfig: DebateStageConfig,
-  config: NaxConfig | undefined,
+  // TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary.
+  config: CompleteConfig | undefined,
   storyId: string,
   timeoutMs: number,
   workdir: string | undefined,

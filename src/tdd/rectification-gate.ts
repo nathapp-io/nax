@@ -9,7 +9,8 @@
 import type { IAgentManager } from "../agents";
 import type { SessionHandle } from "../agents/types";
 import type { ModelTier, NaxConfig } from "../config";
-import { type rectificationGateConfigSelector, resolveModelForAgent } from "../config";
+import { resolveModelForAgent } from "../config";
+import type { RectificationGateConfig } from "../config/selectors";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
@@ -25,8 +26,6 @@ import {
 import { buildFailureRecords } from "../verification/failure-records";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
-
-type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
 
 /** Failure snapshot for the TDD rectification gate retry loop. */
 interface TddRectificationFailure {

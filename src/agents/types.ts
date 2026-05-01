@@ -6,7 +6,7 @@
  * collect results from them uniformly.
  */
 
-import type { NaxConfig } from "../config";
+import type { AgentManagerConfig, CompleteConfig } from "@/config/selectors";
 import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
@@ -123,7 +123,7 @@ export interface AgentRunOptions {
   /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */
   pipelineStage?: import("../config/permissions").PipelineStage;
   /** Full nax config — required so adapters can call resolvePermissions() and audit prompts */
-  config: NaxConfig;
+  config: AgentManagerConfig;
   /**
    * Absolute path to repo root where `.nax/` lives. When provided, prompt audit skips
    * the parent-directory walk and writes directly to `<projectDir>/.nax/prompt-audit/`.
@@ -228,10 +228,11 @@ export interface CompleteOptions {
    */
   timeoutMs?: number;
   /**
-   * Full nax config — required so resolvePermissions() can determine permission mode
-   * and prompt audit is always active when enabled.
+   * Config slice required by the wiring layer: execution (permissions), agent
+   * (default + acp settings), models (model resolution), precheck (plan-mode AC gate).
+   * Full NaxConfig satisfies this type — callers need not change.
    */
-  config: NaxConfig;
+  config: CompleteConfig;
   /**
    * Named session to use for this completion call.
    * If omitted, a timestamp-based ephemeral session name is generated.
