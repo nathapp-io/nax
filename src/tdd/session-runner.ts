@@ -8,6 +8,8 @@ import type { AgentAdapter } from "../agents";
 import { resolveDefaultAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
+
+type TddConfig = Pick<NaxConfig, "tdd" | "execution" | "quality" | "agent" | "models">;
 import { createContextToolRuntime } from "../context/engine";
 import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
@@ -40,7 +42,7 @@ export const _sessionRunnerDeps = {
     | null
     | ((
         role: TddSessionRole,
-        config: NaxConfig,
+        config: TddConfig,
         story: UserStory,
         workdir: string,
         contextMarkdown?: string,
@@ -126,7 +128,7 @@ export async function runTddSession(
   agent: AgentAdapter,
   agentManager: import("../agents/manager-types").IAgentManager,
   story: UserStory,
-  config: NaxConfig,
+  config: TddConfig,
   workdir: string,
   modelTier: ModelTier,
   beforeRef: string,
@@ -165,7 +167,7 @@ export async function runTddSession(
     switch (role) {
       case "test-writer":
         prompt = await PromptBuilder.for("test-writer", { isolation: lite ? "lite" : "strict" })
-          .withLoader(workdir, config)
+          .withLoader(workdir, config as NaxConfig) // boundary cast — withLoader expects NaxConfig
           .story(story)
           .context(contextMarkdown)
           .v2FeatureContext(contextBundle?.pushMarkdown)
@@ -177,7 +179,7 @@ export async function runTddSession(
         break;
       case "implementer":
         prompt = await PromptBuilder.for("implementer", { variant: lite ? "lite" : "standard" })
-          .withLoader(workdir, config)
+          .withLoader(workdir, config as NaxConfig) // boundary cast — withLoader expects NaxConfig
           .story(story)
           .context(contextMarkdown)
           .v2FeatureContext(contextBundle?.pushMarkdown)
@@ -189,7 +191,7 @@ export async function runTddSession(
         break;
       case "verifier":
         prompt = await PromptBuilder.for("verifier")
-          .withLoader(workdir, config)
+          .withLoader(workdir, config as NaxConfig) // boundary cast — withLoader expects NaxConfig
           .story(story)
           .context(contextMarkdown)
           .v2FeatureContext(contextBundle?.pushMarkdown)
@@ -224,7 +226,7 @@ export async function runTddSession(
     ),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     pipelineStage: "run" as const,
-    config,
+    config: config as NaxConfig, // boundary cast — CompleteOptions.config stays NaxConfig per Phase 3 §3.3
     projectDir,
     maxInteractionTurns: config.agent?.maxInteractionTurns,
     featureName,
@@ -236,7 +238,7 @@ export async function runTddSession(
       ? createContextToolRuntime({
           bundle: contextBundle,
           story,
-          config,
+          config: config as NaxConfig, // boundary cast — createContextToolRuntime expects NaxConfig
           repoRoot: workdir,
         })
       : undefined,
