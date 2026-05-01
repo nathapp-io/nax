@@ -78,6 +78,8 @@ export const qualityConfigSelector = pickSelector("quality", "quality", "executi
 // and verification all share one shape.
 export const testPatternConfigSelector = pickSelector("test-pattern", "execution", "project", "quality");
 
+export const contextConfigSelector = pickSelector("context", "context");
+
 // Context-engine pull-tool runtime — reads context.v2.pull.* and forwards
 // execution/project/quality to resolveTestFilePatterns. Co-located so callers don't
 // have to compose two selectors.
@@ -120,6 +122,7 @@ export type InteractionConfig = ReturnType<typeof interactionConfigSelector.sele
 export type PrecheckConfig = ReturnType<typeof precheckConfigSelector.select>;
 export type QualityConfig = ReturnType<typeof qualityConfigSelector.select>;
 export type TestPatternConfig = ReturnType<typeof testPatternConfigSelector.select>;
+export type ContextConfig = ReturnType<typeof contextConfigSelector.select>;
 export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfigSelector.select>;
 export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
 export type CompleteConfig = ReturnType<typeof completeConfigSelector.select>;

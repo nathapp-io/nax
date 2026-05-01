@@ -5,7 +5,7 @@
  */
 
 import { join } from "node:path";
-import type { NaxConfig } from "../config/types";
+import type { PromptLoaderConfig } from "@/config/selectors";
 import type { PromptRole } from "./core/types";
 
 /**
@@ -20,7 +20,7 @@ import type { PromptRole } from "./core/types";
 export async function loadOverride(
   role: PromptRole,
   workdir: string,
-  config: Pick<NaxConfig, "prompts">,
+  config: PromptLoaderConfig,
 ): Promise<string | null> {
   const overridePath = config.prompts?.overrides?.[role];
 

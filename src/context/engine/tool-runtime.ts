@@ -7,7 +7,6 @@
  */
 
 import type { ContextToolRuntimeConfig } from "../../config/selectors";
-import type { NaxConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
