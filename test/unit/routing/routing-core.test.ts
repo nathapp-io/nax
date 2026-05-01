@@ -11,7 +11,8 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import { escalateTier } from "../../../src/execution/runner";
-import { classifyComplexity, determineTestStrategy, routeTask } from "../../../src/routing";
+import { classifyComplexity, complexityToModelTier, determineTestStrategy, routeTask } from "../../../src/routing";
+import { makeNaxConfig } from "../../helpers";
 
 describe("classifyComplexity", () => {
   test("simple: no complexity keywords", () => {
@@ -254,5 +255,32 @@ describe("escalateTier", () => {
 
     result = escalateTier(result!.tier, defaultTiers);
     expect(result).toBeNull();
+  });
+});
+
+describe("routing — stripped config (issue #745 Phase 4d)", () => {
+  test("complexityToModelTier accepts Pick<NaxConfig, routing|autoMode|tdd>", () => {
+    // Config typed as the narrowed slice — proves the signature accepts it without casting.
+    const strippedConfig: Pick<NaxConfig, "routing" | "autoMode" | "tdd"> = makeNaxConfig({
+      autoMode: { complexityRouting: { simple: "fast", complex: "balanced", expert: "powerful" } },
+      tdd: { strategy: "tdd-first" },
+      routing: { strategy: "keyword" },
+    });
+
+    expect(complexityToModelTier("simple", strippedConfig)).toBe("fast");
+    expect(complexityToModelTier("complex", strippedConfig)).toBe("balanced");
+    expect(complexityToModelTier("expert", strippedConfig)).toBe("powerful");
+  });
+
+  test("routeTask accepts Pick<NaxConfig, routing|autoMode|tdd>", () => {
+    const strippedConfig: Pick<NaxConfig, "routing" | "autoMode" | "tdd"> = makeNaxConfig({
+      autoMode: { complexityRouting: { simple: "fast", complex: "balanced", expert: "powerful" } },
+      tdd: { strategy: "auto" },
+      routing: { strategy: "keyword" },
+    });
+
+    const decision = routeTask("Fix typo", "Fix a typo", ["Typo is gone"], [], strippedConfig);
+    expect(decision.modelTier).toBe("fast");
+    expect(decision.complexity).toBe("simple");
   });
 });

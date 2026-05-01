@@ -12,6 +12,8 @@ import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
+
+type RoutingConfig = Pick<NaxConfig, "routing" | "autoMode" | "tdd">;
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy } from "./classify";
 import { classifyComplexity, determineTestStrategy } from "./classify";
@@ -88,7 +90,7 @@ const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
 // ---------------------------------------------------------------------------
 
 /** Map complexity to model tier */
-export function complexityToModelTier(complexity: Complexity, config: NaxConfig): ModelTier {
+export function complexityToModelTier(complexity: Complexity, config: RoutingConfig): ModelTier {
   const mapping = config.autoMode.complexityRouting;
   return (mapping[complexity] ?? "balanced") as ModelTier;
 }
@@ -97,7 +99,7 @@ export function complexityToModelTier(complexity: Complexity, config: NaxConfig)
 // Keyword fallback (internal)
 // ---------------------------------------------------------------------------
 
-function keywordRoute(story: UserStory, config: NaxConfig): RoutingDecision {
+function keywordRoute(story: UserStory, config: RoutingConfig): RoutingDecision {
   const { title, description, acceptanceCriteria, tags } = story;
   const tddStrategy: TddStrategy = config.tdd?.strategy ?? "auto";
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
@@ -139,7 +141,7 @@ function keywordRoute(story: UserStory, config: NaxConfig): RoutingDecision {
  */
 export async function resolveRouting(
   story: UserStory,
-  config: NaxConfig,
+  config: RoutingConfig,
   plugins: PluginRegistry | undefined,
   dispatchContext: DispatchContext,
 ): Promise<RoutingDecision> {
@@ -165,7 +167,10 @@ export async function resolveRouting(
   if (plugins) {
     for (const pluginRouter of plugins.getRouters()) {
       try {
-        const decision = await pluginRouter.route(story, { ...runtimeContext, config } as RoutingContext);
+        const decision = await pluginRouter.route(story, {
+          ...runtimeContext,
+          config: config as NaxConfig,
+        } as RoutingContext);
         if (decision !== null) return decision;
       } catch (err) {
         logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
@@ -180,7 +185,7 @@ export async function resolveRouting(
   if (config.routing.strategy === "llm" && agentManager) {
     try {
       const { classifyWithLlm } = await import("./strategies/llm");
-      const decision = await classifyWithLlm(story, config, agentManager);
+      const decision = await classifyWithLlm(story, config as NaxConfig, agentManager); // boundary cast — classifyWithLlm expects NaxConfig
       if (decision !== null) return decision;
     } catch (err) {
       logger?.warn("routing", "LLM routing failed, falling back to keyword", {
@@ -224,7 +229,7 @@ export function routeTask(
   description: string,
   acceptanceCriteria: string[],
   tags: string[],
-  config: NaxConfig,
+  config: RoutingConfig,
 ): RoutingDecision {
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
   const modelTier = complexityToModelTier(complexity, config);
@@ -272,7 +277,7 @@ export const _tryLlmBatchRouteDeps = {
 };
 
 export async function tryLlmBatchRoute(
-  config: NaxConfig,
+  config: RoutingConfig,
   stories: UserStory[],
   label = "routing",
   _deps = _tryLlmBatchRouteDeps,
@@ -295,7 +300,7 @@ export async function tryLlmBatchRoute(
       mode,
     });
     const { routeBatch } = await import("./strategies/llm");
-    await routeBatch(needsRouting, { config, agentManager });
+    await routeBatch(needsRouting, { config: config as NaxConfig, agentManager }); // boundary cast — LlmRoutingContext.config expects NaxConfig
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
