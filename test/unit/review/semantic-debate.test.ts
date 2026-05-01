@@ -214,9 +214,9 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
-    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "exact" as const }),
     runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "exact" as const }, fallbacks: [] }),
     runAsFn: async (_agent, opts) => ({
       success: true,
       exitCode: 0,
@@ -226,7 +226,7 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
-    completeAsFn: async (_agent, _prompt, _opts) => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    completeAsFn: async (_agent, _prompt, _opts) => ({ output: llmResponse, costUsd: cost, source: "exact" as const }),
   });
 }
 
@@ -241,7 +241,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   beforeEach(() => {
     _diffUtilsDeps.spawn = makeSpawnMock("diff content");
     _diffUtilsDeps.isGitRefValid = mock(async () => true);
-    _diffUtilsDeps.getMergeBase = mock(async () => null);
+    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
     _semanticDeps.createDebateRunner = origCreateDebateSession;
   });
 
@@ -259,7 +259,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
   test("AC3: createDebateRunner is called when debate.stages.review.enabled=true", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
+    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
@@ -278,8 +278,8 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   });
 
   test("AC3: DebateSession.run() is called with the semantic review prompt", async () => {
-    const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
+    const runMock = mock(async (_prompt: string) => DEBATE_MAJORITY_PASS_RESULT);
+    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
@@ -302,7 +302,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
   test("AC3: agent.complete() is NOT called when debate is enabled and debate runs", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock }));
+    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
@@ -324,7 +324,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const createDebateMock = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
     }));
-    _semanticDeps.createDebateRunner = createDebateMock;
+    _semanticDeps.createDebateRunner = createDebateMock as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
@@ -335,7 +335,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       story: STORY,
       semanticConfig: SEMANTIC_CONFIG,
       agentManager,
-      naxConfig: { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
+      naxConfig: { debate: { enabled: false, agents: 0, stages: {} as never } } as unknown as NaxConfig,
       runtime,
     });
 
@@ -350,14 +350,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   test("AC4: success=true when majority (2 of 3) proposals have passed=true", async () => {
     _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
-    }));
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const result = await runSemanticReview({
       workdir: WORKDIR,
       storyGitRef: STORY_GIT_REF,
       story: STORY,
       semanticConfig: SEMANTIC_CONFIG,
-      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      agentManager: makeAgentManager(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
       runtime: makeMockRuntime(),
     });
@@ -369,7 +369,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const auditCalls: unknown[] = [];
     _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
-    }));
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({
@@ -398,14 +398,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   test("AC4: success=false when majority (2 of 3) proposals have passed=false", async () => {
     _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
-    }));
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const result = await runSemanticReview({
       workdir: WORKDIR,
       storyGitRef: STORY_GIT_REF,
       story: STORY,
       semanticConfig: SEMANTIC_CONFIG,
-      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      agentManager: makeAgentManager(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
       runtime: makeMockRuntime(),
     });
@@ -420,14 +420,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   test("AC5: findings contains entries from all debaters when majority fails", async () => {
     _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT),
-    }));
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const result = await runSemanticReview({
       workdir: WORKDIR,
       storyGitRef: STORY_GIT_REF,
       story: STORY,
       semanticConfig: SEMANTIC_CONFIG,
-      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      agentManager: makeAgentManager(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
       runtime: makeMockRuntime(),
     });
@@ -443,14 +443,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     // Expected merged+deduped: 2 findings (not 3)
     _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_DUPLICATE_FINDINGS_RESULT),
-    }));
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const result = await runSemanticReview({
       workdir: WORKDIR,
       storyGitRef: STORY_GIT_REF,
       story: STORY,
       semanticConfig: SEMANTIC_CONFIG,
-      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      agentManager: makeAgentManager(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
       runtime: makeMockRuntime(),
     });
@@ -466,14 +466,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   test("AC5: findings from both debaters are included when they report different issues", async () => {
     _semanticDeps.createDebateRunner = mock(() => ({
       run: mock(async () => DEBATE_DUPLICATE_FINDINGS_RESULT),
-    }));
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const result = await runSemanticReview({
       workdir: WORKDIR,
       storyGitRef: STORY_GIT_REF,
       story: STORY,
       semanticConfig: SEMANTIC_CONFIG,
-      agentManager: () => makeMockAgent(PROPOSAL_PASS),
+      agentManager: makeAgentManager(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
       runtime: makeMockRuntime(),
     });
