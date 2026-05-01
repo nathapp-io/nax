@@ -8,8 +8,9 @@
 
 import type { IAgentManager } from "../../agents";
 import { resolveDefaultAgent } from "../../agents";
-import type { ConfiguredModel, NaxConfig } from "../../config";
+import type { ConfiguredModel } from "../../config";
 import { resolveConfiguredModel } from "../../config";
+import type { LlmRoutingConfig } from "../../config/selectors";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "../../prompts";
@@ -136,7 +137,7 @@ async function callLlmOnce(
   agentManager: IAgentManager,
   modelSelection: ConfiguredModel,
   prompt: string,
-  config: NaxConfig,
+  config: LlmRoutingConfig,
   timeoutMs: number,
 ): Promise<string> {
   const resolvedModel = resolveConfiguredModel(
@@ -174,7 +175,7 @@ async function callLlm(
   agentManager: IAgentManager,
   modelSelection: ConfiguredModel,
   prompt: string,
-  config: NaxConfig,
+  config: LlmRoutingConfig,
 ): Promise<string> {
   const llmConfig = config.routing.llm;
   const timeoutMs = llmConfig?.timeoutMs ?? 30000;
@@ -209,7 +210,7 @@ async function callLlm(
  * Pre-populates the cache with routing decisions for all stories.
  */
 interface LlmRoutingContext {
-  config: NaxConfig;
+  config: LlmRoutingConfig;
   agentManager: IAgentManager;
 }
 
@@ -261,7 +262,7 @@ export async function routeBatch(
  */
 export async function classifyWithLlm(
   story: UserStory,
-  config: NaxConfig,
+  config: LlmRoutingConfig,
   agentManager: IAgentManager,
 ): Promise<RoutingDecision | null> {
   const llmConfig = config.routing.llm;

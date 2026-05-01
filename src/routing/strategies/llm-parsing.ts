@@ -75,7 +75,11 @@ export function stripCodeFences(text: string): string {
 /**
  * Parse and validate LLM routing response.
  */
-export function parseRoutingResponse(output: string, story: UserStory, config: NaxConfig): RoutingDecision {
+export function parseRoutingResponse(
+  output: string,
+  story: UserStory,
+  config: Pick<NaxConfig, "models" | "tdd">,
+): RoutingDecision {
   const parsed = parseLLMJson<Record<string, unknown>>(output);
   return validateRoutingDecision(parsed, config, story);
 }
@@ -86,7 +90,7 @@ export function parseRoutingResponse(output: string, story: UserStory, config: N
 export function parseBatchResponse(
   output: string,
   stories: UserStory[],
-  config: NaxConfig,
+  config: Pick<NaxConfig, "models" | "tdd">,
 ): Map<string, RoutingDecision> {
   const parsed = parseLLMJson(output);
 

@@ -96,6 +96,19 @@ export const contextToolRuntimeConfigSelector = pickSelector(
 // project.* only.
 export const promptLoaderConfigSelector = pickSelector("prompt-loader", "prompts", "context", "project");
 
+// LLM routing — classifyWithLlm / routeBatch / callLlm need routing.llm config,
+// models + agent for resolution, tdd for strategy derivation, and
+// execution + precheck for the agentManager.complete() wiring layer.
+export const llmRoutingConfigSelector = pickSelector(
+  "llm-routing",
+  "routing",
+  "models",
+  "agent",
+  "tdd",
+  "execution",
+  "precheck",
+);
+
 // TODO(#853): workaround — narrows CompleteOptions.config from NaxConfig to the keys the
 // wiring layer actually reads. Phase 2 of #853 removes the field entirely by pre-resolving
 // at the AgentManager boundary; delete this selector when that lands.
@@ -125,4 +138,5 @@ export type TestPatternConfig = ReturnType<typeof testPatternConfigSelector.sele
 export type ContextConfig = ReturnType<typeof contextConfigSelector.select>;
 export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfigSelector.select>;
 export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
+export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
 export type CompleteConfig = ReturnType<typeof completeConfigSelector.select>;

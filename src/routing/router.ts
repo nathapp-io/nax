@@ -6,7 +6,7 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
-import type { RoutingConfig } from "@/config/selectors";
+import type { LlmRoutingConfig, RoutingConfig } from "@/config/selectors";
 import type { IAgentManager } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import { getSafeLogger } from "../logger";
@@ -146,7 +146,7 @@ function keywordRoute(story: UserStory, config: RoutingConfig): RoutingDecision 
  */
 export async function resolveRouting(
   story: UserStory,
-  config: RoutingConfig,
+  config: NaxConfig,
   plugins: PluginRegistry | undefined,
   dispatchContext: DispatchContext,
 ): Promise<RoutingDecision> {
@@ -174,7 +174,7 @@ export async function resolveRouting(
       try {
         const decision = await pluginRouter.route(story, {
           ...runtimeContext,
-          config: config as NaxConfig,
+          config,
         } as RoutingContext);
         if (decision !== null) return decision;
       } catch (err) {
@@ -190,7 +190,7 @@ export async function resolveRouting(
   if (config.routing.strategy === "llm" && agentManager) {
     try {
       const { classifyWithLlm } = await import("./strategies/llm");
-      const decision = await classifyWithLlm(story, config as NaxConfig, agentManager); // boundary cast — classifyWithLlm expects NaxConfig
+      const decision = await classifyWithLlm(story, config, agentManager);
       if (decision !== null) return decision;
     } catch (err) {
       logger?.warn("routing", "LLM routing failed, falling back to keyword", {
@@ -282,7 +282,7 @@ export const _tryLlmBatchRouteDeps = {
 };
 
 export async function tryLlmBatchRoute(
-  config: RoutingConfig,
+  config: LlmRoutingConfig,
   stories: UserStory[],
   label = "routing",
   _deps = _tryLlmBatchRouteDeps,
@@ -305,7 +305,7 @@ export async function tryLlmBatchRoute(
       mode,
     });
     const { routeBatch } = await import("./strategies/llm");
-    await routeBatch(needsRouting, { config: config as NaxConfig, agentManager }); // boundary cast — LlmRoutingContext.config expects NaxConfig
+    await routeBatch(needsRouting, { config, agentManager });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
