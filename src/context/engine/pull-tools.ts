@@ -18,6 +18,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Pull tools
  */
 
+import type { ContextToolRuntimeConfig } from "../../config/selectors";
 import type { NaxConfig } from "../../config/types";
 import { NaxError } from "../../errors";
 import type { UserStory } from "../../prd";
@@ -264,7 +265,7 @@ function filterByKeyword(content: string, keyword: string): string {
 export async function handleQueryFeatureContext(
   input: { filter?: string },
   story: UserStory,
-  config: NaxConfig,
+  config: ContextToolRuntimeConfig,
   repoRoot: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,

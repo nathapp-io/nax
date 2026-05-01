@@ -6,7 +6,7 @@
  * text-based tool-call protocol in its multi-turn loop.
  */
 
-import type { NaxConfig } from "../../config/types";
+import type { ContextToolRuntimeConfig } from "../../config/selectors";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
@@ -27,7 +27,7 @@ function descriptorByName(bundle: ContextBundle): Map<string, ToolDescriptor> {
 export function createContextToolRuntime(options: {
   bundle: ContextBundle;
   story: UserStory;
-  config: NaxConfig;
+  config: ContextToolRuntimeConfig;
   /** Absolute path to the repository root (AC-54). Used by all pull tool handlers. */
   repoRoot: string;
   runCounter?: RunCallCounter;

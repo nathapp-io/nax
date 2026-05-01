@@ -121,7 +121,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     ctx: semanticCallCtx,
     stage: "review",
     stageConfig: reviewStageConfig,
-    config: naxConfig as NaxConfig,
+    config: naxConfig,
     workdir,
     featureName: featureName,
     timeoutSeconds: naxConfig.execution?.sessionTimeoutSeconds,

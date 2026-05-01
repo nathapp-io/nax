@@ -259,9 +259,7 @@ async function runRectificationLoop(
         ),
         timeoutSeconds: config.execution.sessionTimeoutSeconds,
         pipelineStage: "rectification" as const,
-        // Cast required: AgentRunOptions.config expects NaxConfig, but only the picked
-        // subset of keys is actually used by the adapter (permissions, models, agent).
-        config: config as unknown as NaxConfig,
+        config,
         projectDir,
         maxInteractionTurns: config.agent?.maxInteractionTurns,
         featureName,

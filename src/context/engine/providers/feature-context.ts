@@ -16,6 +16,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { ContextToolRuntimeConfig } from "../../../config/selectors";
 import type { NaxConfig } from "../../../config/types";
 import { getLogger } from "../../../logger";
 import type { UserStory } from "../../../prd";
@@ -62,7 +63,7 @@ export class FeatureContextProviderV2 implements IContextProvider {
 
   constructor(
     private readonly story: UserStory,
-    private readonly config: NaxConfig,
+    private readonly config: ContextToolRuntimeConfig,
   ) {}
 
   /**

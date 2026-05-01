@@ -8,8 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _resolverDeps, resolveReviewExcludePatterns, resolveTestFilePatterns } from "../../../src/test-runners/resolver";
+import { testPatternConfigSelector } from "../../../src/config";
+import type { TestPatternConfig } from "../../../src/config/selectors";
 import type { DetectionResult } from "../../../src/test-runners/detect";
+import { _resolverDeps, resolveReviewExcludePatterns, resolveTestFilePatterns } from "../../../src/test-runners/resolver";
 import { makeNaxConfig } from "../../helpers/mock-nax-config";
 
 const WORKDIR = "/fake/workdir";
@@ -189,6 +191,23 @@ describe("resolveTestFilePatterns — field consistency", () => {
     // readonly arrays cannot be pushed to at the TS level — runtime verify via type
     expect(Array.isArray(resolved.globs)).toBe(true);
     expect(typeof resolved.resolution).toBe("string");
+  });
+
+  test("resolveTestFilePatterns accepts a TestPatternConfig slice (no NaxConfig cast)", async () => {
+    const slice: TestPatternConfig = {
+      execution: undefined,
+      project: undefined,
+      quality: undefined,
+    };
+    const result = await resolveTestFilePatterns(slice, "/tmp/nonexistent-resolver-test-dir");
+    expect(result.resolution).toBe("fallback");
+    expect(result.regex.length).toBeGreaterThan(0);
+  });
+
+  test("testPatternConfigSelector picks only execution, project, and quality", () => {
+    const full = makeNaxConfig();
+    const sliced = testPatternConfigSelector.select(full);
+    expect(Object.keys(sliced).sort()).toEqual(["execution", "project", "quality"]);
   });
 });
 
