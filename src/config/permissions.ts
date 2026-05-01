@@ -8,7 +8,7 @@
  * Phase 2: per-stage scoped allowlists (stub below).
  */
 
-import type { NaxConfig } from "./schema";
+import type { AgentManagerConfig } from "./selectors";
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
 
@@ -35,7 +35,7 @@ export interface ResolvedPermissions {
  * Resolve permissions for a given pipeline stage.
  * Single source of truth — all adapters call this.
  */
-export function resolvePermissions(config: NaxConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
+export function resolvePermissions(config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
   const profile: PermissionProfile = config?.execution?.permissionProfile ?? "unrestricted";
 
   switch (profile) {
@@ -54,7 +54,7 @@ export function resolvePermissions(config: NaxConfig | undefined, _stage: Pipeli
  * Phase 2 stub — resolves per-stage permissions from config block.
  * Returns safe defaults until Phase 2 is implemented.
  */
-function resolveScopedPermissions(_config: NaxConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
+function resolveScopedPermissions(_config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
   // Phase 2 implementation goes here
   return { mode: "approve-reads", skipPermissions: false };
 }

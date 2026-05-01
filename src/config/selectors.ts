@@ -38,6 +38,8 @@ export const rectificationGateConfigSelector = pickSelector(
   "review",
 );
 
+// agent only selectors for resolveDefaultAgent
+export const agentConfigSelector = pickSelector("agent", "agent");
 export const agentManagerConfigSelector = pickSelector("agent-manager", "agent", "execution");
 export const interactionConfigSelector = pickSelector("interaction", "interaction");
 export const precheckConfigSelector = pickSelector(
@@ -50,3 +52,24 @@ export const precheckConfigSelector = pickSelector(
   "project",
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
+
+// Derived config-slice types — co-located with each selector so consumers
+// import the type instead of re-deriving `ReturnType<typeof xSelector.select>`
+// in every operation file.
+export type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
+export type PlanConfig = ReturnType<typeof planConfigSelector.select>;
+export type DecomposeConfig = ReturnType<typeof decomposeConfigSelector.select>;
+export type RectifyConfig = ReturnType<typeof rectifyConfigSelector.select>;
+export type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select>;
+export type AcceptanceFixConfig = ReturnType<typeof acceptanceFixConfigSelector.select>;
+export type AcceptanceGenConfig = ReturnType<typeof acceptanceGenConfigSelector.select>;
+export type TddConfig = ReturnType<typeof tddConfigSelector.select>;
+export type DebateConfig = ReturnType<typeof debateConfigSelector.select>;
+export type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
+export type VerifyConfig = ReturnType<typeof verifyConfigSelector.select>;
+export type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
+export type AgentConfig = ReturnType<typeof agentConfigSelector.select>;
+export type AgentManagerConfig = ReturnType<typeof agentManagerConfigSelector.select>;
+export type InteractionConfig = ReturnType<typeof interactionConfigSelector.select>;
+export type PrecheckConfig = ReturnType<typeof precheckConfigSelector.select>;
+export type QualityConfig = ReturnType<typeof qualityConfigSelector.select>;

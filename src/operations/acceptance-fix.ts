@@ -1,4 +1,5 @@
 import { acceptanceFixConfigSelector } from "../config";
+import type { AcceptanceFixConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { RunOperation } from "./types";
 
@@ -21,8 +22,6 @@ export interface AcceptanceFixTestInput {
 export interface AcceptanceFixOutput {
   applied: true;
 }
-
-type AcceptanceFixConfig = ReturnType<typeof acceptanceFixConfigSelector.select>;
 
 export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, AcceptanceFixOutput, AcceptanceFixConfig> = {
   kind: "run",

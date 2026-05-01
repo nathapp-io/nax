@@ -6,6 +6,7 @@
  * collect results from them uniformly.
  */
 
+import type { AgentManagerConfig } from "@/config/selectors";
 import type { NaxConfig } from "../config";
 import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
@@ -123,7 +124,7 @@ export interface AgentRunOptions {
   /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */
   pipelineStage?: import("../config/permissions").PipelineStage;
   /** Full nax config — required so adapters can call resolvePermissions() and audit prompts */
-  config: NaxConfig;
+  config: AgentManagerConfig;
   /**
    * Absolute path to repo root where `.nax/` lives. When provided, prompt audit skips
    * the parent-directory walk and writes directly to `<projectDir>/.nax/prompt-audit/`.

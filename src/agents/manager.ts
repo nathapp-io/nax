@@ -6,7 +6,7 @@
  */
 
 import { EventEmitter } from "node:events";
-import type { NaxConfig } from "../config";
+import type { AgentManagerConfig } from "@/config/selectors";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
@@ -40,8 +40,6 @@ import type {
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
 import type { AgentResult, CompleteOptions, CompleteResult } from "./types";
-
-type AgentManagerConfig = Pick<NaxConfig, "agent" | "execution">;
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -486,11 +484,8 @@ export class AgentManager implements IAgentManager {
   }
 
   async runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult> {
-    /** @design Per plan §3.3 Note: resolvePermissions needs full NaxConfig for permission resolution. this._config is Pick<agent|execution>. */
-    const resolvedPermissions = resolvePermissions(
-      (request.runOptions.config as NaxConfig | undefined) ?? (this._config as NaxConfig),
-      request.runOptions.pipelineStage ?? "run",
-    );
+    const runConfig = request.runOptions.config ?? this._config;
+    const resolvedPermissions = resolvePermissions(runConfig, request.runOptions.pipelineStage ?? "run");
     const augmented: AgentRunRequest = {
       ...request,
       runOptions: { ...request.runOptions, resolvedPermissions },
@@ -501,7 +496,7 @@ export class AgentManager implements IAgentManager {
       agentName,
       kind: "run",
       request: augmented,
-      config: this._config,
+      config: runConfig,
       signal: request.signal ?? request.runOptions.abortSignal,
       resolvedPermissions,
       storyId: request.runOptions.storyId,
@@ -533,7 +528,7 @@ export class AgentManager implements IAgentManager {
     }
     const stage = opts.pipelineStage ?? "run";
     /** @design Per plan §3.3 Note: resolvePermissions needs full NaxConfig. */
-    const resolvedPermissions = resolvePermissions(this._config as NaxConfig, stage);
+    const resolvedPermissions = resolvePermissions(this._config, stage);
     const sessionRole = handle.role ?? opts.sessionRole ?? "main";
     const start = Date.now();
     try {
@@ -586,10 +581,7 @@ export class AgentManager implements IAgentManager {
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
     const stage = options.pipelineStage ?? "complete";
     /** @design Per plan §3.3 Note: resolvePermissions needs full NaxConfig for permission resolution. this._config is Pick<agent|execution>. */
-    const resolvedPermissions = resolvePermissions(
-      (options.config as NaxConfig | undefined) ?? (this._config as NaxConfig),
-      stage,
-    );
+    const resolvedPermissions = resolvePermissions(options.config ?? this._config, stage);
     const augmented: CompleteOptions = { ...options, resolvedPermissions };
     const sessionName =
       options.sessionName ??

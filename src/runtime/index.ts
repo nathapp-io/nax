@@ -36,6 +36,7 @@ export { DispatchEventBus } from "./dispatch-events";
 import { join } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
+import { createAgentManager } from "../agents/factory";
 import { AgentManager } from "../agents/manager";
 import type { NaxConfig } from "../config";
 import { createConfigLoader } from "../config";
@@ -53,7 +54,6 @@ import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
 import type { ICostAggregator } from "./cost-aggregator";
 import { DispatchEventBus } from "./dispatch-events";
 import type { IDispatchEventBus } from "./dispatch-events";
-import { createAgentManager } from "./internal/agent-manager-factory";
 import {
   attachAuditSubscriber,
   attachCostSubscriber,

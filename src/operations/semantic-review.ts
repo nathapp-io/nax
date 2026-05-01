@@ -1,5 +1,6 @@
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
+import type { ReviewConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure } from "../prompts";
@@ -34,8 +35,6 @@ export interface SemanticReviewOutput extends LlmReviewOutput {
    */
   looksLikeFail?: boolean;
 }
-
-type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 
 const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], failOpen: true };
 
