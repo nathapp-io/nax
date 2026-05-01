@@ -21,7 +21,7 @@ export const acceptanceFixConfigSelector = pickSelector("acceptance-fix", "accep
 // acceptance generator take more time to generate the test code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
 export const acceptanceGenConfigSelector = pickSelector("acceptance-gen", "acceptance", "execution");
 export const tddConfigSelector = pickSelector("tdd", "tdd", "execution", "quality", "agent", "models");
-export const debateConfigSelector = pickSelector("debate", "debate", "models");
+export const debateConfigSelector = pickSelector("debate", "debate", "models", "agent");
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
 export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({

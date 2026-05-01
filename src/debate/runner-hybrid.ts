@@ -4,8 +4,9 @@
  * runHybrid() implementation for DebateRunner.
  */
 
+import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
+import type { ConfiguredModel, NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -36,7 +37,7 @@ export interface HybridCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: NaxConfig;
+  readonly config: Pick<NaxConfig, "debate" | "models" | "agent">;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
@@ -77,7 +78,13 @@ export async function runRebuttalLoop(
       internalHandles.push(null); // Caller owns this handle; we do not close it
     } else if (sessionManager) {
       const modelTier = modelTierFromDebater(proposal.debater);
-      const modelDef = resolveModelDefForDebater(proposal.debater, modelTier, ctx.config);
+      const model: ConfiguredModel = { agent: proposal.debater.agent, model: proposal.debater.model ?? modelTier };
+      const modelDef = resolveModelDefForDebater(
+        proposal.debater,
+        model,
+        ctx.config.models,
+        resolveDefaultAgent(ctx.config),
+      );
       const name = sessionManager.nameFor({
         workdir: ctx.workdir,
         featureName: ctx.featureName,
@@ -186,7 +193,8 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       const sessionRole = `debate-hybrid-${i}` as SessionRole;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
-        const modelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
+        const model: ConfiguredModel = { agent: debater.agent, model: debater.model ?? modelTier };
+        const modelDef = resolveModelDefForDebater(debater, model, ctx.config.models, resolveDefaultAgent(ctx.config));
         const name = sessionManager.nameFor({
           workdir: ctx.workdir,
           featureName: ctx.featureName,
@@ -322,7 +330,8 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       proposalOutputs,
       critiqueOutputs,
       ctx.stageConfig,
-      ctx.config,
+      // resolveOutcome's CompleteOptions.config stays NaxConfig per Phase 3 §3.3
+      ctx.config as NaxConfig,
       ctx.storyId,
       ctx.timeoutSeconds * 1000,
       ctx.workdir,

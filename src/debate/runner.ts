@@ -40,7 +40,7 @@ export class DebateRunner {
   private readonly ctx: CallContext;
   private readonly stage: string;
   private readonly stageConfig: DebateStageConfig;
-  private readonly config: NaxConfig;
+  private readonly config: Pick<NaxConfig, "debate" | "models" | "agent">;
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
@@ -245,7 +245,8 @@ export class DebateRunner {
       proposalOutputs,
       critiqueOutputs,
       this.stageConfig,
-      this.config,
+      // resolveOutcome's CompleteOptions.config stays NaxConfig per Phase 3 §3.3
+      this.config as NaxConfig,
       this.ctx.storyId ?? "",
       this.timeoutSeconds * 1000,
       this.workdir,
