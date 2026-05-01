@@ -359,6 +359,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       semanticConfig: SEMANTIC_CONFIG,
       agentManager: () => makeMockAgent(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime: makeMockRuntime(),
     });
 
     expect(result.success).toBe(true);
@@ -406,6 +407,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       semanticConfig: SEMANTIC_CONFIG,
       agentManager: () => makeMockAgent(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime: makeMockRuntime(),
     });
 
     expect(result.success).toBe(false);
@@ -427,6 +429,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       semanticConfig: SEMANTIC_CONFIG,
       agentManager: () => makeMockAgent(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime: makeMockRuntime(),
     });
 
     expect(result.findings).toBeDefined();
@@ -449,6 +452,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       semanticConfig: SEMANTIC_CONFIG,
       agentManager: () => makeMockAgent(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime: makeMockRuntime(),
     });
 
     expect(result.findings).toBeDefined();
@@ -471,6 +475,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       semanticConfig: SEMANTIC_CONFIG,
       agentManager: () => makeMockAgent(PROPOSAL_PASS),
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime: makeMockRuntime(),
     });
 
     // PROPOSAL_FAIL_A has error finding (blocking), PROPOSAL_FAIL_B adds a warn finding (advisory at default threshold)

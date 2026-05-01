@@ -127,6 +127,7 @@ function buildFailureReason(checks: ReviewCheckResult[]): string | undefined {
   return failedChecks.map(formatFailureReason).join(", ");
 }
 
+//TODO: clean up options bag - most of the config is redundant
 export interface OrchestratorReviewOptions {
   reviewConfig: ReviewConfig;
   workdir: string;
@@ -349,7 +350,7 @@ export class ReviewOrchestrator {
             story: semanticStory,
             adversarialConfig: adversarialCfg,
             agentManager,
-            naxConfig,
+            config: naxConfig,
             featureName,
             priorFailures,
             blockingThreshold: reviewConfig.blockingThreshold,

@@ -8,8 +8,8 @@
 import type { SemanticVerdict } from "../acceptance/types";
 import type { IAgentManager } from "../agents";
 import type { SessionHandle } from "../agents/types";
-import type { NaxConfig } from "../config";
 import { resolveConfiguredModel } from "../config/schema-types";
+import type { ReviewConfig } from "../config/selectors";
 import type { DebateResolverContext } from "../debate/types";
 import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
@@ -217,7 +217,7 @@ export function createReviewerSession(
   storyId: string,
   workdir: string,
   featureName: string,
-  _config: Pick<NaxConfig, "review" | "debate" | "models" | "execution">,
+  _config: ReviewConfig,
 ): ReviewerSession {
   const history: DialogueMessage[] = [];
   let active = true;

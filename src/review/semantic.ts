@@ -10,6 +10,7 @@
 import type { IAgentManager } from "../agents";
 import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
+import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
@@ -80,7 +81,7 @@ export interface RunSemanticReviewOptions {
   story: SemanticStory;
   semanticConfig: SemanticReviewConfig;
   agentManager: IAgentManager | undefined;
-  naxConfig?: Pick<NaxConfig, "review" | "debate" | "models" | "execution">;
+  naxConfig?: ReviewConfig;
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
@@ -230,6 +231,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   // Debate path: when debate is enabled for review stage, use DebateRunner instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
   if (reviewDebateEnabled) {
+    if (!runtime) {
+      throw new NaxError("runtime required for debate path — legacy standalone path removed", "DISPATCH_NO_RUNTIME", {
+        stage: "review-semantic-debate",
+        storyId: story.id,
+      });
+    }
+    if (!naxConfig) {
+      throw new NaxError(
+        "naxConfig required for debate path — reviewDebateEnabled implies naxConfig is present",
+        "CONFIG_MISSING",
+        { stage: "review-semantic-debate", storyId: story.id },
+      );
+    }
     return runSemanticDebate({
       naxConfig,
       runtime,

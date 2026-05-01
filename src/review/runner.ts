@@ -5,8 +5,8 @@
  */
 
 import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
 import type { ExecutionConfig, QualityConfig } from "../config/schema";
+import type { ReviewConfig as ReviewNaxConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import { runQualityCommand } from "../quality";
 import { autoCommitIfDirty } from "../utils/git";
@@ -29,7 +29,7 @@ export interface RunReviewOptions {
   storyGitRef?: string;
   story?: SemanticStory;
   agentManager?: IAgentManager;
-  naxConfig?: Pick<NaxConfig, "review" | "debate" | "models" | "execution">;
+  naxConfig?: ReviewNaxConfig;
   retrySkipChecks?: Set<string>;
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
@@ -380,7 +380,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         story: adversarialStory,
         adversarialConfig: adversarialCfg,
         agentManager,
-        naxConfig,
+        config: naxConfig,
         featureName,
         priorFailures,
         blockingThreshold: config.blockingThreshold,
