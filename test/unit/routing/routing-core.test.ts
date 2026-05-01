@@ -263,7 +263,7 @@ describe("routing — stripped config (issue #745 Phase 4d)", () => {
     // Config typed as the narrowed slice — proves the signature accepts it without casting.
     const strippedConfig: Pick<NaxConfig, "routing" | "autoMode" | "tdd"> = makeNaxConfig({
       autoMode: { complexityRouting: { simple: "fast", complex: "balanced", expert: "powerful" } },
-      tdd: { strategy: "tdd-first" },
+      tdd: { strategy: "auto" },
       routing: { strategy: "keyword" },
     });
 
