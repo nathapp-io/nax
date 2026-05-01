@@ -11,6 +11,7 @@
  */
 
 import { debateConfigSelector } from "../config";
+import type { DebateConfig } from "../config/selectors";
 import type { Debater, Proposal } from "../debate/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
@@ -27,8 +28,6 @@ export interface DebateRebutInput {
   /** Debaters participating in this debate (with personas already resolved). */
   readonly debaters: Debater[];
 }
-
-type DebateConfig = ReturnType<typeof debateConfigSelector.select>;
 
 /**
  * CompleteOperation for one-shot rebuttal generation.

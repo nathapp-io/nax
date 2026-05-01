@@ -1,4 +1,5 @@
 import { routingConfigSelector } from "../config";
+import type { RoutingConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
 import type { RoutingDecision } from "../routing";
 import { ROUTING_INSTRUCTIONS, validateRoutingDecision } from "../routing";
@@ -14,8 +15,6 @@ export interface ClassifyRouteInput extends Pick<UserStory, "title" | "descripti
  * `validateRoutingDecision` (config-aware tier check + `testStrategy` derivation).
  */
 export type ClassifyRouteOutput = RoutingDecision;
-
-type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
 
 const CLASSIFY_ROLE = `You are a story classifier that assigns complexity and model tier to user stories.
 Respond with JSON only — no explanation text before or after.`;

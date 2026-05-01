@@ -5,9 +5,9 @@
  */
 
 import { join } from "node:path";
-import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
-import type { ModelDef } from "../config";
+import { resolveDefaultAgent } from "../agents";
+import type { ConfiguredModel, ModelDef } from "../config";
+import type { CompleteConfig, DebateConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
@@ -30,7 +30,9 @@ interface PlanCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: NaxConfig;
+  readonly config: DebateConfig;
+  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
+  readonly completeConfig?: CompleteConfig;
 }
 
 export async function runPlan(
@@ -88,7 +90,13 @@ export async function runPlan(
       const debaterPrompt = `${proposalBuilder.buildProposalPrompt(i)}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
       const modelTier = modelTierFromDebater(rd);
-      const modelDef: ModelDef = resolveModelDefForDebater(rd, modelTier, ctx.config);
+      const model: ConfiguredModel = { agent: rd.agent, model: rd.model ?? modelTier };
+      const modelDef: ModelDef = resolveModelDefForDebater(
+        rd,
+        model,
+        ctx.config.models,
+        resolveDefaultAgent(ctx.config),
+      );
 
       const sessionManager = ctx.sessionManager;
       if (!sessionManager) {
@@ -197,6 +205,7 @@ export async function runPlan(
       stage: ctx.stage,
       stageConfig: ctx.stageConfig,
       config: ctx.config,
+      completeConfig: ctx.completeConfig,
       workdir: opts.workdir,
       featureName: opts.feature,
       timeoutSeconds: opts.timeoutSeconds ?? 600,
@@ -229,7 +238,7 @@ export async function runPlan(
     proposalOutputs,
     critiqueOutputs,
     ctx.stageConfig,
-    ctx.config,
+    ctx.completeConfig,
     ctx.storyId,
     resolverTimeoutMs,
     opts.workdir,

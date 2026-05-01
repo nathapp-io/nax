@@ -4,7 +4,7 @@
  * Discovers and manages available coding agents via the ACP protocol.
  */
 
-import type { NaxConfig } from "../config/schema";
+import type { AgentManagerConfig } from "@/config/selectors";
 import { getLogger } from "../logger";
 import { AcpAgentAdapter } from "./acp/adapter";
 import type { AgentAdapter } from "./types";
@@ -57,7 +57,7 @@ export interface AgentRegistry {
  * lifetime of the registry. Test adapters registered in _registryTestAdapters
  * take precedence and are returned as-is without ACP wrapping.
  */
-export function createAgentRegistry(config: Pick<NaxConfig, "agent">): AgentRegistry {
+export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
   const logger = getLogger();
   const acpCache = new Map<string, AcpAgentAdapter>();
 

@@ -4,9 +4,10 @@
  * runStateful(), runStatefulTurn() implementations for DebateRunner.
  */
 
+import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { ModelDef } from "../config";
-import type { NaxConfig } from "../config";
+import type { ConfiguredModel, ModelDef } from "../config";
+import type { CompleteConfig, DebateConfig } from "../config/selectors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -30,7 +31,9 @@ interface StatefulCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: NaxConfig;
+  readonly config: DebateConfig;
+  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
+  readonly completeConfig?: CompleteConfig;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
@@ -106,7 +109,13 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       const roleKey = `debate-${ctx.stage}-${i}` as SessionRole;
       if (sessionManager) {
         const modelTier = modelTierFromDebater(debater);
-        const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
+        const model: ConfiguredModel = { agent: debater.agent, model: debater.model ?? modelTier };
+        const modelDef: ModelDef = resolveModelDefForDebater(
+          debater,
+          model,
+          ctx.config.models,
+          resolveDefaultAgent(ctx.config),
+        );
         const name = sessionManager.nameFor({
           workdir: ctx.workdir,
           featureName: ctx.featureName,
@@ -295,7 +304,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       proposalOutputs,
       critiqueOutputs,
       ctx.stageConfig,
-      ctx.config,
+      ctx.completeConfig,
       ctx.storyId,
       ctx.timeoutSeconds * 1000,
       ctx.workdir,

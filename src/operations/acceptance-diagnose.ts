@@ -1,5 +1,6 @@
 import type { SemanticVerdict } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
+import type { AcceptanceConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
@@ -19,8 +20,6 @@ export interface AcceptanceDiagnoseOutput {
   testIssues?: string[];
   sourceIssues?: string[];
 }
-
-type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select>;
 
 const FALLBACK: AcceptanceDiagnoseOutput = {
   verdict: "source_bug",
