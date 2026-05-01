@@ -24,7 +24,12 @@ import { classifyComplexity, determineTestStrategy } from "./classify";
 
 /** Context passed to plugin routing strategies */
 export interface RoutingContext extends DispatchContext {
-  /** Full configuration */
+  /**
+   * Full NaxConfig — intentionally not narrowed. RoutingContext is a public plugin
+   * boundary (IRoutingStrategy receives it); narrowing would break plugin authors
+   * that read keys outside "routing"|"autoMode"|"tdd". The router itself uses
+   * the narrowed RoutingConfig internally.
+   */
   config: NaxConfig;
   /** Optional codebase context summary */
   codebaseContext?: string;
