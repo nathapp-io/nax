@@ -469,4 +469,58 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     expect(prompt).toContain("test/unit/foo.test.ts");
     expect(prompt).toContain("test/unit/bar.test.ts");
   });
+
+  test("adversarial check: uses adversarial opener and section label", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("You are fixing test file issues flagged by an adversarial code reviewer.");
+    expect(prompt).toContain("### Test File Findings (adversarial review)");
+    expect(prompt).toContain("do NOT remove tests");
+  });
+
+  test("lint-only check: uses lint opener and section label", () => {
+    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
+      check: "lint",
+      success: false,
+      command: "bun run lint",
+      exitCode: 1,
+      output: "apps/api/test/unit/foo.test.ts:10:5 error — Unexpected console statement",
+      durationMs: 100,
+    };
+    const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
+
+    expect(prompt).toContain("You are fixing test file lint errors.");
+    expect(prompt).toContain("### Test File Findings (lint)");
+    expect(prompt).not.toContain("adversarial");
+  });
+
+  test("lint-only check: includes raw output in findings section", () => {
+    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
+      check: "lint",
+      success: false,
+      command: "bun run lint",
+      exitCode: 1,
+      output: "foo.test.ts:5 error — some lint error",
+      durationMs: 100,
+    };
+    const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
+
+    expect(prompt).toContain("foo.test.ts:5 error — some lint error");
+  });
+
+  test("lint-only check: uses simplified important note without verify-findings step", () => {
+    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
+      check: "lint",
+      success: false,
+      command: "bun run lint",
+      exitCode: 1,
+      output: "some lint output",
+      durationMs: 100,
+    };
+    const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
+
+    expect(prompt).toContain("Fix the lint errors");
+    expect(prompt).not.toContain("verify each finding is a real issue");
+  });
 });

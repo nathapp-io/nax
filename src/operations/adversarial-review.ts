@@ -1,5 +1,6 @@
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
+import type { ReviewConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure, TestInventory } from "../prompts";
@@ -36,8 +37,6 @@ export interface AdversarialReviewOutput extends LlmReviewOutput {
    */
   looksLikeFail?: boolean;
 }
-
-type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 
 const FAIL_OPEN: AdversarialReviewOutput = { passed: true, findings: [], failOpen: true };
 

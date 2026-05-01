@@ -1,4 +1,5 @@
 import { rectifyConfigSelector } from "../config";
+import type { RectifyConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { ReviewCheckResult } from "../review/types";
@@ -12,8 +13,6 @@ export interface RectifyInput {
 export interface RectifyOutput {
   applied: true;
 }
-
-type RectifyConfig = ReturnType<typeof rectifyConfigSelector.select>;
 
 export const rectifyOp: RunOperation<RectifyInput, RectifyOutput, RectifyConfig> = {
   kind: "run",

@@ -1,5 +1,6 @@
-import type { NaxConfig } from "../config";
 import { DEFAULT_CONFIG } from "../config";
+import { debateConfigSelector } from "../config";
+import type { CompleteConfig, DebateConfig } from "../config/selectors";
 import { callOp } from "../operations/call";
 import { debateProposeOp } from "../operations/debate-propose";
 import { debateRebutOp } from "../operations/debate-rebut";
@@ -27,7 +28,7 @@ export interface DebateRunnerOptions {
   readonly ctx: CallContext;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config?: NaxConfig;
+  readonly config?: DebateConfig;
   readonly workdir?: string;
   readonly featureName?: string;
   readonly timeoutSeconds?: number;
@@ -40,7 +41,9 @@ export class DebateRunner {
   private readonly ctx: CallContext;
   private readonly stage: string;
   private readonly stageConfig: DebateStageConfig;
-  private readonly config: Pick<NaxConfig, "debate" | "models" | "agent">;
+  private readonly config: DebateConfig;
+  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
+  private readonly completeConfig: CompleteConfig | undefined;
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
@@ -52,7 +55,11 @@ export class DebateRunner {
     this.ctx = opts.ctx;
     this.stage = opts.stage;
     this.stageConfig = opts.stageConfig;
-    this.config = opts.config ?? DEFAULT_CONFIG;
+    this.config = opts.config ?? debateConfigSelector.select(DEFAULT_CONFIG);
+    // TODO(#853 Phase 2): remove with the CompleteOptions.config field. Until then,
+    // callers that pass a DebateConfig slice may not have CompleteConfig keys —
+    // completeConfig stays optional and downstream guards on undefined.
+    this.completeConfig = opts.config as CompleteConfig | undefined;
     this.workdir = opts.workdir ?? opts.ctx.packageDir;
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
@@ -245,8 +252,7 @@ export class DebateRunner {
       proposalOutputs,
       critiqueOutputs,
       this.stageConfig,
-      // resolveOutcome's CompleteOptions.config stays NaxConfig per Phase 3 §3.3
-      this.config as NaxConfig,
+      this.completeConfig,
       this.ctx.storyId ?? "",
       this.timeoutSeconds * 1000,
       this.workdir,
@@ -279,6 +285,7 @@ export class DebateRunner {
       stage: this.stage,
       stageConfig: this.stageConfig,
       config: this.config,
+      completeConfig: this.completeConfig,
       workdir: this.workdir,
       featureName: this.featureName,
       timeoutSeconds: this.timeoutSeconds,
@@ -297,6 +304,7 @@ export class DebateRunner {
       stage: this.stage,
       stageConfig: this.stageConfig,
       config: this.config,
+      completeConfig: this.completeConfig,
       agentManager: this.ctx.runtime.agentManager,
       sessionManager: this.sessionManager ?? this.ctx.runtime.sessionManager,
       runtime: this.ctx.runtime,

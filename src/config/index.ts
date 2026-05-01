@@ -27,6 +27,11 @@ export type {
   RectificationConfig,
   ProjectProfile,
 } from "./schema";
+export type {
+  TestPatternConfig,
+  ContextToolRuntimeConfig,
+  PromptLoaderConfig,
+} from "./selectors";
 export {
   DEFAULT_CONFIG,
   resolveConfiguredModel,
@@ -60,6 +65,10 @@ export {
   interactionConfigSelector,
   precheckConfigSelector,
   qualityConfigSelector,
+  testPatternConfigSelector,
+  contextToolRuntimeConfigSelector,
+  promptLoaderConfigSelector,
+  completeConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";

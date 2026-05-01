@@ -8,8 +8,9 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { DEFAULT_CONFIG } from "../config";
+import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { NaxConfig } from "../config";
+import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
@@ -80,7 +81,7 @@ export interface RunSemanticReviewOptions {
   story: SemanticStory;
   semanticConfig: SemanticReviewConfig;
   agentManager: IAgentManager | undefined;
-  naxConfig?: NaxConfig;
+  naxConfig?: ReviewConfig;
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
@@ -153,7 +154,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
 
   // ADR-009: resolve effective exclude patterns from config (falls back to DEFAULT_TEST_FILE_PATTERNS
   // when semanticConfig.excludePatterns is undefined — no behaviour change for default config).
-  const resolved = await resolveTestFilePatterns(naxConfig ?? DEFAULT_CONFIG, workdir);
+  const resolved = await resolveTestFilePatterns(naxConfig ?? reviewConfigSelector.select(DEFAULT_CONFIG), workdir);
   const excludePatterns = [...resolveReviewExcludePatterns(semanticConfig.excludePatterns, resolved)];
 
   let diff: string | undefined;
@@ -230,6 +231,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   // Debate path: when debate is enabled for review stage, use DebateRunner instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
   if (reviewDebateEnabled) {
+    if (!runtime) {
+      throw new NaxError("runtime required for debate path — legacy standalone path removed", "DISPATCH_NO_RUNTIME", {
+        stage: "review-semantic-debate",
+        storyId: story.id,
+      });
+    }
+    if (!naxConfig) {
+      throw new NaxError(
+        "naxConfig required for debate path — reviewDebateEnabled implies naxConfig is present",
+        "CONFIG_MISSING",
+        { stage: "review-semantic-debate", storyId: story.id },
+      );
+    }
     return runSemanticDebate({
       naxConfig,
       runtime,

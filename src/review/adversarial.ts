@@ -14,7 +14,7 @@
  */
 
 import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
+import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
@@ -74,7 +74,7 @@ export interface RunAdversarialReviewOptions {
   story: SemanticStory;
   adversarialConfig: AdversarialReviewConfig;
   agentManager: IAgentManager | undefined;
-  naxConfig?: NaxConfig;
+  config?: ReviewConfig;
   featureName?: string;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
   blockingThreshold?: "error" | "warning" | "info";
@@ -97,7 +97,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     story,
     adversarialConfig,
     agentManager,
-    naxConfig,
+    config: naxConfig,
     featureName,
     priorFailures,
     blockingThreshold,

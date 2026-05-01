@@ -219,37 +219,64 @@ export class RectifierPromptBuilder {
   }
 
   /**
-   * Prompt for the test-writer to fix test file issues flagged by adversarial review (#409).
+   * Prompt for the test-writer to fix test file issues routed from review (#409).
    *
-   * Sent when adversarial review found problems in test files that the implementer
-   * cannot fix (isolation constraint). The test-writer is allowed to modify test files.
+   * Sent when review found problems in test files that the implementer cannot fix
+   * (isolation constraint). Handles both adversarial-review findings and lint failures.
    */
   static testWriterRectification(testFileFindings: ReviewCheckResult[], story: UserStory): string {
     const scopeConstraint = story.workdir
       ? `\n\nIMPORTANT: Only modify test files within \`${story.workdir}/\`. Do NOT touch source files.`
       : "\n\nIMPORTANT: Only modify test files. Do NOT touch source implementation files.";
 
+    const checkTypes = new Set(testFileFindings.map((c) => c.check));
+    const isLintOnly = checkTypes.size === 1 && checkTypes.has("lint");
+    const hasAdversarial = checkTypes.has("adversarial");
+
+    const opener = isLintOnly
+      ? "You are fixing test file lint errors."
+      : hasAdversarial
+        ? "You are fixing test file issues flagged by an adversarial code reviewer."
+        : "You are fixing test file issues.";
+
+    const sectionLabel = isLintOnly
+      ? "lint"
+      : hasAdversarial && checkTypes.size === 1
+        ? "adversarial review"
+        : "review";
+
     const findingLines = testFileFindings
-      .flatMap((c) => c.findings ?? [])
-      .map((f) => `- [${f.severity}] ${f.file}:${f.line} — ${f.message}`)
+      .flatMap((c) => {
+        if (c.findings && c.findings.length > 0) {
+          return c.findings.map((f) => `- [${f.severity}] ${f.file}:${f.line} — ${f.message}`);
+        }
+        if (c.check === "lint" && c.output.trim()) {
+          return [c.output.trim()];
+        }
+        return [];
+      })
       .join("\n");
 
     const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
-    return `You are fixing test file issues flagged by an adversarial code reviewer.
+    const importantNote = isLintOnly
+      ? "**Important:** Fix the lint errors in the test files listed above. Do NOT modify source implementation files."
+      : `**Important:** These findings are in test files. Before making any changes:
+1. Read the flagged test files to verify each finding is a real issue
+2. Only fix findings that are genuinely incorrect or missing — do NOT remove tests
+3. Do NOT modify source implementation files`;
+
+    return `${opener}
 
 Story: ${story.title} (${story.id})
 
 ### Acceptance Criteria
 ${acList}
 
-### Test File Findings (adversarial review)
+### Test File Findings (${sectionLabel})
 ${findingLines}
 
-**Important:** These findings are in test files. Before making any changes:
-1. Read the flagged test files to verify each finding is a real issue
-2. Only fix findings that are genuinely incorrect or missing — do NOT remove tests
-3. Do NOT modify source implementation files
+${importantNote}
 
 Commit your fixes when done.${scopeConstraint}`;
   }

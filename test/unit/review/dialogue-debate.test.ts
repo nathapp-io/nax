@@ -23,6 +23,7 @@ import type { RunAsSessionOpts } from "../../../src/agents/manager-types";
 import type { SessionHandle, TurnResult } from "../../../src/agents/types";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
+import type { ReviewConfig } from "../../../src/config/selectors";
 import { NaxError } from "../../../src/errors";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
@@ -94,11 +95,10 @@ function makeAgentManager(runAsSessionFn: RunAsSessionFnType): IAgentManager {
 }
 
 const MOCK_CONFIG = {
-  autoMode: { defaultAgent: "claude" },
   models: { claude: { fast: { model: "claude-haiku-4-5-20251001" }, balanced: { model: "claude-sonnet-4-6" }, powerful: { model: "claude-opus-4-6" } } },
   execution: { sessionTimeoutSeconds: 3600 },
   review: { dialogue: { enabled: true, maxClarificationsPerAttempt: 3, maxDialogueMessages: 20 } },
-} as unknown as import("../../../src/config").NaxConfig;
+} as unknown as ReviewConfig;
 
 // ---------------------------------------------------------------------------
 // resolveDebate() — core behavior
@@ -321,7 +321,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
     const smallMaxConfig = {
       ...MOCK_CONFIG,
       review: { dialogue: { enabled: true, maxClarificationsPerAttempt: 3, maxDialogueMessages: 2 } },
-    } as unknown as import("../../../src/config").NaxConfig;
+    } as unknown as ReviewConfig;
 
     let callCount = 0;
     const multiRunFn: RunAsSessionFnType = mock(async (_agentName: string, _handle: SessionHandle, _prompt: string, _opts: RunAsSessionOpts): Promise<TurnResult> => {

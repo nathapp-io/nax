@@ -1,12 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
 import { _registryTestAdapters } from "../../../src/agents/registry";
 import type { AgentAdapter } from "../../../src/agents/types";
 import { resolveDefaultAgent } from "../../../src/agents/utils";
 import { createAgentRegistry } from "../../../src/agents/registry";
+import { AgentManagerConfig } from "../../../src/config/selectors";
+import { makeAgentAdapter } from "../../helpers";
 
-const makeSlicedConfig = (agent: Record<string, unknown> = {}, execution: Record<string, unknown> = {}): NaxConfig =>
-  ({ agent: agent as NaxConfig["agent"], execution: execution as NaxConfig["execution"] } as NaxConfig);
+const makeSlicedConfig = (agent: Record<string, unknown> = {}, execution: Record<string, unknown> = {}): AgentManagerConfig =>
+  ({ agent: agent as AgentManagerConfig["agent"], execution: execution as unknown as AgentManagerConfig["execution"] });
 
 describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution'>)", () => {
   describe("resolveDefaultAgent", () => {
@@ -30,15 +31,7 @@ describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution
     let mockAdapter: AgentAdapter;
 
     beforeEach(() => {
-      mockAdapter = {
-        name: "mock",
-        displayName: "Mock Agent",
-        protocol: "acp",
-        run: async () => ({ outputs: "", exitCode: 0 }),
-        complete: async () => ({ outputs: "", exitCode: 0 }),
-        isInstalled: async () => true,
-        healthCheck: async () => ({ healthy: true }),
-      };
+      mockAdapter = makeAgentAdapter({ name: "mock", displayName: "Mock Agent", binary: "mock" });
     });
 
     afterEach(() => {

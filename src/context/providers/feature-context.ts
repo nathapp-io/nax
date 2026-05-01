@@ -1,4 +1,4 @@
-import type { NaxConfig } from "../../config/types";
+import type { ContextConfig } from "@/config/selectors";
 /**
  * FeatureContextProvider — reads context.md for the current feature and
  * returns its raw contents for role-filtered injection at prompt-build time.
@@ -53,7 +53,7 @@ export class FeatureContextProvider {
   async getContext(
     story: UserStory,
     workdir: string,
-    config: NaxConfig,
+    config: ContextConfig,
     activeFeature?: string,
   ): Promise<FeatureContextResult | null> {
     const logger = getLogger();

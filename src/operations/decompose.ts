@@ -2,6 +2,7 @@ import { parseDecomposeOutput } from "../agents/shared/decompose";
 import { buildDecomposePromptSync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import { decomposeConfigSelector } from "../config";
+import type { DecomposeConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
 import type { CompleteOperation } from "./types";
 
@@ -14,8 +15,6 @@ export interface DecomposeOpInput {
 }
 
 export type DecomposeOpOutput = DecomposedStory[];
-
-type DecomposeConfig = ReturnType<typeof decomposeConfigSelector.select>;
 
 export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput, DecomposeConfig> = {
   kind: "complete",

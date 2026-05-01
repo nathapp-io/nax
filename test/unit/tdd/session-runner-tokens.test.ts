@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { TokenUsage } from "../../../src/agents/cost/types";
+import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { SessionManager } from "../../../src/session/manager";
 import { _sessionRunnerDeps, runTddSession } from "../../../src/tdd/session-runner";
@@ -187,5 +188,33 @@ describe("runTddSession — state transitions via runInSession (#589)", () => {
     );
 
     expect(mgr.get(descriptor.id)?.state).toBe("FAILED");
+  });
+});
+
+describe("runTddSession — stripped config (issue #745 Phase 4c)", () => {
+  test("accepts Pick<NaxConfig, tdd|execution|quality|agent|models> without full NaxConfig", async () => {
+    // Config typed as the narrowed slice — proves the signature accepts it without casting.
+    const strippedConfig: Pick<NaxConfig, "tdd" | "execution" | "quality" | "agent" | "models"> = makeNaxConfig({
+      models: { claude: { fast: "fast-model", balanced: "balanced-model", powerful: "powerful-model" } },
+      agent: { default: "claude" },
+      execution: { rectification: { enabled: false }, sessionTimeoutSeconds: 300 },
+      quality: { commands: { test: "bun test" } },
+      tdd: { testWriterAllowedPaths: [] },
+    });
+
+    const agent = makeAgent({});
+    const outcome = await runTddSession(
+      "verifier",
+      agent as never,
+      fakeAgentManager(agent as never),
+      makeStory(),
+      strippedConfig,
+      "/tmp/fake",
+      "balanced",
+      "HEAD",
+    );
+
+    expect(outcome.role).toBe("verifier");
+    expect(outcome.success).toBe(true);
   });
 });

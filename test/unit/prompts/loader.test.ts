@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promptLoaderConfigSelector } from "../../../src/config";
+import type { NaxConfig } from "../../../src/config";
+import type { PromptLoaderConfig } from "../../../src/config/selectors";
 import { loadOverride } from "../../../src/prompts/loader";
 import type { PromptRole } from "../../../src/prompts/types";
 import { fullTest } from "../../helpers/env";
@@ -327,5 +330,17 @@ describe("NaxConfig.prompts type shape", () => {
   test("config without prompts block compiles fine", () => {
     const config = makeConfig();
     expect(config.prompts).toBeUndefined();
+  });
+
+  test("promptLoaderConfigSelector picks prompts, context, project", () => {
+    const full = makeConfig();
+    const sliced = promptLoaderConfigSelector.select(full);
+    expect(Object.keys(sliced).sort()).toEqual(["context", "project", "prompts"]);
+  });
+
+  test("loadOverride accepts a Pick<NaxConfig, 'prompts'> literal (no NaxConfig cast)", async () => {
+    const config = { prompts: { overrides: {} } } satisfies Pick<NaxConfig, "prompts">;
+    const result = await loadOverride("test-writer", "/tmp/nonexistent-loader-test", config);
+    expect(result).toBeNull();
   });
 });

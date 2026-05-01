@@ -7,7 +7,7 @@
 import type { AgentAdapter } from "../agents";
 import { resolveDefaultAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
-import { resolveModelForAgent } from "../config";
+import { resolveModelForAgent, type tddConfigSelector } from "../config";
 import { createContextToolRuntime } from "../context/engine";
 import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
@@ -17,16 +17,16 @@ import type { ISessionManager } from "../session/types";
 import { autoCommitIfDirty as _autoCommitIfDirtyFn } from "../utils/git";
 import { captureGitRef as _captureGitRef } from "../utils/git";
 import { cleanupProcessTree as _cleanupProcessTree } from "./cleanup";
-/**
- * Injectable dependencies for session-runner — allows tests to mock
- * autoCommitIfDirty without going through internal git deps.
- * @internal
- */
 import {
   getChangedFiles as _getChangedFiles,
   verifyImplementerIsolation as _verifyImplementerIsolation,
   verifyTestWriterIsolation as _verifyTestWriterIsolation,
 } from "./isolation";
+import type { IsolationCheck } from "./types";
+import type { TddSessionResult, TddSessionRole } from "./types";
+
+// Derived from tddConfigSelector so the type stays in sync when the selector changes.
+type TddConfig = ReturnType<typeof tddConfigSelector.select>;
 
 export const _sessionRunnerDeps = {
   autoCommitIfDirty: _autoCommitIfDirtyFn,
@@ -40,7 +40,7 @@ export const _sessionRunnerDeps = {
     | null
     | ((
         role: TddSessionRole,
-        config: NaxConfig,
+        config: TddConfig,
         story: UserStory,
         workdir: string,
         contextMarkdown?: string,
@@ -49,8 +49,6 @@ export const _sessionRunnerDeps = {
         featureContextMarkdown?: string,
       ) => Promise<string>),
 };
-import type { IsolationCheck } from "./types";
-import type { TddSessionResult, TddSessionRole } from "./types";
 
 /**
  * Truncate test output to prevent context flooding.
@@ -126,7 +124,7 @@ export async function runTddSession(
   agent: AgentAdapter,
   agentManager: import("../agents/manager-types").IAgentManager,
   story: UserStory,
-  config: NaxConfig,
+  config: TddConfig,
   workdir: string,
   modelTier: ModelTier,
   beforeRef: string,
