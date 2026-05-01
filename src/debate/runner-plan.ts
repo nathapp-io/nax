@@ -6,8 +6,8 @@
 
 import { join } from "node:path";
 import { resolveDefaultAgent } from "../agents";
-import type { IAgentManager } from "../agents";
-import type { ConfiguredModel, ModelDef, NaxConfig } from "../config";
+import type { ConfiguredModel, ModelDef } from "../config";
+import type { CompleteConfig, DebateConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
@@ -30,7 +30,9 @@ interface PlanCtx extends DispatchContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: Pick<NaxConfig, "debate" | "models" | "agent">;
+  readonly config: DebateConfig;
+  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
+  readonly completeConfig?: CompleteConfig;
 }
 
 export async function runPlan(
@@ -203,6 +205,7 @@ export async function runPlan(
       stage: ctx.stage,
       stageConfig: ctx.stageConfig,
       config: ctx.config,
+      completeConfig: ctx.completeConfig,
       workdir: opts.workdir,
       featureName: opts.feature,
       timeoutSeconds: opts.timeoutSeconds ?? 600,
@@ -235,8 +238,7 @@ export async function runPlan(
     proposalOutputs,
     critiqueOutputs,
     ctx.stageConfig,
-    // resolveOutcome's CompleteOptions.config stays NaxConfig per Phase 3 §3.3
-    ctx.config as NaxConfig,
+    ctx.completeConfig,
     ctx.storyId,
     resolverTimeoutMs,
     opts.workdir,

@@ -52,6 +52,10 @@ export const precheckConfigSelector = pickSelector(
   "project",
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
+// TODO(#853): workaround — narrows CompleteOptions.config from NaxConfig to the keys the
+// wiring layer actually reads. Phase 2 of #853 removes the field entirely by pre-resolving
+// at the AgentManager boundary; delete this selector when that lands.
+export const completeConfigSelector = pickSelector("complete", "execution", "agent", "models", "precheck");
 
 // Derived config-slice types — co-located with each selector so consumers
 // import the type instead of re-deriving `ReturnType<typeof xSelector.select>`
@@ -73,3 +77,4 @@ export type AgentManagerConfig = ReturnType<typeof agentManagerConfigSelector.se
 export type InteractionConfig = ReturnType<typeof interactionConfigSelector.select>;
 export type PrecheckConfig = ReturnType<typeof precheckConfigSelector.select>;
 export type QualityConfig = ReturnType<typeof qualityConfigSelector.select>;
+export type CompleteConfig = ReturnType<typeof completeConfigSelector.select>;
