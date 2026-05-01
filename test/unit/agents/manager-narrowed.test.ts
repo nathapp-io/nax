@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
 import { _registryTestAdapters } from "../../../src/agents/registry";
 import type { AgentAdapter } from "../../../src/agents/types";
 import { resolveDefaultAgent } from "../../../src/agents/utils";
 import { createAgentRegistry } from "../../../src/agents/registry";
 import { AgentManagerConfig } from "../../../src/config/selectors";
+import { makeAgentAdapter } from "../../helpers";
 
 const makeSlicedConfig = (agent: Record<string, unknown> = {}, execution: Record<string, unknown> = {}): AgentManagerConfig =>
   ({ agent: agent as AgentManagerConfig["agent"], execution: execution as unknown as AgentManagerConfig["execution"] });
@@ -31,18 +31,7 @@ describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution
     let mockAdapter: AgentAdapter;
 
     beforeEach(() => {
-      mockAdapter = {
-        name: "mock",
-        displayName: "Mock Agent",
-        complete: async () => ({ output: "", exitCode: 0, costUsd: 0, source: "exact" }),
-        isInstalled: async () => true,
-        binary: "mock",
-        capabilities: { supportedTiers: [], maxContextTokens: 0, features: new Set() },
-        buildCommand: () => [],
-        openSession: async () => ({ id: "", agentName: "mock", close: async () => {} }),
-        closeSession: async () => {},
-        sendTurn: async () => ({ output: "", exitCode: 0, costUsd: 0, source: "exact", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 }),
-      };
+      mockAdapter = makeAgentAdapter({ name: "mock", displayName: "Mock Agent", binary: "mock" });
     });
 
     afterEach(() => {
