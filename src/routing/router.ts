@@ -6,6 +6,7 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
+import type { RoutingConfig } from "@/config/selectors";
 import type { IAgentManager } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import { getSafeLogger } from "../logger";
@@ -13,7 +14,6 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
 
-type RoutingConfig = Pick<NaxConfig, "routing" | "autoMode" | "tdd">;
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy } from "./classify";
 import { classifyComplexity, determineTestStrategy } from "./classify";
