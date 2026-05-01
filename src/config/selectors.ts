@@ -11,7 +11,16 @@
 import { pickSelector, reshapeSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
-export const reviewConfigSelector = pickSelector("review", "review", "debate", "models", "execution");
+export const reviewConfigSelector = pickSelector(
+  "review",
+  "review",
+  "debate",
+  "models",
+  "execution",
+  "project",
+  "quality",
+  "agent",
+);
 export const planConfigSelector = pickSelector("plan", "plan", "debate");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
@@ -20,7 +29,18 @@ export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance")
 export const acceptanceFixConfigSelector = pickSelector("acceptance-fix", "acceptance", "execution");
 // acceptance generator take more time to generate the test code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
 export const acceptanceGenConfigSelector = pickSelector("acceptance-gen", "acceptance", "execution");
-export const tddConfigSelector = pickSelector("tdd", "tdd", "execution", "quality", "agent", "models");
+export const tddConfigSelector = pickSelector(
+  "tdd",
+  "tdd",
+  "execution",
+  "quality",
+  "agent",
+  "models",
+  "prompts",
+  "context",
+  "project",
+  "precheck",
+);
 export const debateConfigSelector = pickSelector("debate", "debate", "models", "agent");
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
@@ -52,6 +72,28 @@ export const precheckConfigSelector = pickSelector(
   "project",
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
+
+// Test-pattern resolver — resolveTestFilePatterns reads execution.smartTestRunner
+// (root config patterns). Co-located so context-tool-runtime, semantic review,
+// and verification all share one shape.
+export const testPatternConfigSelector = pickSelector("test-pattern", "execution", "project", "quality");
+
+// Context-engine pull-tool runtime — reads context.v2.pull.* and forwards
+// execution/project/quality to resolveTestFilePatterns. Co-located so callers don't
+// have to compose two selectors.
+export const contextToolRuntimeConfigSelector = pickSelector(
+  "context-tool-runtime",
+  "context",
+  "execution",
+  "project",
+  "quality",
+);
+
+// Prompt builder loader — withLoader / loadOverride / hermetic /
+// tdd-language sections read prompts.overrides, context.featureEngine,
+// project.* only.
+export const promptLoaderConfigSelector = pickSelector("prompt-loader", "prompts", "context", "project");
+
 // TODO(#853): workaround — narrows CompleteOptions.config from NaxConfig to the keys the
 // wiring layer actually reads. Phase 2 of #853 removes the field entirely by pre-resolving
 // at the AgentManager boundary; delete this selector when that lands.
@@ -77,4 +119,7 @@ export type AgentManagerConfig = ReturnType<typeof agentManagerConfigSelector.se
 export type InteractionConfig = ReturnType<typeof interactionConfigSelector.select>;
 export type PrecheckConfig = ReturnType<typeof precheckConfigSelector.select>;
 export type QualityConfig = ReturnType<typeof qualityConfigSelector.select>;
+export type TestPatternConfig = ReturnType<typeof testPatternConfigSelector.select>;
+export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfigSelector.select>;
+export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
 export type CompleteConfig = ReturnType<typeof completeConfigSelector.select>;

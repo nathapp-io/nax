@@ -17,7 +17,11 @@ import type { PromptRole } from "./core/types";
  * @returns The override file contents, or null if absent/missing
  * @throws Error when file path is set but file is unreadable (e.g. permissions error)
  */
-export async function loadOverride(role: PromptRole, workdir: string, config: NaxConfig): Promise<string | null> {
+export async function loadOverride(
+  role: PromptRole,
+  workdir: string,
+  config: Pick<NaxConfig, "prompts">,
+): Promise<string | null> {
   const overridePath = config.prompts?.overrides?.[role];
 
   if (!overridePath) {

@@ -21,6 +21,7 @@
  * Backwards-compat alias: PromptBuilder re-exported from src/prompts/index.ts
  */
 
+import type { PromptLoaderConfig } from "../../config/selectors";
 import type { NaxConfig } from "../../config/types";
 import { filterContextByRole, truncateToContextBudget } from "../../context";
 import type { UserStory } from "../../prd";
@@ -54,7 +55,7 @@ export class TddPromptBuilder {
   private v2PushMarkdown_: string | undefined;
   private overridePath_: string | undefined;
   private loaderWorkdir_: string | undefined;
-  private loaderConfig_: NaxConfig | undefined;
+  private loaderConfig_: PromptLoaderConfig | undefined;
   private testCommand_: string | undefined;
   private hermeticConfig_: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
   private noTestJustification_: string | undefined;
@@ -120,7 +121,7 @@ export class TddPromptBuilder {
    * to tddLanguage and hermetic sections (which need config.project) as well
    * as to the override loader.
    */
-  withLoader(workdir: string, config: NaxConfig): this {
+  withLoader(workdir: string, config: PromptLoaderConfig): this {
     this.loaderWorkdir_ = workdir;
     this.loaderConfig_ = config;
     return this;

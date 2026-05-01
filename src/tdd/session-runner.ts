@@ -163,7 +163,7 @@ export async function runTddSession(
     switch (role) {
       case "test-writer":
         prompt = await PromptBuilder.for("test-writer", { isolation: lite ? "lite" : "strict" })
-          .withLoader(workdir, config as NaxConfig) // boundary cast — withLoader expects NaxConfig
+          .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
           .v2FeatureContext(contextBundle?.pushMarkdown)
@@ -175,7 +175,7 @@ export async function runTddSession(
         break;
       case "implementer":
         prompt = await PromptBuilder.for("implementer", { variant: lite ? "lite" : "standard" })
-          .withLoader(workdir, config as NaxConfig) // boundary cast — withLoader expects NaxConfig
+          .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
           .v2FeatureContext(contextBundle?.pushMarkdown)
@@ -187,7 +187,7 @@ export async function runTddSession(
         break;
       case "verifier":
         prompt = await PromptBuilder.for("verifier")
-          .withLoader(workdir, config as NaxConfig) // boundary cast — withLoader expects NaxConfig
+          .withLoader(workdir, config)
           .story(story)
           .context(contextMarkdown)
           .v2FeatureContext(contextBundle?.pushMarkdown)
@@ -222,7 +222,7 @@ export async function runTddSession(
     ),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     pipelineStage: "run" as const,
-    config: config as NaxConfig, // boundary cast — CompleteOptions.config stays NaxConfig per Phase 3 §3.3
+    config,
     projectDir,
     maxInteractionTurns: config.agent?.maxInteractionTurns,
     featureName,
@@ -234,7 +234,7 @@ export async function runTddSession(
       ? createContextToolRuntime({
           bundle: contextBundle,
           story,
-          config: config as NaxConfig, // boundary cast — createContextToolRuntime expects NaxConfig
+          config,
           repoRoot: workdir,
         })
       : undefined,

@@ -53,7 +53,7 @@ export class FeatureContextProvider {
   async getContext(
     story: UserStory,
     workdir: string,
-    config: NaxConfig,
+    config: Pick<NaxConfig, "context">,
     activeFeature?: string,
   ): Promise<FeatureContextResult | null> {
     const logger = getLogger();

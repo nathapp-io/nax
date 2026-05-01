@@ -154,7 +154,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
 
   // ADR-009: resolve effective exclude patterns from config (falls back to DEFAULT_TEST_FILE_PATTERNS
   // when semanticConfig.excludePatterns is undefined — no behaviour change for default config).
-  const resolved = await resolveTestFilePatterns((naxConfig ?? DEFAULT_CONFIG) as NaxConfig, workdir);
+  const resolved = await resolveTestFilePatterns(naxConfig ?? DEFAULT_CONFIG, workdir);
   const excludePatterns = [...resolveReviewExcludePatterns(semanticConfig.excludePatterns, resolved)];
 
   let diff: string | undefined;

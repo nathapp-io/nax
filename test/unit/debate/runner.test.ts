@@ -4,6 +4,7 @@ import { _debateSessionDeps } from "../../../src/debate/session-helpers";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import type { CallContext } from "../../../src/operations/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { debateConfigSelector } from "../../../src/config";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
@@ -144,5 +145,18 @@ describe("DebateRunner — one-shot panel mode", () => {
     await runner.run("prompt");
     expect(calls).toContain("claude");
     expect(calls).toContain("opencode");
+  });
+
+  test("constructor accepts a DebateConfig slice (no NaxConfig cast)", () => {
+    const slice = debateConfigSelector.select(DEFAULT_CONFIG);
+    const ctx = makeCallCtx();
+    const runner = new DebateRunner({
+      ctx,
+      stage: "review",
+      stageConfig: makeStageConfig(),
+      config: slice,
+      workdir: "/tmp",
+    });
+    expect(runner).toBeDefined();
   });
 });

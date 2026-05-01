@@ -18,6 +18,7 @@
  */
 
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import type { TestPatternConfig } from "../config/selectors";
 import type { NaxConfig } from "../config/types";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
@@ -118,7 +119,7 @@ export interface ResolveTestFilePatternsOptions {
  * @param options    - Optional: storyId for log correlation.
  */
 export async function resolveTestFilePatterns(
-  config: NaxConfig,
+  config: TestPatternConfig,
   workdir: string,
   packageDir?: string,
   options?: ResolveTestFilePatternsOptions,
