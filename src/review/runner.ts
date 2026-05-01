@@ -29,7 +29,7 @@ export interface RunReviewOptions {
   storyGitRef?: string;
   story?: SemanticStory;
   agentManager?: IAgentManager;
-  naxConfig?: NaxConfig;
+  naxConfig?: Pick<NaxConfig, "review" | "debate" | "models" | "execution">;
   retrySkipChecks?: Set<string>;
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;

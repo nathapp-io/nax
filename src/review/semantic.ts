@@ -80,7 +80,7 @@ export interface RunSemanticReviewOptions {
   story: SemanticStory;
   semanticConfig: SemanticReviewConfig;
   agentManager: IAgentManager | undefined;
-  naxConfig?: NaxConfig;
+  naxConfig?: Pick<NaxConfig, "review" | "debate" | "models" | "execution">;
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
@@ -153,7 +153,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
 
   // ADR-009: resolve effective exclude patterns from config (falls back to DEFAULT_TEST_FILE_PATTERNS
   // when semanticConfig.excludePatterns is undefined — no behaviour change for default config).
-  const resolved = await resolveTestFilePatterns(naxConfig ?? DEFAULT_CONFIG, workdir);
+  const resolved = await resolveTestFilePatterns((naxConfig ?? DEFAULT_CONFIG) as NaxConfig, workdir);
   const excludePatterns = [...resolveReviewExcludePatterns(semanticConfig.excludePatterns, resolved)];
 
   let diff: string | undefined;

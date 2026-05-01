@@ -74,7 +74,7 @@ export interface RunAdversarialReviewOptions {
   story: SemanticStory;
   adversarialConfig: AdversarialReviewConfig;
   agentManager: IAgentManager | undefined;
-  naxConfig?: NaxConfig;
+  naxConfig?: Pick<NaxConfig, "review" | "debate" | "models" | "execution">;
   featureName?: string;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
   blockingThreshold?: "error" | "warning" | "info";

@@ -49,7 +49,7 @@ function recordSemanticDebateAudit(opts: {
 }
 
 export interface SemanticDebateOptions {
-  naxConfig: NaxConfig | undefined;
+  naxConfig: Pick<NaxConfig, "review" | "debate" | "models" | "execution"> | undefined;
   runtime: import("../runtime").NaxRuntime | undefined;
   workdir: string;
   agentManager: IAgentManager;
@@ -90,7 +90,10 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   const semanticEffectiveConfig = naxConfig ?? DEFAULT_CONFIG;
   const createdRuntime = runtime
     ? undefined
-    : createRuntime(semanticEffectiveConfig, workdir, { agentManager, featureName: featureName ?? "_standalone" });
+    : createRuntime(semanticEffectiveConfig as NaxConfig, workdir, {
+        agentManager,
+        featureName: featureName ?? "_standalone",
+      });
   const debateRuntime = runtime ?? createdRuntime;
   if (!debateRuntime) {
     throw new Error("[review] Debate runtime unavailable");
@@ -131,7 +134,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
       ctx: semanticCallCtx,
       stage: "review",
       stageConfig: reviewStageConfig,
-      config: semanticEffectiveConfig,
+      config: semanticEffectiveConfig as NaxConfig,
       workdir,
       featureName: featureName,
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,

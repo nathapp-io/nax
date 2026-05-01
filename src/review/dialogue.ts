@@ -217,7 +217,7 @@ export function createReviewerSession(
   storyId: string,
   workdir: string,
   featureName: string,
-  _config: NaxConfig,
+  _config: Pick<NaxConfig, "review" | "debate" | "models" | "execution">,
 ): ReviewerSession {
   const history: DialogueMessage[] = [];
   let active = true;

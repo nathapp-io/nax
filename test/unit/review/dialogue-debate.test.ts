@@ -94,11 +94,10 @@ function makeAgentManager(runAsSessionFn: RunAsSessionFnType): IAgentManager {
 }
 
 const MOCK_CONFIG = {
-  autoMode: { defaultAgent: "claude" },
   models: { claude: { fast: { model: "claude-haiku-4-5-20251001" }, balanced: { model: "claude-sonnet-4-6" }, powerful: { model: "claude-opus-4-6" } } },
   execution: { sessionTimeoutSeconds: 3600 },
   review: { dialogue: { enabled: true, maxClarificationsPerAttempt: 3, maxDialogueMessages: 20 } },
-} as unknown as import("../../../src/config").NaxConfig;
+} as Pick<import("../../../src/config").NaxConfig, "review" | "debate" | "models" | "execution">;
 
 // ---------------------------------------------------------------------------
 // resolveDebate() — core behavior
@@ -321,7 +320,7 @@ describe("ReviewerSession.reReviewDebate()", () => {
     const smallMaxConfig = {
       ...MOCK_CONFIG,
       review: { dialogue: { enabled: true, maxClarificationsPerAttempt: 3, maxDialogueMessages: 2 } },
-    } as unknown as import("../../../src/config").NaxConfig;
+    } as Pick<import("../../../src/config").NaxConfig, "review" | "debate" | "models" | "execution">;
 
     let callCount = 0;
     const multiRunFn: RunAsSessionFnType = mock(async (_agentName: string, _handle: SessionHandle, _prompt: string, _opts: RunAsSessionOpts): Promise<TurnResult> => {
