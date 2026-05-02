@@ -123,7 +123,6 @@ export async function preIterationTierCheck(
 
   // Exceeded current tier budget — try to escalate
   const escalationResult = escalateTier(currentTier, tierOrder);
-  const nextTier = escalationResult?.tier ?? null;
   const nextAgent = escalationResult?.agent;
   const routingMode = config.routing.llm?.mode ?? "hybrid";
 
@@ -178,6 +177,7 @@ export async function preIterationTierCheck(
     if (routingMode === "hybrid") {
       await tryLlmBatchRoute(config, [story], "hybrid-re-route", {
         agentManager: undefined,
+        runtime: undefined,
       });
     }
 
@@ -242,6 +242,8 @@ export interface EscalationHandlerContext {
   attemptCost?: number;
   /** Per-run AgentManager — threaded for LLM batch re-routing after escalation */
   agentManager: import("../../agents").IAgentManager;
+  /** NaxRuntime — threaded for callOp-based LLM batch re-routing after escalation */
+  runtime?: import("../../runtime").NaxRuntime;
 }
 
 export interface EscalationHandlerResult {
@@ -287,7 +289,6 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   }
 
   const escalationResult = escalateTier(ctx.routing.modelTier, ctx.config.autoMode.escalation.tierOrder);
-  const nextTier = escalationResult?.tier ?? null;
   const nextAgent = escalationResult?.agent;
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];
@@ -406,6 +407,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   if (routingMode === "hybrid") {
     await tryLlmBatchRoute(ctx.config, storiesToEscalate, "hybrid-re-route-pipeline", {
       agentManager: ctx.agentManager,
+      runtime: ctx.runtime,
     });
   }
 

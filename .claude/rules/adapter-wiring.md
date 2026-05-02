@@ -41,8 +41,8 @@ paths:
 | Role | Dispatch |
 |:---|:---|
 | `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `reviewer-semantic`, `reviewer-adversarial` | `callOp` run-kind |
-| `plan`, `decompose`, `acceptance-gen`, `refine`, `fix-gen` | `callOp` complete-kind |
-| `auto`, `synthesis`, `judge` | `agentManager.completeAs` |
+| `plan`, `decompose`, `acceptance-gen`, `refine`, `fix-gen`, `auto` | `callOp` complete-kind |
+| `synthesis`, `judge` | `agentManager.completeAs` |
 | `` debate-${string} `` | `agentManager.runAsSession` |
 
 ## Rule 3: Adapter primitives stay inside the wiring layer
@@ -51,6 +51,13 @@ Allowed callers of `adapter.openSession` / `sendTurn` / `closeSession` / `comple
 `src/agents/manager.ts`, `src/agents/utils.ts`, `src/session/manager.ts`.
 
 Everywhere else: go through `IAgentManager` / `ISessionManager`. Enforced by `test/integration/cli/adapter-boundary.test.ts`.
+
+**Layer 3 (Manager API) is the intentional escape hatch for parallel fan-out and plugin contracts** — not a generic "behavior outside an Operation." Reach for it only when the dispatch shape cannot be expressed as a single `callOp` call. The only sanctioned `agentManager.completeAs` consumers are:
+
+- Debate fan-out and resolvers (`src/debate/`) — parallel multi-agent invocations with dynamic agent names that preclude a static op config. See #855 for the long-term migration path.
+- `AgentManager`'s own internal dispatch (`src/agents/manager.ts`).
+
+New code goes through `callOp`. If you think you need Layer 3, check with the team first.
 
 ## Rule 4: Agent resolution
 

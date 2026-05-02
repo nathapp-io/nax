@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
+import type { PRD, UserStory } from "../../../src/prd/types";
 import { NaxError } from "../../../src/errors";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
@@ -141,7 +142,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.createRuntime = mock(() =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async () => {
         callCount++;
         if (callCount === 1) {
@@ -149,9 +150,9 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
         }
         return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
       }),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
-    await expect(
+    expect(
       planDecomposeCommand(tmpDir, makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }), { feature: FEATURE, storyId: "US-001" }),
     ).resolves.not.toThrow();
 
@@ -168,12 +169,12 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.createRuntime = mock(() =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async () => {
         callCount++;
         return { stories: [makeOversizedSubStory("US-001-A", 8)] };
       }),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     const config = makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }); // maxReplanAttempts: 3
     await expect(
@@ -188,12 +189,12 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     let callCount = 0;
-    _planDeps.createRuntime = mock(() =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async () => {
         callCount++;
         return { stories: [makeOversizedSubStory("US-001-A", 8)] };
       }),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     const config = makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 1 } }, agent: { default: "claude" } });
 
@@ -212,7 +213,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const prd = makePrd();
     setupBaseDeps(prd);
 
-    _planDeps.createRuntime = mock(() =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async () => ({
         stories: [
           makeOversizedSubStory("US-001-A", 8),
@@ -220,7 +221,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
           makeValidSubStory("US-001-C"),
         ],
       })),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     let caught: NaxError | undefined;
     try {
@@ -243,11 +244,11 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const prd = makePrd();
     setupBaseDeps(prd);
 
-    _planDeps.createRuntime = mock(() =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async () => ({
         stories: [makeOversizedSubStory("US-001-A", 9)],
       })),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     let caught: NaxError | undefined;
     try {
@@ -271,7 +272,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     const capturedPrompts: string[] = [];
     let callCount = 0;
 
-    _planDeps.createRuntime = mock(() =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockAgentManager({
         completeAsFn: async (_name: string, prompt: string) => {
           capturedPrompts.push(prompt);
@@ -282,7 +283,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
           return { output: JSON.stringify(stories), costUsd: 0, source: "exact" as const };
         },
       }),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     await planDecomposeCommand(tmpDir, makeNaxConfig({ precheck: { storySizeGate: { enabled: true, maxAcCount: 5, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 } }, agent: { default: "claude" } }), { feature: FEATURE, storyId: "US-001" });
 
@@ -325,20 +326,7 @@ describe("buildDecomposePrompt — maxAcCount prompt hardening (issue #227)", ()
       workdir: "/tmp/test",
       targetStory: makeTargetStory(),
       siblings: [],
-      config: maxAcCount != null
-        ? ({
-            precheck: {
-              storySizeGate: {
-                enabled: true,
-                maxAcCount,
-                maxDescriptionLength: 3000,
-                maxBulletPoints: 12,
-                action: "block",
-                maxReplanAttempts: 3,
-              },
-            },
-          } as Partial<NaxConfig>)
-        : undefined,
+      maxAcCount: maxAcCount ?? null,
     };
   }
 
@@ -365,7 +353,7 @@ describe("buildDecomposePrompt — maxAcCount prompt hardening (issue #227)", ()
       codebaseContext: "context",
       workdir: "/tmp",
       targetStory: makeTargetStory(),
-      config: {} as Partial<NaxConfig>,
+      maxAcCount: null,
     };
     const prompt = await buildDecomposePromptAsync(opts);
     expect(prompt).not.toContain("Acceptance Criteria Constraint");

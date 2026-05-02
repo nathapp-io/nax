@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { UserStory } from "../../../src/prd/types";
 import { tryLlmBatchRoute } from "../../../src/routing/router";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../helpers";
+import { makeNaxConfig, makeStory } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 describe("tryLlmBatchRoute", () => {
-  test("uses _deps.agentManager when provided and stories need routing", async () => {
+  test("uses _deps.runtime when provided and stories need routing", async () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
@@ -13,17 +14,18 @@ describe("tryLlmBatchRoute", () => {
       },
     });
     const story = makeStory();
-    const mockManager = makeMockAgentManager();
+    const runtime = makeMockRuntime({ config });
 
     const deps = {
-      agentManager: mockManager,
+      agentManager: undefined,
+      runtime,
     };
 
-    // Should not throw — agentManager is available
+    // Should not throw — runtime is available (LLM call will fail due to mock, but that is caught and swallowed)
     await tryLlmBatchRoute(config, [story], "routing", deps);
   });
 
-  test("returns early without error when _deps.agentManager is undefined", async () => {
+  test("returns early without error when _deps.runtime is undefined", async () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
@@ -35,6 +37,7 @@ describe("tryLlmBatchRoute", () => {
 
     const deps = {
       agentManager: undefined,
+      runtime: undefined,
     };
 
     // Should not throw — simply returns early
@@ -59,9 +62,10 @@ describe("tryLlmBatchRoute", () => {
       },
     };
 
-    // Even with agentManager set, should return early since no routing needed
+    // Even with runtime set, should return early since no routing needed
     const deps = {
-      agentManager: makeMockAgentManager(),
+      agentManager: undefined,
+      runtime: makeMockRuntime({ config }),
     };
 
     await expect(tryLlmBatchRoute(config, [story], "routing", deps)).resolves.toBeUndefined();

@@ -6,8 +6,8 @@
 
 import { join } from "node:path";
 import { resolveDefaultAgent } from "../agents";
-import type { ConfiguredModel, ModelDef } from "../config";
-import type { CompleteConfig, DebateConfig } from "../config/selectors";
+import type { ConfiguredModel, ModelDef, NaxConfig } from "../config";
+import type { DebateConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
@@ -32,7 +32,7 @@ interface PlanCtx extends DispatchContext {
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
   /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
-  readonly completeConfig?: CompleteConfig;
+  readonly completeConfig?: NaxConfig;
 }
 
 export async function runPlan(

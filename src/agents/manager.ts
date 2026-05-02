@@ -39,7 +39,7 @@ import type {
 } from "./manager-types";
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
-import type { AgentResult, CompleteOptions, CompleteResult } from "./types";
+import type { AgentResult, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
@@ -359,7 +359,7 @@ export class AgentManager implements IAgentManager {
 
   async completeWithFallback(
     prompt: string,
-    options: CompleteOptions,
+    options: ResolvedCompleteOptions,
     primaryAgentOverride?: string,
   ): Promise<AgentCompleteOutcome> {
     const logger = getSafeLogger();
@@ -386,7 +386,7 @@ export class AgentManager implements IAgentManager {
 
         let result: CompleteResult;
         try {
-          const optionsWithLifecycle: CompleteOptions = this._pidRegistry
+          const optionsWithLifecycle: ResolvedCompleteOptions = this._pidRegistry
             ? {
                 ...options,
                 onPidSpawned: (pid: number) => this._pidRegistry?.register(pid),
@@ -580,9 +580,9 @@ export class AgentManager implements IAgentManager {
 
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
     const stage = options.pipelineStage ?? "complete";
-    /** @design Per plan §3.3 Note: resolvePermissions needs full NaxConfig for permission resolution. this._config is Pick<agent|execution>. */
-    const resolvedPermissions = resolvePermissions(options.config ?? this._config, stage);
-    const augmented: CompleteOptions = { ...options, resolvedPermissions };
+    const resolvedPermissions = resolvePermissions(this._config, stage);
+    const promptRetries = this._config.agent?.acp?.promptRetries;
+    const augmented: ResolvedCompleteOptions = { ...options, resolvedPermissions, promptRetries };
     const sessionName =
       options.sessionName ??
       formatSessionName({

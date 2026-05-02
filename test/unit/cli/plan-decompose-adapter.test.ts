@@ -16,7 +16,9 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import type { DecomposeResult, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD } from "../../helpers";
+import type { PRD, UserStory } from "../../../src/prd/types";
+import type { NaxConfig } from "../../../src/config";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -76,7 +78,6 @@ function makeDecomposeResult(): DecomposeResult {
         dependencies: [],
         complexity: "medium",
         contextFiles: ["src/redis.ts"],
-        relevantFiles: [],
         reasoning: "Infrastructure setup",
         estimatedLOC: 60,
         risks: [],
@@ -143,12 +144,12 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
 
-    _planDeps.createRuntime = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async (_name: string, opts: unknown) => {
         capturedDecomposeCalls.push(opts);
         return { stories: makeDecomposeResult().stories };
       }),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
   });
 
   afterEach(() => {
@@ -176,12 +177,12 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
     const config = makeConfig();
 
     // Replace complete() with a non-throwing mock so we can check call count
-    _planDeps.createRuntime = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async (_name: string, opts: unknown) => {
         capturedDecomposeCalls.push(opts);
         return { stories: makeDecomposeResult().stories };
       }),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     await planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" });
 
@@ -190,7 +191,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
 
   test("resolves without error when adapter.decompose() is available", async () => {
     const config = makeConfig();
-    await expect(
+    expect(
       planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
     ).resolves.toBeDefined();
   });
@@ -223,12 +224,12 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
 
-    _planDeps.createRuntime = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async (_name: string, opts: Record<string, unknown>) => {
         capturedDecomposeOpts.push(opts);
         return { stories: makeDecomposeResult().stories };
       }),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
   });
 
   afterEach(() => {
@@ -260,11 +261,14 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     expect(capturedDecomposeOpts[0].storyId).toBe("US-001");
   });
 
-  test("adapter.decompose() receives config object", async () => {
+  test("adapter.decompose() receives resolved modelDef (not raw config)", async () => {
     const config = makeConfig();
     await planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" });
 
-    expect(capturedDecomposeOpts[0].config).toBe(config);
+    // config is no longer forwarded in CompleteOptions (removed in issue #853).
+    // Model resolution now happens at the callOp boundary — verify modelDef is present.
+    expect(capturedDecomposeOpts[0].modelDef).toBeDefined();
+    expect(typeof (capturedDecomposeOpts[0].modelDef as { model?: string } | undefined)?.model).toBe("string");
   });
 });
 
@@ -331,12 +335,12 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
   test("does not throw when adapter.decompose() returns a structured DecomposeResult", async () => {
     // adapter.decompose() returns DecomposeResult (stories array), not a raw JSON string.
     // planDecomposeCommand must not attempt JSON.parse on this structured value.
-    _planDeps.createRuntime = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     const config = makeConfig();
-    await expect(
+    expect(
       planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
     ).resolves.toBeDefined();
   });
@@ -347,9 +351,9 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
       capturedWrites.push([path, content]);
     });
 
-    _planDeps.createRuntime = mock((_cfg?: unknown) =>
+    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
-    );
+    ) as unknown as typeof _planDeps.createRuntime;
 
     const config = makeConfig();
     await planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" });

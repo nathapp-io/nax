@@ -82,14 +82,15 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
 
   if (op.kind === "complete") {
     const completeOp = op as CompleteOperation<I, O, C>;
+    const sessionRole = ctx.sessionOverride?.role;
     const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, {
-      model: resolved.modelDef.model,
-      config,
+      modelDef: resolved.modelDef,
       jsonMode: completeOp.jsonMode ?? false,
       pipelineStage: op.stage,
       storyId: ctx.storyId,
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
+      ...(sessionRole !== undefined ? { sessionRole } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     });
     const parsedComplete = op.parse(raw.output, input, buildCtx);

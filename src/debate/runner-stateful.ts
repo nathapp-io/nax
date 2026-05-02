@@ -6,8 +6,8 @@
 
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { ConfiguredModel, ModelDef } from "../config";
-import type { CompleteConfig, DebateConfig } from "../config/selectors";
+import type { ConfiguredModel, ModelDef, NaxConfig } from "../config";
+import type { DebateConfig } from "../config/selectors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -33,7 +33,7 @@ interface StatefulCtx extends DispatchContext {
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
   /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
-  readonly completeConfig?: CompleteConfig;
+  readonly completeConfig?: NaxConfig;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;

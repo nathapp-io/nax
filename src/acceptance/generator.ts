@@ -5,15 +5,12 @@
  * via LLM call to the agent adapter.
  */
 
-import type { IAgentManager } from "../agents";
-import { getLogger } from "../logger";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
-import { extractTestCode, generateSkeletonTests } from "./generator-helpers";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
   resolveAcceptanceTestFile as defaultResolveAcceptanceTestFile,
 } from "./test-path";
-import type { AcceptanceCriterion, AcceptanceTestResult, GenerateAcceptanceTestsOptions } from "./types";
+import type { AcceptanceCriterion } from "./types";
 
 export { extractTestCode, generateSkeletonTests } from "./generator-helpers";
 
@@ -124,97 +121,4 @@ export function buildAcceptanceTestPrompt(
     criteriaList,
     resolvedTestPath,
   });
-}
-
-/**
- * Generate acceptance tests from spec.md acceptance criteria.
- *
- * Parses AC lines from spec, builds LLM prompt, calls agent adapter,
- * and returns generated test code. Falls back to skeleton tests if LLM fails.
- *
- * @param adapter - Agent adapter to use for test generation
- * @param options - Generation options with spec content, context, and model
- * @returns Generated test code and processed criteria
- * @throws Error if AC parsing fails or agent call fails critically
- *
- * @example
- * ```ts
- * const adapter = new ClaudeCodeAdapter();
- * const result = await generateAcceptanceTests(adapter, {
- *   specContent: await Bun.file("spec.md").text(),
- *   featureName: "url-shortener",
- *   workdir: "/project",
- *   codebaseContext: "File tree:\nsrc/\n",
- *   modelTier: "balanced",
- *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
- * });
- *
- * await Bun.write(".nax-acceptance.test.ts", result.testCode);
- * ```
- */
-export async function generateAcceptanceTests(
-  agentManager: IAgentManager,
-  options: GenerateAcceptanceTestsOptions,
-): Promise<AcceptanceTestResult> {
-  // Parse acceptance criteria from spec
-  const logger = getLogger();
-  const criteria = parseAcceptanceCriteria(options.specContent);
-
-  if (criteria.length === 0) {
-    // No AC found — generate empty skeleton
-    logger.warn("acceptance", "⚠ No acceptance criteria found in spec.md");
-    return {
-      testCode: generateSkeletonTests(options.featureName, [], options.testFramework),
-      criteria: [],
-    };
-  }
-
-  logger.info("acceptance", "Found acceptance criteria", { count: criteria.length });
-
-  // Build prompt
-  const prompt = buildAcceptanceTestPrompt(
-    criteria,
-    options.featureName,
-    options.codebaseContext,
-    options.config?.acceptance?.testPath,
-    options.config?.project?.language,
-  );
-
-  try {
-    // Call adapter to generate tests
-    const completeResult = await agentManager.complete(prompt, {
-      model: options.modelDef.model,
-      config: options.config,
-      timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
-      workdir: options.workdir,
-      featureName: options.featureName,
-      sessionRole: "acceptance-gen",
-    });
-    const output = typeof completeResult === "string" ? completeResult : completeResult.output;
-
-    // Extract test code from output
-    const testCode = extractTestCode(output);
-
-    if (!testCode) {
-      logger.warn("acceptance", "LLM returned non-code output for acceptance tests — falling back to skeleton", {
-        outputPreview: output.slice(0, 200),
-      });
-      return {
-        testCode: generateSkeletonTests(options.featureName, criteria, options.testFramework),
-        criteria,
-      };
-    }
-
-    return {
-      testCode,
-      criteria,
-    };
-  } catch (error) {
-    logger.warn("acceptance", "⚠ Agent test generation error", { error: (error as Error).message });
-    // Fall back to skeleton
-    return {
-      testCode: generateSkeletonTests(options.featureName, criteria, options.testFramework),
-      criteria,
-    };
-  }
 }

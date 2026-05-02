@@ -6,7 +6,7 @@
  * collect results from them uniformly.
  */
 
-import type { AgentManagerConfig, CompleteConfig } from "@/config/selectors";
+import type { AgentManagerConfig } from "@/config/selectors";
 import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
@@ -205,22 +205,32 @@ export interface AgentCapabilities {
 
 /**
  * Options for one-shot LLM completion calls.
+ *
+ * Callers pass this to `AgentManager.completeAs()` — the manager fills in
+ * `resolvedPermissions`, `promptRetries`, `onPidSpawned`, and `onPidExited`
+ * before handing the augmented `ResolvedCompleteOptions` to the adapter.
  */
 export interface CompleteOptions {
   /** Maximum tokens for the response */
   maxTokens?: number;
   /** Request JSON-formatted output (adds --output-format json) */
   jsonMode?: boolean;
-  /** Override the model (adds --model flag) */
-  model?: string;
-  /** Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions(). */
+  /**
+   * Resolved model definition — the adapter uses modelDef.model directly to set
+   * the --model flag on acpx. Set by callOp / completeAs callers before passing to the adapter.
+   */
+  modelDef: ModelDef;
+  /**
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * Pre-resolved permissions from AgentManager — adapter reads this instead of calling resolvePermissions().
+   */
   resolvedPermissions?: ResolvedPermissions;
   /**
    * Working directory for the completion call.
    * Used by ACP adapter to set --cwd on the spawned acpx session.
    * CLI adapter uses this as the process cwd when spawning the agent binary.
    */
-  workdir?: string;
+  workdir: string;
   /**
    * Timeout for the completion call in milliseconds.
    * Adapters that support it (e.g. ACP) will enforce this as a hard deadline.
@@ -228,11 +238,10 @@ export interface CompleteOptions {
    */
   timeoutMs?: number;
   /**
-   * Config slice required by the wiring layer: execution (permissions), agent
-   * (default + acp settings), models (model resolution), precheck (plan-mode AC gate).
-   * Full NaxConfig satisfies this type — callers need not change.
+   * Number of prompt retries for ACP sessions.
+   * Pre-resolved by AgentManager.completeAs from config.agent.acp.promptRetries.
    */
-  config: CompleteConfig;
+  promptRetries?: number;
   /**
    * Named session to use for this completion call.
    * If omitted, a timestamp-based ephemeral session name is generated.
@@ -247,12 +256,6 @@ export interface CompleteOptions {
   sessionRole?: SessionRole;
   /** Abort signal for cancellation middleware support on complete() calls. */
   signal?: AbortSignal;
-  /**
-   * Model tier hint for adapters that resolve model from config (e.g. ACP adapter).
-   * When set alongside `config`, the adapter resolves the model from `config.models[modelTier]`
-   * instead of using the default. Has no effect when `model` is explicitly set.
-   */
-  modelTier?: ModelTier;
   /**
    * Pipeline stage label for prompt audit logs.
    * Defaults to "complete" when not provided.
@@ -269,6 +272,13 @@ export interface CompleteOptions {
    */
   onPidExited?: (pid: number) => void;
 }
+
+/**
+ * `CompleteOptions` after `AgentManager.completeAs()` has filled in all
+ * `@internal` fields. This is what the adapter boundary actually receives.
+ * Only `manager.ts` and `completeWithFallback` should reference this type.
+ */
+export type ResolvedCompleteOptions = CompleteOptions & { resolvedPermissions: ResolvedPermissions };
 
 /**
  * Result for one-shot completion calls that include normalized cost metadata.
@@ -428,7 +438,7 @@ export interface AgentAdapter {
    * Run a one-shot LLM call and return output with cost metadata.
    * Uses claude -p CLI for non-interactive completions.
    */
-  complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
+  complete(prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult>;
 
   /**
    * Open a new (or resume an existing) physical agent session.

@@ -190,7 +190,7 @@ describe("agentManager.complete() is called with correct arguments", () => {
     await pluginWithModel.decide(makeRequest("req-model"));
 
     const [, options] = completeMock.mock.calls[0] as [string, any];
-    expect(options?.model).toBe("claude-haiku-4-5");
+    expect(options?.modelDef?.model).toBe("claude-haiku-4-5");
   });
 });
 

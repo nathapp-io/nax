@@ -6,7 +6,6 @@ import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "..
 import type { PipelineStage } from "../config/permissions";
 import type { ModelsConfig } from "../config/schema-types";
 import type { ModelDef } from "../config/schema-types";
-import type { CompleteConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { formatSessionName } from "../session/naming";
@@ -133,12 +132,11 @@ export async function runComplete(
   agentName: string,
   prompt: string,
   options: CompleteOptions,
-  modelTier: ModelTier,
+  _modelTier: ModelTier,
   timeoutMs?: number,
 ): Promise<CompleteResult> {
   return agentManager.completeAs(agentName, prompt, {
     ...options,
-    modelTier,
     ...(timeoutMs !== undefined && { timeoutMs }),
   });
 }
@@ -181,7 +179,7 @@ export async function resolveOutcome(
   critiqueOutputs: string[],
   stageConfig: DebateStageConfig,
   // TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary.
-  config: CompleteConfig | undefined,
+  config: NaxConfig | undefined,
   storyId: string,
   timeoutMs: number,
   workdir: string | undefined,
@@ -309,19 +307,16 @@ export async function resolveOutcome(
           modelTier: modelTierFromDebater(resolverDebater),
         };
       }
-      const resolverTier = resolvedResolverModel.modelTier ?? modelTierFromDebater(resolverDebater);
       const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
         agentManager: manager,
         agentName,
         promptSuffix,
         debaters,
         completeOptions: {
-          model: resolvedResolverModel.modelDef.model,
-          modelTier: resolverTier,
-          config: config ?? DEFAULT_CONFIG,
+          modelDef: resolvedResolverModel.modelDef,
+          workdir: workdir ?? "",
           storyId,
           featureName,
-          workdir,
           sessionRole: "synthesis",
           timeoutMs,
           ...(synthesisSessionName !== undefined && { sessionName: synthesisSessionName }),
@@ -358,18 +353,15 @@ export async function resolveOutcome(
         modelTier: modelTierFromDebater(resolverDebater),
       };
     }
-    const resolverTier = resolvedResolverModel.modelTier ?? modelTierFromDebater(resolverDebater);
     const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
       agentManager: manager,
       defaultAgentName: RESOLVER_FALLBACK_AGENT,
       debaters,
       completeOptions: {
-        model: resolvedResolverModel.modelDef.model,
-        modelTier: resolverTier,
-        config: config ?? DEFAULT_CONFIG,
+        modelDef: resolvedResolverModel.modelDef,
+        workdir: workdir ?? "",
         storyId,
         featureName,
-        workdir,
         sessionRole: "judge",
         timeoutMs,
         ...(judgeSessionName !== undefined && { sessionName: judgeSessionName }),

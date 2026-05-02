@@ -136,6 +136,7 @@ export async function runExecutionPhase(
   if (options.useBatch) {
     await tryLlmBatchRoute(options.config, readyStories, "routing", {
       agentManager: options.agentManager,
+      runtime: options.runtime,
     });
   }
 

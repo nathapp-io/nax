@@ -7,9 +7,15 @@
 
 import { z } from "zod";
 import type { IAgentManager } from "../../agents";
+import { resolveDefaultAgent } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
+import { NaxError } from "../../errors";
+import { autoApproveOp, callOp } from "../../operations";
+import type { CallContext } from "../../operations";
 import { OneShotPromptBuilder, type SchemaDescriptor } from "../../prompts";
+import type { NaxRuntime } from "../../runtime";
+import { parseLLMJson } from "../../utils/llm-json";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 const AUTO_APPROVER_SCHEMA: SchemaDescriptor = {
@@ -78,6 +84,9 @@ interface DecisionResponse {
 export const _autoPluginDeps = {
   agentManager: null as IAgentManager | null,
   callLlm: null as ((request: InteractionRequest) => Promise<DecisionResponse>) | null,
+  workdir: "" as string,
+  /** Optional runtime — when set, callLlm routes through callOp for full middleware coverage. */
+  runtime: null as NaxRuntime | null,
 };
 
 /**
@@ -159,34 +168,54 @@ export class AutoInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Call LLM to make decision
+   * Call LLM to make decision.
+   *
+   * Prefers the callOp path when runtime is injected (full middleware coverage).
+   * Falls back to the legacy agentManager.complete() path for tests that inject
+   * agentManager directly without a runtime.
    */
   private async callLlm(request: InteractionRequest): Promise<DecisionResponse> {
-    const prompt = await this.buildPrompt(request);
-
-    // Get agentManager from dependency injection or throw
-    const agentManager = _autoPluginDeps.agentManager;
-    if (!agentManager) {
-      throw new Error("Auto plugin requires agentManager to be injected via _autoPluginDeps.agentManager");
+    // Prefer callOp path when runtime is available — routes through full middleware
+    const runtime = _autoPluginDeps.runtime;
+    if (runtime) {
+      const config = runtime.configLoader.current();
+      const ctx: CallContext = {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: _autoPluginDeps.workdir || runtime.workdir,
+        agentName: resolveDefaultAgent(config),
+        storyId: request.storyId,
+        featureName: request.featureName,
+        sessionOverride: { role: "auto" },
+      };
+      return callOp(ctx, autoApproveOp, request);
     }
 
+    // Legacy path: agentManager injected directly (used by existing tests)
+    const agentManager = _autoPluginDeps.agentManager;
+    if (!agentManager) {
+      throw new Error("Auto plugin requires agentManager or runtime to be injected via _autoPluginDeps");
+    }
+
+    const prompt = await this.buildPrompt(request);
     const naxConfig = this.config.naxConfig ?? DEFAULT_CONFIG;
 
-    let resolvedModel: string | undefined;
+    const modelTier = this.config.model ?? "fast";
+    const defaultAgent = agentManager.getDefault();
+    let resolvedModelDef: import("../../config/schema").ModelDef;
     try {
-      const modelTier = this.config.model ?? "fast";
-      const defaultAgent = agentManager.getDefault();
-      resolvedModel = resolveModelForAgent(naxConfig.models, defaultAgent, modelTier, defaultAgent).model;
+      resolvedModelDef = resolveModelForAgent(naxConfig.models, defaultAgent, modelTier, defaultAgent);
     } catch {
-      // Model resolution failed (e.g. no naxConfig provided) — proceed without a model
+      // Model resolution failed (e.g. no naxConfig provided) — use a safe default
+      resolvedModelDef = { provider: "unknown", model: "default" } as import("../../config/schema").ModelDef;
     }
 
     const timeoutMs = (naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000;
 
     const result = await agentManager.complete(prompt, {
-      ...(resolvedModel !== undefined && { model: resolvedModel }),
+      modelDef: resolvedModelDef,
+      workdir: _autoPluginDeps.workdir,
       jsonMode: true,
-      config: naxConfig,
       featureName: request.featureName,
       storyId: request.storyId,
       sessionRole: "auto",
@@ -231,27 +260,18 @@ export class AutoInteractionPlugin implements InteractionPlugin {
    * Parse LLM response
    */
   private parseResponse(output: string): DecisionResponse {
-    let jsonText = output.trim();
+    const parsed = parseLLMJson<DecisionResponse>(output);
 
-    // Strip markdown code fences
-    if (jsonText.startsWith("```")) {
-      const lines = jsonText.split("\n");
-      jsonText = lines.slice(1, -1).join("\n").trim();
-    }
-    if (jsonText.startsWith("json")) {
-      jsonText = jsonText.slice(4).trim();
-    }
-
-    const parsed = JSON.parse(jsonText) as DecisionResponse;
-
-    // Validate
     if (!parsed.action || parsed.confidence === undefined || !parsed.reasoning) {
-      throw new Error(`Invalid LLM response: ${jsonText}`);
+      throw new NaxError("Invalid LLM response: missing required fields", "AUTO_APPROVE_PARSE_FAILED", {
+        stage: "run",
+      });
     }
 
-    // Validate confidence is 0-1
     if (parsed.confidence < 0 || parsed.confidence > 1) {
-      throw new Error(`Invalid confidence: ${parsed.confidence} (must be 0-1)`);
+      throw new NaxError(`Invalid confidence: ${parsed.confidence} (must be 0-1)`, "AUTO_APPROVE_PARSE_FAILED", {
+        stage: "run",
+      });
     }
 
     return parsed;

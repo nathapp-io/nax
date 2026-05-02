@@ -250,10 +250,12 @@ describe("completeAs — dispatch emission", () => {
 
     try {
       await manager.completeAs("claude", "summarise this", {
-        config: DEFAULT_CONFIG,
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+        workdir: "/tmp/test",
         storyId: "US-003",
         sessionRole: "synthesis",
         pipelineStage: "complete",
+        timeoutMs: 100,
       });
     } catch {
       // Adapter not wired in unit test — error is expected; emission still happens if adapter path reached.
