@@ -7,12 +7,18 @@
  */
 
 import type { LlmRoutingConfig, RoutingConfig } from "@/config/selectors";
+import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import { getSafeLogger } from "../logger";
+import { callOp } from "../operations";
+import { classifyRouteBatchOp, classifyRouteOp } from "../operations";
+import type { CallContext, CompleteOperation, Operation } from "../operations";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
+import type { NaxRuntime } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
+import { MAX_CACHE_SIZE, cachedDecisions, evictOldest } from "./strategies/llm-cache";
 
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy } from "./classify";
@@ -126,6 +132,38 @@ function keywordRoute(story: UserStory, config: RoutingConfig): RoutingDecision 
 }
 
 // ---------------------------------------------------------------------------
+// classifyWithRetry — retry wrapper for callOp-based LLM routing calls
+// ---------------------------------------------------------------------------
+
+async function classifyWithRetry<T>(
+  ctx: CallContext,
+  op: CompleteOperation<unknown, T, RoutingConfig>,
+  input: unknown,
+  opts: { retries: number; retryDelayMs: number },
+): Promise<T> {
+  let lastErr: Error | undefined;
+  for (let i = 0; i <= opts.retries; i++) {
+    try {
+      return await callOp(ctx, op as Operation<unknown, T, RoutingConfig>, input as unknown);
+    } catch (err) {
+      lastErr = err as Error;
+      if (i < opts.retries) {
+        const logger = getSafeLogger();
+        logger?.warn(
+          "routing",
+          `LLM call failed (attempt ${i + 1}/${opts.retries + 1}), retrying in ${opts.retryDelayMs}ms`,
+          {
+            error: lastErr.message,
+          },
+        );
+        await Bun.sleep(opts.retryDelayMs);
+      }
+    }
+  }
+  throw lastErr ?? new Error("classifyWithRetry: unknown failure");
+}
+
+// ---------------------------------------------------------------------------
 // resolveRouting — main entry point
 // ---------------------------------------------------------------------------
 
@@ -187,16 +225,85 @@ export async function resolveRouting(
   }
 
   // 2. LLM fallback (if configured)
-  if (config.routing.strategy === "llm" && agentManager) {
-    try {
-      const { classifyWithLlm } = await import("./strategies/llm");
-      const decision = await classifyWithLlm(story, config, agentManager, dispatchContext.runtime.workdir);
-      if (decision !== null) return decision;
-    } catch (err) {
-      logger?.warn("routing", "LLM routing failed, falling back to keyword", {
-        storyId: story.id,
-        error: (err as Error).message,
-      });
+  if (config.routing.strategy === "llm" && dispatchContext.runtime) {
+    const llmConfig = config.routing.llm;
+    if (llmConfig) {
+      try {
+        const mode = llmConfig.mode ?? "hybrid";
+
+        // Cache hit: return cached decision with fresh testStrategy
+        if (llmConfig.cacheDecisions && cachedDecisions.has(story.id)) {
+          const cached = cachedDecisions.get(story.id);
+          if (cached) {
+            const tddStrategy = config.tdd?.strategy ?? "auto";
+            const freshTestStrategy = determineTestStrategy(
+              cached.complexity,
+              story.title,
+              story.description,
+              story.tags,
+              tddStrategy,
+            );
+            logger?.debug("routing", "LLM cache hit", {
+              storyId: story.id,
+              complexity: cached.complexity,
+              modelTier: cached.modelTier,
+              testStrategy: freshTestStrategy,
+            });
+            return { ...cached, testStrategy: freshTestStrategy };
+          }
+        }
+
+        // One-shot mode: cache miss → defer to keyword (return null to fall through)
+        if (mode === "one-shot") {
+          logger?.info("routing", "One-shot mode cache miss, falling back to keyword", { storyId: story.id });
+        } else {
+          const runtime = dispatchContext.runtime;
+          const ctx: CallContext = {
+            runtime,
+            packageView: runtime.packages.repo(),
+            packageDir: runtime.workdir,
+            agentName: resolveDefaultAgent(runtime.configLoader.current()),
+            storyId: story.id,
+          };
+          const retries = llmConfig.retries ?? 1;
+          const retryDelayMs = llmConfig.retryDelayMs ?? 1000;
+          const decision = await classifyWithRetry(
+            ctx,
+            classifyRouteOp as CompleteOperation<unknown, RoutingDecision, RoutingConfig>,
+            {
+              title: story.title,
+              description: story.description,
+              acceptanceCriteria: story.acceptanceCriteria,
+              tags: story.tags,
+            },
+            { retries, retryDelayMs },
+          );
+
+          if (llmConfig.cacheDecisions) {
+            if (cachedDecisions.size >= MAX_CACHE_SIZE) evictOldest();
+            cachedDecisions.set(story.id, decision);
+          }
+
+          logger?.info("routing", "LLM classified story", {
+            storyId: story.id,
+            complexity: decision.complexity,
+            modelTier: decision.modelTier,
+            testStrategy: decision.testStrategy,
+            reasoning: decision.reasoning,
+          });
+
+          return decision;
+        }
+      } catch (err) {
+        if (llmConfig.fallbackToKeywords) {
+          logger?.warn("routing", "LLM routing failed, falling back to keyword", {
+            storyId: story.id,
+            error: (err as Error).message,
+          });
+        } else {
+          throw err;
+        }
+      }
     }
   }
 
@@ -279,14 +386,15 @@ export function routeTask(
  */
 export const _tryLlmBatchRouteDeps = {
   agentManager: undefined as IAgentManager | undefined,
+  runtime: undefined as NaxRuntime | undefined,
 };
 
 export async function tryLlmBatchRoute(
   config: LlmRoutingConfig,
   stories: UserStory[],
   label = "routing",
-  _deps = _tryLlmBatchRouteDeps,
-  workdir = "",
+  _deps: Partial<typeof _tryLlmBatchRouteDeps> = _tryLlmBatchRouteDeps,
+  _workdir = "",
 ): Promise<void> {
   const mode = config.routing.llm?.mode ?? "hybrid";
   if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
@@ -295,8 +403,11 @@ export async function tryLlmBatchRoute(
   const needsRouting = stories.filter((s) => !(s.routing?.complexity && s.routing?.testStrategy));
   if (needsRouting.length === 0) return;
 
-  const agentManager = _deps.agentManager;
-  if (!agentManager) return;
+  const runtime = _deps.runtime ?? null;
+  if (!runtime) return;
+
+  const llmConfig = config.routing.llm;
+  if (!llmConfig) return;
 
   const logger = getSafeLogger();
   try {
@@ -305,8 +416,30 @@ export async function tryLlmBatchRoute(
       skipped: stories.length - needsRouting.length,
       mode,
     });
-    const { routeBatch } = await import("./strategies/llm");
-    await routeBatch(needsRouting, { config, agentManager, workdir });
+
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: runtime.workdir,
+      agentName: resolveDefaultAgent(runtime.configLoader.current()),
+    };
+    const retries = llmConfig.retries ?? 1;
+    const retryDelayMs = llmConfig.retryDelayMs ?? 1000;
+
+    const decisions = await classifyWithRetry(
+      ctx,
+      classifyRouteBatchOp as CompleteOperation<unknown, Map<string, RoutingDecision>, RoutingConfig>,
+      needsRouting,
+      { retries, retryDelayMs },
+    );
+
+    if (llmConfig.cacheDecisions) {
+      for (const [storyId, decision] of decisions.entries()) {
+        if (cachedDecisions.size >= MAX_CACHE_SIZE) evictOldest();
+        cachedDecisions.set(storyId, decision);
+      }
+    }
+
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {

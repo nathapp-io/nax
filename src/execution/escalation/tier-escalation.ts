@@ -178,6 +178,7 @@ export async function preIterationTierCheck(
     if (routingMode === "hybrid") {
       await tryLlmBatchRoute(config, [story], "hybrid-re-route", {
         agentManager: undefined,
+        runtime: undefined,
       });
     }
 
@@ -242,6 +243,8 @@ export interface EscalationHandlerContext {
   attemptCost?: number;
   /** Per-run AgentManager — threaded for LLM batch re-routing after escalation */
   agentManager: import("../../agents").IAgentManager;
+  /** NaxRuntime — threaded for callOp-based LLM batch re-routing after escalation */
+  runtime?: import("../../runtime").NaxRuntime;
 }
 
 export interface EscalationHandlerResult {
@@ -406,6 +409,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   if (routingMode === "hybrid") {
     await tryLlmBatchRoute(ctx.config, storiesToEscalate, "hybrid-re-route-pipeline", {
       agentManager: ctx.agentManager,
+      runtime: ctx.runtime,
     });
   }
 
