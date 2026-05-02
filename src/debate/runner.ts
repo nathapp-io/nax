@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG } from "../config";
 import { debateConfigSelector } from "../config";
-import type { CompleteConfig, DebateConfig } from "../config/selectors";
+import type { NaxConfig } from "../config";
+import type { DebateConfig } from "../config/selectors";
 import { callOp } from "../operations/call";
 import { debateProposeOp } from "../operations/debate-propose";
 import { debateRebutOp } from "../operations/debate-rebut";
@@ -43,7 +44,7 @@ export class DebateRunner {
   private readonly stageConfig: DebateStageConfig;
   private readonly config: DebateConfig;
   /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
-  private readonly completeConfig: CompleteConfig | undefined;
+  private readonly completeConfig: NaxConfig | undefined;
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
@@ -57,9 +58,9 @@ export class DebateRunner {
     this.stageConfig = opts.stageConfig;
     this.config = opts.config ?? debateConfigSelector.select(DEFAULT_CONFIG);
     // TODO(#853 Phase 2): remove with the CompleteOptions.config field. Until then,
-    // callers that pass a DebateConfig slice may not have CompleteConfig keys —
+    // callers that pass a DebateConfig slice may not have NaxConfig keys —
     // completeConfig stays optional and downstream guards on undefined.
-    this.completeConfig = opts.config as CompleteConfig | undefined;
+    this.completeConfig = opts.config as NaxConfig | undefined;
     this.workdir = opts.workdir ?? opts.ctx.packageDir;
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;

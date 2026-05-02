@@ -8,10 +8,12 @@
  */
 
 import type { IAgentManager } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import { estimateCostByDuration } from "../agents/cost";
 import type { SessionHandle } from "../agents/types";
 import type { NaxConfig } from "../config";
-import { resolveModelForAgent } from "../config";
+import { resolveConfiguredModel, resolveModelForAgent } from "../config";
+import type { ModelDef } from "../config/schema";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { getSafeLogger } from "../logger";
@@ -109,13 +111,31 @@ async function _defaultRunDebate(
   }
 
   const timeoutMs = (config.execution?.sessionTimeoutSeconds ?? 600) * 1000;
+  const defaultAgentName = resolveDefaultAgent(config);
+
+  // Pre-resolve ModelDef per debater so the adapter receives a concrete model string.
+  const resolvedDebaters = resolved.map(({ debater, agentName }) => {
+    let modelDef: ModelDef;
+    try {
+      modelDef = resolveConfiguredModel(
+        config.models,
+        agentName,
+        debater.model ?? "balanced",
+        defaultAgentName,
+      ).modelDef;
+    } catch {
+      modelDef = { provider: "unknown", model: debater.model ?? "default" } as ModelDef;
+    }
+    return { debater, agentName, modelDef };
+  });
+
   const startMs = Date.now();
   const proposalSettled = await Promise.allSettled(
-    resolved.map(({ debater, agentName }) =>
+    resolvedDebaters.map(({ agentName, modelDef }) =>
       manager
         .completeAs(agentName, prompt, {
-          model: debater.model,
-          config,
+          modelDef,
+          workdir: "",
           storyId,
           sessionRole: "debate-proposal",
           timeoutMs,

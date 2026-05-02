@@ -4,9 +4,9 @@
  * runHybrid() implementation for DebateRunner.
  */
 
-import type { CompleteConfig, DebateConfig } from "@/config/selectors";
+import type { DebateConfig } from "@/config/selectors";
 import { resolveDefaultAgent } from "../agents";
-import type { ConfiguredModel } from "../config";
+import type { ConfiguredModel, NaxConfig } from "../config";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -39,7 +39,7 @@ export interface HybridCtx extends DispatchContext {
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
   /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
-  readonly completeConfig?: CompleteConfig;
+  readonly completeConfig?: NaxConfig;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
