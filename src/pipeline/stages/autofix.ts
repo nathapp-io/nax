@@ -26,7 +26,8 @@ import type { ReviewCheckResult } from "../../review/types";
 import { captureGitRef } from "../../utils/git";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
-import { runTestWriterRectification, splitFindingsByScope } from "./autofix-adversarial";
+import { splitFindingsByScope } from "./autofix-scope-split";
+import { runTestWriterRectification } from "./autofix-test-writer";
 
 export const autofixStage: PipelineStage = {
   name: "autofix",

@@ -17,7 +17,7 @@ import { buildProgressivePromptPreamble, runRetryLoop } from "../../verification
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext } from "../types";
 import { _autofixDeps } from "./autofix";
-import { splitFindingsByScope } from "./autofix-adversarial";
+import { splitFindingsByScope } from "./autofix-scope-split";
 
 /** Failure snapshot for the autofix retry loop. */
 interface AutofixFailure {
