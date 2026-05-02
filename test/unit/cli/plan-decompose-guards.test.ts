@@ -138,7 +138,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
       makeMockAgentManager({
         completeAsFn: async (_name: string, prompt: string) => {
           capturedCompleteArgs.push(prompt);
-          return { output: JSON.stringify(stories.map(toDecomposedStory)), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(stories.map(toDecomposedStory)), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     );
@@ -267,7 +267,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
       makeMockAgentManager({
         completeAsFn: async (_name: string, _prompt: string, opts?: any) => {
           capturedDecomposeOpts.push(opts ?? {});
-          return { output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     );

@@ -62,7 +62,7 @@ class MockAgentAdapter implements AgentAdapter {
     return { stories: [] };
   }
   async complete(_prompt: string): Promise<import("../../../src/agents/types").CompleteResult> {
-    return { output: "", costUsd: 0, source: "exact" };
+    return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
   }
 }
 

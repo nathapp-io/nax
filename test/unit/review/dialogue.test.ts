@@ -96,7 +96,7 @@ function makeAgentManager(runAsSessionFn?: RunAsSessionFnType): IAgentManager {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
     runAsSessionFn: effectiveFn,
-    completeFn: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    completeFn: async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
   });
 }
 

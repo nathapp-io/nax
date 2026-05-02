@@ -55,7 +55,7 @@ function agentReturning(tokens: Array<AgentResult["tokenUsage"] | undefined>) {
     },
     isInstalled: mock(async () => true),
     buildCommand: mock(() => [] as string[]),
-    complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
+    complete: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 })),
     plan: mock(async () => ({ specContent: "" })),
     decompose: mock(async () => ({ stories: [] })),
     closePhysicalSession: mock(async () => {}),

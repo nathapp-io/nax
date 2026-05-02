@@ -379,7 +379,7 @@ export class AgentManager implements IAgentManager {
         if (!adapter) {
           _finalStatus = "error";
           return {
-            result: { output: "", costUsd: 0, source: "fallback" },
+            result: { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
             fallbacks,
           };
         }
@@ -397,8 +397,8 @@ export class AgentManager implements IAgentManager {
         } catch (err) {
           result = {
             output: "",
-            costUsd: 0,
-            source: "fallback",
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
             adapterFailure: {
               category: "quality",
               outcome: "fail-unknown",
@@ -408,7 +408,7 @@ export class AgentManager implements IAgentManager {
           };
         }
 
-        _totalCostUsd += result.costUsd ?? 0;
+        _totalCostUsd += result.estimatedCostUsd;
 
         if (!result.adapterFailure) {
           _finalStatus = "ok";
@@ -439,7 +439,7 @@ export class AgentManager implements IAgentManager {
           outcome: result.adapterFailure.outcome,
           category: result.adapterFailure.category,
           timestamp: new Date().toISOString(),
-          costUsd: result.costUsd ?? 0,
+          costUsd: result.estimatedCostUsd,
         };
         fallbacks.push(hop);
         this._emitter.emit("onSwapAttempt", hop);
@@ -606,7 +606,9 @@ export class AgentManager implements IAgentManager {
         featureName: options.featureName,
         workdir: options.workdir,
         resolvedPermissions,
-        exactCostUsd: outcome.result.source === "exact" ? outcome.result.costUsd : undefined,
+        tokenUsage: outcome.result.tokenUsage,
+        estimatedCostUsd: outcome.result.estimatedCostUsd,
+        exactCostUsd: outcome.result.exactCostUsd,
         durationMs: Date.now() - start,
         timestamp: Date.now(),
       };

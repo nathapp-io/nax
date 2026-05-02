@@ -36,8 +36,7 @@ function makeRegistry(
       return {
         complete: mock(async () => ({
           output: r.output,
-          costUsd: 0.01,
-          source: "exact" as const,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, exactCostUsd: 0.01,
           adapterFailure: r.failure,
         })),
       };
@@ -52,7 +51,7 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
       getAgent: () => ({
         complete: mock(async (_prompt: string, opts: CompleteOptions) => {
           capturedOptions = opts;
-          return { output: "ok", costUsd: 0, source: "exact" as const };
+          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         }),
       }),
     } as unknown as AgentRegistry;
@@ -87,7 +86,7 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
       getAgent: () => ({
         complete: mock(async (_prompt: string, opts: CompleteOptions) => {
           capturedOptions = opts;
-          return { output: "ok", costUsd: 0, source: "exact" as const };
+          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         }),
       }),
     } as unknown as AgentRegistry;
@@ -148,7 +147,7 @@ describe("AgentManager.completeAs — promptRetries flows from config, not optio
       getAgent: () => ({
         complete: mock(async (_prompt: string, opts: CompleteOptions) => {
           capturedOptions = opts;
-          return { output: "ok", costUsd: 0, source: "exact" as const };
+          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         }),
       }),
     } as unknown as AgentRegistry;

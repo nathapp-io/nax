@@ -235,7 +235,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(
         undefined,
-        async (_name: string, _prompt: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const }),
+        async (_name: string, _prompt: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
       ),
     );
     _planDeps.createDebateRunner = origCreateDebateSession;
@@ -316,7 +316,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(
         undefined,
-        async (_name: string, _prompt: string, _opts: any) => { adapterComplete(); return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const }; },
+        async (_name: string, _prompt: string, _opts: any) => { adapterComplete(); return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }; },
       ),
     );
 
@@ -354,7 +354,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
         completeCalls.push("called");
-        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
     );
     _planDeps.existsSync = mock(() => true);
@@ -380,7 +380,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
         completeCalls.push("called");
-        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
     );
     _planDeps.existsSync = mock(() => true);
@@ -406,7 +406,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
         completeCalls.push("called");
-        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
     );
     _planDeps.existsSync = mock(() => true);

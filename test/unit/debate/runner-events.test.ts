@@ -212,7 +212,7 @@ describe("DebateRunner.run() — JSONL log events", () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async (agentName, _prompt, opts) => {
         completeCalls.push({ agent: agentName, model: opts?.model });
-        return { output: `output from ${agentName}`, costUsd: 0, source: "fallback" as const };
+        return { output: `output from ${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 

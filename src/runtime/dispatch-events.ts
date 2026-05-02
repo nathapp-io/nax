@@ -24,6 +24,7 @@ export interface DispatchEventBase {
   readonly projectDir?: string;
   readonly resolvedPermissions: ResolvedPermissions;
   readonly tokenUsage?: TokenUsage;
+  readonly estimatedCostUsd?: number;
   readonly exactCostUsd?: number;
   readonly durationMs: number;
   readonly timestamp: number;

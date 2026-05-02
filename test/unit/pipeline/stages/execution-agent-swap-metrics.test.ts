@@ -83,12 +83,12 @@ function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager
         ...outcome,
       };
     },
-    completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
+    completeWithFallback: async () => ({ result: { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }, fallbacks: [] }),
     run: async (req) => {
       const o = await mgr.runWithFallback(req);
       return { ...o.result, agentFallbacks: o.fallbacks };
     },
-    complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    complete: async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     getAgent: () => undefined,
   };
   return mgr;

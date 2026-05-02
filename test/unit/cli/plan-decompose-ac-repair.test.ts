@@ -26,9 +26,9 @@ function makeMockDecomposeManager(
     completeAsFn: decomposeFn
       ? async (name: string, _prompt: string, opts?: any) => {
           const result = await decomposeFn(name, opts ?? {});
-          return { output: JSON.stringify(result.stories), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(result.stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         }
-      : async () => ({ output: JSON.stringify([]), costUsd: 0, source: "exact" as const }),
+      : async () => ({ output: JSON.stringify([]), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
   });
 }
 
@@ -280,7 +280,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
           const stories = callCount === 1
             ? [makeOversizedSubStory("US-001-A", 6)]
             : [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")];
-          return { output: JSON.stringify(stories), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     ) as unknown as typeof _planDeps.createRuntime;

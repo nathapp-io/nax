@@ -16,8 +16,8 @@ const DEFAULT_RESULT = {
 
 const DEFAULT_COMPLETE_RESULT: CompleteResult = {
   output: "",
-  costUsd: 0,
-  source: "primary" as const,
+  tokenUsage: { inputTokens: 0, outputTokens: 0 },
+  estimatedCostUsd: 0,
 };
 
 export interface MockAgentManagerOptions {
@@ -39,7 +39,7 @@ export interface MockAgentManagerOptions {
  * Example:
  * ```ts
  * const manager = makeMockAgentManager({
- *   completeFn: async (_, __, opts) => ({ output: "stubbed", costUsd: 0, source: "primary" }),
+ *   completeFn: async (_, __, opts) => ({ output: "stubbed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
  * });
  * ```
  */
@@ -58,7 +58,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
 
   const completeFn = opts.completeFn
     ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!("claude", prompt, completeOpts))
-    : mock(() => Promise.resolve({ output: "", costUsd: 0, source: "primary" as const }));
+    : mock(() => Promise.resolve({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 } satisfies CompleteResult));
 
   return {
     getDefault: () => opts.getDefaultAgent ?? "claude",
@@ -92,7 +92,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
       ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) => opts.completeAsFn!(name, prompt, completeOpts))
       : opts.completeFn
         ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!(name, prompt, completeOpts))
-        : mock((name: string, _p: string, _o?: CompleteOptions) => Promise.resolve({ output: `output from ${name}`, costUsd: 0, source: "primary" as const })),
+        : mock((name: string, _p: string, _o?: CompleteOptions) => Promise.resolve({ output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 } satisfies CompleteResult)),
     runAsSession: opts.runAsSessionFn
       ? mock((agentName: string, handle: SessionHandle, prompt: string, sessionOpts: RunAsSessionOpts) =>
           opts.runAsSessionFn!(agentName, handle, prompt, sessionOpts),
@@ -101,6 +101,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
           Promise.resolve({
             output: "",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
             internalRoundTrips: 0,
           } satisfies TurnResult),
         ),

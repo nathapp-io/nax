@@ -5,10 +5,10 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
   const offDispatch = bus.onDispatch((event: DispatchEvent) => {
     const tu = event.tokenUsage;
     const exactCostUsd = event.exactCostUsd;
+    const estimatedCostUsd = event.estimatedCostUsd ?? exactCostUsd ?? 0;
 
-    if (!tu && exactCostUsd == null) return;
+    if (!tu && exactCostUsd == null && estimatedCostUsd === 0) return;
 
-    const estimatedCostUsd = exactCostUsd ?? 0;
     const costUsd = exactCostUsd ?? estimatedCostUsd;
     const confidence: "exact" | "estimated" = exactCostUsd != null ? "exact" : "estimated";
 

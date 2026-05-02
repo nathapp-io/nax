@@ -105,7 +105,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
         capturedPrompts.push(prompt);
-        return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
     );
   });
@@ -268,7 +268,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
         capturedPrompts.push(prompt);
-        return { output: JSON.stringify(minimalPrd), costUsd: 0, source: "exact" as const };
+        return { output: JSON.stringify(minimalPrd), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
     );
   });

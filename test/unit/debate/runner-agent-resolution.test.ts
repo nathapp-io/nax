@@ -101,7 +101,7 @@ describe("DebateRunner.run() — agent resolution", () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async (agentName, _prompt, _opts) => {
         completeCalls.push({ agent: agentName });
-        return { output: `{"passed": true}`, costUsd: 0, source: "fallback" as const };
+        return { output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -134,7 +134,7 @@ describe("DebateRunner.run() — agent resolution", () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async (_name, prompt) => {
         receivedPrompts.push(prompt);
-        return { output: `{"passed": true}`, costUsd: 0, source: "fallback" as const };
+        return { output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -165,7 +165,7 @@ describe("DebateRunner.run() — parallel execution", () => {
       completeAsFn: async (name) => {
         startTimes.push(Date.now());
         await new Promise<void>((resolve) => resolvers.push(resolve));
-        return { output: `output from ${name}`, costUsd: 0, source: "fallback" as const };
+        return { output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -193,7 +193,7 @@ describe("DebateRunner.run() — parallel execution", () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async (name) => {
         if (name === "failing") throw new Error("agent error");
-        return { output: `{"passed": true}`, costUsd: 0, source: "fallback" as const };
+        return { output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -222,7 +222,7 @@ describe("DebateRunner.run() — unavailable agent handling", () => {
       unavailableAgents: new Set(["missing-agent"]),
       completeAsFn: async (name) => {
         completeCalls.push(name);
-        return { output: `{"passed": true}`, costUsd: 0, source: "fallback" as const };
+        return { output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -283,7 +283,7 @@ describe("DebateRunner.run() — unavailable agent handling", () => {
       unavailableAgents: new Set(["null-agent"]),
       completeAsFn: async (name) => {
         completeCalls.push(name);
-        return { output: `{"passed": true}`, costUsd: 0, source: "fallback" as const };
+        return { output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -309,7 +309,7 @@ describe("DebateRunner.run() — single-agent fallback", () => {
   test("returns the one successful proposal when only 1 debater succeeds", async () => {
     const agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing-1", "missing-2"]),
-      completeAsFn: async () => ({ output: "the single successful proposal", costUsd: 0, source: "fallback" as const }),
+      completeAsFn: async () => ({ output: "the single successful proposal", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     });
 
     const runner = new DebateRunner({

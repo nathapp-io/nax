@@ -207,33 +207,25 @@ export class AcpAgentAdapter implements AgentAdapter {
           throw new CompleteError("complete() returned empty output");
         }
 
-        if (response.exactCostUsd !== undefined) {
+        const tokenUsage = response.cumulative_token_usage
+          ? this._mapper.toInternal(response.cumulative_token_usage)
+          : { inputTokens: 0, outputTokens: 0 };
+        const estimatedCostUsd =
+          tokenUsage.inputTokens > 0 ? estimateCostFromTokenUsage(tokenUsage, _options.modelDef.model) : 0;
+        const exactCostUsd = response.exactCostUsd;
+
+        if (exactCostUsd !== undefined) {
           getSafeLogger()?.info("acp-adapter", "complete() cost", {
-            costUsd: response.exactCostUsd,
+            costUsd: exactCostUsd,
             model: _options.modelDef.model,
           });
-          return {
-            output: unwrapped,
-            costUsd: response.exactCostUsd,
-            source: "exact",
-          };
-        }
-
-        if (response.cumulative_token_usage) {
-          return {
-            output: unwrapped,
-            costUsd: estimateCostFromTokenUsage(
-              this._mapper.toInternal(response.cumulative_token_usage),
-              _options.modelDef.model,
-            ),
-            source: "estimated",
-          };
         }
 
         return {
           output: unwrapped,
-          costUsd: 0,
-          source: "fallback",
+          tokenUsage,
+          estimatedCostUsd,
+          exactCostUsd,
         };
       } finally {
         if (session) {
@@ -255,8 +247,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (parsed.type === "auth") {
         return {
           output: error.message,
-          costUsd: 0,
-          source: "fallback",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           adapterFailure: {
             category: "availability",
             outcome: "fail-auth",
@@ -268,8 +260,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (parsed.type === "rate-limit") {
         return {
           output: error.message,
-          costUsd: 0,
-          source: "fallback",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           adapterFailure: {
             category: "availability",
             outcome: "fail-rate-limit",
@@ -282,8 +274,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (parsed.type === "model-not-available") {
         return {
           output: error.message,
-          costUsd: 0,
-          source: "fallback",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           adapterFailure: {
             category: "quality",
             outcome: "fail-adapter-error",

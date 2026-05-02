@@ -509,7 +509,7 @@ describe("DebateRunner.runPlan()", () => {
     const agentManager = makeMockAgentManager({
       completeFn: async (_agentName, prompt) => {
         capturedSynthesisPrompt = prompt;
-        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+        return { output: '{"userStories":[]}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -558,7 +558,7 @@ describe("DebateRunner.runPlan()", () => {
     const agentManager = makeMockAgentManager({
       completeFn: async (_agentName, prompt) => {
         capturedSynthesisPrompt = prompt;
-        return { output: '{"userStories":[]}', costUsd: 0, source: "fallback" as const };
+        return { output: '{"userStories":[]}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
