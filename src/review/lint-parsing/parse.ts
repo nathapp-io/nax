@@ -21,16 +21,15 @@ function toolForFormat(format: LintParserFormat): "biome" | "eslint" | "text" {
 export function parseLintOutput(
   output: string,
   format: LintOutputFormat = "auto",
-  opts?: { workdir?: string; cwd?: string },
+  opts?: { workdir: string; cwd: string },
 ): LintParseResult | null {
   if (!output.trim()) return null;
-  const { workdir, cwd } = opts ?? {};
   for (const strategy of strategiesFor(format)) {
     const parsed = strategy.parse(output);
     if (parsed && parsed.diagnostics.length > 0) {
-      if (workdir && cwd) {
+      if (opts) {
         const tool = toolForFormat(parsed.format);
-        const findings = parsed.diagnostics.map((d) => lintDiagnosticToFinding(d, workdir, cwd, tool));
+        const findings = parsed.diagnostics.map((d) => lintDiagnosticToFinding(d, opts.workdir, opts.cwd, tool));
         return { ...parsed, findings };
       }
       return parsed;

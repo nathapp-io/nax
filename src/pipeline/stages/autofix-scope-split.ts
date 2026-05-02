@@ -119,9 +119,11 @@ function splitFindingsByFixTarget(
   const testDiagnostics: LintDiagnostic[] = [];
   const sourceDiagnostics: LintDiagnostic[] = [];
   for (let i = 0; i < findings.length; i++) {
+    const diagnostic = diagnostics[i];
+    if (!diagnostic) continue; // invariant: findings and diagnostics are co-produced by parseLintOutput
     const f = findings[i];
     const target = f.fixTarget ?? deriveFixTarget(f.file, testFilePatterns);
-    (target === "test" ? testDiagnostics : sourceDiagnostics).push(diagnostics[i]);
+    (target === "test" ? testDiagnostics : sourceDiagnostics).push(diagnostic);
   }
   return { testDiagnostics, sourceDiagnostics };
 }
