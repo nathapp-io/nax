@@ -6,7 +6,6 @@
  */
 
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
-import { extractTestCode, generateSkeletonTests } from "./generator-helpers";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
   resolveAcceptanceTestFile as defaultResolveAcceptanceTestFile,
