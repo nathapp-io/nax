@@ -194,6 +194,11 @@ export interface QualityConfig {
     /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
     format?: "auto" | "eslint-json" | "biome-json" | "text" | "none";
   };
+  /** Typecheck output parsing preferences for scope-aware rectification splitting. */
+  typecheckOutput?: {
+    /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
+    format?: "auto" | "tsc" | "text" | "none";
+  };
   /** Auto-fix configuration (Phase 2) */
   autofix?: {
     /** Whether to auto-fix lint/format errors before escalating (default: true) */

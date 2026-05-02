@@ -12,7 +12,9 @@
 import { describe, expect, mock, test, afterEach } from "bun:test";
 import {
   extractFilesFromLintOutput,
+  extractFilesFromTypecheckOutput,
   filterLintOutputToFiles,
+  filterTypecheckOutputToFiles,
   splitFindingsByScope,
   runTestWriterRectification,
 } from "../../../../src/pipeline/stages/autofix-adversarial";
@@ -58,6 +60,17 @@ function makeLintCheck(output: string): ReviewCheckResult {
     check: "lint",
     success: false,
     command: "biome",
+    exitCode: 1,
+    output,
+    durationMs: 10,
+  };
+}
+
+function makeTypecheckCheck(output: string): ReviewCheckResult {
+  return {
+    check: "typecheck",
+    success: false,
+    command: "tsc --noEmit",
     exitCode: 1,
     output,
     durationMs: 10,
@@ -199,18 +212,52 @@ test/unit/service.test.ts:5:1 lint/error message
   });
 });
 
+describe("extractFilesFromTypecheckOutput", () => {
+  test("empty string → empty array", () => {
+    expect(extractFilesFromTypecheckOutput("")).toEqual([]);
+  });
+
+  test("unparseable output → empty array", () => {
+    const output = "Typecheck failed\nPlease fix errors";
+    expect(extractFilesFromTypecheckOutput(output)).toEqual([]);
+  });
+
+  test("tsc compact output extracts source + test files", () => {
+    const output = `
+src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.
+test/unit/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
+`.trim();
+    expect(extractFilesFromTypecheckOutput(output)).toEqual(["src/service.ts", "test/unit/service.test.ts"]);
+  });
+
+  test("tsc pretty output extracts file path", () => {
+    const output = `
+src/service.ts:10:3 - error TS2322: Type 'A' is not assignable to type 'B'.
+
+10 const x: B = value;
+         ~
+`.trim();
+    expect(extractFilesFromTypecheckOutput(output)).toEqual(["src/service.ts"]);
+  });
+
+  test("tsc pretty output extracts Windows drive-letter paths", () => {
+    const output = "C:\\repo\\src\\service.ts:10:3 - error TS2322: Type 'A' is not assignable to type 'B'.";
+    expect(extractFilesFromTypecheckOutput(output)).toEqual(["C:\\repo\\src\\service.ts"]);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // splitFindingsByScope — structured findings path (adversarial checks)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("splitFindingsByScope — structured findings path", () => {
-  test("non-LLM check (typecheck) → both buckets null", () => {
+  test("non-routable check (build) → both buckets null", () => {
     const check: ReviewCheckResult = {
-      check: "typecheck",
+      check: "build",
       success: false,
-      command: "tsc",
+      command: "bun run build",
       exitCode: 1,
-      output: "type error",
+      output: "build failed",
       durationMs: 10,
     };
     const { testFindings, sourceFindings } = splitFindingsByScope(check);
@@ -507,6 +554,69 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
   });
 });
 
+describe("splitFindingsByScope — typecheck output path", () => {
+  test("typecheck check with empty output → both buckets null", () => {
+    const check = makeTypecheckCheck("");
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).toBeNull();
+  });
+
+  test("typecheck check with unparseable output → conservative: sourceFindings non-null, testFindings null", () => {
+    const check = makeTypecheckCheck("Typecheck failed with unknown format");
+    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).not.toBeNull();
+  });
+
+  test("all test-file diagnostics → testFindings non-null, sourceFindings null", () => {
+    const output = `
+src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
+test/unit/foo.test.ts(2,1): error TS2552: Cannot find name 'describe'.
+`.trim();
+    const check = makeTypecheckCheck(output);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check, undefined, "auto", "tsc");
+    expect(testFindings).not.toBeNull();
+    expect(sourceFindings).toBeNull();
+  });
+
+  test("all source diagnostics → sourceFindings non-null, testFindings null", () => {
+    const output = `
+src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.
+src/core.ts(1,1): error TS2304: Cannot find name 'foo'.
+`.trim();
+    const check = makeTypecheckCheck(output);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check, undefined, "auto", "tsc");
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).not.toBeNull();
+  });
+
+  test("mixed test/source diagnostics split into distinct outputs", () => {
+    const output = `
+src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.
+src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
+`.trim();
+    const check = makeTypecheckCheck(output);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check, undefined, "auto", "tsc");
+    expect(testFindings?.output).toContain("src/service.test.ts(5,1)");
+    expect(testFindings?.output).not.toContain("src/service.ts(10,3)");
+    expect(sourceFindings?.output).toContain("src/service.ts(10,3)");
+    expect(sourceFindings?.output).not.toContain("src/service.test.ts(5,1)");
+  });
+
+  test("typecheck parser can be disabled with format none", () => {
+    const output = `
+src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.
+src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
+`.trim();
+    const check = makeTypecheckCheck(output);
+    const { testFindings, sourceFindings } = splitFindingsByScope(check, undefined, "auto", "none");
+    expect(testFindings).toBeNull();
+    expect(sourceFindings).not.toBeNull();
+    expect(sourceFindings?.output).toBe(output);
+  });
+});
+
 describe("filterLintOutputToFiles", () => {
   test("filters block output to target file blocks only", () => {
     const output = `
@@ -543,6 +653,28 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
   test("returns null when target files are absent", () => {
     const output = "src/service.ts:10:3 lint/style/useConst";
     const filtered = filterLintOutputToFiles(output, new Set(["src/other.ts"]));
+    expect(filtered).toBeNull();
+  });
+});
+
+describe("filterTypecheckOutputToFiles", () => {
+  test("filters tsc blocks to target file only", () => {
+    const output = `
+src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.
+
+src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
+Found 2 errors in 2 files.
+`.trim();
+    const filtered = filterTypecheckOutputToFiles(output, new Set(["src/service.test.ts"]), "tsc");
+    expect(filtered).not.toBeNull();
+    expect(filtered).toContain("src/service.test.ts(5,1)");
+    expect(filtered).not.toContain("src/service.ts(10,3)");
+    expect(filtered).not.toContain("Found 2 errors in 2 files.");
+  });
+
+  test("returns null when target files are absent", () => {
+    const output = "src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.";
+    const filtered = filterTypecheckOutputToFiles(output, new Set(["src/other.ts"]), "tsc");
     expect(filtered).toBeNull();
   });
 });
