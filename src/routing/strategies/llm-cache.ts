@@ -6,7 +6,7 @@
  * LLM strategy dependencies (IAgentManager, Bun.spawn, etc.).
  */
 
-import type { RoutingDecision } from "../router";
+import type { RoutingDecision } from "../decision";
 
 /** Module-level cache for routing decisions (PERF-1 fix: max 100 entries LRU) */
 export const cachedDecisions = new Map<string, RoutingDecision>();

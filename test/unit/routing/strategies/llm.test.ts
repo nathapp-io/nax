@@ -35,21 +35,6 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function makeStory(id = "TEST-001") {
-  return {
-    id,
-    title: "Test story",
-    description: "A test story for routing",
-    acceptanceCriteria: ["AC1"],
-    tags: [] as string[],
-    dependencies: [] as string[],
-    status: "pending" as const,
-    passes: false,
-    escalations: [] as never[],
-    attempts: 0,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------

@@ -123,7 +123,6 @@ export async function preIterationTierCheck(
 
   // Exceeded current tier budget — try to escalate
   const escalationResult = escalateTier(currentTier, tierOrder);
-  const nextTier = escalationResult?.tier ?? null;
   const nextAgent = escalationResult?.agent;
   const routingMode = config.routing.llm?.mode ?? "hybrid";
 
@@ -290,7 +289,6 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   }
 
   const escalationResult = escalateTier(ctx.routing.modelTier, ctx.config.autoMode.escalation.tierOrder);
-  const nextTier = escalationResult?.tier ?? null;
   const nextAgent = escalationResult?.agent;
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];

@@ -9,7 +9,7 @@
 import type { LlmRoutingConfig, RoutingConfig } from "@/config/selectors";
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
+import type { Complexity, ModelTier, NaxConfig, TddStrategy } from "../config";
 import { getSafeLogger } from "../logger";
 import { callOp } from "../operations";
 import { classifyRouteBatchOp, classifyRouteOp } from "../operations";
@@ -18,6 +18,8 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
 import type { NaxRuntime } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
+import type { RoutingDecision } from "./decision";
+export type { RoutingDecision } from "./decision";
 import { MAX_CACHE_SIZE, cachedDecisions, evictOldest } from "./strategies/llm-cache";
 
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
@@ -54,14 +56,6 @@ export interface RoutingStrategy {
 // ---------------------------------------------------------------------------
 // Routing decision
 // ---------------------------------------------------------------------------
-
-/** Routing decision for a story */
-export interface RoutingDecision {
-  complexity: Complexity;
-  modelTier: ModelTier;
-  testStrategy: TestStrategy;
-  reasoning: string;
-}
 
 // ---------------------------------------------------------------------------
 // Keyword lists (COMPLEX_KEYWORDS and EXPERT_KEYWORDS live in classify.ts)
@@ -190,7 +184,6 @@ export async function resolveRouting(
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
   const runtimeContext = dispatchContext as DispatchContext | undefined;
-  const agentManager = runtimeContext?.agentManager;
 
   // 0. PRD wins — if story already has routing values set (either manually by the user
   //    or persisted from a previous run), use them directly. This ensures retries use
