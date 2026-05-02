@@ -307,7 +307,6 @@ export async function resolveOutcome(
           modelTier: modelTierFromDebater(resolverDebater),
         };
       }
-      const resolverTier = resolvedResolverModel.modelTier ?? modelTierFromDebater(resolverDebater);
       const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
         agentManager: manager,
         agentName,
@@ -354,7 +353,6 @@ export async function resolveOutcome(
         modelTier: modelTierFromDebater(resolverDebater),
       };
     }
-    const resolverTier = resolvedResolverModel.modelTier ?? modelTierFromDebater(resolverDebater);
     const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
       agentManager: manager,
       defaultAgentName: RESOLVER_FALLBACK_AGENT,

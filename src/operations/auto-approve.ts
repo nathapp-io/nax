@@ -7,6 +7,7 @@
 
 import { interactionConfigSelector } from "../config";
 import type { InteractionConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import type { InteractionRequest } from "../interaction/types";
 import { OneShotPromptBuilder } from "../prompts";
 import type { SchemaDescriptor } from "../prompts";
@@ -95,11 +96,17 @@ export const autoApproveOp: CompleteOperation<AutoApproveInput, AutoApproveOutpu
     const parsed = parseLLMJson<AutoApproveDecision>(output);
 
     if (!parsed.action || parsed.confidence === undefined || !parsed.reasoning) {
-      throw new Error("Invalid LLM response for auto-approve: missing required fields");
+      throw new NaxError(
+        "Invalid LLM response for auto-approve: missing required fields",
+        "AUTO_APPROVE_PARSE_FAILED",
+        { stage: "run" },
+      );
     }
 
     if (parsed.confidence < 0 || parsed.confidence > 1) {
-      throw new Error(`Invalid confidence: ${parsed.confidence} (must be 0-1)`);
+      throw new NaxError(`Invalid confidence: ${parsed.confidence} (must be 0-1)`, "AUTO_APPROVE_PARSE_FAILED", {
+        stage: "run",
+      });
     }
 
     return parsed;

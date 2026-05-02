@@ -10,10 +10,12 @@ import type { IAgentManager } from "../../agents";
 import { resolveDefaultAgent } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
+import { NaxError } from "../../errors";
 import { autoApproveOp, callOp } from "../../operations";
 import type { CallContext } from "../../operations";
 import { OneShotPromptBuilder, type SchemaDescriptor } from "../../prompts";
 import type { NaxRuntime } from "../../runtime";
+import { parseLLMJson } from "../../utils/llm-json";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 const AUTO_APPROVER_SCHEMA: SchemaDescriptor = {
@@ -258,27 +260,18 @@ export class AutoInteractionPlugin implements InteractionPlugin {
    * Parse LLM response
    */
   private parseResponse(output: string): DecisionResponse {
-    let jsonText = output.trim();
+    const parsed = parseLLMJson<DecisionResponse>(output);
 
-    // Strip markdown code fences
-    if (jsonText.startsWith("```")) {
-      const lines = jsonText.split("\n");
-      jsonText = lines.slice(1, -1).join("\n").trim();
-    }
-    if (jsonText.startsWith("json")) {
-      jsonText = jsonText.slice(4).trim();
-    }
-
-    const parsed = JSON.parse(jsonText) as DecisionResponse;
-
-    // Validate
     if (!parsed.action || parsed.confidence === undefined || !parsed.reasoning) {
-      throw new Error(`Invalid LLM response: ${jsonText}`);
+      throw new NaxError("Invalid LLM response: missing required fields", "AUTO_APPROVE_PARSE_FAILED", {
+        stage: "run",
+      });
     }
 
-    // Validate confidence is 0-1
     if (parsed.confidence < 0 || parsed.confidence > 1) {
-      throw new Error(`Invalid confidence: ${parsed.confidence} (must be 0-1)`);
+      throw new NaxError(`Invalid confidence: ${parsed.confidence} (must be 0-1)`, "AUTO_APPROVE_PARSE_FAILED", {
+        stage: "run",
+      });
     }
 
     return parsed;
