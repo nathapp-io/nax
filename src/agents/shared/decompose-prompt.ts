@@ -165,7 +165,7 @@ async function buildPlanModePrompt(options: DecomposeOptions): Promise<string> {
   // biome-ignore lint/style/noNonNullAssertion: guarded by caller (options.targetStory is defined)
   const targetStory = options.targetStory!;
   const siblings = options.siblings ?? [];
-  const maxAcCount = options.config?.precheck?.storySizeGate?.maxAcCount ?? null;
+  const maxAcCount = options.maxAcCount ?? options.config?.precheck?.storySizeGate?.maxAcCount ?? null;
   const instructions = buildPlanModeInstructions(targetStory.id, maxAcCount);
 
   let builder = OneShotPromptBuilder.for("decomposer")

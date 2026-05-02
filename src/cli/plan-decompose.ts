@@ -96,6 +96,7 @@ export async function planDecomposeCommand(
           featureName: options.feature,
           storyId: options.storyId,
           config,
+          maxAcCount: config?.precheck?.storySizeGate?.maxAcCount,
         });
         const decompCallCtx = {
           runtime: rt,

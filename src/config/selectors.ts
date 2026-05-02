@@ -109,11 +109,6 @@ export const llmRoutingConfigSelector = pickSelector(
   "precheck",
 );
 
-// TODO(#853): workaround — narrows CompleteOptions.config from NaxConfig to the keys the
-// wiring layer actually reads. Phase 2 of #853 removes the field entirely by pre-resolving
-// at the AgentManager boundary; delete this selector when that lands.
-export const completeConfigSelector = pickSelector("complete", "execution", "agent", "models", "precheck");
-
 // Derived config-slice types — co-located with each selector so consumers
 // import the type instead of re-deriving `ReturnType<typeof xSelector.select>`
 // in every operation file.
@@ -139,4 +134,3 @@ export type ContextConfig = ReturnType<typeof contextConfigSelector.select>;
 export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfigSelector.select>;
 export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
 export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
-export type CompleteConfig = ReturnType<typeof completeConfigSelector.select>;

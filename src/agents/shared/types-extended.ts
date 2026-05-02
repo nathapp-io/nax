@@ -97,6 +97,8 @@ export interface DecomposeOptions {
   modelDef?: ModelDef;
   /** Global config — used to resolve models.balanced when modelDef is absent */
   config?: Partial<NaxConfig>;
+  /** Maximum acceptance criteria count for plan-mode gate (pre-resolved from config.precheck.storySizeGate.maxAcCount). */
+  maxAcCount?: number | null;
   /** Feature name for ACP session naming (decompose context) */
   featureName?: string;
   /** Story ID for ACP session naming (decompose context) */

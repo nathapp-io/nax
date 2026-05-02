@@ -70,7 +70,6 @@ export {
   contextToolRuntimeConfigSelector,
   promptLoaderConfigSelector,
   llmRoutingConfigSelector,
-  completeConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";

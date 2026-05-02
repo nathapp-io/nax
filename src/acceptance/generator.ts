@@ -183,8 +183,7 @@ export async function generateAcceptanceTests(
   try {
     // Call adapter to generate tests
     const completeResult = await agentManager.complete(prompt, {
-      model: options.modelDef.model,
-      config: options.config,
+      modelDef: options.modelDef,
       timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
       workdir: options.workdir,
       featureName: options.featureName,

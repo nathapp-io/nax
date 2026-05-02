@@ -247,8 +247,7 @@ export async function generateFixStories(
 
     try {
       const fixResult = await agentManager.complete(prompt, {
-        model: modelDef.model,
-        config: options.config,
+        modelDef,
         featureName: options.prd.feature,
         workdir: options.workdir,
         sessionRole: "fix-gen",
