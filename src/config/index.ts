@@ -31,6 +31,7 @@ export type {
   TestPatternConfig,
   ContextToolRuntimeConfig,
   PromptLoaderConfig,
+  LlmRoutingConfig,
 } from "./selectors";
 export {
   DEFAULT_CONFIG,
@@ -68,6 +69,7 @@ export {
   testPatternConfigSelector,
   contextToolRuntimeConfigSelector,
   promptLoaderConfigSelector,
+  llmRoutingConfigSelector,
   completeConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";

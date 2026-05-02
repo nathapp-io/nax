@@ -6,12 +6,14 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
+import type { LlmRoutingConfig, RoutingConfig } from "@/config/selectors";
 import type { IAgentManager } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
+
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy } from "./classify";
 import { classifyComplexity, determineTestStrategy } from "./classify";
@@ -22,7 +24,12 @@ import { classifyComplexity, determineTestStrategy } from "./classify";
 
 /** Context passed to plugin routing strategies */
 export interface RoutingContext extends DispatchContext {
-  /** Full configuration */
+  /**
+   * Full NaxConfig — intentionally not narrowed. RoutingContext is a public plugin
+   * boundary (IRoutingStrategy receives it); narrowing would break plugin authors
+   * that read keys outside "routing"|"autoMode"|"tdd". The router itself uses
+   * the narrowed RoutingConfig internally.
+   */
   config: NaxConfig;
   /** Optional codebase context summary */
   codebaseContext?: string;
@@ -88,7 +95,7 @@ const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
 // ---------------------------------------------------------------------------
 
 /** Map complexity to model tier */
-export function complexityToModelTier(complexity: Complexity, config: NaxConfig): ModelTier {
+export function complexityToModelTier(complexity: Complexity, config: RoutingConfig): ModelTier {
   const mapping = config.autoMode.complexityRouting;
   return (mapping[complexity] ?? "balanced") as ModelTier;
 }
@@ -97,7 +104,7 @@ export function complexityToModelTier(complexity: Complexity, config: NaxConfig)
 // Keyword fallback (internal)
 // ---------------------------------------------------------------------------
 
-function keywordRoute(story: UserStory, config: NaxConfig): RoutingDecision {
+function keywordRoute(story: UserStory, config: RoutingConfig): RoutingDecision {
   const { title, description, acceptanceCriteria, tags } = story;
   const tddStrategy: TddStrategy = config.tdd?.strategy ?? "auto";
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
@@ -165,7 +172,10 @@ export async function resolveRouting(
   if (plugins) {
     for (const pluginRouter of plugins.getRouters()) {
       try {
-        const decision = await pluginRouter.route(story, { ...runtimeContext, config } as RoutingContext);
+        const decision = await pluginRouter.route(story, {
+          ...runtimeContext,
+          config,
+        } as RoutingContext);
         if (decision !== null) return decision;
       } catch (err) {
         logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
@@ -224,7 +234,7 @@ export function routeTask(
   description: string,
   acceptanceCriteria: string[],
   tags: string[],
-  config: NaxConfig,
+  config: RoutingConfig,
 ): RoutingDecision {
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
   const modelTier = complexityToModelTier(complexity, config);
@@ -272,7 +282,7 @@ export const _tryLlmBatchRouteDeps = {
 };
 
 export async function tryLlmBatchRoute(
-  config: NaxConfig,
+  config: LlmRoutingConfig,
   stories: UserStory[],
   label = "routing",
   _deps = _tryLlmBatchRouteDeps,
