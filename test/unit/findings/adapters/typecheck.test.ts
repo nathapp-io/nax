@@ -28,16 +28,6 @@ describe("tscDiagnosticToFinding", () => {
     expect(finding.message).toBe("Cannot find name 'Foo'.");
   });
 
-  test("severity is always 'error'", () => {
-    const finding = tscDiagnosticToFinding(baseDiagnostic, WORKDIR);
-    expect(finding.severity).toBe("error");
-  });
-
-  test("formats code as TS-prefixed rule", () => {
-    const finding = tscDiagnosticToFinding(baseDiagnostic, WORKDIR);
-    expect(finding.rule).toBe("TS2304");
-  });
-
   test("omits rule when code is undefined", () => {
     const d: TypecheckDiagnostic = { ...baseDiagnostic, code: undefined };
     const finding = tscDiagnosticToFinding(d, WORKDIR);

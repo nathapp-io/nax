@@ -1,3 +1,4 @@
+import { NaxError } from "../../errors";
 import type { Finding } from "../../findings";
 import {
   type LintDiagnostic,
@@ -120,7 +121,18 @@ function splitFindingsByFixTarget<D>(
   const sourceDiagnostics: D[] = [];
   for (let i = 0; i < findings.length; i++) {
     const diagnostic = diagnostics[i];
-    if (!diagnostic) continue; // invariant: findings and diagnostics are co-produced by the parser
+    if (!diagnostic) {
+      throw new NaxError(
+        `findings and diagnostics arrays are not co-produced: length mismatch at index ${i}`,
+        "INVARIANT_VIOLATION",
+        {
+          stage: "autofix-scope-split",
+          index: i,
+          findingsCount: findings.length,
+          diagnosticsCount: diagnostics.length,
+        },
+      );
+    }
     const f = findings[i];
     const target = f.fixTarget ?? deriveFixTarget(f.file, testFilePatterns);
     (target === "test" ? testDiagnostics : sourceDiagnostics).push(diagnostic);
