@@ -270,7 +270,7 @@ describe("AdversarialReviewPromptBuilder — output schema", () => {
     });
 
     expect(result).toContain('"error"');
-    expect(result).toContain('"warn"');
+    expect(result).toContain('"warning"');
     expect(result).toContain('"info"');
     expect(result).toContain('"unverifiable"');
   });
@@ -327,17 +327,19 @@ describe("AdversarialReviewPromptBuilder — priorAdversarialFindings", () => {
     round: 1,
     findings: [
       {
-        severity: "error",
+        source: "adversarial-review" as const,
+        severity: "error" as const,
         category: "error-path",
         file: "src/auth/login.ts",
         line: 42,
-        issue: "Null pointer dereference on empty input",
+        message: "Null pointer dereference on empty input",
       },
       {
-        severity: "warn",
+        source: "adversarial-review" as const,
+        severity: "warning" as const,
         category: "convention",
         file: "src/auth/session.ts",
-        issue: "Missing storyId in logger call",
+        message: "Missing storyId in logger call",
       },
     ],
   };
@@ -400,7 +402,15 @@ describe("AdversarialReviewPromptBuilder — priorAdversarialFindings", () => {
       storyGitRef: STORY_GIT_REF,
       priorAdversarialFindings: {
         round: 1,
-        findings: [{ severity: "warn", file: "src/utils.ts", issue: "Unhandled promise rejection" }],
+        findings: [
+              {
+                source: "adversarial-review" as const,
+                severity: "warning" as const,
+                category: "",
+                file: "src/utils.ts",
+                message: "Unhandled promise rejection",
+              },
+            ],
       },
     });
     expect(result).toContain("src/utils.ts");

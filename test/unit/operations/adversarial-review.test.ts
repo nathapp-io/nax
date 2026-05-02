@@ -85,7 +85,16 @@ describe("adversarialReviewOp.build()", () => {
       ...SAMPLE_INPUT,
       priorAdversarialFindings: {
         round: 2,
-        findings: [{ severity: "error", file: "src/session.ts", line: 10, issue: "Silent catch block" }],
+        findings: [
+            {
+              source: "adversarial-review",
+              severity: "error",
+              category: "error-path",
+              file: "src/session.ts",
+              line: 10,
+              message: "Silent catch block",
+            },
+          ],
       },
     };
     const result = adversarialReviewOp.build(inputWithPrior, ctx);
