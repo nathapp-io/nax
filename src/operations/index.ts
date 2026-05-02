@@ -38,3 +38,5 @@ export { writeTddTestOp } from "./write-test";
 export type { TddRunOp } from "./write-test";
 export { implementTddOp } from "./implement";
 export { verifyTddOp } from "./verify";
+export { autoApproveOp } from "./auto-approve";
+export type { AutoApproveInput, AutoApproveOutput, AutoApproveDecision } from "./auto-approve";

@@ -7,9 +7,13 @@
 
 import { z } from "zod";
 import type { IAgentManager } from "../../agents";
+import { resolveDefaultAgent } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
+import { autoApproveOp, callOp } from "../../operations";
+import type { CallContext } from "../../operations";
 import { OneShotPromptBuilder, type SchemaDescriptor } from "../../prompts";
+import type { NaxRuntime } from "../../runtime";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 const AUTO_APPROVER_SCHEMA: SchemaDescriptor = {
@@ -79,6 +83,8 @@ export const _autoPluginDeps = {
   agentManager: null as IAgentManager | null,
   callLlm: null as ((request: InteractionRequest) => Promise<DecisionResponse>) | null,
   workdir: "" as string,
+  /** Optional runtime — when set, callLlm routes through callOp for full middleware coverage. */
+  runtime: null as NaxRuntime | null,
 };
 
 /**
@@ -160,17 +166,36 @@ export class AutoInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Call LLM to make decision
+   * Call LLM to make decision.
+   *
+   * Prefers the callOp path when runtime is injected (full middleware coverage).
+   * Falls back to the legacy agentManager.complete() path for tests that inject
+   * agentManager directly without a runtime.
    */
   private async callLlm(request: InteractionRequest): Promise<DecisionResponse> {
-    const prompt = await this.buildPrompt(request);
-
-    // Get agentManager from dependency injection or throw
-    const agentManager = _autoPluginDeps.agentManager;
-    if (!agentManager) {
-      throw new Error("Auto plugin requires agentManager to be injected via _autoPluginDeps.agentManager");
+    // Prefer callOp path when runtime is available — routes through full middleware
+    const runtime = _autoPluginDeps.runtime;
+    if (runtime) {
+      const config = runtime.configLoader.current();
+      const ctx: CallContext = {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: _autoPluginDeps.workdir || runtime.workdir,
+        agentName: resolveDefaultAgent(config),
+        storyId: request.storyId,
+        featureName: request.featureName,
+        sessionOverride: { role: "auto" },
+      };
+      return callOp(ctx, autoApproveOp, request);
     }
 
+    // Legacy path: agentManager injected directly (used by existing tests)
+    const agentManager = _autoPluginDeps.agentManager;
+    if (!agentManager) {
+      throw new Error("Auto plugin requires agentManager or runtime to be injected via _autoPluginDeps");
+    }
+
+    const prompt = await this.buildPrompt(request);
     const naxConfig = this.config.naxConfig ?? DEFAULT_CONFIG;
 
     const modelTier = this.config.model ?? "fast";
