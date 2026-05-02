@@ -8,6 +8,7 @@ import type { AgentResult } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import type { ConstitutionResult } from "../constitution/types";
 import type { BuiltContext } from "../context/types";
+import type { Finding } from "../findings";
 import type { HooksConfig } from "../hooks/types";
 import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics/types";
@@ -166,6 +167,8 @@ export interface PipelineContext extends DispatchContext {
   /** Acceptance test failures (set by acceptanceStage) */
   acceptanceFailures?: {
     failedACs: string[];
+    /** Structured findings (ADR-021 phase 5). Parallel to failedACs; same order. */
+    findings: Finding[];
     testOutput: string;
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */

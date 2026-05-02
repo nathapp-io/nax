@@ -31,6 +31,7 @@
 import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import type { HardeningContext } from "../../acceptance/hardening";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
+import { acFailureToFinding, acSentinelToFinding } from "../../findings";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
 import { parseTestFailures as _parseTestFailures } from "../../test-runners/ac-parser";
@@ -270,8 +271,14 @@ export const acceptanceStage: PipelineStage = {
     }
 
     // Store failures for fix generation
+    const findings = allFailedACs.map((acId) => {
+      if (acId === "AC-HOOK") return acSentinelToFinding("AC-HOOK", combinedOutput);
+      if (acId === "AC-ERROR") return acSentinelToFinding("AC-ERROR", combinedOutput);
+      return acFailureToFinding(acId, combinedOutput);
+    });
     ctx.acceptanceFailures = {
       failedACs: allFailedACs,
+      findings,
       testOutput: combinedOutput,
     };
 
