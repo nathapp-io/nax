@@ -139,6 +139,7 @@ async function callLlmOnce(
   prompt: string,
   config: LlmRoutingConfig,
   timeoutMs: number,
+  workdir: string,
 ): Promise<string> {
   const resolvedModel = resolveConfiguredModel(
     config.models,
@@ -155,7 +156,7 @@ async function callLlmOnce(
   });
   timeoutPromise.catch(() => {});
 
-  const outputPromise = agentManager.complete(prompt, { model: resolvedModel.modelDef.model, config });
+  const outputPromise = agentManager.complete(prompt, { modelDef: resolvedModel.modelDef, workdir });
 
   try {
     const result = await Promise.race([outputPromise, timeoutPromise]);
@@ -176,6 +177,7 @@ async function callLlm(
   modelSelection: ConfiguredModel,
   prompt: string,
   config: LlmRoutingConfig,
+  workdir: string,
 ): Promise<string> {
   const llmConfig = config.routing.llm;
   const timeoutMs = llmConfig?.timeoutMs ?? 30000;
@@ -186,7 +188,7 @@ async function callLlm(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callLlmOnce(agentManager, modelSelection, prompt, config, timeoutMs);
+      return await callLlmOnce(agentManager, modelSelection, prompt, config, timeoutMs, workdir);
     } catch (err) {
       lastError = err as Error;
       if (attempt < maxRetries) {
@@ -212,6 +214,7 @@ async function callLlm(
 interface LlmRoutingContext {
   config: LlmRoutingConfig;
   agentManager: IAgentManager;
+  workdir: string;
 }
 
 export async function routeBatch(
@@ -234,7 +237,7 @@ export async function routeBatch(
   const prompt = await buildBatchRoutingPromptAsync(stories);
 
   try {
-    const output = await callLlm(agentManager, modelSelection, prompt, config);
+    const output = await callLlm(agentManager, modelSelection, prompt, config, context.workdir);
     const decisions = parseBatchResponse(output, stories, config);
 
     if (llmConfig.cacheDecisions) {
@@ -264,6 +267,7 @@ export async function classifyWithLlm(
   story: UserStory,
   config: LlmRoutingConfig,
   agentManager: IAgentManager,
+  workdir = "",
 ): Promise<RoutingDecision | null> {
   const llmConfig = config.routing.llm;
   if (!llmConfig) return null;
@@ -311,7 +315,7 @@ export async function classifyWithLlm(
 
   let decision: RoutingDecision;
   try {
-    const output = await callLlm(effectiveManager, modelSelection, prompt, config);
+    const output = await callLlm(effectiveManager, modelSelection, prompt, config, workdir);
     decision = parseRoutingResponse(output, story, config);
   } catch (err) {
     if (llmConfig.fallbackToKeywords) {

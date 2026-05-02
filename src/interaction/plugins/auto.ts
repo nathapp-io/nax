@@ -78,6 +78,7 @@ interface DecisionResponse {
 export const _autoPluginDeps = {
   agentManager: null as IAgentManager | null,
   callLlm: null as ((request: InteractionRequest) => Promise<DecisionResponse>) | null,
+  workdir: "" as string,
 };
 
 /**
@@ -172,21 +173,22 @@ export class AutoInteractionPlugin implements InteractionPlugin {
 
     const naxConfig = this.config.naxConfig ?? DEFAULT_CONFIG;
 
-    let resolvedModel: string | undefined;
+    const modelTier = this.config.model ?? "fast";
+    const defaultAgent = agentManager.getDefault();
+    let resolvedModelDef: import("../../config/schema").ModelDef;
     try {
-      const modelTier = this.config.model ?? "fast";
-      const defaultAgent = agentManager.getDefault();
-      resolvedModel = resolveModelForAgent(naxConfig.models, defaultAgent, modelTier, defaultAgent).model;
+      resolvedModelDef = resolveModelForAgent(naxConfig.models, defaultAgent, modelTier, defaultAgent);
     } catch {
-      // Model resolution failed (e.g. no naxConfig provided) — proceed without a model
+      // Model resolution failed (e.g. no naxConfig provided) — use a safe default
+      resolvedModelDef = { provider: "unknown", model: "default" } as import("../../config/schema").ModelDef;
     }
 
     const timeoutMs = (naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000;
 
     const result = await agentManager.complete(prompt, {
-      ...(resolvedModel !== undefined && { model: resolvedModel }),
+      modelDef: resolvedModelDef,
+      workdir: _autoPluginDeps.workdir,
       jsonMode: true,
-      config: naxConfig,
       featureName: request.featureName,
       storyId: request.storyId,
       sessionRole: "auto",

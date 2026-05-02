@@ -190,7 +190,7 @@ export async function resolveRouting(
   if (config.routing.strategy === "llm" && agentManager) {
     try {
       const { classifyWithLlm } = await import("./strategies/llm");
-      const decision = await classifyWithLlm(story, config, agentManager);
+      const decision = await classifyWithLlm(story, config, agentManager, dispatchContext.runtime.workdir);
       if (decision !== null) return decision;
     } catch (err) {
       logger?.warn("routing", "LLM routing failed, falling back to keyword", {
@@ -286,6 +286,7 @@ export async function tryLlmBatchRoute(
   stories: UserStory[],
   label = "routing",
   _deps = _tryLlmBatchRouteDeps,
+  workdir = "",
 ): Promise<void> {
   const mode = config.routing.llm?.mode ?? "hybrid";
   if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
@@ -305,7 +306,7 @@ export async function tryLlmBatchRoute(
       mode,
     });
     const { routeBatch } = await import("./strategies/llm");
-    await routeBatch(needsRouting, { config, agentManager });
+    await routeBatch(needsRouting, { config, agentManager, workdir });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
