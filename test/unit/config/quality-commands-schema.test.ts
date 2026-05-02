@@ -123,3 +123,20 @@ describe("review.commands schema — lintFix/formatFix not stripped by Zod", () 
     expect(result.review.commands.formatFix).toBe("bun run format --write");
   });
 });
+
+describe("quality.lintOutput schema", () => {
+  test("defaults lintOutput.format to auto", () => {
+    const parsed = NaxConfigSchema.parse({});
+    expect(parsed.quality.lintOutput?.format).toBe("auto");
+  });
+
+  test("preserves explicit lintOutput.format", () => {
+    const parsed = NaxConfigSchema.parse({
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        lintOutput: { format: "eslint-json" },
+      },
+    });
+    expect(parsed.quality.lintOutput?.format).toBe("eslint-json");
+  });
+});

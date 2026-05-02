@@ -17,40 +17,47 @@ import { getLogger } from "../../logger";
 import { buildHopCallback } from "../../operations/build-hop-callback";
 import type { UserStory } from "../../prd";
 import { RectifierPromptBuilder } from "../../prompts";
+import {
+  type LintDiagnostic,
+  type LintOutputFormat,
+  formatDiagnosticsOutput,
+  parseLintOutput,
+} from "../../review/lint-parsing";
 import type { ReviewCheckResult } from "../../review/types";
 import { isTestFile } from "../../test-runners";
 import type { PipelineContext } from "../types";
 
-// Known source-file extensions for lint output path extraction.
-const SOURCE_EXT_RE = /\.(ts|tsx|js|jsx|mjs|cjs|go|py|rs|rb|java|cs|cpp|c|h|swift|kt)$/;
+/**
+ * Extract unique file paths from lint output by running the best-effort parser chain.
+ */
+export function extractFilesFromLintOutput(output: string, format: LintOutputFormat = "auto"): string[] {
+  const parsed = parseLintOutput(output, format);
+  if (!parsed) return [];
+  return Array.from(new Set(parsed.diagnostics.map((d) => d.file)));
+}
+
+function buildScopedLintCheck(
+  check: ReviewCheckResult,
+  diagnostics: readonly LintDiagnostic[],
+): ReviewCheckResult | null {
+  const output = formatDiagnosticsOutput(diagnostics);
+  if (!output) return null;
+  return { ...check, output };
+}
 
 /**
- * Extract unique file paths from raw lint CLI output.
- * Handles ESLint stylish, ESLint compact, and Biome stylish formats.
- * Returns empty array when output is empty or no recognisable paths are found.
+ * Best-effort block/diagnostic filter for lint output.
+ * Returns null when no diagnostics map to target files.
  */
-export function extractFilesFromLintOutput(output: string): string[] {
-  if (!output.trim()) return [];
-
-  const files = new Set<string>();
-
-  // Matches file paths at the start of a line (stylish headers) and path:line or
-  // path:line:col patterns (compact format). Covers absolute and relative forms.
-  const PATH_RE = /^[ \t]*((?:\/[\w./-]+|\.\.?\/[\w./-]+|[\w][\w-]*(?:\/[\w./-]+)+))(?::\d+)?(?::\d+)?(?:\s|:|$)/gm;
-
-  let startIndex = 0;
-  while (startIndex <= output.length) {
-    PATH_RE.lastIndex = startIndex;
-    const m = PATH_RE.exec(output);
-    if (m === null) break;
-    const candidate = m[1];
-    if (SOURCE_EXT_RE.test(candidate)) {
-      files.add(candidate);
-    }
-    startIndex = m.index + 1;
-  }
-
-  return Array.from(files);
+export function filterLintOutputToFiles(
+  output: string,
+  targetFiles: ReadonlySet<string>,
+  format: LintOutputFormat = "text",
+): string | null {
+  const parsed = parseLintOutput(output, format);
+  if (!parsed) return null;
+  const filtered = parsed.diagnostics.filter((d) => targetFiles.has(d.file));
+  return formatDiagnosticsOutput(filtered);
 }
 
 function splitByStructuredFindings(
@@ -83,10 +90,10 @@ function splitByStructuredFindings(
 function splitByOutputParsing(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
+  format: LintOutputFormat = "auto",
 ): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
-  const files = extractFilesFromLintOutput(check.output);
-
-  if (files.length === 0) {
+  const parsed = parseLintOutput(check.output, format);
+  if (!parsed) {
     // Cannot classify by file -- conservative fallback: route to implementer if output is non-empty
     if (check.output.trim()) {
       return { testFindings: null, sourceFindings: check };
@@ -94,12 +101,12 @@ function splitByOutputParsing(
     return { testFindings: null, sourceFindings: null };
   }
 
-  const hasTest = files.some((f) => isTestFile(f, testFilePatterns));
-  const hasSource = files.some((f) => !isTestFile(f, testFilePatterns));
+  const testDiagnostics = parsed.diagnostics.filter((d) => isTestFile(d.file, testFilePatterns));
+  const sourceDiagnostics = parsed.diagnostics.filter((d) => !isTestFile(d.file, testFilePatterns));
 
   return {
-    testFindings: hasTest ? check : null,
-    sourceFindings: hasSource ? check : null,
+    testFindings: buildScopedLintCheck(check, testDiagnostics),
+    sourceFindings: buildScopedLintCheck(check, sourceDiagnostics),
   };
 }
 
@@ -118,6 +125,7 @@ function splitByOutputParsing(
 export function splitFindingsByScope(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
+  lintOutputFormat: LintOutputFormat = "auto",
 ): {
   testFindings: ReviewCheckResult | null;
   sourceFindings: ReviewCheckResult | null;
@@ -126,7 +134,7 @@ export function splitFindingsByScope(
     return splitByStructuredFindings(check, testFilePatterns);
   }
   if (check.check === "lint") {
-    return splitByOutputParsing(check, testFilePatterns);
+    return splitByOutputParsing(check, testFilePatterns, lintOutputFormat);
   }
   return { testFindings: null, sourceFindings: null };
 }
