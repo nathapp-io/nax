@@ -17,7 +17,6 @@ import type { GenerateFixStoriesOptions } from "../../../src/acceptance/fix-gene
 import type { CompleteOptions } from "../../../src/agents/types";
 import type { PRD } from "../../../src/prd/types";
 import type { AgentAdapter } from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
 import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 

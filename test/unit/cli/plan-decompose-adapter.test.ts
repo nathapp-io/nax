@@ -19,7 +19,6 @@ import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import { makeMockAgentManager, makeNaxConfig, makePRD } from "../../helpers";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import type { NaxConfig } from "../../../src/config";
-import type { NaxRuntime } from "../../../src/runtime";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -192,7 +191,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
 
   test("resolves without error when adapter.decompose() is available", async () => {
     const config = makeConfig();
-    await expect(
+    expect(
       planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
     ).resolves.toBeDefined();
   });
@@ -341,7 +340,7 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
     ) as unknown as typeof _planDeps.createRuntime;
 
     const config = makeConfig();
-    await expect(
+    expect(
       planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
     ).resolves.toBeDefined();
   });
