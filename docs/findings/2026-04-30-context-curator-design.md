@@ -337,6 +337,94 @@ Captured here so a future operator hitting the same fork can see the analysis wi
 
 ---
 
+## Step 5 — ADR-022 fix-cycle iteration audit (cross-reference)
+
+ADR-022 ("Fix Strategy and Cycle Orchestration", 2026-05-02) introduces a `runFixCycle<F>` that drives diagnose-fix-validate iterations across acceptance, autofix, semantic, and adversarial subsystems. Its "Audit logging" section deliberately **defers cycle-history persistence to this curator redesign** — iteration history is ephemeral by default (in-memory in `PipelineContext`), used only for prompt carry-forward via `buildPriorIterationsBlock`.
+
+When this curator redesign lands, cycle iterations should map onto the same `observations.jsonl` schema. Concrete sketch:
+
+### Mapping `Iteration<F>` → observations
+
+The schema's existing `kind: "rectify-cycle"` (Layer A, line 106) is the right slot — but it predates ADR-022 and was intended to capture only autofix's `runRetryLoop` attempts. Generalise it to cover all cycle iterations:
+
+```typescript
+// Replace existing "rectify-cycle" kind with three more specific events:
+kind:
+  | "fix-cycle.iteration"     // one Iteration<F> completed (cycle iteration boundary)
+  | "fix-cycle.exit"          // cycle terminated (resolved or bailed)
+  | "fix-cycle.validator-retry" // validator threw, cycle retried
+  // … existing kinds preserved
+```
+
+Per-event payloads, mapped from `Iteration<F>` and `FixCycleResult<F>`:
+
+```typescript
+// fix-cycle.iteration
+payload: {
+  cycleName: string;             // "acceptance" | "autofix" | "semantic" | …
+  iterationNum: number;
+  strategiesRan: string[];       // FixApplied[].strategyName
+  outcome: "resolved" | "partial" | "regressed" | "unchanged" | "regressed-different-source";
+  findingsBefore: number;
+  findingsAfter: number;
+  costUsd: number;
+  // optional: top-N finding categories for cross-iteration trend analysis
+  beforeCategories?: string[];
+  afterCategories?: string[];
+}
+
+// fix-cycle.exit
+payload: {
+  cycleName: string;
+  resolved: boolean;
+  reason?: "no-strategy-matches" | "max-attempts-per-strategy" | "max-attempts-total" | "bailed-by-strategy" | "validator-error";
+  bailDetail?: string;
+  exhaustedStrategy?: string;
+  totalIterations: number;
+  totalCostUsd: number;
+}
+
+// fix-cycle.validator-retry
+payload: {
+  cycleName: string;
+  iterationNum: number;
+  attempt: number;               // 0 = first try, 1 = retry
+  errorClass: string;            // err.constructor.name
+  errorMessage: string;
+}
+```
+
+### Why this matters for the curator
+
+Cycle iterations expose patterns the curator wants to surface:
+
+| Curator heuristic | jq query against observations.jsonl |
+|:---|:---|
+| "Story always falsifies its hypothesis (unchanged outcome ≥2 in a row)" → diagnose prompt is wrong | `select(.kind=="fix-cycle.iteration" and .payload.outcome=="unchanged") \| group_by(.storyId)` |
+| "Same strategy hits its per-strategy cap repeatedly" → strategy logic is broken | `select(.kind=="fix-cycle.exit" and .payload.reason=="max-attempts-per-strategy") \| group_by(.payload.exhaustedStrategy)` |
+| "Validator retries cluster on same error class" → validator infra is flaky | `select(.kind=="fix-cycle.validator-retry") \| group_by(.payload.errorClass)` |
+| "Cycle resolves quickly for some stories, never for others" → cross-story baseline anomaly | `select(.kind=="fix-cycle.exit") \| {storyId, resolved, totalIterations}` |
+
+### Telemetry symmetry
+
+ADR-022 §13 already mandates a logger contract for cycle iterations:
+
+```typescript
+logger.info("findings.cycle", "iteration completed", { storyId, packageDir, cycleName, iterationNum, strategiesRan, outcome, findingsBefore, findingsAfter, costUsd });
+```
+
+The `observations.jsonl` shape above is a strict superset — once unified-auditor work (Step 4 in this design) lands, the logger emit and the audit emit can share one dispatch path. Until then, a thin auditor reads logger entries and writes observations rows; same pattern as today's `PromptAuditor`.
+
+### Implementation timing
+
+This is **not a curator-v0 dependency**. ADR-022 phase 4 (acceptance migration) ships first and only requires the in-memory `Iteration<F>[]` carry-forward. Cycle-history audit persistence can wait until:
+
+1. ADR-022 phases 4–7 have shipped — real cycle data exists to mine
+2. Curator v0 is validated against existing auditors — proves the heuristics-from-observations workflow works
+3. Either Step 4's unified-auditor refactor lands, OR a new `cycleAuditor` is added analogous to `reviewAuditor` (R1 from Step 4 risk register may be re-evaluated by then)
+
+Document this here so a future operator landing the audit work sees the cycle-history requirement without re-deriving it from ADR-022.
+
 ## Open questions / next steps
 
 1. **Decide the v0 cut.** Ship the 2 remaining logger emits (pull-tool, acceptance) now, or ship a partial curator first?
@@ -346,6 +434,7 @@ Captured here so a future operator hitting the same fork can see the analysis wi
 5. **Plugin entry point.** `IPostRunAction` is the documented hook. Confirm it gets enough context (run artifacts path, config, logger) to do the walk.
 6. **Apply UX.** Interactive CLI (`nax curator apply`) vs. plain editing the proposals file — pick one before building.
 7. **Verify `dispatchEvents` contract** (R5 from Step 4) — only if the unified-auditor design is revisited.
+8. **Cycle-history audit timing** (Step 5). Ride along with curator v0, defer to v1, or wait for cycle data accumulation? Tied to ADR-022 phase 4+ shipping.
 
 ## References
 
