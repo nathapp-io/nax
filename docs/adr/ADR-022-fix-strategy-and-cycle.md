@@ -77,6 +77,8 @@ A cycle is **scoped to a subsystem** (the unit that owns its validator), not to 
 
 This mirrors current code: `runAgentRectification` already receives a mixed-source `failedChecks` array (lint + typecheck + adversarial together) and dispatches the implementer once for everything. Phase 7's autofix migration preserves that behaviour by composing all those strategies in one `FixCycle`.
 
+**Implementation note — six sources, two fix ops:** The table names six logical sources for autofix, but in phase 7 these are implemented as only **two strategies**: `autofix-implementer` (handles all `fixTarget === "source"` findings: lint, typecheck, adversarial, plugin) and `autofix-test-writer` (handles `fixTarget === "test"` findings). This matches current behaviour — the implementer already receives all source findings in one prompt; splitting into four per-source strategies would add ops without benefit. The six-source framing describes what *flows through* the cycle, not how many fix ops are needed. If per-source routing becomes necessary in the future (e.g. a specialised lint fixer), a new strategy with a tighter `appliesTo(f) => f.source === "lint"` selector can be added without changing `runFixCycle`.
+
 **Consequence:** strategies must use discriminating `appliesTo` selectors (by `source`, `category`, or `fixTarget`) to avoid collisions when two strategies could match the same finding. Reviewer discipline; not enforced by the type system.
 
 ### 2. Iteration shape — multiple fixes per validation

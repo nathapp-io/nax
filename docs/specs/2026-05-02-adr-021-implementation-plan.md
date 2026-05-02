@@ -42,7 +42,8 @@ Phases 2–7 are unblocked from each other. Phase 8 depends on phase 5 (AC senti
 **Read side (already handled — no change needed):**
 - [src/review/adversarial-helpers.ts:56-62](../../src/review/adversarial-helpers.ts#L56) `normalizeSeverity()` — `"warn"` → `"warning"`
 - [src/review/semantic-helpers.ts:55](../../src/review/semantic-helpers.ts#L55) — same
-- [src/review/dialogue.ts](../../src/review/dialogue.ts) — same
+
+> **Note:** `src/review/dialogue.ts` does NOT define or import `normalizeSeverity` — it is not part of the read-side adapter chain. Dialogue results are parsed via `adversarial-helpers.ts` upstream before they reach dialogue.ts.
 
 The `normalizeSeverity` adapters already accept legacy `"warn"` and emit `"warning"`. Rename in prompt schema is forward-only — LLMs producing legacy `"warn"` continue to parse correctly via the adapter. No flag required; the rename is safe across all releases.
 
@@ -129,11 +130,11 @@ No internal-path imports per [.claude/rules/project-conventions.md](../../.claud
 export function pluginToFinding(rf: ReviewFinding, workdir: string): Finding {
   return {
     source: "plugin",
-    tool: rf.source,            // plugin's tool name (semgrep, eslint, snyk, ...)
-    severity: rf.severity,      // "critical" | "error" | "warning" | "info" | "low" — already aligned
+    tool: rf.source ?? "plugin", // rf.source is optional (ReviewFinding.source?: string) — default "plugin"
+    severity: rf.severity,       // "critical" | "error" | "warning" | "info" | "low" — already aligned
     category: rf.category ?? "general",
     rule: rf.ruleId,
-    file: rf.file,              // plugin contract is workdir-relative — no rebasing
+    file: rf.file,               // plugin contract is workdir-relative — no rebasing
     line: rf.line,
     column: rf.column,
     endLine: rf.endLine,
@@ -361,7 +362,7 @@ Same as phase 3.
 | `src/findings/adapters/llm-review.ts` (new) | `llmReviewFindingToFinding(lf: LlmReviewFinding, source, workdir): Finding` |
 | `src/findings/index.ts` | Re-export adapter |
 | [src/operations/adversarial-review.ts:67-105](../../src/operations/adversarial-review.ts#L67) | `parse()` returns `Finding[]` (was `LlmReviewFinding[]`) |
-| [src/operations/adversarial-review.ts:28](../../src/operations/adversarial-review.ts#L28) | `priorAdversarialFindings?: AdversarialFindingsCache` — cache shape upgraded to `{ round: number; findings: Finding[] }` |
+| [src/operations/adversarial-review.ts:28](../../src/operations/adversarial-review.ts#L28) | `priorAdversarialFindings?: AdversarialFindingsCache` — cache shape upgraded to `{ round: number; findings: Finding[] }` (**not** `acceptance-diagnose.ts` — that is phase 8) |
 | [src/review/types.ts:171-182](../../src/review/types.ts#L171) | `AdversarialFindingsCache.findings: Finding[]` |
 | [src/prompts/builders/adversarial-review-builder.ts:202-225](../../src/prompts/builders/adversarial-review-builder.ts#L202) | `buildPriorFindingsBlock()` reads `Finding[]` |
 | [src/prompts/builders/adversarial-review-builder.ts:206](../../src/prompts/builders/adversarial-review-builder.ts#L206) | `OUTPUT_SCHEMA` rename `"warn"` → `"warning"` |
@@ -385,7 +386,7 @@ export function llmReviewFindingToFinding(
     source,
     severity: normalizeSeverity(lf.severity), // "warn" → "warning" already handled
     category: lf.category ?? (source === "semantic-review" ? "ac-coverage" : "general"),
-    rule: lf.acId,                            // semantic uses AC ID; adversarial leaves undefined
+    rule: lf.acId,    // semantic uses AC ID; adversarial: acId is always undefined — Finding.rule is optional
     file: lf.file,
     line: lf.line,
     message: lf.issue,
@@ -443,6 +444,10 @@ This is the highest-risk phase pre-acceptance. Mitigations:
 | [src/acceptance/semantic-verdict.ts:48-90](../../src/acceptance/semantic-verdict.ts#L48) | `persistSemanticVerdict()` and `loadSemanticVerdicts()` work with `Finding[]` shape (compatible per explore report — `Finding` is a superset of `ReviewFinding`) |
 | [src/review/semantic-evidence.ts](../../src/review/semantic-evidence.ts) | `substantiateSemanticEvidence()` operates on `Finding[]`; downgrade-to-unverifiable preserved |
 | Update: `test/unit/acceptance/semantic-verdict.test.ts` | Round-trip persist/load with `Finding[]` |
+
+### Import-path note
+
+`src/acceptance/types.ts:149` imports `ReviewFinding` from `../plugins/types` (not `../plugins/extensions`). Both export a `ReviewFinding` interface with the same fields. The backward-compat loader in `loadSemanticVerdicts()` treats them identically — legacy detection uses the absence of a `source` field, which neither import path adds. No path consolidation required in this phase; the two definitions are field-compatible.
 
 ### Persistence compatibility
 
@@ -629,11 +634,11 @@ Two PRs after phase 8 lands:
 | File | Change |
 |:---|:---|
 | [src/operations/types.ts:171-191](../../src/operations/types.ts#L171) | Delete `LlmReviewFinding` interface |
-| [src/operations/types.ts:204-210](../../src/operations/types.ts#L204) | Update `parseLlmReviewShape()` signature to return `Finding` |
-| [src/review/types.ts:171-182](../../src/review/types.ts#L171) | Delete `AdversarialFindingsCache` shape; replace with `type AdversarialFindingsCache = { round: number; findings: Finding[] }` (or fold into `Iteration` per ADR-022) |
+| [src/operations/types.ts:204-210](../../src/operations/types.ts#L204) | Delete `parseLlmReviewShape()` — by phase 9 it has no callers (phases 6+7 adapters handle conversion directly). Do NOT "update its return type"; just delete the function. |
+| [src/review/types.ts:171-182](../../src/review/types.ts#L171) | Delete `AdversarialFindingsCache` entirely — ADR-022 phase 5 has already migrated all carry-forward to `Iteration<Finding>[]`. Do NOT keep a thin alias; ADR-022 phase 8 is the authority for this deletion and may land after this phase. Co-ordinate so only one PR deletes the type. |
 | [src/acceptance/types.ts:153-165](../../src/acceptance/types.ts#L153) | Delete `DiagnosisResult.testIssues / sourceIssues` fields |
 | [src/operations/index.ts](../../src/operations/index.ts) | Remove `LlmReviewFinding` export |
-| Various consumer files | Update import statements; remove fallback adapters; remove `acceptance.fix.findingsV2` flag plumbing |
+| Various consumer files | Update import statements; remove fallback adapters; remove `acceptance.fix.findingsV2` flag plumbing. **Do NOT delete `acceptance.fix.cycleV2`** — that flag is owned by ADR-022 phase 8. |
 | [src/prompts/builders/acceptance-builder.ts](../../src/prompts/builders/acceptance-builder.ts) | Remove legacy OUTPUT_SCHEMA branch |
 | `test/**/*.test.ts` | Delete tests asserting on legacy field shapes |
 
@@ -641,7 +646,8 @@ Two PRs after phase 8 lands:
 
 - `bun run typecheck` passes (all references resolve to `Finding` / `Finding[]`)
 - Full test suite passes
-- `git grep "LlmReviewFinding\|testIssues\|sourceIssues" -- 'src/'` returns nothing
+- `git grep "LlmReviewFinding\|testIssues\|sourceIssues\|parseLlmReviewShape\|acceptanceLegacyToFindings\|findingsV2" -- 'src/'` returns nothing
+- For full cleanup coverage also run: `git grep "previousFailure\|AdversarialFindingsCache\|PriorFailure\|buildPriorFindingsBlock\|buildAttemptContextBlock\|cycleV2" -- 'src/'` per ADR-022 phase 8 gate
 - Build artefact size unchanged or smaller
 
 ### Rollback

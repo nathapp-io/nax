@@ -24,6 +24,8 @@ ADR-022 introduces unified fix orchestration on top of ADR-021's `Finding` wire 
 | 7 | Autofix migration (lint + typecheck + adversarial + plugin + test-writer/implementer) | medium-high | `quality.autofix.cycleV2` (shadow mode 2 releases) |
 | 8 | Cleanup (delete legacy carry-forward types; remove flags) | zero | n/a |
 
+**Hard prerequisite:** ADR-021 phase 1 (`src/findings/types.ts` + `src/findings/index.ts`) must be merged (PR #868) before any phase of this plan begins. Every phase imports from `src/findings` — if the barrel doesn't exist, `bun run typecheck` will fail immediately.
+
 **Migration model:** each phase is a single PR. Phases 1–3 are foundational and unblocked by anything outside ADR-022 phase 1. Phases 4–7 each consume `Finding[]` produced by the corresponding ADR-021 producer phase — see §2.4 for the cross-ADR sequencing.
 
 ## 2. Cross-phase concerns
@@ -102,8 +104,8 @@ No internal-path imports. Per [.claude/rules/project-conventions.md](../../.clau
 
 | File | Change |
 |:---|:---|
-| `src/findings/cycle-types.ts` (new) | All cycle/strategy types |
-| `src/findings/index.ts` | Re-export new types |
+| `src/findings/cycle-types.ts` (new) | All cycle/strategy types including `FixCycle<F>` |
+| `src/findings/index.ts` | Re-export new types (`Iteration`, `FixApplied`, `FixStrategy`, `FixCycle`, `FixCycleContext`, `FixCycleConfig`, `FixCycleResult`, `FixCycleBailReason`, `IterationOutcome`) |
 
 ### Type exports
 
@@ -175,6 +177,18 @@ export interface FixCycleResult<F extends Finding = Finding> {
   iterations: Iteration<F>[];
   findings: F[];
 }
+
+/** Input shape for runFixCycle — callers construct this and pass it. */
+export interface FixCycle<F extends Finding = Finding> {
+  name: string;                                          // for telemetry: "acceptance", "autofix", …
+  findings: F[];
+  iterations: Iteration<F>[];
+  strategies: FixStrategy<F, any, any, any>[];
+  validate: (ctx: FixCycleContext) => Promise<F[]>;
+  config: FixCycleConfig;
+  /** Optional verdict for fast-path strategies when findings is empty. */
+  verdict?: string;
+}
 ```
 
 ### Tests
@@ -228,21 +242,11 @@ import { getSafeLogger } from "../logger";
 import { callOp } from "../operations";
 import { findingKey } from "./types";
 import { classifyOutcome } from "./outcome";
+// FixCycle is defined in cycle-types.ts and re-exported from the barrel — import from there, not redefined here
 import type {
-  FixApplied, FixCycleConfig, FixCycleContext, FixCycleResult, FixStrategy, Iteration,
+  FixApplied, FixCycle, FixCycleConfig, FixCycleContext, FixCycleResult, FixStrategy, Iteration,
 } from "./cycle-types";
 import type { Finding } from "./types";
-
-export interface FixCycle<F extends Finding = Finding> {
-  name: string;                                          // for telemetry: "acceptance", "autofix", …
-  findings: F[];
-  iterations: Iteration<F>[];
-  strategies: FixStrategy<F, any, any, any>[];
-  validate: (ctx: FixCycleContext) => Promise<F[]>;
-  config: FixCycleConfig;
-  /** Optional verdict for fast-path strategies when findings is empty. */
-  verdict?: string;
-}
 
 export async function runFixCycle<F extends Finding = Finding>(
   cycle: FixCycle<F>,
@@ -487,8 +491,8 @@ function aggregateOutcomes(per: IterationOutcome[]): IterationOutcome {
 
 ```typescript
 // src/prompts/builders/prior-iterations.ts
-import type { Finding } from "../../findings/types";
-import type { Iteration } from "../../findings/cycle-types";
+// Use the barrel — never internal-path imports (project-conventions.md)
+import type { Finding, Iteration } from "../../findings";
 
 const FALSIFIED_LINE =
   'When outcome is "unchanged", the prior hypothesis is FALSIFIED — the change did\n' +
@@ -673,6 +677,10 @@ The diagnosis prompt builder now receives `priorIterations: Iteration<Finding>[]
 
 The fast-paths in [acceptance-fix.ts:78-116](../../src/execution/lifecycle/acceptance-fix.ts#L78) (`implement-only`, `semanticVerdicts.every(passed)`, `isTestLevelFailure`) **stay where they are** — they produce `DiagnosisResult` with `findings: []` and `verdict: "..."`. The cycle's `appliesToVerdict` selector picks up the right strategy.
 
+### Flag interaction: `cycleV2` vs `findingsV2`
+
+`cycleV2: true` with `findingsV2: false` is a **supported degraded mode**. When `findingsV2` is off the LLM still returns the old `testIssues/sourceIssues` schema; `applyFixV2` calls `acceptanceLegacyToFindings(diagnosis)` as fallback (since `diagnosis.findings` will be `undefined`). The cycle runs correctly on the resulting `Finding[]`. No config-schema validation is needed to enforce ordering between the two flags — the fallback path handles the gap transparently.
+
 ### Flag-gated implementation
 
 ```typescript
@@ -774,7 +782,7 @@ The prompt builder change is one line — `buildPriorFindingsBlock(...)` becomes
 ### Risk mitigation
 
 - No prompt schema change (the table format is the only change to prompt content; prompt instructions unaffected).
-- `AdversarialFindingsCache` stays in `src/review/types.ts` as a deprecated alias for one release before phase 8 deletes it.
+- `AdversarialFindingsCache` stays in `src/review/types.ts` as a **deprecated alias** (`type AdversarialFindingsCache = { round: number; findings: Finding[] }`) for one release before phase 8 deletes it. ADR-021 phase 9 must NOT independently delete or replace this type — phase 8 of this plan is the sole authority. Co-ordinate PRs so phase 8 lands first if both land in the same release window.
 
 ### Rollback
 
@@ -837,7 +845,11 @@ Same as phase 5, scoped to semantic review.
 
 ### Strategy set
 
-Six strategies in the autofix cycle:
+ADR-022 §1b lists six logical finding sources for the autofix cycle (lint, typecheck, adversarial, plugin, test-writer, implementer). In the implementation, these map to **two strategies** — not six — because the existing `runAgentRectification` already dispatches all source-targeted findings (lint, typecheck, adversarial, plugin) to a single implementer agent, and test-targeted findings to a single test-writer agent. The discriminant is `fixTarget`, not source. Adding per-source strategies would require splitting a single agent invocation into 4+ separate ops with no benefit — the implementer already receives all source findings in one prompt.
+
+The six-source framing in ADR-022 §1b describes logical groupings (what findings flow through the cycle), not distinct fix ops. This two-strategy set is the correct implementation.
+
+Two strategies in the autofix cycle:
 
 ```typescript
 const strategies: FixStrategy<Finding, any, any, any>[] = [
@@ -924,6 +936,8 @@ When flag is on:
 
 CI dogfood validates ≥95% routing agreement before flag flip. Two release cycles of soak.
 
+> **Gitignore:** `.nax/cycle-shadow/` must be covered by the `.nax/` gitignore pattern (same as `.nax/findings-shadow/` from ADR-021 phase 8). Verify the project `.gitignore` covers both before the phase 7 PR lands.
+
 ### Tests
 
 - Flag off: legacy path runs; existing autofix tests pass.
@@ -986,19 +1000,21 @@ Refs: #867
 |:---|:---|
 | [src/execution/lifecycle/acceptance-loop.ts](../../src/execution/lifecycle/acceptance-loop.ts) | Delete `previousFailure: string` accumulator and all writes |
 | [src/execution/lifecycle/acceptance-fix.ts](../../src/execution/lifecycle/acceptance-fix.ts) | Delete `applyFixLegacy`; rename `applyFixV2` → `applyFix` |
+| [src/operations/acceptance-diagnose.ts](../../src/operations/acceptance-diagnose.ts) | Remove `previousFailure?: string` from `AcceptanceDiagnoseInput` — the field becomes dead once `acceptance-loop.ts` stops passing it |
 | [src/review/types.ts:171-182](../../src/review/types.ts#L171) | Delete `AdversarialFindingsCache` (already migrated to `Iteration<Finding>[]`) |
-| [src/prompts/builders/adversarial-review-builder.ts:202-225](../../src/prompts/builders/adversarial-review-builder.ts#L202) | Delete `buildPriorFindingsBlock` (callers now use `buildPriorIterationsBlock`) |
+| [src/prompts/builders/adversarial-review-builder.ts:202-225](../../src/prompts/builders/adversarial-review-builder.ts#L202) | Delete `buildPriorFindingsBlock` — already replaced by one-line delegation in phase 5; now fully unused. Also remove the delegation shim added in phase 5. |
 | [src/prompts/builders/review-builder.ts:65-68,186-211](../../src/prompts/builders/review-builder.ts#L65) | Delete `PriorFailure` and `buildAttemptContextBlock` |
 | [src/pipeline/stages/autofix-agent.ts](../../src/pipeline/stages/autofix-agent.ts), [autofix.ts](../../src/pipeline/stages/autofix.ts) | Delete legacy `runAgentRectification`; rename V2 to canonical |
-| [src/config/schemas.ts](../../src/config/schemas.ts) | Delete `acceptance.fix.cycleV2` and `quality.autofix.cycleV2` fields |
+| [src/config/schemas.ts](../../src/config/schemas.ts) | Delete `acceptance.fix.cycleV2` and `quality.autofix.cycleV2` fields. **This is the sole authority for these deletions** — ADR-021 phase 9 must not delete them. |
 | Various tests | Delete tests asserting on legacy field shapes / flag-off behaviour |
 
 ### Validation gate
 
 - `bun run typecheck` passes
 - Full test suite passes
-- `git grep "previousFailure\|AdversarialFindingsCache\|PriorFailure\|buildPriorFindingsBlock\|buildAttemptContextBlock\|cycleV2" -- 'src/'` returns nothing
-- Feature flag config schema no longer mentions the deprecated flags
+- `git grep "previousFailure\|AdversarialFindingsCache\|PriorFailure\|buildPriorFindingsBlock\|buildAttemptContextBlock\|cycleV2\|AcceptanceDiagnoseInput" -- 'src/'` returns nothing (or only valid non-deprecated usages of `AcceptanceDiagnoseInput`)
+- Feature flag config schema no longer mentions `cycleV2` fields
+- For full end-to-end coverage, also run the ADR-021 phase 9 gate: `git grep "LlmReviewFinding\|testIssues\|sourceIssues\|parseLlmReviewShape\|acceptanceLegacyToFindings\|findingsV2" -- 'src/'` returns nothing
 
 ### Rollback
 
