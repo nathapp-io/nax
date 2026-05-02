@@ -55,6 +55,11 @@ export interface ResolverContext {
   storyGitRef?: string;
   /** Git diff --stat summary (ref mode) */
   stat?: string;
+  /**
+   * Ref-mode production diff excludes derived from resolveTestFilePatterns().
+   * Used to avoid hardcoded language-specific test file patterns in debate prompts.
+   */
+  productionExcludePatterns?: readonly string[];
   story: { id: string; title: string; acceptanceCriteria: string[] };
   semanticConfig: import("../review/types").SemanticReviewConfig;
   labeledProposals: Array<{ debater: string; output: string }>;
@@ -227,7 +232,12 @@ export async function resolveOutcome(
       // Build diffContext from resolverContext — discriminated on diffMode.
       const diffContext: import("../review/types").DiffContext =
         resolverContext.diffMode === "ref"
-          ? { mode: "ref", storyGitRef: resolverContext.storyGitRef ?? "", stat: resolverContext.stat }
+          ? {
+              mode: "ref",
+              storyGitRef: resolverContext.storyGitRef ?? "",
+              stat: resolverContext.stat,
+              productionExcludePatterns: resolverContext.productionExcludePatterns,
+            }
           : { mode: "embedded", diff: resolverContext.diff ?? "" };
 
       let dialogueResult: import("../review/dialogue").ReviewDialogueResult;

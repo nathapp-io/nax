@@ -492,6 +492,46 @@ describe("buildResolverPrompt()", () => {
     expect(prompt).toContain(DIFF);
   });
 
+  test("ref mode production diff uses provided exclusion pathspec", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(
+      LABELED_PROPOSALS,
+      CRITIQUES_STRINGS,
+      {
+        mode: "ref" as const,
+        storyGitRef: "abc123",
+        stat: "1 file changed",
+        productionExcludePatterns: [":!*_test.go", ":!tests/test_*.py"],
+      },
+      REVIEW_STORY,
+      ctx,
+    );
+
+    expect(prompt).toContain(":!*_test.go");
+    expect(prompt).toContain(":!tests/test_*.py");
+  });
+
+  test("ref mode production diff omits hardcoded TypeScript exclusion literals", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const builder = makeBuilder();
+    const prompt = builder.buildResolverPrompt(
+      LABELED_PROPOSALS,
+      CRITIQUES_STRINGS,
+      {
+        mode: "ref" as const,
+        storyGitRef: "abc123",
+        stat: "1 file changed",
+        productionExcludePatterns: [":!*_test.go"],
+      },
+      REVIEW_STORY,
+      ctx,
+    );
+
+    expect(prompt).not.toContain(":!*.test.ts");
+    expect(prompt).not.toContain(":!*.spec.ts");
+  });
+
   test("includes acceptance criteria", () => {
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     const builder = makeBuilder();

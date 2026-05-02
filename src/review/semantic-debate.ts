@@ -62,6 +62,7 @@ export interface SemanticDebateOptions {
   effectiveRef: string;
   startTime: number;
   prompt: string;
+  productionExcludePatterns: readonly string[];
   blockingThreshold: "error" | "warning" | "info" | undefined;
   createDebateRunner: (opts: DebateRunnerOptions) => DebateRunner;
 }
@@ -82,6 +83,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     effectiveRef,
     startTime,
     prompt,
+    productionExcludePatterns,
     blockingThreshold,
     createDebateRunner,
   } = opts;
@@ -129,7 +131,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     resolverContextInput: resolverSession
       ? {
           diffMode,
-          ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat } : { diff }),
+          ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat, productionExcludePatterns } : { diff }),
           story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
           semanticConfig,
           resolverType: reviewStageConfig.resolver.type,

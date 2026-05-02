@@ -13,13 +13,16 @@
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
  */
 
+import { relative, sep } from "node:path";
 import type { IAgentManager } from "../agents";
+import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
+import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import {
   type AdversarialLLMFinding,
@@ -152,6 +155,23 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
 
   let diff: string | undefined;
   let testInventory: import("./diff-utils").TestInventory | undefined;
+  const effectiveConfig = naxConfig ?? reviewConfigSelector.select(DEFAULT_CONFIG);
+  const packageDirRelative =
+    projectDir && workdir !== projectDir
+      ? (() => {
+          const rel = relative(projectDir, workdir);
+          if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
+          return rel && rel !== "." ? rel : undefined;
+        })()
+      : undefined;
+  const resolvedTestPatterns = await resolveTestFilePatterns(
+    effectiveConfig,
+    projectDir ?? workdir,
+    packageDirRelative,
+  );
+  const effectiveRefExcludePatterns = [
+    ...resolveReviewExcludePatterns(adversarialConfig.excludePatterns, resolvedTestPatterns),
+  ];
 
   if (diffMode === "embedded") {
     // Adversarial embedded mode: excludes .nax/ metadata but sees test files (unlike semantic).
@@ -245,9 +265,11 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       priorFailures,
       testInventory,
       excludePatterns: adversarialConfig.excludePatterns,
+      testGlobs: resolvedTestPatterns.globs,
       featureCtxBlock,
       priorAdversarialFindings,
       blockingThreshold,
+      refExcludePatterns: effectiveRefExcludePatterns,
     });
   } catch (err) {
     logger?.warn("adversarial", "LLM call failed — fail-open", { storyId: story.id, cause: String(err) });

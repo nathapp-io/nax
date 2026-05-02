@@ -21,7 +21,9 @@ export interface AdversarialReviewInput {
   stat?: string;
   priorFailures?: PriorFailure[];
   testInventory?: TestInventory;
+  testGlobs?: readonly string[];
   excludePatterns?: string[];
+  refExcludePatterns?: readonly string[];
   /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
   featureCtxBlock?: string;
   /** Prior adversarial findings to carry forward into this review round (issue #736). */
@@ -86,6 +88,8 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         priorFailures: input.priorFailures,
         testInventory: input.testInventory,
         excludePatterns: input.excludePatterns,
+        testGlobs: input.testGlobs,
+        refExcludePatterns: input.refExcludePatterns,
         priorAdversarialFindings: input.priorAdversarialFindings,
       },
     );

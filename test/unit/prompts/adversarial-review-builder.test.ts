@@ -113,6 +113,31 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
 
     expect(result).not.toContain("Changed Files Summary");
   });
+
+  test("ref mode uses resolver-provided test patterns in test-audit workflow", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      testGlobs: ["**/*_test.go", "tests/test_*.py"],
+      refExcludePatterns: [":!*_test.go", ":!tests/test_*.py"],
+    });
+
+    expect(result).toContain("**/*_test.go");
+    expect(result).toContain("tests/test_*.py");
+    expect(result).toContain(":!*_test.go");
+  });
+
+  test("ref mode does not include hardcoded TypeScript test layout literals", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      testGlobs: ["**/*_test.go"],
+      refExcludePatterns: [":!*_test.go"],
+    });
+
+    expect(result).not.toContain("src/**.ts");
+    expect(result).not.toContain("test/**/**.test.ts");
+  });
 });
 
 // ─── embedded mode ────────────────────────────────────────────────────────────

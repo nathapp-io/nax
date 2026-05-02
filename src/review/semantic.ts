@@ -7,6 +7,7 @@
  * is handled by lint/typecheck, not semantic review.
  */
 
+import { relative, sep } from "node:path";
 import type { IAgentManager } from "../agents";
 import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { NaxConfig } from "../config";
@@ -154,7 +155,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
 
   // ADR-009: resolve effective exclude patterns from config (falls back to DEFAULT_TEST_FILE_PATTERNS
   // when semanticConfig.excludePatterns is undefined — no behaviour change for default config).
-  const resolved = await resolveTestFilePatterns(naxConfig ?? reviewConfigSelector.select(DEFAULT_CONFIG), workdir);
+  const packageDirRelative =
+    projectDir && workdir !== projectDir
+      ? (() => {
+          const rel = relative(projectDir, workdir);
+          if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
+          return rel && rel !== "." ? rel : undefined;
+        })()
+      : undefined;
+  const resolved = await resolveTestFilePatterns(
+    naxConfig ?? reviewConfigSelector.select(DEFAULT_CONFIG),
+    projectDir ?? workdir,
+    packageDirRelative,
+  );
   const excludePatterns = [...resolveReviewExcludePatterns(semanticConfig.excludePatterns, resolved)];
 
   let diff: string | undefined;
@@ -259,6 +272,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       effectiveRef,
       startTime,
       prompt,
+      productionExcludePatterns: excludePatterns,
       blockingThreshold,
       createDebateRunner: _semanticDeps.createDebateRunner,
     });

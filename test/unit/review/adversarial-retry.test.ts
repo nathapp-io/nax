@@ -227,6 +227,41 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
     expect(result.findings![0].ruleId).toBe("adversarial");
   });
 
+  test("passes resolver-derived testGlobs and refExcludePatterns to callOp input", async () => {
+    const callOpMock = mock(async () => ({
+      passed: true,
+      findings: [],
+    }));
+    _adversarialDeps.callOp = callOpMock;
+
+    const agentManager = makeAgentManager(PASSING_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager });
+
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: { ...ADVERSARIAL_CONFIG, excludePatterns: undefined },
+      agentManager,
+      runtime,
+    });
+
+    expect(callOpMock).toHaveBeenCalledTimes(1);
+    const input = (callOpMock.mock.calls[0] as unknown[])[2] as {
+      testGlobs?: readonly string[];
+      refExcludePatterns?: readonly string[];
+    };
+
+    expect((input.testGlobs ?? []).length).toBeGreaterThan(0);
+    expect((input.testGlobs ?? []).some((glob) => glob.includes(".test.ts"))).toBe(true);
+
+    expect((input.refExcludePatterns ?? []).length).toBeGreaterThan(0);
+    expect(input.refExcludePatterns).toContain(":!*.test.ts");
+    expect(input.refExcludePatterns).toContain(":!*.spec.ts");
+    expect(input.refExcludePatterns).toContain(":!.nax/");
+    expect(input.refExcludePatterns).toContain(":!.nax-pids");
+  });
+
   test("returns fail-open when callOp throws", async () => {
     _adversarialDeps.callOp = mock(async () => { throw new Error("LLM call failed"); });
     const agentManager = makeAgentManager(PASSING_RESPONSE);
