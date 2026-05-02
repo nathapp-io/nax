@@ -189,6 +189,11 @@ export interface QualityConfig {
     /** Build command (e.g., "bun run build") */
     build?: string;
   };
+  /** Lint output parsing preferences for scope-aware rectification splitting. */
+  lintOutput?: {
+    /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
+    format?: "auto" | "eslint-json" | "biome-json" | "text" | "none";
+  };
   /** Auto-fix configuration (Phase 2) */
   autofix?: {
     /** Whether to auto-fix lint/format errors before escalating (default: true) */

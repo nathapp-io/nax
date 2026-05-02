@@ -140,12 +140,13 @@ export const autofixStage: PipelineStage = {
       typeof ctx.rootConfig.execution?.smartTestRunner === "object"
         ? ctx.rootConfig.execution.smartTestRunner?.testFilePatterns
         : undefined;
+    const lintOutputFormat = ctx.config.quality.lintOutput?.format ?? "auto";
     if (ctx.routing.testStrategy === "no-test") {
       const failedChecks = (reviewResult.checks ?? []).filter((c) => !c.success);
       if (
         failedChecks.length > 0 &&
         failedChecks.every((c) => {
-          const { testFindings, sourceFindings } = splitFindingsByScope(c, testFilePatterns);
+          const { testFindings, sourceFindings } = splitFindingsByScope(c, testFilePatterns, lintOutputFormat);
           return testFindings !== null && sourceFindings === null;
         })
       ) {

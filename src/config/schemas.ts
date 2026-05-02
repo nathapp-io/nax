@@ -115,6 +115,9 @@ export const NaxConfigSchema = z
       requireTests: true,
       scopeTestThreshold: 10,
       commands: {},
+      lintOutput: {
+        format: "auto",
+      },
       autofix: {
         enabled: true,
         maxAttempts: 3,
