@@ -153,8 +153,7 @@ export async function runAgentRectification(
         stageTestFilePatterns,
         lintOutputFormat,
         typecheckOutputFormat,
-        ctx.workdir,
-        ctx.workdir,
+        { workdir: ctx.workdir, cwd: ctx.workdir },
       );
       // null/null means the check has no classifiable findings — leave implementerChecks unchanged.
       if (testFindings || sourceFindings) {

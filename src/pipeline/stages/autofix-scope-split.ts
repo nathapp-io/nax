@@ -132,10 +132,9 @@ function splitByOutputParsing(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   format: LintOutputFormat = "auto",
-  workdir?: string,
-  cwd?: string,
+  lintOpts?: { workdir: string; cwd: string },
 ): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
-  const parsed = parseLintOutput(check.output, format, workdir && cwd ? { workdir, cwd } : undefined);
+  const parsed = parseLintOutput(check.output, format, lintOpts);
   if (!parsed) {
     // Cannot classify by file -- conservative fallback: route to implementer if output is non-empty
     if (check.output.trim()) {
@@ -190,17 +189,15 @@ function splitByTypecheckOutputParsing(
  * Split a check result into test-file vs source-file buckets for scope-aware routing.
  * Returns null for each bucket when there are no findings for that scope.
  *
- * Pass workdir and cwd (directory where lint ran) to enable Finding-based partitioning
- * for lint checks (ADR-021 phase 3). Both must be provided together; omitting either
- * falls back to the diagnostic file-path approach.
+ * Pass lintOpts to enable Finding-based partitioning for lint checks (ADR-021 phase 3).
+ * Omitting it falls back to the diagnostic file-path approach.
  */
 export function splitFindingsByScope(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   lintOutputFormat: LintOutputFormat = "auto",
   typecheckOutputFormat: TypecheckOutputFormat = "auto",
-  workdir?: string,
-  cwd?: string,
+  lintOpts?: { workdir: string; cwd: string },
 ): {
   testFindings: ReviewCheckResult | null;
   sourceFindings: ReviewCheckResult | null;
@@ -209,7 +206,7 @@ export function splitFindingsByScope(
     return splitByStructuredFindings(check, testFilePatterns);
   }
   if (check.check === "lint") {
-    return splitByOutputParsing(check, testFilePatterns, lintOutputFormat, workdir, cwd);
+    return splitByOutputParsing(check, testFilePatterns, lintOutputFormat, lintOpts);
   }
   if (check.check === "typecheck") {
     return splitByTypecheckOutputParsing(check, testFilePatterns, typecheckOutputFormat);
