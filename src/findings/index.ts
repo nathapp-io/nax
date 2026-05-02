@@ -26,6 +26,7 @@ export {
   acFailureToFinding,
   acSentinelToFinding,
   lintDiagnosticToFinding,
+  llmReviewFindingToFinding,
   pluginToFinding,
   tscDiagnosticToFinding,
 } from "./adapters";
