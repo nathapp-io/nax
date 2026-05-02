@@ -6,8 +6,6 @@
 
 export type {
   AcceptanceCriterion,
-  GenerateAcceptanceTestsOptions,
-  AcceptanceTestResult,
   RefinedCriterion,
   RefinementContext,
 } from "./types";
@@ -17,17 +15,12 @@ export { parseRefinementResponse } from "./refinement";
 export {
   parseAcceptanceCriteria,
   buildAcceptanceTestPrompt,
-  generateAcceptanceTests,
   generateSkeletonTests,
 } from "./generator";
 
-export type {
-  FixStory,
-  GenerateFixStoriesOptions,
-} from "./fix-generator";
+export type { FixStory } from "./fix-generator";
 
 export {
-  generateFixStories,
   findRelatedStories,
   parseACTextFromSpec,
   convertFixStoryToUserStory,

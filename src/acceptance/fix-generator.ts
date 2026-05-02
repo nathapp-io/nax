@@ -7,11 +7,7 @@
  * and enriches descriptions with test context (P1-A).
  */
 
-import type { IAgentManager } from "../agents";
-import type { ModelDef, NaxConfig } from "../config/schema";
-import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd/types";
-import { AcceptancePromptBuilder } from "../prompts";
 import { resolveAcceptanceTestFile } from "./test-path";
 
 const MAX_FIX_STORIES = 8;
@@ -54,43 +50,6 @@ export interface FixStory {
   testFilePath?: string;
   /** Workdir inherited from related story (D4) */
   workdir?: string;
-}
-
-/**
- * Options for generating fix stories.
- *
- * @example
- * ```ts
- * const options: GenerateFixStoriesOptions = {
- *   failedACs: ["AC-2", "AC-5"],
- *   testOutput: "...",
- *   prd: loadedPRD,
- *   specContent: "# Feature...",
- *   workdir: "/project",
- *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
- *   testFilePath: "/project/nax/features/cache/.nax-acceptance.test.ts",
- * };
- * ```
- */
-export interface GenerateFixStoriesOptions {
-  /** Failed AC identifiers */
-  failedACs: string[];
-  /** Full test output from bun test */
-  testOutput: string;
-  /** Current PRD with all stories */
-  prd: PRD;
-  /** Original spec.md content */
-  specContent: string;
-  /** Working directory */
-  workdir: string;
-  /** Model definition for LLM call */
-  modelDef: ModelDef;
-  /** Global config */
-  config: NaxConfig;
-  /** Path to acceptance test file for agent context (P1-A) */
-  testFilePath?: string;
-  /** Timeout for each complete() call (ms). Defaults to acceptance.timeoutMs config or 1800000. */
-  timeoutMs?: number;
 }
 
 /**
@@ -183,110 +142,6 @@ export function groupACsByRelatedStories(
   }
 
   return result;
-}
-
-/**
- * Generate fix stories from failed acceptance criteria.
- *
- * Groups ACs by related stories (D1), generates one fix story per group,
- * and caps at MAX_FIX_STORIES to prevent runaway cost.
- *
- * @param adapter - Agent adapter for LLM calls
- * @param options - Generation options
- * @returns Array of generated fix stories
- *
- * @example
- * ```ts
- * const adapter = new ClaudeCodeAdapter();
- * const fixStories = await generateFixStories(adapter, {
- *   failedACs: ["AC-2", "AC-5"],
- *   testOutput: "...",
- *   prd: loadedPRD,
- *   specContent: "...",
- *   workdir: "/project",
- *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
- *   testFilePath: "/project/nax/features/cache/.nax-acceptance.test.ts",
- * });
- * ```
- */
-export async function generateFixStories(
-  agentManager: IAgentManager,
-  options: GenerateFixStoriesOptions,
-): Promise<FixStory[]> {
-  const { failedACs, testOutput, prd, specContent, modelDef, testFilePath } = options;
-  const logger = getLogger();
-
-  const acTextMap = parseACTextFromSpec(specContent);
-
-  // D1: Group ACs by related stories — batch related failures into one fix story
-  const groups = groupACsByRelatedStories(failedACs, prd);
-  const fixStories: FixStory[] = [];
-
-  for (let i = 0; i < groups.length; i++) {
-    const { acs: batchedACs, relatedStories } = groups[i];
-
-    if (relatedStories.length === 0) {
-      logger.warn("acceptance", "[WARN] No related stories found for AC group — skipping", { batchedACs });
-      continue;
-    }
-
-    logger.info("acceptance", "Generating fix for AC group", { batchedACs });
-
-    const prompt = new AcceptancePromptBuilder().buildFixGeneratorPrompt({
-      batchedACs,
-      acTextMap,
-      testOutput,
-      relatedStories,
-      prd,
-      testFilePath,
-    });
-
-    // D4: inherit workdir from first related story that has one set
-    const relatedStory = prd.userStories.find((s) => relatedStories.includes(s.id) && s.workdir);
-    const workdir = relatedStory?.workdir;
-
-    try {
-      const fixResult = await agentManager.complete(prompt, {
-        modelDef,
-        featureName: options.prd.feature,
-        workdir: options.workdir,
-        sessionRole: "fix-gen",
-        timeoutMs: options.timeoutMs ?? options.config?.acceptance?.timeoutMs ?? 1800000,
-      });
-
-      fixStories.push({
-        id: `US-FIX-${String(i + 1).padStart(3, "0")}`,
-        title: `Fix: ${batchedACs.join(", ")} — ${(acTextMap[batchedACs[0]] || "").slice(0, 40)}`,
-        failedAC: batchedACs[0],
-        batchedACs,
-        testOutput,
-        relatedStories,
-        description: typeof fixResult === "string" ? fixResult : fixResult.output,
-        testFilePath,
-        workdir,
-      });
-
-      logger.info("acceptance", "[OK] Generated fix story", { storyId: fixStories[fixStories.length - 1].id });
-    } catch (error) {
-      logger.warn("acceptance", "[WARN] Error generating fix", {
-        batchedACs,
-        error: (error as Error).message,
-      });
-      fixStories.push({
-        id: `US-FIX-${String(i + 1).padStart(3, "0")}`,
-        title: `Fix: ${batchedACs.join(", ")}`,
-        failedAC: batchedACs[0],
-        batchedACs,
-        testOutput,
-        relatedStories,
-        description: `Fix the implementation to make ${batchedACs.join(", ")} pass. Related stories: ${relatedStories.join(", ")}.`,
-        testFilePath,
-        workdir,
-      });
-    }
-  }
-
-  return fixStories;
 }
 
 /**
