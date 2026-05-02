@@ -324,7 +324,7 @@ export async function resolveOutcome(
       });
       return {
         outcome: "passed",
-        resolverCostUsd: resolverResult.costUsd,
+        resolverCostUsd: resolverResult.exactCostUsd ?? resolverResult.estimatedCostUsd,
         output: resolverResult.output,
       };
     }
@@ -369,7 +369,7 @@ export async function resolveOutcome(
     });
     return {
       outcome: "passed",
-      resolverCostUsd: resolverResult.costUsd,
+      resolverCostUsd: resolverResult.exactCostUsd ?? resolverResult.estimatedCostUsd,
       output: resolverResult.output,
     };
   }

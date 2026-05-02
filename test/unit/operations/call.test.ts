@@ -59,7 +59,7 @@ const invalidTimedRunEchoOp: RunOperation<{ text: string }, string, Pick<typeof 
 
 describe("callOp — kind:complete", () => {
   test("calls agentManager.completeAs with composed prompt", async () => {
-    const completeResult: CompleteResult = { output: "echoed", costUsd: 0, source: "exact" };
+    const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     const runtime = makeTestRuntime({ agentManager });
 
@@ -77,7 +77,7 @@ describe("callOp — kind:complete", () => {
   });
 
   test("passes op timeoutMs to completeAs", async () => {
-    const completeResult: CompleteResult = { output: "echoed", costUsd: 0, source: "exact" };
+    const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     const runtime = makeTestRuntime({ agentManager });
 
@@ -99,7 +99,7 @@ describe("callOp — kind:complete", () => {
   });
 
   test("throws CALL_OP_INVALID_TIMEOUT on non-positive timeoutMs", async () => {
-    const completeResult: CompleteResult = { output: "echoed", costUsd: 0, source: "exact" };
+    const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     const runtime = makeTestRuntime({ agentManager });
 
@@ -296,7 +296,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
 // back to "balanced is hardcoded".
 describe("callOp — op.model resolver (issue #725)", () => {
   test("CompleteOperation: literal model is forwarded to completeAs.model", async () => {
-    const completeResult: CompleteResult = { output: "ok", costUsd: 0, source: "exact" };
+    const completeResult: CompleteResult = { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     const runtime = makeTestRuntime({ agentManager });
 
@@ -323,7 +323,7 @@ describe("callOp — op.model resolver (issue #725)", () => {
   });
 
   test("CompleteOperation: resolver function is invoked with input and resolves to ConfiguredModel", async () => {
-    const completeResult: CompleteResult = { output: "ok", costUsd: 0, source: "exact" };
+    const completeResult: CompleteResult = { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     const runtime = makeTestRuntime({ agentManager });
 

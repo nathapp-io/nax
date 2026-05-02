@@ -90,7 +90,7 @@ afterEach(() => {
 describe("DebateRunner.run() mode routing — AC1: panel + one-shot", () => {
   test("with mode 'panel' and sessionMode 'one-shot', calls runOneShot", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     });
 
     const runner = new DebateRunner({
@@ -149,7 +149,7 @@ describe("DebateRunner.run() mode routing — AC3: mode undefined defaults to pa
     delete (stageConfig as any).mode;
 
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     });
 
     const runner = new DebateRunner({
@@ -200,7 +200,7 @@ describe("DebateRunner.run() mode routing — AC4: hybrid + stateful", () => {
 describe("DebateRunner.run() mode routing — AC5: hybrid + one-shot with fallback", () => {
   test("with mode 'hybrid' and sessionMode 'one-shot', calls runOneShot and logs warning", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     });
 
     const runner = new DebateRunner({
@@ -236,7 +236,7 @@ describe("DebateRunner.run() mode routing — AC6: hybrid + undefined sessionMod
     delete (stageConfig as any).sessionMode;
 
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" as const }),
+      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     });
 
     const runner = new DebateRunner({

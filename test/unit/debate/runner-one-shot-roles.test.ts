@@ -24,7 +24,7 @@ function makeCallCtx(
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
 ): CallContext {
   const agentManager = makeMockAgentManager({
-    completeAsFn: completeAsFn ?? (async () => ({ output: '{"passed":true}', costUsd: 0, source: "fallback" as const })),
+    completeAsFn: completeAsFn ?? (async () => ({ output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 })),
   });
   return {
     runtime: {
@@ -66,7 +66,7 @@ describe("DebateRunner.runPanelOneShot() proposal invocations", () => {
     const runner = new DebateRunner({
       ctx: makeCallCtx("US-ROLE", async (agentName, _prompt, _opts) => {
         agentCalls.push(agentName);
-        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+        return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
       stage: "review",
       stageConfig: makeStageConfig(),
@@ -87,7 +87,7 @@ describe("DebateRunner.runPanelOneShot() proposal invocations", () => {
     const runner = new DebateRunner({
       ctx: makeCallCtx("US-ROLE", async (_agentName, _prompt, _opts) => {
         callCount.total++;
-        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+        return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
       stage: "review",
       stageConfig: makeStageConfig({
@@ -114,7 +114,7 @@ describe("DebateRunner.runPanelOneShot() — persona injection in proposal round
     const runner = new DebateRunner({
       ctx: makeCallCtx("US-P1", async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
-        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+        return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
       stage: "review",
       stageConfig: makeStageConfig({
@@ -151,7 +151,7 @@ describe("DebateRunner.runPanelOneShot() — persona injection in proposal round
     const runner = new DebateRunner({
       ctx: makeCallCtx("US-P1-NO-PERSONA", async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
-        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+        return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
       stage: "review",
       stageConfig: makeStageConfig({
@@ -179,7 +179,7 @@ describe("DebateRunner.runPanelOneShot() — persona injection in proposal round
     const runner = new DebateRunner({
       ctx: makeCallCtx("US-P1-TASK", async (_agentName, prompt) => {
         capturedPrompts.push(prompt);
-        return { output: '{"passed":true}', costUsd: 0, source: "fallback" as const };
+        return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
       stage: "review",
       stageConfig: makeStageConfig({
@@ -210,7 +210,7 @@ describe("DebateRunner.runPanelOneShot() — labeledProposals persona label (P3)
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
-        return { output: "proposal output", costUsd: 0, source: "fallback" as const };
+        return { output: "proposal output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
       stage: "plan",
       stageConfig: makeStageConfig({
@@ -244,7 +244,7 @@ describe("DebateRunner.runPanelOneShot() — labeledProposals persona label (P3)
         if (opts?.sessionRole === "synthesis") {
           capturedSynthesisPrompt = prompt;
         }
-        return { output: "proposal output", costUsd: 0, source: "fallback" as const };
+        return { output: "proposal output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
       stage: "plan",
       stageConfig: makeStageConfig({

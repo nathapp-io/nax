@@ -139,7 +139,7 @@ describe("runRectificationLoop — debate enabled", () => {
       }),
       completeFn: mock(async () => {
         completeCalls++;
-        return { output: "The root cause is a missing null check.", costUsd: 0, source: "primary" as const };
+        return { output: "The root cause is a missing null check.", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
     });
 
@@ -176,7 +176,7 @@ describe("runRectificationLoop — debate enabled", () => {
         }
         return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
       }),
-      completeFn: mock(async () => ({ output: diagnosisOutput, costUsd: 0, source: "primary" as const })),
+      completeFn: mock(async () => ({ output: diagnosisOutput, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 })),
     });
 
     _rectificationDeps.agentManager = mockManager as any;

@@ -28,9 +28,9 @@ function makeMockDecomposeManager(
     completeAsFn: decomposeFn
       ? async (name: string, _prompt: string, opts?: any) => {
           const result = await decomposeFn(name, opts ?? {});
-          return { output: JSON.stringify(result.stories), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(result.stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         }
-      : async () => ({ output: JSON.stringify([]), costUsd: 0, source: "exact" as const }),
+      : async () => ({ output: JSON.stringify([]), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
   });
 }
 
@@ -277,7 +277,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     );
@@ -327,7 +327,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     );
@@ -392,7 +392,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     );
@@ -418,7 +418,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     );

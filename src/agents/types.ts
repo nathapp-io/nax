@@ -286,10 +286,12 @@ export type ResolvedCompleteOptions = CompleteOptions & { resolvedPermissions: R
 export interface CompleteResult {
   /** Raw text output from the completion call */
   output: string;
-  /** Cost for this completion call in USD */
-  costUsd: number;
-  /** How costUsd was derived */
-  source: "exact" | "estimated" | "fallback";
+  /** Accumulated token usage for this completion call. */
+  tokenUsage: TokenUsage;
+  /** Estimated cost from token usage × pricing rates (always present). */
+  estimatedCostUsd: number;
+  /** Exact cost reported by wire protocol (when available). */
+  exactCostUsd?: number;
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */
   adapterFailure?: AdapterFailure;
 }

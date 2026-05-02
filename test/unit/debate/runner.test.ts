@@ -9,7 +9,7 @@ import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
   const agentManager = makeMockAgentManager({
-    completeFn: async (_name: string, _p: string, _o: unknown) => ({ output: '{"passed":true}', costUsd: 0, source: "primary" as const }),
+    completeFn: async (_name: string, _p: string, _o: unknown) => ({ output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
   });
   return {
     runtime: {
@@ -82,7 +82,7 @@ describe("DebateRunner — one-shot panel mode", () => {
       completeAsFn: async (name: string, _p: string, _o: unknown) => {
         callCount++;
         if (callCount === 2) throw new Error("second debater failed");
-        return { output: '{"passed":true}', costUsd: 0, source: "primary" as const };
+        return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
     const ctx = makeCallCtx({
@@ -123,7 +123,7 @@ describe("DebateRunner — one-shot panel mode", () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async (name: string, _p: string, _o: unknown) => {
         calls.push(name);
-        return { output: '{"passed":true}', costUsd: 0, source: "primary" as const };
+        return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
     const stageConfig = makeStageConfig({

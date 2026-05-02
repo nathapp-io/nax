@@ -76,12 +76,12 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
         const result = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCostUsd: 0.01 };
         return { result, fallbacks: [], finalBundle: request.bundle, finalPrompt: request.runOptions.prompt };
       }),
-      completeWithFallback: async () => ({ result: { output: "", costUsd: 0, source: "fallback" as const }, fallbacks: [] }),
+      completeWithFallback: async () => ({ result: { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }, fallbacks: [] }),
       run: async (request: import("../../../../src/agents/manager-types").AgentRunRequest) => {
         const outcome = await manager.runWithFallback(request);
         return { ...outcome.result, agentFallbacks: outcome.fallbacks };
       },
-      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+      complete: async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
       getAgent: () => undefined,
     } as unknown as IAgentManager;
 

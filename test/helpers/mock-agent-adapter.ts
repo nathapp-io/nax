@@ -3,8 +3,8 @@ import type { AgentAdapter, CompleteResult, SessionHandle, TurnResult } from "..
 
 const DEFAULT_COMPLETE_RESULT: CompleteResult = {
   output: "",
-  costUsd: 0,
-  source: "fallback" as const,
+  tokenUsage: { inputTokens: 0, outputTokens: 0 },
+  estimatedCostUsd: 0,
 };
 
 const DEFAULT_SESSION_HANDLE: SessionHandle = {
@@ -15,6 +15,7 @@ const DEFAULT_SESSION_HANDLE: SessionHandle = {
 const DEFAULT_TURN_RESULT: TurnResult = {
   output: "",
   tokenUsage: { inputTokens: 0, outputTokens: 0 },
+  estimatedCostUsd: 0,
   internalRoundTrips: 1,
 };
 

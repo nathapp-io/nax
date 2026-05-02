@@ -46,7 +46,7 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const agentManager = makeMockAgentManager({
         completeAsFn: async () => {
           await Bun.write(testFilePath, REAL_TEST_CODE);
-          return { output: CONVERSATIONAL_OUTPUT, costUsd: 0, source: "exact" as const };
+          return { output: CONVERSATIONAL_OUTPUT, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
@@ -80,7 +80,7 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const agentManager = makeMockAgentManager({
         completeAsFn: async () => {
           await Bun.write(testFilePath, STUB_TEST_CODE);
-          return { output: CONVERSATIONAL_OUTPUT, costUsd: 0, source: "exact" as const };
+          return { output: CONVERSATIONAL_OUTPUT, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
@@ -110,7 +110,7 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const testFilePath = join(dir, "test-feature.nax-acceptance.test.ts");
 
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => ({ output: CONVERSATIONAL_OUTPUT, costUsd: 0, source: "exact" as const }),
+        completeAsFn: async () => ({ output: CONVERSATIONAL_OUTPUT, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
       const ctx: CallContext = {

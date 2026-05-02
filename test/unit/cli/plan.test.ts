@@ -122,7 +122,7 @@ describe("planCommand", () => {
       return makeMockAgentManager({
         completeAsFn: async (_name: string, prompt: string, _opts?: any) => {
           if (prompt) capturedPlanArgs.push(prompt);
-          return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       });
     });
@@ -186,7 +186,7 @@ describe("planCommand", () => {
       makeMockAgentManager({
         completeAsFn: async (name: string, _prompt: string, _opts?: any) => {
           receivedAgentName = name;
-          return { output: JSON.stringify(SAMPLE_PRD), costUsd: 0, source: "exact" as const };
+          return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
         },
       }),
     );
@@ -286,7 +286,7 @@ describe("planCommand", () => {
   test("AC-4: throws on invalid JSON response from adapter", async () => {
     _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockAgentManager({
-        completeAsFn: async () => ({ output: "not valid json {{", costUsd: 0, source: "exact" as const }),
+        completeAsFn: async () => ({ output: "not valid json {{", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
       }),
     );
 
@@ -308,8 +308,7 @@ describe("planCommand", () => {
       makeMockAgentManager({
         completeAsFn: async () => ({
           output: JSON.stringify(prdWithoutProject),
-          costUsd: 0,
-          source: "exact" as const,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0,
         }),
       }),
     );
@@ -334,8 +333,7 @@ describe("planCommand", () => {
       makeMockAgentManager({
         completeAsFn: async () => ({
           output: JSON.stringify(badPrd),
-          costUsd: 0,
-          source: "exact" as const,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0,
         }),
       }),
     );
@@ -395,8 +393,7 @@ describe("planCommand", () => {
       makeMockAgentManager({
         completeAsFn: async () => ({
           output: JSON.stringify(prdWithBadStatuses),
-          costUsd: 0,
-          source: "exact" as const,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0,
         }),
       }),
     );

@@ -182,7 +182,7 @@ describe("synthesisResolver()", () => {
     let callCount = 0;
     const agentManager = makeMockAgentManager({ completeAsFn: async () => {
       callCount++;
-      return { output: "synthesis output", costUsd: 0, source: "fallback" };
+      return { output: "synthesis output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await synthesisResolver(["proposal 1", "proposal 2", "proposal 3"], [], {
@@ -198,7 +198,7 @@ describe("synthesisResolver()", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "synthesis output", costUsd: 0, source: "fallback" };
+      return { output: "synthesis output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await synthesisResolver(
@@ -216,7 +216,7 @@ describe("synthesisResolver()", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "synthesis output", costUsd: 0, source: "fallback" };
+      return { output: "synthesis output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await synthesisResolver(["proposal 1"], ["critique X", "critique Y"], {
@@ -230,7 +230,7 @@ describe("synthesisResolver()", () => {
   });
 
   test("returns output and cost metadata from agentManager.completeAs()", async () => {
-    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "the synthesis result", costUsd: 0, source: "fallback" }) });
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "the synthesis result", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }) });
 
     const result = await synthesisResolver(["prop 1", "prop 2"], [], {
       agentManager,
@@ -239,12 +239,12 @@ describe("synthesisResolver()", () => {
     });
 
     expect(result.output).toBe("the synthesis result");
-    expect(result.costUsd).toBe(0);
-    expect(result.source).toBe("fallback");
+    expect(result.estimatedCostUsd).toBe(0);
+    expect(result.exactCostUsd).toBeUndefined();
   });
 
   test("works when critiques array is empty", async () => {
-    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "synthesis without critiques", costUsd: 0, source: "fallback" }) });
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "synthesis without critiques", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }) });
 
     const result = await synthesisResolver(["p1", "p2"], [], {
       agentManager,
@@ -253,12 +253,12 @@ describe("synthesisResolver()", () => {
     });
 
     expect(result.output).toBe("synthesis without critiques");
-    expect(result.costUsd).toBe(0);
-    expect(result.source).toBe("fallback");
+    expect(result.estimatedCostUsd).toBe(0);
+    expect(result.exactCostUsd).toBeUndefined();
   });
 
   test("preserves exact cost metadata from agentManager.completeAs()", async () => {
-    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "exact synthesis", costUsd: 0.42, source: "exact" }) });
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "exact synthesis", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.42, exactCostUsd: 0.42 }) });
 
     const result = await synthesisResolver(["p1", "p2"], ["c1"], {
       agentManager,
@@ -267,15 +267,15 @@ describe("synthesisResolver()", () => {
     });
 
     expect(result.output).toBe("exact synthesis");
-    expect(result.costUsd).toBeCloseTo(0.42, 6);
-    expect(result.source).toBe("exact");
+    expect(result.estimatedCostUsd).toBeCloseTo(0.42, 6);
+    expect(result.exactCostUsd).toBeCloseTo(0.42, 6);
   });
 
   test("forwards complete options to agentManager.completeAs()", async () => {
     let capturedOptions: CompleteOptions | undefined;
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, _prompt, opts) => {
       capturedOptions = opts;
-      return { output: "exact synthesis", costUsd: 0.42, source: "exact" };
+      return { output: "exact synthesis", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.42, exactCostUsd: 0.42 };
     } });
 
     const completeOptions = {
@@ -304,7 +304,7 @@ describe("judgeResolver()", () => {
 
     const agentManager = makeMockAgentManager({ completeAsFn: async (name, _prompt, _opts) => {
       usedAgentName = name;
-      return { output: "judge output", costUsd: 0, source: "fallback" };
+      return { output: "judge output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     const resolverConfig: ResolverConfig = {
@@ -325,7 +325,7 @@ describe("judgeResolver()", () => {
 
     const agentManager = makeMockAgentManager({ completeAsFn: async () => {
       callCount++;
-      return { output: "judge output", costUsd: 0, source: "fallback" };
+      return { output: "judge output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await judgeResolver(["p1", "p2"], ["c1"], { type: "custom", agent: "judge" }, {
@@ -341,7 +341,7 @@ describe("judgeResolver()", () => {
 
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "judge output", costUsd: 0, source: "fallback" };
+      return { output: "judge output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await judgeResolver(
@@ -360,7 +360,7 @@ describe("judgeResolver()", () => {
 
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "judge output", costUsd: 0, source: "fallback" };
+      return { output: "judge output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await judgeResolver(
@@ -375,7 +375,7 @@ describe("judgeResolver()", () => {
   });
 
   test("returns output and cost metadata from agentManager.completeAs()", async () => {
-    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "final judge verdict", costUsd: 0, source: "fallback" }) });
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "final judge verdict", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }) });
 
     const result = await judgeResolver(["p1"], [], { type: "custom", agent: "judge" }, {
       agentManager,
@@ -383,12 +383,12 @@ describe("judgeResolver()", () => {
     });
 
     expect(result.output).toBe("final judge verdict");
-    expect(result.costUsd).toBe(0);
-    expect(result.source).toBe("fallback");
+    expect(result.estimatedCostUsd).toBe(0);
+    expect(result.exactCostUsd).toBeUndefined();
   });
 
   test("preserves exact cost metadata from judge agentManager.completeAs()", async () => {
-    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "judge verdict", costUsd: 0.55, source: "exact" }) });
+    const agentManager = makeMockAgentManager({ completeAsFn: async () => ({ output: "judge verdict", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.55, exactCostUsd: 0.55 }) });
 
     const result = await judgeResolver(["p1"], ["c1"], { type: "custom", agent: "judge" }, {
       agentManager,
@@ -396,8 +396,8 @@ describe("judgeResolver()", () => {
     });
 
     expect(result.output).toBe("judge verdict");
-    expect(result.costUsd).toBeCloseTo(0.55, 6);
-    expect(result.source).toBe("exact");
+    expect(result.estimatedCostUsd).toBeCloseTo(0.55, 6);
+    expect(result.exactCostUsd).toBeCloseTo(0.55, 6);
   });
 
   test("uses defaultAgentName when resolver.agent is not specified", async () => {
@@ -405,7 +405,7 @@ describe("judgeResolver()", () => {
 
     const agentManager = makeMockAgentManager({ completeAsFn: async (name, _prompt, _opts) => {
       usedAgentName = name;
-      return { output: "judge output", costUsd: 0, source: "fallback" };
+      return { output: "judge output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     const resolverConfig: ResolverConfig = {
@@ -427,7 +427,7 @@ describe("judgeResolver()", () => {
 
     const agentManager = makeMockAgentManager({ completeAsFn: async () => {
       wasCalled = true;
-      return { output: "fallback judge output", costUsd: 0, source: "fallback" };
+      return { output: "fallback judge output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     const resolverConfig: ResolverConfig = {
@@ -450,7 +450,7 @@ describe("judgeResolver()", () => {
     let capturedOptions: CompleteOptions | undefined;
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, _prompt, opts) => {
       capturedOptions = opts;
-      return { output: "judge verdict", costUsd: 0.55, source: "exact" };
+      return { output: "judge verdict", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.55, exactCostUsd: 0.55 };
     } });
 
     const completeOptions = {
@@ -477,7 +477,7 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "synthesis", costUsd: 0, source: "fallback" };
+      return { output: "synthesis", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     const debaters: Debater[] = [
@@ -504,7 +504,7 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "synthesis", costUsd: 0, source: "fallback" };
+      return { output: "synthesis", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     const debaters: Debater[] = [
@@ -528,7 +528,7 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "synthesis", costUsd: 0, source: "fallback" };
+      return { output: "synthesis", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await synthesisResolver(["proposal A", "proposal B"], [], {
@@ -545,7 +545,7 @@ describe("synthesisResolver() — persona-aware proposal labels (P2)", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "synthesis", costUsd: 0, source: "fallback" };
+      return { output: "synthesis", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     const debaters: Debater[] = [
@@ -570,7 +570,7 @@ describe("judgeResolver() — persona-aware proposal labels (P2)", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "synthesis output", costUsd: 0, source: "fallback" };
+      return { output: "synthesis output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     const debaters: Debater[] = [
@@ -592,7 +592,7 @@ describe("judgeResolver() — persona-aware proposal labels (P2)", () => {
     let capturedPrompt = "";
     const agentManager = makeMockAgentManager({ completeAsFn: async (_name, prompt) => {
       capturedPrompt = prompt;
-      return { output: "verdict", costUsd: 0, source: "fallback" };
+      return { output: "verdict", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     } });
 
     await judgeResolver(["p1", "p2"], [], { type: "custom", agent: "judge" }, {

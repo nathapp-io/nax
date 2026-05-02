@@ -165,7 +165,7 @@ describe("DebateRunner.run() — stateful mode", () => {
       },
       completeAsFn: async (name) => {
         completeAsCalls.push(name);
-        return { output: "complete-output", costUsd: 0, source: "primary" as const };
+        return { output: "complete-output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
 
@@ -406,7 +406,7 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
       }),
       completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
         completeCalls.push({ opts });
-        return { output: "synthesis resolved", costUsd: 0.01, source: "exact" as const };
+        return { output: "synthesis resolved", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, exactCostUsd: 0.01 };
       },
     });
 
@@ -449,7 +449,7 @@ describe("DebateRunner.run() — one-shot mode unchanged", () => {
       },
       completeFn: async () => {
         completeCount += 1;
-        return { output: '{"passed": true}', costUsd: 0.1, source: "exact" as const };
+        return { output: '{"passed": true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.1, exactCostUsd: 0.1 };
       },
     });
 

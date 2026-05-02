@@ -52,7 +52,7 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
     },
     isInstalled: async () => true,
     buildCommand: () => ["mock"],
-    complete: mock(async () => ({ output: "", costUsd: 0, source: "fallback" as const })),
+    complete: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 })),
     plan: mock(async () => ({ specContent: "" })),
     decompose: mock(async () => ({ stories: [] })),
     closePhysicalSession: mock(async () => {}),

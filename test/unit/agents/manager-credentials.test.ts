@@ -20,7 +20,7 @@ function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
     buildCommand: () => [],
     plan: async () => ({ spec: "", cost: 0 }) as never,
     decompose: async () => ({ stories: [] }) as never,
-    complete: async () => ({ output: "", costUsd: 0, source: "estimated" as const }),
+    complete: async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     closePhysicalSession: async () => {},
     closeSession: async () => {},
   });

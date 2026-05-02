@@ -38,7 +38,7 @@ function makeAgentManager(
 ): { mgr: IAgentManager; completeMock: ReturnType<typeof mock> } {
   const completeMock = mock(
     completeImpl ??
-      (async () => ({ output: JSON.stringify({ action: "approve", confidence: 0.9, reasoning: "ok" }), costUsd: 0, source: "mock" as const })),
+      (async () => ({ output: JSON.stringify({ action: "approve", confidence: 0.9, reasoning: "ok" }), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 })),
   );
   return {
     mgr: {
@@ -101,7 +101,7 @@ describe("auto.ts does not spawn claude CLI directly", () => {
     const plugin = new AutoInteractionPlugin();
     await plugin.init({ confidenceThreshold: 0.7 });
 
-    const { mgr } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const originalSpawn = Bun.spawn;
@@ -130,7 +130,7 @@ describe("agentManager.complete() is called with correct arguments", () => {
   });
 
   test("agentManager.complete() is called exactly once per decide() invocation", async () => {
-    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     await plugin.decide(makeRequest("req-once"));
@@ -139,7 +139,7 @@ describe("agentManager.complete() is called with correct arguments", () => {
   });
 
   test("agentManager.complete() receives a non-empty prompt string", async () => {
-    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     await plugin.decide(makeRequest("req-prompt", { summary: "Is this safe?" }));
@@ -150,7 +150,7 @@ describe("agentManager.complete() is called with correct arguments", () => {
   });
 
   test("agentManager.complete() prompt contains the request summary", async () => {
-    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const summary = "Should we merge this story?";
@@ -161,7 +161,7 @@ describe("agentManager.complete() is called with correct arguments", () => {
   });
 
   test("agentManager.complete() receives jsonMode: true option", async () => {
-    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     await plugin.decide(makeRequest("req-json-mode"));
@@ -184,7 +184,7 @@ describe("agentManager.complete() is called with correct arguments", () => {
       } as any,
     });
 
-    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    const { mgr, completeMock } = makeAgentManager(async () => ({ output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     await pluginWithModel.decide(makeRequest("req-model"));
@@ -214,7 +214,7 @@ describe("agentManager dependency injection via _deps.agentManager", () => {
     let completeCalled = false;
     const { mgr } = makeAgentManager(async () => {
       completeCalled = true;
-      return { output: approveJson(0.9), costUsd: 0, source: "mock" };
+      return { output: approveJson(0.9), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     });
     (_deps as Record<string, unknown>).agentManager = mgr;
 
@@ -237,7 +237,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
   });
 
   test("agentManager returns approve JSON → response.action is approve", async () => {
-    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.9), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.9), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-approve"));
@@ -249,7 +249,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
   });
 
   test("agentManager returns reject JSON → response.action is reject", async () => {
-    const { mgr } = makeAgentManager(async () => ({ output: rejectJson(0.85), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: rejectJson(0.85), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-reject"));
@@ -258,7 +258,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
   });
 
   test("agentManager returns choose JSON with value → value is propagated", async () => {
-    const { mgr } = makeAgentManager(async () => ({ output: chooseJson("option-b"), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: chooseJson("option-b"), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(
@@ -276,7 +276,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
   });
 
   test("confidence below threshold → returns undefined (escalates)", async () => {
-    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.5), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.5), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-low-conf"));
@@ -288,7 +288,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
     const pluginAtThreshold = new AutoInteractionPlugin();
     await pluginAtThreshold.init({ confidenceThreshold: 0.8 });
 
-    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.8), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.8), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await pluginAtThreshold.decide(makeRequest("req-at-threshold"));
@@ -301,7 +301,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
     let completeCalled = false;
     const { mgr } = makeAgentManager(async () => {
       completeCalled = true;
-      return { output: approveJson(), costUsd: 0, source: "mock" };
+      return { output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     });
     (_deps as Record<string, unknown>).agentManager = mgr;
 
@@ -327,7 +327,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
   });
 
   test("agentManager.complete() returns malformed JSON → returns undefined (escalates)", async () => {
-    const { mgr } = makeAgentManager(async () => ({ output: "not valid json {{{", costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: "not valid json {{{", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-bad-json"));
@@ -337,7 +337,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
 
   test("agentManager.complete() returns JSON with missing fields → returns undefined", async () => {
     const { mgr } = makeAgentManager(async () =>
-      ({ output: JSON.stringify({ action: "approve" }), costUsd: 0, source: "mock" }), // missing confidence and reasoning
+      ({ output: JSON.stringify({ action: "approve" }), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }), // missing confidence and reasoning
     );
     (_deps as Record<string, unknown>).agentManager = mgr;
 
@@ -348,7 +348,7 @@ describe("auto-response behaviour is preserved after adapter migration", () => {
 
   test("respondedAt is set to a recent timestamp", async () => {
     const before = Date.now();
-    const { mgr } = makeAgentManager(async () => ({ output: approveJson(), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-timestamp"));
@@ -374,7 +374,7 @@ describe("agentManager.complete() response parsing handles markdown-wrapped JSON
 
   test("markdown-wrapped JSON is unwrapped and parsed correctly", async () => {
     const wrappedJson = "```json\n" + approveJson(0.95) + "\n```";
-    const { mgr } = makeAgentManager(async () => ({ output: wrappedJson, costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: wrappedJson, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-markdown"));
@@ -383,7 +383,7 @@ describe("agentManager.complete() response parsing handles markdown-wrapped JSON
   });
 
   test("plain JSON without markdown fences is parsed correctly", async () => {
-    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.88), costUsd: 0, source: "mock" }));
+    const { mgr } = makeAgentManager(async () => ({ output: approveJson(0.88), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }));
     (_deps as Record<string, unknown>).agentManager = mgr;
 
     const response = await plugin.decide(makeRequest("req-plain-json"));

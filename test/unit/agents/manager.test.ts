@@ -228,7 +228,7 @@ describe("AgentManager — middleware envelope", () => {
     let calledCompleteAs = false;
     (manager as unknown as { completeAs: typeof manager.completeAs }).completeAs = async (_name, _prompt, _opts) => {
       calledCompleteAs = true;
-      return { output: "", costUsd: 0, source: "fallback" as const };
+      return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     };
     try { await manager.complete("prompt", {} as never); } catch {}
     expect(calledCompleteAs).toBe(true);
