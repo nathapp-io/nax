@@ -52,6 +52,13 @@ Allowed callers of `adapter.openSession` / `sendTurn` / `closeSession` / `comple
 
 Everywhere else: go through `IAgentManager` / `ISessionManager`. Enforced by `test/integration/cli/adapter-boundary.test.ts`.
 
+**Layer 3 (Manager API) is the intentional escape hatch for parallel fan-out and plugin contracts** — not a generic "behavior outside an Operation." Reach for it only when the dispatch shape cannot be expressed as a single `callOp` call. The only sanctioned `agentManager.completeAs` consumers are:
+
+- Debate fan-out and resolvers (`src/debate/`) — parallel multi-agent invocations with dynamic agent names that preclude a static op config. See #855 for the long-term migration path.
+- `AgentManager`'s own internal dispatch (`src/agents/manager.ts`).
+
+New code goes through `callOp`. If you think you need Layer 3, check with the team first.
+
 ## Rule 4: Agent resolution
 
 - Pipeline / op code: `ctx.agentManager?.getDefault() ?? "claude"` (or `ctx.agentName` inside an op).
