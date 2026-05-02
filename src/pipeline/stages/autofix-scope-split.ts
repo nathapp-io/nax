@@ -111,16 +111,16 @@ function deriveFixTarget(file: string | undefined, testFilePatterns: readonly st
   return file && isTestFile(file, testFilePatterns) ? "test" : "source";
 }
 
-function splitFindingsByFixTarget(
+function splitFindingsByFixTarget<D>(
   findings: readonly Finding[],
-  diagnostics: readonly LintDiagnostic[],
+  diagnostics: readonly D[],
   testFilePatterns: readonly string[] | undefined,
-): { testDiagnostics: LintDiagnostic[]; sourceDiagnostics: LintDiagnostic[] } {
-  const testDiagnostics: LintDiagnostic[] = [];
-  const sourceDiagnostics: LintDiagnostic[] = [];
+): { testDiagnostics: D[]; sourceDiagnostics: D[] } {
+  const testDiagnostics: D[] = [];
+  const sourceDiagnostics: D[] = [];
   for (let i = 0; i < findings.length; i++) {
     const diagnostic = diagnostics[i];
-    if (!diagnostic) continue; // invariant: findings and diagnostics are co-produced by parseLintOutput
+    if (!diagnostic) continue; // invariant: findings and diagnostics are co-produced by the parser
     const f = findings[i];
     const target = f.fixTarget ?? deriveFixTarget(f.file, testFilePatterns);
     (target === "test" ? testDiagnostics : sourceDiagnostics).push(diagnostic);
@@ -132,9 +132,9 @@ function splitByOutputParsing(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   format: LintOutputFormat = "auto",
-  lintOpts?: { workdir: string },
+  opts?: { workdir: string },
 ): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
-  const parsed = parseLintOutput(check.output, format, lintOpts);
+  const parsed = parseLintOutput(check.output, format, opts);
   if (!parsed) {
     // Cannot classify by file -- conservative fallback: route to implementer if output is non-empty
     if (check.output.trim()) {
@@ -167,8 +167,9 @@ function splitByTypecheckOutputParsing(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   format: TypecheckOutputFormat = "auto",
+  opts?: { workdir: string },
 ): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
-  const parsed = parseTypecheckOutput(check.output, format);
+  const parsed = parseTypecheckOutput(check.output, format, opts);
   if (!parsed) {
     if (check.output.trim()) {
       return { testFindings: null, sourceFindings: check };
@@ -176,8 +177,19 @@ function splitByTypecheckOutputParsing(
     return { testFindings: null, sourceFindings: null };
   }
 
-  const testDiagnostics = parsed.diagnostics.filter((d) => isTestFile(d.file, testFilePatterns));
-  const sourceDiagnostics = parsed.diagnostics.filter((d) => !isTestFile(d.file, testFilePatterns));
+  let testDiagnostics: TypecheckDiagnostic[];
+  let sourceDiagnostics: TypecheckDiagnostic[];
+
+  if (parsed.findings) {
+    ({ testDiagnostics, sourceDiagnostics } = splitFindingsByFixTarget(
+      parsed.findings,
+      parsed.diagnostics,
+      testFilePatterns,
+    ));
+  } else {
+    testDiagnostics = parsed.diagnostics.filter((d) => isTestFile(d.file, testFilePatterns));
+    sourceDiagnostics = parsed.diagnostics.filter((d) => !isTestFile(d.file, testFilePatterns));
+  }
 
   return {
     testFindings: buildScopedTypecheckCheck(check, testDiagnostics),
@@ -189,15 +201,15 @@ function splitByTypecheckOutputParsing(
  * Split a check result into test-file vs source-file buckets for scope-aware routing.
  * Returns null for each bucket when there are no findings for that scope.
  *
- * Pass lintOpts to enable Finding-based partitioning for lint checks (ADR-021 phase 3).
- * Omitting it falls back to the diagnostic file-path approach.
+ * Pass opts to enable Finding-based partitioning for lint and typecheck checks (ADR-021 phase 3/4).
+ * Omitting opts falls back to the diagnostic file-path approach.
  */
 export function splitFindingsByScope(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   lintOutputFormat: LintOutputFormat = "auto",
   typecheckOutputFormat: TypecheckOutputFormat = "auto",
-  lintOpts?: { workdir: string },
+  opts?: { workdir: string },
 ): {
   testFindings: ReviewCheckResult | null;
   sourceFindings: ReviewCheckResult | null;
@@ -206,10 +218,10 @@ export function splitFindingsByScope(
     return splitByStructuredFindings(check, testFilePatterns);
   }
   if (check.check === "lint") {
-    return splitByOutputParsing(check, testFilePatterns, lintOutputFormat, lintOpts);
+    return splitByOutputParsing(check, testFilePatterns, lintOutputFormat, opts);
   }
   if (check.check === "typecheck") {
-    return splitByTypecheckOutputParsing(check, testFilePatterns, typecheckOutputFormat);
+    return splitByTypecheckOutputParsing(check, testFilePatterns, typecheckOutputFormat, opts);
   }
   return { testFindings: null, sourceFindings: null };
 }

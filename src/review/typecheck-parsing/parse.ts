@@ -1,3 +1,4 @@
+import { tscDiagnosticToFinding } from "../../findings";
 import { typecheckTextBlockStrategy } from "./strategies/text-block";
 import { tscStrategy } from "./strategies/tsc";
 import type { TypecheckDiagnostic, TypecheckOutputFormat, TypecheckParseResult, TypecheckParseStrategy } from "./types";
@@ -12,11 +13,16 @@ function strategiesFor(format: TypecheckOutputFormat): ReadonlyArray<TypecheckPa
 export function parseTypecheckOutput(
   output: string,
   format: TypecheckOutputFormat = "auto",
+  opts?: { workdir: string },
 ): TypecheckParseResult | null {
   if (!output.trim()) return null;
   for (const strategy of strategiesFor(format)) {
     const parsed = strategy.parse(output);
     if (parsed && parsed.diagnostics.length > 0) {
+      if (opts) {
+        const findings = parsed.diagnostics.map((d) => tscDiagnosticToFinding(d, opts.workdir));
+        return { ...parsed, findings };
+      }
       return parsed;
     }
   }
