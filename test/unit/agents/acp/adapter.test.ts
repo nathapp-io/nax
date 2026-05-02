@@ -80,6 +80,16 @@ export function makeClient(
 
 const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
 
+/** Default CompleteOptions with required primitives for unit tests. */
+function makeCompleteOptions(overrides: Record<string, unknown> = {}): import("../../../../src/agents/types").CompleteOptions {
+  return {
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
+    workdir: ACP_WORKDIR,
+    resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
+    ...overrides,
+  } as import("../../../../src/agents/types").CompleteOptions;
+}
+
 export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
   return {
     workdir: ACP_WORKDIR,
@@ -175,7 +185,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    const result = await new AcpAgentAdapter("claude").complete("What is the answer?", { workdir: ACP_WORKDIR });
+    const result = await new AcpAgentAdapter("claude").complete("What is the answer?", makeCompleteOptions());
     expect(result.output).toBe("The answer is 42.");
   });
 
@@ -193,7 +203,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await new AcpAgentAdapter("claude").complete("Explain recursion", { workdir: ACP_WORKDIR });
+    await new AcpAgentAdapter("claude").complete("Explain recursion", makeCompleteOptions());
     expect(received).toBe("Explain recursion");
   });
 
@@ -203,7 +213,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(new AcpAgentAdapter("claude").complete("Hello", { workdir: ACP_WORKDIR })).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(CompleteError);
   });
 
   test("throws CompleteError when assistant output is blank", async () => {
@@ -216,7 +226,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(new AcpAgentAdapter("claude").complete("Hello", { workdir: ACP_WORKDIR })).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(CompleteError);
   });
 
   test("closes the session after one-shot completion", async () => {
@@ -224,7 +234,7 @@ describe("complete()", () => {
     const session = makeSession({ closeFn: async () => { closeCalled = true; } });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await new AcpAgentAdapter("claude").complete("Quick question", { workdir: ACP_WORKDIR });
+    await new AcpAgentAdapter("claude").complete("Quick question", makeCompleteOptions());
     expect(closeCalled).toBe(true);
   });
 
@@ -235,7 +245,7 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await expect(
-      new AcpAgentAdapter("claude").complete("Hang?", { timeoutMs: 50, workdir: ACP_WORKDIR }),
+      new AcpAgentAdapter("claude").complete("Hang?", makeCompleteOptions({ timeoutMs: 50 })),
     ).rejects.toThrow(/timed out/i);
   });
 
@@ -245,7 +255,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    const result = await new AcpAgentAdapter("claude").complete("Rate limited", { workdir: ACP_WORKDIR });
+    const result = await new AcpAgentAdapter("claude").complete("Rate limited", makeCompleteOptions());
     expect(result.adapterFailure).toBeDefined();
     expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
     expect(result.adapterFailure?.category).toBe("availability");
@@ -259,7 +269,7 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await expect(
-      new AcpAgentAdapter("claude").complete("Unknown fail", { workdir: ACP_WORKDIR }),
+      new AcpAgentAdapter("claude").complete("Unknown fail", makeCompleteOptions()),
     ).rejects.toThrow(/unexpected internal error/);
   });
 
@@ -275,10 +285,7 @@ describe("complete()", () => {
     );
 
     const tracker = mock((_pid: number) => {});
-    await new AcpAgentAdapter("claude").complete("track-me", {
-      workdir: ACP_WORKDIR,
-      onPidSpawned: tracker,
-    });
+    await new AcpAgentAdapter("claude").complete("track-me", makeCompleteOptions({ onPidSpawned: tracker }));
     expect(capturedOnPidSpawned).toBe(tracker);
   });
 
@@ -289,7 +296,7 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await new AcpAgentAdapter("claude").complete("hello", { workdir: ACP_WORKDIR });
+    await new AcpAgentAdapter("claude").complete("hello", makeCompleteOptions());
     expect(capturedCloseOpts?.forceTerminate).toBe(true);
   });
 
@@ -302,16 +309,16 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await expect(
-      new AcpAgentAdapter("claude").complete("fail", { workdir: ACP_WORKDIR }),
+      new AcpAgentAdapter("claude").complete("fail", makeCompleteOptions()),
     ).rejects.toBeInstanceOf(CompleteError);
     expect(capturedCloseOpts?.forceTerminate).toBe(true);
   });
 });
 
-// complete() — model resolution from config + modelTier
+// complete() — primitive model resolution (modelDef)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("complete() — model resolution", () => {
+describe("complete() — modelDef primitive consumption", () => {
   const origCreateClient = _acpAdapterDeps.createClient;
   const origSleep = _acpAdapterDeps.sleep;
 
@@ -325,64 +332,66 @@ describe("complete() — model resolution", () => {
     mock.restore();
   });
 
-  function makePassSession() {
-    const session = makeSession();
-    return makeClient(session);
+  function makePassClient() {
+    return makeClient(makeSession());
   }
 
-  test("uses 'default' when no model or config provided", async () => {
+  test("uses modelDef.model from options for the acpx command", async () => {
     let capturedCmd = "";
-    const client = makePassSession();
     _acpAdapterDeps.createClient = mock((cmd: string) => {
       capturedCmd = cmd;
-      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+      return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    await new AcpAgentAdapter("claude").complete("test", { workdir: ACP_WORKDIR });
-    expect(capturedCmd).toContain("--model default");
-  });
-
-  test("uses explicit model string when provided", async () => {
-    let capturedCmd = "";
-    const client = makePassSession();
-    _acpAdapterDeps.createClient = mock((cmd: string) => {
-      capturedCmd = cmd;
-      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
-    });
-
-    await new AcpAgentAdapter("claude").complete("test", { model: "claude-haiku-4-5", workdir: ACP_WORKDIR });
-    expect(capturedCmd).toContain("--model claude-haiku-4-5");
-  });
-
-  test("resolves model from config.models[modelTier] when model not explicit", async () => {
-    let capturedCmd = "";
-    const client = makePassSession();
-    _acpAdapterDeps.createClient = mock((cmd: string) => {
-      capturedCmd = cmd;
-      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
-    });
-
-    const naxConfig = {
-agent: { default: "claude" },
-      models: { claude: { fast: "claude-haiku-4-5-20250514", balanced: "claude-sonnet-4-5-20250514" } },
-    } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
-
-    await new AcpAgentAdapter("claude").complete("test", { modelTier: "fast", config: naxConfig, workdir: ACP_WORKDIR });
+    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({
+      modelDef: { provider: "anthropic", model: "claude-haiku-4-5-20250514", env: {} },
+    }));
     expect(capturedCmd).toContain("--model claude-haiku-4-5-20250514");
   });
 
-  test("falls back to 'default' when config has no matching tier", async () => {
-    let capturedCmd = "";
-    const client = makePassSession();
-    _acpAdapterDeps.createClient = mock((cmd: string) => {
-      capturedCmd = cmd;
+  test("uses resolvedPermissions.mode for the session permissionMode", async () => {
+    let capturedPermissionMode = "";
+    const session = makeSession();
+    const client = makePassClient();
+    _acpAdapterDeps.createClient = mock((_cmd: string) => {
+      const origCreate = client.createSession.bind(client);
+      (client as Record<string, unknown>).createSession = mock(async (opts: { agentName: string; permissionMode: string }) => {
+        capturedPermissionMode = opts.permissionMode;
+        return origCreate(opts);
+      });
       return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    const naxConfig = { agent: { default: "claude" }, models: {} } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
+    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({
+      resolvedPermissions: { skipPermissions: true, mode: "approve-all" as const },
+    }));
+    expect(capturedPermissionMode).toBe("approve-all");
+  });
 
-    await new AcpAgentAdapter("claude").complete("test", { modelTier: "powerful", config: naxConfig, workdir: ACP_WORKDIR });
-    expect(capturedCmd).toContain("--model default");
+  test("uses promptRetries from options for createClient", async () => {
+    let capturedRetries: number | undefined;
+    _acpAdapterDeps.createClient = mock(
+      (_cmd: string, _cwd: string, _timeout?: number, _onPid?: unknown, promptRetries?: number) => {
+        capturedRetries = promptRetries;
+        return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+      },
+    );
+
+    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({ promptRetries: 5 }));
+    expect(capturedRetries).toBe(5);
+  });
+
+  test("model string from modelDef flows into the acpx command string", async () => {
+    let capturedCmd = "";
+    _acpAdapterDeps.createClient = mock((cmd: string) => {
+      capturedCmd = cmd;
+      return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+    });
+
+    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({
+      modelDef: { provider: "anthropic", model: "claude-default", env: {} },
+    }));
+    expect(capturedCmd).toContain("--model claude-default");
   });
 });
 

@@ -313,13 +313,13 @@ describe("callOp — op.model resolver (issue #725)", () => {
     );
 
     const completeArgs = (agentManager.completeAs as ReturnType<typeof mock>).mock.calls[0]?.[2] as
-      | { model?: string }
+      | { modelDef?: { model?: string } }
       | undefined;
     // The fast tier of the default models config resolves to a real ModelDef.model — assert
     // that something was passed (the exact id depends on DEFAULT_CONFIG.models, not on our
     // resolver). What we want to pin is that the resolver fired and produced a definition.
-    expect(typeof completeArgs?.model).toBe("string");
-    expect(completeArgs?.model).not.toBe("");
+    expect(typeof completeArgs?.modelDef?.model).toBe("string");
+    expect(completeArgs?.modelDef?.model).not.toBe("");
   });
 
   test("CompleteOperation: resolver function is invoked with input and resolves to ConfiguredModel", async () => {
@@ -351,9 +351,9 @@ describe("callOp — op.model resolver (issue #725)", () => {
     expect(resolverCalls[0]).toEqual({ text: "case-1" });
     // Sanity: the chosen tier flows downstream (agentManager.completeAs got *some* model id).
     const completeArgs = (agentManager.completeAs as ReturnType<typeof mock>).mock.calls[0]?.[2] as
-      | { model?: string }
+      | { modelDef?: { model?: string } }
       | undefined;
-    expect(typeof completeArgs?.model).toBe("string");
+    expect(typeof completeArgs?.modelDef?.model).toBe("string");
   });
 
   test("RunOperation: resolver returning undefined falls back to 'balanced'", async () => {

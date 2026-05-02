@@ -310,7 +310,7 @@ describe("AgentManager — middleware envelope", () => {
     };
     const manager = makeMiddlewareManager(mw);
     try {
-      await manager.completeAs("claude", "prompt", {} as never);
+      await manager.completeAs("claude", "prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", timeoutMs: 100 });
     } catch {}
     expect(calls).toHaveLength(0);
   });
@@ -322,7 +322,7 @@ describe("AgentManager — middleware envelope", () => {
       before: async (ctx: MiddlewareContext) => { capturedSignal = ctx.signal; },
     };
     const manager = makeMiddlewareManager(mw);
-    try { await manager.completeAs("claude", "prompt", {} as never); } catch {}
+    try { await manager.completeAs("claude", "prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", timeoutMs: 100 }); } catch {}
     expect(capturedSignal).toBeUndefined();
   });
 });

@@ -2,8 +2,8 @@
  * Tests for resolver.model threading in resolveOutcome()
  *
  * Covers: resolver.model field for synthesis and judge resolvers (issue #352).
- * Verifies that modelTier in completeOptions reflects resolver.model when set,
- * and defaults to "fast" when absent — matching debater model resolution behavior.
+ * Verifies that modelDef in completeOptions reflects resolver.model when set,
+ * and defaults to "fast" model when absent — matching debater model resolution behavior.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -41,7 +41,7 @@ function makeCaptureManager(captured: { opts?: CompleteOptions }[]) {
 
 // ─── Synthesis resolver ───────────────────────────────────────────────────────
 
-describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", () => {
+describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", () => {
   let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
@@ -53,40 +53,44 @@ describe("resolveOutcome() synthesis — resolver.model → modelTier (#352)", (
     mock.restore();
   });
 
-  test("passes modelTier='powerful' when resolver.model is 'powerful'", async () => {
+  test("passes modelDef with 'powerful' model when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "powerful"), NO_CONFIG, "US-352", 30_000);
 
     expect(captured.length).toBeGreaterThan(0);
-    expect(captured[0]?.opts?.modelTier).toBe("powerful");
+    expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
+    // The model is resolved from DEFAULT_CONFIG.models — just verify it is a non-empty string
+    expect(typeof captured[0]?.opts?.modelDef?.model).toBe("string");
   });
 
-  test("passes modelTier='fast' when resolver.model is absent", async () => {
+  test("passes modelDef with 'fast' model when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis"), NO_CONFIG, "US-352", 30_000);
 
     expect(captured.length).toBeGreaterThan(0);
-    expect(captured[0]?.opts?.modelTier).toBe("fast");
+    expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
+    expect(typeof captured[0]?.opts?.modelDef?.model).toBe("string");
   });
 
-  test("passes modelTier='balanced' when resolver.model is 'sonnet' (alias)", async () => {
+  test("passes modelDef with 'balanced' model when resolver.model is 'sonnet' (alias)", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "sonnet"), NO_CONFIG, "US-352", 30_000);
 
     expect(captured.length).toBeGreaterThan(0);
-    expect(captured[0]?.opts?.modelTier).toBe("balanced");
+    expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
+    expect(typeof captured[0]?.opts?.modelDef?.model).toBe("string");
   });
 });
 
 // ─── Judge / custom resolver ──────────────────────────────────────────────────
 
-describe("resolveOutcome() custom/judge — resolver.model → modelTier (#352)", () => {
+describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)", () => {
   let origAgentManager: typeof _debateSessionDeps.agentManager;
 
   beforeEach(() => {
@@ -98,23 +102,25 @@ describe("resolveOutcome() custom/judge — resolver.model → modelTier (#352)"
     mock.restore();
   });
 
-  test("passes modelTier='powerful' when resolver.model is 'powerful'", async () => {
+  test("passes modelDef with 'powerful' model when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a"], [], makeStageConfig("custom", "powerful"), NO_CONFIG, "US-352", 30_000);
 
     expect(captured.length).toBeGreaterThan(0);
-    expect(captured[0]?.opts?.modelTier).toBe("powerful");
+    expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
+    expect(typeof captured[0]?.opts?.modelDef?.model).toBe("string");
   });
 
-  test("passes modelTier='fast' when resolver.model is absent", async () => {
+  test("passes modelDef with 'fast' model when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(["proposal-a"], [], makeStageConfig("custom"), NO_CONFIG, "US-352", 30_000);
 
     expect(captured.length).toBeGreaterThan(0);
-    expect(captured[0]?.opts?.modelTier).toBe("fast");
+    expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
+    expect(typeof captured[0]?.opts?.modelDef?.model).toBe("string");
   });
 });

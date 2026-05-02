@@ -260,11 +260,14 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     expect(capturedDecomposeOpts[0].storyId).toBe("US-001");
   });
 
-  test("adapter.decompose() receives config object", async () => {
+  test("adapter.decompose() receives resolved modelDef (not raw config)", async () => {
     const config = makeConfig();
     await planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" });
 
-    expect(capturedDecomposeOpts[0].config).toBe(config);
+    // config is no longer forwarded in CompleteOptions (removed in issue #853).
+    // Model resolution now happens at the callOp boundary — verify modelDef is present.
+    expect(capturedDecomposeOpts[0].modelDef).toBeDefined();
+    expect(typeof capturedDecomposeOpts[0].modelDef?.model).toBe("string");
   });
 });
 

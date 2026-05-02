@@ -297,7 +297,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     await generateAcceptanceTests(adapter, options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
-    expect(completeCalls[0].options?.model).toBe(MODEL_DEF.model);
+    expect(completeCalls[0].options?.modelDef?.model).toBe(MODEL_DEF.model);
   });
 
   test("returns generated test code from adapter.complete() response", async () => {
@@ -435,7 +435,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     await generateFixStories(adapter, options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
-    expect(completeCalls[0].options?.model).toBe(MODEL_DEF.model);
+    expect(completeCalls[0].options?.modelDef?.model).toBe(MODEL_DEF.model);
   });
 
   test("returns FixStory[] with description from adapter.complete() response", async () => {

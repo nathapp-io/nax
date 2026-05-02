@@ -173,13 +173,13 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     const config = makeConfig({ model: "balanced" });
     const mockAgentManager = makeAgentManagerFromAdapter(mockAdapter);
 
-    await classifyWithLlm(makeStory("MODEL-TEST"), config, mockAgentManager);
+    await classifyWithLlm(makeStory("MODEL-TEST"), config, mockAgentManager, "/tmp/test");
 
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     const [_prompt, opts] = mockAdapter.complete.mock.calls[0] as [string, CompleteOptions?];
-    // Resolved model should be passed so the adapter can honour it
-    expect(opts?.model).toBeDefined();
-    expect(typeof opts?.model).toBe("string");
+    // Resolved modelDef should be passed so the adapter can honour it
+    expect(opts?.modelDef?.model).toBeDefined();
+    expect(typeof opts?.modelDef?.model).toBe("string");
   });
 
   test("propagates error from adapter.complete() when fallbackToKeywords is false", async () => {
