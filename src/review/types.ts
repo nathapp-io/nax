@@ -14,7 +14,17 @@ export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semanti
  */
 export type DiffContext =
   | { mode: "embedded"; diff: string; storyGitRef?: never; stat?: never }
-  | { mode: "ref"; storyGitRef: string; stat?: string; diff?: never };
+  | {
+      mode: "ref";
+      storyGitRef: string;
+      stat?: string;
+      diff?: never;
+      /**
+       * Production-diff exclude pathspec derived from resolveTestFilePatterns() +
+       * resolveReviewExcludePatterns(). Used by debate resolver prompts.
+       */
+      productionExcludePatterns?: readonly string[];
+    };
 
 /** Story fields required for semantic review */
 export interface SemanticStory {

@@ -277,6 +277,42 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     expect(_semanticDeps.createDebateRunner).toHaveBeenCalled();
   });
 
+  test("ref mode + resolverSession threads productionExcludePatterns into resolverContextInput", async () => {
+    const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
+    const createDebateRunnerMock = mock(() => ({ run: runMock }));
+    _semanticDeps.createDebateRunner = createDebateRunnerMock as unknown as typeof _semanticDeps.createDebateRunner;
+
+    const agentManager = makeAgentManager(PROPOSAL_PASS);
+    const runtime = makeMockRuntime({ agentManager });
+    const resolverSession = { history: [] } as unknown as import("../../../src/review/dialogue").ReviewerSession;
+
+    await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: { ...SEMANTIC_CONFIG, diffMode: "ref", excludePatterns: undefined },
+      agentManager,
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime,
+      resolverSession,
+    });
+
+    expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);
+    const [opts] = createDebateRunnerMock.mock.calls[0] as [
+      {
+        resolverContextInput?: {
+          productionExcludePatterns?: readonly string[];
+        };
+      },
+    ];
+    const excludes = opts.resolverContextInput?.productionExcludePatterns ?? [];
+    expect(excludes.length).toBeGreaterThan(0);
+    expect(excludes).toContain(":!test/");
+    expect(excludes).toContain(":!*.test.ts");
+    expect(excludes).toContain(":!.nax/");
+    expect(excludes).toContain(":!.nax-pids");
+  });
+
   test("AC3: DebateSession.run() is called with the semantic review prompt", async () => {
     const runMock = mock(async (_prompt: string) => DEBATE_MAJORITY_PASS_RESULT);
     _semanticDeps.createDebateRunner = mock(() => ({ run: runMock })) as unknown as typeof _semanticDeps.createDebateRunner;

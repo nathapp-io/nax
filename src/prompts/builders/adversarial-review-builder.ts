@@ -35,12 +35,19 @@ export interface AdversarialReviewPromptOptions {
   priorFailures?: PriorFailure[];
   /** Used when mode === "embedded": pre-computed test file audit */
   testInventory?: TestInventory;
+  /** Project test file globs resolved by resolveTestFilePatterns(). */
+  testGlobs?: readonly string[];
   /**
    * Pathspec exclusions for mode === "ref" git commands shown in prompt.
    * Always merged with ':!.nax/' and ':!.nax-pids'.
    * Adversarial does NOT exclude test files (unlike semantic).
    */
   excludePatterns?: string[];
+  /**
+   * Production-diff excludes derived from resolveReviewExcludePatterns().
+   * Used for test-audit instructions in ref mode.
+   */
+  refExcludePatterns?: readonly string[];
   /**
    * Prior adversarial findings from the previous round (issue #736).
    * When set, injects a "## Prior Adversarial Findings" block instructing the reviewer
@@ -83,7 +90,7 @@ What did the implementer accept but not actually use?
 
 ### 4. Test Audit Gap
 What new exported units lack corresponding test files?
-- New \`src/foo/bar.ts\` with exports but no \`test/**/bar.test.ts\`
+- New source modules with exports but no matching test file
 - New public functions that only appear in implementation, not in tests
 - Acceptance criteria that touch a code path with no test coverage
 
@@ -135,10 +142,22 @@ Severity guide:
  * Instructs the reviewer to self-serve the full diff (including tests) via git commands.
  * Always excludes .nax/ and .nax-pids metadata paths; test files are included.
  */
-function buildAdversarialRefDiffSection(storyGitRef: string, stat?: string, excludePatterns: string[] = []): string {
+function buildAdversarialRefDiffSection(
+  storyGitRef: string,
+  stat?: string,
+  excludePatterns: string[] = [],
+  testGlobs: readonly string[] = [],
+  refExcludePatterns: readonly string[] = [],
+): string {
   const merged = [...new Set([...excludePatterns, ":!.nax/", ":!.nax-pids"])];
   const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
+  const productionExcludes = [...new Set([...refExcludePatterns, ":!.nax/", ":!.nax-pids"])];
+  const productionExcludeArgs = productionExcludes.map((p) => `'${p}'`).join(" ");
   const statBlock = stat ? `## Changed Files Summary\n\n\`\`\`\n${stat}\n\`\`\`\n\n` : "";
+  const testPatternGuide =
+    testGlobs.length > 0
+      ? testGlobs.map((glob) => `\`${glob}\``).join(", ")
+      : "the resolved project test-file patterns";
 
   return `${statBlock}## Diff Access
 
@@ -164,8 +183,10 @@ cat path/to/file.ts
 
 **Test audit workflow:**
 1. Run: \`git diff --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${excludeArgs}\`
-2. For each new \`src/**.ts\` file, check whether a matching \`test/**/**.test.ts\` was also added.
+2. For each new source file, check whether a matching test file was added (patterns: ${testPatternGuide}).
 3. If a new exported module has no test file, flag it as \`"test-gap"\`.
+4. To focus only on production deltas while auditing test coverage, run:
+  \`git diff --unified=3 ${storyGitRef}..HEAD -- . ${productionExcludeArgs}\`
 
 `;
 }
@@ -233,8 +254,18 @@ export class AdversarialReviewPromptBuilder {
     config: AdversarialReviewConfig,
     options: AdversarialReviewPromptOptions,
   ): string {
-    const { mode, diff, storyGitRef, stat, priorFailures, testInventory, excludePatterns, priorAdversarialFindings } =
-      options;
+    const {
+      mode,
+      diff,
+      storyGitRef,
+      stat,
+      priorFailures,
+      testInventory,
+      excludePatterns,
+      testGlobs,
+      refExcludePatterns,
+      priorAdversarialFindings,
+    } = options;
 
     const priorFindingsBlock =
       priorAdversarialFindings && priorAdversarialFindings.findings.length > 0
@@ -261,7 +292,13 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 
     let diffBlock: string;
     if (mode === "ref" && storyGitRef) {
-      diffBlock = buildAdversarialRefDiffSection(storyGitRef, stat, excludePatterns ?? []);
+      diffBlock = buildAdversarialRefDiffSection(
+        storyGitRef,
+        stat,
+        excludePatterns ?? [],
+        testGlobs ?? [],
+        refExcludePatterns ?? [],
+      );
     } else if (mode === "embedded" && diff) {
       diffBlock = buildAdversarialEmbeddedDiffSection(diff, testInventory);
     } else {

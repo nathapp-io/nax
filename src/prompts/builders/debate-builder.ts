@@ -417,6 +417,8 @@ function buildDebateDiffSection(ctx: DiffContext): string {
     // ref mode: reviewer self-serves the full diff via tools
     const stat = ctx.stat ?? "(no stat available)";
     const ref = ctx.storyGitRef;
+    const excludes = [...new Set([...(ctx.productionExcludePatterns ?? []), ":!.nax/", ":!.nax-pids"])];
+    const excludeArgs = excludes.map((p) => `'${p}'`).join(" ");
     return [
       "## Changed Files",
       "```",
@@ -427,7 +429,7 @@ function buildDebateDiffSection(ctx: DiffContext): string {
       "",
       "To inspect the implementation:",
       `- Full diff: \`git diff --unified=3 ${ref}..HEAD\``,
-      `- Production diff: \`git diff --unified=3 ${ref}..HEAD -- . ':!test/' ':!tests/' ':!*.test.ts' ':!*.spec.ts' ':!.nax/' ':!.nax-pids'\``,
+      `- Production diff: \`git diff --unified=3 ${ref}..HEAD -- . ${excludeArgs}\``,
       `- Commit history: \`git log --oneline ${ref}..HEAD\``,
       "",
       "Use these commands to inspect the code. Do NOT rely solely on the file list above.",
