@@ -32,6 +32,7 @@ import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import type { HardeningContext } from "../../acceptance/hardening";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import { acFailureToFinding, acSentinelToFinding } from "../../findings";
+import type { Finding } from "../../findings";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
 import { parseTestFailures as _parseTestFailures } from "../../test-runners/ac-parser";
@@ -142,6 +143,7 @@ export const acceptanceStage: PipelineStage = {
 
     // Collect combined results across all packages
     const allFailedACs: string[] = [];
+    const allFindings: Finding[] = [];
     const allOutputParts: string[] = [];
     let anyError = false;
     let errorExitCode = 0;
@@ -209,12 +211,16 @@ export const acceptanceStage: PipelineStage = {
         anyError = true;
         errorExitCode = exitCode;
         allFailedACs.push("AC-ERROR");
+        allFindings.push(acSentinelToFinding("AC-ERROR", output));
         continue;
       }
 
       for (const acId of actualFailures) {
         if (!allFailedACs.includes(acId)) {
           allFailedACs.push(acId);
+          allFindings.push(
+            acId === "AC-HOOK" ? acSentinelToFinding("AC-HOOK", output) : acFailureToFinding(acId, output),
+          );
         }
       }
 
@@ -271,14 +277,9 @@ export const acceptanceStage: PipelineStage = {
     }
 
     // Store failures for fix generation
-    const findings = allFailedACs.map((acId) => {
-      if (acId === "AC-HOOK") return acSentinelToFinding("AC-HOOK", combinedOutput);
-      if (acId === "AC-ERROR") return acSentinelToFinding("AC-ERROR", combinedOutput);
-      return acFailureToFinding(acId, combinedOutput);
-    });
     ctx.acceptanceFailures = {
       failedACs: allFailedACs,
-      findings,
+      findings: allFindings,
       testOutput: combinedOutput,
     };
 
