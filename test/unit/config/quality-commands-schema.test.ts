@@ -140,3 +140,20 @@ describe("quality.lintOutput schema", () => {
     expect(parsed.quality.lintOutput?.format).toBe("eslint-json");
   });
 });
+
+describe("quality.typecheckOutput schema", () => {
+  test("defaults typecheckOutput.format to auto", () => {
+    const parsed = NaxConfigSchema.parse({});
+    expect(parsed.quality.typecheckOutput?.format).toBe("auto");
+  });
+
+  test("preserves explicit typecheckOutput.format", () => {
+    const parsed = NaxConfigSchema.parse({
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        typecheckOutput: { format: "tsc" },
+      },
+    });
+    expect(parsed.quality.typecheckOutput?.format).toBe("tsc");
+  });
+});

@@ -145,9 +145,15 @@ export async function runAgentRectification(
       ? ctx.rootConfig.execution.smartTestRunner?.testFilePatterns
       : undefined;
   const lintOutputFormat = ctx.config.quality.lintOutput?.format ?? "auto";
+  const typecheckOutputFormat = ctx.config.quality.typecheckOutput?.format ?? "auto";
   for (const check of failedChecks) {
-    if (check.check === "adversarial" || check.check === "lint") {
-      const { testFindings, sourceFindings } = splitFindingsByScope(check, stageTestFilePatterns, lintOutputFormat);
+    if (check.check === "adversarial" || check.check === "lint" || check.check === "typecheck") {
+      const { testFindings, sourceFindings } = splitFindingsByScope(
+        check,
+        stageTestFilePatterns,
+        lintOutputFormat,
+        typecheckOutputFormat,
+      );
       // null/null means the check has no classifiable findings — leave implementerChecks unchanged.
       if (testFindings || sourceFindings) {
         if (testFindings) testWriterChecks = [...testWriterChecks, testFindings];

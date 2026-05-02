@@ -118,6 +118,9 @@ export const NaxConfigSchema = z
       lintOutput: {
         format: "auto",
       },
+      typecheckOutput: {
+        format: "auto",
+      },
       autofix: {
         enabled: true,
         maxAttempts: 3,

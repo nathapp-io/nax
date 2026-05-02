@@ -141,6 +141,11 @@ export const QualityConfigSchema = z.object({
       format: z.enum(["auto", "eslint-json", "biome-json", "text", "none"]).default("auto"),
     })
     .default({ format: "auto" }),
+  typecheckOutput: z
+    .object({
+      format: z.enum(["auto", "tsc", "text", "none"]).default("auto"),
+    })
+    .default({ format: "auto" }),
   autofix: z
     .object({
       enabled: z.boolean().default(true),
