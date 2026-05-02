@@ -144,54 +144,30 @@ export class AcpAgentAdapter implements AgentAdapter {
     return {};
   }
 
-  async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
-    const timeoutMs = _options?.timeoutMs ?? 120_000;
-    const permissionMode = _options?.resolvedPermissions?.mode ?? "approve-reads";
-    const workdir = _options?.workdir;
-    if (!workdir) {
-      throw new Error("[acp-adapter] complete() requires workdir in options");
-    }
-    // Resolve model for a given agent name
-    const resolveModel = async (agentName: string): Promise<string> => {
-      let model = _options?.model;
-      if (!model && _options?.modelTier && _options?.config?.models) {
-        const tier = _options.modelTier;
-        const { resolveModelForAgent } = await import("../../config/schema");
-        try {
-          model = resolveModelForAgent(
-            _options.config.models,
-            agentName,
-            tier,
-            _options.config.agent?.default ?? agentName,
-          ).model;
-        } catch {
-          // fall through to "default"
-        }
-      }
-      return model ?? "default";
-    };
+  async complete(prompt: string, _options: CompleteOptions): Promise<CompleteResult> {
+    const timeoutMs = _options.timeoutMs ?? 120_000;
+    const permissionMode = _options.resolvedPermissions?.mode ?? "approve-reads";
+    const workdir = _options.workdir;
 
     // Attempt one call with the given agent; throws on any error
     const tryOneAgent = async (agentName: string): Promise<CompleteResult> => {
-      const model = await resolveModel(agentName);
-      const cmdStr = `acpx --model ${model} ${agentName}`;
+      const cmdStr = `acpx --model ${_options.modelDef.model} ${agentName}`;
       const timeoutSeconds = Math.ceil(timeoutMs / 1000);
-      const promptRetries = _options?.config?.agent?.acp?.promptRetries;
       const client = _acpAdapterDeps.createClient(
         cmdStr,
         workdir,
         timeoutSeconds,
-        _options?.onPidSpawned,
-        promptRetries,
-        _options?.onPidExited,
+        _options.onPidSpawned,
+        _options.promptRetries,
+        _options.onPidExited,
       );
       await client.start();
 
       let session: import("./adapter-session-types").AcpSession | null = null;
       try {
         const completeSessionName =
-          _options?.sessionName ??
-          computeAcpHandle(workdir, _options?.featureName, _options?.storyId, _options?.sessionRole);
+          _options.sessionName ??
+          computeAcpHandle(workdir, _options.featureName, _options.storyId, _options.sessionRole);
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -232,7 +208,10 @@ export class AcpAgentAdapter implements AgentAdapter {
         }
 
         if (response.exactCostUsd !== undefined) {
-          getSafeLogger()?.info("acp-adapter", "complete() cost", { costUsd: response.exactCostUsd, model });
+          getSafeLogger()?.info("acp-adapter", "complete() cost", {
+            costUsd: response.exactCostUsd,
+            model: _options.modelDef.model,
+          });
           return {
             output: unwrapped,
             costUsd: response.exactCostUsd,
@@ -243,7 +222,10 @@ export class AcpAgentAdapter implements AgentAdapter {
         if (response.cumulative_token_usage) {
           return {
             output: unwrapped,
-            costUsd: estimateCostFromTokenUsage(this._mapper.toInternal(response.cumulative_token_usage), model),
+            costUsd: estimateCostFromTokenUsage(
+              this._mapper.toInternal(response.cumulative_token_usage),
+              _options.modelDef.model,
+            ),
             source: "estimated",
           };
         }
