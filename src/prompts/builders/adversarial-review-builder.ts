@@ -9,6 +9,7 @@
  * Reuses PriorFailure and buildAttemptContextBlock from review-builder.ts.
  */
 
+import type { Finding } from "../../findings";
 import type { AdversarialFindingsCache, AdversarialReviewConfig, SemanticStory } from "../../review/types";
 import { buildAttemptContextBlock } from "./review-builder";
 import type { PriorFailure } from "./review-builder";
@@ -117,7 +118,7 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
   "passed": true | false,
   "findings": [
     {
-      "severity": "error" | "warn" | "info" | "unverifiable",
+      "severity": "error" | "warning" | "info" | "unverifiable",
       "category": "input" | "error-path" | "abandonment" | "test-gap" | "convention" | "assumption",
       "file": "relative/path/to/file.ts",
       "line": 42,
@@ -130,11 +131,11 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
 
 Severity guide:
 - \`"error"\`: confident this will cause real failure or regression
-- \`"warn"\`: fragile or incomplete but may ship without immediate breakage
+- \`"warning"\`: fragile or incomplete but may ship without immediate breakage
 - \`"info"\`: noteworthy but not actionable as a blocker
 - \`"unverifiable"\`: suspect problem but couldn't confirm from available artifacts
 
-\`passed\` must be \`false\` if any finding has severity \`"error"\` or \`"warn"\`.
+\`passed\` must be \`false\` if any finding has severity \`"error"\` or \`"warning"\`.
 \`passed\` may be \`true\` with findings if all findings are \`"info"\` or \`"unverifiable"\`.`;
 
 /**
@@ -222,15 +223,13 @@ ${diff}\`\`\`
  * Build the prior-findings carry-forward block injected at the top of subsequent rounds.
  * Verdict-first: the reviewer sees unresolved findings before scanning for new issues.
  */
-function buildPriorFindingsBlock(
-  round: number,
-  findings: Array<{ severity: string; category?: string; file: string; line?: number; issue: string }>,
-): string {
+function buildPriorFindingsBlock(round: number, findings: readonly Finding[]): string {
   const rows = findings
     .map((f) => {
-      const location = f.line !== undefined ? `${f.file}:${f.line}` : f.file;
-      const category = f.category ?? "—";
-      return `| ${f.severity} | ${category} | ${location} | ${f.issue} |`;
+      const filePath = f.file ?? "";
+      const location = f.line !== undefined ? `${filePath}:${f.line}` : filePath;
+      const category = f.category || "—";
+      return `| ${f.severity} | ${category} | ${location} | ${f.message} |`;
     })
     .join("\n");
 

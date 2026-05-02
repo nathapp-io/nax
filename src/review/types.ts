@@ -4,6 +4,8 @@
  * Post-implementation quality verification
  */
 
+import type { Finding } from "../findings";
+
 /** Review check name */
 export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic" | "adversarial";
 
@@ -182,13 +184,7 @@ export interface AdversarialFindingsCache {
   /** Round that produced these findings (1-indexed) */
   round: number;
   /** Blocking findings from the previous adversarial round */
-  findings: Array<{
-    severity: string;
-    category?: string;
-    file: string;
-    line?: number;
-    issue: string;
-  }>;
+  findings: Finding[];
 }
 
 /** Review configuration */
