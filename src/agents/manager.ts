@@ -580,9 +580,9 @@ export class AgentManager implements IAgentManager {
 
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
     const stage = options.pipelineStage ?? "complete";
-    /** @design Per plan §3.3 Note: resolvePermissions needs full NaxConfig for permission resolution. this._config is Pick<agent|execution>. */
-    const resolvedPermissions = resolvePermissions(options.config ?? this._config, stage);
-    const augmented: CompleteOptions = { ...options, resolvedPermissions };
+    const resolvedPermissions = resolvePermissions(this._config, stage);
+    const promptRetries = this._config.agent?.acp?.promptRetries;
+    const augmented: CompleteOptions = { ...options, resolvedPermissions, promptRetries };
     const sessionName =
       options.sessionName ??
       formatSessionName({
