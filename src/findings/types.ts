@@ -110,18 +110,28 @@ export interface Finding {
   rule?: string;
 
   /**
-   * Path to the offending file, ALWAYS relative to the repo root (the
-   * directory containing `.nax/`). Producers normalise at their adapter
-   * boundary. See ADR-021 §3.
+   * Path to the offending file, ALWAYS relative to nax's workdir — the
+   * directory where `.nax/` lives and where nax is invoked. In single-package
+   * projects this is the project root; in monorepos with per-package nax
+   * invocations this is the package directory (`packageDir`). Matches the
+   * convention already used across nax for test-pattern resolution and
+   * review artifact paths (see `.claude/rules/monorepo-awareness.md`).
    *
-   * Optional — a finding may be repo-global (e.g. "package.json missing
-   * required script"). Plugin contract (ReviewFinding.file: workdir-relative)
-   * is preserved at the plugin boundary; only the internal Finding shape
-   * is normalised.
+   * Optional — a finding may be workdir-global (e.g. "package.json missing
+   * required script"). Plugin contract (`ReviewFinding.file: workdir-relative`)
+   * is preserved as-is; this field uses the same convention internally.
+   *
+   * Cross-package aggregation across multiple monorepo packages is the
+   * consumer's concern — they must thread workdir context per finding-batch.
    */
   file?: string;
   line?: number;
   column?: number;
+  /**
+   * Range end — 1-indexed, end-INCLUSIVE. Matches biome and tsc native
+   * output. For LSP-style consumers (0-indexed, end-exclusive), convert at
+   * the boundary.
+   */
   endLine?: number;
   endColumn?: number;
 
@@ -152,8 +162,69 @@ export interface Finding {
    * Producer-specific extras — semantic review's verifiedBy evidence,
    * raw tool output, AC text, TS span, etc.
    *
-   * Avoid putting load-bearing data here that downstream consumers must read.
-   * Prefer promoting frequently-used fields to first-class properties.
+   * **Read-only by convention** — this is for human inspection, debug
+   * dumps, and forensic logs. Consumers must NOT branch on `meta` fields
+   * for load-bearing logic; doing so couples consumers to producer
+   * internals and turns `meta` into an unenforced contract. When a meta
+   * field is being read by ≥2 consumers, promote it to a first-class
+   * property in a follow-up. The shape is `Record<string, unknown>` to
+   * make this discipline explicit at the type level — there's no
+   * compile-time help here, so reviewers must enforce it.
    */
   meta?: Record<string, unknown>;
+}
+
+// ─── Severity ordering ───────────────────────────────────────────────────────
+
+/**
+ * Total ordering on severities for threshold comparisons. Higher number =
+ * more severe. Consumers that need to filter by `blockingThreshold` should
+ * import this constant rather than hand-rolling order tables.
+ *
+ * Order rationale:
+ *   - critical (5)     hard production breakage; halts everything
+ *   - error    (4)     definite bug; matches `blockingThreshold: "error"`
+ *   - warning  (3)     fragile / incomplete; matches `blockingThreshold: "warning"`
+ *   - info     (2)     advisory; matches `blockingThreshold: "info"`
+ *   - low      (1)     plugin-compat; below info but still actionable
+ *   - unverifiable (0) suspect but unconfirmed; orthogonal to severity but
+ *                      placed lowest so threshold comparisons treat it as
+ *                      strictly advisory
+ */
+export const SEVERITY_ORDER: Readonly<Record<FindingSeverity, number>> = Object.freeze({
+  critical: 5,
+  error: 4,
+  warning: 3,
+  info: 2,
+  low: 1,
+  unverifiable: 0,
+});
+
+/**
+ * Compare two severities. Returns negative if a < b, zero if a === b,
+ * positive if a > b — same shape as `Array.prototype.sort` comparator.
+ */
+export function compareSeverity(a: FindingSeverity, b: FindingSeverity): number {
+  return SEVERITY_ORDER[a] - SEVERITY_ORDER[b];
+}
+
+// ─── Stable identity ─────────────────────────────────────────────────────────
+
+/**
+ * Stable string identity for a Finding — used by ADR-022's `classifyOutcome`
+ * to detect whether two iterations produced equivalent finding sets ("did
+ * the fix change anything?"). Also usable for deduplication and persistence.
+ *
+ * Key composition: `(source, file, line, rule, message)` JSON-serialised.
+ * Including `message` makes the key strict — LLM rephrasing of the same
+ * underlying issue produces a different key. This is the safe direction:
+ * over-counting "different findings" is fine because it conservatively
+ * classifies the iteration as "changed" rather than "unchanged"; the
+ * falsified-hypothesis detection only fires on truly identical output,
+ * which validator-emitted (deterministic tool) findings reliably produce.
+ *
+ * JSON.stringify is used to handle pipe-character collisions in messages.
+ */
+export function findingKey(f: Finding): string {
+  return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null, f.message]);
 }

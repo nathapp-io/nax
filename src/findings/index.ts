@@ -16,3 +16,5 @@ export type {
   FindingSource,
   FixTarget,
 } from "./types";
+
+export { SEVERITY_ORDER, compareSeverity, findingKey } from "./types";

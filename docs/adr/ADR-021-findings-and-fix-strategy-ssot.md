@@ -76,26 +76,26 @@ Adversarial review's prompt schema currently emits `"warn"`. Migration is one sc
 
 `"unverifiable"` is preserved (adversarial-only today). `"low"` is preserved for plugin compatibility.
 
-### 3. File path SSOT — repoRoot-relative
+### 3. File path SSOT — relative to nax's workdir
 
-Every `Finding.file` is **relative to the repo root** (the directory containing `.nax/`). Not workdir-relative, not packageDir-relative, not absolute.
+Every `Finding.file` is **relative to nax's workdir** — the directory where `.nax/` lives and where nax is invoked. In single-package projects this is the project root; in monorepos with per-package nax invocations this is the package directory (`packageDir`).
 
 Rationale:
-- The autofix routing layer in [splitFindingsByScope](../../src/pipeline/stages/autofix-scope-split.ts#L158) and [isTestFile](../../src/test-runners/) already operates on repoRoot-relative paths.
-- Cross-package finding aggregation (the long-term goal) requires a single repo-anchored coordinate system.
-- Tools that natively emit workdir-relative paths (biome, tsc, plugin reviewers) get one rebasing step at their adapter boundary — not scattered across consumers.
+- Matches the convention already used across nax for test-file pattern resolution, story workdirs, and review artifact paths (see [.claude/rules/monorepo-awareness.md](../../.claude/rules/monorepo-awareness.md)).
+- The autofix routing layer in [splitFindingsByScope](../../src/pipeline/stages/autofix-scope-split.ts#L158) and [isTestFile](../../src/test-runners/) already operates on workdir-relative paths.
+- Plugin contract (`ReviewFinding.file: workdir-relative`) uses the same convention — no rebasing needed at the boundary.
 
 Producer adapters are responsible for normalisation:
 
 | Producer | Native format | Adapter rebases to |
 |:---|:---|:---|
-| Biome JSON output | `cwd`-relative | `path.relative(repoRoot, resolve(cwd, file))` |
-| `tsc` `--pretty=false` | absolute | `path.relative(repoRoot, file)` |
-| `LlmReviewFinding` | LLM-emitted, often packageDir-relative | adapter resolves against story's `packageDir`, then rebases |
-| `ReviewFinding` (plugin) | workdir-relative per contract | `path.relative(repoRoot, resolve(workdir, file))` |
-| Acceptance diagnose | LLM-emitted; new prompt schema instructs repoRoot-relative explicitly | direct |
+| Biome JSON output | `cwd`-relative | `path.relative(workdir, resolve(cwd, file))` |
+| `tsc` `--pretty=false` | absolute | `path.relative(workdir, file)` |
+| `LlmReviewFinding` | LLM-emitted | adapter resolves against the active workdir |
+| `ReviewFinding` (plugin) | workdir-relative per contract | direct (no rebasing) |
+| Acceptance diagnose | LLM-emitted; new prompt schema instructs workdir-relative | direct |
 
-The plugin contract (`ReviewFinding.file: workdir-relative`) is unchanged — only the internal `Finding` representation is normalised. Plugin authors are unaffected.
+**Cross-package aggregation** — when a future consumer needs to aggregate findings across multiple monorepo packages (e.g. an "all open findings on this branch" view), it must thread workdir context per finding-batch externally. `Finding.file` alone is ambiguous in that case. This is a consumer concern, deliberately not solved at the type layer.
 
 ### 4. Absorption table — existing types map cleanly
 
@@ -152,16 +152,23 @@ Schema change ships behind `acceptance.fix.findingsV2` config flag, default off,
 
 ## Phased implementation
 
-| Phase | Files | Scope | Risk |
-|:---|:---|:---|:---|
-| **1. Types** | new `src/findings/{types,index}.ts` | `Finding`, enums, no consumers | zero |
-| **2. Producer adapters — mechanical** | `src/quality/lint-output-parser.ts`, typecheck parser | Emit `Finding[]` alongside existing return shape (additive, non-breaking) | low |
-| **3. Producer adapters — LLM** | `src/operations/{semantic-review,adversarial-review,acceptance-diagnose}.ts` | Same — additive emission | medium (acceptance prompt schema, behind flag) |
-| **4. Severity rename** | adversarial prompt schema | One-line rename in OUTPUT_SCHEMA block | low |
-| **5. File-path normalisation** | each producer adapter | `path.relative(repoRoot, …)` at the boundary | low |
-| **6. Cleanup** | delete `LlmReviewFinding`, `AdversarialFindingsCache`, `DiagnosisResult.{testIssues,sourceIssues}` | After ADR-022's consumers migrate | zero |
+Each phase after phase 1 is a **fold-per-producer** PR — the producer's adapter migration AND its direct consumers ship together. This avoids the "additive emission of unread `Finding[]`" interval that an earlier draft proposed and ensures every PR is a complete, reviewable unit.
 
-Phases 1–5 ship without ADR-022. Phase 6 is gated on ADR-022 phase completion.
+| Phase | Producer | Direct consumer(s) updated in same PR | Notes |
+|:---|:---|:---|:---|
+| **1. Types** | — | — | This PR. `src/findings/{types,index}.ts`. Zero consumers. |
+| **2. Plugin adapter** | `IReviewPlugin` boundary | `failedChecks` aggregator in autofix; review-result audit serialiser | Plugin contract (`ReviewFinding`) unchanged. Internal nax converts to `Finding` at the IReviewPlugin call site. |
+| **3. Lint** | Biome JSON parser | `splitFindingsByScope` lint branch; lint output rendering | Replaces raw output parsing. Mechanical, deterministic. |
+| **4. Typecheck** | tsc `--pretty=false` parser | `splitFindingsByScope` typecheck branch | Same shape change as lint. |
+| **5. TDD verifier** | TDD verifier output parser | Verifier verdict consumer | Small. User confirmed scope (item 7 in design discussion). |
+| **6. Adversarial** | `acceptanceDiagnoseOp` and the adversarial review op | `buildPriorFindingsBlock` reads `Finding[]`; `AdversarialFindingsCache.findings[]` becomes `Finding[]` | Severity rename `"warn"` → `"warning"` in OUTPUT_SCHEMA block lands here. Read-path `normalizeSeverity` adapters in `semantic-helpers.ts`/`adversarial-helpers.ts`/`dialogue.ts` already handle the rename. |
+| **7. Semantic** | semantic review op | `buildAttemptContextBlock`, `SemanticVerdict.findings`, semantic evidence verifier | `verifiedBy` → `meta.verifiedBy`; AC ID → `rule`. |
+| **8. Acceptance diagnose** | `acceptanceDiagnoseOp` prompt schema | `applyFix` consumes `findings: Finding[]` (with `fixTarget` per item) instead of `testIssues`/`sourceIssues`. AC-HOOK / AC-ERROR sentinels emitted as findings (§5). | Behind `acceptance.fix.findingsV2` flag, default off. Bench against `nax-dogfood/fixtures/hello-lint`. Largest behaviour change in the ADR; lands last to benefit from prior phases' patterns. |
+| **9. Cleanup** | — | delete `LlmReviewFinding`, `AdversarialFindingsCache`, `DiagnosisResult.{testIssues,sourceIssues}`, scaffolding adapters | Zero risk. |
+
+Phases 2–7 are unblocked by ADR-022. Phase 8 (acceptance) and the ADR-022 cycle can land in either order — they're independent. Phase 9 (cleanup) requires phase 8 done plus all ADR-022 consumer migrations done.
+
+**What ADR-022 owns** (orchestration, not data): cycle types (`Iteration`, `FixApplied`, `FixStrategy`), `runFixCycle`, `classifyOutcome`, the shared `buildPriorIterationsBlock` helper that replaces `buildPriorFindingsBlock` + `buildAttemptContextBlock` + acceptance's `previousFailure` accumulator. ADR-022 operates on `Finding[]` which already exists everywhere by the time it lands.
 
 ## Consequences
 
