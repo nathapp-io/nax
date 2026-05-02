@@ -132,7 +132,7 @@ function splitByOutputParsing(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   format: LintOutputFormat = "auto",
-  lintOpts?: { workdir: string; cwd: string },
+  lintOpts?: { workdir: string },
 ): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
   const parsed = parseLintOutput(check.output, format, lintOpts);
   if (!parsed) {
@@ -197,7 +197,7 @@ export function splitFindingsByScope(
   testFilePatterns?: readonly string[],
   lintOutputFormat: LintOutputFormat = "auto",
   typecheckOutputFormat: TypecheckOutputFormat = "auto",
-  lintOpts?: { workdir: string; cwd: string },
+  lintOpts?: { workdir: string },
 ): {
   testFindings: ReviewCheckResult | null;
   sourceFindings: ReviewCheckResult | null;

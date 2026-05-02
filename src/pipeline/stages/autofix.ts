@@ -153,7 +153,7 @@ export const autofixStage: PipelineStage = {
             testFilePatterns,
             lintOutputFormat,
             typecheckOutputFormat,
-            { workdir: ctx.workdir, cwd: ctx.workdir },
+            { workdir: ctx.workdir },
           );
           return testFindings !== null && sourceFindings === null;
         })

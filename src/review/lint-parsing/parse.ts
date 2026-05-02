@@ -21,7 +21,7 @@ function toolForFormat(format: LintParserFormat): "biome" | "eslint" | "text" {
 export function parseLintOutput(
   output: string,
   format: LintOutputFormat = "auto",
-  opts?: { workdir: string; cwd: string },
+  opts?: { workdir: string },
 ): LintParseResult | null {
   if (!output.trim()) return null;
   for (const strategy of strategiesFor(format)) {
@@ -29,7 +29,7 @@ export function parseLintOutput(
     if (parsed && parsed.diagnostics.length > 0) {
       if (opts) {
         const tool = toolForFormat(parsed.format);
-        const findings = parsed.diagnostics.map((d) => lintDiagnosticToFinding(d, opts.workdir, opts.cwd, tool));
+        const findings = parsed.diagnostics.map((d) => lintDiagnosticToFinding(d, opts.workdir, tool));
         return { ...parsed, findings };
       }
       return parsed;
