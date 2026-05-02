@@ -12,7 +12,7 @@ import { resolveConfiguredModel } from "../config/schema-types";
 import type { ReviewConfig } from "../config/selectors";
 import type { DebateResolverContext } from "../debate/types";
 import { NaxError } from "../errors";
-import type { ReviewFinding } from "../plugins/types";
+import type { Finding, FindingSeverity } from "../findings";
 import { DebatePromptBuilder } from "../prompts";
 import type { ISessionManager } from "../session/types";
 import { parseLLMJson, tryParseLLMJson } from "../utils/llm-json";
@@ -36,8 +36,8 @@ export interface ReviewDialogueResult {
   checkResult: {
     /** Whether all acceptance criteria passed */
     success: boolean;
-    /** Structured findings from the reviewer */
-    findings: ReviewFinding[];
+    /** Structured findings from the reviewer — Finding[] per ADR-021 phase 7 */
+    findings: Finding[];
   };
   /** Map from finding identifier to detailed reasoning string */
   findingReasoning: Map<string, string>;
@@ -105,32 +105,32 @@ export interface ReviewerSession {
   destroy(): Promise<void>;
 }
 
-function extractDeltaSummary(
-  rawOutput: string,
-  previousFindings: ReviewFinding[],
-  newFindings: ReviewFinding[],
-): string {
+function findingId(f: Finding): string {
+  return f.rule ?? `${f.file ?? ""}:${f.line ?? 0}:${f.message.slice(0, 40)}`;
+}
+
+function extractDeltaSummary(rawOutput: string, previousFindings: Finding[], newFindings: Finding[]): string {
   const parsed = tryParseLLMJson<Record<string, unknown>>(rawOutput);
   if (parsed && typeof parsed.deltaSummary === "string" && parsed.deltaSummary.length > 0) {
     return parsed.deltaSummary;
   }
 
-  const newIds = new Set(newFindings.map((f) => f.ruleId));
-  const prevIds = new Set(previousFindings.map((f) => f.ruleId));
+  const newIds = new Set(newFindings.map(findingId));
+  const prevIds = new Set(previousFindings.map(findingId));
 
-  const resolved = previousFindings.filter((f) => !newIds.has(f.ruleId));
-  const stillPresent = newFindings.filter((f) => prevIds.has(f.ruleId));
-  const added = newFindings.filter((f) => !prevIds.has(f.ruleId));
+  const resolved = previousFindings.filter((f) => !newIds.has(findingId(f)));
+  const stillPresent = newFindings.filter((f) => prevIds.has(findingId(f)));
+  const added = newFindings.filter((f) => !prevIds.has(findingId(f)));
 
   const parts: string[] = [];
   if (resolved.length > 0) {
-    parts.push(`Resolved: ${resolved.map((f) => f.ruleId).join(", ")}.`);
+    parts.push(`Resolved: ${resolved.map(findingId).join(", ")}.`);
   }
   if (stillPresent.length > 0) {
-    parts.push(`Still present: ${stillPresent.map((f) => f.ruleId).join(", ")}.`);
+    parts.push(`Still present: ${stillPresent.map(findingId).join(", ")}.`);
   }
   if (added.length > 0) {
-    parts.push(`New findings: ${added.map((f) => f.ruleId).join(", ")}.`);
+    parts.push(`New findings: ${added.map(findingId).join(", ")}.`);
   }
   if (parts.length === 0) {
     return previousFindings.length > 0 ? "All previous findings resolved." : "No changes from previous review.";
@@ -155,26 +155,30 @@ function compactHistory(history: DialogueMessage[]): string {
 }
 
 /**
- * Map a raw LLM finding object to a ReviewFinding.
+ * Map a raw LLM finding object to a Finding.
  * The dialogue reviewer LLM may return `issue`/`suggestion` (matching the semantic.ts prompt schema)
- * or may return `message`/`ruleId` directly. Both shapes are normalized here so that
- * ReviewFinding.ruleId and ReviewFinding.message are always populated.
+ * or may return `message` directly. Both shapes are normalized here.
  */
-function mapLLMFindingToReviewFinding(f: Record<string, unknown>): ReviewFinding {
+function mapLLMFindingToFinding(f: Record<string, unknown>): Finding {
   const rawSeverity = typeof f.severity === "string" ? f.severity : "info";
-  let severity: ReviewFinding["severity"] = "info";
+  let severity: FindingSeverity = "info";
   if (rawSeverity === "warn" || rawSeverity === "warning") severity = "warning";
-  else if (rawSeverity === "critical" || rawSeverity === "error" || rawSeverity === "low") severity = rawSeverity;
-  else if (rawSeverity === "unverifiable") severity = "info";
-  else if (rawSeverity === "info") severity = "info";
+  else if (
+    rawSeverity === "critical" ||
+    rawSeverity === "error" ||
+    rawSeverity === "low" ||
+    rawSeverity === "unverifiable"
+  )
+    severity = rawSeverity;
 
   return {
-    ruleId: typeof f.ruleId === "string" && f.ruleId ? f.ruleId : "semantic",
+    source: "semantic-review",
     severity,
+    category: "",
+    rule: typeof f.ruleId === "string" && f.ruleId ? f.ruleId : undefined,
     file: typeof f.file === "string" ? f.file : "",
     line: typeof f.line === "number" ? f.line : 0,
     message: typeof f.message === "string" && f.message ? f.message : typeof f.issue === "string" ? f.issue : "",
-    source: typeof f.source === "string" ? f.source : "semantic-review",
   };
 }
 
@@ -197,7 +201,7 @@ function parseReviewResponse(output: string): ReviewDialogueResult {
   }
   const success = Boolean(parsed.passed);
   const rawFindings = Array.isArray(parsed.findings) ? (parsed.findings as Record<string, unknown>[]) : [];
-  const findings: ReviewFinding[] = rawFindings.map((f) => mapLLMFindingToReviewFinding(f));
+  const findings: Finding[] = rawFindings.map((f) => mapLLMFindingToFinding(f));
   const reasoningObj =
     parsed.findingReasoning && typeof parsed.findingReasoning === "object"
       ? (parsed.findingReasoning as Record<string, string>)

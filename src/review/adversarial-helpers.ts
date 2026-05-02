@@ -5,7 +5,7 @@
  * to keep each file within the 600-line project limit.
  */
 
-import type { ReviewFinding } from "../plugins/types";
+import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { SEVERITY_RANK } from "./severity";
 
@@ -53,11 +53,18 @@ export function formatFindings(findings: AdversarialLLMFinding[]): string {
     .join("\n");
 }
 
-/** Normalize LLM severity values to ReviewFinding severity union. */
-export function normalizeSeverity(sev: string): ReviewFinding["severity"] {
+/** Normalize LLM severity values to FindingSeverity. */
+export function normalizeSeverity(sev: string): FindingSeverity {
   if (sev === "warn") return "warning";
-  if (sev === "unverifiable") return "info";
-  if (sev === "critical" || sev === "error" || sev === "warning" || sev === "info" || sev === "low") return sev;
+  if (
+    sev === "critical" ||
+    sev === "error" ||
+    sev === "warning" ||
+    sev === "info" ||
+    sev === "low" ||
+    sev === "unverifiable"
+  )
+    return sev;
   return "info";
 }
 
@@ -69,15 +76,15 @@ export function isBlockingSeverity(sev: string, threshold: "error" | "warning" |
   return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
 }
 
-/** Convert AdversarialLLMFinding[] to ReviewFinding[] with adversarial-review metadata. */
-export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): ReviewFinding[] {
+/** Convert AdversarialLLMFinding[] to Finding[] with adversarial-review source. */
+export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): Finding[] {
   return findings.map((f) => ({
-    ruleId: "adversarial",
+    source: "adversarial-review",
     severity: normalizeSeverity(f.severity),
+    category: f.category,
     file: f.file,
     line: f.line,
     message: f.issue,
-    source: "adversarial-review",
-    category: f.category,
+    suggestion: f.suggestion,
   }));
 }

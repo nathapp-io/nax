@@ -7,6 +7,7 @@
  */
 
 import path from "node:path";
+import { reviewFindingToFinding } from "../findings";
 import { getLogger } from "../logger";
 import type { SemanticVerdict } from "./types";
 export type { SemanticVerdict } from "./types";
@@ -57,6 +58,23 @@ export async function persistSemanticVerdict(
 }
 
 /**
+ * Migrate a verdict that may have been persisted with the old ReviewFinding shape
+ * (pre-ADR-021-phase-7). Detection: a finding with `ruleId` but no `source` field
+ * is a legacy ReviewFinding — convert it via reviewFindingToFinding.
+ */
+function migrateSemanticVerdict(verdict: SemanticVerdict): SemanticVerdict {
+  if (!verdict.findings?.length) return verdict;
+  const first = verdict.findings[0] as unknown as Record<string, unknown>;
+  if ("source" in first) return verdict;
+  return {
+    ...verdict,
+    findings: (verdict.findings as unknown as Array<unknown>).map((f) =>
+      reviewFindingToFinding(f as Parameters<typeof reviewFindingToFinding>[0]),
+    ),
+  };
+}
+
+/**
  * Load all semantic verdicts from <featureDir>/semantic-verdicts/.
  *
  * Returns an empty array when the directory does not exist or is empty.
@@ -81,7 +99,8 @@ export async function loadSemanticVerdicts(featureDir: string): Promise<Semantic
     const filePath = path.join(dir, file);
     const content = await _semanticVerdictDeps.readFile(filePath);
     try {
-      results.push(JSON.parse(content) as SemanticVerdict);
+      const parsed = JSON.parse(content) as SemanticVerdict;
+      results.push(migrateSemanticVerdict(parsed));
     } catch {
       _semanticVerdictDeps.logDebug(`Skipping invalid JSON in semantic-verdicts/${file}`);
     }

@@ -13,6 +13,7 @@
 // RE-ARCH: rewrite
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
+import type { ReviewFinding } from "../../plugins/types";
 import { createReviewerSession } from "../../review/dialogue";
 import { reviewOrchestrator } from "../../review/orchestrator";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -179,7 +180,16 @@ export const reviewStage: PipelineStage = {
         .filter((c) => c.check === "semantic" && !c.success && c.findings?.length)
         .flatMap((c) => c.findings ?? []);
       if (semanticFindings.length > 0) {
-        ctx.reviewFindings = semanticFindings;
+        // Downcast Finding[] → ReviewFinding[] for ctx.reviewFindings; migrates in a later phase once elements.ts adopts Finding[].
+        ctx.reviewFindings = semanticFindings.map((f) => ({
+          ruleId: f.rule ?? "semantic",
+          severity: (f.severity === "unverifiable" ? "info" : f.severity) as ReviewFinding["severity"],
+          file: f.file ?? "",
+          line: f.line ?? 0,
+          message: f.message,
+          source: f.source,
+          category: f.category,
+        }));
       }
 
       if (result.pluginFailed) {

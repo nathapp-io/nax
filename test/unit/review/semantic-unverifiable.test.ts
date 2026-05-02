@@ -242,7 +242,7 @@ describe("unverifiable finding handling", () => {
     expect(result.success).toBe(true);
     expect(result.findings).toBeUndefined();
     expect(result.advisoryFindings?.length).toBe(1);
-    expect(result.advisoryFindings?.[0].severity).toBe("info");
+    expect(result.advisoryFindings?.[0].severity).toBe("unverifiable");
   });
 
   test("ref mode downgrades error findings that admit they only used the diff", async () => {
@@ -350,7 +350,7 @@ describe("unverifiable finding handling", () => {
     expect(result.success).toBe(true);
     expect(result.findings).toBeUndefined();
     expect(result.advisoryFindings?.length).toBe(1);
-    expect(result.advisoryFindings?.[0].severity).toBe("info");
+    expect(result.advisoryFindings?.[0].severity).toBe("unverifiable");
     expect(result.advisoryFindings?.[0].message).toBe("AC not implemented");
   });
 });

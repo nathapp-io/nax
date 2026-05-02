@@ -136,7 +136,7 @@ describe("ReviewerSession.resolveDebate()", () => {
 
     expect(result.checkResult.success).toBe(false);
     expect(result.checkResult.findings).toHaveLength(1);
-    expect(result.checkResult.findings[0].ruleId).toBe("ac-gap");
+    expect(result.checkResult.findings[0].rule).toBe("ac-gap");
     expect(result.findingReasoning.get("ac-gap")).toBe("The code does not satisfy AC-1");
   });
 

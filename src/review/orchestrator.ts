@@ -592,14 +592,7 @@ export class ReviewOrchestrator {
       if (!advCheck.success && (advCheck.findings?.length ?? 0) > 0) {
         ctx.priorAdversarialFindings = {
           round: (ctx.priorAdversarialFindings?.round ?? 0) + 1,
-          findings: (advCheck.findings ?? []).map((f) => ({
-            source: "adversarial-review" as const,
-            severity: f.severity,
-            category: f.category ?? "",
-            file: f.file,
-            line: f.line,
-            message: f.message,
-          })),
+          findings: advCheck.findings ?? [],
         };
       } else if (advCheck.success && !advCheck.skipped) {
         ctx.priorAdversarialFindings = undefined;

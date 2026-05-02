@@ -44,7 +44,7 @@ Respond with JSON only — no explanation text before or after:
   "passed": boolean,
   "findings": [
     {
-      "severity": "error" | "warn" | "info" | "unverifiable",
+      "severity": "error" | "warning" | "info" | "unverifiable",
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
@@ -112,7 +112,7 @@ Respond with JSON only — no explanation text before or after:
   "passed": boolean,
   "findings": [
     {
-      "severity": "error" | "warn" | "info" | "unverifiable",
+      "severity": "error" | "warning" | "info" | "unverifiable",
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",

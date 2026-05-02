@@ -5,6 +5,7 @@
  */
 
 import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
+import type { Finding } from "../findings";
 import type { DispatchContext } from "../runtime/dispatch-context";
 
 /**
@@ -145,8 +146,8 @@ export interface SemanticVerdict {
   timestamp: string;
   /** Number of acceptance criteria in scope at review time */
   acCount: number;
-  /** Structured findings from the semantic check (empty when passed) */
-  findings: import("../plugins/types").ReviewFinding[];
+  /** Structured findings from the semantic check (empty when passed) — Finding[] per ADR-021 phase 7 */
+  findings: Finding[];
 }
 
 /** Diagnosis result from acceptance test failure analysis (US-001) */

@@ -13,7 +13,7 @@
 
 import { PERSONA_FRAGMENTS } from "../../debate/personas";
 import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "../../debate/types";
-import type { ReviewFinding } from "../../plugins/types";
+import type { Finding } from "../../findings";
 import type { DiffContext } from "../../review/types";
 import type { ComposeInput } from "../compose";
 
@@ -234,9 +234,11 @@ ${this.stageContext.outputFormat}`;
   }
 
   /** Re-review prompt — references previous findings and updated diff. */
-  buildReReviewPrompt(updatedDiff: string, previousFindings: ReviewFinding[]): string {
+  buildReReviewPrompt(updatedDiff: string, previousFindings: Finding[]): string {
     const findingsList =
-      previousFindings.length > 0 ? previousFindings.map((f) => `- ${f.ruleId}: ${f.message}`).join("\n") : "(none)";
+      previousFindings.length > 0
+        ? previousFindings.map((f) => `- ${f.rule ?? "semantic"}: ${f.message}`).join("\n")
+        : "(none)";
     return [
       "This is a follow-up re-review. Please review the updated diff below.",
       "",
@@ -292,12 +294,14 @@ ${this.stageContext.outputFormat}`;
     proposals: Array<{ debater: string; output: string }>,
     critiques: string[],
     diffContext: DiffContext,
-    previousFindings: ReviewFinding[],
+    previousFindings: Finding[],
     resolverContext: DebateResolverContext,
   ): string {
     const framing = this.buildResolverFraming(resolverContext);
     const findingsList =
-      previousFindings.length > 0 ? previousFindings.map((f) => `- ${f.ruleId}: ${f.message}`).join("\n") : "(none)";
+      previousFindings.length > 0
+        ? previousFindings.map((f) => `- ${f.rule ?? "semantic"}: ${f.message}`).join("\n")
+        : "(none)";
     const proposalsSection = this.buildLabeledProposalsSection(proposals);
     const critiquesSection = this.buildLabeledCritiquesSection(critiques);
     const diffSection = buildDebateDiffSection(diffContext);

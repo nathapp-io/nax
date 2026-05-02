@@ -83,10 +83,10 @@ export interface ReviewCheckResult {
   output: string;
   /** Duration in milliseconds */
   durationMs: number;
-  /** Blocking findings — severity at or above blockingThreshold (populated by LLM reviewers) */
-  findings?: import("../plugins/types").ReviewFinding[];
-  /** Advisory findings — severity below blockingThreshold (populated by LLM reviewers) */
-  advisoryFindings?: import("../plugins/types").ReviewFinding[];
+  /** Blocking findings — severity at or above blockingThreshold (populated by LLM reviewers) — Finding[] per ADR-021 phase 7 */
+  findings?: Finding[];
+  /** Advisory findings — severity below blockingThreshold (populated by LLM reviewers) — Finding[] per ADR-021 phase 7 */
+  advisoryFindings?: Finding[];
   /** LLM cost incurred for this check (populated by semantic review) */
   cost?: number;
   /** True when the LLM reviewer could not parse its response and fell back to success:true (fail-open).

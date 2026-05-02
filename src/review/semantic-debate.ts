@@ -172,7 +172,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
           success: false,
           command: "",
           exitCode: 1,
-          output: `Semantic review failed:\n\n${findings.map((f) => `${f.ruleId}: ${f.message}`).join("\n")}`,
+          output: `Semantic review failed:\n\n${findings.map((f) => `${f.rule ?? "semantic"}: ${f.message}`).join("\n")}`,
           durationMs,
           findings,
           cost: debateCost,

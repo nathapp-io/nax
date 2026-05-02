@@ -148,7 +148,7 @@ describe("runAdversarialReview — finding category and metadata", () => {
     });
 
     expect(result.findings).toBeDefined();
-    expect(result.findings![0].ruleId).toBe("adversarial");
+    expect(result.findings![0].source).toBe("adversarial-review");
   });
 
   test("finding has source 'adversarial-review'", async () => {
