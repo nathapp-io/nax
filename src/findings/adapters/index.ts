@@ -1,0 +1,1 @@
+export { pluginToFinding } from "./plugin";

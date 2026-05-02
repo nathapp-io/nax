@@ -138,6 +138,83 @@ describe("Review Stage - Plugin Integration", () => {
       expect(ctx.reviewResult?.success).toBe(false);
     });
 
+    test("plugin findings are converted to Finding[] (ADR-021 phase 2)", async () => {
+      const tempDir = makeTempDir("nax-review-plugin-");
+      await initGitRepo(tempDir);
+
+      const mockReviewer: IReviewPlugin = {
+        name: "security-scanner",
+        description: "Security scanner",
+        async check() {
+          return {
+            passed: false,
+            output: "Security issue found",
+            exitCode: 1,
+            findings: [
+              {
+                ruleId: "detect-non-literal-regexp",
+                severity: "error" as const,
+                file: "src/auth.ts",
+                line: 42,
+                column: 5,
+                message: "Potentially unsafe regex construction",
+                source: "semgrep",
+                category: "security",
+                url: "https://semgrep.dev/r/detect-non-literal-regexp",
+              },
+              {
+                ruleId: "no-dynamic-require",
+                severity: "critical" as const,
+                file: "src/loader.ts",
+                line: 7,
+                message: "Dynamic require is dangerous",
+              },
+            ],
+          };
+        },
+      };
+
+      const mockPlugin: NaxPlugin = {
+        name: "security-plugin",
+        version: "1.0.0",
+        provides: ["reviewer"],
+        extensions: { reviewer: mockReviewer },
+      };
+
+      const registry = new PluginRegistry([mockPlugin]);
+      const ctx = createMockContext(tempDir, registry);
+
+      await reviewStage.execute(ctx);
+
+      const pluginResult = ctx.reviewResult?.pluginReviewers?.[0];
+      expect(pluginResult).toBeDefined();
+      expect(pluginResult?.findings).toHaveLength(2);
+
+      // First finding: full field mapping with source, category, url
+      const f0 = pluginResult?.findings?.[0];
+      expect(f0?.source).toBe("plugin");
+      expect(f0?.tool).toBe("semgrep");
+      expect(f0?.severity).toBe("error");
+      expect(f0?.category).toBe("security");
+      expect(f0?.rule).toBe("detect-non-literal-regexp");
+      expect(f0?.file).toBe("src/auth.ts");
+      expect(f0?.line).toBe(42);
+      expect(f0?.column).toBe(5);
+      expect(f0?.message).toBe("Potentially unsafe regex construction");
+      expect(f0?.meta).toEqual({ url: "https://semgrep.dev/r/detect-non-literal-regexp" });
+
+      // Second finding: defaults (no source → tool "plugin", no category → "general", no url → no meta)
+      const f1 = pluginResult?.findings?.[1];
+      expect(f1?.source).toBe("plugin");
+      expect(f1?.tool).toBe("plugin");
+      expect(f1?.severity).toBe("critical");
+      expect(f1?.category).toBe("general");
+      expect(f1?.rule).toBe("no-dynamic-require");
+      expect(f1?.file).toBe("src/loader.ts");
+      expect(f1?.line).toBe(7);
+      expect(f1?.meta).toBeUndefined();
+    });
+
     test("no plugin reviewers registered - continues normally", async () => {
       const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);

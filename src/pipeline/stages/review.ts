@@ -168,15 +168,18 @@ export const reviewStage: PipelineStage = {
     }
 
     if (!result.success) {
-      // Collect structured findings from plugin reviewers for escalation context
-      const pluginFindings = result.builtIn.pluginReviewers?.flatMap((pr) => pr.findings ?? []) ?? [];
-      // Collect semantic findings from built-in checks (AC-1/AC-2/AC-3)
+      // Collect semantic findings from built-in checks (AC-1/AC-2/AC-3) for escalation context.
+      // Plugin findings (Finding[] per ADR-021 phase 2) are accessible via
+      // ctx.reviewResult.builtIn.pluginReviewers[*].findings — they use Finding.rule (not
+      // ReviewFinding.ruleId) so they cannot be merged into ctx.reviewFindings (ReviewFinding[])
+      // until context/elements.ts migrates to Finding[] in a later phase.
+      // Note: plugins only run when built-in checks pass (guard in orchestrator), so
+      // pluginFindings and semanticFindings are mutually exclusive in practice.
       const semanticFindings = (result.builtIn.checks ?? [])
         .filter((c) => c.check === "semantic" && !c.success && c.findings?.length)
         .flatMap((c) => c.findings ?? []);
-      const allFindings = [...pluginFindings, ...semanticFindings];
-      if (allFindings.length > 0) {
-        ctx.reviewFindings = allFindings;
+      if (semanticFindings.length > 0) {
+        ctx.reviewFindings = semanticFindings;
       }
 
       if (result.pluginFailed) {
