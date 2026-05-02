@@ -22,5 +22,5 @@ export type {
 
 export { SEVERITY_ORDER, compareSeverity, findingKey } from "./types";
 
-export { pluginToFinding } from "./adapters";
+export { lintDiagnosticToFinding, pluginToFinding } from "./adapters";
 export { rebaseToWorkdir } from "./path-utils";

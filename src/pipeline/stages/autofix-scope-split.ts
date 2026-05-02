@@ -1,3 +1,4 @@
+import type { Finding } from "../../findings";
 import {
   type LintDiagnostic,
   type LintOutputFormat,
@@ -106,12 +107,34 @@ function splitByStructuredFindings(
   return { testFindings: toCheck(testFs), sourceFindings: toCheck(sourceFs) };
 }
 
+function deriveFixTarget(file: string | undefined, testFilePatterns: readonly string[] | undefined): "test" | "source" {
+  return file && isTestFile(file, testFilePatterns) ? "test" : "source";
+}
+
+function splitFindingsByFixTarget(
+  findings: readonly Finding[],
+  diagnostics: readonly LintDiagnostic[],
+  testFilePatterns: readonly string[] | undefined,
+): { testDiagnostics: LintDiagnostic[]; sourceDiagnostics: LintDiagnostic[] } {
+  const testDiagnostics: LintDiagnostic[] = [];
+  const sourceDiagnostics: LintDiagnostic[] = [];
+  for (let i = 0; i < findings.length; i++) {
+    const diagnostic = diagnostics[i];
+    if (!diagnostic) continue; // invariant: findings and diagnostics are co-produced by parseLintOutput
+    const f = findings[i];
+    const target = f.fixTarget ?? deriveFixTarget(f.file, testFilePatterns);
+    (target === "test" ? testDiagnostics : sourceDiagnostics).push(diagnostic);
+  }
+  return { testDiagnostics, sourceDiagnostics };
+}
+
 function splitByOutputParsing(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   format: LintOutputFormat = "auto",
+  lintOpts?: { workdir: string },
 ): { testFindings: ReviewCheckResult | null; sourceFindings: ReviewCheckResult | null } {
-  const parsed = parseLintOutput(check.output, format);
+  const parsed = parseLintOutput(check.output, format, lintOpts);
   if (!parsed) {
     // Cannot classify by file -- conservative fallback: route to implementer if output is non-empty
     if (check.output.trim()) {
@@ -120,8 +143,19 @@ function splitByOutputParsing(
     return { testFindings: null, sourceFindings: null };
   }
 
-  const testDiagnostics = parsed.diagnostics.filter((d) => isTestFile(d.file, testFilePatterns));
-  const sourceDiagnostics = parsed.diagnostics.filter((d) => !isTestFile(d.file, testFilePatterns));
+  let testDiagnostics: LintDiagnostic[];
+  let sourceDiagnostics: LintDiagnostic[];
+
+  if (parsed.findings) {
+    ({ testDiagnostics, sourceDiagnostics } = splitFindingsByFixTarget(
+      parsed.findings,
+      parsed.diagnostics,
+      testFilePatterns,
+    ));
+  } else {
+    testDiagnostics = parsed.diagnostics.filter((d) => isTestFile(d.file, testFilePatterns));
+    sourceDiagnostics = parsed.diagnostics.filter((d) => !isTestFile(d.file, testFilePatterns));
+  }
 
   return {
     testFindings: buildScopedLintCheck(check, testDiagnostics),
@@ -154,12 +188,16 @@ function splitByTypecheckOutputParsing(
 /**
  * Split a check result into test-file vs source-file buckets for scope-aware routing.
  * Returns null for each bucket when there are no findings for that scope.
+ *
+ * Pass lintOpts to enable Finding-based partitioning for lint checks (ADR-021 phase 3).
+ * Omitting it falls back to the diagnostic file-path approach.
  */
 export function splitFindingsByScope(
   check: ReviewCheckResult,
   testFilePatterns?: readonly string[],
   lintOutputFormat: LintOutputFormat = "auto",
   typecheckOutputFormat: TypecheckOutputFormat = "auto",
+  lintOpts?: { workdir: string },
 ): {
   testFindings: ReviewCheckResult | null;
   sourceFindings: ReviewCheckResult | null;
@@ -168,7 +206,7 @@ export function splitFindingsByScope(
     return splitByStructuredFindings(check, testFilePatterns);
   }
   if (check.check === "lint") {
-    return splitByOutputParsing(check, testFilePatterns, lintOutputFormat);
+    return splitByOutputParsing(check, testFilePatterns, lintOutputFormat, lintOpts);
   }
   if (check.check === "typecheck") {
     return splitByTypecheckOutputParsing(check, testFilePatterns, typecheckOutputFormat);

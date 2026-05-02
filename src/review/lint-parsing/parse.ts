@@ -1,7 +1,8 @@
+import { lintDiagnosticToFinding } from "../../findings";
 import { biomeJsonStrategy } from "./strategies/biome-json";
 import { eslintJsonStrategy } from "./strategies/eslint-json";
 import { textBlockStrategy } from "./strategies/text-block";
-import type { LintDiagnostic, LintOutputFormat, LintParseResult, LintParseStrategy } from "./types";
+import type { LintDiagnostic, LintOutputFormat, LintParseResult, LintParseStrategy, LintParserFormat } from "./types";
 
 function strategiesFor(format: LintOutputFormat): ReadonlyArray<LintParseStrategy> {
   if (format === "eslint-json") return [eslintJsonStrategy];
@@ -11,11 +12,26 @@ function strategiesFor(format: LintOutputFormat): ReadonlyArray<LintParseStrateg
   return [eslintJsonStrategy, biomeJsonStrategy, textBlockStrategy];
 }
 
-export function parseLintOutput(output: string, format: LintOutputFormat = "auto"): LintParseResult | null {
+function toolForFormat(format: LintParserFormat): "biome" | "eslint" | "text" {
+  if (format === "biome-json") return "biome";
+  if (format === "eslint-json") return "eslint";
+  return "text";
+}
+
+export function parseLintOutput(
+  output: string,
+  format: LintOutputFormat = "auto",
+  opts?: { workdir: string },
+): LintParseResult | null {
   if (!output.trim()) return null;
   for (const strategy of strategiesFor(format)) {
     const parsed = strategy.parse(output);
     if (parsed && parsed.diagnostics.length > 0) {
+      if (opts) {
+        const tool = toolForFormat(parsed.format);
+        const findings = parsed.diagnostics.map((d) => lintDiagnosticToFinding(d, opts.workdir, tool));
+        return { ...parsed, findings };
+      }
       return parsed;
     }
   }

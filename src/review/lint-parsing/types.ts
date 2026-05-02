@@ -1,3 +1,5 @@
+import type { Finding } from "../../findings";
+
 export type LintOutputFormat = "auto" | "eslint-json" | "biome-json" | "text" | "none";
 
 export type LintParserFormat = "eslint-json" | "biome-json" | "text-block";
@@ -15,6 +17,8 @@ export interface LintDiagnostic {
 export interface LintParseResult {
   diagnostics: LintDiagnostic[];
   format: LintParserFormat;
+  /** Structured findings (ADR-021 phase 3). Populated when workdir/cwd are provided to parseLintOutput(). */
+  findings?: Finding[];
 }
 
 export interface LintParseStrategy {
