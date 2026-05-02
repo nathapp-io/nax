@@ -16,124 +16,14 @@ import type { GenerateAcceptanceTestsOptions } from "../../../src/acceptance/typ
 import type { GenerateFixStoriesOptions } from "../../../src/acceptance/fix-generator";
 import type { CompleteOptions } from "../../../src/agents/types";
 import type { PRD } from "../../../src/prd/types";
+import type { AgentAdapter } from "../../../src/agents/types";
+import type { NaxConfig } from "../../../src/config";
 import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
-import type { PRD } from "../../../src/prd/types";
+import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
-
-function makeNaxConfig(): NaxConfig {
-  return {
-    version: 1,
-    models: {
-      fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
-      powerful: { provider: "anthropic", model: "claude-opus-4-5" },
-    },
-    autoMode: {
-      enabled: true,
-      defaultAgent: "claude",
-      fallbackOrder: ["claude"],
-      complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      escalation: { enabled: false, tierOrder: [{ tier: "fast", attempts: 3 }] },
-    },
-    analyze: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 5000,
-    },
-    routing: {
-      strategy: "keyword",
-      adaptive: { minSamples: 10, costThreshold: 0.8, fallbackStrategy: "keyword" },
-      llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
-    },
-    execution: {
-      maxIterations: 5,
-      iterationDelayMs: 0,
-      costLimit: 10,
-      sessionTimeoutSeconds: 60,
-      verificationTimeoutSeconds: 60,
-      maxStoriesPerFeature: 100,
-      rectification: {
-        enabled: false,
-        maxRetries: 1,
-        fullSuiteTimeoutSeconds: 60,
-        maxFailureSummaryChars: 1000,
-        abortOnIncreasingFailures: false,
-      },
-      regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true, maxRectificationAttempts: 1 },
-      contextProviderTokenBudget: 1000,
-      smartTestRunner: false,
-    },
-    quality: {
-      requireTypecheck: false,
-      requireLint: false,
-      requireTests: false,
-      commands: {},
-      forceExit: false,
-      detectOpenHandles: false,
-      detectOpenHandlesRetries: 0,
-      gracePeriodMs: 0,
-      dangerouslySkipPermissions: true,
-      drainTimeoutMs: 0,
-      shell: "/bin/sh",
-      stripEnvVars: [],
-    },
-    tdd: {
-      maxRetries: 1,
-      autoVerifyIsolation: false,
-      autoApproveVerifier: true,
-      strategy: "off",
-      sessionTiers: { testWriter: "fast", verifier: "fast" },
-      testWriterAllowedPaths: [],
-      rollbackOnFailure: false,
-      greenfieldDetection: false,
-    },
-    constitution: { enabled: false, path: "constitution.md", maxTokens: 0 },
-    review: { enabled: false, checks: [], commands: {} },
-    plan: { model: "balanced", outputPath: "spec.md" },
-    acceptance: {
-      enabled: true,
-      maxRetries: 1,
-      generateTests: false,
-      testPath: "acceptance.test.ts",
-      model: "fast",
-      refinement: false,
-      redGate: false,
-    },
-    context: {
-      fileInjection: "disabled",
-      testCoverage: {
-        enabled: false,
-        detail: "names-and-counts",
-        maxTokens: 0,
-        testPattern: "**/*.test.ts",
-        scopeToStory: false,
-      },
-      autoDetect: { enabled: false, maxFiles: 0, traceImports: false },
-    },
-    interaction: {
-      plugin: "cli",
-      config: {},
-      defaults: { timeout: 1000, fallback: "escalate" },
-      triggers: {},
-    },
-    precheck: {
-      storySizeGate: { enabled: false, maxAcCount: 10, maxDescriptionLength: 5000, maxBulletPoints: 20 },
-    },
-    prompts: {},
-    decompose: {
-      trigger: "disabled",
-      maxAcceptanceCriteria: 6,
-      maxSubstories: 5,
-      maxSubstoryComplexity: "medium",
-      maxRetries: 1,
-      model: "balanced",
-    },
-  };
-}
 
 const SPEC_WITH_ACS = `# Feature
 
@@ -245,7 +135,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
       return originalSpawn(...(args as Parameters<typeof originalSpawn>));
     };
 
-    await generateAcceptanceTests(adapter, options);
+    await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     // adapter.complete() must be called at least once
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
@@ -261,7 +151,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
       return originalSpawn(...(args as Parameters<typeof originalSpawn>));
     };
 
-    await generateAcceptanceTests(adapter, options);
+    await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     expect(spawnCalls).toHaveLength(0);
   });
@@ -270,7 +160,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     const { adapter, completeCalls } = makeMockAdapter();
     const options = makeGenerateOptions();
 
-    await generateAcceptanceTests(adapter, options);
+    await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
     expect(typeof completeCalls[0].prompt).toBe("string");
@@ -281,7 +171,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     const { adapter, completeCalls } = makeMockAdapter();
     const options = makeGenerateOptions();
 
-    await generateAcceptanceTests(adapter, options);
+    await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
     const prompt = completeCalls[0].prompt;
@@ -294,7 +184,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     const { adapter, completeCalls } = makeMockAdapter();
     const options = makeGenerateOptions();
 
-    await generateAcceptanceTests(adapter, options);
+    await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
     expect(completeCalls[0].options?.modelDef?.model).toBe(MODEL_DEF.model);
@@ -304,7 +194,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     const { adapter } = makeMockAdapter(SAMPLE_TEST_CODE);
     const options = makeGenerateOptions();
 
-    const result = await generateAcceptanceTests(adapter, options);
+    const result = await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     expect(typeof result.testCode).toBe("string");
     expect(result.testCode.length).toBeGreaterThan(0);
@@ -314,7 +204,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     const { adapter } = makeMockAdapter();
     const options = makeGenerateOptions();
 
-    const result = await generateAcceptanceTests(adapter, options);
+    const result = await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     expect(result.criteria.length).toBe(3);
     expect(result.criteria[0].id).toBe("AC-1");
@@ -329,7 +219,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     });
 
     const options = makeGenerateOptions();
-    const result = await generateAcceptanceTests(adapter, options);
+    const result = await generateAcceptanceTests(fakeAgentManager(adapter), options);
 
     // Should return skeleton tests, not throw
     expect(typeof result.testCode).toBe("string");
@@ -352,7 +242,7 @@ describe("generateAcceptanceTests — adapter.complete() integration", () => {
     });
 
     const options = makeGenerateOptions();
-    await generateAcceptanceTests(adapterWithSpy as AgentAdapter, options);
+    await generateAcceptanceTests(fakeAgentManager(adapterWithSpy as AgentAdapter), options);
 
     // complete() must have been called
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
@@ -387,7 +277,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
       return originalSpawn(...(args as Parameters<typeof originalSpawn>));
     };
 
-    await generateFixStories(adapter, options);
+    await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
   });
@@ -402,7 +292,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
       return originalSpawn(...(args as Parameters<typeof originalSpawn>));
     };
 
-    await generateFixStories(adapter, options);
+    await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(spawnCalls).toHaveLength(0);
   });
@@ -411,7 +301,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     const { adapter, completeCalls } = makeMockAdapter("Fix the TTL implementation.");
     const options = makeFixOptions();
 
-    await generateFixStories(adapter, options);
+    await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
     expect(typeof completeCalls[0].prompt).toBe("string");
@@ -422,7 +312,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     const { adapter, completeCalls } = makeMockAdapter("Fix the TTL implementation.");
     const options = makeFixOptions();
 
-    await generateFixStories(adapter, options);
+    await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
     expect(completeCalls[0].prompt).toContain("AC-2");
@@ -432,7 +322,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     const { adapter, completeCalls } = makeMockAdapter("Fix the TTL implementation.");
     const options = makeFixOptions();
 
-    await generateFixStories(adapter, options);
+    await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
     expect(completeCalls[0].options?.modelDef?.model).toBe(MODEL_DEF.model);
@@ -443,7 +333,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     const { adapter } = makeMockAdapter(fixDesc);
     const options = makeFixOptions();
 
-    const result = await generateFixStories(adapter, options);
+    const result = await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBe(1);
@@ -454,7 +344,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     const { adapter } = makeMockAdapter("Fix the TTL implementation.");
     const options = makeFixOptions();
 
-    const result = await generateFixStories(adapter, options);
+    const result = await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(result[0].failedAC).toBe("AC-2");
     expect(result[0].id).toBe("US-FIX-001");
@@ -467,7 +357,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     });
 
     const options = makeFixOptions();
-    const result = await generateFixStories(adapter, options);
+    const result = await generateFixStories(fakeAgentManager(adapter), options);
 
     // Should return fallback fix story, not throw
     expect(Array.isArray(result)).toBe(true);
@@ -491,7 +381,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
     });
 
     const options = makeFixOptions();
-    await generateFixStories(adapterWithSpy as AgentAdapter, options);
+    await generateFixStories(fakeAgentManager(adapterWithSpy as AgentAdapter), options);
 
     expect(completeCalls.length).toBeGreaterThanOrEqual(1);
     expect(binaryAccessed).toBe(false);
@@ -515,7 +405,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
       },
     };
 
-    await generateFixStories(adapter, options);
+    await generateFixStories(fakeAgentManager(adapter), options);
 
     // D1: ACs sharing the same related story are batched into 1 fix story → 1 LLM call
     expect(completeCalls.length).toBe(1);
@@ -545,7 +435,7 @@ describe("generateFixStories — adapter.complete() integration", () => {
       },
     };
 
-    await generateFixStories(adapter, options);
+    await generateFixStories(fakeAgentManager(adapter), options);
 
     expect(completeCalls.length).toBe(2);
   });
