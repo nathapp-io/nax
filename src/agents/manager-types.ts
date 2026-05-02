@@ -7,7 +7,14 @@ import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
 import type { SessionRole } from "../runtime/session-role";
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
-import type { AgentAdapter, AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "./types";
+import type {
+  AgentAdapter,
+  AgentResult,
+  AgentRunOptions,
+  CompleteOptions,
+  CompleteResult,
+  ResolvedCompleteOptions,
+} from "./types";
 
 export interface AgentFallbackRecord {
   storyId?: string;
@@ -156,7 +163,7 @@ export interface IAgentManager {
    * Mirrors runWithFallback but for complete() calls.
    * Swaps on availability failures when agent.fallback.enabled.
    */
-  completeWithFallback(prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome>;
+  completeWithFallback(prompt: string, options: ResolvedCompleteOptions): Promise<AgentCompleteOutcome>;
 
   // ─── ADR-013 Phase 1: uniform call surface ───────────────────────────────
 

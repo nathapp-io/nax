@@ -20,9 +20,9 @@ import type {
   AgentAdapter,
   AgentCapabilities,
   AgentRunOptions,
-  CompleteOptions,
   CompleteResult,
   OpenSessionOpts,
+  ResolvedCompleteOptions,
   SendTurnOpts,
   SessionHandle,
   TurnResult,
@@ -144,12 +144,9 @@ export class AcpAgentAdapter implements AgentAdapter {
     return {};
   }
 
-  async complete(prompt: string, _options: CompleteOptions): Promise<CompleteResult> {
+  async complete(prompt: string, _options: ResolvedCompleteOptions): Promise<CompleteResult> {
     const timeoutMs = _options.timeoutMs ?? 120_000;
-    // resolvedPermissions is always set by AgentManager.completeAs before calling the adapter.
-    // If it is somehow absent, we want a loud runtime error — not a silent wrong fallback.
-    // biome-ignore lint/style/noNonNullAssertion: manager contract — always set before calling complete()
-    const permissionMode = _options.resolvedPermissions!.mode;
+    const permissionMode = _options.resolvedPermissions.mode;
     const workdir = _options.workdir;
 
     // Attempt one call with the given agent; throws on any error

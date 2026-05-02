@@ -81,13 +81,13 @@ export function makeClient(
 const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
 
 /** Default CompleteOptions with required primitives for unit tests. */
-function makeCompleteOptions(overrides: Record<string, unknown> = {}): import("../../../../src/agents/types").CompleteOptions {
+function makeCompleteOptions(overrides: Record<string, unknown> = {}): import("../../../../src/agents/types").ResolvedCompleteOptions {
   return {
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     workdir: ACP_WORKDIR,
     resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
     ...overrides,
-  } as import("../../../../src/agents/types").CompleteOptions;
+  } as import("../../../../src/agents/types").ResolvedCompleteOptions;
 }
 
 export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {

@@ -205,6 +205,10 @@ export interface AgentCapabilities {
 
 /**
  * Options for one-shot LLM completion calls.
+ *
+ * Callers pass this to `AgentManager.completeAs()` — the manager fills in
+ * `resolvedPermissions`, `promptRetries`, `onPidSpawned`, and `onPidExited`
+ * before handing the augmented `ResolvedCompleteOptions` to the adapter.
  */
 export interface CompleteOptions {
   /** Maximum tokens for the response */
@@ -268,6 +272,13 @@ export interface CompleteOptions {
    */
   onPidExited?: (pid: number) => void;
 }
+
+/**
+ * `CompleteOptions` after `AgentManager.completeAs()` has filled in all
+ * `@internal` fields. This is what the adapter boundary actually receives.
+ * Only `manager.ts` and `completeWithFallback` should reference this type.
+ */
+export type ResolvedCompleteOptions = CompleteOptions & { resolvedPermissions: ResolvedPermissions };
 
 /**
  * Result for one-shot completion calls that include normalized cost metadata.
@@ -427,7 +438,7 @@ export interface AgentAdapter {
    * Run a one-shot LLM call and return output with cost metadata.
    * Uses claude -p CLI for non-interactive completions.
    */
-  complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
+  complete(prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult>;
 
   /**
    * Open a new (or resume an existing) physical agent session.
