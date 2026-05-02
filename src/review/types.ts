@@ -104,8 +104,8 @@ export interface PluginReviewerResult {
   exitCode?: number;
   /** Error message if reviewer threw an exception */
   error?: string;
-  /** Structured findings from the reviewer (optional) */
-  findings?: import("../plugins/types").ReviewFinding[];
+  /** Structured findings from the reviewer (optional) — Finding[] per ADR-021 phase 2 */
+  findings?: import("../findings").Finding[];
 }
 
 /** Per-reviewer blocking/advisory finding counts for reviewSummary */

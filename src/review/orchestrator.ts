@@ -14,6 +14,7 @@ import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { assembleForStage } from "../context/engine";
 import type { ContextBundle } from "../context/engine";
+import { pluginToFinding } from "../findings";
 import { getSafeLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
@@ -491,7 +492,7 @@ export class ReviewOrchestrator {
               passed: result.passed,
               output: result.output,
               exitCode: result.exitCode,
-              findings: result.findings,
+              findings: result.findings?.map((rf) => pluginToFinding(rf, workdir)),
             });
             if (!result.passed) {
               builtIn.pluginReviewers = pluginResults;
