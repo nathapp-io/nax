@@ -16,8 +16,8 @@ import {
   filterLintOutputToFiles,
   filterTypecheckOutputToFiles,
   splitFindingsByScope,
-  runTestWriterRectification,
-} from "../../../../src/pipeline/stages/autofix-adversarial";
+} from "../../../../src/pipeline/stages/autofix-scope-split";
+import { runTestWriterRectification } from "../../../../src/pipeline/stages/autofix-test-writer";
 import { isTestFile } from "../../../../src/test-runners";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
