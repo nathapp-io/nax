@@ -149,9 +149,11 @@ function buildAdversarialRefDiffSection(
   testGlobs: readonly string[] = [],
   refExcludePatterns: readonly string[] = [],
 ): string {
-  const merged = [...new Set([...excludePatterns, ":!.nax/", ":!.nax-pids"])];
+  const merged = [...new Set([...excludePatterns, ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"])];
   const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
-  const productionExcludes = [...new Set([...refExcludePatterns, ":!.nax/", ":!.nax-pids"])];
+  const productionExcludes = [
+    ...new Set([...refExcludePatterns, ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"]),
+  ];
   const productionExcludeArgs = productionExcludes.map((p) => `'${p}'`).join(" ");
   const statBlock = stat ? `## Changed Files Summary\n\n\`\`\`\n${stat}\n\`\`\`\n\n` : "";
   const testPatternGuide =

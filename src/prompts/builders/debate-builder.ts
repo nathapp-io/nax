@@ -417,7 +417,9 @@ function buildDebateDiffSection(ctx: DiffContext): string {
     // ref mode: reviewer self-serves the full diff via tools
     const stat = ctx.stat ?? "(no stat available)";
     const ref = ctx.storyGitRef;
-    const excludes = [...new Set([...(ctx.productionExcludePatterns ?? []), ":!.nax/", ":!.nax-pids"])];
+    const excludes = [
+      ...new Set([...(ctx.productionExcludePatterns ?? []), ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"]),
+    ];
     const excludeArgs = excludes.map((p) => `'${p}'`).join(" ");
     return [
       "## Changed Files",
