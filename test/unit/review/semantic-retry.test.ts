@@ -232,7 +232,7 @@ describe("runSemanticReview — JSON retry outcomes", () => {
 
     expect(result.success).toBe(false);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings![0].ruleId).toBe("semantic");
+    expect(result.findings![0].source).toBe("semantic-review");
   });
 
   test("returns fail-open when callOp throws", async () => {

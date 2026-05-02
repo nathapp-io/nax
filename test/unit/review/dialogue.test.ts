@@ -423,7 +423,7 @@ describe("ReviewerSession.review() — result parsing", () => {
     const session = createReviewerSession(makeAgentManager(runAsSessionFn), makeSessionManager(), "US-001", "/work", "my-feature", makeConfig());
     const result = await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(result.checkResult.findings.length).toBe(1);
-    expect(result.checkResult.findings[0]?.ruleId).toBe("missing-ac-coverage");
+    expect(result.checkResult.findings[0]?.rule).toBe("missing-ac-coverage");
     await session.destroy();
   });
 

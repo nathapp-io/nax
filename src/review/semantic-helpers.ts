@@ -3,7 +3,7 @@
  * Extracted from semantic.ts to stay within the 600-line file limit.
  */
 
-import type { ReviewFinding } from "../plugins/types";
+import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { SEVERITY_RANK } from "./severity";
 import type { SemanticReviewConfig } from "./types";
@@ -50,11 +50,18 @@ export function formatFindings(findings: LLMFinding[]): string {
     .join("\n");
 }
 
-/** Normalize LLM severity values to ReviewFinding severity union. */
-export function normalizeSeverity(sev: string): ReviewFinding["severity"] {
+/** Normalize LLM severity values to FindingSeverity. */
+export function normalizeSeverity(sev: string): FindingSeverity {
   if (sev === "warn") return "warning";
-  if (sev === "unverifiable") return "info";
-  if (sev === "critical" || sev === "error" || sev === "warning" || sev === "info" || sev === "low") return sev;
+  if (
+    sev === "critical" ||
+    sev === "error" ||
+    sev === "warning" ||
+    sev === "info" ||
+    sev === "low" ||
+    sev === "unverifiable"
+  )
+    return sev;
   return "info";
 }
 
@@ -105,14 +112,21 @@ function downgradeToUnverifiable(finding: LLMFinding): LLMFinding {
   };
 }
 
-/** Convert LLMFinding[] to ReviewFinding[] with semantic-review metadata. */
-export function toReviewFindings(findings: LLMFinding[]): ReviewFinding[] {
-  return findings.map((f) => ({
-    ruleId: "semantic",
+/** Convert a single LLMFinding to the unified Finding wire format. */
+export function llmFindingToFinding(f: LLMFinding): Finding {
+  return {
+    source: "semantic-review",
     severity: normalizeSeverity(f.severity),
+    category: "",
     file: f.file,
     line: f.line,
     message: f.issue,
-    source: "semantic-review",
-  }));
+    suggestion: f.suggestion ?? undefined,
+    meta: f.verifiedBy ? { verifiedBy: f.verifiedBy } : undefined,
+  };
+}
+
+/** Convert LLMFinding[] to Finding[] with semantic-review source. */
+export function toReviewFindings(findings: LLMFinding[]): Finding[] {
+  return findings.map(llmFindingToFinding);
 }

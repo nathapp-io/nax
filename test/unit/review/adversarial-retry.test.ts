@@ -224,7 +224,7 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
 
     expect(result.success).toBe(false);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings![0].ruleId).toBe("adversarial");
+    expect(result.findings![0].source).toBe("adversarial-review");
   });
 
   test("passes resolver-derived testGlobs and refExcludePatterns to callOp input", async () => {

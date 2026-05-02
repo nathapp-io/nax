@@ -166,7 +166,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const result = await callRunSemanticReview(llmResponse);
 
     // info is advisory by default — check advisoryFindings
-    expect(result.advisoryFindings![0].ruleId).toBe("semantic");
+    expect(result.advisoryFindings![0].rule).toBeUndefined();
+    expect(result.advisoryFindings![0].source).toBe("semantic-review");
   });
 
   test("maps finding.file to ReviewFinding.file", async () => {

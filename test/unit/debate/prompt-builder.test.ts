@@ -366,7 +366,7 @@ describe("buildClosePrompt()", () => {
 // ─── Review-specific methods (Phase 4) ──────────────────────────────────────
 
 import type { DebateResolverContext } from "../../../src/debate/types";
-import type { ReviewFinding } from "../../../src/plugins/types";
+import type { Finding } from "../../../src/findings";
 import type { ReviewStoryContext } from "../../../src/prompts";
 
 const REVIEW_STORY: ReviewStoryContext = {
@@ -377,9 +377,11 @@ const REVIEW_STORY: ReviewStoryContext = {
 
 const DIFF = "diff --git a/src/foo.ts b/src/foo.ts\n+export function foo() {}";
 
-const FINDING: ReviewFinding = {
-  ruleId: "missing-ac",
+const FINDING: Finding = {
+  source: "semantic-review",
+  rule: "missing-ac",
   severity: "error",
+  category: "",
   file: "src/foo.ts",
   line: 1,
   message: "AC-1 not satisfied",

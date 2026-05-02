@@ -42,7 +42,7 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
   "passed": boolean,
   "findings": [
     {
-      "severity": "error" | "warn" | "info" | "unverifiable",
+      "severity": "error" | "warning" | "info" | "unverifiable",
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",

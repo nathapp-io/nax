@@ -528,7 +528,7 @@ describe("ReviewerSession.getVerdict() — SemanticVerdict fields", () => {
     const verdict = session.getVerdict();
     expect(Array.isArray(verdict.findings)).toBe(true);
     expect(verdict.findings.length).toBe(2);
-    expect(verdict.findings[0]?.ruleId).toBe("AC-1-not-satisfied");
+    expect(verdict.findings[0]?.rule).toBe("AC-1-not-satisfied");
     await session.destroy();
   });
 
@@ -546,7 +546,7 @@ describe("ReviewerSession.getVerdict() — SemanticVerdict fields", () => {
     // RE_REVIEW_RESPONSE has 1 finding (AC-2-not-satisfied only)
     expect(verdict.passed).toBe(false);
     expect(verdict.findings.length).toBe(1);
-    expect(verdict.findings[0]?.ruleId).toBe("AC-2-not-satisfied");
+    expect(verdict.findings[0]?.rule).toBe("AC-2-not-satisfied");
     await session.destroy();
   });
 });
