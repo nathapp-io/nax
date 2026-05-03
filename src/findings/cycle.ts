@@ -151,6 +151,7 @@ export async function runFixCycle<F extends Finding>(
 
   const storyId = ctx.storyId;
   const packageDir = ctx.packageDir;
+  let totalCostUsd = 0;
 
   for (;;) {
     // ── Select active strategies ──────────────────────────────────────────────
@@ -163,7 +164,12 @@ export async function runFixCycle<F extends Finding>(
         reason: "no-strategy",
         findingsCount: cycle.findings.length,
       });
-      return { iterations: cycle.iterations, finalFindings: cycle.findings, exitReason: "no-strategy" };
+      return {
+        iterations: cycle.iterations,
+        finalFindings: cycle.findings,
+        exitReason: "no-strategy",
+        costUsd: totalCostUsd,
+      };
     }
 
     // ── Per-strategy attempt cap ──────────────────────────────────────────────
@@ -184,6 +190,7 @@ export async function runFixCycle<F extends Finding>(
           finalFindings: cycle.findings,
           exitReason: "max-attempts-per-strategy",
           exhaustedStrategy: strategy.name,
+          costUsd: totalCostUsd,
         };
       }
     }
@@ -199,7 +206,12 @@ export async function runFixCycle<F extends Finding>(
         totalAttempts,
         maxAttemptsTotal: cycle.config.maxAttemptsTotal,
       });
-      return { iterations: cycle.iterations, finalFindings: cycle.findings, exitReason: "max-attempts-total" };
+      return {
+        iterations: cycle.iterations,
+        finalFindings: cycle.findings,
+        exitReason: "max-attempts-total",
+        costUsd: totalCostUsd,
+      };
     }
 
     // ── bailWhen predicates ───────────────────────────────────────────────────
@@ -219,6 +231,7 @@ export async function runFixCycle<F extends Finding>(
           finalFindings: cycle.findings,
           exitReason: "bail-when",
           bailDetail: bailReason,
+          costUsd: totalCostUsd,
         };
       }
     }
@@ -239,6 +252,7 @@ export async function runFixCycle<F extends Finding>(
         op: strategy.fixOp.name,
         targetFiles: extracted.targetFiles ?? [],
         summary: extracted.summary ?? "",
+        costUsd: extracted.costUsd,
       });
     }
 
@@ -258,7 +272,12 @@ export async function runFixCycle<F extends Finding>(
             reason: "validator-error",
             error: errorMessage(err),
           });
-          return { iterations: cycle.iterations, finalFindings: cycle.findings, exitReason: "validator-error" };
+          return {
+            iterations: cycle.iterations,
+            finalFindings: cycle.findings,
+            exitReason: "validator-error",
+            costUsd: totalCostUsd,
+          };
         }
         logger?.warn("findings.cycle", "validator retry", {
           storyId,
@@ -288,7 +307,8 @@ export async function runFixCycle<F extends Finding>(
     cycle.iterations.push(iteration);
     cycle.findings = findingsAfter;
 
-    const costUsd = fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+    const iterationCostUsd = fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+    totalCostUsd += iterationCostUsd;
     logger?.info("findings.cycle", "iteration completed", {
       storyId,
       packageDir,
@@ -298,11 +318,11 @@ export async function runFixCycle<F extends Finding>(
       outcome,
       findingsBefore: findingsBefore.length,
       findingsAfter: findingsAfter.length,
-      ...(costUsd > 0 ? { costUsd } : {}),
+      ...(iterationCostUsd > 0 ? { costUsd: iterationCostUsd } : {}),
     });
 
     if (outcome === "resolved") {
-      return { iterations: cycle.iterations, finalFindings: [], exitReason: "resolved" };
+      return { iterations: cycle.iterations, finalFindings: [], exitReason: "resolved", costUsd: totalCostUsd };
     }
   }
 }

@@ -23,7 +23,6 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
-import { captureGitRef } from "../../utils/git";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { runAgentRectification } from "./autofix-agent";
@@ -272,7 +271,6 @@ async function recheckReview(ctx: PipelineContext): Promise<boolean> {
 export const _autofixDeps = {
   runQualityCommand,
   recheckReview,
-  captureGitRef,
   runAgentRectification,
   runTestWriterRectification: (
     ctx: PipelineContext,

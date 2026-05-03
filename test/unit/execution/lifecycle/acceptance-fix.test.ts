@@ -8,10 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
-  _applyFixDeps,
+  _diagnosisDeps,
   resolveAcceptanceDiagnosis,
 } from "../../../../src/execution/lifecycle/acceptance-fix";
-import type { SemanticVerdict } from "../../../../src/acceptance/types";
+import type { DiagnosisResult, SemanticVerdict } from "../../../../src/acceptance/types";
 import type { NaxConfig } from "../../../../src/config/schema";
 import type { AcceptanceLoopContext } from "../../../../src/execution/lifecycle/acceptance-loop";
 import { makeNaxConfig } from "../../../helpers";
@@ -67,14 +67,14 @@ function makeDiagnosisOpts() {
   };
 }
 
-let savedCallOp: typeof _applyFixDeps.callOp;
+let savedCallOp: typeof _diagnosisDeps.callOp;
 
 beforeEach(() => {
-  savedCallOp = _applyFixDeps.callOp;
+  savedCallOp = _diagnosisDeps.callOp;
 });
 
 afterEach(() => {
-  _applyFixDeps.callOp = savedCallOp;
+  _diagnosisDeps.callOp = savedCallOp;
   mock.restore();
 });
 
@@ -83,7 +83,7 @@ afterEach(() => {
 describe("resolveAcceptanceDiagnosis() — fast paths", () => {
   test("implement-only strategy → source_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -100,7 +100,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("all semantic verdicts passed → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const verdicts: SemanticVerdict[] = [
       { storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 5, findings: [] },
@@ -122,7 +122,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test(">80% ACs failed → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -140,7 +140,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("AC-ERROR sentinel → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -156,9 +156,9 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("normal failure (no fast path) → callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async (_callCtx, _op, _input) => {
+    _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as any;
+      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as unknown as DiagnosisResult;
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -176,10 +176,10 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
   });
 
   test("normal path passes semanticVerdicts to callOp input", async () => {
-    let capturedInput: any;
-    _applyFixDeps.callOp = async (_callCtx, _op, input) => {
-      capturedInput = input;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as any;
+    let capturedInput: Record<string, unknown> | undefined;
+    _diagnosisDeps.callOp = async (_callCtx, _op, input) => {
+      capturedInput = input as Record<string, unknown>;
+      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as unknown as DiagnosisResult;
     };
 
     const semanticVerdicts: SemanticVerdict[] = [

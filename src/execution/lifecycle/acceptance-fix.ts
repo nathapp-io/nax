@@ -52,7 +52,7 @@ export interface ResolveAcceptanceDiagnosisOptions {
 }
 
 /** Injectable dependencies for resolveAcceptanceDiagnosis. */
-export const _applyFixDeps = {
+export const _diagnosisDeps = {
   callOp: _callOp as typeof _callOp,
 };
 
@@ -114,7 +114,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
 
   // Slow path: full LLM diagnosis via callOp
   const sourceFiles = await loadSourceFilesForDiagnosis(diagnosisOpts.testFileContent, diagnosisOpts.workdir);
-  return await _applyFixDeps.callOp(fixCallCtx(ctx), acceptanceDiagnoseOp, {
+  return await _diagnosisDeps.callOp(fixCallCtx(ctx), acceptanceDiagnoseOp, {
     testOutput: diagnosisOpts.testOutput,
     testFileContent: diagnosisOpts.testFileContent,
     sourceFiles,
