@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { getSafeLogger } from "../logger";
 import { validateModulePath } from "../utils/path-security";
 import type { LLMFinding } from "./semantic-helpers";
@@ -40,7 +41,12 @@ async function substantiateFinding(finding: LLMFinding, workdir: string, storyId
 
   const file = finding.verifiedBy?.file?.trim() || finding.file;
   const contents = await readSafeFile(workdir, file);
-  if (contents !== null && normalizedIncludes(contents, observed)) return finding;
+
+  // File genuinely unreadable on this machine — cannot verify or refute.
+  // Preserve the finding rather than silently demoting a real AC violation.
+  if (contents === null) return finding;
+
+  if (normalizedIncludes(contents, observed)) return finding;
 
   _evidenceDeps.getLogger()?.warn("review", "Downgraded unsubstantiated semantic error finding", {
     storyId,
@@ -56,13 +62,26 @@ async function substantiateFinding(finding: LLMFinding, workdir: string, storyId
 
 async function readSafeFile(workdir: string, file: string): Promise<string | null> {
   const validated = validateModulePath(file, [workdir]);
-  if (!validated.valid || !validated.absolutePath) return null;
-
-  try {
-    return await Bun.file(validated.absolutePath).text();
-  } catch {
-    return null;
+  if (validated.valid && validated.absolutePath) {
+    try {
+      return await Bun.file(validated.absolutePath).text();
+    } catch {
+      return null;
+    }
   }
+
+  // Absolute path outside workdir — the LLM ran its tool against a different
+  // machine or repo root. Attempt a direct read so we can still verify the
+  // evidence rather than skipping substantiation entirely.
+  if (isAbsolute(file)) {
+    try {
+      return await Bun.file(file).text();
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 function normalizedIncludes(contents: string, observed: string): boolean {
