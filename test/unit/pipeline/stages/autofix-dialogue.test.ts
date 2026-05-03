@@ -163,15 +163,19 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 
 let origRecheckReview: typeof _autofixDeps.recheckReview;
 let origCaptureGitRef: typeof _autofixDeps.captureGitRef;
+let origHasWorkingTreeChange: typeof _autofixDeps.hasWorkingTreeChange;
 
 beforeEach(() => {
   origRecheckReview = _autofixDeps.recheckReview;
   origCaptureGitRef = _autofixDeps.captureGitRef;
+  origHasWorkingTreeChange = _autofixDeps.hasWorkingTreeChange;
+  _autofixDeps.hasWorkingTreeChange = mock(async () => true);
 });
 
 afterEach(() => {
   _autofixDeps.recheckReview = origRecheckReview;
   _autofixDeps.captureGitRef = origCaptureGitRef;
+  _autofixDeps.hasWorkingTreeChange = origHasWorkingTreeChange;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

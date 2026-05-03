@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _gitDeps, captureOutputFiles, detectMergeConflict } from "../../../src/utils/git";
+import { _gitDeps, captureOutputFiles, detectMergeConflict, hasWorkingTreeChange } from "../../../src/utils/git";
 
 describe("detectMergeConflict", () => {
   test("returns true when output contains uppercase CONFLICT", () => {
@@ -138,5 +138,122 @@ describe("captureOutputFiles", () => {
     _gitDeps.spawn = mockSpawnOutput("");
     const result = await captureOutputFiles("/tmp/repo", "abc123");
     expect(result).toEqual([]);
+  });
+});
+
+describe("hasWorkingTreeChange", () => {
+  test("returns false when baseRef is undefined", async () => {
+    const result = await hasWorkingTreeChange("/tmp/repo", undefined);
+    expect(result).toBe(false);
+  });
+
+  test("returns true when HEAD advances", async () => {
+    let call = 0;
+    _gitDeps.spawn = mock((_args: string[], _opts: unknown) => {
+      call++;
+      const out = call === 1 ? "next-head\n" : "";
+      const bytes = new TextEncoder().encode(out);
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+    const result = await hasWorkingTreeChange("/tmp/repo", "base-head");
+    expect(result).toBe(true);
+  });
+
+  test("returns true when HEAD unchanged but porcelain has changes", async () => {
+    let call = 0;
+    _gitDeps.spawn = mock((_args: string[], _opts: unknown) => {
+      call++;
+      const out = call === 1 ? "same-head\n" : " M src/a.ts\n";
+      const bytes = new TextEncoder().encode(out);
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+    const result = await hasWorkingTreeChange("/tmp/repo", "same-head");
+    expect(result).toBe(true);
+  });
+
+  test("returns true when HEAD unchanged and staged file exists", async () => {
+    let call = 0;
+    _gitDeps.spawn = mock((_args: string[], _opts: unknown) => {
+      call++;
+      const out = call === 1 ? "same-head\n" : "M  src/staged.ts\n";
+      const bytes = new TextEncoder().encode(out);
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+    const result = await hasWorkingTreeChange("/tmp/repo", "same-head");
+    expect(result).toBe(true);
+  });
+
+  test("returns true when HEAD unchanged and untracked file exists", async () => {
+    let call = 0;
+    _gitDeps.spawn = mock((_args: string[], _opts: unknown) => {
+      call++;
+      const out = call === 1 ? "same-head\n" : "?? src/new-file.ts\n";
+      const bytes = new TextEncoder().encode(out);
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+    const result = await hasWorkingTreeChange("/tmp/repo", "same-head");
+    expect(result).toBe(true);
+  });
+
+  test("returns false when HEAD unchanged and porcelain is empty", async () => {
+    let call = 0;
+    _gitDeps.spawn = mock((_args: string[], _opts: unknown) => {
+      call++;
+      const out = call === 1 ? "same-head\n" : "";
+      const bytes = new TextEncoder().encode(out);
+      return {
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        exited: Promise.resolve(0),
+        kill: mock(() => {}),
+      };
+    });
+    const result = await hasWorkingTreeChange("/tmp/repo", "same-head");
+    expect(result).toBe(false);
   });
 });

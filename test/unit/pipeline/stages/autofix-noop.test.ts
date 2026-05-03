@@ -108,19 +108,23 @@ function makeMockAgentManager(mockRun: ReturnType<typeof mock>) {
 
 let origRecheckReview: typeof _autofixDeps.recheckReview;
 let origCaptureGitRef: typeof _autofixDeps.captureGitRef;
+let origHasWorkingTreeChange: typeof _autofixDeps.hasWorkingTreeChange;
 let origRunTestWriterRectification: typeof _autofixDeps.runTestWriterRectification;
 
 beforeEach(() => {
   origRecheckReview = _autofixDeps.recheckReview;
   origCaptureGitRef = _autofixDeps.captureGitRef;
+  origHasWorkingTreeChange = _autofixDeps.hasWorkingTreeChange;
   origRunTestWriterRectification = _autofixDeps.runTestWriterRectification;
   // Default: no test-writer rectification needed
   _autofixDeps.runTestWriterRectification = mock(async () => 0);
+  _autofixDeps.hasWorkingTreeChange = mock(async () => true);
 });
 
 afterEach(() => {
   _autofixDeps.recheckReview = origRecheckReview;
   _autofixDeps.captureGitRef = origCaptureGitRef;
+  _autofixDeps.hasWorkingTreeChange = origHasWorkingTreeChange;
   _autofixDeps.runTestWriterRectification = origRunTestWriterRectification;
 });
 
@@ -137,16 +141,10 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
     const agentManager = makeMockAgentManager(mockRun);
 
-    // First call returns same ref (no-op); subsequent calls return different ref (change).
-    let captureCallCount = 0;
-    _autofixDeps.captureGitRef = mock(async () => {
-      captureCallCount++;
-      // Calls come in pairs: (before, after) per attempt.
-      // Attempt 1 before → "ref-a", Attempt 1 after → "ref-a" (no-op)
-      // Attempt 1-reprompt before → "ref-a", Attempt 1-reprompt after → "ref-b" (change)
-      // Attempt 2 before → "ref-b", Attempt 2 after → "ref-c" (change)
-      if (captureCallCount <= 2) return "ref-a"; // attempt 1: same ref → no-op
-      return `ref-${captureCallCount}`; // subsequent: always different
+    let changeCallCount = 0;
+    _autofixDeps.hasWorkingTreeChange = mock(async () => {
+      changeCallCount++;
+      return changeCallCount > 1;
     });
 
     // Recheck: fails once (after reprompt), then passes.
@@ -176,12 +174,10 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
     const agentManager = makeMockAgentManager(mockRun);
 
-    // Two consecutive same refs → no-op on first call, then change.
-    let captureCallCount = 0;
-    _autofixDeps.captureGitRef = mock(async () => {
-      captureCallCount++;
-      if (captureCallCount <= 2) return "same-ref";
-      return `changed-${captureCallCount}`;
+    let changeCallCount = 0;
+    _autofixDeps.hasWorkingTreeChange = mock(async () => {
+      changeCallCount++;
+      return changeCallCount > 1;
     });
 
     _autofixDeps.recheckReview = mock(async () => false);
@@ -196,6 +192,38 @@ describe("runAgentRectification — no-op short-circuit", () => {
     expect(capturedPrompts[1]).toContain("UNRESOLVED");
   });
 
+  test("no-op reprompt uses fresh failures from recheck, not initial failure", async () => {
+    const capturedPrompts: string[] = [];
+    const mockRun = mock(async (opts: Record<string, unknown>) => {
+      capturedPrompts.push(opts.prompt as string);
+      return { success: true, estimatedCostUsd: 0, output: "ok" };
+    });
+    const agentManager = makeMockAgentManager(mockRun);
+
+    _autofixDeps.hasWorkingTreeChange = mock(async () => false);
+    _autofixDeps.recheckReview = mock(async (mockCtx: PipelineContext) => {
+      mockCtx.reviewResult = {
+        success: false,
+        checks: [makeFailedCheck("adversarial")],
+      } as unknown as PipelineContext["reviewResult"];
+      return false;
+    });
+
+    const ctx = makeCtx({
+      agentManager,
+      reviewResult: {
+        success: false,
+        checks: [makeFailedCheck("build")],
+      } as unknown as PipelineContext["reviewResult"],
+    });
+
+    await _autofixDeps.runAgentRectification(ctx, undefined, undefined, "/tmp");
+
+    expect(capturedPrompts.length).toBeGreaterThanOrEqual(2);
+    expect(capturedPrompts[1]).toContain("adversarial failure output");
+    expect(capturedPrompts[1]).not.toContain("build failure output");
+  });
+
   test("second consecutive no-op is counted as a consumed attempt", async () => {
     const capturedPrompts: string[] = [];
     const mockRun = mock(async (opts: Record<string, unknown>) => {
@@ -204,8 +232,8 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
     const agentManager = makeMockAgentManager(mockRun);
 
-    // All calls return same ref (all no-ops) — agent never makes changes.
-    _autofixDeps.captureGitRef = mock(async () => "always-same-ref");
+    // All calls report no change (all no-ops) — agent never makes changes.
+    _autofixDeps.hasWorkingTreeChange = mock(async () => false);
 
     // Recheck always fails.
     _autofixDeps.recheckReview = mock(async () => false);
@@ -242,12 +270,11 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
     const agentManager = makeMockAgentManager(mockRun);
 
-    // Iteration 1: no-op (same ref before/after). Iteration 2: change (different ref).
-    let captureCallCount = 0;
-    _autofixDeps.captureGitRef = mock(async () => {
-      captureCallCount++;
-      if (captureCallCount <= 2) return "ref-a"; // iteration 1: no-op
-      return `ref-${captureCallCount}`; // iteration 2+: changed
+    // Iteration 1: no-op. Iteration 2: change.
+    let changeCallCount = 0;
+    _autofixDeps.hasWorkingTreeChange = mock(async () => {
+      changeCallCount++;
+      return changeCallCount > 1;
     });
 
     // Iter 1 recheck (no-op + mechanical failure): false → reprompt.
@@ -293,8 +320,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
     const agentManager = makeMockAgentManager(mockRun);
 
-    // No-op (HEAD does not advance).
-    _autofixDeps.captureGitRef = mock(async () => "ref-unchanged");
+    _autofixDeps.hasWorkingTreeChange = mock(async () => false);
 
     // Recheck would return false but should not be called at all.
     const recheckMock = mock(async () => false);
@@ -331,8 +357,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
     const agentManager = makeMockAgentManager(mockRun);
 
-    // No-op (HEAD does not advance).
-    _autofixDeps.captureGitRef = mock(async () => "ref-unchanged");
+    _autofixDeps.hasWorkingTreeChange = mock(async () => false);
 
     // Mechanical recheck reveals the failure was transient — now passing.
     const recheckMock = mock(async () => true);
@@ -367,8 +392,7 @@ describe("runAgentRectification — no-op short-circuit", () => {
     });
     const agentManager = makeMockAgentManager(mockRun);
 
-    // First turn is a no-op (HEAD does not advance).
-    _autofixDeps.captureGitRef = mock(async () => "ref-unchanged");
+    _autofixDeps.hasWorkingTreeChange = mock(async () => false);
 
     // But re-running the failing check now passes (transient/pre-resolved).
     _autofixDeps.recheckReview = mock(async () => true);
@@ -400,9 +424,7 @@ describe("runAgentRectification — attemptsRemaining in logs", () => {
     const mockRun = mock(async () => ({ success: false, estimatedCostUsd: 0, output: "", exitCode: 1, rateLimited: false }));
     const agentManager = makeMockAgentManager(mockRun);
 
-    // Always different ref so no-op short-circuit doesn't fire.
-    let counter = 0;
-    _autofixDeps.captureGitRef = mock(async () => `ref-${counter++}`);
+    _autofixDeps.hasWorkingTreeChange = mock(async () => true);
     _autofixDeps.recheckReview = mock(async () => false);
 
     const ctx = makeCtx({

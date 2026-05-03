@@ -1,5 +1,5 @@
 // RE-ARCH: keep
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _autofixDeps, autofixStage } from "../../../../src/pipeline/stages/autofix";
 import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { PipelineContext } from "../../../../src/pipeline/types";
@@ -85,6 +85,17 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     ...overrides,
   };
 }
+
+let origHasWorkingTreeChange: typeof _autofixDeps.hasWorkingTreeChange;
+
+beforeEach(() => {
+  origHasWorkingTreeChange = _autofixDeps.hasWorkingTreeChange;
+  _autofixDeps.hasWorkingTreeChange = mock(async () => true);
+});
+
+afterEach(() => {
+  _autofixDeps.hasWorkingTreeChange = origHasWorkingTreeChange;
+});
 
 // ---------------------------------------------------------------------------
 // #106: Global autofix budget — ctx.autofixAttempt persists across cycles

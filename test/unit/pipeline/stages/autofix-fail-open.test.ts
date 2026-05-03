@@ -178,10 +178,11 @@ describe("runAgentRectification — fail-open aborts retry loop (issue #832)", (
 
     const savedCaptureGitRef = _autofixDeps.captureGitRef;
     const savedRecheckReview = _autofixDeps.recheckReview;
+    const savedHasWorkingTreeChange = _autofixDeps.hasWorkingTreeChange;
 
-    // Both before/after return undefined → sourceFilesChanged=true, noOp=false,
-    // so recheckWorthwhile=true and recheckReview is invoked.
+    // hasWorkingTreeChange=true keeps this on the non-no-op path so recheck runs.
     _autofixDeps.captureGitRef = async () => undefined as unknown as string;
+    _autofixDeps.hasWorkingTreeChange = async () => true;
     _autofixDeps.recheckReview = async (mockCtx: PipelineContext) => {
       // Simulate: adversarial timed out during recheck — success:true but failOpen:true
       mockCtx.reviewResult = {
@@ -233,6 +234,7 @@ describe("runAgentRectification — fail-open aborts retry loop (issue #832)", (
 
     _autofixDeps.captureGitRef = savedCaptureGitRef;
     _autofixDeps.recheckReview = savedRecheckReview;
+    _autofixDeps.hasWorkingTreeChange = savedHasWorkingTreeChange;
 
     expect(result.succeeded).toBe(false);
     // shouldAbort fires after attempt 1's verify — attempt 2 must not be built
