@@ -1,7 +1,7 @@
 import type { SemanticVerdict } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
-import type { Finding } from "../findings";
+import type { Finding, FindingSeverity, FixTarget } from "../findings";
 import { AcceptancePromptBuilder } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
@@ -52,7 +52,8 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
       task: { id: "task", content: prompt, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
+  parse(output, _input, ctx) {
+    const findingsV2 = ctx.config.acceptance.fix?.findingsV2 ?? false;
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     if (
       raw &&
@@ -66,9 +67,23 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
         confidence: raw.confidence,
       };
 
-      // findingsV2 path: LLM emits findings[] directly
-      if (Array.isArray(raw.findings) && raw.findings.length > 0) {
-        return { ...base, findings: raw.findings as Finding[] };
+      // findingsV2 path: gated on config flag; inject source and validate shape
+      if (findingsV2 && Array.isArray(raw.findings) && raw.findings.length > 0) {
+        const findings = (raw.findings as Array<Record<string, unknown>>)
+          .filter((f) => typeof f.message === "string" && typeof f.category === "string")
+          .map(
+            (f): Finding => ({
+              source: "acceptance-diagnose",
+              severity: (typeof f.severity === "string" ? f.severity : "error") as FindingSeverity,
+              category: String(f.category),
+              message: String(f.message),
+              fixTarget: (f.fixTarget as FixTarget | undefined) ?? undefined,
+              file: typeof f.file === "string" ? f.file : undefined,
+              line: typeof f.line === "number" ? f.line : undefined,
+              suggestion: typeof f.suggestion === "string" ? f.suggestion : undefined,
+            }),
+          );
+        if (findings.length > 0) return { ...base, findings };
       }
 
       // Legacy path: wrap testIssues/sourceIssues as Finding[] for uniform consumption

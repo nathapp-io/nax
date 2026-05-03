@@ -159,6 +159,46 @@ describe("acceptanceDiagnoseOp findingsV2 mode", () => {
     expect(result.testIssues).toBeUndefined();
     expect(result.sourceIssues).toBeUndefined();
   });
+  test("parse() injects source:'acceptance-diagnose' into LLM findings (LLM does not emit source)", () => {
+    const ctx = makeBuildCtx({ findingsV2: true });
+    const json = JSON.stringify({
+      verdict: "test_bug",
+      reasoning: "bad import",
+      confidence: 0.9,
+      findings: [{ fixTarget: "test", category: "import-path", message: "wrong path" }],
+    });
+    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.findings?.[0].source).toBe("acceptance-diagnose");
+  });
+  test("parse() drops findings items missing required message or category", () => {
+    const ctx = makeBuildCtx({ findingsV2: true });
+    const json = JSON.stringify({
+      verdict: "test_bug",
+      reasoning: "bad import",
+      confidence: 0.9,
+      findings: [
+        { fixTarget: "test", category: "import-path", message: "valid" },
+        { fixTarget: "test", message: "missing category" },
+        { fixTarget: "source", category: "missing-impl" },
+      ],
+    });
+    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.findings?.length).toBe(1);
+    expect(result.findings?.[0].message).toBe("valid");
+  });
+  test("parse() ignores findings[] when findingsV2 is false (flag isolation)", () => {
+    const ctx = makeBuildCtx({ findingsV2: false });
+    const json = JSON.stringify({
+      verdict: "test_bug",
+      reasoning: "bad import",
+      confidence: 0.9,
+      // LLM hallucinated findings even though prompt asked for testIssues/sourceIssues
+      findings: [{ fixTarget: "test", category: "import-path", message: "wrong path" }],
+    });
+    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
+    // Should NOT use the findingsV2 fast-path — fall through to legacy path
+    expect(result.findings).toBeUndefined();
+  });
   test("parse() falls back gracefully when findings[] is empty array", () => {
     const ctx = makeBuildCtx({ findingsV2: true });
     const json = JSON.stringify({
