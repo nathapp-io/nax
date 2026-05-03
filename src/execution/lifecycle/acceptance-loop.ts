@@ -128,13 +128,14 @@ function buildFixCycleCtx(
     packageDir: ctx.workdir,
     storyId,
     featureName: ctx.feature,
+    // agentName captured once at cycle construction time; fallback changes not reflected mid-cycle
     agentName: ctx.agentManager?.getDefault() ?? "claude",
   };
 }
 
-async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Promise<AcceptanceTestRunResult> {
+function buildAcceptanceContext(ctx: AcceptanceLoopContext, prd: PRD): PipelineContext {
   const firstStory = prd.userStories[0];
-  const acceptanceContext: PipelineContext = {
+  return {
     config: ctx.config,
     rootConfig: ctx.config,
     prd,
@@ -159,6 +160,10 @@ async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Pro
     runtime: ctx.runtime,
     abortSignal: ctx.abortSignal,
   };
+}
+
+async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Promise<AcceptanceTestRunResult> {
+  const acceptanceContext = buildAcceptanceContext(ctx, prd);
   const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
   const result = await acceptanceStage.execute(acceptanceContext);
   if (result.action !== "fail") return { passed: true, failedACs: [], testOutput: "" };
@@ -175,7 +180,9 @@ async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Pro
  *   - acceptance-test-fix:   appliesTo fixTarget==="test",   appliesToVerdict test_bug/both
  *
  * Validate fn re-runs acceptance tests and converts failures to Finding[].
- * previousFailure accumulator replaced by buildPriorIterationsBlock(priorIterations).
+ * buildPriorIterationsBlock(priorIterations) replaces the hand-rolled previousFailure
+ * string accumulator. Note: only acceptance-test-fix uses priorIterations — the source-fix
+ * op type does not accept it, so source-fix prompts intentionally omit prior-attempt context.
  */
 export async function runAcceptanceFixCycle(
   ctx: AcceptanceLoopContext,
@@ -276,36 +283,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   logger?.info("acceptance", "All stories complete, running acceptance validation");
 
+  const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+
   while (acceptanceRetries < maxRetries) {
     // ── 1. Run acceptance ────────────────────────────────────────────────
     const firstStory = prd.userStories[0];
-    const acceptanceContext: PipelineContext = {
-      config: ctx.config,
-      rootConfig: ctx.config,
-      prd,
-      story: firstStory,
-      stories: [firstStory],
-      routing: {
-        complexity: "simple",
-        modelTier: "balanced",
-        testStrategy: "test-after",
-        reasoning: "Acceptance validation",
-      },
-      projectDir: ctx.workdir,
-      workdir: ctx.workdir,
-      naxIgnoreIndex: ctx.naxIgnoreIndex,
-      featureDir: ctx.featureDir,
-      hooks: ctx.hooks,
-      plugins: ctx.pluginRegistry,
-      agentGetFn: ctx.agentGetFn,
-      agentManager: ctx.agentManager,
-      sessionManager: ctx.sessionManager,
-      acceptanceTestPaths: ctx.acceptanceTestPaths,
-      runtime: ctx.runtime,
-      abortSignal: ctx.abortSignal,
-    };
-
-    const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+    const acceptanceContext = buildAcceptanceContext(ctx, prd);
     const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
 
     if (acceptanceResult.action === "continue") {
@@ -456,7 +439,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         testFileContent,
         acceptanceTestPath,
       );
-      const success = cycleResult.exitReason === "resolved";
+      // "resolved" is the canonical success exit; also treat empty finalFindings as success
+      // in case the last validate pass cleared all findings before runFixCycle emitted "resolved".
+      const success = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
+      // retries here counts: 1 outer pass (acceptanceRetries) + N internal strategy attempts.
+      // This differs from the legacy path (1 per outer loop pass) — intentional: cycleV2
+      // replaces all subsequent outer passes with internal runFixCycle iterations.
       return buildResult(
         success,
         prd,
@@ -464,7 +452,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         iterations,
         storiesCompleted,
         prdDirty,
-        success ? undefined : failures.failedACs,
+        success ? undefined : cycleResult.finalFindings.map((f) => f.message),
         acceptanceRetries + cycleResult.iterations.length,
       );
     }
