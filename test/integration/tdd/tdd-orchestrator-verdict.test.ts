@@ -245,7 +245,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     expect(result.reviewReason).toContain("illegitimate test modifications");
   });
 
-  test("verdict approved=false + criteria not met → failureCategory='verifier-rejected'", async () => {
+  test("verdict approved=false + criteria not met only → advisory success", async () => {
     await writeVerdictToDir({ approved: false, failReason: "criteria-not-met" });
     mockGitAndTestForT9({});
 
@@ -264,9 +264,33 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       modelTier: "balanced",
     });
 
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("verifier-rejected");
-    expect(result.reviewReason).toContain("Must work");
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+    expect(result.reviewReason).toBeUndefined();
+  });
+
+  test("verdict approved=false + poor quality only → advisory success", async () => {
+    await writeVerdictToDir({ approved: false, failReason: "poor-quality" });
+    mockGitAndTestForT9({});
+
+    const agent = createMockAgent([
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      agentManager: fakeAgentManager(agent),
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+    expect(result.reviewReason).toBeUndefined();
   });
 
   test("no verdict file → fallback: post-TDD test check is run on session failures", async () => {

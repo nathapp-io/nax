@@ -100,6 +100,8 @@ export async function runTddSessionOp(
     ? buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" })
     : undefined;
 
+  const verifierLimitedContext = role === "verifier";
+
   return runTddSession(
     role,
     agent,
@@ -112,12 +114,12 @@ export async function runTddSessionOp(
     includeContext ? contextMarkdown : undefined,
     lite,
     skipIsolation,
-    constitution,
+    verifierLimitedContext ? undefined : constitution,
     featureName,
     interactionBridge,
     projectDir,
     includeContext ? featureContextMarkdown : undefined,
-    contextBundle,
+    verifierLimitedContext ? undefined : contextBundle,
     sessionBinding,
     abortSignal,
   );

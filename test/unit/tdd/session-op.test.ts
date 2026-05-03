@@ -53,4 +53,39 @@ describe("runTddSessionOp", () => {
     expect(result.role).toBe("test-writer");
     expect(typeof result.success).toBe("boolean");
   });
+
+  test("limits verifier prompt inputs to TDD integrity context", async () => {
+    const config = makeNaxConfig({
+      quality: { commands: { test: "bun test" } },
+      tdd: { rollbackOnFailure: false },
+    });
+    const contextBundle = {
+      pushMarkdown: "## Broad Feature Context\nSemantic details",
+      pullTools: [{ name: "query_feature_context", description: "feature search" }],
+      digest: "digest",
+    };
+    const buildPrompt = _sessionRunnerDeps.buildPrompt as ReturnType<typeof mock>;
+
+    const result = await runTddSessionOp(
+      verifyTddOp,
+      {
+        agent: makeAgentAdapter(),
+        agentManager: fakeAgentManager(makeAgentAdapter()),
+        story: makeStory(),
+        config,
+        workdir: "/tmp/fake",
+        modelTier: "balanced" as const,
+        constitution: "constitution.md content",
+        featureContextMarkdown: "legacy feature context",
+        contextMarkdown: "legacy run context",
+      },
+      "HEAD",
+      contextBundle as never,
+    );
+
+    expect(result.role).toBe("verifier");
+    expect(buildPrompt.mock.calls[0]?.[4]).toBeUndefined(); // contextMarkdown
+    expect(buildPrompt.mock.calls[0]?.[6]).toBeUndefined(); // constitution
+    expect(buildPrompt.mock.calls[0]?.[7]).toBeUndefined(); // feature context / v2 pushMarkdown
+  });
 });

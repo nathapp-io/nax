@@ -72,7 +72,7 @@ export function buildIsolationSection(
   }
 
   if (role === "verifier") {
-    return `${header}\n\nisolation scope: Read-only inspection. Review all test results, implementation code, and acceptance criteria compliance. You MAY write a verdict file (.nax-verifier-verdict.json) and apply legitimate fixes if needed.${footer}`;
+    return `${header}\n\nisolation scope: Read-only TDD integrity inspection. Review story-scoped test results and test-file modifications. Do NOT apply source or test fixes. You MAY write only the verdict file (.nax-verifier-verdict.json).${footer}`;
   }
 
   if (role === "single-session") {

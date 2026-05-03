@@ -159,9 +159,9 @@ describe("buildVerdictSection", () => {
     expect(result).toContain('"poor"');
   });
 
-  test("includes commit instruction referencing the story title", () => {
+  test("instructs verifier not to commit code changes", () => {
     const result = buildVerdictSection(STORY);
-    expect(result).toContain(STORY.title);
+    expect(result).toContain("do not commit code changes");
   });
 
   test("is pure — same story returns same output", () => {
