@@ -105,6 +105,7 @@ export interface DiagnosisTemplateParams {
 export interface SourceFixParams {
   testOutput: string;
   diagnosisReasoning?: string;
+  priorIterationsBlock?: string;
   acceptanceTestPath: string;
   testFileContent?: string;
 }
@@ -112,6 +113,7 @@ export interface SourceFixParams {
 export interface TestFixParams {
   testOutput: string;
   diagnosisReasoning?: string;
+  priorIterationsBlock?: string;
   failedACs: string[];
   acceptanceTestPath: string;
   testFileContent: string;
@@ -201,6 +203,7 @@ ${responseSchema}`;
   buildSourceFixPrompt(p: SourceFixParams): string {
     let prompt = `ACCEPTANCE TEST FAILURE:\n${p.testOutput}\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
+    if (p.priorIterationsBlock) prompt += p.priorIterationsBlock;
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;
     if (p.testFileContent && p.testFileContent.length > 0) {
       prompt += `\`\`\`typescript\n${p.testFileContent}\n\`\`\`\n\n`;
@@ -365,6 +368,7 @@ Assert about HTTP responses, status codes, and API endpoint output.${framework}
     prompt += `FAILING ACS: ${p.failedACs.join(", ")}\n\n`;
     prompt += `TEST OUTPUT:\n${p.testOutput}\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
+    if (p.priorIterationsBlock) prompt += p.priorIterationsBlock;
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;
     prompt += `\`\`\`typescript\n${p.testFileContent}\n\`\`\`\n\n`;
     prompt += "Fix ONLY the failing test assertions for the ACs listed above. ";

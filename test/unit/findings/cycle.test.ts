@@ -137,7 +137,7 @@ describe("classifyOutcome", () => {
 // ─── runFixCycle — bail: no-strategy ──────────────────────────────────────────
 
 describe("runFixCycle — bail: no-strategy", () => {
-  test("exits immediately when no strategies match and findings is empty", async () => {
+  test("resolves immediately when findings is empty and no verdict is pending", async () => {
     const strategy = makeStrategy({
       name: "lint-fix",
       appliesTo: (f) => f.source === "lint",
@@ -149,7 +149,7 @@ describe("runFixCycle — bail: no-strategy", () => {
     const result = await runFixCycle(cycle, ctx, "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
 callOp: callOpMock as unknown as CallOpFn});
 
-    expect(result.exitReason).toBe("no-strategy");
+    expect(result.exitReason).toBe("resolved");
     expect(result.iterations).toHaveLength(0);
     expect(callOpMock).not.toHaveBeenCalled();
   });

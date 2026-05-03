@@ -86,5 +86,6 @@ export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): 
     line: f.line,
     message: f.issue,
     suggestion: f.suggestion,
+    fixTarget: f.category === "test-gap" ? "test" : undefined,
   }));
 }

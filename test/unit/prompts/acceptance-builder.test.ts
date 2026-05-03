@@ -233,6 +233,12 @@ describe("builder.buildSourceFixPrompt()", () => {
     expect(builder.buildSourceFixPrompt(base)).toContain(base.diagnosisReasoning);
   });
 
+  test("includes prior iterations block when provided", () => {
+    const result = builder.buildSourceFixPrompt({ ...base, priorIterationsBlock: "## Prior Iterations\n\nprior table\n\n" });
+    expect(result).toContain("## Prior Iterations");
+    expect(result).toContain("prior table");
+  });
+
   test("includes acceptance test path", () => {
     expect(builder.buildSourceFixPrompt(base)).toContain(base.acceptanceTestPath);
   });
@@ -278,6 +284,12 @@ describe("builder.buildTestFixPrompt()", () => {
   test("includes diagnosis reasoning", () => {
     const result = builder.buildTestFixPrompt(base);
     expect(result).toContain(base.diagnosisReasoning);
+  });
+
+  test("includes prior iterations block when provided", () => {
+    const result = builder.buildTestFixPrompt({ ...base, priorIterationsBlock: "## Prior Iterations\n\nprior table\n\n" });
+    expect(result).toContain("## Prior Iterations");
+    expect(result).toContain("prior table");
   });
 
   test("includes test file content in fenced typescript block", () => {

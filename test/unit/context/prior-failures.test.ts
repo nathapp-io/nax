@@ -175,6 +175,36 @@ describe("formatPriorFailures", () => {
     // Should not crash or include undefined stack
     expect(formatted).not.toContain("undefined");
   });
+
+  test("should format review findings using Finding wire format", () => {
+    const failure: StructuredFailure = {
+      attempt: 1,
+      modelTier: "balanced",
+      stage: "review",
+      summary: "Review failed",
+      reviewFindings: [
+        {
+          source: "semantic-review",
+          severity: "error",
+          category: "semantic",
+          rule: "semantic-ac",
+          file: "src/foo.ts",
+          line: 12,
+          message: "AC not satisfied",
+          meta: { url: "https://example.com/rule" },
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    };
+
+    const formatted = formatPriorFailures([failure]);
+
+    expect(formatted).toContain("**Review Findings (fix these issues):**");
+    expect(formatted).toContain("`src/foo.ts:12` (semantic-review)");
+    expect(formatted).toContain("**Rule:** semantic-ac");
+    expect(formatted).toContain("**Issue:** AC not satisfied");
+    expect(formatted).toContain("**Docs:** https://example.com/rule");
+  });
 });
 
 describe("createPriorFailuresContext", () => {

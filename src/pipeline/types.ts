@@ -207,8 +207,8 @@ export interface PipelineContext extends DispatchContext {
   fullSuiteGatePassed?: boolean;
   /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
   storyRuntimeCrashes?: number;
-  /** Structured review findings from plugin reviewers — passed to escalation for retry context */
-  reviewFindings?: import("../plugins/types").ReviewFinding[];
+  /** Structured review findings — passed to escalation for retry context */
+  reviewFindings?: import("../findings").Finding[];
   /** Active reviewer-implementer dialogue session (set by reviewStage when dialogue.enabled) */
   reviewerSession?: import("../review/dialogue").ReviewerSession;
   /** Accumulated cost across all prior escalation attempts (BUG-067) */

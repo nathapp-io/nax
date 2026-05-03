@@ -8,6 +8,7 @@
  */
 
 import type { NaxConfig } from "../../config";
+import type { Finding } from "../../findings";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
 import type { PRD, StructuredFailure, UserStory } from "../../prd";
@@ -24,7 +25,7 @@ import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome"
 function buildEscalationFailure(
   story: UserStory,
   currentTier: string,
-  reviewFindings?: import("../../plugins/types").ReviewFinding[],
+  reviewFindings?: Finding[],
   cost?: number,
 ): StructuredFailure {
   // AC-3: Use stage='review' when there are semantic review findings
@@ -225,7 +226,7 @@ export interface EscalationHandlerContext {
     context: {
       retryAsLite?: boolean;
       tddFailureCategory?: FailureCategory;
-      reviewFindings?: import("../../plugins/types").ReviewFinding[];
+      reviewFindings?: Finding[];
     };
   };
   config: NaxConfig;
