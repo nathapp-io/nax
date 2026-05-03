@@ -154,6 +154,10 @@ export async function runFixCycle<F extends Finding>(
   let totalCostUsd = 0;
 
   for (;;) {
+    if (cycle.findings.length === 0 && cycle.verdict === undefined) {
+      return { iterations: cycle.iterations, finalFindings: [], exitReason: "resolved", costUsd: totalCostUsd };
+    }
+
     // ── Select active strategies ──────────────────────────────────────────────
     const active = selectActiveStrategies(cycle.strategies, cycle.findings, cycle.verdict);
     if (active.length === 0) {

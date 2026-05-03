@@ -11,6 +11,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../../src/config";
+import type { Finding } from "../../../../src/findings";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
 import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review";
@@ -253,14 +254,15 @@ describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-00
   // AC-1: ctx.reviewFindings is populated when semantic check fails with findings
 
   test("populates ctx.reviewFindings when semantic check returns success=false with findings", async () => {
-    const semanticFindings: ReviewFinding[] = [
+    const semanticFindings: Finding[] = [
       {
-        ruleId: "semantic",
+        source: "semantic-review",
+        rule: "semantic",
         severity: "error",
+        category: "semantic",
         file: "src/review/runner.ts",
         line: 42,
         message: "Missing wiring",
-        source: "semantic-review",
       },
     ];
 
@@ -298,23 +300,25 @@ describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-00
   });
 
   // AC-2: correct field mapping verified at stage level
-  test("ctx.reviewFindings contains findings with source='semantic-review' and ruleId='semantic'", async () => {
-    const semanticFindings: ReviewFinding[] = [
+  test("ctx.reviewFindings contains findings with source='semantic-review' and rule='semantic'", async () => {
+    const semanticFindings: Finding[] = [
       {
-        ruleId: "semantic",
+        source: "semantic-review",
+        rule: "semantic",
         severity: "error",
+        category: "semantic",
         file: "src/foo.ts",
         line: 10,
         message: "Stub left in code",
-        source: "semantic-review",
       },
       {
-        ruleId: "semantic",
+        source: "semantic-review",
+        rule: "semantic",
         severity: "warning",
+        category: "semantic",
         file: "src/bar.ts",
         line: 25,
         message: "TODO not addressed",
-        source: "semantic-review",
       },
     ];
 
@@ -341,7 +345,7 @@ describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-00
     expect(ctx.reviewFindings).toHaveLength(2);
     for (const f of ctx.reviewFindings!) {
       expect(f.source).toBe("semantic-review");
-      expect(f.ruleId).toBe("semantic");
+      expect(f.rule).toBe("semantic");
     }
     expect(ctx.reviewFindings![0].file).toBe("src/foo.ts");
     expect(ctx.reviewFindings![0].line).toBe(10);
@@ -349,10 +353,18 @@ describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-00
     reviewOrchestrator.review = original;
   });
 
-  // AC-3: findings structured for priorFailures context (source/ruleId match context renderer expectations)
+  // AC-3: findings structured for priorFailures context (source/rule match context renderer expectations)
   test("ctx.reviewFindings has source='semantic-review' so context renderer includes tool source in retry context", async () => {
-    const semanticFindings: ReviewFinding[] = [
-      { ruleId: "semantic", severity: "error", file: "src/a.ts", line: 1, message: "Critical issue", source: "semantic-review" },
+    const semanticFindings: Finding[] = [
+      {
+        source: "semantic-review",
+        rule: "semantic",
+        severity: "error",
+        category: "semantic",
+        file: "src/a.ts",
+        line: 1,
+        message: "Critical issue",
+      },
     ];
 
     const reviewResult = {
@@ -379,7 +391,7 @@ describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-00
     // handleTierEscalation can attach them to priorFailures for retry context.
     expect(ctx.reviewFindings).toBeDefined();
     expect(ctx.reviewFindings![0].source).toBe("semantic-review");
-    expect(ctx.reviewFindings![0].ruleId).toBe("semantic");
+    expect(ctx.reviewFindings![0].rule).toBe("semantic");
     expect(typeof ctx.reviewFindings![0].message).toBe("string");
     expect(ctx.reviewFindings![0].message.length).toBeGreaterThan(0);
     reviewOrchestrator.review = original;
@@ -438,8 +450,16 @@ describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-00
   });
 
   test("returns continue when semantic check fails with findings (autofix handles it)", async () => {
-    const semanticFindings: ReviewFinding[] = [
-      { ruleId: "semantic", severity: "error", file: "src/a.ts", line: 1, message: "Issue", source: "semantic-review" },
+    const semanticFindings: Finding[] = [
+      {
+        source: "semantic-review",
+        rule: "semantic",
+        severity: "error",
+        category: "semantic",
+        file: "src/a.ts",
+        line: 1,
+        message: "Issue",
+      },
     ];
 
     const reviewResult = {

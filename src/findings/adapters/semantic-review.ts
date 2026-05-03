@@ -14,5 +14,6 @@ export function reviewFindingToFinding(f: ReviewFinding): Finding {
     endLine: f.endLine,
     endColumn: f.endColumn,
     message: f.message,
+    fixTarget: "source",
   };
 }

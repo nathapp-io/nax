@@ -4,6 +4,7 @@ import { _cycleDeps } from "../../../../src/findings";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import { runAgentRectificationV2 } from "../../../../src/pipeline/stages/autofix-cycle";
 import type { PipelineContext } from "../../../../src/pipeline/types";
+import { toAdversarialReviewFindings } from "../../../../src/review/adversarial-helpers";
 import type { ReviewCheckResult } from "../../../../src/review/types";
 import { makeMockAgentManager, makeMockRuntime } from "../../../helpers";
 
@@ -144,6 +145,44 @@ describe("runAgentRectificationV2", () => {
     await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
 
     expect(capturedOps).toContain("autofix-test-writer");
+  });
+
+  test("test-writer strategy fires for real adversarial test-gap adapter output", async () => {
+    const capturedOps: string[] = [];
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _cycleDeps.callOp = mock(async (_ctx: unknown, op: any): Promise<any> => {
+      capturedOps.push(op.name as string);
+      return { applied: true };
+    });
+    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
+      ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
+      return true;
+    });
+
+    const ctx = makeCtx();
+    ctx.reviewResult = {
+      success: false,
+      checks: [
+        {
+          ...failedCheck("adversarial", "test gap found"),
+          findings: toAdversarialReviewFindings([
+            {
+              severity: "error",
+              category: "test-gap",
+              file: "src/foo.ts",
+              line: 1,
+              issue: "missing behavioral test",
+              suggestion: "add coverage",
+            },
+          ]),
+        },
+      ],
+    } as unknown as PipelineContext["reviewResult"];
+
+    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+
+    expect(capturedOps).toContain("autofix-test-writer");
+    expect(capturedOps).not.toContain("autofix-implementer");
   });
 
   test("buildInput for second iteration uses fresh post-recheck checks", async () => {

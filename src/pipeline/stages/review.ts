@@ -13,7 +13,6 @@
 // RE-ARCH: rewrite
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
-import type { ReviewFinding } from "../../plugins/types";
 import { createReviewerSession } from "../../review/dialogue";
 import { reviewOrchestrator } from "../../review/orchestrator";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -169,27 +168,12 @@ export const reviewStage: PipelineStage = {
     }
 
     if (!result.success) {
-      // Collect semantic findings from built-in checks (AC-1/AC-2/AC-3) for escalation context.
-      // Plugin findings (Finding[] per ADR-021 phase 2) are accessible via
-      // ctx.reviewResult.builtIn.pluginReviewers[*].findings — they use Finding.rule (not
-      // ReviewFinding.ruleId) so they cannot be merged into ctx.reviewFindings (ReviewFinding[])
-      // until context/elements.ts migrates to Finding[] in a later phase.
-      // Note: plugins only run when built-in checks pass (guard in orchestrator), so
-      // pluginFindings and semanticFindings are mutually exclusive in practice.
+      // Collect semantic findings from built-in checks for escalation context.
       const semanticFindings = (result.builtIn.checks ?? [])
         .filter((c) => c.check === "semantic" && !c.success && c.findings?.length)
         .flatMap((c) => c.findings ?? []);
       if (semanticFindings.length > 0) {
-        // Downcast Finding[] → ReviewFinding[] for ctx.reviewFindings; migrates in a later phase once elements.ts adopts Finding[].
-        ctx.reviewFindings = semanticFindings.map((f) => ({
-          ruleId: f.rule ?? "semantic",
-          severity: (f.severity === "unverifiable" ? "info" : f.severity) as ReviewFinding["severity"],
-          file: f.file ?? "",
-          line: f.line ?? 0,
-          message: f.message,
-          source: f.source,
-          category: f.category,
-        }));
+        ctx.reviewFindings = semanticFindings;
       }
 
       if (result.pluginFailed) {

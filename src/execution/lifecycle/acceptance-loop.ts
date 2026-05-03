@@ -25,6 +25,7 @@ import type { PipelineEventEmitter } from "../../pipeline/events";
 import type { AgentGetFn, PipelineContext } from "../../pipeline/types";
 import type { PluginRegistry } from "../../plugins";
 import type { PRD } from "../../prd/types";
+import { buildPriorIterationsBlock } from "../../prompts";
 
 import type { DispatchContext } from "../../runtime/dispatch-context";
 import type { NaxIgnoreIndex } from "../../utils/path-filters";
@@ -117,6 +118,26 @@ function convertFailuresToFindings(failedACs: string[], testOutput: string): Fin
   });
 }
 
+function findingsForDiagnosis(failedACs: string[], testOutput: string, diagnosis: DiagnosisResult): Finding[] {
+  if (diagnosis.findings && diagnosis.findings.length > 0) return diagnosis.findings;
+
+  const findings = convertFailuresToFindings(failedACs, testOutput);
+  const isTestRunnerSentinel = (f: Finding): boolean =>
+    f.category === "hook-failure" || f.category === "test-runner-error";
+  if (diagnosis.verdict === "source_bug") {
+    return findings.map((f) => (isTestRunnerSentinel(f) ? f : { ...f, fixTarget: "source" }));
+  }
+  if (diagnosis.verdict === "test_bug") return findings.map((f) => ({ ...f, fixTarget: "test" }));
+  return findings.flatMap((f) =>
+    isTestRunnerSentinel(f)
+      ? [f]
+      : [
+          { ...f, fixTarget: "source" as const },
+          { ...f, fixTarget: "test" as const },
+        ],
+  );
+}
+
 function buildFixCycleCtx(
   ctx: AcceptanceLoopContext,
   runtime: NonNullable<AcceptanceLoopContext["runtime"]>,
@@ -204,7 +225,7 @@ export async function runAcceptanceFixCycle(
   const cycleCtx = buildFixCycleCtx(ctx, runtime, storyId);
 
   const cycle: FixCycle<Finding> = {
-    findings: convertFailuresToFindings(initialFailures.failedACs, initialFailures.testOutput),
+    findings: findingsForDiagnosis(initialFailures.failedACs, initialFailures.testOutput, diagnosis),
     iterations: [],
     strategies: [
       {
@@ -212,9 +233,10 @@ export async function runAcceptanceFixCycle(
         appliesTo: (f) => f.fixTarget === "source",
         appliesToVerdict: (v) => v === "source_bug" || v === "both",
         fixOp: acceptanceFixSourceOp,
-        buildInput: (_findings, _priorIterations, _ctx) => ({
+        buildInput: (_findings, priorIterations, _ctx) => ({
           testOutput: currentTestOutput,
           diagnosisReasoning: diagnosis.reasoning,
+          priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           acceptanceTestPath,
           testFileContent,
         }),
@@ -226,9 +248,10 @@ export async function runAcceptanceFixCycle(
         appliesTo: (f) => f.fixTarget === "test",
         appliesToVerdict: (v) => v === "test_bug" || v === "both",
         fixOp: acceptanceFixTestOp,
-        buildInput: (_findings, _priorIterations, _ctx) => ({
+        buildInput: (_findings, priorIterations, _ctx) => ({
           testOutput: currentTestOutput,
           diagnosisReasoning: diagnosis.reasoning,
+          priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           failedACs: currentFailedACs,
           acceptanceTestPath,
           testFileContent,
@@ -242,7 +265,7 @@ export async function runAcceptanceFixCycle(
       if (result.passed) return [];
       currentTestOutput = result.testOutput;
       currentFailedACs = result.failedACs;
-      return convertFailuresToFindings(result.failedACs, result.testOutput);
+      return findingsForDiagnosis(result.failedACs, result.testOutput, diagnosis);
     },
     config: {
       maxAttemptsTotal: ctx.config.acceptance.maxRetries,

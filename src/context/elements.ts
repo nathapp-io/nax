@@ -103,11 +103,12 @@ export function formatPriorFailures(failures: StructuredFailure[]): string {
       parts.push("\n**Review Findings (fix these issues):**");
       for (const finding of failure.reviewFindings) {
         const source = finding.source ? ` (${finding.source})` : "";
-        parts.push(`\n- **[${finding.severity}]** \`${finding.file}:${finding.line}\`${source}`);
-        parts.push(`  **Rule:** ${finding.ruleId}`);
+        const loc = finding.file ? `${finding.file}:${finding.line ?? 0}` : "global";
+        parts.push(`\n- **[${finding.severity}]** \`${loc}\`${source}`);
+        parts.push(`  **Rule:** ${finding.rule ?? finding.category}`);
         parts.push(`  **Issue:** ${finding.message}`);
-        if (finding.url) {
-          parts.push(`  **Docs:** ${finding.url}`);
+        if (typeof finding.meta?.url === "string") {
+          parts.push(`  **Docs:** ${finding.meta.url}`);
         }
       }
     }

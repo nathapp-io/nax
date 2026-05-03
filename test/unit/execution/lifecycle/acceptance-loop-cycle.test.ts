@@ -82,6 +82,41 @@ function makeDiagnosis(verdict: DiagnosisResult["verdict"] = "source_bug"): Diag
   return { verdict, reasoning: "test reasoning", confidence: 0.9 };
 }
 
+function makeIteration(): import("../../../../src/findings").Iteration<Finding> {
+  return {
+    iterationNum: 1,
+    findingsBefore: [
+      {
+        source: "test-runner",
+        severity: "error",
+        category: "assertion-failure",
+        message: "AC-1 failed",
+        fixTarget: "test",
+      },
+    ],
+    fixesApplied: [
+      {
+        strategyName: "acceptance-test-fix",
+        op: "acceptance-fix-test",
+        targetFiles: ["/tmp/test.ts"],
+        summary: "updated import",
+      },
+    ],
+    findingsAfter: [
+      {
+        source: "test-runner",
+        severity: "error",
+        category: "assertion-failure",
+        message: "AC-1 failed",
+        fixTarget: "test",
+      },
+    ],
+    outcome: "unchanged",
+    startedAt: "2026-05-03T00:00:00.000Z",
+    finishedAt: "2026-05-03T00:00:01.000Z",
+  };
+}
+
 const resolvedCycleResult: FixCycleResult<Finding> = {
   iterations: [],
   finalFindings: [],
@@ -249,6 +284,76 @@ describe("runAcceptanceFixCycle", () => {
     expect(capturedCycle?.findings[0].fixTarget).toBe("source");
   });
 
+  test("cycle.findings are retargeted to test when diagnosis verdict is test_bug", async () => {
+    let capturedCycle: FixCycle<Finding> | undefined;
+    _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
+      capturedCycle = cycle;
+      return resolvedCycleResult;
+    }) as typeof _acceptanceFixCycleDeps.runFixCycle;
+
+    await runAcceptanceFixCycle(
+      makeCtx(),
+      makePrd(),
+      { failedACs: ["AC-1"], testOutput: "test output" },
+      makeDiagnosis("test_bug"),
+      "",
+      "",
+    );
+
+    expect(capturedCycle?.findings).toHaveLength(1);
+    expect(capturedCycle?.findings[0].fixTarget).toBe("test");
+  });
+
+  test("cycle.findings duplicate source and test targets when diagnosis verdict is both", async () => {
+    let capturedCycle: FixCycle<Finding> | undefined;
+    _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
+      capturedCycle = cycle;
+      return resolvedCycleResult;
+    }) as typeof _acceptanceFixCycleDeps.runFixCycle;
+
+    await runAcceptanceFixCycle(
+      makeCtx(),
+      makePrd(),
+      { failedACs: ["AC-1"], testOutput: "test output" },
+      makeDiagnosis("both"),
+      "",
+      "",
+    );
+
+    expect(capturedCycle?.findings.map((f) => f.fixTarget).sort()).toEqual(["source", "test"]);
+  });
+
+  test("diagnosis findings are used directly when available", async () => {
+    let capturedCycle: FixCycle<Finding> | undefined;
+    _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
+      capturedCycle = cycle;
+      return resolvedCycleResult;
+    }) as typeof _acceptanceFixCycleDeps.runFixCycle;
+
+    const diagnosis: DiagnosisResult = {
+      ...makeDiagnosis("test_bug"),
+      findings: [
+        {
+          source: "acceptance-diagnose",
+          severity: "error",
+          category: "import-path",
+          message: "wrong test import",
+          fixTarget: "test",
+        },
+      ],
+    };
+    await runAcceptanceFixCycle(
+      makeCtx(),
+      makePrd(),
+      { failedACs: ["AC-1"], testOutput: "test output" },
+      diagnosis,
+      "",
+      "",
+    );
+
+    expect(capturedCycle?.findings).toEqual(diagnosis.findings);
+  });
+
   test("AC-HOOK sentinel converted via acSentinelToFinding", async () => {
     let capturedCycle: FixCycle<Finding> | undefined;
     _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
@@ -357,6 +462,27 @@ describe("strategy buildInput closures", () => {
     expect(input.testFileContent).toBe("test-content");
   });
 
+  test("source-fix buildInput includes prior iterations block", async () => {
+    let capturedCycle: FixCycle<Finding> | undefined;
+    _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
+      capturedCycle = cycle;
+      return resolvedCycleResult;
+    }) as typeof _acceptanceFixCycleDeps.runFixCycle;
+
+    await runAcceptanceFixCycle(
+      makeCtx(),
+      makePrd(),
+      { failedACs: ["AC-1"], testOutput: "initial output" },
+      makeDiagnosis(),
+      "test-content",
+      "/path/to/test.ts",
+    );
+
+    const input = capturedCycle!.strategies[0].buildInput([], [makeIteration()], {} as never) as Record<string, unknown>;
+    expect(input.priorIterationsBlock).toContain("## Prior Iterations");
+    expect(input.priorIterationsBlock).toContain("acceptance-test-fix");
+  });
+
   test("test-fix buildInput reflects currentFailedACs at call time", async () => {
     let capturedCycle: FixCycle<Finding> | undefined;
     _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
@@ -392,6 +518,20 @@ describe("strategy buildInput closures", () => {
     const inputEmpty = testStrategy.buildInput([], [], {} as never) as Record<string, unknown>;
     expect(inputEmpty.testOutput).toBe("");
     expect(inputEmpty.failedACs).toEqual([]);
+  });
+
+  test("test-fix buildInput includes prior iterations block", async () => {
+    let capturedCycle: FixCycle<Finding> | undefined;
+    _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
+      capturedCycle = cycle;
+      return resolvedCycleResult;
+    }) as typeof _acceptanceFixCycleDeps.runFixCycle;
+
+    await runAcceptanceFixCycle(makeCtx(), makePrd(), { failedACs: ["AC-1"], testOutput: "" }, makeDiagnosis("test_bug"), "", "");
+
+    const input = capturedCycle!.strategies[1].buildInput([], [makeIteration()], {} as never) as Record<string, unknown>;
+    expect(input.priorIterationsBlock).toContain("## Prior Iterations");
+    expect(input.priorIterationsBlock).toContain("unchanged");
   });
 });
 

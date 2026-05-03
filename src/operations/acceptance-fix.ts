@@ -6,6 +6,7 @@ import type { RunOperation } from "./types";
 export interface AcceptanceFixSourceInput {
   testOutput: string;
   diagnosisReasoning?: string;
+  priorIterationsBlock?: string;
   acceptanceTestPath: string;
   testFileContent?: string;
 }
@@ -13,6 +14,7 @@ export interface AcceptanceFixSourceInput {
 export interface AcceptanceFixTestInput {
   testOutput: string;
   diagnosisReasoning?: string;
+  priorIterationsBlock?: string;
   failedACs: string[];
   acceptanceTestPath: string;
   testFileContent?: string;
@@ -33,6 +35,7 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
     const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
       testOutput: input.testOutput,
       diagnosisReasoning: input.diagnosisReasoning,
+      priorIterationsBlock: input.priorIterationsBlock,
       acceptanceTestPath: input.acceptanceTestPath,
       testFileContent: input.testFileContent,
     });
@@ -57,6 +60,7 @@ export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, Acceptanc
     const prompt = new AcceptancePromptBuilder().buildTestFixPrompt({
       testOutput: input.testOutput,
       diagnosisReasoning: input.diagnosisReasoning,
+      priorIterationsBlock: input.priorIterationsBlock,
       failedACs: input.failedACs,
       acceptanceTestPath: input.acceptanceTestPath,
       testFileContent: input.testFileContent ?? "",

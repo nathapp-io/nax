@@ -122,6 +122,7 @@ export function llmFindingToFinding(f: LLMFinding): Finding {
     line: f.line,
     message: f.issue,
     suggestion: f.suggestion ?? undefined,
+    fixTarget: "source",
     meta: f.verifiedBy ? { verifiedBy: f.verifiedBy } : undefined,
   };
 }
