@@ -25,6 +25,7 @@ import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { getLogger } from "../../../logger";
 import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
+import type { NaxIgnoreMatcher } from "../../../utils/path-filters";
 import { isRelativeAndSafe } from "../../../utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -66,9 +67,44 @@ const MAX_CHUNK_TOKENS = 500;
 
 /**
  * Source file extensions to scan for reverse deps.
- * Covers common languages nax may be run against.
+ *
+ * TODO: temporary workaround — this list is hardcoded. Future work should make
+ * it configurable via .nax/config.json or auto-detected from the package language
+ * (via detectLanguage(packageDir)) so nax doesn't scan irrelevant extensions.
+ *
+ * No `src/` prefix: projects may use lib/, app/, cmd/, or root-level layouts.
+ * Excluded directories (node_modules, .nax, vendor, etc.) are stripped at scan
+ * time by EXCLUDED_DIR_PREFIXES rather than by glob pattern.
  */
-const SOURCE_GLOB = "src/**/*.{ts,tsx,js,jsx,py,go,rs,java,rb,php,cs,cpp,c,h}";
+const SOURCE_GLOB = "**/*.{ts,tsx,js,jsx,py,go,rs,java,rb,php,cs,cpp,c,h}";
+
+/**
+ * Directory prefixes to exclude from the reverse-dep glob scan.
+ *
+ * TODO: temporary workaround — future work should make this configurable or
+ * derive it from the package language / project type (e.g. only exclude vendor/
+ * for Go projects). For now the list covers the most common noise sources.
+ *
+ * Checked as a startsWith prefix or an interior segment (`/prefix/`), so both
+ * repo-root and nested occurrences (e.g. packages/api/.nax/) are excluded.
+ */
+const EXCLUDED_DIR_PREFIXES = [
+  "node_modules/",
+  ".git/",
+  ".nax/",
+  "vendor/",
+  "dist/",
+  "build/",
+  "out/",
+  ".cache/",
+] as const;
+
+function isExcludedPath(file: string, ignoreMatchers: readonly NaxIgnoreMatcher[]): boolean {
+  for (const prefix of EXCLUDED_DIR_PREFIXES) {
+    if (file.startsWith(prefix) || file.includes(`/${prefix}`)) return true;
+  }
+  return ignoreMatchers.some((m) => m.test(file));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -79,12 +115,13 @@ export const _codeNeighborDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
   getLogger,
-  glob: (pattern: string, cwd: string): string[] => {
+  glob: (pattern: string, cwd: string, ignoreMatchers: readonly NaxIgnoreMatcher[] = []): string[] => {
     const g = new Bun.Glob(pattern);
     const results: string[] = [];
     let count = 0;
     let truncated = false;
     for (const file of g.scanSync({ cwd, absolute: false })) {
+      if (isExcludedPath(file, ignoreMatchers)) continue;
       if (count >= MAX_GLOB_FILES) {
         truncated = true;
         break;
@@ -310,6 +347,7 @@ async function collectNeighbors(
   workdir: string,
   extraGlobWorkdirs?: string[],
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
+  ignoreMatchers?: readonly NaxIgnoreMatcher[],
 ): Promise<string[]> {
   const neighbors = new Set<string>();
 
@@ -328,7 +366,7 @@ async function collectNeighbors(
   const fileNoExt = filePath.replace(/\.[^.]+$/, "");
 
   const scanForReverseDeps = async (scanWorkdir: string) => {
-    const srcFiles = _codeNeighborDeps.glob(SOURCE_GLOB, scanWorkdir);
+    const srcFiles = _codeNeighborDeps.glob(SOURCE_GLOB, scanWorkdir, ignoreMatchers);
     for (const srcFile of srcFiles) {
       if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
       if (srcFile === filePath) continue;
@@ -477,9 +515,11 @@ export class CodeNeighborProvider implements IContextProvider {
         }
       : undefined;
 
+    const ignoreMatchers = request.naxIgnoreIndex?.getMatchers(workdir);
+
     const sections: string[] = [];
     for (const file of filesToProcess) {
-      const neighbors = await collectNeighbors(file, workdir, extraGlobWorkdirs, siblingTestContext);
+      const neighbors = await collectNeighbors(file, workdir, extraGlobWorkdirs, siblingTestContext, ignoreMatchers);
       if (neighbors.length > 0) {
         sections.push(`### ${file}\n${neighbors.map((n) => `- ${n}`).join("\n")}`);
       }

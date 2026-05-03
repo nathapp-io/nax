@@ -11,6 +11,7 @@ import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } fr
 import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { CodeNeighborProviderOptions } from "../../../../../src/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "../../../../../src/context/engine/types";
+import type { NaxIgnoreMatcher, NaxIgnoreIndex } from "../../../../../src/utils/path-filters";
 import type { ResolvedTestPatterns } from "../../../../../src/test-runners/resolver";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../../../src/test-runners/conventions";
 import { cleanupTempDir, makeTempDir } from "../../../../helpers/temp";
@@ -611,5 +612,120 @@ describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
 
     expect(results.length).toBeLessThan(200);
     expect(debugCalls.length).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Glob source exclusions: node_modules, .nax, nested .nax, naxIgnoreIndex
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CodeNeighborProvider — glob source file exclusions", () => {
+  let tmpDir: string;
+
+  beforeAll(() => {
+    tmpDir = makeTempDir("nax-glob-excl-");
+    // Excluded dirs
+    mkdirSync(join(tmpDir, "node_modules", "lodash"), { recursive: true });
+    writeFileSync(join(tmpDir, "node_modules", "lodash", "index.ts"), "");
+    mkdirSync(join(tmpDir, ".nax"), { recursive: true });
+    writeFileSync(join(tmpDir, ".nax", "setup.ts"), "");
+    mkdirSync(join(tmpDir, "packages", "api", ".nax"), { recursive: true });
+    writeFileSync(join(tmpDir, "packages", "api", ".nax", "config.ts"), "");
+    // Real source files in non-src/ layouts
+    mkdirSync(join(tmpDir, "lib"), { recursive: true });
+    writeFileSync(join(tmpDir, "lib", "utils.ts"), "");
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "main.ts"), "");
+  });
+
+  afterAll(() => {
+    cleanupTempDir(tmpDir);
+  });
+
+  test("excludes node_modules/ from glob results", () => {
+    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(results.some((f) => f.startsWith("node_modules/"))).toBe(false);
+  });
+
+  test("excludes .nax/ from glob results", () => {
+    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(results.some((f) => f.startsWith(".nax/"))).toBe(false);
+  });
+
+  test("excludes nested packages/api/.nax/ from glob results", () => {
+    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(results.some((f) => f.includes("/.nax/"))).toBe(false);
+  });
+
+  test("includes files in lib/ (non-src/ layout)", () => {
+    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(results).toContain("lib/utils.ts");
+  });
+
+  test("includes files in src/ (standard layout)", () => {
+    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(results).toContain("src/main.ts");
+  });
+
+  test("excluded dirs do not count against MAX_GLOB_FILES cap", () => {
+    // Create 205 node_modules files — old code let these eat the cap
+    const nmDir = join(tmpDir, "node_modules", "bigpkg");
+    mkdirSync(nmDir, { recursive: true });
+    for (let i = 0; i < 205; i++) {
+      writeFileSync(join(nmDir, `mod${i}.ts`), "");
+    }
+    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    // Real source files are still returned despite node_modules flood
+    expect(results).toContain("lib/utils.ts");
+    expect(results).toContain("src/main.ts");
+    expect(results.some((f) => f.startsWith("node_modules/"))).toBe(false);
+  });
+
+  test("respects naxIgnoreIndex matchers passed as third arg", () => {
+    const matcher: NaxIgnoreMatcher = {
+      source: "root",
+      pattern: "lib/**",
+      test: (p: string) => p.startsWith("lib/"),
+    };
+    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir, [matcher]);
+    expect(results.some((f) => f.startsWith("lib/"))).toBe(false);
+    expect(results).toContain("src/main.ts");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// naxIgnoreIndex threading: ContextRequest → collectNeighbors → glob dep
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CodeNeighborProvider — naxIgnoreIndex threaded through fetch", () => {
+  test("passes naxIgnoreIndex matchers to glob dep", async () => {
+    let capturedMatchers: readonly NaxIgnoreMatcher[] | undefined;
+    _codeNeighborDeps.glob = (_pattern, _cwd, ignoreMatchers) => {
+      capturedMatchers = ignoreMatchers;
+      return [];
+    };
+
+    const matcher: NaxIgnoreMatcher = {
+      source: "root",
+      pattern: "generated/**",
+      test: (p: string) => p.startsWith("generated/"),
+    };
+    const mockIndex: NaxIgnoreIndex = {
+      repoRoot: "/repo",
+      getMatchers: () => [matcher],
+      filter: (paths) => [...paths],
+      toPathspecExcludes: () => [],
+    };
+
+    const p = new CodeNeighborProvider();
+    await p.fetch(
+      makeRequest({
+        touchedFiles: ["src/foo.ts"],
+        naxIgnoreIndex: mockIndex,
+      }),
+    );
+
+    expect(capturedMatchers).toBeDefined();
+    expect(capturedMatchers).toEqual([matcher]);
   });
 });
