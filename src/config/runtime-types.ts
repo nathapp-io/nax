@@ -211,6 +211,8 @@ export interface QualityConfig {
     rethinkAtAttempt?: number;
     /** Inject final-attempt urgency language on and after this autofix attempt number (default: 3) */
     urgencyAtAttempt?: number;
+    /** ADR-022 Phase 7: drive autofix via runFixCycle instead of hand-rolled loop (default: false) */
+    cycleV2?: boolean;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;

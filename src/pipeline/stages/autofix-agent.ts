@@ -92,6 +92,11 @@ export async function runAgentRectification(
   formatFixCmd: string | undefined,
   effectiveWorkdir: string,
 ): Promise<{ succeeded: boolean; cost: number; unresolvedReason?: string }> {
+  if (ctx.config.quality.autofix?.cycleV2 === true) {
+    const { runAgentRectificationV2 } = await import("./autofix-cycle");
+    return runAgentRectificationV2(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir);
+  }
+
   const logger = getLogger();
   const maxPerCycle = ctx.config.quality.autofix?.maxAttempts ?? 2;
   const maxTotal = ctx.config.quality.autofix?.maxTotalAttempts ?? 10;

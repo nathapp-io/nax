@@ -127,6 +127,7 @@ export const NaxConfigSchema = z
         maxTotalAttempts: 12,
         rethinkAtAttempt: 2,
         urgencyAtAttempt: 3,
+        cycleV2: false,
       },
       forceExit: false,
       detectOpenHandles: true,
