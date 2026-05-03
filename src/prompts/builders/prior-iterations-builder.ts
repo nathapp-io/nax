@@ -10,8 +10,8 @@
  * so the model can avoid repeating falsified hypotheses.
  */
 
-import type { Iteration } from "../../findings/cycle-types";
-import type { Finding } from "../../findings/types";
+import type { Iteration } from "../../findings";
+import type { Finding } from "../../findings";
 
 /**
  * Build the prior iterations block for inclusion in a rectifier prompt.

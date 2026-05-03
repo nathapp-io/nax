@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import type { Iteration, Finding } from "../../../../src/findings";
 import { buildPriorIterationsBlock } from "../../../../src/prompts/builders/prior-iterations-builder";
-import type { Iteration } from "../../../../src/findings/cycle-types";
-import type { Finding } from "../../../../src/findings/types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

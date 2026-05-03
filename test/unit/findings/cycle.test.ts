@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { CallOpFn } from "../../../src/findings/cycle";
 import { classifyOutcome, runFixCycle } from "../../../src/findings/cycle";
-import type { FixCycle, FixCycleContext, FixStrategy, Iteration } from "../../../src/findings/cycle-types";
-import type { Finding } from "../../../src/findings/types";
+import type { FixCycle, FixCycleContext, FixStrategy, Iteration } from "../../../src/findings";
+import type { Finding } from "../../../src/findings";
 import { makeNaxConfig } from "../../helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -103,6 +103,10 @@ describe("classifyOutcome", () => {
     const before = [lintA, lintB];
     const after = [lintA];
     expect(classifyOutcome(before, after)).toBe("partial");
+  });
+
+  test("regressed — before empty, after has new findings (not regressed-different-source)", () => {
+    expect(classifyOutcome([], [lintA])).toBe("regressed");
   });
 
   test("regressed — new finding appears in same source", () => {

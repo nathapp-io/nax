@@ -64,6 +64,8 @@ function classifySingleSource<F extends Finding>(before: F[], after: F[]): Itera
  */
 export function classifyOutcome<F extends Finding>(before: F[], after: F[]): IterationOutcome {
   if (before.length === 0 && after.length === 0) return "resolved";
+  // No prior findings — any new finding is a plain regression, not a source-switch.
+  if (before.length === 0) return "regressed";
 
   const beforeSources = new Set(before.map((f) => f.source));
   const afterSources = new Set(after.map((f) => f.source));
