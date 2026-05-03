@@ -20,6 +20,8 @@ const AcceptanceFixConfigSchema = z.object({
   fixModel: ConfiguredModelSchema.default("balanced"),
   strategy: z.enum(["diagnose-first", "implement-only"]).default("diagnose-first"),
   maxRetries: z.number().int().nonnegative().default(2),
+  /** ADR-021 phase 8: emit findings: Finding[] in diagnose prompt instead of testIssues/sourceIssues. Default off for one release. */
+  findingsV2: z.boolean().default(false),
 });
 
 export const AcceptanceConfigSchema = z.object({
@@ -40,6 +42,7 @@ export const AcceptanceConfigSchema = z.object({
     fixModel: "balanced",
     strategy: "diagnose-first",
     maxRetries: 2,
+    findingsV2: false,
   }),
   suggestedTestPath: z.string().min(1).optional(),
   hardening: z

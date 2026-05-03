@@ -14,6 +14,7 @@ import { loadSourceFilesForDiagnosis } from "../../acceptance/fix-diagnosis";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import type { DiagnosisResult, SemanticVerdict } from "../../acceptance/types";
 import { NaxError } from "../../errors";
+import type { FixTarget } from "../../findings";
 import { getSafeLogger } from "../../logger";
 import { acceptanceDiagnoseOp, acceptanceFixSourceOp, acceptanceFixTestOp } from "../../operations";
 import { callOp as _callOp } from "../../operations/call";
@@ -126,6 +127,28 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
   });
 }
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Build diagnosisReasoning string for a fix op.
+ *
+ * When structured findings are present, appends findings relevant to the
+ * given fixTarget so the fix agent has structured context. Falls back to
+ * plain reasoning when no findings match.
+ */
+function buildDiagnosisReasoning(diagnosis: DiagnosisResult, fixTarget: FixTarget): string {
+  if (!diagnosis.findings || diagnosis.findings.length === 0) {
+    return diagnosis.reasoning;
+  }
+  const relevant = diagnosis.findings.filter((f) => f.fixTarget === fixTarget);
+  if (relevant.length === 0) return diagnosis.reasoning;
+  const lines = relevant.map((f) => {
+    const loc = f.file ? ` [${f.file}${f.line != null ? `:${f.line}` : ""}]` : "";
+    return `- ${f.message}${loc}${f.suggestion ? ` → ${f.suggestion}` : ""}`;
+  });
+  return `${diagnosis.reasoning}\n\nFindings:\n${lines.join("\n")}`;
+}
+
 // ─── applyFix ───────────────────────────────────────────────────────────────
 
 export interface ApplyFixOptions {
@@ -187,11 +210,14 @@ export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
 
   const callCtx = fixCallCtx(ctx);
 
+  const sourceDiagnosisReasoning = buildDiagnosisReasoning(diagnosis, "source");
+  const testDiagnosisReasoning = buildDiagnosisReasoning(diagnosis, "test");
+
   if (diagnosis.verdict === "source_bug" || diagnosis.verdict === "both") {
     logger?.info("acceptance.applyFix", "Applying source fix", { storyId, verdict: diagnosis.verdict });
     await _applyFixDeps.callOp(callCtx, acceptanceFixSourceOp, {
       testOutput: failures.testOutput,
-      diagnosisReasoning: diagnosis.reasoning,
+      diagnosisReasoning: sourceDiagnosisReasoning,
       acceptanceTestPath,
       testFileContent,
     });
@@ -202,7 +228,7 @@ export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
     logger?.info("acceptance.applyFix", "Applying test fix", { storyId, verdict: diagnosis.verdict });
     await _applyFixDeps.callOp(callCtx, acceptanceFixTestOp, {
       testOutput: failures.testOutput,
-      diagnosisReasoning: diagnosis.reasoning,
+      diagnosisReasoning: testDiagnosisReasoning,
       failedACs: failures.failedACs,
       acceptanceTestPath,
       testFileContent,

@@ -288,6 +288,8 @@ export interface AcceptanceFixConfig {
   strategy: "diagnose-first" | "implement-only";
   /** @deprecated Ignored — outer loop controls retries via acceptance.maxRetries. Kept for backward compat. */
   maxRetries: number;
+  /** ADR-021 phase 8: emit findings[] in diagnose prompt instead of testIssues/sourceIssues. Default off. */
+  findingsV2: boolean;
 }
 
 /** Acceptance validation config */

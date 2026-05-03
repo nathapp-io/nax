@@ -158,9 +158,11 @@ export interface DiagnosisResult {
   reasoning: string;
   /** Confidence score between 0 and 1 */
   confidence: number;
-  /** Issues found in the test (optional) */
+  /** Structured findings from the LLM (ADR-021 phase 8 findingsV2 mode). When present, supersedes testIssues/sourceIssues. */
+  findings?: Finding[];
+  /** Issues found in the test (optional, legacy — superseded by findings in findingsV2 mode) */
   testIssues?: string[];
-  /** Issues found in the source code (optional) */
+  /** Issues found in the source code (optional, legacy — superseded by findings in findingsV2 mode) */
   sourceIssues?: string[];
   /** LLM cost incurred for the diagnosis agent session */
   cost?: number;
