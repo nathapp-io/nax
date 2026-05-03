@@ -380,7 +380,7 @@ describe("strategy buildInput closures", () => {
     expect(input.testOutput).toBe("initial output");
   });
 
-  test("test-fix buildInput passes priorIterations to buildPriorIterationsBlock", async () => {
+  test("test-fix buildInput returns expected fields", async () => {
     let capturedCycle: FixCycle<Finding> | undefined;
     _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
       capturedCycle = cycle;
@@ -390,9 +390,9 @@ describe("strategy buildInput closures", () => {
     await runAcceptanceFixCycle(makeCtx(), makePrd(), { failedACs: [], testOutput: "" }, makeDiagnosis(), "", "");
 
     const testStrategy = capturedCycle!.strategies[1];
-    // empty priorIterations → previousFailure should be empty string
     const inputEmpty = testStrategy.buildInput([], [], {} as never) as Record<string, unknown>;
-    expect(typeof inputEmpty.previousFailure).toBe("string");
+    expect(inputEmpty.testOutput).toBe("");
+    expect(inputEmpty.failedACs).toEqual([]);
   });
 });
 

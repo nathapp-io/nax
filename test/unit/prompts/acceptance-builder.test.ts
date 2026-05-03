@@ -32,7 +32,7 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
   };
 
   describe("snapshot stability", () => {
-    test("no framework override, no implementation context, no previous failure", () => {
+    test("no framework override, no implementation context", () => {
       expect(builder.buildGeneratorFromPRDPrompt(base)).toMatchSnapshot();
     });
 
@@ -45,12 +45,11 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
       ).toMatchSnapshot();
     });
 
-    test("with implementation context and previous failure", () => {
+    test("with implementation context", () => {
       expect(
         builder.buildGeneratorFromPRDPrompt({
           ...base,
           implementationContext: [{ path: "src/index.ts", content: "export function shorten() {}" }],
-          previousFailure: "AC-1 assertion error: expected 1 but got null",
         }),
       ).toMatchSnapshot();
     });
@@ -96,17 +95,6 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
     test("omits implementation section when not provided", () => {
       const result = builder.buildGeneratorFromPRDPrompt(base);
       expect(result).not.toContain("## Implementation");
-    });
-
-    test("includes previous failure when provided", () => {
-      const msg = "AC-1 assertion error: expected 1 but got null";
-      const result = builder.buildGeneratorFromPRDPrompt({ ...base, previousFailure: msg });
-      expect(result).toContain(msg);
-    });
-
-    test("omits previous failure section when not provided", () => {
-      const result = builder.buildGeneratorFromPRDPrompt(base);
-      expect(result).not.toContain("Previous test failed because:");
     });
 
     test("includes framework override when non-empty", () => {
@@ -165,21 +153,19 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
     testFileContent: 'import { test } from "bun:test"; test("AC-1: x", () => {});',
     sourceFilesSection: "(No source files could be resolved from imports)",
     verdictSection: "",
-    previousFailureSection: "",
     maxFileLines: 500,
   };
 
   describe("snapshot stability", () => {
-    test("no verdicts, no previous failure", () => {
+    test("no verdicts", () => {
       expect(builder.buildDiagnosisPromptTemplate(base)).toMatchSnapshot();
     });
 
-    test("with verdict section and previous failure section", () => {
+    test("with verdict section", () => {
       expect(
         builder.buildDiagnosisPromptTemplate({
           ...base,
           verdictSection: "\nSEMANTIC VERDICTS:\n- US-001: likely test bug (semantic review confirmed AC implementation)\n",
-          previousFailureSection: "\nPREVIOUS FIX ATTEMPTS:\nFailed to fix null pointer\n",
         }),
       ).toMatchSnapshot();
     });
@@ -285,28 +271,19 @@ describe("builder.buildTestFixPrompt()", () => {
   });
 
   test("includes test output", () => {
-    expect(builder.buildTestFixPrompt(base)).toContain(base.testOutput);
+    const result = builder.buildTestFixPrompt(base);
+    expect(result).toContain(base.testOutput);
   });
 
   test("includes diagnosis reasoning", () => {
-    expect(builder.buildTestFixPrompt(base)).toContain(base.diagnosisReasoning);
+    const result = builder.buildTestFixPrompt(base);
+    expect(result).toContain(base.diagnosisReasoning);
   });
 
   test("includes test file content in fenced typescript block", () => {
     const result = builder.buildTestFixPrompt(base);
     expect(result).toContain("```typescript");
     expect(result).toContain(base.testFileContent);
-  });
-
-  test("includes previous failure when provided", () => {
-    const result = builder.buildTestFixPrompt({ ...base, previousFailure: "patch1 failed" });
-    expect(result).toContain("patch1 failed");
-    expect(result).toContain("PREVIOUS FAILED ATTEMPTS");
-  });
-
-  test("omits previous failure section when not provided", () => {
-    const result = builder.buildTestFixPrompt(base);
-    expect(result).not.toContain("PREVIOUS FAILED ATTEMPTS");
   });
 
   test("instructs to fix only failing ACs and not source code", () => {

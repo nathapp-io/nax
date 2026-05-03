@@ -20,8 +20,6 @@ const AcceptanceFixConfigSchema = z.object({
   fixModel: ConfiguredModelSchema.default("balanced"),
   strategy: z.enum(["diagnose-first", "implement-only"]).default("diagnose-first"),
   maxRetries: z.number().int().nonnegative().default(2),
-  /** ADR-022 phase 4: use runFixCycle for acceptance retries instead of the hand-rolled loop. Default off. */
-  cycleV2: z.boolean().default(false),
 });
 
 export const AcceptanceConfigSchema = z.object({
@@ -42,7 +40,6 @@ export const AcceptanceConfigSchema = z.object({
     fixModel: "balanced",
     strategy: "diagnose-first",
     maxRetries: 2,
-    cycleV2: false,
   }),
   suggestedTestPath: z.string().min(1).optional(),
   hardening: z

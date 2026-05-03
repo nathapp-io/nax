@@ -63,12 +63,6 @@ If all ACs are correctly implemented, respond with { "passed": true, "findings":
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
-/** Prior failure entry used by the adversarial attempt context block. */
-export interface PriorFailure {
-  stage: string;
-  modelTier: string;
-}
-
 /** Options for buildSemanticReviewPrompt */
 export interface SemanticReviewPromptOptions {
   /** Diff mode: embedded includes diff in prompt, ref includes git ref + stat */
@@ -180,23 +174,6 @@ ${SEMANTIC_OUTPUT_SCHEMA}`;
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
-
-/**
- * Build the attempt context section.
- * Emitted only when priorFailures is non-empty.
- */
-export function buildAttemptContextBlock(priorFailures?: PriorFailure[]): string {
-  if (!priorFailures || priorFailures.length === 0) return "";
-
-  const attemptNumber = priorFailures.length + 1;
-  const stages = priorFailures.map((f) => f.stage).join(", ");
-
-  return `## Attempt Context
-This is escalation attempt ${attemptNumber}. Prior attempts failed at stages: ${stages}.
-The diff shows the NET result of all changes since story start — verify against the current codebase state.
-
-`;
-}
 
 /**
  * Build the diff section for "embedded" mode.

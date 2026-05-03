@@ -11,7 +11,6 @@ export interface AcceptanceDiagnoseInput {
   testFileContent: string;
   sourceFiles: Array<{ path: string; content: string }>;
   semanticVerdicts?: SemanticVerdict[];
-  previousFailure?: string;
 }
 
 export interface AcceptanceDiagnoseOutput {
@@ -40,7 +39,6 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
       testFileContent: input.testFileContent,
       sourceFiles: input.sourceFiles,
       semanticVerdicts: input.semanticVerdicts,
-      previousFailure: input.previousFailure,
     });
     return {
       role: { id: "role", content: "", overridable: false },

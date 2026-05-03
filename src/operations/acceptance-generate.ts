@@ -11,7 +11,6 @@ export interface AcceptanceGenerateInput {
   frameworkOverrideLine: string;
   targetTestFilePath: string;
   implementationContext?: Array<{ path: string; content: string }>;
-  previousFailure?: string;
 }
 
 export interface AcceptanceGenerateOutput {
@@ -36,7 +35,6 @@ export const acceptanceGenerateOp: CompleteOperation<
       frameworkOverrideLine: input.frameworkOverrideLine,
       targetTestFilePath: input.targetTestFilePath,
       implementationContext: input.implementationContext,
-      previousFailure: input.previousFailure,
     });
     return {
       role: { id: "role", content: "", overridable: false },

@@ -25,12 +25,12 @@ import type { PipelineEventEmitter } from "../../pipeline/events";
 import type { AgentGetFn, PipelineContext } from "../../pipeline/types";
 import type { PluginRegistry } from "../../plugins";
 import type { PRD } from "../../prd/types";
-import { buildPriorIterationsBlock } from "../../prompts";
+
 import type { DispatchContext } from "../../runtime/dispatch-context";
 import type { NaxIgnoreIndex } from "../../utils/path-filters";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
-import { applyFix, resolveAcceptanceDiagnosis } from "./acceptance-fix";
+import { resolveAcceptanceDiagnosis } from "./acceptance-fix";
 import {
   buildResult,
   isStubTestFile,
@@ -90,7 +90,7 @@ export const _acceptanceLoopDeps = {
   loadSemanticVerdicts,
 };
 
-/** Injectable deps for the cycleV2 path — swap in tests. */
+/** Injectable deps for the fix cycle — swap in tests. */
 export const _acceptanceFixCycleDeps = {
   runFixCycle,
 };
@@ -100,7 +100,7 @@ export const _acceptanceFixCycleDeps = {
 
 const MAX_STUB_REGENS = 2;
 
-// ─── cycleV2 helpers ─────────────────────────────────────────────────────────
+// ─── acceptance fix cycle helpers ────────────────────────────────────────────
 
 interface AcceptanceTestRunResult {
   passed: boolean;
@@ -180,7 +180,7 @@ async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Pro
  *   - acceptance-test-fix:   appliesTo fixTarget==="test",   appliesToVerdict test_bug/both
  *
  * Validate fn re-runs acceptance tests and converts failures to Finding[].
- * buildPriorIterationsBlock(priorIterations) replaces the hand-rolled previousFailure
+ * buildPriorIterationsBlock(priorIterations) replaced the hand-rolled previousFailure
  * string accumulator. Note: only acceptance-test-fix uses priorIterations — the source-fix
  * op type does not accept it, so source-fix prompts intentionally omit prior-attempt context.
  */
@@ -226,13 +226,12 @@ export async function runAcceptanceFixCycle(
         appliesTo: (f) => f.fixTarget === "test",
         appliesToVerdict: (v) => v === "test_bug" || v === "both",
         fixOp: acceptanceFixTestOp,
-        buildInput: (_findings, priorIterations, _ctx) => ({
+        buildInput: (_findings, _priorIterations, _ctx) => ({
           testOutput: currentTestOutput,
           diagnosisReasoning: diagnosis.reasoning,
           failedACs: currentFailedACs,
           acceptanceTestPath,
           testFileContent,
-          previousFailure: buildPriorIterationsBlock(priorIterations),
         }),
         maxAttempts: 3,
         coRun: "co-run-sequential",
@@ -262,11 +261,10 @@ export async function runAcceptanceFixCycle(
  *   1. Run acceptance tests → PASS → done / FAIL → collect failures
  *   2. Stub guard (with stubRegenCount cap) → regen + continue
  *   3. Diagnose (fresh each iteration via resolveAcceptanceDiagnosis)
- *   4. applyFix(diagnosis) — single-attempt
- *   5. Accumulate previousFailure context
- *   6. continue (always — back to step 1)
+ *   4. runAcceptanceFixCycle(diagnosis) — runFixCycle handles retries
+ *   5. return result (runFixCycle replaces all subsequent outer passes)
  *
- * The outer loop owns ALL retry logic. Inner functions apply exactly one fix.
+ * The outer loop owns stub guard and diagnosis. runFixCycle owns fix retry logic.
  */
 export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult> {
   const logger = getSafeLogger();
@@ -274,9 +272,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   let acceptanceRetries = 0;
   let stubRegenCount = 0;
-  let previousFailure = "";
   const prd = ctx.prd;
-  let totalCost = ctx.totalCost;
+  const totalCost = ctx.totalCost;
   const iterations = ctx.iterations;
   const storiesCompleted = ctx.storiesCompleted;
   const prdDirty = false;
@@ -419,7 +416,6 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         workdir: ctx.workdir,
         storyId: firstStory?.id,
       },
-      previousFailure,
     });
 
     logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
@@ -429,47 +425,22 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       attempt: acceptanceRetries,
     });
 
-    // ── 5. cycleV2 path (ADR-022 phase 4) ────────────────────────────────
-    if (ctx.config.acceptance.fix?.cycleV2) {
-      const cycleResult = await runAcceptanceFixCycle(
-        ctx,
-        prd,
-        failures,
-        diagnosis,
-        testFileContent,
-        acceptanceTestPath,
-      );
-      // "resolved" is the canonical success exit; also treat empty finalFindings as success
-      // in case the last validate pass cleared all findings before runFixCycle emitted "resolved".
-      const success = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
-      // retries here counts: 1 outer pass (acceptanceRetries) + N internal strategy attempts.
-      // This differs from the legacy path (1 per outer loop pass) — intentional: cycleV2
-      // replaces all subsequent outer passes with internal runFixCycle iterations.
-      return buildResult(
-        success,
-        prd,
-        totalCost,
-        iterations,
-        storiesCompleted,
-        prdDirty,
-        success ? undefined : cycleResult.finalFindings.map((f) => f.message),
-        acceptanceRetries + cycleResult.iterations.length,
-      );
-    }
-
-    // ── 5. Apply fix (single attempt) — legacy path ──────────────────────
-    const fixResult = await applyFix({
-      ctx,
-      failures,
-      diagnosis,
-      previousFailure,
-    });
-    totalCost += fixResult.cost;
-
-    // ── 6. Accumulate previousFailure ────────────────────────────────────
-    previousFailure += `\n---\nAttempt ${acceptanceRetries}/${maxRetries}: verdict=${diagnosis.verdict}, confidence=${diagnosis.confidence}\nReasoning: ${diagnosis.reasoning}\nFailed ACs: ${failures.failedACs.join(", ")}\n`;
-
-    // ── 7. continue (always — back to step 1) ────────────────────────────
+    // ── 5. Run acceptance fix cycle ────────────────────────────────────
+    const cycleResult = await runAcceptanceFixCycle(ctx, prd, failures, diagnosis, testFileContent, acceptanceTestPath);
+    // "resolved" is the canonical success exit; also treat empty finalFindings as success
+    // in case the last validate pass cleared all findings before runFixCycle emitted "resolved".
+    const success = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
+    // retries here counts: 1 outer pass (acceptanceRetries) + N internal strategy attempts.
+    return buildResult(
+      success,
+      prd,
+      totalCost,
+      iterations,
+      storiesCompleted,
+      prdDirty,
+      success ? undefined : cycleResult.finalFindings.map((f) => f.message),
+      acceptanceRetries + cycleResult.iterations.length,
+    );
   }
 
   return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);

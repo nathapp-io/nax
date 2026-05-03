@@ -19,7 +19,7 @@ export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "./b
 
 // Review prompt builder — semantic review prompt construction.
 export { ReviewPromptBuilder } from "./builders/review-builder";
-export type { PriorFailure, SemanticReviewPromptOptions } from "./builders/review-builder";
+export type { SemanticReviewPromptOptions } from "./builders/review-builder";
 
 // Adversarial review prompt builder — adversarial reviewer prompt construction.
 export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-builder";

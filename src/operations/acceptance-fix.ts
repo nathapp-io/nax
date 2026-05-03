@@ -16,7 +16,6 @@ export interface AcceptanceFixTestInput {
   failedACs: string[];
   acceptanceTestPath: string;
   testFileContent?: string;
-  previousFailure?: string;
 }
 
 export interface AcceptanceFixOutput {
@@ -61,7 +60,6 @@ export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, Acceptanc
       failedACs: input.failedACs,
       acceptanceTestPath: input.acceptanceTestPath,
       testFileContent: input.testFileContent ?? "",
-      previousFailure: input.previousFailure,
     });
     return {
       role: { id: "role", content: "", overridable: false },

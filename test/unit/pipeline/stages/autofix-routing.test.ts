@@ -90,17 +90,15 @@ describe("#409 scope-aware adversarial routing", () => {
     };
   }
 
-  test("adversarial findings in test files only → test-writer session invoked, implementer skipped", async () => {
+  test("adversarial findings in test files only → agent rectification invoked (V2 handles test-writer internally)", async () => {
     const saved = { ..._autofixDeps };
-    let testWriterCalled = false;
+    let agentRectificationCalled = false;
 
-    _autofixDeps.runTestWriterRectification = async () => {
-      testWriterCalled = true;
-      return 0;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
     };
     _autofixDeps.recheckReview = async () => false;
-
-    const mockAgentManager = _makeMockAgentManager();
 
     const adversarialCheck = makeAdversarialCheck([
       { file: "test/unit/foo.test.ts" },
@@ -109,7 +107,6 @@ describe("#409 scope-aware adversarial routing", () => {
     const ctx = makeCtx({
       // Pass reviewResult directly to preserve findings (makeFailedReviewResult drops them)
       reviewResult: { success: false, checks: [adversarialCheck], summary: "" } as any,
-      agentManager: mockAgentManager,
       config: {
         ...DEFAULT_CONFIG,
         quality: {
@@ -125,16 +122,16 @@ describe("#409 scope-aware adversarial routing", () => {
 
     Object.assign(_autofixDeps, saved);
 
-    expect(testWriterCalled).toBe(true);
+    expect(agentRectificationCalled).toBe(true);
   });
 
-  test("mixed findings (test + source) → both test-writer and implementer sessions invoked", async () => {
+  test("mixed findings (test + source) → agent rectification invoked (V2 routes internally)", async () => {
     const saved = { ..._autofixDeps };
-    let testWriterCalled = false;
+    let agentRectificationCalled = false;
 
-    _autofixDeps.runTestWriterRectification = async () => {
-      testWriterCalled = true;
-      return 0;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
     };
     _autofixDeps.recheckReview = async () => false;
 
@@ -160,16 +157,16 @@ describe("#409 scope-aware adversarial routing", () => {
 
     Object.assign(_autofixDeps, saved);
 
-    expect(testWriterCalled).toBe(true);
+    expect(agentRectificationCalled).toBe(true);
   });
 
-  test("two adversarial entries: first all-test, second has source findings → second entry reaches implementer", async () => {
+  test("two adversarial entries: first all-test, second has source findings → agent rectification invoked", async () => {
     const saved = { ..._autofixDeps };
-    let testWriterCalled = false;
+    let agentRectificationCalled = false;
 
-    _autofixDeps.runTestWriterRectification = async () => {
-      testWriterCalled = true;
-      return 0;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
     };
     _autofixDeps.recheckReview = async () => false;
 
@@ -191,18 +188,16 @@ describe("#409 scope-aware adversarial routing", () => {
     await autofixStage.execute(ctx);
     Object.assign(_autofixDeps, saved);
 
-    // First adversarial entry (all-test) goes to test-writer and is removed from implementer.
-    // Second adversarial entry (source) must still reach the implementer loop.
-    expect(testWriterCalled).toBe(true);
+    expect(agentRectificationCalled).toBe(true);
   });
 
-  test("all source findings → only implementer invoked (existing behavior)", async () => {
+  test("all source findings → agent rectification invoked", async () => {
     const saved = { ..._autofixDeps };
-    let testWriterCalled = false;
+    let agentRectificationCalled = false;
 
-    _autofixDeps.runTestWriterRectification = async () => {
-      testWriterCalled = true;
-      return 0;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
     };
     _autofixDeps.recheckReview = async () => false;
 
@@ -228,7 +223,7 @@ describe("#409 scope-aware adversarial routing", () => {
 
     Object.assign(_autofixDeps, saved);
 
-    expect(testWriterCalled).toBe(false);
+    expect(agentRectificationCalled).toBe(true);
   });
 });
 
@@ -344,17 +339,17 @@ describe("STRAT-001 no-test adversarial skip", () => {
     expect(agentRectificationCalled).toBe(true);
   });
 
-  test("safety-net: mixed findings with no-test → test-writer skipped, implementer runs for source findings", async () => {
+  test("mixed findings with no-test → agent rectification runs (V2 handles routing internally)", async () => {
     const saved = { ..._autofixDeps };
-    let testWriterCalled = false;
+    let agentRectificationCalled = false;
 
-    _autofixDeps.runTestWriterRectification = async () => {
-      testWriterCalled = true;
-      return 0;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return { succeeded: false, cost: 0 };
     };
     _autofixDeps.recheckReview = async () => false;
 
-    // Mixed findings: early exit does not fire (source + test), but safety-net blocks test-writer
+    // Mixed findings: early exit does not fire because not all findings are test-only
     const mixedCheck = makeAdversarialCheck([
       { file: "test/unit/foo.test.ts" },
       { file: "src/implementation.ts" },
@@ -366,6 +361,6 @@ describe("STRAT-001 no-test adversarial skip", () => {
     await autofixStage.execute(ctx);
     Object.assign(_autofixDeps, saved);
 
-    expect(testWriterCalled).toBe(false);
+    expect(agentRectificationCalled).toBe(true);
   });
 });

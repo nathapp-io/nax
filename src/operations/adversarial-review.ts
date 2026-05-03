@@ -4,14 +4,14 @@ import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
-import type { PriorFailure, TestInventory } from "../prompts";
+import type { TestInventory } from "../prompts";
 import { validateAdversarialShape } from "../review/adversarial-helpers";
 import { looksLikeTruncatedJson } from "../review/truncation";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBody, RunOperation } from "./types";
 
-export type { AdversarialReviewConfig, PriorFailure, SemanticStory, TestInventory };
+export type { AdversarialReviewConfig, SemanticStory, TestInventory };
 
 export interface AdversarialReviewInput {
   story: SemanticStory;
@@ -20,7 +20,6 @@ export interface AdversarialReviewInput {
   diff?: string;
   storyGitRef?: string;
   stat?: string;
-  priorFailures?: PriorFailure[];
   testInventory?: TestInventory;
   testGlobs?: readonly string[];
   excludePatterns?: string[];
@@ -89,7 +88,6 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         diff: input.diff,
         storyGitRef: input.storyGitRef,
         stat: input.stat,
-        priorFailures: input.priorFailures,
         testInventory: input.testInventory,
         excludePatterns: input.excludePatterns,
         testGlobs: input.testGlobs,

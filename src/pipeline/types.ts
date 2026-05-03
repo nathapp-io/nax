@@ -178,7 +178,7 @@ export interface PipelineContext extends DispatchContext {
   rectifyAttempt?: number;
   /** Tracks how many times the autofix stage has run this pipeline (for event attempt numbers). */
   autofixAttempt?: number;
-  /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries (cycleV2 only). */
+  /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
   autofixPriorIterations?: Iteration[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;

@@ -68,7 +68,6 @@ export interface DiagnosisPromptParams {
   sourceFiles: Array<{ path: string; content: string }>;
   /** Minimal shape — avoids importing SemanticVerdict across layers */
   semanticVerdicts?: Array<{ storyId: string; passed: boolean }>;
-  previousFailure?: string;
 }
 
 export interface RefinementPromptOptions {
@@ -87,7 +86,6 @@ export interface GeneratorFromPRDParams {
   /** Fully resolved absolute path for the test file output. */
   targetTestFilePath: string;
   implementationContext?: Array<{ path: string; content: string }>;
-  previousFailure?: string;
 }
 
 export interface GeneratorFromSpecParams {
@@ -101,7 +99,6 @@ export interface DiagnosisTemplateParams {
   testFileContent: string;
   sourceFilesSection: string;
   verdictSection: string;
-  previousFailureSection: string;
   maxFileLines: number;
 }
 
@@ -116,7 +113,6 @@ export interface TestFixParams {
   testOutput: string;
   diagnosisReasoning?: string;
   failedACs: string[];
-  previousFailure?: string;
   acceptanceTestPath: string;
   testFileContent: string;
 }
@@ -131,9 +127,6 @@ export class AcceptancePromptBuilder {
       p.implementationContext && p.implementationContext.length > 0
         ? `\n\n## Implementation (already exists)\n\n${p.implementationContext.map((f) => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")}`
         : "";
-    const prevFailureSection =
-      p.previousFailure && p.previousFailure.length > 0 ? `\n\nPrevious test failed because: ${p.previousFailure}` : "";
-
     return `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${p.featureName}" feature.
 
 ${STEP1}
@@ -147,7 +140,7 @@ ${STEP3_HEADER}
 ${STEP3_SHARED_RULES}
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
 - **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${p.targetTestFilePath}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).
-- **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the **package root** (\`join(import.meta.dir, "../../..")\`) as your default — unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.${implSection}${prevFailureSection}`;
+- **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the **package root** (\`join(import.meta.dir, "../../..")\`) as your default — unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.${implSection}`;
   }
 
   /** Prompt for generateAcceptanceTests() — agent returns raw test code. */
@@ -199,7 +192,7 @@ ${p.testFileContent}
 
 SOURCE FILES (auto-detected from imports, up to ${p.maxFileLines} lines each):
 ${p.sourceFilesSection}
-${p.verdictSection}${p.previousFailureSection}
+${p.verdictSection}
 Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
 ${responseSchema}`;
   }
@@ -276,15 +269,11 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
         ? `\nSEMANTIC VERDICTS:\n${p.semanticVerdicts.map((v) => `- ${v.storyId}: ${v.passed ? "likely test bug (semantic review confirmed AC implementation)" : "unconfirmed"}`).join("\n")}\n`
         : "";
 
-    const previousFailureSection =
-      p.previousFailure && p.previousFailure.length > 0 ? `\nPREVIOUS FIX ATTEMPTS:\n${p.previousFailure}\n` : "";
-
     return this.buildDiagnosisPromptTemplate({
       truncatedOutput,
       testFileContent: p.testFileContent,
       sourceFilesSection,
       verdictSection,
-      previousFailureSection,
       maxFileLines: MAX_FILE_LINES,
     });
   }
@@ -376,9 +365,6 @@ Assert about HTTP responses, status codes, and API endpoint output.${framework}
     prompt += `FAILING ACS: ${p.failedACs.join(", ")}\n\n`;
     prompt += `TEST OUTPUT:\n${p.testOutput}\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
-    if (p.previousFailure && p.previousFailure.length > 0) {
-      prompt += `PREVIOUS FAILED ATTEMPTS:\n${p.previousFailure}\n\n`;
-    }
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;
     prompt += `\`\`\`typescript\n${p.testFileContent}\n\`\`\`\n\n`;
     prompt += "Fix ONLY the failing test assertions for the ACs listed above. ";
