@@ -452,6 +452,13 @@ export interface ContextRequest {
    * consult this field instead of hardcoding extensions or directory names.
    */
   resolvedTestPatterns?: import("../../test-runners/resolver").ResolvedTestPatterns;
+  /**
+   * Pre-built naxIgnore index for this run.
+   * When present, CodeNeighborProvider passes the per-package matchers to the
+   * glob dep so user-defined .naxignore patterns suppress files from the
+   * reverse-dep scan.
+   */
+  naxIgnoreIndex?: import("../../utils/path-filters").NaxIgnoreIndex;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
