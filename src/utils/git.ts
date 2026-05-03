@@ -98,6 +98,26 @@ export async function captureGitRef(workdir: string): Promise<string | undefined
 }
 
 /**
+ * Return whether anything changed since baseRef.
+ *
+ * True when HEAD advanced, or when working tree has staged/untracked/modified files.
+ * False when baseRef is missing, git commands fail, or tree is clean and HEAD unchanged.
+ */
+export async function hasWorkingTreeChange(workdir: string, baseRef: string | undefined): Promise<boolean> {
+  if (baseRef === undefined) return false;
+  try {
+    const head = await captureGitRef(workdir);
+    if (head === undefined) return false;
+    if (head !== baseRef) return true;
+    const { stdout, exitCode } = await gitWithTimeout(["status", "--porcelain"], workdir);
+    if (exitCode !== 0) return false;
+    return stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Verify that a git ref (SHA or branch name) is reachable in the given workdir.
  * Used to validate a persisted storyGitRef before using it in a diff range.
  *

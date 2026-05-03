@@ -443,9 +443,7 @@ export async function runAgentRectification(
       }
 
       // Detect no-op (zero changes)
-      const refAfterAttempt = await _autofixDeps.captureGitRef(ctx.workdir);
-      const sourceFilesChanged =
-        autofixBeforeRef === undefined || refAfterAttempt === undefined || autofixBeforeRef !== refAfterAttempt;
+      const sourceFilesChanged = await _autofixDeps.hasWorkingTreeChange(ctx.workdir, autofixBeforeRef);
       const noOp = !sourceFilesChanged;
 
       // Detect check signature change — will be computed during verify phase
@@ -481,6 +479,11 @@ export async function runAgentRectification(
       const hasMechanicalFailure = failingChecks.some((c) => !LLM_REVIEW_CHECKS.has(c.check));
       const recheckWorthwhile = !result.noOp || hasMechanicalFailure;
       const passed = recheckWorthwhile ? await _autofixDeps.recheckReview(ctx) : false;
+      const collectFreshFailure = (): AutofixFailure => {
+        const updated = collectFailedChecks(ctx);
+        if (updated.length === 0) return initialFailure;
+        return { checks: updated, checkSignature: getCheckSignature(updated) };
+      };
       if (passed) {
         if (result.noOp) {
           logger.info(
@@ -516,7 +519,7 @@ export async function runAgentRectification(
         }
         return {
           passed: false,
-          newFailure: initialFailure,
+          newFailure: collectFreshFailure(),
         };
       }
 
@@ -534,7 +537,7 @@ export async function runAgentRectification(
         // Return failure to trigger the no-op reprompt logic in buildPrompt
         return {
           passed: false,
-          newFailure: initialFailure,
+          newFailure: collectFreshFailure(),
         };
       }
 

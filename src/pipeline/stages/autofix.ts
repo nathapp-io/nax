@@ -23,7 +23,7 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
-import { captureGitRef } from "../../utils/git";
+import { captureGitRef, hasWorkingTreeChange } from "../../utils/git";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { splitFindingsByScope } from "./autofix-scope-split";
@@ -272,6 +272,7 @@ export const _autofixDeps = {
   runQualityCommand,
   recheckReview,
   captureGitRef,
+  hasWorkingTreeChange,
   runAgentRectification: (
     ctx: PipelineContext,
     lintFixCmd: string | undefined,
