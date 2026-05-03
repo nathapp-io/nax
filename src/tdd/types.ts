@@ -117,6 +117,8 @@ export interface ThreeSessionTddOptions {
    * the middleware chain (audit, cost, cancellation).
    */
   agentManager: import("../agents/manager-types").IAgentManager;
+  /** Runtime services used by rectification to emit prompt audit/cost events. */
+  runtime?: import("../runtime").NaxRuntime;
 }
 
 /**

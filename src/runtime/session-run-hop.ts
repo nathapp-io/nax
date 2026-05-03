@@ -61,6 +61,8 @@ export function createSessionRunHop(sessionManager: ISessionManager): SessionRun
           estimatedCostUsd: turnResult.estimatedCostUsd ?? 0,
           exactCostUsd: turnResult.exactCostUsd,
           tokenUsage: turnResult.tokenUsage,
+          protocolIds: handle.protocolIds,
+          internalRoundTrips: turnResult.internalRoundTrips,
         },
       };
     } catch (err) {

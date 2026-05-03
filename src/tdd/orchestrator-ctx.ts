@@ -169,5 +169,6 @@ export async function runThreeSessionTddFromCtx(
     projectDir: ctx.projectDir,
     abortSignal: ctx.abortSignal,
     agentManager: ctx.agentManager,
+    runtime: ctx.runtime,
   });
 }

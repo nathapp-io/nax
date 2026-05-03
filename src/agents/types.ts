@@ -393,6 +393,8 @@ export interface TurnResult {
   exactCostUsd?: number;
   /** Number of session.prompt() calls made. */
   internalRoundTrips: number;
+  /** Protocol-specific IDs for prompt-audit correlation. */
+  protocolIds?: ProtocolIds;
 }
 
 /**

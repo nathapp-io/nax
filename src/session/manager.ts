@@ -504,11 +504,12 @@ export class SessionManager implements ISessionManager {
     this._busySessions.add(handle.id);
 
     try {
-      return await adapter.sendTurn(handle, prompt, {
+      const result = await adapter.sendTurn(handle, prompt, {
         interactionHandler: opts?.interactionHandler ?? NO_OP_INTERACTION_HANDLER,
         signal: opts?.signal,
         maxTurns: opts?.maxTurns,
       });
+      return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
       // Check signal.aborted OR an AbortError thrown by the adapter to avoid
       // false-positive cancellation when a non-abort error races with an
