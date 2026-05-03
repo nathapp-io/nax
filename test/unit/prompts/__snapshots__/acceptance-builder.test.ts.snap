@@ -183,8 +183,16 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
   "verdict": "source_bug" | "test_bug" | "both",
   "reasoning": "Your analysis explaining why this is a source_bug, test_bug, or both",
   "confidence": 0.0-1.0,
-  "testIssues": ["Issue in test code if any"],
-  "sourceIssues": ["Issue in source code if any"]
+  "findings": [
+    {
+      "fixTarget": "source" | "test",
+      "category": "stdout-capture" | "ac-mismatch" | "framework-misuse" | "missing-impl" | "import-path" | "hook-failure" | "test-runner-error" | "stub-test" | "other",
+      "file": "optional/path/relative/to/workdir.ts",
+      "line": 0,
+      "message": "Concrete description of the issue",
+      "suggestion": "Optional concrete fix suggestion"
+    }
+  ]
 }"
 `;
 
@@ -215,7 +223,15 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
   "verdict": "source_bug" | "test_bug" | "both",
   "reasoning": "Your analysis explaining why this is a source_bug, test_bug, or both",
   "confidence": 0.0-1.0,
-  "testIssues": ["Issue in test code if any"],
-  "sourceIssues": ["Issue in source code if any"]
+  "findings": [
+    {
+      "fixTarget": "source" | "test",
+      "category": "stdout-capture" | "ac-mismatch" | "framework-misuse" | "missing-impl" | "import-path" | "hook-failure" | "test-runner-error" | "stub-test" | "other",
+      "file": "optional/path/relative/to/workdir.ts",
+      "line": 0,
+      "message": "Concrete description of the issue",
+      "suggestion": "Optional concrete fix suggestion"
+    }
+  ]
 }"
 `;

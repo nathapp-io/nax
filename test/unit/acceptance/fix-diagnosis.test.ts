@@ -94,25 +94,27 @@ describe("DiagnosisResult interface validation", () => {
     expect(highConfidence.confidence).toBe(1);
   });
 
-  test("testIssues and sourceIssues are optional", () => {
+  test("findings is optional", () => {
     const minimal: DiagnosisResult = {
       verdict: "source_bug",
       reasoning: "Minimal result",
       confidence: 0.5,
     };
-    expect(minimal.testIssues).toBeUndefined();
-    expect(minimal.sourceIssues).toBeUndefined();
+    expect(minimal.findings).toBeUndefined();
   });
 
-  test("testIssues and sourceIssues can be provided together", () => {
+  test("findings can be provided", () => {
     const full: DiagnosisResult = {
       verdict: "both",
       reasoning: "Full result",
       confidence: 0.95,
-      testIssues: ["Test issue 1"],
-      sourceIssues: ["Source issue 1", "Source issue 2"],
+      findings: [
+        { source: "acceptance-diagnose", severity: "error", category: "test", message: "Test issue 1", fixTarget: "test" },
+        { source: "acceptance-diagnose", severity: "error", category: "source", message: "Source issue 1", fixTarget: "source" },
+      ],
     };
-    expect(full.testIssues).toEqual(["Test issue 1"]);
-    expect(full.sourceIssues).toEqual(["Source issue 1", "Source issue 2"]);
+    expect(full.findings?.length).toBe(2);
+    expect(full.findings?.[0].message).toBe("Test issue 1");
+    expect(full.findings?.[1].message).toBe("Source issue 1");
   });
 });

@@ -33,7 +33,6 @@ export type {
   BuildContext,
   CallContext,
   CompleteOperation,
-  LlmReviewFinding,
   Operation,
   RunOperation,
   VerifyContext,

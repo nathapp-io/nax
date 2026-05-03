@@ -12,12 +12,8 @@ const SAMPLE_INPUT: AcceptanceDiagnoseInput = {
   ],
 };
 
-function makeBuildCtx(overrides?: { findingsV2?: boolean }) {
-  const config = makeNaxConfig(
-    overrides?.findingsV2 != null
-      ? { acceptance: { fix: { findingsV2: overrides.findingsV2 } } }
-      : {},
-  );
+function makeBuildCtx() {
+  const config = makeNaxConfig({});
   const runtime = makeTestRuntime({ config });
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(acceptanceDiagnoseOp.config) };
@@ -63,6 +59,14 @@ describe("acceptanceDiagnoseOp.build()", () => {
     expect(result.task.content).toContain("SEMANTIC VERDICTS");
     expect(result.task.content).toContain("likely test bug");
   });
+  test("build() emits findings schema", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).toContain('"findings"');
+    expect(result.task.content).toContain('"fixTarget"');
+    expect(result.task.content).not.toContain('"testIssues"');
+    expect(result.task.content).not.toContain('"sourceIssues"');
+  });
 });
 
 describe("acceptanceDiagnoseOp.parse()", () => {
@@ -91,60 +95,8 @@ describe("acceptanceDiagnoseOp.parse()", () => {
     const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.verdict).toBe("test_bug");
   });
-  test("parses optional testIssues and sourceIssues arrays", () => {
+  test("parses findings[] directly when LLM emits findings array", () => {
     const ctx = makeBuildCtx();
-    const json = JSON.stringify({
-      verdict: "both",
-      reasoning: "both sides",
-      confidence: 0.5,
-      testIssues: ["wrong assertion"],
-      sourceIssues: ["off by one"],
-    });
-    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
-    expect(result.testIssues).toEqual(["wrong assertion"]);
-    expect(result.sourceIssues).toEqual(["off by one"]);
-  });
-  test("wraps testIssues/sourceIssues as legacy findings when no findings[] present", () => {
-    const ctx = makeBuildCtx();
-    const json = JSON.stringify({
-      verdict: "both",
-      reasoning: "both sides",
-      confidence: 0.5,
-      testIssues: ["wrong assertion"],
-      sourceIssues: ["off by one"],
-    });
-    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
-    expect(result.findings).toBeDefined();
-    expect(result.findings?.length).toBe(2);
-    expect(result.findings?.[0]).toMatchObject({ fixTarget: "test", message: "wrong assertion", category: "legacy" });
-    expect(result.findings?.[1]).toMatchObject({ fixTarget: "source", message: "off by one", category: "legacy" });
-  });
-  test("findings is undefined when no testIssues/sourceIssues and no findings[] in response", () => {
-    const ctx = makeBuildCtx();
-    const json = JSON.stringify({ verdict: "source_bug", reasoning: "plain", confidence: 0.8 });
-    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
-    expect(result.findings).toBeUndefined();
-  });
-});
-
-describe("acceptanceDiagnoseOp findingsV2 mode", () => {
-  test("build() emits findings schema when findingsV2 is true", () => {
-    const ctx = makeBuildCtx({ findingsV2: true });
-    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain('"findings"');
-    expect(result.task.content).toContain('"fixTarget"');
-    expect(result.task.content).not.toContain('"testIssues"');
-    expect(result.task.content).not.toContain('"sourceIssues"');
-  });
-  test("build() emits legacy schema when findingsV2 is false", () => {
-    const ctx = makeBuildCtx({ findingsV2: false });
-    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain('"testIssues"');
-    expect(result.task.content).toContain('"sourceIssues"');
-    expect(result.task.content).not.toContain('"fixTarget"');
-  });
-  test("parse() returns findings[] directly when LLM emits findings array", () => {
-    const ctx = makeBuildCtx({ findingsV2: true });
     const json = JSON.stringify({
       verdict: "test_bug",
       reasoning: "test imports wrong",
@@ -156,11 +108,9 @@ describe("acceptanceDiagnoseOp findingsV2 mode", () => {
     const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.findings?.length).toBe(1);
     expect(result.findings?.[0]).toMatchObject({ fixTarget: "test", category: "import-path", message: "wrong relative path" });
-    expect(result.testIssues).toBeUndefined();
-    expect(result.sourceIssues).toBeUndefined();
   });
-  test("parse() injects source:'acceptance-diagnose' into LLM findings (LLM does not emit source)", () => {
-    const ctx = makeBuildCtx({ findingsV2: true });
+  test("injects source:'acceptance-diagnose' into LLM findings (LLM does not emit source)", () => {
+    const ctx = makeBuildCtx();
     const json = JSON.stringify({
       verdict: "test_bug",
       reasoning: "bad import",
@@ -170,8 +120,8 @@ describe("acceptanceDiagnoseOp findingsV2 mode", () => {
     const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.findings?.[0].source).toBe("acceptance-diagnose");
   });
-  test("parse() drops findings items missing required message or category", () => {
-    const ctx = makeBuildCtx({ findingsV2: true });
+  test("drops findings items missing required message or category", () => {
+    const ctx = makeBuildCtx();
     const json = JSON.stringify({
       verdict: "test_bug",
       reasoning: "bad import",
@@ -186,21 +136,8 @@ describe("acceptanceDiagnoseOp findingsV2 mode", () => {
     expect(result.findings?.length).toBe(1);
     expect(result.findings?.[0].message).toBe("valid");
   });
-  test("parse() ignores findings[] when findingsV2 is false (flag isolation)", () => {
-    const ctx = makeBuildCtx({ findingsV2: false });
-    const json = JSON.stringify({
-      verdict: "test_bug",
-      reasoning: "bad import",
-      confidence: 0.9,
-      // LLM hallucinated findings even though prompt asked for testIssues/sourceIssues
-      findings: [{ fixTarget: "test", category: "import-path", message: "wrong path" }],
-    });
-    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
-    // Should NOT use the findingsV2 fast-path — fall through to legacy path
-    expect(result.findings).toBeUndefined();
-  });
-  test("parse() falls back gracefully when findings[] is empty array", () => {
-    const ctx = makeBuildCtx({ findingsV2: true });
+  test("falls back gracefully when findings[] is empty array", () => {
+    const ctx = makeBuildCtx();
     const json = JSON.stringify({
       verdict: "source_bug",
       reasoning: "missing impl",
@@ -209,6 +146,12 @@ describe("acceptanceDiagnoseOp findingsV2 mode", () => {
     });
     const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.verdict).toBe("source_bug");
+    expect(result.findings).toBeUndefined();
+  });
+  test("findings is undefined when no findings[] in response", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({ verdict: "source_bug", reasoning: "plain", confidence: 0.8 });
+    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.findings).toBeUndefined();
   });
 });

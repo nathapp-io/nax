@@ -24,7 +24,6 @@ export {
   acFailureToFinding,
   acSentinelToFinding,
   lintDiagnosticToFinding,
-  llmReviewFindingToFinding,
   pluginToFinding,
   reviewFindingToFinding,
   tscDiagnosticToFinding,

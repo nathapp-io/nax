@@ -69,8 +69,6 @@ export interface DiagnosisPromptParams {
   /** Minimal shape — avoids importing SemanticVerdict across layers */
   semanticVerdicts?: Array<{ storyId: string; passed: boolean }>;
   previousFailure?: string;
-  /** ADR-021 phase 8: when true, emit findings[] instead of testIssues/sourceIssues */
-  findingsV2?: boolean;
 }
 
 export interface RefinementPromptOptions {
@@ -105,8 +103,6 @@ export interface DiagnosisTemplateParams {
   verdictSection: string;
   previousFailureSection: string;
   maxFileLines: number;
-  /** ADR-021 phase 8: when true, emit findings[] instead of testIssues/sourceIssues */
-  findingsV2?: boolean;
 }
 
 export interface SourceFixParams {
@@ -173,8 +169,7 @@ ${STEP3_SHARED_RULES}
 
   /** Template assembly for buildDiagnosisPrompt() — receives pre-processed strings. */
   buildDiagnosisPromptTemplate(p: DiagnosisTemplateParams): string {
-    const responseSchema = p.findingsV2
-      ? `{
+    const responseSchema = `{
   "verdict": "source_bug" | "test_bug" | "both",
   "reasoning": "Your analysis explaining why this is a source_bug, test_bug, or both",
   "confidence": 0.0-1.0,
@@ -188,13 +183,6 @@ ${STEP3_SHARED_RULES}
       "suggestion": "Optional concrete fix suggestion"
     }
   ]
-}`
-      : `{
-  "verdict": "source_bug" | "test_bug" | "both",
-  "reasoning": "Your analysis explaining why this is a source_bug, test_bug, or both",
-  "confidence": 0.0-1.0,
-  "testIssues": ["Issue in test code if any"],
-  "sourceIssues": ["Issue in source code if any"]
 }`;
 
     return `You are a debugging expert. An acceptance test has failed.
@@ -298,7 +286,6 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
       verdictSection,
       previousFailureSection,
       maxFileLines: MAX_FILE_LINES,
-      findingsV2: p.findingsV2,
     });
   }
 
