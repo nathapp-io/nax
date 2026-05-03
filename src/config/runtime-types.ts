@@ -290,6 +290,8 @@ export interface AcceptanceFixConfig {
   maxRetries: number;
   /** ADR-021 phase 8: emit findings[] in diagnose prompt instead of testIssues/sourceIssues. Default off. */
   findingsV2: boolean;
+  /** ADR-022 phase 4: use runFixCycle for acceptance retries instead of the hand-rolled loop. Default off. */
+  cycleV2: boolean;
 }
 
 /** Acceptance validation config */
