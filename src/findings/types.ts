@@ -5,8 +5,8 @@
  *
  * Designed as a strict superset of:
  *   - src/plugins/extensions.ts ReviewFinding   (mechanical / plugin findings)
- *   - src/operations/types.ts   LlmReviewFinding (LLM reviewer ops)
- *   - src/acceptance/types.ts   DiagnosisResult.testIssues / sourceIssues (string-typed today)
+ *   - src/review/semantic-helpers.ts   LLMFinding (semantic review)
+ *   - src/review/adversarial-helpers.ts   AdversarialLLMFinding (adversarial review)
  *
  * Producers convert to Finding[] at the boundary; the wire format is uniform
  * regardless of subsystem. See ADR-021 §3 for the file-path SSOT decision and

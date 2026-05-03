@@ -5,11 +5,11 @@ import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure, TestInventory } from "../prompts";
+import { validateAdversarialShape } from "../review/adversarial-helpers";
 import { looksLikeTruncatedJson } from "../review/truncation";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { HopBody, LlmReviewFinding, LlmReviewOutput, RunOperation } from "./types";
-import { parseLlmReviewShape } from "./types";
+import type { HopBody, RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, PriorFailure, SemanticStory, TestInventory };
 
@@ -33,7 +33,10 @@ export interface AdversarialReviewInput {
   blockingThreshold?: "error" | "warning" | "info";
 }
 
-export interface AdversarialReviewOutput extends LlmReviewOutput {
+export interface AdversarialReviewOutput {
+  passed: boolean;
+  findings: unknown[];
+  failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false`.
    * Callers should treat this as a hard failure rather than fail-open.
@@ -48,7 +51,7 @@ const adversarialReviewHopBody: HopBody<AdversarialReviewInput> = async (initial
   const first = await ctx.send(initialPrompt);
   const isTruncated = looksLikeTruncatedJson(first.output);
   const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
-  if (!isTruncated && parsed && parseLlmReviewShape(parsed)) return first;
+  if (!isTruncated && parsed && validateAdversarialShape(parsed)) return first;
 
   const retryPrompt = isTruncated
     ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: ctx.input.blockingThreshold })
@@ -102,8 +105,8 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   },
   parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
-    const parsed = parseLlmReviewShape(raw);
-    if (parsed) return parsed;
+    const parsed = validateAdversarialShape(raw);
+    if (parsed) return { passed: parsed.passed, findings: parsed.findings };
     if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
     return FAIL_OPEN;
   },

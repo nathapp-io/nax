@@ -18,10 +18,7 @@ export interface AcceptanceDiagnoseOutput {
   verdict: "source_bug" | "test_bug" | "both";
   reasoning: string;
   confidence: number;
-  /** findingsV2 mode: structured findings supersede testIssues/sourceIssues */
   findings?: Finding[];
-  testIssues?: string[];
-  sourceIssues?: string[];
 }
 
 const FALLBACK: AcceptanceDiagnoseOutput = {
@@ -37,23 +34,20 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
   session: { role: "diagnose", lifetime: "fresh" },
   config: acceptanceConfigSelector,
   timeoutMs: (_input, ctx) => ctx.config.acceptance.timeoutMs,
-  build(input, ctx) {
-    const findingsV2 = ctx.config.acceptance.fix?.findingsV2 ?? false;
+  build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildDiagnosisPrompt({
       testOutput: input.testOutput,
       testFileContent: input.testFileContent,
       sourceFiles: input.sourceFiles,
       semanticVerdicts: input.semanticVerdicts,
       previousFailure: input.previousFailure,
-      findingsV2,
     });
     return {
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: prompt, overridable: false },
     };
   },
-  parse(output, _input, ctx) {
-    const findingsV2 = ctx.config.acceptance.fix?.findingsV2 ?? false;
+  parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     if (
       raw &&
@@ -67,8 +61,7 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
         confidence: raw.confidence,
       };
 
-      // findingsV2 path: gated on config flag; inject source and validate shape
-      if (findingsV2 && Array.isArray(raw.findings) && raw.findings.length > 0) {
+      if (Array.isArray(raw.findings) && raw.findings.length > 0) {
         const findings = (raw.findings as Array<Record<string, unknown>>)
           .filter((f) => typeof f.message === "string" && typeof f.category === "string")
           .map(
@@ -86,37 +79,7 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
         if (findings.length > 0) return { ...base, findings };
       }
 
-      // Legacy path: wrap testIssues/sourceIssues as Finding[] for uniform consumption
-      const legacyFindings: Finding[] = [];
-      if (Array.isArray(raw.testIssues)) {
-        for (const msg of raw.testIssues as string[]) {
-          legacyFindings.push({
-            source: "acceptance-diagnose",
-            severity: "error",
-            category: "legacy",
-            message: msg,
-            fixTarget: "test",
-          });
-        }
-      }
-      if (Array.isArray(raw.sourceIssues)) {
-        for (const msg of raw.sourceIssues as string[]) {
-          legacyFindings.push({
-            source: "acceptance-diagnose",
-            severity: "error",
-            category: "legacy",
-            message: msg,
-            fixTarget: "source",
-          });
-        }
-      }
-
-      return {
-        ...base,
-        findings: legacyFindings.length > 0 ? legacyFindings : undefined,
-        testIssues: Array.isArray(raw.testIssues) ? (raw.testIssues as string[]) : undefined,
-        sourceIssues: Array.isArray(raw.sourceIssues) ? (raw.sourceIssues as string[]) : undefined,
-      };
+      return base;
     }
     return FALLBACK;
   },

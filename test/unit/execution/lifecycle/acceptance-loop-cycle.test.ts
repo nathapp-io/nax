@@ -53,7 +53,7 @@ function makeCtx(cycleV2 = true): AcceptanceLoopContext {
   const config = makeNaxConfig({
     acceptance: {
       maxRetries: 3,
-      fix: { cycleV2, findingsV2: false, strategy: "diagnose-first" },
+      fix: { cycleV2, strategy: "diagnose-first" },
     },
   });
   const runtime = makeMockRuntime({ config });

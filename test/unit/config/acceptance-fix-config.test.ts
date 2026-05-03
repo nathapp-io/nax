@@ -17,7 +17,6 @@ describe("AcceptanceFixConfig type (US-001)", () => {
       fixModel: "balanced",
       strategy: "diagnose-first",
       maxRetries: 2,
-      findingsV2: false,
       cycleV2: false,
     };
     expect(fix.diagnoseModel).toBe("fast");
@@ -33,7 +32,6 @@ describe("AcceptanceFixConfig type (US-001)", () => {
       fixModel: "balanced",
       strategy: "implement-only",
       maxRetries: 2,
-      findingsV2: false,
       cycleV2: false,
     };
     expect(fix.strategy).toBe("implement-only");
@@ -45,7 +43,6 @@ describe("AcceptanceFixConfig type (US-001)", () => {
       fixModel: "balanced",
       strategy: "diagnose-first",
       maxRetries: 2,
-      findingsV2: false,
       cycleV2: false,
     };
     expect(fix.cycleV2).toBe(false);
@@ -59,7 +56,6 @@ describe("DEFAULT_CONFIG.acceptance.fix (US-001)", () => {
       fixModel: "balanced",
       strategy: "diagnose-first",
       maxRetries: 2,
-      findingsV2: false,
       cycleV2: false,
     });
   });
@@ -129,54 +125,26 @@ describe("DiagnosisResult interface (US-001)", () => {
     expect(result.confidence).toBe(1);
   });
 
-  test("testIssues is optional", () => {
+  test("findings is optional", () => {
     const result: DiagnosisResult = {
       verdict: "source_bug",
       reasoning: "Source bug found",
       confidence: 0.8,
     };
-    expect(result.testIssues).toBeUndefined();
+    expect(result.findings).toBeUndefined();
   });
 
-  test("testIssues can be provided", () => {
+  test("findings can be provided", () => {
     const result: DiagnosisResult = {
       verdict: "test_bug",
       reasoning: "Test bug found",
       confidence: 0.8,
-      testIssues: ["Test does not mock the database"],
+      findings: [
+        { source: "acceptance-diagnose", severity: "error", category: "import-path", message: "Wrong import", fixTarget: "test" },
+      ],
     };
-    expect(result.testIssues).toEqual(["Test does not mock the database"]);
-  });
-
-  test("sourceIssues is optional", () => {
-    const result: DiagnosisResult = {
-      verdict: "test_bug",
-      reasoning: "Test bug found",
-      confidence: 0.8,
-    };
-    expect(result.sourceIssues).toBeUndefined();
-  });
-
-  test("sourceIssues can be provided", () => {
-    const result: DiagnosisResult = {
-      verdict: "source_bug",
-      reasoning: "Source bug found",
-      confidence: 0.8,
-      sourceIssues: ["Null pointer exception on line 42"],
-    };
-    expect(result.sourceIssues).toEqual(["Null pointer exception on line 42"]);
-  });
-
-  test("can have both testIssues and sourceIssues", () => {
-    const result: DiagnosisResult = {
-      verdict: "both",
-      reasoning: "Multiple issues found",
-      confidence: 0.95,
-      testIssues: ["Test assertion is wrong"],
-      sourceIssues: ["Off-by-one error in loop"],
-    };
-    expect(result.testIssues).toEqual(["Test assertion is wrong"]);
-    expect(result.sourceIssues).toEqual(["Off-by-one error in loop"]);
+    expect(result.findings?.length).toBe(1);
+    expect(result.findings?.[0].message).toBe("Wrong import");
   });
 });
 

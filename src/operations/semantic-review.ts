@@ -4,11 +4,11 @@ import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
+import { validateLLMShape } from "../review/semantic-helpers";
 import { looksLikeTruncatedJson } from "../review/truncation";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { HopBody, LlmReviewFinding, LlmReviewOutput, RunOperation } from "./types";
-import { parseLlmReviewShape } from "./types";
+import type { HopBody, RunOperation } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
 
@@ -27,7 +27,10 @@ export interface SemanticReviewInput {
   blockingThreshold?: "error" | "warning" | "info";
 }
 
-export interface SemanticReviewOutput extends LlmReviewOutput {
+export interface SemanticReviewOutput {
+  passed: boolean;
+  findings: unknown[];
+  failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false` —
    * the agent clearly intended a failure but the response was truncated/malformed.
@@ -48,7 +51,7 @@ const semanticReviewHopBody: HopBody<SemanticReviewInput> = async (initialPrompt
   const first = await ctx.send(initialPrompt);
   const isTruncated = looksLikeTruncatedJson(first.output);
   const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
-  if (!isTruncated && parsed && parseLlmReviewShape(parsed)) return first;
+  if (!isTruncated && parsed && validateLLMShape(parsed)) return first;
 
   const retryPrompt = isTruncated
     ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: ctx.input.blockingThreshold })
@@ -96,8 +99,8 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   },
   parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
-    const parsed = parseLlmReviewShape(raw);
-    if (parsed) return parsed;
+    const parsed = validateLLMShape(raw);
+    if (parsed) return { passed: parsed.passed, findings: parsed.findings };
     if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
     return FAIL_OPEN;
   },
