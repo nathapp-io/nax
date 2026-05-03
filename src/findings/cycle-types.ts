@@ -68,6 +68,8 @@ export interface FixCycleResult<F extends Finding = Finding> {
   exhaustedStrategy?: string;
   /** Human-readable detail from strategy.bailWhen(). Set when exitReason is "bail-when". */
   bailDetail?: string;
+  /** Total cost of all fix attempts in the cycle. Only present when strategies surface cost via extractApplied. */
+  costUsd?: number;
 }
 
 // ─── Context ─────────────────────────────────────────────────────────────────
@@ -126,10 +128,11 @@ export interface FixStrategy<
   buildInput: (findings: F[], priorIterations: Iteration<F>[], ctx: FixCycleContext) => I;
 
   /**
-   * Optional: extract targetFiles and summary from the op output for FixApplied
-   * record-keeping. When absent, targetFiles defaults to [] and summary to "".
+   * Optional: extract targetFiles, summary, and cost from the op output for FixApplied
+   * record-keeping. When absent, targetFiles defaults to [], summary to "", and costUsd
+   * is omitted ( FixApplied.costUsd stays undefined).
    */
-  extractApplied?: (output: O, input: I) => { targetFiles?: string[]; summary?: string };
+  extractApplied?: (output: O, input: I) => { targetFiles?: string[]; summary?: string; costUsd?: number };
 
   /**
    * Optional bail predicate called before each iteration. Return a non-null

@@ -23,9 +23,9 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
-import { captureGitRef, hasWorkingTreeChange } from "../../utils/git";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { runAgentRectification } from "./autofix-agent";
 import { splitFindingsByScope } from "./autofix-scope-split";
 import { runTestWriterRectification } from "./autofix-test-writer";
 
@@ -271,17 +271,7 @@ async function recheckReview(ctx: PipelineContext): Promise<boolean> {
 export const _autofixDeps = {
   runQualityCommand,
   recheckReview,
-  captureGitRef,
-  hasWorkingTreeChange,
-  runAgentRectification: (
-    ctx: PipelineContext,
-    lintFixCmd: string | undefined,
-    formatFixCmd: string | undefined,
-    effectiveWorkdir: string,
-  ): Promise<{ succeeded: boolean; cost: number; unresolvedReason?: string }> =>
-    import("./autofix-agent").then(({ runAgentRectification }) =>
-      runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir),
-    ),
+  runAgentRectification,
   runTestWriterRectification: (
     ctx: PipelineContext,
     testWriterChecks: ReviewCheckResult[],

@@ -1,5 +1,5 @@
 /**
- * Tests for the cycleV2 path in acceptance-loop.ts (ADR-022 phase 4).
+ * Tests for runAcceptanceFixCycle in acceptance-loop.ts (ADR-022 phase 4).
  *
  * Covers:
  * - runAcceptanceFixCycle builds a FixCycle with two co-run-sequential strategies
@@ -7,7 +7,6 @@
  * - test strategy appliesTo + appliesToVerdict routing
  * - validate fn converts acceptance failures to Finding[]
  * - _acceptanceFixCycleDeps.runFixCycle is called with correct cycleName
- * - cycleV2 flag gates the new path in runAcceptanceLoop
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -49,11 +48,11 @@ function makePrd(): PRD {
   };
 }
 
-function makeCtx(cycleV2 = true): AcceptanceLoopContext {
+function makeCtx(): AcceptanceLoopContext {
   const config = makeNaxConfig({
     acceptance: {
       maxRetries: 3,
-      fix: { cycleV2, strategy: "diagnose-first" },
+      fix: { strategy: "diagnose-first" },
     },
   });
   const runtime = makeMockRuntime({ config });
@@ -380,7 +379,7 @@ describe("strategy buildInput closures", () => {
     expect(input.testOutput).toBe("initial output");
   });
 
-  test("test-fix buildInput passes priorIterations to buildPriorIterationsBlock", async () => {
+  test("test-fix buildInput returns expected fields", async () => {
     let capturedCycle: FixCycle<Finding> | undefined;
     _acceptanceFixCycleDeps.runFixCycle = mock(async (cycle) => {
       capturedCycle = cycle;
@@ -390,9 +389,9 @@ describe("strategy buildInput closures", () => {
     await runAcceptanceFixCycle(makeCtx(), makePrd(), { failedACs: [], testOutput: "" }, makeDiagnosis(), "", "");
 
     const testStrategy = capturedCycle!.strategies[1];
-    // empty priorIterations → previousFailure should be empty string
     const inputEmpty = testStrategy.buildInput([], [], {} as never) as Record<string, unknown>;
-    expect(typeof inputEmpty.previousFailure).toBe("string");
+    expect(inputEmpty.testOutput).toBe("");
+    expect(inputEmpty.failedACs).toEqual([]);
   });
 });
 

@@ -5,17 +5,11 @@
  * Distinct cognitive stance from semantic review:
  *   - Semantic asks: "Does this satisfy the acceptance criteria?"
  *   - Adversarial asks: "Where does this break? What is missing?"
- *
- * Reuses PriorFailure and buildAttemptContextBlock from review-builder.ts.
  */
 
 import type { Iteration } from "../../findings";
 import type { AdversarialReviewConfig, SemanticStory } from "../../review/types";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
-import { buildAttemptContextBlock } from "./review-builder";
-import type { PriorFailure } from "./review-builder";
-
-export type { PriorFailure };
 
 export interface TestInventory {
   /** Source files added in this story that have a matching test file */
@@ -33,8 +27,6 @@ export interface AdversarialReviewPromptOptions {
   storyGitRef?: string;
   /** Diff stat summary (used in both modes when available) */
   stat?: string;
-  /** Prior failure context for escalation attempts */
-  priorFailures?: PriorFailure[];
   /** Used when mode === "embedded": pre-computed test file audit */
   testInventory?: TestInventory;
   /** Project test file globs resolved by resolveTestFilePatterns(). */
@@ -241,7 +233,6 @@ export class AdversarialReviewPromptBuilder {
       diff,
       storyGitRef,
       stat,
-      priorFailures,
       testInventory,
       excludePatterns,
       testGlobs,
@@ -266,8 +257,6 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
       config.rules.length > 0
         ? `## Project-Specific Adversarial Rules\n\n${config.rules.map((r) => `- ${r}`).join("\n")}\n\n`
         : "";
-
-    const attemptBlock = buildAttemptContextBlock(priorFailures);
 
     let diffBlock: string;
     if (mode === "ref" && storyGitRef) {
@@ -294,7 +283,6 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
       customRulesBlock,
       OUTPUT_SCHEMA,
       "\n\n",
-      attemptBlock,
       diffBlock,
     ].join("");
   }

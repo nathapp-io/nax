@@ -1,10 +1,10 @@
 /**
  * ADR-022 Phase 3 — buildPriorIterationsBlock.
  *
- * Verdict-first table that replaces the three legacy carry-forward blocks:
- *   - buildPriorFindingsBlock (adversarial-review-builder.ts)
- *   - buildAttemptContextBlock (review-builder.ts)
- *   - previousFailure accumulator (acceptance-loop.ts)
+ * Verdict-first table that replaced the three legacy carry-forward blocks:
+ *   - buildPriorFindingsBlock (adversarial-review-builder.ts) — deleted in ADR-022 phase 5
+ *   - buildAttemptContextBlock (review-builder.ts) — deleted in ADR-022 phase 8
+ *   - previousFailure accumulator (acceptance-loop.ts) — deleted in ADR-022 phase 8
  *
  * Consumed by all rectifier-class prompts to carry iteration history forward
  * so the model can avoid repeating falsified hypotheses.

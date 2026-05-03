@@ -221,34 +221,7 @@ describe("AdversarialReviewPromptBuilder — custom rules", () => {
   });
 });
 
-// ─── prior failures ───────────────────────────────────────────────────────────
 
-describe("AdversarialReviewPromptBuilder — prior failures", () => {
-  test("prompt contains escalation attempt text when priorFailures are provided", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      priorFailures: [
-        {
-          stage: "review",
-          modelTier: "fast",
-        },
-      ],
-    });
-
-    expect(result).toContain("escalation attempt");
-  });
-
-  test("no escalation block when priorFailures is empty", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      priorFailures: [],
-    });
-
-    expect(result).not.toContain("escalation attempt");
-  });
-});
 
 // ─── output schema ────────────────────────────────────────────────────────────
 

@@ -138,11 +138,7 @@ export const _regenerateDeps = {
  * 4. Collect implementation context from git diff
  * 5. Run acceptance-setup stage to regenerate
  */
-export async function regenerateAcceptanceTest(
-  testPath: string,
-  acceptanceContext: PipelineContext,
-  previousFailure?: string,
-): Promise<boolean> {
+export async function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean> {
   const logger = getSafeLogger();
   const bakPath = `${testPath}.bak`;
 
@@ -214,11 +210,9 @@ export async function regenerateAcceptanceTest(
 
   const contextForSetup: PipelineContext & {
     implementationContext?: Array<{ path: string; content: string }>;
-    previousFailure?: string;
   } = {
     ...acceptanceContext,
     ...(implementationContext ? { implementationContext } : {}),
-    ...(previousFailure ? { previousFailure } : {}),
   };
 
   await _regenerateDeps.acceptanceSetupExecute(contextForSetup as PipelineContext);

@@ -4,13 +4,11 @@
  * Covers:
  * - resolveAcceptanceDiagnosis fast paths (no LLM call)
  * - resolveAcceptanceDiagnosis slow path (callOp invoked)
- * - applyFix op dispatch by verdict
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
-  _applyFixDeps,
-  applyFix,
+  _diagnosisDeps,
   resolveAcceptanceDiagnosis,
 } from "../../../../src/execution/lifecycle/acceptance-fix";
 import type { DiagnosisResult, SemanticVerdict } from "../../../../src/acceptance/types";
@@ -69,18 +67,14 @@ function makeDiagnosisOpts() {
   };
 }
 
-function makeApplyFixDiagnosis(verdict: DiagnosisResult["verdict"] = "source_bug"): DiagnosisResult {
-  return { verdict, reasoning: "test reasoning", confidence: 0.9 };
-}
-
-let savedCallOp: typeof _applyFixDeps.callOp;
+let savedCallOp: typeof _diagnosisDeps.callOp;
 
 beforeEach(() => {
-  savedCallOp = _applyFixDeps.callOp;
+  savedCallOp = _diagnosisDeps.callOp;
 });
 
 afterEach(() => {
-  _applyFixDeps.callOp = savedCallOp;
+  _diagnosisDeps.callOp = savedCallOp;
   mock.restore();
 });
 
@@ -89,7 +83,7 @@ afterEach(() => {
 describe("resolveAcceptanceDiagnosis() — fast paths", () => {
   test("implement-only strategy → source_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -106,7 +100,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("all semantic verdicts passed → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const verdicts: SemanticVerdict[] = [
       { storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 5, findings: [] },
@@ -128,7 +122,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test(">80% ACs failed → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -146,7 +140,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("AC-ERROR sentinel → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async () => { callOpCalled = true; return {} as any; };
+    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -162,9 +156,9 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("normal failure (no fast path) → callOp invoked", async () => {
     let callOpCalled = false;
-    _applyFixDeps.callOp = async (_callCtx, _op, _input) => {
+    _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as any;
+      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as unknown as DiagnosisResult;
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -181,30 +175,11 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     expect(result.verdict).toBe("source_bug");
   });
 
-  test("normal path passes previousFailure to callOp input", async () => {
-    let capturedInput: any;
-    _applyFixDeps.callOp = async (_callCtx, _op, input) => {
-      capturedInput = input;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as any;
-    };
-
-    await resolveAcceptanceDiagnosis({
-      ctx: makeAcceptanceCtx(true),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
-      totalACs: 10,
-      strategy: "diagnose-first",
-      semanticVerdicts: [],
-      diagnosisOpts: makeDiagnosisOpts(),
-      previousFailure: "PREVIOUS_MARKER",
-    });
-    expect(capturedInput?.previousFailure).toBe("PREVIOUS_MARKER");
-  });
-
   test("normal path passes semanticVerdicts to callOp input", async () => {
-    let capturedInput: any;
-    _applyFixDeps.callOp = async (_callCtx, _op, input) => {
-      capturedInput = input;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as any;
+    let capturedInput: Record<string, unknown> | undefined;
+    _diagnosisDeps.callOp = async (_callCtx, _op, input) => {
+      capturedInput = input as Record<string, unknown>;
+      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as unknown as DiagnosisResult;
     };
 
     const semanticVerdicts: SemanticVerdict[] = [
@@ -221,102 +196,5 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     });
 
     expect(capturedInput?.semanticVerdicts).toEqual(semanticVerdicts);
-  });
-});
-
-// ─── applyFix() ─────────────────────────────────────────────────────────────
-
-describe("applyFix()", () => {
-  test("source_bug verdict → calls acceptance-fix-source op once", async () => {
-    const opNames: string[] = [];
-    _applyFixDeps.callOp = mock(async (_ctx, op, _input) => {
-      opNames.push(op.name);
-      return { applied: true } as any;
-    });
-
-    const result = await applyFix({
-      ctx: makeAcceptanceCtx(true),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
-      diagnosis: makeApplyFixDiagnosis("source_bug"),
-    });
-
-    expect(opNames).toEqual(["acceptance-fix-source"]);
-    expect(result.cost).toBe(0);
-  });
-
-  test("test_bug verdict → calls acceptance-fix-test op once", async () => {
-    const opNames: string[] = [];
-    _applyFixDeps.callOp = mock(async (_ctx, op, _input) => {
-      opNames.push(op.name);
-      return { applied: true } as any;
-    });
-
-    const result = await applyFix({
-      ctx: makeAcceptanceCtx(true),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
-      diagnosis: makeApplyFixDiagnosis("test_bug"),
-    });
-
-    expect(opNames).toEqual(["acceptance-fix-test"]);
-    expect(result.cost).toBe(0);
-  });
-
-  test("both verdict → calls source fix then test fix in order", async () => {
-    const opNames: string[] = [];
-    _applyFixDeps.callOp = mock(async (_ctx, op, _input) => {
-      opNames.push(op.name);
-      return { applied: true } as any;
-    });
-
-    const result = await applyFix({
-      ctx: makeAcceptanceCtx(true),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
-      diagnosis: makeApplyFixDiagnosis("both"),
-    });
-
-    expect(opNames).toEqual(["acceptance-fix-source", "acceptance-fix-test"]);
-    expect(result.cost).toBe(0);
-  });
-
-  test("does not retry — callOp called exactly once per verdict branch", async () => {
-    _applyFixDeps.callOp = mock(async (_ctx, _op, _input) => ({ applied: true } as any));
-
-    await applyFix({
-      ctx: makeAcceptanceCtx(true),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
-      diagnosis: makeApplyFixDiagnosis("source_bug"),
-    });
-
-    expect((_applyFixDeps.callOp as ReturnType<typeof mock>).mock.calls.length).toBe(1);
-  });
-
-  test("passes previousFailure to acceptanceFixTestOp input", async () => {
-    let capturedInput: any;
-    _applyFixDeps.callOp = mock(async (_ctx, op, input) => {
-      if (op.name === "acceptance-fix-test") capturedInput = input;
-      return { applied: true } as any;
-    });
-
-    await applyFix({
-      ctx: makeAcceptanceCtx(true),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
-      diagnosis: makeApplyFixDiagnosis("test_bug"),
-      previousFailure: "PREVIOUS_MARKER",
-    });
-
-    expect(capturedInput?.previousFailure).toBe("PREVIOUS_MARKER");
-  });
-
-  test("returns { cost: 0 } when runtime not found", async () => {
-    _applyFixDeps.callOp = mock(async () => ({ applied: true } as any));
-
-    const result = await applyFix({
-      ctx: makeAcceptanceCtx(false),  // no runtime
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
-      diagnosis: makeApplyFixDiagnosis("source_bug"),
-    });
-
-    expect(result.cost).toBe(0);
-    expect((_applyFixDeps.callOp as ReturnType<typeof mock>).mock.calls.length).toBe(0);
   });
 });

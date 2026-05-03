@@ -5,7 +5,6 @@
  *   - autofix-implementer: source-targeted findings (maxAttempts from config)
  *   - autofix-test-writer: test-targeted findings (maxAttempts 1)
  *
- * Activated via quality.autofix.cycleV2 = true (default off).
  * Shadow mode writes divergence snapshots for comparison with legacy routing.
  *
  * Known V2 limitations (tracked for future iterations):

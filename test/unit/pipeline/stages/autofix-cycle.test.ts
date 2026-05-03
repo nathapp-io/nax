@@ -20,7 +20,7 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
       ...DEFAULT_CONFIG,
       quality: {
         ...DEFAULT_CONFIG.quality,
-        autofix: { enabled: true, maxAttempts: 2, maxTotalAttempts: 4, cycleV2: true },
+        autofix: { enabled: true, maxAttempts: 2, maxTotalAttempts: 4 },
       },
     } as PipelineContext["config"],
     prd: { feature: "phase7-test", stories: [] } as unknown as PipelineContext["prd"],

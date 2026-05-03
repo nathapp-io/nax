@@ -17,13 +17,11 @@ describe("AcceptanceFixConfig type (US-001)", () => {
       fixModel: "balanced",
       strategy: "diagnose-first",
       maxRetries: 2,
-      cycleV2: false,
     };
     expect(fix.diagnoseModel).toBe("fast");
     expect(fix.fixModel).toBe("balanced");
     expect(fix.strategy).toBe("diagnose-first");
     expect(fix.maxRetries).toBe(2);
-    expect(fix.cycleV2).toBe(false);
   });
 
   test("strategy accepts 'implement-only'", () => {
@@ -32,20 +30,8 @@ describe("AcceptanceFixConfig type (US-001)", () => {
       fixModel: "balanced",
       strategy: "implement-only",
       maxRetries: 2,
-      cycleV2: false,
     };
     expect(fix.strategy).toBe("implement-only");
-  });
-
-  test("cycleV2 defaults to false in schema", () => {
-    const fix: AcceptanceFixConfig = {
-      diagnoseModel: "fast",
-      fixModel: "balanced",
-      strategy: "diagnose-first",
-      maxRetries: 2,
-      cycleV2: false,
-    };
-    expect(fix.cycleV2).toBe(false);
   });
 });
 
@@ -56,7 +42,6 @@ describe("DEFAULT_CONFIG.acceptance.fix (US-001)", () => {
       fixModel: "balanced",
       strategy: "diagnose-first",
       maxRetries: 2,
-      cycleV2: false,
     });
   });
 

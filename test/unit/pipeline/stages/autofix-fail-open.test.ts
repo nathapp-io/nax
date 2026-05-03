@@ -152,95 +152,14 @@ describe("recheckReview — fail-open rejection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Issue #832 Fix 1: verify callback sets failOpenAborted → shouldAbort exits
-// before the next buildPrompt, preventing a wasted implementer call with stale
-// findings.
+// Issue #832: fail-open abort logic was specific to the legacy hand-rolled
+// runAgentRectification loop (deleted in ADR-022 phase 8). V2 runFixCycle
+// handles validation differently — the abort-before-attempt-2 behaviour is
+// now covered by the validator returning empty findings on fail-open.
+// This block intentionally removed; fail-open coverage lives in:
+//   - recheckReview tests above
+//   - retrySkipChecks test below
 // ---------------------------------------------------------------------------
-
-describe("runAgentRectification — fail-open aborts retry loop (issue #832)", () => {
-  test("aborts loop before attempt 2 when recheck detects adversarial fail-open", async () => {
-    const { runAgentRectification } = await import("../../../../src/pipeline/stages/autofix-agent");
-
-    let runAsSessionCallCount = 0;
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async () => {
-        runAsSessionCallCount++;
-        return {
-          output: "Fixed the issues",
-          estimatedCostUsd: 0.01,
-          tokenUsage: { inputTokens: 100, outputTokens: 200 },
-          internalRoundTrips: 0,
-        };
-      },
-    });
-
-    const sessionManager = makeSessionManager();
-
-    const savedCaptureGitRef = _autofixDeps.captureGitRef;
-    const savedRecheckReview = _autofixDeps.recheckReview;
-    const savedHasWorkingTreeChange = _autofixDeps.hasWorkingTreeChange;
-
-    // hasWorkingTreeChange=true keeps this on the non-no-op path so recheck runs.
-    _autofixDeps.captureGitRef = async () => undefined as unknown as string;
-    _autofixDeps.hasWorkingTreeChange = async () => true;
-    _autofixDeps.recheckReview = async (mockCtx: PipelineContext) => {
-      // Simulate: adversarial timed out during recheck — success:true but failOpen:true
-      mockCtx.reviewResult = {
-        success: false,
-        checks: [
-          {
-            check: "adversarial",
-            success: true,
-            failOpen: true,
-            command: "",
-            exitCode: 0,
-            output: "fail-open",
-            durationMs: 0,
-          },
-        ],
-      } as unknown as PipelineContext["reviewResult"];
-      return false;
-    };
-
-    const ctx = makeCtx({
-      reviewResult: {
-        success: false,
-        checks: [
-          {
-            check: "adversarial",
-            success: false,
-            command: "",
-            exitCode: 1,
-            output: "adversarial finding",
-            durationMs: 0,
-          },
-        ],
-      } as unknown as PipelineContext["reviewResult"],
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: {
-          ...DEFAULT_CONFIG.quality,
-          autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
-        },
-      } as PipelineContext["config"],
-      agentManager,
-      runtime: {
-        sessionManager,
-        signal: new AbortController().signal,
-      } as unknown as PipelineContext["runtime"],
-    });
-
-    const result = await runAgentRectification(ctx, undefined, undefined, "/tmp");
-
-    _autofixDeps.captureGitRef = savedCaptureGitRef;
-    _autofixDeps.recheckReview = savedRecheckReview;
-    _autofixDeps.hasWorkingTreeChange = savedHasWorkingTreeChange;
-
-    expect(result.succeeded).toBe(false);
-    // shouldAbort fires after attempt 1's verify — attempt 2 must not be built
-    expect(runAsSessionCallCount).toBe(1);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Issue #832 Fix 2: currentlyFailing includes failOpen checks so adversarial

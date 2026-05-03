@@ -211,8 +211,6 @@ export interface QualityConfig {
     rethinkAtAttempt?: number;
     /** Inject final-attempt urgency language on and after this autofix attempt number (default: 3) */
     urgencyAtAttempt?: number;
-    /** ADR-022 Phase 7: drive autofix via runFixCycle instead of hand-rolled loop (default: false) */
-    cycleV2?: boolean;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;
@@ -290,8 +288,6 @@ export interface AcceptanceFixConfig {
   strategy: "diagnose-first" | "implement-only";
   /** @deprecated Ignored — outer loop controls retries via acceptance.maxRetries. Kept for backward compat. */
   maxRetries: number;
-  /** ADR-022 phase 4: use runFixCycle for acceptance retries instead of the hand-rolled loop. Default off. */
-  cycleV2: boolean;
 }
 
 /** Acceptance validation config */

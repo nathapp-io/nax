@@ -1,22 +1,19 @@
 /**
- * Acceptance Fix — single-attempt fix orchestration.
+ * Acceptance Fix — diagnosis orchestration.
  *
  * Provides:
  * - resolveAcceptanceDiagnosis(): runs diagnosis or returns a fast-path verdict
- * - applyFix(): applies exactly one fix based on the diagnosis verdict
  *
  * Used by runAcceptanceLoop() — the loop owns retry logic, this module
- * applies one fix per iteration.
+ * resolves the diagnosis per iteration.
  */
 
-import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "../../acceptance/content-loader";
 import { loadSourceFilesForDiagnosis } from "../../acceptance/fix-diagnosis";
-import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import type { DiagnosisResult, SemanticVerdict } from "../../acceptance/types";
 import { NaxError } from "../../errors";
 import type { FixTarget } from "../../findings";
 import { getSafeLogger } from "../../logger";
-import { acceptanceDiagnoseOp, acceptanceFixSourceOp, acceptanceFixTestOp } from "../../operations";
+import { acceptanceDiagnoseOp } from "../../operations";
 import { callOp as _callOp } from "../../operations/call";
 import type { CallContext } from "../../operations/types";
 import { isTestLevelFailure } from "./acceptance-helpers";
@@ -52,11 +49,10 @@ export interface ResolveAcceptanceDiagnosisOptions {
     workdir: string;
     storyId?: string;
   };
-  previousFailure?: string;
 }
 
-/** Injectable dependencies for resolveAcceptanceDiagnosis and applyFix. */
-export const _applyFixDeps = {
+/** Injectable dependencies for resolveAcceptanceDiagnosis. */
+export const _diagnosisDeps = {
   callOp: _callOp as typeof _callOp,
 };
 
@@ -68,11 +64,11 @@ export const _applyFixDeps = {
  * - All semantic verdicts passed → test_bug
  * - >80% ACs failed OR AC-ERROR sentinel → test_bug
  *
- * Otherwise calls acceptanceDiagnoseOp via callOp with previousFailure context.
+ * Otherwise calls acceptanceDiagnoseOp via callOp.
  */
 export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosisOptions): Promise<DiagnosisResult> {
   const logger = getSafeLogger();
-  const { ctx, failures, totalACs, strategy, semanticVerdicts, diagnosisOpts, previousFailure } = opts;
+  const { ctx, failures, totalACs, strategy, semanticVerdicts, diagnosisOpts } = opts;
   const storyId = diagnosisOpts.storyId;
 
   // Fast path 1: implement-only strategy bypasses diagnosis
@@ -118,12 +114,11 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
 
   // Slow path: full LLM diagnosis via callOp
   const sourceFiles = await loadSourceFilesForDiagnosis(diagnosisOpts.testFileContent, diagnosisOpts.workdir);
-  return await _applyFixDeps.callOp(fixCallCtx(ctx), acceptanceDiagnoseOp, {
+  return await _diagnosisDeps.callOp(fixCallCtx(ctx), acceptanceDiagnoseOp, {
     testOutput: diagnosisOpts.testOutput,
     testFileContent: diagnosisOpts.testFileContent,
     sourceFiles,
     semanticVerdicts,
-    previousFailure,
   });
 }
 
@@ -147,95 +142,4 @@ function buildDiagnosisReasoning(diagnosis: DiagnosisResult, fixTarget: FixTarge
     return `- ${f.message}${loc}${f.suggestion ? ` → ${f.suggestion}` : ""}`;
   });
   return `${diagnosis.reasoning}\n\nFindings:\n${lines.join("\n")}`;
-}
-
-// ─── applyFix ───────────────────────────────────────────────────────────────
-
-export interface ApplyFixOptions {
-  ctx: AcceptanceLoopContext;
-  failures: { failedACs: string[]; testOutput: string };
-  diagnosis: DiagnosisResult;
-  previousFailure?: string;
-}
-
-export interface ApplyFixResult {
-  cost: number;
-}
-
-/**
- * Apply exactly one fix attempt based on the diagnosis verdict.
- *
- * - source_bug: calls acceptanceFixSourceOp once
- * - test_bug:   calls acceptanceFixTestOp once (surgical, in-place)
- * - both:       calls acceptanceFixSourceOp then acceptanceFixTestOp in sequence
- *
- * Does NOT run acceptance tests — the outer loop re-tests after each call.
- * Does NOT have an inner retry loop — each attempt is single-shot.
- * Returns only cost (no fixed boolean) — the outer loop checks success via re-test.
- */
-export async function applyFix(opts: ApplyFixOptions): Promise<ApplyFixResult> {
-  const logger = getSafeLogger();
-  const { ctx, failures, diagnosis, previousFailure } = opts;
-  const storyId = ctx.prd.userStories[0]?.id ?? "unknown";
-
-  if (!ctx.runtime) {
-    logger?.error("acceptance.applyFix", "Runtime not found", { storyId });
-    return { cost: 0 };
-  }
-
-  // Resolve test file content + path (per-package aware)
-  const testPaths = ctx.acceptanceTestPaths;
-  let testFileContent = "";
-  let acceptanceTestPath = "";
-
-  if (testPaths && testPaths.length > 0) {
-    const pathStrings = testPaths.map((p) => (typeof p === "string" ? p : p.testPath));
-    const moduleEntries = await loadAcceptanceTestContentModule(pathStrings);
-    if (moduleEntries.length > 0) {
-      testFileContent = moduleEntries[0].content;
-      acceptanceTestPath = moduleEntries[0].testPath;
-    }
-  } else if (ctx.featureDir) {
-    const fallbackPath = resolveAcceptanceFeatureTestPath(
-      ctx.featureDir,
-      ctx.config.acceptance.testPath,
-      ctx.config.project?.language,
-    );
-    const moduleEntries = await loadAcceptanceTestContentModule(fallbackPath);
-    if (moduleEntries.length > 0) {
-      testFileContent = moduleEntries[0].content;
-      acceptanceTestPath = moduleEntries[0].testPath;
-    }
-  }
-
-  const callCtx = fixCallCtx(ctx);
-
-  const sourceDiagnosisReasoning = buildDiagnosisReasoning(diagnosis, "source");
-  const testDiagnosisReasoning = buildDiagnosisReasoning(diagnosis, "test");
-
-  if (diagnosis.verdict === "source_bug" || diagnosis.verdict === "both") {
-    logger?.info("acceptance.applyFix", "Applying source fix", { storyId, verdict: diagnosis.verdict });
-    await _applyFixDeps.callOp(callCtx, acceptanceFixSourceOp, {
-      testOutput: failures.testOutput,
-      diagnosisReasoning: sourceDiagnosisReasoning,
-      acceptanceTestPath,
-      testFileContent,
-    });
-    logger?.info("acceptance.source-fix", "Source fix completed", { storyId });
-  }
-
-  if (diagnosis.verdict === "test_bug" || diagnosis.verdict === "both") {
-    logger?.info("acceptance.applyFix", "Applying test fix", { storyId, verdict: diagnosis.verdict });
-    await _applyFixDeps.callOp(callCtx, acceptanceFixTestOp, {
-      testOutput: failures.testOutput,
-      diagnosisReasoning: testDiagnosisReasoning,
-      failedACs: failures.failedACs,
-      acceptanceTestPath,
-      testFileContent,
-      previousFailure,
-    });
-    logger?.info("acceptance.test-fix", "Test fix completed", { storyId });
-  }
-
-  return { cost: 0 };
 }
