@@ -296,7 +296,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     const categorization = categorizeVerdict(verdict, verdict.tests.allPassing);
 
     if (categorization.success) {
-      logger.info("tdd", "[OK] Verifier verdict: approved", {
+      logger.info("tdd", "[OK] Verifier verdict: accepted", {
         storyId: story.id,
         verdictApproved: verdict.approved,
         testsAllPassing: verdict.tests.allPassing,

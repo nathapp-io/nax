@@ -17,16 +17,13 @@ After completing your verification, you **MUST** write a verdict file at the **p
 **File:** \`.nax-verifier-verdict.json\`
 
 Set \`approved: true\` when ALL of these conditions are met:
-- All story-scoped tests pass (the orchestrator already confirmed the full suite passes — you only need to verify the story's own tests)
-- Implementation is clean and follows conventions
-- All acceptance criteria met
+- All story-scoped tests pass (the orchestrator already attempted the full-suite gate — you only need to verify the story's own tests)
 - Any test modifications by implementer are legitimate fixes
 
 Set \`approved: false\` when ANY of these conditions are true:
 - Tests are failing and you cannot fix them
 - The implementer loosened test assertions to mask bugs
-- Critical acceptance criteria are not met
-- Code quality is poor (security issues, severe bugs, etc.)
+- The implementer made illegitimate test changes
 
 **JSON schema** (fill in all fields with real values):
 
@@ -37,8 +34,9 @@ Set \`approved: false\` when ANY of these conditions are true:
 **Field notes:**
 - \`quality.rating\` must be one of: \`"good"\`, \`"acceptable"\`, \`"poor"\`
 - \`testModifications.files\` — list any test files the implementer changed
-- \`fixes\` — list any fixes you applied yourself during this verification session
+- \`acceptanceCriteria\` and \`quality\` are advisory in this TDD verifier verdict; do not use them to reject semantic correctness
+- \`fixes\` — keep this empty; the verifier must not apply code or test fixes
 - \`reasoning\` — brief summary of your overall assessment
 
-When done, commit any fixes with message: "fix: verify and adjust ${story.title}"`;
+When done, do not commit code changes. Only write the verdict file.`;
 }

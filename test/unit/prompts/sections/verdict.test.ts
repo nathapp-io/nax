@@ -50,4 +50,10 @@ describe("buildVerdictSection", () => {
     expect(result).toContain("Set `approved: true`");
     expect(result).toContain("Set `approved: false`");
   });
+
+  test("marks acceptance criteria and quality fields advisory", () => {
+    const result = buildVerdictSection(mockStory);
+    expect(result).toContain("advisory");
+    expect(result).toContain("do not use them to reject semantic correctness");
+  });
 });

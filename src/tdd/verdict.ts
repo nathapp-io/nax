@@ -88,9 +88,8 @@ export interface VerdictCategorization {
  * - verdict.approved = true → success
  * - Not approved, illegitimate test mods → verifier-rejected
  * - Not approved, tests failing → tests-failing
- * - Not approved, criteria not met → verifier-rejected
- * - Not approved, poor quality → verifier-rejected
- * - Not approved, other → verifier-rejected (catch-all)
+ * - Not approved for semantic AC/quality concerns only → success (advisory; semantic review owns these)
+ * - Not approved, other → success (advisory; verifier only blocks TDD integrity failures)
  * - null verdict, testsPass=true → success
  * - null verdict, testsPass=false → tests-failing
  */
@@ -127,26 +126,5 @@ export function categorizeVerdict(verdict: VerifierVerdict | null, testsPass: bo
     };
   }
 
-  if (!verdict.acceptanceCriteria.allMet) {
-    const unmet = verdict.acceptanceCriteria.criteria.filter((c) => !c.met).map((c) => c.criterion);
-    return {
-      success: false,
-      failureCategory: "verifier-rejected",
-      reviewReason: `Acceptance criteria not met: ${unmet.join("; ")}`,
-    };
-  }
-
-  if (verdict.quality.rating === "poor") {
-    return {
-      success: false,
-      failureCategory: "verifier-rejected",
-      reviewReason: `Poor code quality: ${verdict.quality.issues.join("; ")}`,
-    };
-  }
-
-  return {
-    success: false,
-    failureCategory: "verifier-rejected",
-    reviewReason: verdict.reasoning || "Verifier rejected without specific reason",
-  };
+  return { success: true };
 }

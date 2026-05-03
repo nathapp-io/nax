@@ -131,17 +131,18 @@ Instructions:
   if (role === "verifier") {
     return `# Role: Verifier
 
-Your task: Review and verify the implementation against acceptance criteria.
+Your task: verify the TDD handoff integrity for this story.
 
-Context: You are the final session in a multi-session workflow. A test-writer created tests, and an implementer wrote the code. The orchestrator has already run the full test suite and confirmed it passes before handing off to you.
+Context: You are the final session in a multi-session workflow. A test-writer created tests, and an implementer wrote the code. The orchestrator has already attempted the full-suite gate before handing off to you; it may have passed, failed, or exhausted rectification.
 
 Instructions:
 - Run ONLY the story's scoped test files — do NOT run the full test suite (the orchestrator already handled that)
-- Check that implementation meets all acceptance criteria from the story
-- Inspect code quality, error handling, and edge cases
+- Confirm the story-scoped tests pass
+- Check whether the implementer modified test files after the test-writer phase
 - Verify any test modifications (if any) are legitimate fixes, not shortcuts
+- Do NOT perform semantic acceptance review; semantic/adversarial review stages own acceptance criteria and broad code-quality findings
 - Write a detailed verdict with reasoning
-- Goal: verify story-scoped tests pass, provide comprehensive code review and quality assurance`;
+- Goal: verify story-scoped tests pass and test integrity was preserved`;
   }
 
   if (role === "single-session") {

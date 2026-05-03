@@ -440,9 +440,9 @@ describe("categorizeVerdict", () => {
     expect(result.reviewReason).toContain("3 failure(s)");
   });
 
-  // --- acceptance criteria not met ---
+  // --- advisory acceptance criteria / quality ---
 
-  test("acceptance criteria not met → verifier-rejected", () => {
+  test("acceptance criteria not met only → advisory success", () => {
     const verdict = makeVerdict({
       approved: false,
       tests: { allPassing: true, passCount: 10, failCount: 0 },
@@ -455,14 +455,12 @@ describe("categorizeVerdict", () => {
       },
     });
     const result = categorizeVerdict(verdict, true);
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("verifier-rejected");
-    expect(result.reviewReason).toContain("Must validate input");
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+    expect(result.reviewReason).toBeUndefined();
   });
 
-  // --- poor quality ---
-
-  test("poor quality → verifier-rejected", () => {
+  test("poor quality only → advisory success", () => {
     const verdict = makeVerdict({
       approved: false,
       tests: { allPassing: true, passCount: 10, failCount: 0 },
@@ -476,10 +474,9 @@ describe("categorizeVerdict", () => {
       },
     });
     const result = categorizeVerdict(verdict, true);
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("verifier-rejected");
-    expect(result.reviewReason).toContain("SQL injection vulnerability");
-    expect(result.reviewReason).toContain("No error handling");
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+    expect(result.reviewReason).toBeUndefined();
   });
 
   test("acceptable quality → does not trigger poor-quality rejection", () => {
@@ -497,14 +494,13 @@ describe("categorizeVerdict", () => {
       reasoning: "Overall acceptable but not approved for other reason",
     });
     const result = categorizeVerdict(verdict, true);
-    // Falls to catch-all
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("verifier-rejected");
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
   });
 
-  // --- catch-all: not approved without specific categorizable reason ---
+  // --- catch-all: not approved without TDD integrity failure ---
 
-  test("not approved with no specific categorizable reason → verifier-rejected (catch-all)", () => {
+  test("not approved with no TDD integrity failure → advisory success", () => {
     const verdict = makeVerdict({
       approved: false,
       tests: { allPassing: true, passCount: 10, failCount: 0 },
@@ -514,9 +510,9 @@ describe("categorizeVerdict", () => {
       reasoning: "Something else is wrong.",
     });
     const result = categorizeVerdict(verdict, true);
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("verifier-rejected");
-    expect(result.reviewReason).toContain("Something else is wrong.");
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+    expect(result.reviewReason).toBeUndefined();
   });
 
   // --- null verdict fallback ---
@@ -552,7 +548,7 @@ describe("categorizeVerdict", () => {
     expect(result.reviewReason).toContain("illegitimate test modifications");
   });
 
-  test("failing tests take priority over acceptance criteria", () => {
+  test("failing tests still block when acceptance criteria are also unmet", () => {
     const verdict = makeVerdict({
       approved: false,
       tests: { allPassing: false, passCount: 1, failCount: 2 },
@@ -571,7 +567,7 @@ describe("categorizeVerdict", () => {
     expect(result.failureCategory).toBe("tests-failing");
   });
 
-  test("acceptance criteria not met takes priority over poor quality", () => {
+  test("acceptance criteria plus poor quality without TDD integrity failure → advisory success", () => {
     const verdict = makeVerdict({
       approved: false,
       tests: { allPassing: true, passCount: 10, failCount: 0 },
@@ -588,7 +584,8 @@ describe("categorizeVerdict", () => {
       quality: { rating: "poor", issues: ["Very bad"] },
     });
     const result = categorizeVerdict(verdict, true);
-    expect(result.failureCategory).toBe("verifier-rejected");
-    expect(result.reviewReason).toContain("Criterion A");
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+    expect(result.reviewReason).toBeUndefined();
   });
 });

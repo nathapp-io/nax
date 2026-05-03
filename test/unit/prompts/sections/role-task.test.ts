@@ -83,6 +83,19 @@ describe("buildRoleTaskSection — verifier role", () => {
     const result = buildRoleTaskSection("verifier");
     expect(result).not.toContain("Write tests first");
   });
+
+  test("keeps semantic acceptance review out of verifier role", () => {
+    const result = buildRoleTaskSection("verifier");
+    expect(result).toContain("TDD handoff integrity");
+    expect(result).toContain("Do NOT perform semantic acceptance review");
+  });
+
+  test("does not claim the full-suite gate already passed", () => {
+    const result = buildRoleTaskSection("verifier");
+    expect(result).toContain("attempted the full-suite gate");
+    expect(result).toContain("may have passed, failed, or exhausted rectification");
+    expect(result).not.toContain("confirmed it passes");
+  });
 });
 
 describe("buildRoleTaskSection — single-session role", () => {
