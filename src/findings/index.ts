@@ -1,16 +1,14 @@
 /**
- * src/findings — unified Finding wire format.
+ * src/findings — unified Finding wire format (ADR-021) and cycle orchestration
+ * types + runtime (ADR-022).
  *
- * ADR-021 phase 1: types only, no behaviour. Producers migrate to emit
- * Finding[] in subsequent phases.
+ * ADR-021: Finding wire format — types, severity ordering, stable identity key,
+ * and per-producer adapter converters.
  *
- * Phase 2: plugin reviewer adapter. Converts ReviewFinding → Finding at the
- * IReviewPlugin call site. Plugin contract (ReviewFinding) unchanged.
+ * ADR-022 Phase 1: cycle orchestration types — Iteration, FixApplied,
+ * FixStrategy, FixCycle, FixCycleResult, FixCycleContext, FixCycleConfig.
  *
- * Orchestration (Iteration, FixApplied, FixStrategy, runFixCycle, …) lives
- * in ADR-022 and will arrive in a separate file (e.g. cycle-types.ts) once
- * that ADR's phase 1 PR begins. Consumers should import only the wire-format
- * types from here for now.
+ * ADR-022 Phase 2: runFixCycle and classifyOutcome behaviour.
  */
 
 export type {
@@ -32,3 +30,17 @@ export {
   tscDiagnosticToFinding,
 } from "./adapters";
 export { rebaseToWorkdir } from "./path-utils";
+
+export type {
+  FixApplied,
+  FixCycle,
+  FixCycleConfig,
+  FixCycleContext,
+  FixCycleExitReason,
+  FixCycleResult,
+  FixStrategy,
+  Iteration,
+  IterationOutcome,
+} from "./cycle-types";
+
+export { classifyOutcome, runFixCycle, _cycleDeps } from "./cycle";
