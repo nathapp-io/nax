@@ -85,7 +85,7 @@ export interface RunSemanticReviewOptions {
   naxConfig?: ReviewConfig;
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
-  priorFailures?: Array<{ stage: string; modelTier: string }>;
+  priorSemanticIterations?: import("../findings").Iteration[];
   blockingThreshold?: "error" | "warning" | "info";
   featureContextMarkdown?: string;
   contextBundle?: import("../context/engine").ContextBundle;
@@ -107,7 +107,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     naxConfig,
     featureName,
     resolverSession,
-    priorFailures,
+    priorSemanticIterations,
     blockingThreshold,
     featureContextMarkdown,
     contextBundle,
@@ -236,7 +236,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     diff,
     storyGitRef: effectiveRef,
     stat,
-    priorFailures,
+    priorSemanticIterations,
     excludePatterns: semanticConfig.excludePatterns,
   });
   const prompt = featureCtxBlock ? `${featureCtxBlock}${basePrompt}` : basePrompt;
@@ -315,7 +315,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       diff,
       storyGitRef: effectiveRef,
       stat,
-      priorFailures,
+      priorSemanticIterations,
       excludePatterns,
       featureCtxBlock,
       blockingThreshold,

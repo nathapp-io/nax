@@ -1,16 +1,16 @@
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
+import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
-import type { PriorFailure } from "../prompts";
 import { looksLikeTruncatedJson } from "../review/truncation";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBody, LlmReviewFinding, LlmReviewOutput, RunOperation } from "./types";
 import { parseLlmReviewShape } from "./types";
 
-export type { PriorFailure, SemanticReviewConfig, SemanticStory };
+export type { SemanticReviewConfig, SemanticStory };
 
 export interface SemanticReviewInput {
   story: SemanticStory;
@@ -19,7 +19,7 @@ export interface SemanticReviewInput {
   diff?: string;
   storyGitRef?: string;
   stat?: string;
-  priorFailures?: PriorFailure[];
+  priorSemanticIterations?: Iteration[];
   excludePatterns?: string[];
   /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
   featureCtxBlock?: string;
@@ -85,7 +85,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       diff: input.diff,
       storyGitRef: input.storyGitRef,
       stat: input.stat,
-      priorFailures: input.priorFailures,
+      priorSemanticIterations: input.priorSemanticIterations,
       excludePatterns: input.excludePatterns,
     });
     const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;

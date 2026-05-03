@@ -244,6 +244,11 @@ export interface PipelineContext extends DispatchContext {
    * buildPriorIterationsBlock so the reviewer sees prior-round findings verdict-first.
    */
   priorAdversarialIterations?: Iteration[];
+  /**
+   * Carry-forward iteration history for semantic review rounds (ADR-022 phase 6).
+   * Mirrors priorAdversarialIterations: appended on failure, cleared on pass.
+   */
+  priorSemanticIterations?: Iteration[];
 }
 
 /**

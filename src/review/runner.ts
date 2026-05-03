@@ -35,6 +35,7 @@ export interface RunReviewOptions {
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
+  priorSemanticIterations?: Iteration[];
   featureContextMarkdown?: string;
   contextBundles?: {
     semantic?: import("../context/engine").ContextBundle;
@@ -245,6 +246,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
     featureName,
     resolverSession,
     priorFailures,
+    priorSemanticIterations,
     featureContextMarkdown,
     contextBundles,
     projectDir,
@@ -339,7 +341,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         naxConfig,
         featureName,
         resolverSession,
-        priorFailures,
+        priorSemanticIterations,
         blockingThreshold: config.blockingThreshold,
         featureContextMarkdown,
         contextBundle: contextBundles?.semantic,

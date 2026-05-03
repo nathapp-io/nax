@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { Iteration } from "../../../src/findings";
 import { ReviewPromptBuilder } from "../../../src/prompts";
 import type { SemanticReviewConfig, SemanticStory } from "../../../src/review/types";
 
@@ -131,6 +132,48 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
       expect(result).toMatch(/observed.*(verbatim|copy-pasted|exact)/i);
       expect(result).toContain("not a description");
     });
+  });
+});
+
+describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — priorSemanticIterations", () => {
+  const builder = new ReviewPromptBuilder();
+
+  test("omits prior iterations block when priorSemanticIterations is undefined", () => {
+    const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
+    expect(result).not.toContain("## Prior Iterations");
+  });
+
+  test("omits prior iterations block when priorSemanticIterations is empty array", () => {
+    const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, {
+      mode: "embedded",
+      diff: DIFF,
+      priorSemanticIterations: [],
+    });
+    expect(result).not.toContain("## Prior Iterations");
+  });
+
+  test("includes prior iterations table when priorSemanticIterations has entries", () => {
+    const iteration: Iteration = {
+      iterationNum: 1,
+      findingsBefore: [],
+      fixesApplied: [],
+      findingsAfter: [
+        { source: "semantic-review", message: "AC 2 not wired", severity: "error", category: "ac-coverage" },
+      ],
+      outcome: "partial",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:01.000Z",
+    };
+    const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, {
+      mode: "embedded",
+      diff: DIFF,
+      priorSemanticIterations: [iteration],
+    });
+    expect(result).toContain("## Prior Iterations — verdict required before new analysis");
+    expect(result).toContain("| 1 |");
+    expect(result).toContain("partial");
+    expect(result).toContain("0 →");
+    expect(result).toContain("1 [ac-coverage]");
   });
 });
 
