@@ -16,6 +16,7 @@ import { filterContextByRole } from "../context";
 import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
 import { NaxError } from "../errors";
+import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { callOp as _callOp } from "../operations/call";
 import { semanticReviewOp } from "../operations/semantic-review";
@@ -85,7 +86,7 @@ export interface RunSemanticReviewOptions {
   naxConfig?: ReviewConfig;
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
-  priorSemanticIterations?: import("../findings").Iteration[];
+  priorSemanticIterations?: Iteration[];
   blockingThreshold?: "error" | "warning" | "info";
   featureContextMarkdown?: string;
   contextBundle?: import("../context/engine").ContextBundle;

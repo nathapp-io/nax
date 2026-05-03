@@ -240,12 +240,14 @@ export class ReviewOrchestrator {
         featureName,
         resolverSession,
         priorFailures,
+        priorSemanticIterations,
         featureContextMarkdown,
         contextBundles,
         projectDir,
         env,
         naxIgnoreIndex,
         runtime,
+        priorAdversarialIterations,
       });
     } else {
       // Split checks into ordered mechanical + LLM groups.
