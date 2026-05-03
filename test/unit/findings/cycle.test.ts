@@ -3,7 +3,7 @@ import type { CallOpFn } from "../../../src/findings/cycle";
 import { classifyOutcome, runFixCycle } from "../../../src/findings/cycle";
 import type { FixCycle, FixCycleContext, FixStrategy, Iteration } from "../../../src/findings";
 import type { Finding } from "../../../src/findings";
-import { makeNaxConfig } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -24,7 +24,7 @@ function makeCtx(): FixCycleContext {
   return {
     runtime: {
       configLoader: { current: () => config },
-      agentManager: { getDefault: () => "claude" } as FixCycleContext["runtime"]["agentManager"],
+      agentManager: makeMockAgentManager(),
       sessionManager: {} as FixCycleContext["runtime"]["sessionManager"],
       packages: { resolve: () => ({ select: () => config }) } as unknown as FixCycleContext["runtime"]["packages"],
       projectDir: "/tmp/test",
