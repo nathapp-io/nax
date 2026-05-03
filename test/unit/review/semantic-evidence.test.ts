@@ -124,7 +124,7 @@ describe("substantiateSemanticEvidence — ref mode", () => {
         issue: "hasContentChanged() ignores outgoing links",
         verifiedBy: {
           command: "Read src/foo.ts",
-          file: "apps/api/src/rag/rag.service.ts",
+          file: "src/foo.ts",
           line: 109,
           observed: "hasContentChanged only compares label, type, source_file — storedLinkMap captured on line 814",
         },
@@ -138,7 +138,7 @@ describe("substantiateSemanticEvidence — ref mode", () => {
       expect(downgradeCall?.stage).toBe("review");
       expect(downgradeCall?.data?.event).toBe("review.semantic.finding.downgraded");
       expect(downgradeCall?.data?.storyId).toBe(STORY_ID);
-      expect(downgradeCall?.data?.file).toBe("apps/api/src/rag/rag.service.ts");
+      expect(downgradeCall?.data?.file).toBe("src/foo.ts");
       expect(downgradeCall?.data?.line).toBe(109);
       expect(downgradeCall?.data?.issue).toBe("hasContentChanged() ignores outgoing links");
       expect(typeof downgradeCall?.data?.observed).toBe("string");
@@ -156,6 +156,71 @@ describe("substantiateSemanticEvidence — ref mode", () => {
       const result = await substantiateSemanticEvidence(findings, "ref", workdir, STORY_ID);
 
       expect(result.map((f) => f.severity)).toEqual(["warn", "info", "unverifiable"]);
+      expect(logger.calls.find((c) => c.message.includes("Downgraded"))).toBeUndefined();
+    });
+  });
+
+  test("preserves error finding when absolute verifiedBy.file does not exist on this machine", async () => {
+    await withTempDir(async (workdir) => {
+      // Simulates the real case: LLM ran its grep on a Mac against an absolute
+      // path that doesn't exist in the current environment (CI, Linux, different
+      // repo location). The file is unreadable, so we preserve rather than demote.
+      const finding = makeFinding({
+        verifiedBy: {
+          command: "grep -n 'deleteAllBySourceType' /Users/williamkhoo/repos/koda/apps/api/src/rag/rag.service.ts",
+          file: "/Users/williamkhoo/repos/koda/apps/api/src/rag/rag.service.ts",
+          line: 723,
+          observed: "const cleared = await this.deleteAllBySourceType(projectId, 'code');",
+        },
+      });
+
+      const result = await substantiateSemanticEvidence([finding], "ref", workdir, STORY_ID);
+
+      expect(result[0].severity).toBe("error");
+      expect(logger.calls.find((c) => c.message.includes("Downgraded"))).toBeUndefined();
+    });
+  });
+
+  test("downgrades error finding when absolute verifiedBy.file exists but snippet is absent", async () => {
+    await withTempDir(async (workdir) => {
+      // Write a real file at a known absolute path (temp dir) so the direct read
+      // succeeds, then verify that a non-matching observed still downgrades.
+      const absFile = join(workdir, "abs-target.ts");
+      writeFileSync(absFile, "export function realCode() { return 42; }\n");
+
+      const finding = makeFinding({
+        verifiedBy: {
+          command: `cat ${absFile}`,
+          file: absFile,
+          line: 1,
+          observed: "this snippet does not appear in the file at all",
+        },
+      });
+
+      const result = await substantiateSemanticEvidence([finding], "ref", workdir, STORY_ID);
+
+      expect(result[0].severity).toBe("unverifiable");
+      expect(logger.calls.find((c) => c.message.includes("Downgraded"))).toBeDefined();
+    });
+  });
+
+  test("preserves error finding when absolute verifiedBy.file exists and snippet matches", async () => {
+    await withTempDir(async (workdir) => {
+      const absFile = join(workdir, "abs-target.ts");
+      writeFileSync(absFile, "const cleared = await this.deleteAllBySourceType(projectId, 'code');\n");
+
+      const finding = makeFinding({
+        verifiedBy: {
+          command: `grep -n deleteAllBySourceType ${absFile}`,
+          file: absFile,
+          line: 1,
+          observed: "const cleared = await this.deleteAllBySourceType(projectId, 'code');",
+        },
+      });
+
+      const result = await substantiateSemanticEvidence([finding], "ref", workdir, STORY_ID);
+
+      expect(result[0].severity).toBe("error");
       expect(logger.calls.find((c) => c.message.includes("Downgraded"))).toBeUndefined();
     });
   });
