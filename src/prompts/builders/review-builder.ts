@@ -9,8 +9,10 @@
  * src/prompts, so importing semantic.ts here would form a cycle.
  */
 
+import type { Iteration } from "../../findings";
 import type { SemanticReviewConfig, SemanticStory } from "../../review/types";
 import { wrapJsonPrompt } from "../../utils/llm-json";
+import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -61,7 +63,7 @@ If all ACs are correctly implemented, respond with { "passed": true, "findings":
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
-/** Prior failure entry for attempt context */
+/** Prior failure entry used by the adversarial attempt context block. */
 export interface PriorFailure {
   stage: string;
   modelTier: string;
@@ -77,8 +79,8 @@ export interface SemanticReviewPromptOptions {
   storyGitRef?: string;
   /** Git diff --stat output (used when mode = "ref") */
   stat?: string;
-  /** Prior failure context for attempt awareness */
-  priorFailures?: PriorFailure[];
+  /** Prior semantic review iterations for carry-forward context (ADR-022 phase 6). */
+  priorSemanticIterations?: Iteration[];
   /** Exclude patterns for the self-serve diff command (mode = "ref") */
   excludePatterns?: string[];
 }
@@ -105,7 +107,7 @@ export class ReviewPromptBuilder {
       semanticConfig.rules.length > 0
         ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
         : "";
-    const attemptContextBlock = buildAttemptContextBlock(options.priorFailures);
+    const priorIterationsBlock = buildPriorIterationsBlock(options.priorSemanticIterations ?? []);
 
     let diffSection: string;
     if (options.mode === "ref") {
@@ -123,7 +125,7 @@ ${story.description}
 
 ### Acceptance Criteria
 ${acList}
-${customRulesBlock}${attemptContextBlock}${diffSection}
+${customRulesBlock}${priorIterationsBlock}${diffSection}
 ${SEMANTIC_INSTRUCTIONS}
 ${SEMANTIC_OUTPUT_SCHEMA}`;
 

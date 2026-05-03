@@ -145,6 +145,7 @@ export interface OrchestratorReviewOptions {
   featureName?: string;
   resolverSession?: import("./dialogue").ReviewerSession;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
+  priorSemanticIterations?: Iteration[];
   featureContextMarkdown?: string;
   contextBundles?: { semantic?: ContextBundle; adversarial?: ContextBundle };
   projectDir?: string;
@@ -173,6 +174,7 @@ export class ReviewOrchestrator {
       featureName,
       resolverSession,
       priorFailures,
+      priorSemanticIterations,
       featureContextMarkdown,
       contextBundles,
       projectDir,
@@ -238,12 +240,14 @@ export class ReviewOrchestrator {
         featureName,
         resolverSession,
         priorFailures,
+        priorSemanticIterations,
         featureContextMarkdown,
         contextBundles,
         projectDir,
         env,
         naxIgnoreIndex,
         runtime,
+        priorAdversarialIterations,
       });
     } else {
       // Split checks into ordered mechanical + LLM groups.
@@ -337,7 +341,7 @@ export class ReviewOrchestrator {
             naxConfig,
             featureName,
             resolverSession,
-            priorFailures,
+            priorSemanticIterations,
             blockingThreshold: reviewConfig.blockingThreshold,
             featureContextMarkdown,
             contextBundle: contextBundles?.semantic,
@@ -382,6 +386,7 @@ export class ReviewOrchestrator {
           featureName,
           resolverSession,
           priorFailures,
+          priorSemanticIterations,
           featureContextMarkdown,
           contextBundles,
           projectDir,
@@ -575,6 +580,7 @@ export class ReviewOrchestrator {
       featureName: ctx.prd.feature,
       resolverSession,
       priorFailures: ctx.story.priorFailures,
+      priorSemanticIterations: ctx.priorSemanticIterations,
       featureContextMarkdown: ctx.featureContextMarkdown,
       contextBundles,
       projectDir: ctx.projectDir,
@@ -616,6 +622,33 @@ export class ReviewOrchestrator {
       // Adversarial was skipped because it passed in the previous review pass.
       // Clear any stale iteration history — the reviewer already approved this code.
       ctx.priorAdversarialIterations = undefined;
+    }
+
+    // Update ctx.priorSemanticIterations for the next review round (ADR-022 phase 6).
+    // Mirrors the adversarial carry-forward pattern: append on failure, clear on pass.
+    // fixesApplied is always [] — semantic fixes run in the implementation session.
+    const semCheck = result.builtIn.checks?.find((c) => c.check === "semantic");
+    if (semCheck) {
+      if (!semCheck.success && !semCheck.skipped) {
+        const prior = ctx.priorSemanticIterations ?? [];
+        const findingsBefore = prior.length > 0 ? (prior[prior.length - 1].findingsAfter ?? []) : [];
+        const findingsAfter = semCheck.findings ?? [];
+        const now = new Date().toISOString();
+        const newIteration: Iteration = {
+          iterationNum: prior.length + 1,
+          findingsBefore,
+          fixesApplied: [],
+          findingsAfter,
+          outcome: classifyOutcome(findingsBefore, findingsAfter),
+          startedAt: now,
+          finishedAt: now,
+        };
+        ctx.priorSemanticIterations = [...prior, newIteration];
+      } else if (semCheck.success && !semCheck.skipped) {
+        ctx.priorSemanticIterations = undefined;
+      }
+    } else if (retrySkipChecks?.has("semantic")) {
+      ctx.priorSemanticIterations = undefined;
     }
 
     return result;

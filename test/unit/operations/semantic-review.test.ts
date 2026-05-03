@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { Iteration } from "../../../src/findings";
 import { makeTestRuntime } from "../../helpers";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
@@ -76,6 +77,37 @@ describe("semanticReviewOp.build()", () => {
     const embeddedInput: SemanticReviewInput = { ...SAMPLE_INPUT, mode: "embedded", diff: "+const x = 1;" };
     const result = semanticReviewOp.build(embeddedInput, ctx);
     expect(result.task.content).toContain("+const x = 1;");
+  });
+});
+
+describe("semanticReviewOp.build() — priorSemanticIterations", () => {
+  test("includes prior iterations block when priorSemanticIterations has entries", () => {
+    const ctx = makeBuildCtx();
+    const iteration: Iteration = {
+      iterationNum: 1,
+      findingsBefore: [],
+      fixesApplied: [],
+      findingsAfter: [
+        { source: "semantic-review", message: "handler not wired", severity: "error", category: "ac-coverage" },
+      ],
+      outcome: "partial",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:01.000Z",
+    };
+    const inputWithIterations: SemanticReviewInput = {
+      ...SAMPLE_INPUT,
+      priorSemanticIterations: [iteration],
+    };
+    const result = semanticReviewOp.build(inputWithIterations, ctx);
+    expect(result.task.content).toContain("## Prior Iterations — verdict required before new analysis");
+    expect(result.task.content).toContain("| 1 |");
+    expect(result.task.content).toContain("partial");
+  });
+
+  test("omits prior iterations block when priorSemanticIterations is undefined", () => {
+    const ctx = makeBuildCtx();
+    const result = semanticReviewOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).not.toContain("## Prior Iterations");
   });
 });
 
