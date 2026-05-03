@@ -585,12 +585,16 @@ export class ReviewOrchestrator {
     });
 
     // Update ctx.priorAdversarialIterations for the next review round (ADR-022 phase 5).
-    // When adversarial fails with blocking findings, append an Iteration so the next
-    // round's prompt carries them forward via buildPriorIterationsBlock (verdict-first).
+    // When adversarial fails, append an Iteration so the next round's prompt carries
+    // history forward via buildPriorIterationsBlock (verdict-first). This covers both
+    // structured-findings failures and looksLikeFail (truncated JSON / no findings array).
     // When adversarial passes, clear the history.
+    //
+    // fixesApplied is always [] here because adversarial fixes run in the implementation
+    // session outside this subsystem — there is no FixApplied op to record.
     const advCheck = result.builtIn.checks?.find((c) => c.check === "adversarial");
     if (advCheck) {
-      if (!advCheck.success && (advCheck.findings?.length ?? 0) > 0) {
+      if (!advCheck.success && !advCheck.skipped) {
         const prior = ctx.priorAdversarialIterations ?? [];
         const findingsBefore = prior.length > 0 ? (prior[prior.length - 1].findingsAfter ?? []) : [];
         const findingsAfter = advCheck.findings ?? [];

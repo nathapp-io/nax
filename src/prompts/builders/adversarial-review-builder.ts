@@ -54,6 +54,13 @@ export interface AdversarialReviewPromptOptions {
    * Prior adversarial review iterations (ADR-022 phase 5).
    * When set, injects buildPriorIterationsBlock instructing the reviewer to verdict
    * on unresolved prior-round issues before scanning for new ones.
+   *
+   * Trade-off (accepted, ADR-022): the block shows aggregated finding counts per
+   * iteration rather than per-finding detail (severity, file:line, message). This
+   * is intentional — individual findings appear in the current diff, and the LLM
+   * re-derives them from the code. The count table keeps token cost bounded across
+   * many rounds without repeating the full finding list. fixesApplied may be []
+   * for adversarial carry-forward iterations (fix ran in the implementation session).
    */
   priorAdversarialIterations?: Iteration[];
 }
