@@ -66,6 +66,7 @@ export {
   interactionConfigSelector,
   precheckConfigSelector,
   qualityConfigSelector,
+  autofixConfigSelector,
   testPatternConfigSelector,
   contextToolRuntimeConfigSelector,
   promptLoaderConfigSelector,
