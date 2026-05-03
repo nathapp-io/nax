@@ -148,17 +148,20 @@ describe("autofix session wiring (PROMPT-001)", () => {
 
     ctx.reviewResult = { success: false, checks: [makeFailedCheck("lint")], totalDurationMs: 100 };
 
-    const saved = { recheckReview: _autofixDeps.recheckReview, captureGitRef: _autofixDeps.captureGitRef };
+    const saved = {
+      recheckReview: _autofixDeps.recheckReview,
+      captureGitRef: _autofixDeps.captureGitRef,
+      hasWorkingTreeChange: _autofixDeps.hasWorkingTreeChange,
+    };
     _autofixDeps.recheckReview = async () => false;
-    // Different refs each time so no-op detection doesn't fire
-    let refCounter = 0;
-    _autofixDeps.captureGitRef = async () => `ref-${refCounter++}`;
+    _autofixDeps.hasWorkingTreeChange = async () => true;
 
     try {
       await _autofixDeps.runAgentRectification(ctx, undefined, undefined, WORKDIR);
     } finally {
       _autofixDeps.recheckReview = saved.recheckReview;
       _autofixDeps.captureGitRef = saved.captureGitRef;
+      _autofixDeps.hasWorkingTreeChange = saved.hasWorkingTreeChange;
     }
 
     expect(ctx.agentManager.runAsSession).toHaveBeenCalledTimes(2);
@@ -187,16 +190,20 @@ describe("autofix session wiring (PROMPT-001)", () => {
 
     ctx.reviewResult = { success: false, checks: [makeFailedCheck("lint")], totalDurationMs: 100 };
 
-    const saved = { recheckReview: _autofixDeps.recheckReview, captureGitRef: _autofixDeps.captureGitRef };
+    const saved = {
+      recheckReview: _autofixDeps.recheckReview,
+      captureGitRef: _autofixDeps.captureGitRef,
+      hasWorkingTreeChange: _autofixDeps.hasWorkingTreeChange,
+    };
     _autofixDeps.recheckReview = async () => false;
-    let refCounter = 0;
-    _autofixDeps.captureGitRef = async () => `ref-${refCounter++}`;
+    _autofixDeps.hasWorkingTreeChange = async () => true;
 
     try {
       await _autofixDeps.runAgentRectification(ctx, undefined, undefined, WORKDIR);
     } finally {
       _autofixDeps.recheckReview = saved.recheckReview;
       _autofixDeps.captureGitRef = saved.captureGitRef;
+      _autofixDeps.hasWorkingTreeChange = saved.hasWorkingTreeChange;
     }
 
     for (const call of ctx.agentManager.runAsSession.mock.calls as unknown[][]) {
