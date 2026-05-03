@@ -842,6 +842,9 @@ Same as phase 5, scoped to semantic review.
 | [src/config/selectors.ts](../../src/config/selectors.ts) | Expose flag |
 | `test/unit/pipeline/stages/autofix-cycle.test.ts` (new) | Cycle-driven autofix tests |
 | `test/integration/autofix/cycle-shadow.test.ts` (new) | Shadow-mode divergence detection |
+| [test/contract/autofix/fresh-failure-propagation.contract.test.ts](../../test/contract/autofix/fresh-failure-propagation.contract.test.ts) | **Un-skip the V2 assertion.** File added by [#808](https://github.com/nathapp-io/nax/issues/808) with the legacy assertion live and the V2 assertion `.skip`'d. Phase 7 PR enables the V2 branch — see §9.x "Strategy invariant" below. |
+
+> **Helper carry-forward note — `hasWorkingTreeChange`:** `src/utils/git.ts` exposes `hasWorkingTreeChange(workdir, baseRef)` (added by [#808](https://github.com/nathapp-io/nax/issues/808) to fix the legacy `noOp` detection). V2 does **not** need it — `runFixCycle`'s `IterationOutcome` is derived from the validator's `Finding[]` diff, not from git state. Phase 7 author should NOT add new callers; once legacy is deleted, the helper becomes a phase 8 deletion candidate (covered in §10).
 
 ### Strategy set
 
@@ -879,6 +882,18 @@ const strategies: FixStrategy<Finding, any, any, any>[] = [
 ```
 
 The "test-writer one-shot" pattern is preserved by `maxAttempts: 1` AND selector-based dropout: once test-writer fixes test findings, the validator returns no `fixTarget === "test"` findings, so test-writer's `appliesTo` returns false in subsequent iterations. No special "runOnce" modifier needed.
+
+### Strategy invariant — fresh validator output is the only truth
+
+V2 must preserve the invariant established by [#808](https://github.com/nathapp-io/nax/issues/808):
+
+> **Strategies' `appliesTo` and `buildInput` consume the latest `validate()` output, never a cycle-start snapshot. There is no fallback to `cycle.findings` once iterations have begun.**
+
+Legacy `runAgentRectification` originally violated this by re-emitting `initialFailure` from its no-op return sites — the prompt would re-ask the implementer to fix already-fixed problems while ignoring the genuinely-failing finding set just produced by `recheckReview`. #808 corrected legacy by threading `collectFreshFailure()` through both no-op branches.
+
+V2's `runFixCycle` is structurally aligned with this invariant — `validate()` returns `Finding[]` directly each iteration, `classifyOutcome` derives `IterationOutcome` from the pre/post diff, and `buildInput(findings, prior, ctx)` consumes the validator's latest output. Phase 7 author **must not** introduce a code path that falls back to `cycle.findings` (the cycle-start snapshot) for any iteration `n > 1`.
+
+The contract test `test/contract/autofix/fresh-failure-propagation.contract.test.ts` enforces this for both legacy (live, post-#808) and V2 (un-skipped in this phase). Both branches assert: when validator output flips between iterations (e.g. `build:fail → adversarial:fail`), the next strategy invocation receives the post-validator findings.
 
 ### Cycle entry
 
@@ -1006,13 +1021,15 @@ Refs: #867
 | [src/prompts/builders/review-builder.ts:65-68,186-211](../../src/prompts/builders/review-builder.ts#L65) | Delete `PriorFailure` and `buildAttemptContextBlock` |
 | [src/pipeline/stages/autofix-agent.ts](../../src/pipeline/stages/autofix-agent.ts), [autofix.ts](../../src/pipeline/stages/autofix.ts) | Delete legacy `runAgentRectification`; rename V2 to canonical |
 | [src/config/schemas.ts](../../src/config/schemas.ts) | Delete `acceptance.fix.cycleV2` and `quality.autofix.cycleV2` fields. **This is the sole authority for these deletions** — ADR-021 phase 9 must not delete them. |
+| [src/utils/git.ts](../../src/utils/git.ts) | Delete `hasWorkingTreeChange` (added by [#808](https://github.com/nathapp-io/nax/issues/808) for legacy `noOp` detection) **if** `git grep "hasWorkingTreeChange" -- 'src/'` shows no remaining callers. V2 does not need it — `IterationOutcome` is derived from validator findings, not git state. |
+| [test/contract/autofix/fresh-failure-propagation.contract.test.ts](../../test/contract/autofix/fresh-failure-propagation.contract.test.ts) | Drop the legacy assertion (the legacy code path is gone); keep the V2 assertion as the durable invariant guard. |
 | Various tests | Delete tests asserting on legacy field shapes / flag-off behaviour |
 
 ### Validation gate
 
 - `bun run typecheck` passes
 - Full test suite passes
-- `git grep "previousFailure\|AdversarialFindingsCache\|PriorFailure\|buildPriorFindingsBlock\|buildAttemptContextBlock\|cycleV2\|AcceptanceDiagnoseInput" -- 'src/'` returns nothing (or only valid non-deprecated usages of `AcceptanceDiagnoseInput`)
+- `git grep "previousFailure\|AdversarialFindingsCache\|PriorFailure\|buildPriorFindingsBlock\|buildAttemptContextBlock\|cycleV2\|AcceptanceDiagnoseInput\|hasWorkingTreeChange" -- 'src/'` returns nothing (or only valid non-deprecated usages of `AcceptanceDiagnoseInput`)
 - Feature flag config schema no longer mentions `cycleV2` fields
 - For full end-to-end coverage, also run the ADR-021 phase 9 gate: `git grep "LlmReviewFinding\|testIssues\|sourceIssues\|parseLlmReviewShape\|acceptanceLegacyToFindings\|findingsV2" -- 'src/'` returns nothing
 
