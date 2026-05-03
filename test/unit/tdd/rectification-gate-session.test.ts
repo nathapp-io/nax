@@ -102,6 +102,62 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("rectification session reuse", () => {
+  test("uses runtime runAsSession branch so each rectification attempt emits dispatch events", async () => {
+    const story = makeStory();
+    const config = makeConfig(2);
+    const handle = {
+      id: "nax-rectify",
+      agentName: "claude",
+      protocolIds: { recordId: "rec-1", sessionId: "sess-1" },
+    };
+
+    mockSuiteResults = [
+      { success: false, exitCode: 1, output: FAILING_OUTPUT },
+      { success: false, exitCode: 1, output: FAILING_OUTPUT },
+      { success: false, exitCode: 1, output: FAILING_OUTPUT },
+    ];
+
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runAsSessionFn: async () => ({
+        output: "fixed something",
+        tokenUsage: { inputTokens: 1, outputTokens: 2 },
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 1,
+      }),
+      runFn: async () => {
+        throw new Error("legacy run path should not be used when runtime is provided");
+      },
+    });
+    const runtime = {
+      sessionManager: {
+        openSession: mock(async () => handle),
+        closeSession: mock(async () => {}),
+      },
+      signal: new AbortController().signal,
+    };
+
+    await runFullSuiteGate(
+      story,
+      config,
+      "/tmp/fake-workdir",
+      agentManager,
+      "balanced",
+      true,
+      { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
+      "my-feature",
+      "/tmp/project",
+      undefined,
+      undefined,
+      runtime as any,
+    );
+
+    expect(agentManager.runAsSession).toHaveBeenCalledTimes(2);
+    expect(agentManager.run).not.toHaveBeenCalled();
+    expect(runtime.sessionManager.openSession).toHaveBeenCalledTimes(1);
+    expect(runtime.sessionManager.closeSession).toHaveBeenCalledTimes(1);
+  });
+
   test("all attempts use the same sessionRole", async () => {
     const story = makeStory();
     const config = makeConfig(2); // maxRetries=2

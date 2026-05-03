@@ -38,6 +38,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     _recursionDepth = 0,
     projectDir,
     agentManager,
+    runtime,
   } = options;
   const logger = getLogger();
 
@@ -270,6 +271,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     projectDir,
     implementerBinding?.sessionManager,
     implementerBinding?.sessionId,
+    runtime,
   );
 
   // Session 3: Verifier

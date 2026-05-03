@@ -38,6 +38,7 @@ function makeStubTurnResult(output = "agent output"): TurnResult {
     internalRoundTrips: 1,
     estimatedCostUsd: 0.001 ,
     exactCostUsd: 0.002,
+    protocolIds: { recordId: "rec-turn", sessionId: "sess-turn" },
   };
 }
 
@@ -123,6 +124,8 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     expect(hop.result.estimatedCostUsd).toBe(0.001);
     expect(hop.result.exactCostUsd).toBe(0.002);
     expect(hop.result.tokenUsage).toEqual(turnResult.tokenUsage);
+    expect(hop.result.protocolIds).toEqual({ recordId: "rec-turn", sessionId: "sess-turn" });
+    expect(hop.result.internalRoundTrips).toBe(1);
   });
 });
 

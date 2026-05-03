@@ -532,7 +532,11 @@ export class AgentManager implements IAgentManager {
     const sessionRole = handle.role ?? opts.sessionRole ?? "main";
     const start = Date.now();
     try {
-      const result = await this._sendPrompt(handle, prompt, opts);
+      const rawResult = await this._sendPrompt(handle, prompt, opts);
+      const result = {
+        ...rawResult,
+        protocolIds: rawResult.protocolIds ?? handle.protocolIds,
+      };
       const event: SessionTurnDispatchEvent = {
         kind: "session-turn",
         sessionName: handle.id,

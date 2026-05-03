@@ -157,6 +157,8 @@ export async function runTrackedSession(
   if (current?.state === "RUNNING") {
     state.transition(id, result.success ? "COMPLETED" : "FAILED");
   }
+  const protocolIds = result.protocolIds ?? current?.protocolIds;
+  const turn = Math.max((result as { internalRoundTrips?: number }).internalRoundTrips ?? 1, 1);
 
   const sessionName = state.nameFor({
     workdir: pre.workdir,
@@ -177,10 +179,10 @@ export async function runTrackedSession(
     featureName: pre.featureName,
     workdir: pre.workdir,
     resolvedPermissions,
-    turn: (result as { internalRoundTrips?: number }).internalRoundTrips ?? 0,
+    turn,
     protocolIds: {
-      sessionId: result.protocolIds?.sessionId ?? null,
-      recordId: result.protocolIds?.recordId ?? null,
+      sessionId: protocolIds?.sessionId ?? null,
+      recordId: protocolIds?.recordId ?? null,
     },
     origin: "runTrackedSession",
     tokenUsage: result.tokenUsage,

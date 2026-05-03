@@ -17,6 +17,7 @@ import type { IAgentManager } from "../../../src/agents/manager-types";
 import type { AgentRunRequest } from "../../../src/agents/manager-types";
 import type { AgentResult } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
+import { DispatchEventBus, type SessionTurnDispatchEvent } from "../../../src/runtime/dispatch-events";
 import { SessionManager } from "../../../src/session/manager";
 import { makeMockAgentManager } from "../../../test/helpers";
 
@@ -115,6 +116,23 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
     );
 
     expect(mgr.get(d.id)?.protocolIds).toEqual({ recordId: "rec-1", sessionId: "sess-1" });
+  });
+
+  test("dispatch event falls back to descriptor protocolIds and turn=1 when result omits metadata", async () => {
+    const bus = new DispatchEventBus();
+    const events: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((event) => {
+      if (event.kind === "session-turn") events.push(event);
+    });
+    const mgr = new SessionManager({ dispatchEvents: bus });
+    const d = mgr.create({ role: "main", agent: "claude", workdir: "/tmp/x", handle: "nax-test" });
+    mgr.bindHandle(d.id, "nax-test", { recordId: "rec-bound", sessionId: "sess-bound" });
+
+    await mgr.runInSession(d.id, makeAgentManager(makeResult()), makeRequest());
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.protocolIds).toEqual({ recordId: "rec-bound", sessionId: "sess-bound" });
+    expect(events[0]?.turn).toBe(1);
   });
 
   test("throws SESSION_NOT_FOUND for unknown id", async () => {

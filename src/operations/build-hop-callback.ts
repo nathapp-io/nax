@@ -65,6 +65,8 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
     estimatedCostUsd: r.estimatedCostUsd ?? 0,
     exactCostUsd: r.exactCostUsd,
     tokenUsage: r.tokenUsage,
+    protocolIds: r.protocolIds,
+    internalRoundTrips: r.internalRoundTrips,
   };
 }
 
