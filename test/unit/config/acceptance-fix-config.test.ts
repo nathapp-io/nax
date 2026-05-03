@@ -17,6 +17,7 @@ describe("AcceptanceFixConfig type (US-001)", () => {
       fixModel: "balanced",
       strategy: "diagnose-first",
       maxRetries: 2,
+      findingsV2: false,
     };
     expect(fix.diagnoseModel).toBe("fast");
     expect(fix.fixModel).toBe("balanced");
@@ -30,6 +31,7 @@ describe("AcceptanceFixConfig type (US-001)", () => {
       fixModel: "balanced",
       strategy: "implement-only",
       maxRetries: 2,
+      findingsV2: false,
     };
     expect(fix.strategy).toBe("implement-only");
   });
@@ -42,6 +44,7 @@ describe("DEFAULT_CONFIG.acceptance.fix (US-001)", () => {
       fixModel: "balanced",
       strategy: "diagnose-first",
       maxRetries: 2,
+      findingsV2: false,
     });
   });
 

@@ -238,6 +238,7 @@ export const NaxConfigSchema = z
         fixModel: "balanced",
         strategy: "diagnose-first",
         maxRetries: 2,
+        findingsV2: false,
       },
       hardening: { enabled: true },
     }),
