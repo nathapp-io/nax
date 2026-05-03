@@ -34,7 +34,15 @@ export interface Iteration<F extends Finding = Finding> {
   /** 1-indexed. */
   iterationNum: number;
   findingsBefore: F[];
-  /** At least one entry per iteration — one per strategy that ran. */
+  /**
+   * Strategies that ran during this iteration. At least one entry when the
+   * iteration is produced by runFixCycle (one per strategy that ran).
+   *
+   * Exception: carry-forward iterations recorded by review orchestrators
+   * (e.g. adversarial) have fixesApplied: [] because the fix ran in the
+   * implementation session outside the FixCycle. The rendered table shows "-"
+   * in the "Strategies run" column for these rows.
+   */
   fixesApplied: FixApplied[];
   findingsAfter: F[];
   outcome: IterationOutcome;

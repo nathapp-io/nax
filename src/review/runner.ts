@@ -7,6 +7,7 @@
 import type { IAgentManager } from "../agents";
 import type { ExecutionConfig, QualityConfig } from "../config/schema";
 import type { ReviewConfig as ReviewNaxConfig } from "../config/selectors";
+import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { runQualityCommand } from "../quality";
 import { autoCommitIfDirty } from "../utils/git";
@@ -15,7 +16,7 @@ import { runAdversarialReview as _runAdversarialReviewImpl } from "./adversarial
 import { resolveLanguageCommand } from "./language-commands";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { SemanticStory } from "./semantic";
-import type { AdversarialFindingsCache, ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 // Re-export for test compatibility
 export { resolveLanguageCommand };
@@ -43,7 +44,7 @@ export interface RunReviewOptions {
   env?: Record<string, string | undefined>;
   naxIgnoreIndex?: NaxIgnoreIndex;
   runtime?: import("../runtime").NaxRuntime;
-  priorAdversarialFindings?: AdversarialFindingsCache;
+  priorAdversarialIterations?: Iteration[];
 }
 
 /**
@@ -250,7 +251,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
     env,
     naxIgnoreIndex,
     runtime,
-    priorAdversarialFindings,
+    priorAdversarialIterations,
   } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -389,7 +390,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         projectDir,
         naxIgnoreIndex,
         runtime,
-        priorAdversarialFindings,
+        priorAdversarialIterations,
       });
       checks.push(result);
       if (!result.success && !firstFailure) {

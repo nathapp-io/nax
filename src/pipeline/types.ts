@@ -9,12 +9,13 @@ import type { NaxConfig } from "../config/schema";
 import type { ConstitutionResult } from "../constitution/types";
 import type { BuiltContext } from "../context/types";
 import type { Finding } from "../findings";
+import type { Iteration } from "../findings";
 import type { HooksConfig } from "../hooks/types";
 import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
-import type { AdversarialFindingsCache, ReviewResult } from "../review/types";
+import type { ReviewResult } from "../review/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { FailureCategory } from "../tdd/types";
 import type { VerifyResult } from "../verification/orchestrator-types";
@@ -237,12 +238,12 @@ export interface PipelineContext extends DispatchContext {
    */
   mechanicalFailedOnly?: boolean;
   /**
-   * Carry-forward cache for adversarial prior findings (issue #736).
-   * Set by reviewFromContext() when the adversarial check fails with blocking findings.
-   * Cleared when adversarial passes. Injected into the next round's prompt so the reviewer
-   * does not open a fresh session with no memory of what it already flagged.
+   * Carry-forward iteration history for adversarial review rounds (ADR-022 phase 5).
+   * Appended by reviewFromContext() when adversarial fails with blocking findings.
+   * Cleared when adversarial passes. Injected into the next round's prompt via
+   * buildPriorIterationsBlock so the reviewer sees prior-round findings verdict-first.
    */
-  priorAdversarialFindings?: AdversarialFindingsCache;
+  priorAdversarialIterations?: Iteration[];
 }
 
 /**

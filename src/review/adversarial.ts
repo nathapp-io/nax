@@ -19,6 +19,7 @@ import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
+import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
@@ -33,7 +34,7 @@ import {
 } from "./adversarial-helpers";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
-import type { AdversarialFindingsCache, AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
+import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
 export const _adversarialDeps = {
@@ -86,7 +87,7 @@ export interface RunAdversarialReviewOptions {
   projectDir?: string;
   naxIgnoreIndex?: NaxIgnoreIndex;
   runtime?: import("../runtime").NaxRuntime;
-  priorAdversarialFindings?: AdversarialFindingsCache;
+  priorAdversarialIterations?: Iteration[];
 }
 
 /**
@@ -109,7 +110,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     projectDir,
     naxIgnoreIndex,
     runtime,
-    priorAdversarialFindings,
+    priorAdversarialIterations,
   } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -267,7 +268,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       excludePatterns: adversarialConfig.excludePatterns,
       testGlobs: resolvedTestPatterns.globs,
       featureCtxBlock,
-      priorAdversarialFindings,
+      priorAdversarialIterations,
       blockingThreshold,
       refExcludePatterns: effectiveRefExcludePatterns,
     });

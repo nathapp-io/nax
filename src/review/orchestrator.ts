@@ -14,7 +14,8 @@ import type { IAgentManager } from "../agents";
 import type { NaxConfig } from "../config";
 import { assembleForStage } from "../context/engine";
 import type { ContextBundle } from "../context/engine";
-import { pluginToFinding } from "../findings";
+import { classifyOutcome, pluginToFinding } from "../findings";
+import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
@@ -26,7 +27,6 @@ import { runReview } from "./runner";
 import type { SemanticStory } from "./semantic";
 import { runSemanticReview } from "./semantic";
 import type {
-  AdversarialFindingsCache,
   AdversarialReviewConfig,
   ReviewCheckResult,
   ReviewConfig,
@@ -151,7 +151,7 @@ export interface OrchestratorReviewOptions {
   env?: Record<string, string | undefined>;
   naxIgnoreIndex?: NaxIgnoreIndex;
   runtime?: import("../runtime").NaxRuntime;
-  priorAdversarialFindings?: AdversarialFindingsCache;
+  priorAdversarialIterations?: Iteration[];
 }
 
 export class ReviewOrchestrator {
@@ -179,7 +179,7 @@ export class ReviewOrchestrator {
       env,
       naxIgnoreIndex,
       runtime,
-      priorAdversarialFindings,
+      priorAdversarialIterations,
     } = opts;
     const logger = getSafeLogger();
 
@@ -360,7 +360,7 @@ export class ReviewOrchestrator {
             projectDir,
             naxIgnoreIndex,
             runtime,
-            priorAdversarialFindings,
+            priorAdversarialIterations,
           }),
         ]);
         llmCheckResults = [semResult, advResult];
@@ -388,7 +388,7 @@ export class ReviewOrchestrator {
           env,
           naxIgnoreIndex,
           runtime,
-          priorAdversarialFindings,
+          priorAdversarialIterations,
         });
         llmCheckResults = llmResult.checks;
       }
@@ -581,26 +581,41 @@ export class ReviewOrchestrator {
       env: ctx.worktreeDependencyContext?.env,
       naxIgnoreIndex: ctx.naxIgnoreIndex,
       runtime: ctx.runtime,
-      priorAdversarialFindings: ctx.priorAdversarialFindings,
+      priorAdversarialIterations: ctx.priorAdversarialIterations,
     });
 
-    // Update ctx.priorAdversarialFindings for the next review round (issue #736).
-    // When adversarial fails with blocking findings, cache them so the next round's
-    // prompt carries them forward. When adversarial passes, clear the cache.
+    // Update ctx.priorAdversarialIterations for the next review round (ADR-022 phase 5).
+    // When adversarial fails, append an Iteration so the next round's prompt carries
+    // history forward via buildPriorIterationsBlock (verdict-first). This covers both
+    // structured-findings failures and looksLikeFail (truncated JSON / no findings array).
+    // When adversarial passes, clear the history.
+    //
+    // fixesApplied is always [] here because adversarial fixes run in the implementation
+    // session outside this subsystem — there is no FixApplied op to record.
     const advCheck = result.builtIn.checks?.find((c) => c.check === "adversarial");
     if (advCheck) {
-      if (!advCheck.success && (advCheck.findings?.length ?? 0) > 0) {
-        ctx.priorAdversarialFindings = {
-          round: (ctx.priorAdversarialFindings?.round ?? 0) + 1,
-          findings: advCheck.findings ?? [],
+      if (!advCheck.success && !advCheck.skipped) {
+        const prior = ctx.priorAdversarialIterations ?? [];
+        const findingsBefore = prior.length > 0 ? (prior[prior.length - 1].findingsAfter ?? []) : [];
+        const findingsAfter = advCheck.findings ?? [];
+        const now = new Date().toISOString();
+        const newIteration: Iteration = {
+          iterationNum: prior.length + 1,
+          findingsBefore,
+          fixesApplied: [],
+          findingsAfter,
+          outcome: classifyOutcome(findingsBefore, findingsAfter),
+          startedAt: now,
+          finishedAt: now,
         };
+        ctx.priorAdversarialIterations = [...prior, newIteration];
       } else if (advCheck.success && !advCheck.skipped) {
-        ctx.priorAdversarialFindings = undefined;
+        ctx.priorAdversarialIterations = undefined;
       }
     } else if (retrySkipChecks?.has("adversarial")) {
       // Adversarial was skipped because it passed in the previous review pass.
-      // Clear any stale findings — the reviewer already approved this code.
-      ctx.priorAdversarialFindings = undefined;
+      // Clear any stale iteration history — the reviewer already approved this code.
+      ctx.priorAdversarialIterations = undefined;
     }
 
     return result;

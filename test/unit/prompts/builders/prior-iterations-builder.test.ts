@@ -165,6 +165,21 @@ describe("buildPriorIterationsBlock — multiple iterations", () => {
     expect(output).toContain("| 1 | lint-fix | - |");
   });
 
+  test("empty fixesApplied (carry-forward iteration) shows dash in both strategy and files columns", () => {
+    // Adversarial carry-forward iterations have fixesApplied: [] because fixes run
+    // in the implementation session outside the FixCycle.
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "partial",
+      findingsBefore: [],
+      findingsAfter: [makeFinding({ source: "adversarial-review", message: "null dereference" })],
+      fixesApplied: [],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+    expect(output).toContain("| 1 | - | - | partial |");
+  });
+
   test("most-frequent category shown when findings have mixed categories", () => {
     const f1 = makeFinding({ source: "lint", message: "a", category: "unused-var" });
     const f2 = makeFinding({ source: "lint", message: "b", category: "unused-var" });

@@ -79,33 +79,41 @@ describe("adversarialReviewOp.build()", () => {
     expect(result.task.content).toContain("-old line");
   });
 
-  test("task content contains prior findings block when priorAdversarialFindings is set", () => {
+  test("task content contains prior iterations block when priorAdversarialIterations is set", () => {
     const ctx = makeBuildCtx();
     const inputWithPrior: AdversarialReviewInput = {
       ...SAMPLE_INPUT,
-      priorAdversarialFindings: {
-        round: 2,
-        findings: [
+      priorAdversarialIterations: [
+        {
+          iterationNum: 1,
+          findingsBefore: [],
+          fixesApplied: [{ strategyName: "source-fix", op: "source-fix", targetFiles: ["src/session.ts"], summary: "", costUsd: 0 }],
+          findingsAfter: [
             {
-              source: "adversarial-review",
-              severity: "error",
+              source: "adversarial-review" as const,
+              severity: "error" as const,
               category: "error-path",
               file: "src/session.ts",
               line: 10,
               message: "Silent catch block",
             },
           ],
-      },
+          outcome: "partial" as const,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          finishedAt: "2026-01-01T00:01:00.000Z",
+        },
+      ],
     };
     const result = adversarialReviewOp.build(inputWithPrior, ctx);
-    expect(result.task.content).toContain("Prior Adversarial Findings — Round 2");
-    expect(result.task.content).toContain("Silent catch block");
+    expect(result.task.content).toContain("## Prior Iterations — verdict required before new analysis");
+    expect(result.task.content).toContain("source-fix");
+    expect(result.task.content).toContain("partial");
   });
 
-  test("task content has no prior findings block when priorAdversarialFindings is absent", () => {
+  test("task content has no prior iterations block when priorAdversarialIterations is absent", () => {
     const ctx = makeBuildCtx();
     const result = adversarialReviewOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).not.toContain("Prior Adversarial Findings");
+    expect(result.task.content).not.toContain("## Prior Iterations");
   });
 });
 
