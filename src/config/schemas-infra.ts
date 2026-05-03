@@ -22,6 +22,8 @@ const AcceptanceFixConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative().default(2),
   /** ADR-021 phase 8: emit findings: Finding[] in diagnose prompt instead of testIssues/sourceIssues. Default off for one release. */
   findingsV2: z.boolean().default(false),
+  /** ADR-022 phase 4: use runFixCycle for acceptance retries instead of the hand-rolled loop. Default off. */
+  cycleV2: z.boolean().default(false),
 });
 
 export const AcceptanceConfigSchema = z.object({
@@ -43,6 +45,7 @@ export const AcceptanceConfigSchema = z.object({
     strategy: "diagnose-first",
     maxRetries: 2,
     findingsV2: false,
+    cycleV2: false,
   }),
   suggestedTestPath: z.string().min(1).optional(),
   hardening: z
