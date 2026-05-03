@@ -9,8 +9,9 @@
  * Reuses PriorFailure and buildAttemptContextBlock from review-builder.ts.
  */
 
-import type { Finding } from "../../findings";
-import type { AdversarialFindingsCache, AdversarialReviewConfig, SemanticStory } from "../../review/types";
+import type { Iteration } from "../../findings";
+import type { AdversarialReviewConfig, SemanticStory } from "../../review/types";
+import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 import { buildAttemptContextBlock } from "./review-builder";
 import type { PriorFailure } from "./review-builder";
 
@@ -50,11 +51,11 @@ export interface AdversarialReviewPromptOptions {
    */
   refExcludePatterns?: readonly string[];
   /**
-   * Prior adversarial findings from the previous round (issue #736).
-   * When set, injects a "## Prior Adversarial Findings" block instructing the reviewer
-   * to verdict on unresolved prior issues before scanning for new ones.
+   * Prior adversarial review iterations (ADR-022 phase 5).
+   * When set, injects buildPriorIterationsBlock instructing the reviewer to verdict
+   * on unresolved prior-round issues before scanning for new ones.
    */
-  priorAdversarialFindings?: AdversarialFindingsCache;
+  priorAdversarialIterations?: Iteration[];
 }
 
 const ADVERSARIAL_ROLE = `You are an adversarial code reviewer with full access to the repository.
@@ -220,33 +221,6 @@ ${diff}\`\`\`
 }
 
 /**
- * Build the prior-findings carry-forward block injected at the top of subsequent rounds.
- * Verdict-first: the reviewer sees unresolved findings before scanning for new issues.
- */
-function buildPriorFindingsBlock(round: number, findings: readonly Finding[]): string {
-  const rows = findings
-    .map((f) => {
-      const filePath = f.file ?? "";
-      const location = f.line !== undefined ? `${filePath}:${f.line}` : filePath;
-      const category = f.category || "—";
-      return `| ${f.severity} | ${category} | ${location} | ${f.message} |`;
-    })
-    .join("\n");
-
-  return `## Prior Adversarial Findings — Round ${round}
-
-The following issues were flagged in the previous adversarial review round.
-**Verdict on each of these first — determine whether each has been fixed, partially addressed, or is still present.**
-Then continue scanning for new issues.
-
-| Severity | Category | Location | Issue |
-|:---------|:---------|:---------|:------|
-${rows}
-
-`;
-}
-
-/**
  * Build an adversarial review prompt for the given story and diff context.
  */
 export class AdversarialReviewPromptBuilder {
@@ -265,13 +239,10 @@ export class AdversarialReviewPromptBuilder {
       excludePatterns,
       testGlobs,
       refExcludePatterns,
-      priorAdversarialFindings,
+      priorAdversarialIterations,
     } = options;
 
-    const priorFindingsBlock =
-      priorAdversarialFindings && priorAdversarialFindings.findings.length > 0
-        ? buildPriorFindingsBlock(priorAdversarialFindings.round, priorAdversarialFindings.findings)
-        : "";
+    const priorFindingsBlock = buildPriorIterationsBlock(priorAdversarialIterations ?? []);
 
     const storyBlock = `## Story Under Review
 

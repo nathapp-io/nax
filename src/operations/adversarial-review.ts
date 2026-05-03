@@ -1,11 +1,12 @@
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
+import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { PriorFailure, TestInventory } from "../prompts";
 import { looksLikeTruncatedJson } from "../review/truncation";
-import type { AdversarialFindingsCache, AdversarialReviewConfig, SemanticStory } from "../review/types";
+import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBody, LlmReviewFinding, LlmReviewOutput, RunOperation } from "./types";
 import { parseLlmReviewShape } from "./types";
@@ -26,8 +27,8 @@ export interface AdversarialReviewInput {
   refExcludePatterns?: readonly string[];
   /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
   featureCtxBlock?: string;
-  /** Prior adversarial findings to carry forward into this review round (issue #736). */
-  priorAdversarialFindings?: AdversarialFindingsCache;
+  /** Prior adversarial review iterations to carry forward into this round (ADR-022 phase 5). */
+  priorAdversarialIterations?: Iteration[];
   /** Severity threshold from review config — drives the JSON-retry condensation prompt. */
   blockingThreshold?: "error" | "warning" | "info";
 }
@@ -90,7 +91,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         excludePatterns: input.excludePatterns,
         testGlobs: input.testGlobs,
         refExcludePatterns: input.refExcludePatterns,
-        priorAdversarialFindings: input.priorAdversarialFindings,
+        priorAdversarialIterations: input.priorAdversarialIterations,
       },
     );
     const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;
