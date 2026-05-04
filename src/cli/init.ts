@@ -36,8 +36,9 @@ export function validateProjectName(name: string): ProjectNameValidationResult {
       valid: false,
       error: "name must contain only lowercase letters, digits, hyphens, and underscores",
     };
-  if (name.startsWith(".") || name.startsWith("_")) return { valid: false, error: `name '${name}' is reserved` };
   if (["global", "_archive"].includes(name)) return { valid: false, error: `name '${name}' is reserved` };
+  if (name.startsWith(".") || name.startsWith("_"))
+    return { valid: false, error: "name must not start with '.' or '_'" };
   return { valid: true };
 }
 
