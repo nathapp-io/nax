@@ -270,6 +270,8 @@ Each of the 2 remaining gaps is a self-contained, no-behavior-change PR.
 
 While auditing the gaps in Step 3, the question came up: **do we keep adding domain-specific auditors (`PullToolAuditor`, `AcceptanceAuditor`, `EscalationAuditor`, …) every time a new domain needs persisted observations, or unify them?**
 
+**Update (2026-05-04) — premise revised.** Step 3's actual recommendation for the two v0 gaps is `logger.info` (pull-tool, acceptance), and Step 5 confirms ADR-022 §13 already specifies `logger.info` for fix-cycle. **No new auditor classes are required for curator v0.** The "auditor proliferation" trigger that motivated this section never materialises under Step 3's chosen path. The unified design is recorded below as the eventual-shape reach, but the deferral case is now strictly stronger — see the updated recommendation and the new "curator IS the unification" subsection at the end of this section.
+
 Current shape (from `src/runtime/index.ts`):
 
 ```
@@ -316,24 +318,52 @@ Before committing, evaluated against this codebase:
 | R2 | **Schema versioning blast radius.** Today each auditor's schema is local — breaking changes affect only that domain's consumers. After unification, schema changes touch every consumer of `events.jsonl`. | Major | Mandatory `schemaVersion` on every event; tolerant parsers; never reuse field names across versions. |
 | R3 | **Atomicity of blob + event pair.** Implicit ordering is `blobStore.put → eventLog.record({ ref })`. Process death between the two leaves orphan blobs or dangling refs. Same problem prompt-auditor.ts:6-8 already documents (2026-04-29 incident: `.txt` succeeded, `.jsonl` dropped) — unification doesn't fix or worsen it. | Major | GC sweep at runtime startup (delete unreferenced blobs older than X). |
 | R4 | **Single-stream ergonomic regression.** `ls .nax/review-audit/<feature>/` becomes `jq 'select(.kind=="review.decision")' events.jsonl`. Workflow regresses without a CLI shim. | Major | Ship `nax events --kind=...` view command; or keep per-domain folders as secondary projections during transition. |
-| R5 | **`dispatchEvents` contract is unverified.** Claim is that it's already a typed bus, but the actual interface (typed/loose, sync/async, tolerant of unknown kinds) hasn't been read. If loose, "every audit goes through here" is itself a refactor. | Medium | Read `src/runtime/index.ts` + dispatch types **before** committing to a design doc. |
+| R5 | **`dispatchEvents` contract verified (2026-05-04) — bus is call-shaped.** Read of `src/runtime/dispatch-events.ts` confirms 3 strictly-typed channels (`onDispatch`, `onOperationCompleted`, `onDispatchError`), synchronous emit with per-listener `try/catch` (one bad subscriber can't break others), no tolerance for unknown kinds. Cross-cutting fields live on `DispatchEventBase` — adding e.g. `traceId` is a one-line, compile-checked change. **Finding:** the bus is a solid foundation, but every event represents a **call boundary** (prompt-in/response-out + timing/cost/permissions). Decision-shaped events (parsed review outcome, acceptance verdict, fix-cycle iteration) don't fit — see R11. | **Resolved** | Verified. |
 | R6 | **Subscriber failure visibility.** `Promise.allSettled` (`runtime/index.ts:211`) means audit failures are silent today. Acceptable per-domain; after unification, a silent EventLog failure breaks every downstream consumer. | Medium | Explicit health check at run-end: "recorded N events, expected ≥M". Fail loudly below threshold. |
 | R7 | **Plugin / external consumer drift.** `IReporter` and `IPostRunAction` plugins might read audit folders directly. Even if none does today, the contract is implicit. | Medium | Dual-write during transition. |
 | R8 | **Test debt.** `PromptAuditor` and `ReviewAuditor` each have tests. Migration needs regression coverage proving behavior preserved. | Minor | ~200–500 LOC of test code, on top of new-primitive tests. |
 | R9 | **Aborted-run blob cleanup.** Ctrl+C mid-run leaves orphan blobs. Same problem as today's prompt-audit `.txt` orphans. No regression. | Minor | Reuse existing cleanup story (none today; defer). |
 | R10 | **Performance under parallel stories.** Single `events.jsonl` per run, multiple stories appending. JSONL append is atomic per-line on POSIX; per-runId scoping bounds contention. | Minor | Not a real concern at current scale. |
+| **R11** | **Bus is call-shaped; decisions don't fit.** Discovered via the R5 verification pass (2026-05-04). `ReviewAuditor.recordDecision` is called directly from `src/review/{semantic,adversarial,semantic-debate}.ts` bypassing the bus — parsed-review semantics (`passed`, `findings[]`, `failOpen`, `blockingThreshold`, `advisoryFindings[]`) don't belong on a universal call event. Future verdict events (acceptance, fix-cycle) hit the same wall. Unification has to either widen the bus with non-call channels (`onReviewDecision`, `onAcceptanceVerdict`, …) or accept hybrid ingress (some events via bus, some via direct call), which leaks the abstraction. | Major | Closing the review-decision gap with a typed `ReviewDecisionEvent` channel is a smaller, justified change today — independent of unification. ~50 LOC. |
+| **R12** | **The three persistence shapes are not symmetric.** Prompt = per-call append + paired TXT sidecar (sync-append carve-out for reliability — see `prompt-auditor.ts:6-23`). Cost = in-memory aggregate + single batch on `drain()` **plus a live query surface** (`snapshot/byAgent/byStage/byStory` read **during** the run by metrics/reporters). Review = per-decision atomic JSON file with two-step dispatch+decision join keyed by `reviewer:storyId`. eventLog+blobStore is append-shaped: fits prompt natively, awkwardly fits review (loses one-decision-one-file artifact), pessimises cost (forces eager writes for data that doesn't need them). Cost's query surface means an aggregator layer survives **above** any eventLog — net runtime code increases, not decreases. | Major | None — confirms the unification primitive is mis-shaped for existing data, not just premature. |
 
-### Recommendation — defer unification
+### Recommendation — defer indefinitely (revised 2026-05-04)
 
-The unified design is the right *eventual* shape, but R1 dominates: building EventLog/BlobStore now spends a week on a runtime refactor when a config flip + 2 small log lines unblock the curator. R5 also means the design isn't grounded enough to commit — primitives would be guessed, not verified against the existing bus contract.
+After the R5 verification and the R11 / R12 additions, the deferral case is stronger than originally stated:
 
-Order of operations:
+- **R1 (YAGNI) holds harder than first written.** Curator v0 needs zero new auditor classes — Step 3's `logger.info` path covers pull-tool and acceptance, ADR-022 §13 covers fix-cycle. The "third auditor" that triggered this section is hypothetical against the doc's own recommendations.
+- **R5 is closed.** The bus is solid but call-shaped. Unification can't paper over the call/decision split — see R11.
+- **R11 + R12 say the primitive is mis-shaped, not just premature.** eventLog+blobStore as sketched fits one of the three existing auditors (prompt) and pessimises the other two. The 3 existing auditors are correctly differentiated, not accidentally fragmented.
 
-1. **Verify R5.** Read `dispatchEvents` types and current subscriber contracts. ~30 minutes. Confirms or kills the unification's foundation.
-2. **Ship curator v0** against existing `reviewAuditor` + `metrics.json` + run jsonl. Validate the keep/drop UX with real proposals.
-3. **Defer the unification decision** until pull-tool-audit (or a 4th domain) actually pushes. By then the per-domain folder UX will be known to matter (or not), and the bus contract will be on solid ground.
+**Trigger condition for revisiting:** a future domain genuinely needs **blobs** OR a **live query surface during the run** OR **atomic per-decision file artifacts**. None of curator v0's new domains hit any of these. Until at least one does, the unification is solving a problem nax doesn't have.
+
+**The actual unification already exists in the design — at the curator layer.** See "The curator IS the unification" subsection below.
+
+**Smaller adjacent change worth doing now (independent of unification):** add a typed `ReviewDecisionEvent` channel to `DispatchEventBus` and route the 4 direct `ReviewAuditor.recordDecision` callsites through it. Closes the asymmetry called out in R11. ~50 LOC. No `CreateRuntimeOptions` change.
 
 Captured here so a future operator hitting the same fork can see the analysis without re-deriving it.
+
+### The curator IS the unification (added 2026-05-04)
+
+The unification debate above treats "single canonical event stream" as a runtime-primitive question. The cleaner mental model is that this stream **already exists in the design** — just at a different layer:
+
+| Layer | Today | Curator role |
+|:---|:---|:---|
+| In-process events | `DispatchEventBus` (typed, sync) + `logger.info` (run jsonl) | — |
+| Per-domain artifacts | `prompt-audit/`, `review-audit/`, `cost/`, `metrics.json`, `context-manifest-*.json` | **primary input** (Step 3) |
+| Cross-domain projection | `.nax/runs/<runId>/observations.jsonl` (Step 2 schema) | **built by curator at end-of-run** |
+
+eventLog+blobStore would have unified at the **emission layer** — forcing every domain into one shape at the time of write. The curator unifies at the **projection layer** — reading each domain in its native shape and writing one normalized table.
+
+Why projection-layer wins:
+
+- Doesn't require widening the bus to carry decision-shaped events (R11).
+- Doesn't force prompt's blob/sidecar shape, cost's query surface, or review's per-decision atomic file into one mould (R12).
+- Lets new domains pick the lightest emission they need (`logger.info` for pull-tool, acceptance, fix-cycle).
+- Keeps schema versioning local to each domain — a domain change ripples to the curator's parser for that domain only, not to every consumer of `events.jsonl` (R2).
+- Keeps the per-domain folder UX intact for human operators (`ls .nax/review-audit/<feature>/` still works) — R4 doesn't fire.
+
+This retires the eventLog+blobStore conversation cleanly: the primitive curator wanted is `observations.jsonl`, and the curator builds it itself from artifacts the runtime already produces.
 
 ---
 
@@ -421,7 +451,7 @@ This is **not a curator-v0 dependency**. ADR-022 phase 4 (acceptance migration) 
 
 1. ADR-022 phases 4–7 have shipped — real cycle data exists to mine
 2. Curator v0 is validated against existing auditors — proves the heuristics-from-observations workflow works
-3. Either Step 4's unified-auditor refactor lands, OR a new `cycleAuditor` is added analogous to `reviewAuditor` (R1 from Step 4 risk register may be re-evaluated by then)
+3. The curator's projection layer (Step 4 "curator IS the unification") proves out — at which point fix-cycle events are just another `kind` in `observations.jsonl`, parsed from the existing `logger.info("findings.cycle", …)` emits. No new auditor class needed.
 
 Document this here so a future operator landing the audit work sees the cycle-history requirement without re-deriving it from ADR-022.
 
@@ -433,8 +463,9 @@ Document this here so a future operator landing the audit work sees the cycle-hi
 4. **Storage location.** `.nax/runs/<runId>/` is current; cross-run rollup at `.nax/curator/rollup.jsonl` is new — confirm convention.
 5. **Plugin entry point.** `IPostRunAction` is the documented hook. Confirm it gets enough context (run artifacts path, config, logger) to do the walk.
 6. **Apply UX.** Interactive CLI (`nax curator apply`) vs. plain editing the proposals file — pick one before building.
-7. **Verify `dispatchEvents` contract** (R5 from Step 4) — only if the unified-auditor design is revisited.
-8. **Cycle-history audit timing** (Step 5). Ride along with curator v0, defer to v1, or wait for cycle data accumulation? Tied to ADR-022 phase 4+ shipping.
+7. ~~**Verify `dispatchEvents` contract** (R5 from Step 4)~~ — **Closed 2026-05-04.** Bus is typed, narrow, sync, call-shaped. See updated R5 in the risk register. Unification deferred indefinitely; see "The curator IS the unification" subsection.
+8. **Cycle-history audit timing** (Step 5). Ride along with curator v0, defer to v1, or wait for cycle data accumulation? Tied to ADR-022 phase 4+ shipping. Note: ADR-022 §13 already specifies `logger.info("findings.cycle", …)`, so cycle data flows into `observations.jsonl` via the projection layer with no new auditor class.
+9. **Close the review-decision bus gap** (added 2026-05-04). Add typed `ReviewDecisionEvent` channel to `DispatchEventBus`; route 4 direct `ReviewAuditor.recordDecision` callsites through it. ~50 LOC. Independent of curator, but cleans up the asymmetry that R11 surfaced.
 
 ## References
 
