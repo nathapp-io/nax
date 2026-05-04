@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import os from "node:os";
 import path from "node:path";
+// Direct node:fs/promises is used here because writeProjectIdentity writes to ~/.nax/<key>/
+// which is outside os.tmpdir() — the test/helpers/temp.ts helpers only manage tmpdir paths.
 import { rm, mkdir } from "node:fs/promises";
 import { writeProjectIdentity } from "../../../src/runtime";
 import { validateProjectName, checkInitCollision } from "../../../src/cli/init";
