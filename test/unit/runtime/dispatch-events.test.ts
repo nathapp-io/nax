@@ -4,6 +4,7 @@ import {
   type DispatchEvent,
   type DispatchErrorEvent,
   type OperationCompletedEvent,
+  type ReviewDecisionEvent,
   type SessionTurnDispatchEvent,
 } from "../../../src/runtime/dispatch-events";
 
@@ -189,6 +190,77 @@ describe("DispatchEventBus", () => {
     bus.onDispatch((e) => dispatchReceived.push(e));
 
     bus.emitDispatchError(makeErrorEvent());
+
+    expect(dispatchReceived).toHaveLength(0);
+  });
+});
+
+function makeReviewDecisionEvent(overrides: Partial<ReviewDecisionEvent> = {}): ReviewDecisionEvent {
+  return {
+    kind: "review-decision",
+    reviewer: "semantic",
+    timestamp: 5000,
+    parsed: true,
+    result: { passed: true, findings: [] },
+    ...overrides,
+  };
+}
+
+describe("onReviewDecision / emitReviewDecision", () => {
+  test("delivers review-decision event to registered listener", () => {
+    const bus = new DispatchEventBus();
+    const received: ReviewDecisionEvent[] = [];
+    bus.onReviewDecision((e) => received.push(e));
+
+    const event = makeReviewDecisionEvent();
+    bus.emitReviewDecision(event);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toBe(event);
+    expect(received[0].kind).toBe("review-decision");
+  });
+
+  test("delivers to multiple listeners", () => {
+    const bus = new DispatchEventBus();
+    const a: ReviewDecisionEvent[] = [];
+    const b: ReviewDecisionEvent[] = [];
+    bus.onReviewDecision((e) => a.push(e));
+    bus.onReviewDecision((e) => b.push(e));
+
+    bus.emitReviewDecision(makeReviewDecisionEvent());
+
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+  });
+
+  test("unsubscribe stops delivery", () => {
+    const bus = new DispatchEventBus();
+    const received: ReviewDecisionEvent[] = [];
+    const off = bus.onReviewDecision((e) => received.push(e));
+
+    bus.emitReviewDecision(makeReviewDecisionEvent());
+    off();
+    bus.emitReviewDecision(makeReviewDecisionEvent());
+
+    expect(received).toHaveLength(1);
+  });
+
+  test("listener that throws does not break other listeners", () => {
+    const bus = new DispatchEventBus();
+    const received: ReviewDecisionEvent[] = [];
+    bus.onReviewDecision(() => { throw new Error("boom"); });
+    bus.onReviewDecision((e) => received.push(e));
+
+    expect(() => bus.emitReviewDecision(makeReviewDecisionEvent())).not.toThrow();
+    expect(received).toHaveLength(1);
+  });
+
+  test("review-decision events do not leak to dispatch listeners", () => {
+    const bus = new DispatchEventBus();
+    const dispatchReceived: DispatchEvent[] = [];
+    bus.onDispatch((e) => dispatchReceived.push(e));
+
+    bus.emitReviewDecision(makeReviewDecisionEvent());
 
     expect(dispatchReceived).toHaveLength(0);
   });

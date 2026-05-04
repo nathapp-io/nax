@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { ReviewAuditDispatch } from "../../../../src/review/review-audit";
+import type { ReviewAuditDecision, ReviewAuditDispatch } from "../../../../src/review/review-audit";
 import { DispatchEventBus } from "../../../../src/runtime/dispatch-events";
-import type { SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
+import type { ReviewDecisionEvent, SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
 import { attachReviewAuditSubscriber } from "../../../../src/runtime/middleware/review-audit";
 
 const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
@@ -82,5 +82,58 @@ describe("attachReviewAuditSubscriber", () => {
     bus.emitDispatch(makeSessionTurnEvent({ sessionRole: "implementer" }));
 
     expect(recorded).toHaveLength(0);
+  });
+
+  test("forwards review-decision events to auditor.recordDecision", () => {
+    const decisions: ReviewAuditDecision[] = [];
+    const bus = new DispatchEventBus();
+    attachReviewAuditSubscriber(
+      bus,
+      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), async flush() {} },
+      "run-1",
+    );
+
+    const event: ReviewDecisionEvent = {
+      kind: "review-decision",
+      reviewer: "adversarial",
+      storyId: "US-002",
+      featureName: "feat",
+      workdir: "/tmp/w",
+      projectDir: "/tmp/p",
+      timestamp: 9000,
+      parsed: true,
+      passed: false,
+      result: { passed: false, findings: [{ severity: "error", message: "missing check" }] },
+    };
+    bus.emitReviewDecision(event);
+
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].reviewer).toBe("adversarial");
+    expect(decisions[0].storyId).toBe("US-002");
+    expect(decisions[0].parsed).toBe(true);
+    expect(decisions[0].passed).toBe(false);
+  });
+
+  test("unsubscribing stops review-decision forwarding", () => {
+    const decisions: ReviewAuditDecision[] = [];
+    const bus = new DispatchEventBus();
+    const off = attachReviewAuditSubscriber(
+      bus,
+      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), async flush() {} },
+      "run-1",
+    );
+
+    const event: ReviewDecisionEvent = {
+      kind: "review-decision",
+      reviewer: "semantic",
+      timestamp: 1000,
+      parsed: false,
+      result: null,
+    };
+    bus.emitReviewDecision(event);
+    off();
+    bus.emitReviewDecision(event);
+
+    expect(decisions).toHaveLength(1);
   });
 });

@@ -33,11 +33,13 @@ function recordSemanticDebateAudit(opts: {
   result: { passed: boolean; findings: unknown[] } | null;
   advisoryFindings?: unknown[];
 }): void {
-  opts.runtime.reviewAuditor.recordDecision({
+  opts.runtime.dispatchEvents.emitReviewDecision({
+    kind: "review-decision",
     reviewer: "semantic",
     workdir: opts.workdir,
     storyId: opts.storyId,
     featureName: opts.featureName,
+    timestamp: Date.now(),
     parsed: opts.parsed,
     failOpen: false,
     passed: opts.passed,
