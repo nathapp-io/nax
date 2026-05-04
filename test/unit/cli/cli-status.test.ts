@@ -6,9 +6,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { displayFeatureStatus } from "../../../src/cli/status";
+import { _statusFeaturesDeps, displayFeatureStatus } from "../../../src/cli/status-features";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import type { PRD } from "../../../src/prd";
 // Requires real PID checks — skipped by default, run with FULL=1.
@@ -18,6 +17,7 @@ import { makeTempDir } from "../../helpers/temp";
 describe("displayFeatureStatus", () => {
   let testDir: string;
   let originalCwd: string;
+  let origProjectOutputDir: typeof _statusFeaturesDeps.projectOutputDir;
   let consoleOutput: string[];
   const originalLog = console.log;
 
@@ -27,6 +27,10 @@ describe("displayFeatureStatus", () => {
     testDir = realpathSync(rawTestDir);
     originalCwd = process.cwd();
 
+    // Redirect output dir derivation to testDir/.nax so test fixtures are found
+    origProjectOutputDir = _statusFeaturesDeps.projectOutputDir;
+    _statusFeaturesDeps.projectOutputDir = () => join(testDir, ".nax");
+
     // Mock console.log to capture output
     consoleOutput = [];
     console.log = mock((message: string) => {
@@ -35,6 +39,7 @@ describe("displayFeatureStatus", () => {
   });
 
   afterEach(() => {
+    _statusFeaturesDeps.projectOutputDir = origProjectOutputDir;
     // Restore original CWD and console.log
     process.chdir(originalCwd);
     console.log = originalLog;
