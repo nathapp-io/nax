@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 function makeCtx(workdir: string): PipelineContext {
-  const runtime = makeMockRuntime({});
+  const runtime = makeMockRuntime({ config: { ...DEFAULT_CONFIG, outputDir: join(workdir, ".nax") } });
   return {
     config: {
       ...DEFAULT_CONFIG,

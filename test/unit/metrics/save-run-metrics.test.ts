@@ -17,20 +17,22 @@ import { loadRunMetrics, saveRunMetrics } from "../../../src/metrics/tracker";
 import type { RunMetrics, StoryMetrics } from "../../../src/metrics/types";
 import { TokenUsage } from "../../../src/metrics/types";
 
-const WORKDIR = `/tmp/nax-save-run-metrics-test-${randomUUID()}`;
+// OUTPUT_DIR plays the role of outputDir (e.g. ~/.nax/<projectKey>): metrics are written
+// directly to OUTPUT_DIR/metrics.json, no .nax/ subdirectory.
+const OUTPUT_DIR = `/tmp/nax-save-run-metrics-test-${randomUUID()}`;
 
 async function setupWorkdir() {
-  await mkdir(`${WORKDIR}/.nax`, { recursive: true });
+  await mkdir(OUTPUT_DIR, { recursive: true });
 }
 
 async function cleanupWorkdir() {
-  if (existsSync(WORKDIR)) {
-    await rm(WORKDIR, { recursive: true, force: true });
+  if (existsSync(OUTPUT_DIR)) {
+    await rm(OUTPUT_DIR, { recursive: true, force: true });
   }
 }
 
 async function readMetricsFile(): Promise<RunMetrics[]> {
-  const content = await readFile(`${WORKDIR}/.nax/metrics.json`, "utf-8");
+  const content = await readFile(`${OUTPUT_DIR}/metrics.json`, "utf-8");
   return JSON.parse(content);
 }
 
@@ -89,7 +91,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       stories: [story1, story2],
     };
 
-    await saveRunMetrics(WORKDIR, runMetrics);
+    await saveRunMetrics(OUTPUT_DIR, runMetrics);
 
     const saved = await readMetricsFile();
     expect(saved).toHaveLength(1);
@@ -152,7 +154,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       stories: [story1, story2],
     };
 
-    await saveRunMetrics(WORKDIR, runMetrics);
+    await saveRunMetrics(OUTPUT_DIR, runMetrics);
 
     const saved = await readMetricsFile();
     expect(saved).toHaveLength(1);
@@ -206,7 +208,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       stories: [story1, story2],
     };
 
-    await saveRunMetrics(WORKDIR, runMetrics);
+    await saveRunMetrics(OUTPUT_DIR, runMetrics);
 
     const saved = await readMetricsFile();
     expect(saved).toHaveLength(1);
@@ -246,9 +248,9 @@ describe("loadRunMetrics - backward compatibility", () => {
       },
     ];
 
-    await writeFile(`${WORKDIR}/.nax/metrics.json`, JSON.stringify(existingMetrics, null, 2));
+    await writeFile(`${OUTPUT_DIR}/metrics.json`, JSON.stringify(existingMetrics, null, 2));
 
-    const runs = await loadRunMetrics(WORKDIR);
+    const runs = await loadRunMetrics(OUTPUT_DIR);
 
     expect(runs).toHaveLength(1);
     expect(runs[0].runId).toBe("run-old-001");

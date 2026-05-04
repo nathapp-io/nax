@@ -173,6 +173,7 @@ function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecuti
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
+    runtime: { outputDir: "/tmp/nax-test-deferred-review-output" } as unknown as SequentialExecutionContext["runtime"],
   };
 }
 

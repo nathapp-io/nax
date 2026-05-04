@@ -8,13 +8,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { diagnoseCommand } from "../../../src/cli/diagnose";
+import { diagnoseCommand, _diagnoseDeps } from "../../../src/cli/diagnose";
 import type { PRD } from "../../../src/prd";
 import { savePRD } from "../../../src/prd";
 import { makeTempDir } from "../../helpers/temp";
 
 // Test fixture directory
 let testDir: string;
+let origProjectOutputDir: typeof _diagnoseDeps.projectOutputDir;
 
 beforeEach(() => {
   // Create unique test directory
@@ -22,9 +23,15 @@ beforeEach(() => {
 
   // Create nax directory structure
   mkdirSync(join(testDir, ".nax", "features"), { recursive: true });
+
+  // Redirect outputDir to testDir/.nax for isolation
+  origProjectOutputDir = _diagnoseDeps.projectOutputDir;
+  _diagnoseDeps.projectOutputDir = () => join(testDir, ".nax");
 });
 
 afterEach(() => {
+  _diagnoseDeps.projectOutputDir = origProjectOutputDir;
+
   // Clean up test directory
   if (existsSync(testDir)) {
     rmSync(testDir, { recursive: true, force: true });

@@ -42,7 +42,7 @@ describe("Wave 2 exit criteria", () => {
       _promptAuditorDeps.write = async (_p, _d) => 0;
 
       try {
-        const rt = createRuntime(auditEnabledConfig, dir, { featureName: "my-feature" });
+        const rt = createRuntime({ ...auditEnabledConfig, outputDir: join(dir, ".nax") }, dir, { featureName: "my-feature" });
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,
@@ -75,7 +75,7 @@ describe("Wave 2 exit criteria", () => {
       };
 
       try {
-        const rt = createRuntime(DEFAULT_CONFIG, dir);
+        const rt = createRuntime({ ...DEFAULT_CONFIG, outputDir: join(dir, ".nax") }, dir);
         rt.costAggregator.record({
           ts: Date.now(),
           runId: rt.runId,
@@ -119,7 +119,7 @@ describe("Wave 2 exit criteria", () => {
       };
 
       try {
-        const rt = createRuntime(auditEnabledConfig, dir, { featureName: "my-feature" });
+        const rt = createRuntime({ ...auditEnabledConfig, outputDir: join(dir, ".nax") }, dir, { featureName: "my-feature" });
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,
