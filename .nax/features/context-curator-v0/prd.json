@@ -1,0 +1,302 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "context-curator-v0",
+  "branchName": "feat/context-curator-v0",
+  "createdAt": "2026-05-04T00:00:00Z",
+  "updatedAt": "2026-05-04T09:37:20.522Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add pull-tool logger emits for curator ingestion",
+      "description": "**Goal** — Add structured `logger.info(\"pull-tool\", \"invoked\", ...)` emits to both pull-tool handlers so the curator can detect empty results (H2 heuristic).\n\n**Motivation** — The curator's H2 heuristic detects repeated pull-tool empty results across stories. Without these logger emits, the observation projection has no `pull-call` kind entries to group on.\n\n**Approach** — Add one `logger.info(\"pull-tool\", \"invoked\", { storyId, tool, keyword, resultCount, resultBytes, truncated? })` call at the end of `handleQueryNeighbor` (after the truncation return) and one at the end of `handleQueryFeatureContext`. The existing handler shapes stay unchanged — this is purely additive instrumentation. For `handleQueryNeighbor`, the handler currently hardcodes `storyId: \"_pull-tool\"`; pass through a storyId parameter if available from the caller, otherwise keep `\"_pull-tool\"`.\n\n**Scope** — In: `src/context/engine/pull-tools.ts` only. Out: any other instrumentation, handler behavior changes, new pull-tool descriptors.\n\n**Interface**\n```typescript\n// At end of handleQueryNeighbor\nlogger.info(\"pull-tool\", \"invoked\", {\n  storyId: storyId ?? \"_pull-tool\",\n  tool: \"query_neighbor\",\n  filePath: input.filePath,\n  resultCount: result.chunks.length,\n  resultBytes: content.length,\n  ...(truncated ? { truncated: true } : {}),\n});\n\n// At end of handleQueryFeatureContext\nlogger.info(\"pull-tool\", \"invoked\", {\n  storyId: story.id,\n  tool: \"query_feature_context\",\n  keyword: input.filter ?? null,\n  resultCount: filteredSections,\n  resultBytes: content.length,\n});\n```",
+      "acceptanceCriteria": [
+        "handleQueryNeighbor emits logger.info(\"pull-tool\", \"invoked\", ...) with tool=\"query_neighbor\" and resultCount matching the number of neighbor chunks found",
+        "handleQueryFeatureContext emits logger.info(\"pull-tool\", \"invoked\", ...) with tool=\"query_feature_context\" and keyword matching the input filter",
+        "When a pull-tool call returns zero results, the emit includes resultCount=0 and resultBytes=0",
+        "When handleQueryNeighbor truncates content, the emit includes truncated=true"
+      ],
+      "tags": [
+        "feature",
+        "instrumentation"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/context/engine/pull-tools.ts",
+        "src/logger/logger.ts"
+      ],
+      "suggestedCriteria": [
+        "handleQueryFeatureContext emit includes storyId matching the passed story.id",
+        "Emit fires exactly once per pull-tool invocation, even when the handler returns early or throws"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Consolidate acceptance verdict logger emit",
+      "description": "**Goal** — Add a single canonical `logger.info(\"acceptance\", \"verdict\", { storyId, passed, failedACs, retries, packageDir, durationMs })` call at the per-story termination point of the acceptance stage.\n\n**Motivation** — The curator's acceptance-verdict observation kind needs a single authoritative emit per story regardless of pass/fail. Currently the acceptance stage has scattered emits that are progress-oriented — no single event captures the final verdict with all relevant fields.\n\n**Approach** — Existing emits (at approximate lines ~228, ~235, ~243 in `src/pipeline/stages/acceptance.ts`) stay as progress messages. Add one canonical verdict event at per-story termination — after all ACs have been evaluated, before the stage returns `{ action: \"continue\" }` or `{ action: \"fail\" }`. The emit fires once per story regardless of pass/fail outcome. The `failedACs` field is `[]` when passed; `retries` captures hardening pass count.\n\n**Scope** — In: `src/pipeline/stages/acceptance.ts`. Out: any change to acceptance test execution logic, hardening pass behavior, or failure parsing.\n\n**Interface**\n```typescript\n// Once per story at acceptance stage exit\nlogger.info(\"acceptance\", \"verdict\", {\n  storyId: ctx.story.id,\n  packageDir: ctx.packageDir,\n  passed: allACsPassed,\n  failedACs: failedACs,    // [] if passed\n  retries: hardeningRetries,\n  durationMs: Date.now() - startTime,\n});\n```",
+      "acceptanceCriteria": [
+        "The acceptance stage emits logger.info(\"acceptance\", \"verdict\", ...) exactly once per story after all ACs are evaluated",
+        "When all ACs pass, the emit includes passed=true and failedACs=[]",
+        "When any AC fails, the emit includes passed=false and failedACs containing the failing AC identifiers",
+        "The emit includes retries reflecting the hardening pass count and durationMs as a positive integer"
+      ],
+      "tags": [
+        "feature",
+        "instrumentation"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/acceptance.ts",
+        "src/logger/logger.ts"
+      ],
+      "suggestedCriteria": [
+        "The verdict emit fires on both the pass path (action: \"continue\") and fail path (action: \"fail\")",
+        "failedACs field matches the exact set returned by parseTestFailures() when failures exist"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Add ReviewDecisionEvent bus channel for review audit routing",
+      "description": "**Goal** — Add a typed `ReviewDecisionEvent` channel to the dispatch event bus and route direct `recordDecision` calls through it, closing the asymmetry where review decisions bypass the bus while session-turn metadata goes through it.\n\n**Code-backed finding** — Current code has 3 call-shaped dispatch channels in `src/runtime/dispatch-events.ts` (`onDispatch`, `onOperationCompleted`, `onDispatchError`). Review dispatch metadata is captured by `src/runtime/middleware/review-audit.ts`, but parsed review decisions are still written directly via `runtime.reviewAuditor.recordDecision()` in `src/review/semantic.ts`, `src/review/adversarial.ts`, and `src/review/semantic-debate.ts`.\n\n**Scope note** — This is now included in the v0 implementation plan, but the curator collector still reads existing `review-audit/<feature>/*.json` files directly and must not depend on this event channel.\n\n**Approach** — Add a `ReviewDecisionEvent` type beside the existing call-shaped dispatch event types, not inside `DispatchEventBase` (which requires prompt/response/permissions and does not fit parsed decisions). Add `onReviewDecision` listener + `emitReviewDecision` method to `IDispatchEventBus`. In `src/runtime/middleware/review-audit.ts`, subscribe to review-decision events and pipe them to the auditor. Update the direct `recordDecision` call sites in `src/review/semantic.ts`, `src/review/adversarial.ts`, and `src/review/semantic-debate.ts` to emit through the bus.\n\n**Scope** — In: `src/runtime/dispatch-events.ts`, `src/runtime/middleware/review-audit.ts`, review call sites, and tests. Out: curator collector dependency, behavior changes to review logic, audit file shape changes.\n\n**Interface**\n```typescript\nexport interface ReviewDecisionEvent {\n  readonly kind: \"review-decision\";\n  readonly runId?: string;\n  readonly reviewer: \"semantic\" | \"adversarial\";\n  readonly workdir?: string;\n  readonly projectDir?: string;\n  readonly outputDir?: string;\n  readonly sessionName?: string;\n  readonly sessionId?: string | null;\n  readonly recordId?: string | null;\n  readonly agentName?: string;\n  readonly storyId?: string;\n  readonly featureName?: string;\n  readonly timestamp: number;\n  readonly parsed: boolean;\n  readonly looksLikeFail?: boolean;\n  readonly failOpen?: boolean;\n  readonly passed?: boolean;\n  readonly blockingThreshold?: \"error\" | \"warning\" | \"info\";\n  readonly result: { passed: boolean; findings: unknown[] } | null;\n  readonly advisoryFindings?: unknown[];\n}\n\ninterface IDispatchEventBus {\n  onReviewDecision(listener: (event: ReviewDecisionEvent) => void): () => void;\n  emitReviewDecision(event: ReviewDecisionEvent): void;\n}\n```",
+      "acceptanceCriteria": [
+        "emitReviewDecision() fires onReviewDecision listeners with a ReviewDecisionEvent containing kind=\"review-decision\"",
+        "onReviewDecision() returns an unsubscribe function that removes the listener from future emits",
+        "attachReviewAuditSubscriber() subscribes to review-decision events and forwards them to the auditor via recordDispatch()",
+        "When a review call site emits through the bus instead of calling auditor.recordDecision() directly, the auditor still receives the decision record"
+      ],
+      "tags": [
+        "feature",
+        "refactor",
+        "events"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/runtime/dispatch-events.ts",
+        "src/runtime/middleware/review-audit.ts",
+        "src/review/review-audit.ts"
+      ],
+      "suggestedCriteria": [
+        "Multiple listeners can subscribe to review-decision events and all receive the same event",
+        "A listener error does not prevent other listeners from receiving the event",
+        "The existing session-turn listener in review-audit middleware continues to work unchanged alongside the new review-decision listener"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Curator plugin scaffold with observation projection",
+      "description": "**Goal** — Create the curator as a built-in `IPostRunAction` plugin with Phase 1 (collection): read Tier 1 run artifacts and project them to a normalized `Observation[]` array, writing `observations.jsonl` per run.\n\n**Motivation** — After every nax run, signal lives in disparate run artifacts (manifests, run jsonl, audit JSONs, metrics) but nothing harvests it. This scaffold establishes the curator plugin registration, config schema, path resolution, post-run context wiring, and the observation collector that reads the Tier 1 sources and projects them to a single normalized schema.\n\n**Code-backed findings** — Current code already has folder-split output paths in `src/runtime/paths.ts`: `projectOutputDir()` defaults to `~/.nax/<projectKey>` and `curatorRollupPath()` defaults to `~/.nax/global/curator/rollup.jsonl`. `NaxRuntime` exposes `outputDir`, `globalDir`, `projectKey`, and `curatorRollupPath`, but `PostRunContext` currently does not expose them or the typed config. The plugin loader currently discovers global/project/config plugins only; there is no built-in plugin registration path.\n\n**Approach** —\n\n1. **Config schema and defaults**: Extend `CuratorConfigSchema` in `src/config/schemas-infra.ts` to add `enabled: z.boolean().default(true)` and configurable `thresholds`; keep `rollupPath` validation aligned with `curatorRollupPath()` (absolute or `~/`). Update `CuratorConfig` in `src/config/runtime-types.ts` and add `curatorConfigSelector` in `src/config/selectors.ts` only if a selector is actually used by the implementation.\n\n2. **Post-run context wiring**: Extend `PostRunContext` / `RunCleanupOptions` / `buildPostRunContext()` to include the fields the curator needs without re-deriving runtime state: `config`, `outputDir`, `globalDir`, `projectKey`, `curatorRollupPath`, and `logFilePath?`. Pass these from `runner.ts` using the existing `runtime` and `logFilePath`.\n\n3. **Built-in plugin registration**: Create `src/plugins/builtin/curator/index.ts` exporting a full `NaxPlugin` whose `provides` includes `\"post-run-action\"` and whose `extensions.postRunAction.name` is `\"nax-curator\"`. Add a small built-in registration path to the plugin loader/registry so this plugin is present by default, while `config.disabledPlugins` can still disable `nax-curator`.\n\n4. **Types**: Create `src/plugins/builtin/curator/types.ts` with a discriminated `Observation` union (`schemaVersion: 1`, identity fields, and kind-specific payloads) and `Proposal` types matching the spec §4 and §7. Payload parsing should be tolerant at read boundaries, but emitted observations should use typed payload shapes rather than an unbounded public `Record<string, unknown>` contract.\n\n5. **Paths**: Create `src/plugins/builtin/curator/paths.ts` with `resolveCuratorOutputs(context)` returning `{ observationsPath, proposalsPath, rollupPath }`. Resolve per-run files to `context.outputDir/runs/context.runId/...` and use `context.curatorRollupPath` directly for the append-only rollup file.\n\n6. **Collector**: Create `src/plugins/builtin/curator/collect.ts` that reads: `metrics.json` from `outputDir` (story verdicts, attempts, cost, tokens, context provider metrics), `review-audit/<feature>/*.json` from `outputDir`, context manifests from `workdir/.nax/features/<feature>/stories/<storyId>/context-manifest-*.json`, the active run JSONL from `context.logFilePath` when available, and logger lines for rectify/escalation/fix-cycle/pull-tool/acceptance observations. Returns `Observation[]` and never throws for a missing source directory.\n\n7. **Plugin execution**: Implement `shouldRun()` with `config.curator.enabled !== false` and `context.storySummary.completed > 0`; warn and continue when `config.review.audit.enabled` is false. Implement `execute()` to call the collector and write `observations.jsonl` for Phase 1.\n\n**Scope** — In: new files under `src/plugins/builtin/curator/`, config schema/type changes, post-run context wiring, built-in registration, collector tests. Out: heuristics (US-005), CLI (US-006), any LLM usage.\n\n**Interface**\n```typescript\nexport interface CuratorThresholds {\n  repeatedFinding: number;\n  emptyKeyword: number;\n  rectifyAttempts: number;\n  escalationChain: number;\n  staleChunkRuns: number;\n  unchangedOutcome: number;\n}\n\nexport interface CuratorConfig {\n  enabled: boolean;\n  rollupPath?: string;\n  thresholds: CuratorThresholds;\n}\n\nexport type Observation =\n  | ChunkIncludedObservation\n  | ChunkExcludedObservation\n  | ProviderEmptyObservation\n  | ReviewFindingObservation\n  | RectifyCycleObservation\n  | EscalationObservation\n  | AcceptanceVerdictObservation\n  | PullCallObservation\n  | CoChangeObservation\n  | VerdictObservation\n  | FixCycleIterationObservation\n  | FixCycleExitObservation\n  | FixCycleValidatorRetryObservation;\n\nexport interface CuratorPostRunContext extends PostRunContext {\n  config: NaxConfig;\n  outputDir: string;\n  globalDir: string;\n  projectKey: string;\n  curatorRollupPath: string;\n  logFilePath?: string;\n}\n\nexport async function collectObservations(context: CuratorPostRunContext): Promise<Observation[]>;\n\nexport function resolveCuratorOutputs(context: CuratorPostRunContext): {\n  observationsPath: string;\n  proposalsPath: string;\n  rollupPath: string;\n};\n```",
+      "acceptanceCriteria": [
+        "Curator config supports enabled, rollupPath, and thresholds with schema/default/type coverage, and PostRunContext exposes config, outputDir, globalDir, projectKey, curatorRollupPath, and logFilePath? from the active runtime/run.",
+        "The built-in nax-curator plugin is registered by default and appears in pluginRegistry.getPostRunActions(), while config.disabledPlugins can disable it.",
+        "collectObservations() returns schemaVersion=1 observations with runId, featureId, storyId, stage, ts, kind, and a plain-object payload for every emitted row.",
+        "collectObservations() reads outputDir artifacts (metrics.json and review-audit/<feature>/*.json) and projects story verdict/context metrics plus review findings when those sources exist.",
+        "collectObservations() reads workdir context manifests and projects chunk-included, chunk-excluded, and provider-empty observations, including stale exclusion reasons when present.",
+        "collectObservations() reads the active run JSONL when logFilePath is available and projects rectify-cycle, escalation, pull-call, acceptance-verdict, and fix-cycle observations from matching structured logger lines.",
+        "resolveCuratorOutputs() resolves observationsPath and proposalsPath under context.outputDir/runs/<runId>/ and uses context.curatorRollupPath as the rollup file path.",
+        "curatorPlugin.shouldRun() returns false when curator.enabled is explicitly false or no stories completed, returns true when enabled with completed stories, and warns-but-continues when review.audit.enabled is false.",
+        "curatorPlugin.execute() writes observations.jsonl to <outputDir>/runs/<runId>/observations.jsonl with one JSON line per observation.",
+        "Missing source directories, malformed source files, and per-source read errors are logged as warnings and do not cause collectObservations() or curatorPlugin.execute() to throw."
+      ],
+      "tags": [
+        "feature",
+        "plugin"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/plugins/extensions.ts",
+        "src/plugins/types.ts",
+        "src/plugins/loader.ts",
+        "src/plugins/registry.ts",
+        "src/config/schemas.ts",
+        "src/config/schemas-infra.ts",
+        "src/config/runtime-types.ts",
+        "src/runtime/index.ts",
+        "src/runtime/paths.ts",
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/execution/runner.ts",
+        "src/context/engine/manifest-store.ts",
+        "src/context/engine/types.ts",
+        "src/metrics/types.ts",
+        "src/logger/logger.ts"
+      ],
+      "suggestedCriteria": [
+        "Each observation's ts field is a valid ISO 8601 string",
+        "Observation payload is always a plain object (never undefined or null), even for kinds with no extra fields",
+        "collectObservations() handles missing source directories gracefully (no JSON files found = empty array for that source, not an error)",
+        "collectObservations() logs a warning and skips malformed JSON source files instead of failing the post-run action",
+        "The curator plugin appears in pluginRegistry.getPostRunActions() after registration",
+        "config.curator.thresholds defaults are materialized by NaxConfigSchema.parse({}) / DEFAULT_CONFIG",
+        "Relative curator.rollupPath is rejected consistently with src/runtime/paths.ts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Curator heuristics, proposal generation, and cross-run rollup",
+      "description": "**Goal** — Implement Phases 2 and 3 of the curator: 6 deterministic heuristics that group observations into proposals, a markdown renderer that writes `curator-proposals.md`, and an append-only cross-run rollup writer.\n\n**Motivation** — Observations alone don't help the operator — they need structured proposals with severity, evidence, and actionable targets. The heuristics turn raw observations into decision support, and the rollup enables cross-run trend analysis.\n\n**Approach** —\n\n**Heuristics (Phase 2):** Create `src/plugins/builtin/curator/heuristics.ts` with 6 pure functions, each taking `Observation[]` and thresholds, returning `Proposal[]`:\n\n| ID | Heuristic | Source kind | Threshold | Target | Severity |\n|:---|:---|:---|:---|:---|:---|\n| H1 | Repeated review finding | `review-finding` | `count(checkId) ≥ X` across stories | Add to `.nax/rules/curator-suggestions.md` | MED if 2-3, HIGH if ≥4 |\n| H2 | Pull-tool empty result | `pull-call` where `resultCount=0` | same `keyword` ≥ X | Add to `.nax/features/<id>/context.md` | MED |\n| H3 | Repeated rectification cycle | `rectify-cycle` | `attempts ≥ X` for same story | Add to `.nax/features/<id>/context.md` | HIGH |\n| H4 | Escalation chain | `escalation` | `fromTier→toTier ≥ X` for same story type | Add to `.nax/features/<id>/context.md` | MED |\n| H5 | Stale chunk | `chunk-excluded` where `reason=\"stale\"` | story still passed AND chunk excluded ≥ X runs back | Drop from staged rules target | LOW |\n| H6 | Fix-cycle unchanged outcome | `fix-cycle.iteration` where `outcome=\"unchanged\"` | ≥ X consecutive | Advisory | LOW |\n\nH1/H5 intentionally stage rule suggestions in `.nax/rules/curator-suggestions.md`; domain inference for `.nax/rules/<inferred-domain>.md` is deferred.\n\n**Render (Phase 3):** Create `src/plugins/builtin/curator/render.ts` that groups proposals by `target.action` and `target.canonicalFile`, renders markdown with checkbox sections per the spec §7 format. Each line carries severity in brackets, heuristic ID, and concrete evidence (counts, story IDs).\n\n**Rollup:** Create `src/plugins/builtin/curator/rollup.ts` with `appendToRollup(observations, rollupPath)` — append-only, `mkdir -p` on first run. `rollupPath` is the actual JSONL file path from `context.curatorRollupPath`, not a parent directory.\n\n**Integration:** Update `src/plugins/builtin/curator/index.ts` execute() to wire: collect → heuristics → render (write observations.jsonl + proposals.md) → rollup append. Curator errors must not change the nax run exit code.\n\n**Scope** — In: new files `heuristics.ts`, `render.ts`, `rollup.ts`, modifications to `index.ts`. Out: CLI (US-006), any LLM usage, auto-apply.\n\n**Interface**\n```typescript\nexport type ProposalTarget = {\n  canonicalFile: string;\n  action: \"add\" | \"drop\" | \"advisory\";\n};\n\nexport type Proposal = {\n  id: \"H1\" | \"H2\" | \"H3\" | \"H4\" | \"H5\" | \"H6\";\n  severity: \"LOW\" | \"MED\" | \"HIGH\";\n  target: ProposalTarget;\n  description: string;\n  evidence: string;\n  sourceKinds: Observation[\"kind\"][];\n  storyIds: string[];\n};\n\nexport function runHeuristics(observations: Observation[], thresholds: CuratorThresholds): Proposal[];\nexport function renderProposals(proposals: Proposal[], runId: string, observationCount: number): string;\nexport async function appendToRollup(observations: Observation[], rollupPath: string): Promise<void>;\n```",
+      "acceptanceCriteria": [
+        "runHeuristics() implements all six v0 heuristics H1-H6 with configurable thresholds, correct severity/action targets, and expected proposal IDs for representative positive cases.",
+        "H1/H5 rules proposals stage to .nax/rules/curator-suggestions.md in v0; feature-context proposals target .nax/features/<id>/context.md and H6 remains advisory.",
+        "runHeuristics() returns an empty array for empty or non-triggering observations and uses default thresholds when config values are absent.",
+        "renderProposals() produces markdown with generated timestamp, observation count, checkbox sections grouped by target action/canonical file, and proposal lines containing severity, heuristic ID, counts, and story evidence.",
+        "renderProposals() still produces useful markdown when zero proposals fire, including observation count and a zero-heuristics message.",
+        "appendToRollup() creates the rollup parent directory, appends one JSON line per observation, and logs/returns without throwing on write errors.",
+        "curatorPlugin.execute() wires collect → heuristics → render → rollup, writes observations.jsonl and curator-proposals.md, and never lets curator failures change the post-run exit behavior."
+      ],
+      "tags": [
+        "feature",
+        "heuristics",
+        "plugin"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/plugins/builtin/curator/collect.ts",
+        "src/plugins/builtin/curator/types.ts",
+        "src/plugins/builtin/curator/paths.ts",
+        "src/metrics/types.ts",
+        "src/runtime/paths.ts"
+      ],
+      "suggestedCriteria": [
+        "runHeuristics() returns an empty array when observations array is empty",
+        "runHeuristics() uses configurable thresholds from config.curator.thresholds, falling back to defaults when not configured",
+        "renderProposals() includes a generated timestamp in ISO 8601 format",
+        "Multiple proposals for the same target file are grouped under the same markdown section heading",
+        "Rollup append works correctly with POSIX concurrent writes (each observation under PIPE_BUF size)"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "nax curator CLI subcommands",
+      "description": "**Goal** — Add `nax curator status`, `nax curator commit`, `nax curator dryrun`, and `nax curator gc` CLI subcommands following the existing command pattern.\n\n**Motivation** — The curator produces proposals automatically post-run, but the operator needs CLI tools to inspect (`status`), accept proposals (`commit`), re-run heuristics during threshold calibration (`dryrun`), and manage rollup size (`gc`).\n\n**Code-backed finding** — `src/commands/common.ts` currently resolves the project root/config path only. Curator commands must additionally load config and resolve output paths using the same runtime path helpers as `createRuntime()` (`projectOutputDir`, `globalOutputDir`, `curatorRollupPath`) so they read from `~/.nax/<projectKey>/runs/<runId>/...` by default, not from the input `.nax/` directory.\n\n**Approach** — Create `src/commands/curator.ts` with injectable deps and async handler functions:\n\n1. **`curatorStatus(options)`**: Resolve project, load config, compute `outputDir`, find the given or latest run under `<outputDir>/runs`, read `observations.jsonl` and `curator-proposals.md`, print observation counts by kind and the proposal markdown when present.\n\n2. **`curatorCommit(options)`**: Parse `<outputDir>/runs/<runId>/curator-proposals.md` for checked `[x]` lines. For each checked line: if target is `.nax/features/<id>/context.md`, append the proposal description/evidence to that file; if target is `.nax/rules/curator-suggestions.md`, append to that file; if a drop proposal, remove the specified line range from the target file. Validate drops first, adds second; conflicts abort clearly. Open modified canonical files in `$EDITOR` for human review. Do not create a git commit automatically.\n\n3. **`curatorDryrun(options)`**: Re-run heuristics on an existing `observations.jsonl` file (default: latest run) using current `config.curator.thresholds`, and print rendered proposals to stdout without writing canonical files.\n\n4. **`curatorGc(options)`**: Prune old rows from the rollup JSONL. Default `--keep 50` retains rows for the 50 most recent runIds by max observation timestamp. It rewrites only the rollup file; it does not delete canonical feature files.\n\n**CLI registration**: Register `curator` as a Commander.js subcommand in the CLI entry point, with sub-subcommands for status, commit, dryrun, and gc.\n\n**Scope** — In: `src/commands/curator.ts`, CLI registration, barrel export. Out: any changes to how curator plugin runs, automatic git commits, interactive apply UX.\n\n**Interface**\n```typescript\nexport interface CuratorStatusOptions {\n  project?: string;\n  run?: string;\n}\nexport interface CuratorCommitOptions {\n  project?: string;\n  runId: string;\n}\nexport interface CuratorDryrunOptions {\n  project?: string;\n  run?: string;\n}\nexport interface CuratorGcOptions {\n  project?: string;\n  keep?: number;\n}\n\nexport async function curatorStatus(options: CuratorStatusOptions): Promise<void>;\nexport async function curatorCommit(options: CuratorCommitOptions): Promise<void>;\nexport async function curatorDryrun(options: CuratorDryrunOptions): Promise<void>;\nexport async function curatorGc(options: CuratorGcOptions): Promise<void>;\n\nexport const _curatorCmdDeps = {\n  resolveProject: typeof resolveProject;\n  loadConfig: typeof loadConfig;\n  projectOutputDir: typeof projectOutputDir;\n  globalOutputDir: typeof globalOutputDir;\n  curatorRollupPath: typeof curatorRollupPath;\n  readFile: typeof readFile;\n  writeFile: typeof writeFile;\n  appendFile: typeof appendFile;\n  openInEditor: (filePath: string) => Promise<void>;\n};\n```",
+      "acceptanceCriteria": [
+        "All curator commands resolve the project with resolveProject(), load config, and use runtime path helpers to locate generated artifacts under outputDir and the configured rollup path.",
+        "curatorStatus() supports latest-run and --run <runId> modes, prints observation counts by kind, and prints proposal markdown when present.",
+        "curatorCommit() parses checked [x] proposal lines, applies drops before adds, writes accepted changes to canonical target files, detects conflicts with a clear abort, opens modified files in $EDITOR, and never creates a git commit automatically.",
+        "curatorDryrun() re-runs heuristics on an existing observations.jsonl using current config.curator.thresholds and prints rendered proposals without modifying canonical files.",
+        "curatorGc() keeps rows for the most recent runIds using default --keep 50 or explicit --keep <N>, rewrites only the rollup file, and is a no-op when fewer runs exist than the keep count.",
+        "The CLI reports clear helpful messages for missing runs, missing proposals.md, invalid run IDs, and absent --project by falling back to CWD project resolution."
+      ],
+      "tags": [
+        "feature",
+        "cli"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/commands/index.ts",
+        "src/commands/runs.ts",
+        "src/commands/common.ts",
+        "src/config/loader.ts",
+        "src/runtime/paths.ts",
+        "src/plugins/builtin/curator/heuristics.ts",
+        "src/plugins/builtin/curator/render.ts"
+      ],
+      "suggestedCriteria": [
+        "curatorStatus() prints a helpful message when no runs exist (no observations.jsonl found)",
+        "curatorStatus() prints a helpful message when observations.jsonl exists but proposals.md does not",
+        "curatorCommit() skips lines in proposals.md that are not checkbox items without error",
+        "curatorCommit() with an invalid runId prints a clear error message",
+        "curatorGc() is a no-op when there are fewer runs than --keep",
+        "Each curator subcommand properly handles missing --project by using CWD resolution"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Document curator usage and architecture",
+      "description": "**Goal** — Add the documentation PR from the design spec so curator v0 is discoverable and operable after implementation.\n\n**Motivation** — The source spec includes a documentation PR as part of v0 readiness. Without docs, users will not know that `review.audit.enabled` improves curator quality, where outputs are written after the folder split, how to accept proposals safely, or how to tune thresholds during dogfood.\n\n**Approach** — Add `docs/guides/curator.md` covering what the curator reads, what it writes, how to enable/disable it, how to inspect proposals, how to use `nax curator commit`, and how threshold tuning works. Update `docs/architecture/subsystems.md` with a concise curator subsystem entry that explains projection-layer unification and explicitly says no LLM/auto-apply. Update README feature coverage. Update `docs/findings/2026-04-30-context-curator-design.md` status to point at the v0 spec/implementation.\n\n**Scope** — In: documentation only. Out: code behavior changes and threshold calibration defaults.",
+      "acceptanceCriteria": [
+        "docs/guides/curator.md explains curator inputs, outputs, configuration, review-audit dependency, proposal review flow, CLI commands, and threshold tuning",
+        "docs/architecture/subsystems.md includes a curator subsystem entry describing the built-in post-run plugin and projection-layer observations model",
+        "README mentions the curator as a deterministic post-run context maintenance feature",
+        "docs/findings/2026-04-30-context-curator-design.md status is updated to reference the implemented v0 spec/feature",
+        "Documentation states that curator never uses an LLM and never auto-applies canonical source changes without checked proposals plus `nax curator commit`"
+      ],
+      "tags": [
+        "docs"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "documentation-only story from source spec PR 7"
+      },
+      "contextFiles": [
+        "docs/specs/2026-05-04-context-curator-v0-design.md",
+        "docs/guides/curator.md",
+        "docs/architecture/subsystems.md",
+        "README.md",
+        "docs/findings/2026-04-30-context-curator-design.md"
+      ],
+      "suggestedCriteria": [
+        "The guide includes the default output paths for both project artifacts and global rollup",
+        "The guide documents config.curator.enabled=false and config.disabledPlugins=[\"nax-curator\"] as distinct disable options",
+        "The guide warns that rollup rows may contain project paths or story/context content and should be shared intentionally"
+      ]
+    }
+  ],
+  "analysis": "## Code-Backed Architecture Notes\n\nThe Context Curator remains a deterministic post-run projection plugin: no LLM calls, no automatic canonical-source edits, and no runtime event-log/blob-store unification. It reads existing artifacts, emits per-run observations, renders human-reviewable proposals, and appends observations to the configured rollup.\n\n## Confirmed Current Code Shape\n\n- src/runtime/paths.ts already implements the folder-split path layer: projectOutputDir(projectKey, config.outputDir) defaults to ~/.nax/<projectKey>, and curatorRollupPath(globalDir, config.curator?.rollupPath) defaults to ~/.nax/global/curator/rollup.jsonl.\n- src/runtime/index.ts exposes runtime.outputDir, runtime.globalDir, runtime.projectKey, and runtime.curatorRollupPath, but src/plugins/extensions.ts / src/execution/lifecycle/run-cleanup.ts do not currently pass those fields into PostRunContext.\n- src/plugins/loader.ts currently loads global/project/config plugins only. There is no built-in plugin registration path, so curator registration needs a small loader/registry addition.\n- src/config/schemas-infra.ts currently has only curator.rollupPath; enabled and thresholds are not yet in schema or CuratorConfig.\n- src/context/engine/manifest-store.ts stores manifests under project input .nax/features/<feature>/stories/<storyId>/context-manifest-<stage>.json; these are not under outputDir.\n- src/metrics/tracker.ts saves generated metrics.json under runtime.outputDir.\n- src/review/review-audit.ts writes review audit JSON under outputDir/review-audit/<feature>/ when runtime outputDir is available.\n- The active run JSONL path is known to runner as logFilePath, but it is not currently included in post-run context.\n- src/context/engine/pull-tools.ts and src/pipeline/stages/acceptance.ts do not yet emit the two curator-specific logger lines.\n- ReviewDecisionEvent is optional. The code has direct recordDecision() call sites in semantic.ts, adversarial.ts, and semantic-debate.ts, but curator v0 can read review-audit JSON without changing that path.\n\n## PRD Corrections Applied\n\n- US-003 is included for implementation per product decision, while curator collection remains independent of the new event channel.\n- US-004 now includes post-run context wiring, built-in plugin registration, outputDir/globalDir/rollup path usage, and grouped acceptance coverage for the observation families from the spec.\n- US-005 now uses target.action consistently, clarifies that curatorRollupPath is a file path, and has grouped ACs for heuristics/render/rollup integration.\n- US-006 now resolves generated artifacts through config plus runtime path helpers and has grouped ACs for status/commit/dryrun/gc behavior.\n- US-007 was added for the documentation PR that was present in the spec but missing as an executable story.\n\n## Deferred / Out Of Scope\n\n- Dogfood and calibrated threshold defaults remain post-implementation follow-up work, not this PRD implementation scope.\n- Domain inference for rule files remains deferred; v0 stages rules suggestions in .nax/rules/curator-suggestions.md.\n- Event-log/blob-store unification remains explicitly out of scope."
+}

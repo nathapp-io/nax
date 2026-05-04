@@ -4,7 +4,7 @@
     "claude": {
       "fast": "haiku",
       "balanced": "sonnet",
-      "powerful": "opus"
+      "powerful": "sonnet"
     },
     "opencode": {
       "fast": "minimax/MiniMax-M2.7",
@@ -108,7 +108,7 @@
     "commands": {
       "test": "bun run test",
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint",
+      "lint": "bun run lint:json",
       "build": "bun run build",
       "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
     },
@@ -128,7 +128,7 @@
     ],
     "commands": {
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint",
+      "lint": "bun run lint:json",
       "build": "bun run build",
       "lintFix": "bun run lint:fix",
       "formatFix": "bun run lint:fix"
