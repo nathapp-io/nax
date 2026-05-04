@@ -15,6 +15,10 @@ import { projectOutputDir } from "../runtime";
 import { diagnoseStories, generateRecommendations } from "./diagnose-analysis";
 import { formatReport } from "./diagnose-formatter";
 
+export const _diagnoseDeps = {
+  projectOutputDir: projectOutputDir as typeof projectOutputDir,
+};
+
 export interface DiagnoseOptions {
   feature?: string;
   workdir?: string;
@@ -141,7 +145,7 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
   }
   if (!projectDir) throw new Error("Not in a nax project directory");
 
-  const outputDir = projectOutputDir(basename(projectDir), undefined);
+  const outputDir = _diagnoseDeps.projectOutputDir(basename(projectDir), undefined);
 
   let feature = options.feature;
   if (!feature) {

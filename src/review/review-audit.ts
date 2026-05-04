@@ -32,6 +32,8 @@ export interface ReviewAuditEntry {
   workdir: string;
   /** Project root, when known. */
   projectDir?: string;
+  /** Output directory — when present, used as the first choice for resolvedDir. */
+  outputDir?: string;
   /** Agent that produced the reviewed response. */
   agentName?: string;
   /** Story ID for metadata. */
@@ -65,6 +67,8 @@ export interface ReviewAuditDispatch {
   recordId?: string | null;
   workdir?: string;
   projectDir?: string;
+  /** Output directory — when present, used as the first choice for resolvedDir. */
+  outputDir?: string;
   agentName?: string;
   storyId?: string;
   featureName?: string;
@@ -132,8 +136,13 @@ function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): string {
 }
 
 async function persistReviewAudit(entry: ReviewAuditEntry): Promise<void> {
-  const projectRoot = entry.projectDir ?? (await _reviewAuditDeps.findNaxProjectRoot(entry.workdir));
-  const resolvedDir = join(projectRoot, ".nax", "review-audit", entry.featureName ?? "_unknown");
+  let resolvedDir: string;
+  if (entry.outputDir) {
+    resolvedDir = join(entry.outputDir, "review-audit", entry.featureName ?? "_unknown");
+  } else {
+    const projectRoot = entry.projectDir ?? (await _reviewAuditDeps.findNaxProjectRoot(entry.workdir));
+    resolvedDir = join(projectRoot, ".nax", "review-audit", entry.featureName ?? "_unknown");
+  }
 
   await _reviewAuditDeps.mkdir(resolvedDir);
 
@@ -156,7 +165,7 @@ export class ReviewAuditor implements IReviewAuditor {
 
   constructor(
     private readonly _runId: string,
-    private readonly _workdir: string,
+    private readonly _outputDir: string,
   ) {}
 
   recordDispatch(entry: ReviewAuditDispatch): void {
@@ -173,7 +182,8 @@ export class ReviewAuditor implements IReviewAuditor {
       sessionName: entry.sessionName ?? dispatch?.sessionName ?? fallbackSessionName(entry),
       sessionId: entry.sessionId ?? dispatch?.sessionId ?? null,
       recordId: entry.recordId ?? dispatch?.recordId ?? null,
-      workdir: entry.workdir ?? dispatch?.workdir ?? this._workdir,
+      workdir: entry.workdir ?? dispatch?.workdir ?? "",
+      outputDir: entry.outputDir ?? dispatch?.outputDir ?? this._outputDir,
       projectDir: entry.projectDir ?? dispatch?.projectDir,
       agentName: entry.agentName ?? dispatch?.agentName,
       storyId: entry.storyId ?? dispatch?.storyId,

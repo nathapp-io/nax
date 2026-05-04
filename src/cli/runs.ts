@@ -5,10 +5,11 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type { LogEntry } from "../logger/types";
+import { projectOutputDir } from "../runtime";
 
 /**
  * Options for runs list command.
@@ -18,6 +19,8 @@ export interface RunsListOptions {
   feature: string;
   /** Project directory */
   workdir: string;
+  /** Config-derived output dir override — when absent, defaults to ~/.nax/<basename(workdir)> */
+  outputDir?: string;
 }
 
 /**
@@ -30,6 +33,8 @@ export interface RunsShowOptions {
   feature: string;
   /** Project directory */
   workdir: string;
+  /** Config-derived output dir override — when absent, defaults to ~/.nax/<basename(workdir)> */
+  outputDir?: string;
 }
 
 /**
@@ -64,7 +69,8 @@ export async function runsListCommand(options: RunsListOptions): Promise<void> {
   const logger = getLogger();
   const { feature, workdir } = options;
 
-  const runsDir = join(workdir, ".nax", "features", feature, "runs");
+  const outputDir = options.outputDir ?? projectOutputDir(basename(workdir), undefined);
+  const runsDir = join(outputDir, "features", feature, "runs");
 
   if (!existsSync(runsDir)) {
     logger.info("cli", "No runs found for feature", { feature, hint: `Directory not found: ${runsDir}` });
@@ -126,7 +132,8 @@ export async function runsShowCommand(options: RunsShowOptions): Promise<void> {
   const logger = getLogger();
   const { runId, feature, workdir } = options;
 
-  const logPath = join(workdir, ".nax", "features", feature, "runs", `${runId}.jsonl`);
+  const outputDir = options.outputDir ?? projectOutputDir(basename(workdir), undefined);
+  const logPath = join(outputDir, "features", feature, "runs", `${runId}.jsonl`);
 
   if (!existsSync(logPath)) {
     logger.error("cli", "Run not found", { runId, feature, logPath });

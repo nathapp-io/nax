@@ -34,13 +34,20 @@ export interface MetaJson {
  * Listens to run:started and writes meta.json to
  * ~/.nax/runs/<project>-<feature>-<runId>/meta.json.
  *
- * @param bus     - The pipeline event bus
- * @param feature - Feature name
- * @param runId   - Current run ID
- * @param workdir - Working directory (project name derived via basename)
+ * @param bus       - The pipeline event bus
+ * @param feature   - Feature name
+ * @param runId     - Current run ID
+ * @param workdir   - Working directory (project name derived via basename)
+ * @param outputDir - Project output directory (where status.json and features/ live)
  * @returns Unsubscribe function
  */
-export function wireRegistry(bus: PipelineEventBus, feature: string, runId: string, workdir: string): UnsubscribeFn {
+export function wireRegistry(
+  bus: PipelineEventBus,
+  feature: string,
+  runId: string,
+  workdir: string,
+  outputDir: string,
+): UnsubscribeFn {
   const logger = getSafeLogger();
   const project = basename(workdir);
   const runDir = join(homedir(), ".nax", "runs", `${project}-${feature}-${runId}`);
@@ -55,8 +62,8 @@ export function wireRegistry(bus: PipelineEventBus, feature: string, runId: stri
           project,
           feature,
           workdir,
-          statusPath: join(workdir, ".nax", "features", feature, "status.json"),
-          eventsDir: join(workdir, ".nax", "features", feature, "runs"),
+          statusPath: join(outputDir, "features", feature, "status.json"),
+          eventsDir: join(outputDir, "features", feature, "runs"),
           registeredAt: new Date().toISOString(),
         };
         await writeFile(metaFile, JSON.stringify(meta, null, 2));
