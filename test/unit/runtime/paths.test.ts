@@ -10,6 +10,7 @@ import {
   identityPath,
   readProjectIdentity,
   writeProjectIdentity,
+  curatorRollupPath,
   type ProjectIdentity,
 } from "../../../src/runtime";
 
@@ -94,8 +95,6 @@ describe("identity I/O", () => {
   });
 });
 
-import { curatorRollupPath } from "../../../src/runtime";
-
 describe("curatorRollupPath", () => {
   it("defaults to globalDir/curator/rollup.jsonl", () => {
     const result = curatorRollupPath("/home/user/.nax/global", undefined);
@@ -110,6 +109,10 @@ describe("curatorRollupPath", () => {
   it("expands tilde in override", () => {
     const result = curatorRollupPath("/home/user/.nax/global", "~/custom/rollup.jsonl");
     expect(result).toBe(path.join(os.homedir(), "custom/rollup.jsonl"));
+  });
+
+  it("throws NaxError for relative override", () => {
+    expect(() => curatorRollupPath("/home/user/.nax/global", "relative/path")).toThrow(NaxError);
   });
 });
 

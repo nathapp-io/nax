@@ -71,5 +71,12 @@ export function curatorRollupPath(globalDir: string, rollupPathOverride: string 
   if (rollupPathOverride.startsWith("~/")) {
     return path.join(os.homedir(), rollupPathOverride.slice(2));
   }
-  return rollupPathOverride;
+  if (path.isAbsolute(rollupPathOverride)) {
+    return rollupPathOverride;
+  }
+  throw new NaxError("curator.rollupPath must be absolute or start with ~/", "CONFIG_INVALID", {
+    stage: "runtime",
+    field: "curator.rollupPath",
+    value: rollupPathOverride,
+  });
 }
