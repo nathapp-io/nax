@@ -193,3 +193,5 @@
 {"timestamp":"2026-05-04T12:42:22.515Z","level":"warn","stage":"crash-recovery","message":"Received SIGPIPE (subprocess exited before stdin write — suppressed)"}
 {"timestamp":"2026-05-04T12:42:22.515Z","level":"warn","stage":"crash-recovery","message":"Received SIGPIPE (subprocess exited before stdin write — suppressed)"}
 {"timestamp":"2026-05-04T12:42:22.515Z","level":"warn","stage":"crash-recovery","message":"Received SIGPIPE (subprocess exited before stdin write — suppressed)"}
+{"timestamp":"2026-05-04T12:42:22.515Z","level":"warn","stage":"crash-recovery","message":"Received SIGPIPE (subprocess exited before stdin write — suppressed)"}
+{"timestamp":"2026-05-04T12:42:22.515Z","level":"warn","stage":"crash-recovery","message":"Received SIGPIPE (subprocess exited before stdin write — suppressed)"}
