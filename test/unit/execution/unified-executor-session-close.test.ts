@@ -83,6 +83,7 @@ function makeCtx(sessionManager: ISessionManager) {
     batchPlan: [],
     interactionChain: null,
     sessionManager,
+    runtime: { outputDir: "/tmp/nax-test-session-close-output" },
   };
 }
 
