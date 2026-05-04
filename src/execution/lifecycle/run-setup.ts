@@ -228,8 +228,15 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
         storyId: "_setup",
         count: candidates.length,
       });
-      await migrateCommand({ workdir });
-      logger?.info("setup", "Auto-migration complete", { storyId: "_setup" });
+      try {
+        await migrateCommand({ workdir });
+        logger?.info("setup", "Auto-migration complete", { storyId: "_setup" });
+      } catch (err) {
+        logger?.warn("setup", "Auto-migration failed — continuing without migration", {
+          storyId: "_setup",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 

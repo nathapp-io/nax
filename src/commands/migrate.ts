@@ -187,11 +187,8 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
     await mkdir(path.dirname(dest), { recursive: true });
 
     if (existsSync(dest)) {
-      throw new NaxError(`Migration conflict: destination already exists: ${dest}`, "MIGRATE_CONFLICT", {
-        stage: "migrate",
-        src: candidate.srcPath,
-        dest,
-      });
+      logger.warn("migrate", `Skipping — destination already exists: ${dest}`, { storyId: "_migrate" });
+      continue;
     }
 
     try {
