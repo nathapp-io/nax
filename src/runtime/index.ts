@@ -129,9 +129,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const configLoader = createConfigLoader(config);
   const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
 
-  // TODO(Task 2): replace casts once name/outputDir are added to NaxConfigSchema
-  const projectKey = (config as { name?: string }).name?.trim() || basename(workdir);
-  const outputDir = projectOutputDir(projectKey, (config as { outputDir?: string }).outputDir);
+  const projectKey = config.name?.trim() || basename(workdir);
+  const outputDir = projectOutputDir(projectKey, config.outputDir);
   const globalDir = globalOutputDir();
 
   const costDir = join(workdir, ".nax", "cost");

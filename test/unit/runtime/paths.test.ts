@@ -93,3 +93,66 @@ describe("identity I/O", () => {
     expect(result).toBeNull();
   });
 });
+
+import { NaxConfigSchema } from "../../../src/config/schemas";
+
+describe("NaxConfigSchema name field", () => {
+  it("accepts a valid name", () => {
+    const result = NaxConfigSchema.safeParse({ name: "my-project" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a name with underscores and digits", () => {
+    const result = NaxConfigSchema.safeParse({ name: "proj_1" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a name with uppercase letters", () => {
+    const result = NaxConfigSchema.safeParse({ name: "MyProject" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects reserved name 'global'", () => {
+    const result = NaxConfigSchema.safeParse({ name: "global" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects reserved name '_archive'", () => {
+    const result = NaxConfigSchema.safeParse({ name: "_archive" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a name starting with '.'", () => {
+    const result = NaxConfigSchema.safeParse({ name: ".hidden" });
+    expect(result.success).toBe(false);
+  });
+
+  it("defaults name to empty string when absent", () => {
+    const result = NaxConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.name).toBe("");
+  });
+
+  it("accepts optional outputDir as absolute path", () => {
+    const result = NaxConfigSchema.safeParse({ name: "koda", outputDir: "/mnt/fast/nax/koda" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts outputDir starting with ~/", () => {
+    const result = NaxConfigSchema.safeParse({ name: "koda", outputDir: "~/custom/koda" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects relative outputDir", () => {
+    const result = NaxConfigSchema.safeParse({ name: "koda", outputDir: "relative/path" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts curator.rollupPath", () => {
+    const result = NaxConfigSchema.safeParse({
+      name: "koda",
+      curator: { rollupPath: "/mnt/share/rollup.jsonl" },
+    });
+    expect(result.success).toBe(true);
+  });
+});

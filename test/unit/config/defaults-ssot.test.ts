@@ -17,6 +17,8 @@ import { NaxConfigSchema } from "../../../src/config/schemas";
 import type { NaxConfig } from "../../../src/config/types";
 
 const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
+  "name",
+  "outputDir",
   "version",
   "models",
   "autoMode",
@@ -40,6 +42,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "agent",
   "generate",
   "project",
+  "curator",
   "debate",
   "profile",
 ];

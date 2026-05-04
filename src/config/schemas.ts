@@ -18,6 +18,7 @@ import {
 import {
   AcceptanceConfigSchema,
   AgentConfigSchema,
+  CuratorConfigSchema,
   GenerateConfigSchema,
   HooksConfigSchema,
   InteractionConfigSchema,
@@ -40,6 +41,27 @@ export { PromptsConfigSchema } from "./schemas-infra";
 
 export const NaxConfigSchema = z
   .object({
+    name: z
+      .string()
+      .default("")
+      .refine((v) => v === "" || /^[a-z0-9_-]+$/.test(v), {
+        message: "name must contain only lowercase letters, digits, hyphens, and underscores",
+      })
+      .refine((v) => v === "" || (!v.startsWith(".") && !v.startsWith("_")), {
+        message: "name must not start with '.' or '_'",
+      })
+      .refine((v) => !["global", "_archive"].includes(v), {
+        message: "name 'global' and '_archive' are reserved",
+      })
+      .refine((v) => v === "" || v.length <= 64, {
+        message: "name must be at most 64 characters",
+      }),
+    outputDir: z
+      .string()
+      .optional()
+      .refine((v) => v === undefined || v.startsWith("/") || v.startsWith("~/"), {
+        message: "outputDir must be absolute or start with ~/",
+      }),
     version: z.number().default(1),
     models: ModelMapSchema.default({
       claude: {
@@ -356,6 +378,7 @@ export const NaxConfigSchema = z
         },
       },
     })),
+    curator: CuratorConfigSchema.optional(),
     profile: z.string().default("default"),
   })
   .refine((data) => data.version === 1, {
