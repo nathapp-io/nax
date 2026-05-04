@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { acceptanceGenerateOp } from "../../../src/operations/acceptance-generate";
 import type { AcceptanceGenerateInput } from "../../../src/operations/acceptance-generate";
 import type { VerifyContext } from "../../../src/operations/types";
-import { makeTestRuntime } from "../../helpers";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import { withTempDir } from "../../helpers/temp";
 
 const SAMPLE_INPUT: AcceptanceGenerateInput = {
@@ -45,6 +45,21 @@ describe("acceptanceGenerateOp shape", () => {
   });
   test("stage is acceptance", () => {
     expect(acceptanceGenerateOp.stage).toBe("acceptance");
+  });
+  test("model resolves from acceptance.model config", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(acceptanceGenerateOp.config) };
+
+    expect(acceptanceGenerateOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
   });
 });
 

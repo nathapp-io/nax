@@ -44,6 +44,11 @@ export const debateRebutOp: CompleteOperation<DebateRebutInput, string, DebateCo
   stage: "review",
   jsonMode: false,
   config: debateConfigSelector,
+  model: (input) => {
+    const debater = input.debaters[input.debaterIndex];
+    if (!debater) return "fast";
+    return { agent: debater.agent, model: debater.model ?? "fast" };
+  },
   build(input, _ctx) {
     const builder = new DebatePromptBuilder(
       { taskContext: input.taskContext, outputFormat: "", stage: input.stage },

@@ -153,7 +153,10 @@ export function buildHopCallback(
       role: resolvedRunOptions.sessionRole ?? "implementer",
       pipelineStage: stage,
     });
-    const modelDef = resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
+    const modelDef =
+      failure === undefined
+        ? (resolvedRunOptions.modelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
+        : resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
     const timeoutSeconds = resolvedRunOptions.timeoutSeconds ?? config.execution.sessionTimeoutSeconds;
 
     // openSession errors propagate naturally — no handle, no closeSession needed

@@ -23,6 +23,7 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
   stage: "acceptance",
   jsonMode: true,
   config: acceptanceConfigSelector,
+  model: (_input, ctx) => ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.acceptance.timeoutMs,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildRefinementPrompt(input.criteria, input.codebaseContext, {

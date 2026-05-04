@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeTestRuntime } from "../../helpers";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "../../../src/operations/acceptance-fix";
 import { acceptanceFixSourceOp, acceptanceFixTestOp } from "../../../src/operations/acceptance-fix";
 
@@ -48,6 +48,23 @@ describe("acceptanceFixSourceOp shape", () => {
     const ctx = makeSourceCtx();
     const timeoutMs = acceptanceFixSourceOp.timeoutMs?.(SOURCE_INPUT, ctx);
     expect(timeoutMs).toBe((ctx.config.execution.sessionTimeoutSeconds ?? 0) * 1000);
+  });
+  test("model resolves from acceptance.fix.fixModel", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        fix: {
+          fixModel: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+        },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(acceptanceFixSourceOp.config) };
+
+    expect(acceptanceFixSourceOp.model?.(SOURCE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
   });
 });
 
@@ -102,6 +119,23 @@ describe("acceptanceFixTestOp shape", () => {
     const ctx = makeTestCtx();
     const timeoutMs = acceptanceFixTestOp.timeoutMs?.(TEST_INPUT, ctx);
     expect(timeoutMs).toBe((ctx.config.execution.sessionTimeoutSeconds ?? 0) * 1000);
+  });
+  test("model resolves from acceptance.fix.fixModel", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        fix: {
+          fixModel: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+        },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(acceptanceFixTestOp.config) };
+
+    expect(acceptanceFixTestOp.model?.(TEST_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
   });
 });
 

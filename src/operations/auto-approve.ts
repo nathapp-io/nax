@@ -14,6 +14,20 @@ import type { SchemaDescriptor } from "../prompts";
 import { parseLLMJson } from "../utils/llm-json";
 import type { BuildContext, CompleteOperation } from "./types";
 
+function resolveAutoApproveModel(config: InteractionConfig): string {
+  const root =
+    typeof config === "object" &&
+    config !== null &&
+    "interaction" in config &&
+    typeof config.interaction === "object" &&
+    config.interaction !== null
+      ? config.interaction
+      : config;
+  const value = (root as { config?: Record<string, unknown> }).config?.model;
+  if (typeof value === "string") return value;
+  return "fast";
+}
+
 const AUTO_APPROVER_SCHEMA: SchemaDescriptor = {
   name: "ApprovalDecision",
   description: "Respond with ONLY this JSON — no markdown, no explanation.",
@@ -59,6 +73,7 @@ export const autoApproveOp: CompleteOperation<AutoApproveInput, AutoApproveOutpu
   stage: "run",
   jsonMode: true,
   config: interactionConfigSelector,
+  model: (_input, ctx) => resolveAutoApproveModel(ctx.config),
 
   build(input: AutoApproveInput, _ctx: BuildContext<InteractionConfig>) {
     const requestLines = [

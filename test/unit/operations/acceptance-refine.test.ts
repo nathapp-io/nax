@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeTestRuntime } from "../../helpers";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import type { AcceptanceRefineInput } from "../../../src/operations/acceptance-refine";
 import { acceptanceRefineOp } from "../../../src/operations/acceptance-refine";
 
@@ -31,6 +31,21 @@ describe("acceptanceRefineOp shape", () => {
   });
   test("stage is acceptance", () => {
     expect(acceptanceRefineOp.stage).toBe("acceptance");
+  });
+  test("model resolves from acceptance.model config", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(acceptanceRefineOp.config) };
+
+    expect(acceptanceRefineOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
   });
 });
 

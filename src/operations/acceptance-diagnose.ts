@@ -33,6 +33,7 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
   stage: "acceptance",
   session: { role: "diagnose", lifetime: "fresh" },
   config: acceptanceConfigSelector,
+  model: (_input, ctx) => ctx.config.acceptance.fix?.diagnoseModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.acceptance.timeoutMs,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildDiagnosisPrompt({

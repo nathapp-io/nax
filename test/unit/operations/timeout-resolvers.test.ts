@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeTestRuntime } from "../../helpers";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import { decomposeOp } from "../../../src/operations/decompose";
 import { planOp } from "../../../src/operations/plan";
@@ -22,6 +22,29 @@ describe("operation timeout resolvers", () => {
     expect(timeoutMs).toBe((ctx.config.plan.timeoutSeconds ?? 600) * 1000);
   });
 
+  test("planOp model resolves from plan.model config", () => {
+    const config = makeNaxConfig({
+      plan: {
+        model: { agent: "opencode", model: "opencode-go/kimi-k2.6" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(planOp.config) };
+
+    const model = planOp.model?.(
+      {
+        specContent: "spec",
+        codebaseContext: "",
+        featureName: "feature",
+        branchName: "feature-branch",
+      },
+      ctx,
+    );
+
+    expect(model).toEqual({ agent: "opencode", model: "opencode-go/kimi-k2.6" });
+  });
+
   test("decomposeOp timeoutMs prefers plan.decomposeTimeoutSeconds", () => {
     const runtime = makeTestRuntime();
     const view = runtime.packages.repo();
@@ -34,6 +57,27 @@ describe("operation timeout resolvers", () => {
       ctx,
     );
     expect(timeoutMs).toBe((ctx.config.plan.decomposeTimeoutSeconds ?? ctx.config.plan.timeoutSeconds ?? 600) * 1000);
+  });
+
+  test("decomposeOp model resolves from plan.model config", () => {
+    const config = makeNaxConfig({
+      plan: {
+        model: { agent: "opencode", model: "opencode-go/deepseek-v4-pro" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(decomposeOp.config) };
+
+    const model = decomposeOp.model?.(
+      {
+        specContent: "spec",
+        codebaseContext: "",
+      },
+      ctx,
+    );
+
+    expect(model).toEqual({ agent: "opencode", model: "opencode-go/deepseek-v4-pro" });
   });
 
   test("semanticReviewOp timeoutMs resolves from semanticConfig.timeoutMs input", () => {

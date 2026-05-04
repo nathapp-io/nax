@@ -32,6 +32,31 @@ describe("debateRebutOp", () => {
     expect(debateRebutOp.stage).toBe("review");
   });
 
+  test("model resolves from selected debater", () => {
+    const input = {
+      taskContext: "review code changes",
+      stage: "review",
+      debaterIndex: 1,
+      proposals,
+      debaters,
+    };
+    expect(debateRebutOp.model?.(input, makeBuildCtx())).toEqual({
+      agent: "opencode",
+      model: "fast",
+    });
+  });
+
+  test("model falls back to fast for invalid debater index", () => {
+    const input = {
+      taskContext: "review code changes",
+      stage: "review",
+      debaterIndex: 99,
+      proposals,
+      debaters,
+    };
+    expect(debateRebutOp.model?.(input, makeBuildCtx())).toBe("fast");
+  });
+
   test("build returns ComposeInput with rebuttal prompt", () => {
     const input = {
       taskContext: "review code changes",

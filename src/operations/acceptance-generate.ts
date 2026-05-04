@@ -27,6 +27,7 @@ export const acceptanceGenerateOp: CompleteOperation<
   stage: "acceptance",
   jsonMode: false,
   config: acceptanceGenConfigSelector,
+  model: (_input, ctx) => ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildGeneratorFromPRDPrompt({
