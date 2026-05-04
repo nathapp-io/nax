@@ -1,20 +1,20 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-22T08-05-29-172Z",
-    "feature": "test-coverage-provider",
-    "startedAt": "2026-04-22T08:05:29.172Z",
-    "status": "completed",
+    "id": "run-2026-05-04T11-11-53-385Z",
+    "feature": "context-curator-v0",
+    "startedAt": "2026-05-04T11:11:53.385Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 581103
+    "pid": 58689
   },
   "progress": {
-    "total": 4,
-    "passed": 4,
+    "total": 7,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 7
   },
   "cost": {
     "spent": 0,
@@ -22,16 +22,7 @@
   },
   "current": null,
   "iterations": 0,
-  "updatedAt": "2026-04-22T08:24:03.625Z",
-  "durationMs": 1114453,
-  "postRun": {
-    "acceptance": {
-      "status": "passed",
-      "lastRunAt": "2026-04-22T08:18:13.733Z"
-    },
-    "regression": {
-      "status": "passed",
-      "lastRunAt": "2026-04-22T08:24:03.616Z"
-    }
-  }
+  "updatedAt": "2026-05-04T11:22:53.438Z",
+  "durationMs": 660053,
+  "lastHeartbeat": "2026-05-04T11:22:53.437Z"
 }

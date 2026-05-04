@@ -1,0 +1,282 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "handleQueryNeighbor emits logger.info(\"pull-tool\", \"invoked\", ...) with tool=\"query_neighbor\" and resultCount matching the number of neighbor chunks found",
+    "refined": "When handleQueryNeighbor is called, logger.info is called with subsystem=\"pull-tool\", message=\"invoked\", and data object containing tool=\"query_neighbor\" and resultCount equal to result.chunks.length at the time of the call",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "handleQueryFeatureContext emits logger.info(\"pull-tool\", \"invoked\", ...) with tool=\"query_feature_context\" and keyword matching the input filter",
+    "refined": "When handleQueryFeatureContext is called, logger.info is called with subsystem=\"pull-tool\", message=\"invoked\", and data object containing tool=\"query_feature_context\" and keyword equal to input.filter (or null when input.filter is undefined)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When a pull-tool call returns zero results, the emit includes resultCount=0 and resultBytes=0",
+    "refined": "When handleQueryNeighbor or handleQueryFeatureContext produces an empty result (chunks.length=0 or no sections after filtering), the logger.info data object contains resultCount=0 and resultBytes=0",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When handleQueryNeighbor truncates content, the emit includes truncated=true",
+    "refined": "When handleQueryNeighbor truncates the assembled content (i.e., the truncation branch is taken), the logger.info data object contains truncated=true; when no truncation occurs, the truncated key is absent from the data object",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "The acceptance stage emits logger.info(\"acceptance\", \"verdict\", ...) exactly once per story after all ACs are evaluated",
+    "refined": "When runAcceptanceStage() completes for a story, exactly one logger.info call with stage=\"acceptance\" and message=\"verdict\" is recorded in the log output, regardless of pass/fail outcome. Verified by capturing logger calls in a test spy and asserting spy.calls.filter(c => c[0]===\"acceptance\" && c[1]===\"verdict\").length === 1.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When all ACs pass, the emit includes passed=true and failedACs=[]",
+    "refined": "When all acceptance criteria pass, the single verdict log entry has data.passed === true and data.failedACs deep-equal to []. Verified by asserting the captured verdict call's third argument satisfies { passed: true, failedACs: [] }.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When any AC fails, the emit includes passed=false and failedACs containing the failing AC identifiers",
+    "refined": "When one or more acceptance criteria fail, the single verdict log entry has data.passed === false and data.failedACs is a non-empty array containing the string identifiers of every failing AC. Verified by asserting the captured verdict call's third argument satisfies { passed: false, failedACs: [<id1>, ...] } where the array matches expected failing AC ids.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "The emit includes retries reflecting the hardening pass count and durationMs as a positive integer",
+    "refined": "The verdict log entry's data object has data.retries equal to the number of hardening passes executed (0 if no hardening occurred) and data.durationMs is an integer greater than or equal to 0. Verified by asserting typeof data.retries === 'number' && data.retries === expectedHardeningCount && Number.isInteger(data.durationMs) && data.durationMs >= 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "emitReviewDecision() fires onReviewDecision listeners with a ReviewDecisionEvent containing kind=\"review-decision\"",
+    "refined": "Given a DispatchEventBus instance with a registered onReviewDecision listener, when emitReviewDecision() is called with a ReviewDecisionEvent object, the listener is invoked exactly once with the same event object, and event.kind === \"review-decision\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-10",
+    "original": "onReviewDecision() returns an unsubscribe function that removes the listener from future emits",
+    "refined": "Given a DispatchEventBus instance, when onReviewDecision() is called it returns a function; after that function is invoked and emitReviewDecision() is called again, the listener's call count does not increase beyond its count before unsubscription",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-11",
+    "original": "attachReviewAuditSubscriber() subscribes to review-decision events and forwards them to the auditor via recordDispatch()",
+    "refined": "Given a DispatchEventBus and a mock auditor with a recordDispatch spy, when attachReviewAuditSubscriber() is called and emitReviewDecision() fires with a ReviewDecisionEvent, the auditor.recordDispatch() method is called exactly once with data derived from that event",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When a review call site emits through the bus instead of calling auditor.recordDecision() directly, the auditor still receives the decision record",
+    "refined": "Given the updated semantic.ts, adversarial.ts, and semantic-debate.ts call sites, when a review run completes, zero direct calls to runtime.reviewAuditor.recordDecision() occur at those sites (grep confirms no such calls), and auditor.recordDecision() (or equivalent recordDispatch path) is still invoked exactly once per review result via the bus subscriber",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Curator config supports enabled, rollupPath, and thresholds with schema/default/type coverage, and PostRunContext exposes config, outputDir, globalDir, projectKey, curatorRollupPath, and logFilePath? from the active runtime/run.",
+    "refined": "CuratorConfigSchema.parse({}) produces { enabled: true, thresholds: { repeatedFinding: number, emptyKeyword: number, rectifyAttempts: number, escalationChain: number, staleChunkRuns: number, unchangedOutcome: number } } with all threshold fields present and numeric. PostRunContext type includes fields config, outputDir, globalDir, projectKey, curatorRollupPath (all required strings), and logFilePath (optional string), verifiable via TypeScript type-check (tsc --noEmit) and a unit test constructing a PostRunContext object with those fields.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-14",
+    "original": "The built-in nax-curator plugin is registered by default and appears in pluginRegistry.getPostRunActions(), while config.disabledPlugins can disable it.",
+    "refined": "After calling the plugin loader with a default config, pluginRegistry.getPostRunActions() returns an array containing exactly one entry with name === 'nax-curator'. When config.disabledPlugins includes 'nax-curator', pluginRegistry.getPostRunActions() returns an array with no entry named 'nax-curator'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-15",
+    "original": "collectObservations() returns schemaVersion=1 observations with runId, featureId, storyId, stage, ts, kind, and a plain-object payload for every emitted row.",
+    "refined": "collectObservations() returns an array where every element satisfies: schemaVersion === 1, typeof runId === 'string', typeof featureId === 'string', typeof storyId === 'string', typeof stage === 'string', typeof ts === 'string' (ISO-8601 parseable), typeof kind === 'string', and typeof payload === 'object' && payload !== null && !Array.isArray(payload). Verified by unit test with fixture inputs producing at least one observation.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-16",
+    "original": "collectObservations() reads outputDir artifacts (metrics.json and review-audit/<feature>/*.json) and projects story verdict/context metrics plus review findings when those sources exist.",
+    "refined": "Given a fixture outputDir containing metrics.json with story verdict and cost fields, collectObservations() returns at least one observation with kind === 'verdict' whose payload matches the metrics.json story data. Given a fixture outputDir with review-audit/<feature>/<file>.json, collectObservations() returns at least one observation with kind === 'review-finding' whose payload matches fields from that audit file. When neither file exists, the returned array contains no verdict or review-finding observations and no error is thrown.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-17",
+    "original": "collectObservations() reads workdir context manifests and projects chunk-included, chunk-excluded, and provider-empty observations, including stale exclusion reasons when present.",
+    "refined": "Given a fixture workdir with context-manifest-*.json files under .nax/features/<feature>/stories/<storyId>/, collectObservations() returns observations with kind === 'chunk-included' for included chunks, kind === 'chunk-excluded' for excluded chunks (with payload.reason populated when a stale exclusion reason is present in the manifest), and kind === 'provider-empty' for providers that returned no chunks. When the manifest directory does not exist, no chunk or provider-empty observations are emitted and no error is thrown.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-18",
+    "original": "collectObservations() reads the active run JSONL when logFilePath is available and projects rectify-cycle, escalation, pull-call, acceptance-verdict, and fix-cycle observations from matching structured logger lines.",
+    "refined": "Given a fixture logFilePath pointing to a JSONL file containing structured log lines with stage values matching rectify, escalation, pull-tool, acceptance, and fix-cycle patterns, collectObservations() returns observations with kind values 'rectify-cycle', 'escalation', 'pull-call', 'acceptance-verdict', 'fix-cycle-iteration', 'fix-cycle-exit', or 'fix-cycle-validator-retry' corresponding to each matching line. When logFilePath is undefined, no such observations are emitted and no error is thrown.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-19",
+    "original": "resolveCuratorOutputs() resolves observationsPath and proposalsPath under context.outputDir/runs/<runId>/ and uses context.curatorRollupPath as the rollup file path.",
+    "refined": "resolveCuratorOutputs({ outputDir: '/tmp/out', runId: 'run-123', curatorRollupPath: '/home/user/.nax/global/curator/rollup.jsonl', ...rest }) returns { observationsPath: '/tmp/out/runs/run-123/observations.jsonl', proposalsPath: '/tmp/out/runs/run-123/proposals.jsonl', rollupPath: '/home/user/.nax/global/curator/rollup.jsonl' }.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-20",
+    "original": "curatorPlugin.shouldRun() returns false when curator.enabled is explicitly false or no stories completed, returns true when enabled with completed stories, and warns-but-continues when review.audit.enabled is false.",
+    "refined": "shouldRun() returns false when config.curator.enabled === false regardless of storySummary. shouldRun() returns false when config.curator.enabled === true but context.storySummary.completed === 0. shouldRun() returns true when config.curator.enabled === true and context.storySummary.completed > 0. When config.review.audit.enabled === false and shouldRun() would otherwise return true, shouldRun() still returns true and a logger.warn call is made with a message referencing audit being disabled.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "curatorPlugin.execute() writes observations.jsonl to <outputDir>/runs/<runId>/observations.jsonl with one JSON line per observation.",
+    "refined": "After curatorPlugin.execute(context) resolves, the file at path.join(context.outputDir, 'runs', context.runId, 'observations.jsonl') exists, contains exactly N newline-delimited lines where N equals the number of observations returned by collectObservations(), and each line is valid JSON parseable without error.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Missing source directories, malformed source files, and per-source read errors are logged as warnings and do not cause collectObservations() or curatorPlugin.execute() to throw.",
+    "refined": "When outputDir does not exist, when metrics.json contains invalid JSON, when a review-audit file contains invalid JSON, and when logFilePath points to a file with malformed lines: collectObservations() does not throw and returns an array (possibly empty). curatorPlugin.execute() does not throw and resolves successfully. In each error scenario, at least one logger.warn call is made containing context about the failed source.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "runHeuristics() implements all six v0 heuristics H1-H6 with configurable thresholds, correct severity/action targets, and expected proposal IDs for representative positive cases.",
+    "refined": "Given observations that individually trigger each heuristic at threshold: H1 returns proposal with id='H1', severity in ['MED','HIGH'], target.action='add', target.canonicalFile='.nax/rules/curator-suggestions.md'; H2 returns id='H2', severity='MED', target.action='add'; H3 returns id='H3', severity='HIGH', target.action='add'; H4 returns id='H4', severity='MED', target.action='add'; H5 returns id='H5', severity='LOW', target.action='drop'; H6 returns id='H6', severity='LOW', target.action='advisory'. All six proposal IDs appear in the result array.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-24",
+    "original": "H1/H5 rules proposals stage to .nax/rules/curator-suggestions.md in v0; feature-context proposals target .nax/features/<id>/context.md and H6 remains advisory.",
+    "refined": "H1 proposal has target.canonicalFile==='.nax/rules/curator-suggestions.md' and target.action==='add'. H5 proposal has target.canonicalFile==='.nax/rules/curator-suggestions.md' and target.action==='drop'. H2, H3, H4 proposals have target.canonicalFile matching regex /^\\.nax\\/features\\/.+\\/context\\.md$/ and target.action==='add'. H6 proposal has target.action==='advisory'.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-25",
+    "original": "runHeuristics() returns an empty array for empty or non-triggering observations and uses default thresholds when config values are absent.",
+    "refined": "runHeuristics([], thresholds) returns an array of length 0. runHeuristics(observations_below_threshold, thresholds) returns an array of length 0 where no observation group meets minimum counts. runHeuristics(observations, {}) or runHeuristics called with partial thresholds object applies default numeric thresholds without throwing and returns valid Proposal[] (no runtime error).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-26",
+    "original": "renderProposals() produces markdown with generated timestamp, observation count, checkbox sections grouped by target action/canonical file, and proposal lines containing severity, heuristic ID, counts, and story evidence.",
+    "refined": "renderProposals(proposals, runId, observationCount) returns a string that: contains a line matching /\\d{4}-\\d{2}-\\d{2}/ (ISO date); contains the observationCount as a digit sequence; contains '- [ ]' checkbox markers for each proposal; groups proposals under headings that include the target.canonicalFile; each proposal line contains the severity token (LOW|MED|HIGH), the heuristic ID (H[1-6]), a numeric count, and at least one storyId from proposal.storyIds.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-27",
+    "original": "renderProposals() still produces useful markdown when zero proposals fire, including observation count and a zero-heuristics message.",
+    "refined": "renderProposals([], runId, N) returns a string that: is non-empty; contains the observation count N as a digit sequence; contains a phrase indicating no proposals were generated (e.g. matches /no proposals|0 proposals|nothing to report/i); does not throw.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-28",
+    "original": "appendToRollup() creates the rollup parent directory, appends one JSON line per observation, and logs/returns without throwing on write errors.",
+    "refined": "Given rollupPath pointing to a non-existent directory: appendToRollup(observations, rollupPath) resolves without throwing; the parent directory is created; the file at rollupPath contains exactly observations.length newline-delimited JSON lines each parseable as an Observation. When rollupPath is an unwritable path, appendToRollup() catches the error and resolves (does not reject/throw), emitting a log warning instead.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "curatorPlugin.execute() wires collect → heuristics → render → rollup, writes observations.jsonl and curator-proposals.md, and never lets curator failures change the post-run exit behavior.",
+    "refined": "After curatorPlugin.execute(context) resolves: a file exists at context.curatorObservationsPath containing JSONL observations; a file exists at the curator-proposals.md path containing markdown text. When any internal step (collect, heuristics, render, rollup) throws, execute() still resolves (does not reject) and the resolved PostRunResult has the same exitCode as a successful no-op run (i.e. curator errors do not flip exit code to non-zero).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "All curator commands resolve the project with resolveProject(), load config, and use runtime path helpers to locate generated artifacts under outputDir and the configured rollup path.",
+    "refined": "Each of curatorStatus, curatorCommit, curatorDryrun, and curatorGc call deps.resolveProject() exactly once, then deps.loadConfig() with the resolved project root, then deps.projectOutputDir() and/or deps.curatorRollupPath() to derive artifact paths; no command constructs paths by direct string concatenation from options.project alone.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-31",
+    "original": "curatorStatus() supports latest-run and --run <runId> modes, prints observation counts by kind, and prints proposal markdown when present.",
+    "refined": "When invoked without options.run, curatorStatus resolves the lexicographically latest directory under <outputDir>/runs and reads its observations.jsonl; when options.run is provided it reads from <outputDir>/runs/<runId>/observations.jsonl. The function groups JSONL lines by the 'kind' field, prints a line of the form '<kind>: <count>' for each distinct kind, and prints the full text of curator-proposals.md when the file exists in that run directory.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-32",
+    "original": "curatorCommit() parses checked [x] proposal lines, applies drops before adds, writes accepted changes to canonical target files, detects conflicts with a clear abort, opens modified files in $EDITOR, and never creates a git commit automatically.",
+    "refined": "curatorCommit parses <outputDir>/runs/<runId>/curator-proposals.md and extracts lines matching /^- \\[x\\]/i as accepted proposals. It executes all drop operations (removing specified line ranges from target files) before any add operations (appending to .nax/features/<id>/context.md or .nax/rules/curator-suggestions.md). If a drop range is out-of-bounds or two operations target overlapping ranges, the function throws with a message containing 'conflict' or 'abort' and writes no files. After successful writes, deps.openInEditor is called once per distinct modified canonical file. deps for git operations (spawn, exec) are never invoked.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-33",
+    "original": "curatorDryrun() re-runs heuristics on an existing observations.jsonl using current config.curator.thresholds and prints rendered proposals without modifying canonical files.",
+    "refined": "curatorDryrun reads <outputDir>/runs/<resolvedRunId>/observations.jsonl, applies the heuristic rules with config.curator.thresholds values from the loaded config, and writes rendered proposal markdown to stdout. deps.writeFile, deps.appendFile, and any canonical file paths under .nax/ are never called during the function's execution.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-34",
+    "original": "curatorGc() keeps rows for the most recent runIds using default --keep 50 or explicit --keep <N>, rewrites only the rollup file, and is a no-op when fewer runs exist than the keep count.",
+    "refined": "curatorGc groups rollup JSONL rows by runId, orders groups by max observation timestamp descending, retains rows belonging to the top min(keep, totalRunIds) groups, and rewrites only deps.curatorRollupPath() with the retained rows. When options.keep is omitted the effective keep value is 50. When the number of distinct runIds in the rollup is less than or equal to keep, deps.writeFile is not called (no-op). No other file paths are written or deleted.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-35",
+    "original": "The CLI reports clear helpful messages for missing runs, missing proposals.md, invalid run IDs, and absent --project by falling back to CWD project resolution.",
+    "refined": "When <outputDir>/runs contains no directories, the command exits with a non-zero code and prints a message containing 'no runs'. When curator-proposals.md does not exist for the resolved run, curatorStatus prints a message containing 'no proposals' rather than throwing. When options.runId references a non-existent run directory, curatorCommit exits with a non-zero code and prints a message containing the invalid runId. When options.project is undefined, resolveProject is called with process.cwd() as the fallback argument.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-36",
+    "original": "docs/guides/curator.md explains curator inputs, outputs, configuration, review-audit dependency, proposal review flow, CLI commands, and threshold tuning",
+    "refined": "File docs/guides/curator.md exists and contains all of the following sections or keywords: 'inputs' or 'reads', 'outputs' or 'writes', 'configuration' or 'config', 'review.audit' or 'audit', 'proposal' or 'proposals', 'nax curator commit', and 'threshold'",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-37",
+    "original": "docs/architecture/subsystems.md includes a curator subsystem entry describing the built-in post-run plugin and projection-layer observations model",
+    "refined": "File docs/architecture/subsystems.md exists and contains a section or entry referencing 'curator' that includes the terms 'post-run' or 'plugin', and 'projection' or 'projection-layer' or 'observations'",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-38",
+    "original": "README mentions the curator as a deterministic post-run context maintenance feature",
+    "refined": "The root README.md file contains the word 'curator' and at least one of 'deterministic' or 'post-run' or 'context maintenance' within close proximity (same paragraph or section)",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-39",
+    "original": "docs/findings/2026-04-30-context-curator-design.md status is updated to reference the implemented v0 spec/feature",
+    "refined": "File docs/findings/2026-04-30-context-curator-design.md exists and its content includes an updated status section referencing 'v0' and either 'implemented', 'spec', or 'feature' — the status must not read as 'draft', 'proposed', or 'pending' alone without a v0 reference",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-40",
+    "original": "Documentation states that curator never uses an LLM and never auto-applies canonical source changes without checked proposals plus `nax curator commit`",
+    "refined": "At least one documentation file among docs/guides/curator.md and docs/architecture/subsystems.md contains explicit text stating that the curator does not use an LLM (e.g., 'no LLM', 'never uses an LLM', 'deterministic') and does not auto-apply changes without 'nax curator commit' (e.g., 'never auto-applies', 'requires nax curator commit', 'no auto-apply')",
+    "testable": true,
+    "storyId": "US-007"
+  }
+]
