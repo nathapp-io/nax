@@ -1,18 +1,33 @@
 /**
  * Curator Plugin — Built-in Post-Run Action
  *
- * Collects observations from run artifacts and writes observations.jsonl.
+ * Collects observations from run artifacts, runs heuristics, renders proposals,
+ * and appends to the cross-run rollup.
  */
 
+import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
 import type { IPostRunAction, PluginLogger, PostRunActionResult, PostRunContext } from "../../types";
 import type { NaxPlugin } from "../../types";
 import { collectObservations } from "./collect";
+import type { CuratorThresholds } from "./heuristics";
+import { runHeuristics } from "./heuristics";
 import { resolveCuratorOutputs } from "./paths";
+import { renderProposals } from "./render";
+import { appendToRollup } from "./rollup";
 import type { CuratorPostRunContext } from "./types";
 
 const PLUGIN_NAME = "nax-curator";
 const PLUGIN_VERSION = "0.1.0";
+
+const DEFAULT_THRESHOLDS: CuratorThresholds = {
+  repeatedFinding: 2,
+  emptyKeyword: 2,
+  rectifyAttempts: 3,
+  escalationChain: 2,
+  staleChunkRuns: 2,
+  unchangedOutcome: 3,
+};
 
 function getCuratorEnabled(context: PostRunContext): boolean {
   const cfg = context.config as Record<string, unknown> | undefined;
@@ -32,6 +47,21 @@ function getReviewAuditEnabled(context: PostRunContext): boolean {
   if (!audit) return true;
   if (audit.enabled === false) return false;
   return true;
+}
+
+function getCuratorThresholds(context: PostRunContext): CuratorThresholds {
+  const cfg = context.config as Record<string, unknown> | undefined;
+  const curator = cfg?.curator as Record<string, unknown> | undefined;
+  const raw = curator?.thresholds as Partial<CuratorThresholds> | undefined;
+  if (!raw) return DEFAULT_THRESHOLDS;
+  return {
+    repeatedFinding: raw.repeatedFinding ?? DEFAULT_THRESHOLDS.repeatedFinding,
+    emptyKeyword: raw.emptyKeyword ?? DEFAULT_THRESHOLDS.emptyKeyword,
+    rectifyAttempts: raw.rectifyAttempts ?? DEFAULT_THRESHOLDS.rectifyAttempts,
+    escalationChain: raw.escalationChain ?? DEFAULT_THRESHOLDS.escalationChain,
+    staleChunkRuns: raw.staleChunkRuns ?? DEFAULT_THRESHOLDS.staleChunkRuns,
+    unchangedOutcome: raw.unchangedOutcome ?? DEFAULT_THRESHOLDS.unchangedOutcome,
+  };
 }
 
 /**
@@ -54,15 +84,30 @@ const curatorAction: IPostRunAction = {
     try {
       const curatorContext = context as CuratorPostRunContext;
       const observations = await collectObservations(curatorContext);
+
       if (context.outputDir) {
-        const { observationsPath } = resolveCuratorOutputs(curatorContext);
-        const dir = path.dirname(observationsPath);
+        const { observationsPath, rollupPath } = resolveCuratorOutputs(curatorContext);
+        const runDir = path.dirname(observationsPath);
+        await mkdir(runDir, { recursive: true });
+
+        // Write observations.jsonl
         await Bun.write(
           observationsPath,
           observations.map((o) => JSON.stringify(o)).join("\n") + (observations.length > 0 ? "\n" : ""),
         );
-        void dir;
+
+        // Run heuristics and render proposals
+        const thresholds = getCuratorThresholds(context);
+        const proposals = runHeuristics(observations, thresholds);
+        const markdown = renderProposals(proposals, context.runId, observations.length);
+
+        const proposalsMdPath = path.join(runDir, "curator-proposals.md");
+        await Bun.write(proposalsMdPath, markdown);
+
+        // Append to cross-run rollup
+        await appendToRollup(observations, rollupPath);
       }
+
       return {
         success: true,
         message: `Curator collected ${observations.length} observations`,

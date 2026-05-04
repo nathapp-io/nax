@@ -4,6 +4,8 @@
  * Append-only rollup writer for cross-run observation aggregation.
  */
 
+import { mkdir } from "node:fs/promises";
+import * as path from "node:path";
 import type { Observation } from "./types";
 
 /**
@@ -16,5 +18,27 @@ import type { Observation } from "./types";
  * @param rollupPath - Absolute path to the rollup JSONL file
  */
 export async function appendToRollup(observations: Observation[], rollupPath: string): Promise<void> {
-  // TODO: Implement append-only JSONL writer
+  try {
+    const dir = path.dirname(rollupPath);
+    await mkdir(dir, { recursive: true });
+
+    if (observations.length === 0) {
+      const f = Bun.file(rollupPath);
+      if (!(await f.exists())) {
+        await Bun.write(rollupPath, "");
+      }
+      return;
+    }
+
+    let existing = "";
+    const f = Bun.file(rollupPath);
+    if (await f.exists()) {
+      existing = await f.text();
+    }
+
+    const newLines = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
+    await Bun.write(rollupPath, existing + newLines);
+  } catch {
+    // Write errors are logged but never thrown — curator must not affect run exit code
+  }
 }
