@@ -115,6 +115,7 @@ export const acceptanceStage: PipelineStage = {
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
+    const startTime = Date.now();
 
     logger.info("acceptance", "Running acceptance tests", { storyId: ctx.story.id });
 
@@ -147,6 +148,7 @@ export const acceptanceStage: PipelineStage = {
     const allOutputParts: string[] = [];
     let anyError = false;
     let errorExitCode = 0;
+    let hardeningRetries = 0;
 
     for (const { testPath, packageDir, testFramework, commandOverride } of testGroups) {
       // Check if test file exists
@@ -237,6 +239,7 @@ export const acceptanceStage: PipelineStage = {
     }
 
     const combinedOutput = allOutputParts.join("\n");
+    const durationMs = Date.now() - startTime;
 
     // All packages passed
     if (allFailedACs.length === 0) {
@@ -260,6 +263,7 @@ export const acceptanceStage: PipelineStage = {
             runtime: ctx.runtime,
             abortSignal: ctx.abortSignal,
           });
+          hardeningRetries = result.promoted.length;
           logger.info("acceptance", "Hardening pass complete", {
             storyId: ctx.story.id,
             promoted: result.promoted.length,
@@ -273,6 +277,16 @@ export const acceptanceStage: PipelineStage = {
         }
       }
 
+      // Emit canonical verdict: all ACs passed
+      logger.info("acceptance", "verdict", {
+        storyId: ctx.story.id,
+        packageDir: ctx.workdir,
+        passed: true,
+        failedACs: [],
+        retries: hardeningRetries,
+        durationMs,
+      });
+
       return { action: "continue" };
     }
 
@@ -282,6 +296,16 @@ export const acceptanceStage: PipelineStage = {
       findings: allFindings,
       testOutput: combinedOutput,
     };
+
+    // Emit canonical verdict: ACs failed
+    logger.info("acceptance", "verdict", {
+      storyId: ctx.story.id,
+      packageDir: ctx.workdir,
+      passed: false,
+      failedACs: allFailedACs,
+      retries: hardeningRetries,
+      durationMs,
+    });
 
     if (anyError) {
       return {

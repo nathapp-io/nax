@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 7
+    "pending": 6
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.39613890000000007,
     "limit": 50
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Add pull-tool logger emits for curator ingestion",
+    "storyId": "US-002",
+    "title": "Consolidate acceptance verdict logger emit",
     "complexity": "simple",
     "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-05-04T11:25:53.448Z",
-  "durationMs": 840063,
-  "lastHeartbeat": "2026-05-04T11:25:53.448Z"
+  "iterations": 2,
+  "updatedAt": "2026-05-04T11:30:53.462Z",
+  "durationMs": 1140077,
+  "lastHeartbeat": "2026-05-04T11:30:53.462Z"
 }
