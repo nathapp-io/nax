@@ -1,10 +1,13 @@
 # ADR-022: Fix Strategy and Cycle Orchestration
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-02
+**Accepted:** 2026-05-04
 **Author:** William Khoo, Claude
 **Builds on:** ADR-021 (Finding Type SSOT)
 **Related:** ADR-006 (Acceptance Retry Loop Restructure — superseded in part by phase 4 of this ADR)
+
+> **Implementation status (2026-05-04):** All 8 phases shipped. `acceptance.fix.cycleV2` and `quality.autofix.cycleV2` flags skipped — both cycles cut over directly. `runAgentRectification` re-exports `runAgentRectificationV2` from `src/pipeline/stages/autofix-cycle.ts`. Acceptance enters `runFixCycle` from `runAcceptanceLoop` after the stub-regen prelude. Carry-forward via `buildPriorIterationsBlock` is wired into review-builder, adversarial-review-builder, and acceptance-loop.
 
 ---
 
