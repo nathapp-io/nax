@@ -2,3 +2,4 @@
 [2026-05-04T11:32:31.634Z] US-002 — PASSED — Consolidate acceptance verdict logger emit — Cost: $0.4321
 [2026-05-04T11:38:52.578Z] US-003 — PASSED — Add ReviewDecisionEvent bus channel for review audit routing — Cost: $1.0555
 [2026-05-04T12:07:43.559Z] US-004 — PASSED — Curator plugin scaffold with observation projection — Cost: $1.7997
+[2026-05-04T12:23:58.434Z] US-005 — PASSED — Curator heuristics, proposal generation, and cross-run rollup — Cost: $1.7109

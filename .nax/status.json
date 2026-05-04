@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 3.6834506800000004,
+    "spent": 5.39436153,
     "limit": 50
   },
   "current": {
-    "storyId": "US-005",
-    "title": "Curator heuristics, proposal generation, and cross-run rollup",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-006",
+    "title": "nax curator CLI subcommands",
+    "complexity": "medium",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-05-04T12:18:53.562Z",
-  "durationMs": 4020177,
-  "lastHeartbeat": "2026-05-04T12:18:53.562Z"
+  "iterations": 6,
+  "updatedAt": "2026-05-04T12:31:53.637Z",
+  "durationMs": 4800252,
+  "lastHeartbeat": "2026-05-04T12:31:53.637Z"
 }
