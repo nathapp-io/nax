@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 1.8837558300000001,
+    "spent": 3.6834506800000004,
     "limit": 50
   },
   "current": {
-    "storyId": "US-004",
-    "title": "Curator plugin scaffold with observation projection",
+    "storyId": "US-005",
+    "title": "Curator heuristics, proposal generation, and cross-run rollup",
     "complexity": "complex",
     "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-05-04T11:48:53.508Z",
-  "durationMs": 2220123,
-  "lastHeartbeat": "2026-05-04T11:48:53.508Z"
+  "iterations": 5,
+  "updatedAt": "2026-05-04T12:09:53.540Z",
+  "durationMs": 3480155,
+  "lastHeartbeat": "2026-05-04T12:09:53.540Z"
 }
