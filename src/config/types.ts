@@ -78,4 +78,5 @@ export type {
   AdaptiveRoutingConfig,
   AgentConfig,
   ProjectProfile,
+  CuratorConfig,
 } from "./runtime-types";

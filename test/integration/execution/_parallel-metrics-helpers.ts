@@ -74,6 +74,7 @@ export function makeCtx(overrides: { parallelCount?: number; costLimit?: number;
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
+    runtime: { outputDir: "/tmp/nax-test-parallel-metrics-output" },
     parallelCount,
   };
 }

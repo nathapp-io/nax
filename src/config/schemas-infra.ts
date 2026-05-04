@@ -183,5 +183,9 @@ export const GenerateConfigSchema = z.object({
   agents: z.array(z.enum(VALID_AGENT_TYPES)).optional(),
 });
 
+export const CuratorConfigSchema = z.object({
+  rollupPath: z.string().optional(),
+});
+
 // Re-export ModelTierSchema for consumers that currently import it from schemas-infra
 export { ModelTierSchema };

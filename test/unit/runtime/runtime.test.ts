@@ -1,6 +1,8 @@
 import { describe, test, expect } from "bun:test";
+import os from "node:os";
+import path from "node:path";
 import { createRuntime } from "../../../src/runtime";
-import { DEFAULT_CONFIG } from "../../../src/config";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 describe("createRuntime", () => {
@@ -223,6 +225,23 @@ describe("createRuntime", () => {
     await rt.close();
 
     expect(reviewFlushCalled).toBe(true);
+  });
+});
+
+describe("createRuntime outputDir", () => {
+  test("sets outputDir to ~/.nax/<basename> when name is absent", () => {
+    const config = NaxConfigSchema.parse({});
+    const runtime = createRuntime(config, "/tmp/my-project");
+    expect(runtime.outputDir).toBe(path.join(os.homedir(), ".nax", "my-project"));
+    expect(runtime.projectKey).toBe("my-project");
+    expect(runtime.globalDir).toBe(path.join(os.homedir(), ".nax", "global"));
+  });
+
+  test("uses config.name as projectKey when present", () => {
+    const config = NaxConfigSchema.parse({ name: "koda" });
+    const runtime = createRuntime(config, "/tmp/any-path");
+    expect(runtime.projectKey).toBe("koda");
+    expect(runtime.outputDir).toBe(path.join(os.homedir(), ".nax", "koda"));
   });
 });
 

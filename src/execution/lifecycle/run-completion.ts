@@ -308,7 +308,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   };
 
   try {
-    await saveRunMetrics(workdir, runMetrics);
+    await saveRunMetrics(options.runtime.outputDir, runMetrics);
   } catch (err) {
     logger?.warn("run.complete", "Failed to save run metrics", { error: String(err) });
   }

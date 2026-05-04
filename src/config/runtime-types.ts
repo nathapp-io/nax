@@ -505,6 +505,10 @@ export type {
 
 /** Full nax configuration */
 export interface NaxConfig {
+  /** Project name — used as the default projectKey for output directory. Lowercase alphanumeric, hyphens, underscores. */
+  name: string;
+  /** Output directory override — absolute path or ~/path. If absent, defaults to ~/.nax/<projectKey> */
+  outputDir?: string;
   /** Schema version */
   version: 1;
   /** Model mapping — per-agent tier map: Record<agentName, Record<tierName, ModelEntry>> */
@@ -551,8 +555,15 @@ export interface NaxConfig {
   project?: ProjectProfile;
   /** Multi-agent debate settings */
   debate?: import("../debate/types").DebateConfig;
+  /** Curator configuration */
+  curator?: CuratorConfig;
   /** Configuration profile name (default: "default") */
   profile: string;
+}
+
+export interface CuratorConfig {
+  /** Path to the rollup JSONL file for aggregated run results */
+  rollupPath?: string;
 }
 
 export type {

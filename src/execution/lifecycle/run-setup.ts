@@ -15,7 +15,7 @@
 import * as os from "node:os";
 import path from "node:path";
 import type { NaxConfig } from "../../config";
-import { LockAcquisitionError } from "../../errors";
+import { LockAcquisitionError, NaxError } from "../../errors";
 import type { LoadedHooksConfig } from "../../hooks";
 import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
@@ -217,6 +217,52 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
   statusWriter.setPrd(prd);
+
+  // Auto-migrate generated content out of .nax/ if needed (no-op when already migrated)
+  {
+    const { detectGeneratedContent, migrateCommand } = await import("../../commands/migrate");
+    const naxDir = path.join(workdir, ".nax");
+    const candidates = await detectGeneratedContent(naxDir).catch(() => []);
+    if (candidates.length > 0) {
+      logger?.info("setup", "Found generated content under .nax/ — migrating to output dir", {
+        storyId: "_setup",
+        count: candidates.length,
+      });
+      try {
+        await migrateCommand({ workdir });
+        logger?.info("setup", "Auto-migration complete", { storyId: "_setup" });
+      } catch (err) {
+        logger?.warn("setup", "Auto-migration failed — continuing without migration", {
+          storyId: "_setup",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  // Claim project identity on first run (no-op if already claimed for this workdir)
+  {
+    const { claimProjectIdentity } = await import("../../runtime");
+    let remoteUrl: string | null = null;
+    try {
+      const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+      if (gitResult.exitCode === 0) {
+        remoteUrl = new TextDecoder().decode(gitResult.stdout).trim() || null;
+      }
+    } catch {
+      /* non-git project — remoteUrl stays null */
+    }
+    const projectKey = config.name?.trim() || path.basename(workdir);
+    await claimProjectIdentity(projectKey, workdir, remoteUrl).catch((err) => {
+      if (err instanceof NaxError && err.code === "RUN_NAME_COLLISION") {
+        throw err;
+      }
+      logger?.warn("setup", "Failed to claim project identity", {
+        storyId: "_setup",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
 
   // ── Run precheck validations (unless --skip-precheck) ──────────────────────
   if (!skipPrecheck) {

@@ -96,6 +96,7 @@ function makeMinimalContext(): SequentialExecutionContext {
     batchPlan: [],
     interactionChain: null,
     logFilePath: undefined,
+    runtime: { outputDir: "/tmp/nax-test-rl007-output" } as unknown as SequentialExecutionContext["runtime"],
   };
 }
 

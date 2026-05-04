@@ -19,6 +19,17 @@ export type {
   ReviewAuditEntry,
 } from "../review/review-audit";
 export type { PackageView, PackageRegistry } from "./packages";
+export {
+  projectInputDir,
+  projectOutputDir,
+  globalOutputDir,
+  identityPath,
+  readProjectIdentity,
+  writeProjectIdentity,
+  claimProjectIdentity,
+  curatorRollupPath,
+} from "./paths";
+export type { ProjectIdentity } from "./paths";
 export { createPackageRegistry } from "./packages";
 export type { DispatchContext } from "./dispatch-context";
 export type { AgentMiddleware, MiddlewareContext } from "./agent-middleware";
@@ -33,7 +44,7 @@ export type {
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
 
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
@@ -63,6 +74,7 @@ import {
 } from "./middleware";
 import { createPackageRegistry } from "./packages";
 import type { PackageRegistry } from "./packages";
+import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
 import { PromptAuditor, createNoOpPromptAuditor } from "./prompt-auditor";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createSessionRunHop } from "./session-run-hop";
@@ -72,6 +84,10 @@ export interface NaxRuntime {
   readonly configLoader: ConfigLoader;
   readonly workdir: string;
   readonly projectDir: string;
+  readonly outputDir: string;
+  readonly globalDir: string;
+  readonly curatorRollupPath: string; // ~/.nax/global/curator/rollup.jsonl or config override
+  readonly projectKey: string;
   readonly agentManager: IAgentManager;
   readonly sessionManager: ISessionManager;
   readonly costAggregator: ICostAggregator;
@@ -116,11 +132,16 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const configLoader = createConfigLoader(config);
   const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
 
-  const costDir = join(workdir, ".nax", "cost");
+  const projectKey = config.name?.trim() || basename(workdir);
+  const outputDir = projectOutputDir(projectKey, config.outputDir);
+  const globalDir = globalOutputDir();
+  const curatorRollupPathValue = curatorRollupPath(globalDir, config.curator?.rollupPath);
+
+  const costDir = join(outputDir, "cost");
   const costAggregator = opts?.costAggregator ?? new CostAggregator(runId, costDir);
 
   const auditEnabled = config.agent?.promptAudit?.enabled ?? false;
-  const auditDir = config.agent?.promptAudit?.dir ?? join(workdir, ".nax", "prompt-audit");
+  const auditDir = config.agent?.promptAudit?.dir ?? join(outputDir, "prompt-audit");
   let promptAuditor: IPromptAuditor;
   if (opts?.promptAuditor) {
     promptAuditor = opts.promptAuditor;
@@ -139,7 +160,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
 
   const reviewAuditor =
     opts?.reviewAuditor ??
-    (config.review?.audit?.enabled ? new ReviewAuditor(runId, workdir) : createNoOpReviewAuditor());
+    (config.review?.audit?.enabled ? new ReviewAuditor(runId, outputDir) : createNoOpReviewAuditor());
 
   const defaultAgent = config.agent?.default ?? "claude";
   const pidRegistry = opts?.pidRegistry ?? new PidRegistry(workdir);
@@ -188,6 +209,10 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     configLoader,
     workdir,
     projectDir: workdir, // Wave 1: equal to workdir; Wave 3 will separate worktree paths
+    outputDir,
+    globalDir,
+    curatorRollupPath: curatorRollupPathValue,
+    projectKey,
     agentManager,
     sessionManager,
     costAggregator,

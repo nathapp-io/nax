@@ -175,7 +175,7 @@ async function writeShadowReport(
   initialFindingsCount: number,
 ): Promise<void> {
   const logger = getLogger();
-  const shadowDir = join(ctx.workdir, ".nax", "cycle-shadow", ctx.story.id);
+  const shadowDir = join(ctx.runtime.outputDir, "cycle-shadow", ctx.story.id);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const report: ShadowReport = {
     storyId: ctx.story.id,

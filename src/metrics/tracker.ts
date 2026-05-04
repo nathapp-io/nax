@@ -270,8 +270,8 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
  * });
  * ```
  */
-export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): Promise<void> {
-  const metricsPath = path.join(workdir, ".nax", "metrics.json");
+export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics): Promise<void> {
+  const metricsPath = path.join(outputDir, "metrics.json");
 
   // Compute totalTokens by summing all story tokens
   let totalInputTokens = 0;
@@ -324,8 +324,8 @@ export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): P
  * console.log(`Total runs: ${runs.length}`);
  * ```
  */
-export async function loadRunMetrics(workdir: string): Promise<RunMetrics[]> {
-  const metricsPath = path.join(workdir, ".nax", "metrics.json");
+export async function loadRunMetrics(outputDir: string): Promise<RunMetrics[]> {
+  const metricsPath = path.join(outputDir, "metrics.json");
 
   const content = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
   return Array.isArray(content) ? content : [];
