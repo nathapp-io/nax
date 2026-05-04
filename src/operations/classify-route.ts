@@ -26,6 +26,7 @@ export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRout
   stage: "run",
   jsonMode: true,
   config: routingConfigSelector,
+  model: (_input, ctx) => ctx.config.routing.llm?.model ?? "balanced",
   build(input: ClassifyRouteInput, _ctx: BuildContext<RoutingConfig>) {
     const criteria = input.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
     const storyBody = [
@@ -60,6 +61,7 @@ export const classifyRouteBatchOp: CompleteOperation<UserStory[], Map<string, Ro
   stage: "run",
   jsonMode: true,
   config: routingConfigSelector,
+  model: (_input, ctx) => ctx.config.routing.llm?.model ?? "balanced",
   build(input: UserStory[], _ctx: BuildContext<RoutingConfig>) {
     const storyBlocks = input
       .map((story, idx) => {

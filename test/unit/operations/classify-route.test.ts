@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { routingConfigSelector } from "../../../src/config";
 import type { ClassifyRouteInput } from "../../../src/operations/classify-route";
-import { classifyRouteOp } from "../../../src/operations/classify-route";
-import { makeTestRuntime } from "../../helpers";
+import { classifyRouteBatchOp, classifyRouteOp } from "../../../src/operations/classify-route";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 const SAMPLE_INPUT: ClassifyRouteInput = {
   title: "Add button",
@@ -26,6 +26,51 @@ describe("classifyRouteOp shape", () => {
   });
   test("jsonMode is true", () => {
     expect(classifyRouteOp.jsonMode).toBe(true);
+  });
+
+  test("model resolves from routing.llm.model config", () => {
+    const config = makeNaxConfig({
+      routing: {
+        strategy: "llm",
+        llm: {
+          model: { agent: "opencode", model: "opencode-go/kimi-k2.6" },
+        },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(routingConfigSelector) };
+
+    expect(classifyRouteOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/kimi-k2.6",
+    });
+  });
+
+  test("batch model resolves from routing.llm.model config", () => {
+    const config = makeNaxConfig({
+      routing: {
+        strategy: "llm",
+        llm: {
+          model: "powerful",
+        },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(routingConfigSelector) };
+    const stories = [
+      {
+        id: "US-001",
+        title: "Add button",
+        description: "Add a red button",
+        acceptanceCriteria: ["Button exists"],
+        tags: [],
+      },
+    ];
+    expect(classifyRouteBatchOp.model?.(stories as unknown as Parameters<typeof classifyRouteBatchOp.model>[0], ctx)).toBe(
+      "powerful",
+    );
   });
 });
 

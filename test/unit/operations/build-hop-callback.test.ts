@@ -98,6 +98,30 @@ afterEach(() => {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("buildHopCallback — primary hop (no failure)", () => {
+  test("uses resolvedRunOptions.modelDef on primary hop", async () => {
+    const sessionManager = makeSessionManager({ openSession: mock(async () => makeHandle("nax-modeldef-handle")) });
+    const agentManager = makeAgentManagerStub();
+    const config = makeNaxConfig({
+      models: {
+        claude: {
+          balanced: { provider: "anthropic", model: "claude-balanced-from-tier" },
+        },
+      },
+    });
+    const ctx = makeCtx({ sessionManager, agentManager, config });
+    const baseOptions = makeBaseOptions("do the work", config);
+    const pinnedModelDef = { provider: "unknown", model: "opencode-go/kimi-k2.6" };
+    const optionsWithPinnedModel = { ...baseOptions, modelDef: pinnedModelDef } as AgentRunOptions;
+    const cb = buildHopCallback(ctx, SESSION_ID, optionsWithPinnedModel);
+
+    await cb("claude", makeBundle(), undefined, optionsWithPinnedModel);
+
+    const openOpts = (sessionManager.openSession as ReturnType<typeof mock>).mock.calls[0]?.[1] as {
+      modelDef: { provider: string; model: string };
+    };
+    expect(openOpts.modelDef).toEqual(pinnedModelDef);
+  });
+
   test("opens and closes session; calls runAsSession with initial prompt; wraps TurnResult", async () => {
     const turnResult = makeStubTurnResult("hello from agent");
     const agentManager = makeAgentManagerStub(() => Promise.resolve(turnResult));
@@ -130,6 +154,40 @@ describe("buildHopCallback — primary hop (no failure)", () => {
 });
 
 describe("buildHopCallback — failure hop (fallback)", () => {
+  test("uses tier-derived modelDef on failure hop", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-rate-limit",
+      category: "availability",
+      message: "rate limit hit",
+      retriable: true,
+    };
+    _buildHopCallbackDeps.rebuildForAgent = mock(() => makeBundle({ pushMarkdown: "## Rebuilt context" }));
+
+    const config = makeNaxConfig({
+      models: {
+        codex: {
+          balanced: { provider: "openai", model: "gpt-5" },
+        },
+      },
+    });
+    const sessionManager = makeSessionManager();
+    const agentManager = makeAgentManagerStub();
+    const ctx = makeCtx({ sessionManager, agentManager, config });
+    const baseOptions = makeBaseOptions("original prompt", config);
+    const optionsWithPinnedModel = {
+      ...baseOptions,
+      modelDef: { provider: "unknown", model: "opencode-go/kimi-k2.6" },
+    } as AgentRunOptions;
+    const cb = buildHopCallback(ctx, SESSION_ID, optionsWithPinnedModel);
+
+    await cb("codex", makeBundle(), failure, optionsWithPinnedModel);
+
+    const openOpts = (sessionManager.openSession as ReturnType<typeof mock>).mock.calls[0]?.[1] as {
+      modelDef: { provider: string; model: string };
+    };
+    expect(openOpts.modelDef).toEqual({ provider: "openai", model: "gpt-5" });
+  });
+
   test("rebuilds bundle; calls handoff; rewrites prompt via swapHandoff; closes session", async () => {
     const failure: AdapterFailure = {
       outcome: "fail-rate-limit",

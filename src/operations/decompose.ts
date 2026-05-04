@@ -22,6 +22,7 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
   stage: "plan",
   jsonMode: false,
   config: decomposeConfigSelector,
+  model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.decomposeTimeoutSeconds ?? ctx.config.plan.timeoutSeconds ?? 600) * 1000,
   build(input, _ctx) {
     const prompt = buildDecomposePromptSync({

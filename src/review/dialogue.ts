@@ -238,6 +238,7 @@ export function createReviewerSession(
   // When compaction occurs, the summary is stored here so the next agent call
   // prepends it as initial context for the fresh session.
   let pendingCompactionContext: string | null = null;
+  let currentSessionSignature: string | null = null;
   // Shared builder instance — review-specific methods are self-contained and don't use stageContext/options.
   const promptBuilder = new DebatePromptBuilder(
     { taskContext: "", outputFormat: "", stage: "review" },
@@ -247,11 +248,19 @@ export function createReviewerSession(
   function resolveRunParams(semanticConfig: SemanticReviewConfig) {
     const defaultAgent = agentManager.getDefault();
     const resolved = resolveConfiguredModel(_config.models, defaultAgent, semanticConfig.model, defaultAgent);
-    const modelTier = resolved.modelTier ?? "balanced";
+    const agentName = resolved.agent;
     const timeoutSeconds = semanticConfig.timeoutMs
       ? Math.ceil(semanticConfig.timeoutMs / 1000)
       : (_config.execution?.sessionTimeoutSeconds ?? 3600);
-    return { modelTier, modelDef: resolved.modelDef, timeoutSeconds };
+    return { agentName, modelDef: resolved.modelDef, timeoutSeconds };
+  }
+
+  function toSessionSignature(params: {
+    agentName: string;
+    modelDef: { provider: string; model: string };
+    timeoutSeconds: number;
+  }): string {
+    return `${params.agentName}|${params.modelDef.provider}|${params.modelDef.model}|${params.timeoutSeconds}`;
   }
 
   function buildEffectivePrompt(prompt: string): string {
@@ -264,19 +273,30 @@ export function createReviewerSession(
   }
 
   async function getOrOpenHandle(semanticConfig: SemanticReviewConfig): Promise<SessionHandle> {
-    if (_handle !== null) return _handle;
-    const { modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
+    const params = resolveRunParams(semanticConfig);
+    const nextSignature = toSessionSignature(params);
+
+    if (_handle !== null && currentSessionSignature === nextSignature) {
+      return _handle;
+    }
+
+    if (_handle !== null && currentSessionSignature !== nextSignature) {
+      await sessionManager.closeSession(_handle);
+      _handle = null;
+    }
+
     const sessionName = sessionManager.nameFor({ workdir, featureName, storyId, role: "reviewer-semantic" });
     _handle = await sessionManager.openSession(sessionName, {
-      agentName: agentManager.getDefault(),
+      agentName: params.agentName,
       role: "reviewer-semantic",
       workdir,
       pipelineStage: "review",
-      modelDef,
-      timeoutSeconds,
+      modelDef: params.modelDef,
+      timeoutSeconds: params.timeoutSeconds,
       featureName,
       storyId,
     });
+    currentSessionSignature = nextSignature;
     return _handle;
   }
 
@@ -303,7 +323,7 @@ export function createReviewerSession(
       const prompt = promptBuilder.buildReviewPrompt(diff, story);
       const effectivePrompt = buildEffectivePrompt(prompt);
       const handle = await getOrOpenHandle(semanticConfig);
-      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+      const turnResult = await agentManager.runAsSession(handle.agentName, handle, effectivePrompt, {
         storyId,
         pipelineStage: "review",
       });
@@ -338,7 +358,7 @@ export function createReviewerSession(
       const prompt = promptBuilder.buildReReviewPrompt(updatedDiff, previousFindings);
       const effectivePrompt = buildEffectivePrompt(prompt);
       const handle = await getOrOpenHandle(lastSemanticConfig);
-      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+      const turnResult = await agentManager.runAsSession(handle.agentName, handle, effectivePrompt, {
         storyId,
         pipelineStage: "review",
       });
@@ -358,6 +378,7 @@ export function createReviewerSession(
         if (_handle !== null) {
           await sessionManager.closeSession(_handle);
           _handle = null;
+          currentSessionSignature = null;
         }
       }
 
@@ -384,7 +405,7 @@ export function createReviewerSession(
         } as SemanticReviewConfig);
       const effectivePrompt = buildEffectivePrompt(question);
       const handle = await getOrOpenHandle(effectiveSemanticConfig);
-      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+      const turnResult = await agentManager.runAsSession(handle.agentName, handle, effectivePrompt, {
         storyId,
         pipelineStage: "review",
       });
@@ -413,7 +434,7 @@ export function createReviewerSession(
       const prompt = promptBuilder.buildResolverPrompt(proposals, critiques, diffContext, story, resolverContext);
       const effectivePrompt = buildEffectivePrompt(prompt);
       const handle = await getOrOpenHandle(semanticConfig);
-      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+      const turnResult = await agentManager.runAsSession(handle.agentName, handle, effectivePrompt, {
         storyId,
         pipelineStage: "review",
       });
@@ -460,7 +481,7 @@ export function createReviewerSession(
       );
       const effectivePrompt = buildEffectivePrompt(prompt);
       const handle = await getOrOpenHandle(lastSemanticConfig);
-      const turnResult = await agentManager.runAsSession(agentManager.getDefault(), handle, effectivePrompt, {
+      const turnResult = await agentManager.runAsSession(handle.agentName, handle, effectivePrompt, {
         storyId,
         pipelineStage: "review",
       });
@@ -480,6 +501,7 @@ export function createReviewerSession(
         if (_handle !== null) {
           await sessionManager.closeSession(_handle);
           _handle = null;
+          currentSessionSignature = null;
         }
       }
 
@@ -507,6 +529,7 @@ export function createReviewerSession(
       if (_handle !== null) {
         await sessionManager.closeSession(_handle);
         _handle = null;
+        currentSessionSignature = null;
       }
       history.length = 0;
     },

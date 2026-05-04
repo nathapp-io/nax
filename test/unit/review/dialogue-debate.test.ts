@@ -105,6 +105,50 @@ const MOCK_CONFIG = {
 // ---------------------------------------------------------------------------
 
 describe("ReviewerSession.resolveDebate()", () => {
+  test("uses semantic configured agent/model for session open and run", async () => {
+    let capturedOpenOptions: unknown;
+    const sessionManager = makeSessionManager({
+      openSession: mock(async (_name: string, options: unknown) => {
+        capturedOpenOptions = options;
+        return { id: "mock-session", agentName: (options as { agentName: string }).agentName };
+      }),
+    });
+
+    const runFn = makeRunFn(PASSING_RESPONSE);
+    const configWithOpencode = {
+      ...MOCK_CONFIG,
+      models: {
+        ...MOCK_CONFIG.models,
+        opencode: {
+          fast: { model: "opencode-go/minimax-m2.7" },
+          balanced: { model: "opencode-go/deepseek-v4-pro" },
+          powerful: { model: "opencode-go/kimi-k2.6" },
+        },
+      },
+    } as ReviewConfig;
+
+    const session = createReviewerSession(
+      makeAgentManager(runFn),
+      sessionManager,
+      "story-1",
+      "/workdir",
+      "feature",
+      configWithOpencode,
+    );
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const pinnedSemanticConfig: SemanticReviewConfig = {
+      ...SEMANTIC_CONFIG,
+      model: { agent: "opencode", model: "opencode-go/kimi-k2.6" },
+    };
+
+    await session.resolveDebate(PROPOSALS, CRITIQUES, DIFF, STORY, pinnedSemanticConfig, ctx);
+
+    expect((capturedOpenOptions as { agentName: string }).agentName).toBe("opencode");
+    expect((capturedOpenOptions as { modelDef: { model: string } }).modelDef.model).toBe("opencode-go/kimi-k2.6");
+    expect((runFn as ReturnType<typeof mock>).mock.calls[0][0]).toBe("opencode");
+    await session.destroy();
+  });
+
   test("calls agentManager.runAsSession() with pipelineStage: review (ADR-019)", async () => {
     let capturedOpts: RunAsSessionOpts | undefined;
     const runFn = mock(async (_agentName: string, _handle: SessionHandle, _prompt: string, opts: RunAsSessionOpts): Promise<TurnResult> => {

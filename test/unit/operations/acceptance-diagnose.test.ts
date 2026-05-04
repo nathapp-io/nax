@@ -35,6 +35,23 @@ describe("acceptanceDiagnoseOp shape", () => {
   test("stage is acceptance", () => {
     expect(acceptanceDiagnoseOp.stage).toBe("acceptance");
   });
+  test("model resolves from acceptance.fix.diagnoseModel", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        fix: {
+          diagnoseModel: { agent: "opencode", model: "opencode-go/deepseek-v4-pro" },
+        },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(acceptanceDiagnoseOp.config) };
+
+    expect(acceptanceDiagnoseOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/deepseek-v4-pro",
+    });
+  });
 });
 
 describe("acceptanceDiagnoseOp.build()", () => {

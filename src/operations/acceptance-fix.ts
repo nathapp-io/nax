@@ -30,6 +30,7 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
   stage: "acceptance",
   session: { role: "source-fix", lifetime: "fresh" },
   config: acceptanceFixConfigSelector,
+  model: (_input, ctx) => ctx.config.acceptance.fix?.fixModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
@@ -55,6 +56,7 @@ export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, Acceptanc
   stage: "acceptance",
   session: { role: "test-fix", lifetime: "fresh" },
   config: acceptanceFixConfigSelector,
+  model: (_input, ctx) => ctx.config.acceptance.fix?.fixModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildTestFixPrompt({
