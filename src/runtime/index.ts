@@ -33,7 +33,6 @@ export type {
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
 
-import os from "node:os";
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
