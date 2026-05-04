@@ -4,7 +4,7 @@
     "id": "run-2026-05-04T11-11-53-385Z",
     "feature": "context-curator-v0",
     "startedAt": "2026-05-04T11:11:53.385Z",
-    "status": "stalled",
+    "status": "failed",
     "dryRun": false,
     "pid": 58689
   },
@@ -22,8 +22,8 @@
   },
   "current": null,
   "iterations": 7,
-  "updatedAt": "2026-05-04T12:48:11.610Z",
-  "durationMs": 5778225,
+  "updatedAt": "2026-05-04T12:48:11.611Z",
+  "durationMs": 5778226,
   "postRun": {
     "acceptance": {
       "status": "not-run"

@@ -4,3 +4,4 @@
 [2026-05-04T12:07:43.559Z] US-004 — PASSED — Curator plugin scaffold with observation projection — Cost: $1.7997
 [2026-05-04T12:23:58.434Z] US-005 — PASSED — Curator heuristics, proposal generation, and cross-run rollup — Cost: $1.7109
 [2026-05-04T12:39:36.619Z] US-006 — PASSED — nax curator CLI subcommands — Cost: $2.4941
+[2026-05-04T12:47:44.143Z] US-007 — FAILED — Document curator usage and architecture — Stage "autofix" exceeded max retries (5) for "review"
