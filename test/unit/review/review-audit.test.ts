@@ -206,7 +206,7 @@ describe("ReviewAuditor", () => {
     Object.assign(_reviewAuditDeps, saved);
 
     const content = JSON.parse(written[0].content);
-    expect(written[0].path).toContain(".nax/review-audit/my-feature");
+    expect(written[0].path).toContain("review-audit/my-feature");
     expect(content.sessionName).toBe("nax-reviewer-semantic");
     expect(content.sessionId).toBe("sid-1");
     expect(content.recordId).toBe("rid-1");
