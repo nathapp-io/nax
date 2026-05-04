@@ -436,7 +436,9 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     // to avoid requiring config.json (status display only needs feature files)
     let featureDir: string;
     if (options.dir) {
-      featureDir = join(resolve(options.dir), ".nax", "features", options.feature);
+      const projectDir = resolve(options.dir);
+      const outputDir = projectOutputDir(basename(projectDir), undefined);
+      featureDir = join(outputDir, "features", options.feature);
     } else {
       const resolved = resolveProject({ feature: options.feature });
       if (!resolved.featureDir) {
