@@ -138,11 +138,11 @@ describe("claimProjectIdentity", () => {
     expect(identity?.name).toBe(TEST_CLAIM_KEY);
   });
 
-  it("is idempotent — second call does not overwrite", async () => {
+  it("throws RUN_NAME_COLLISION when a different workdir claims the same key", async () => {
     await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
-    await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/other-project", null);
-    const identity = await readProjectIdentity(TEST_CLAIM_KEY);
-    expect(identity?.workdir).toBe("/tmp/my-project");
+    const err = await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/other-project", null).catch((e) => e);
+    expect(err).toBeInstanceOf(NaxError);
+    expect((err as NaxError).code).toBe("RUN_NAME_COLLISION");
   });
 
   it("updates lastSeen on subsequent calls for same workdir", async () => {

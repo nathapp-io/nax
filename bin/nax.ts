@@ -35,7 +35,7 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -80,6 +80,7 @@ import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
 import { type LogLevel, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
+import { projectOutputDir } from "../src/runtime";
 import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
 import { NAX_VERSION } from "../src/version";
 
@@ -136,6 +137,7 @@ program
   .command("init")
   .description("Initialize nax in the current project")
   .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("-n, --name <name>", "Project name for the output registry (default: directory name)")
   .option("-f, --force", "Force overwrite existing files", false)
   .option("--package <dir>", "Scaffold per-package nax/context.md (e.g. packages/api)")
   .action(async (options) => {
@@ -170,12 +172,42 @@ program
       return;
     }
 
+    // Validate and collision-check --name when explicitly provided
+    if (options.name) {
+      const { validateProjectName, checkInitCollision } = await import("../src/cli/init");
+      const nameValidation = validateProjectName(options.name);
+      if (!nameValidation.valid) {
+        console.error(chalk.red(`Invalid project name "${options.name}": ${nameValidation.error}`));
+        process.exit(1);
+      }
+      if (!options.force) {
+        const collision = await checkInitCollision(options.name, workdir, null);
+        if (collision.collision && collision.existing) {
+          console.error(
+            chalk.red(
+              [
+                `Project name collision: "${options.name}"`,
+                `  This project:    ${workdir}`,
+                `  Already in use:  ${collision.existing.workdir}  (last run: ${collision.existing.lastSeen})`,
+                "  Resolve:",
+                "    1. Rename: choose a different --name",
+                `    2. Reclaim: nax migrate --reclaim ${options.name}`,
+                `    3. Merge:   nax migrate --merge ${options.name}`,
+              ].join("\n"),
+            ),
+          );
+          process.exit(1);
+        }
+      }
+    }
+
     // Create directory structure
     mkdirSync(join(naxDir, "features"), { recursive: true });
     mkdirSync(join(naxDir, "hooks"), { recursive: true });
 
-    // Write default config
-    await Bun.write(join(naxDir, "config.json"), JSON.stringify(DEFAULT_CONFIG, null, 2));
+    // Write config (include name when explicitly provided)
+    const initConfig = options.name ? { ...DEFAULT_CONFIG, name: options.name } : DEFAULT_CONFIG;
+    await Bun.write(join(naxDir, "config.json"), JSON.stringify(initConfig, null, 2));
 
     // Write default hooks.json
     await Bun.write(
@@ -464,8 +496,12 @@ program
     // Reset plan logger (if plan phase ran) so the run logger can be initialized fresh
     resetLogger();
 
-    // Create run directory and JSONL log file path
-    const runsDir = join(featureDir, "runs");
+    // Resolve output directory: ~/.nax/<projectKey>/ or config.outputDir override
+    const projectKey = config.name?.trim() || basename(workdir);
+    const outputDir = projectOutputDir(projectKey, config.outputDir);
+
+    // Create run directory and JSONL log file path under the output dir
+    const runsDir = join(outputDir, "features", options.feature, "runs");
     mkdirSync(runsDir, { recursive: true });
 
     // Generate run ID from ISO timestamp
@@ -528,8 +564,8 @@ program
       console.log(chalk.dim("   [Headless mode — pipe output]"));
     }
 
-    // Compute status file path: <workdir>/.nax/status.json
-    const statusFilePath = join(workdir, ".nax", "status.json");
+    // Compute status file path under the output dir
+    const statusFilePath = join(outputDir, "status.json");
 
     // Parse --parallel option
     let parallel: number | undefined;
@@ -589,6 +625,37 @@ program
     }
 
     process.exit(result.success ? 0 : 1);
+  });
+
+// ── migrate ───────────────────────────────────────────
+program
+  .command("migrate")
+  .description("Migrate generated content from .nax/ to the output directory (~/.nax/<project>/)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--dry-run", "Preview moves without touching the filesystem", false)
+  .option("--reclaim <name>", "Archive ~/.nax/<name>/ to free the project name")
+  .option("--merge <name>", "Rewrite the identity for <name> to point to this workdir")
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    const { migrateCommand } = await import("../src/commands/migrate");
+    try {
+      await migrateCommand({
+        workdir,
+        dryRun: options.dryRun,
+        reclaim: options.reclaim,
+        merge: options.merge,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
   });
 
 // ── features ─────────────────────────────────────────

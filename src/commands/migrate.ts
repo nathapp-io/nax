@@ -14,7 +14,7 @@ import path from "node:path";
 import { validateProjectName } from "../cli/init";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { readProjectIdentity, writeProjectIdentity } from "../runtime";
+import { projectOutputDir, readProjectIdentity, writeProjectIdentity } from "../runtime";
 
 export interface MigrateCandidate {
   name: string;
@@ -216,7 +216,7 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
     });
   }
 
-  let config: { name?: string } = {};
+  let config: { name?: string; outputDir?: string } = {};
   try {
     config = await Bun.file(configPath).json();
   } catch (e) {
@@ -227,7 +227,7 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
   }
 
   const projectKey = config.name?.trim() || path.basename(options.workdir);
-  const destBase = path.join(os.homedir(), ".nax", projectKey);
+  const destBase = projectOutputDir(projectKey, config.outputDir);
   const candidates = await detectGeneratedContent(naxDir);
 
   if (candidates.length === 0) {
@@ -252,8 +252,11 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
     await mkdir(path.dirname(dest), { recursive: true });
 
     if (existsSync(dest)) {
-      logger.warn("migrate", `Skipping — destination already exists: ${dest}`, { storyId: "_migrate" });
-      continue;
+      throw new NaxError(
+        `Migration conflict: destination already exists.\n  Source:      ${candidate.srcPath}\n  Destination: ${dest}\n  Remove the destination or run nax migrate --dry-run to inspect.`,
+        "MIGRATE_CONFLICT",
+        { stage: "migrate", src: candidate.srcPath, dest },
+      );
     }
 
     try {

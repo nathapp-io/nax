@@ -312,7 +312,10 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
 
   // Detect project stack and build config
   const stack = detectStack(projectRoot);
-  const projectConfig = buildInitConfig(stack);
+  const projectConfig = {
+    ...buildInitConfig(stack),
+    ...(detectedName ? { name: detectedName } : {}),
+  };
   logger.info("init", "Detected project stack", {
     runtime: stack.runtime,
     language: stack.language,

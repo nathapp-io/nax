@@ -15,7 +15,7 @@
 import * as os from "node:os";
 import path from "node:path";
 import type { NaxConfig } from "../../config";
-import { LockAcquisitionError } from "../../errors";
+import { LockAcquisitionError, NaxError } from "../../errors";
 import type { LoadedHooksConfig } from "../../hooks";
 import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
@@ -254,6 +254,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     }
     const projectKey = config.name?.trim() || path.basename(workdir);
     await claimProjectIdentity(projectKey, workdir, remoteUrl).catch((err) => {
+      if (err instanceof NaxError && err.code === "RUN_NAME_COLLISION") {
+        throw err;
+      }
       logger?.warn("setup", "Failed to claim project identity", {
         storyId: "_setup",
         error: err instanceof Error ? err.message : String(err),

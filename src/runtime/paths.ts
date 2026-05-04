@@ -80,12 +80,23 @@ export async function claimProjectIdentity(
   const now = new Date().toISOString();
 
   if (existing) {
-    // Workdir matches — update lastSeen only
     if (existing.workdir === workdir) {
       await writeProjectIdentity(projectKey, { ...existing, lastSeen: now });
+      return;
     }
-    // Different workdir — do not overwrite (collision detection is nax init's job)
-    return;
+    throw new NaxError(
+      [
+        `Project name collision: "${projectKey}" is already claimed by a different project.`,
+        `  This project:    ${workdir}`,
+        `  Registered to:  ${existing.workdir}  (last seen: ${existing.lastSeen})`,
+        "  Resolve:",
+        "    1. Rename: set a different name in .nax/config.json",
+        `    2. Reclaim: nax migrate --reclaim ${projectKey}`,
+        `    3. Merge:   nax migrate --merge ${projectKey}`,
+      ].join("\n"),
+      "RUN_NAME_COLLISION",
+      { stage: "setup", projectKey, existingWorkdir: existing.workdir },
+    );
   }
 
   // First claim — Bun.write() creates parent dirs automatically
