@@ -6,14 +6,77 @@
 
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { readProjectIdentity } from "../runtime";
 import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import { initContext, initPackage } from "./init-context";
 import { buildInitConfig, detectStack } from "./init-detect";
 import type { ProjectStack } from "./init-detect";
 import { promptsInitCommand } from "./prompts";
+
+/** Result of project name validation */
+export interface ProjectNameValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+/**
+ * Validate a project name.
+ * Must be lowercase alphanumeric with hyphens/underscores, 1–64 chars,
+ * must not start with '.' or '_', and must not be a reserved name.
+ */
+export function validateProjectName(name: string): ProjectNameValidationResult {
+  if (!name) return { valid: false, error: "name must be non-empty" };
+  if (name.length > 64) return { valid: false, error: "name must be at most 64 characters" };
+  if (!/^[a-z0-9_-]+$/.test(name))
+    return {
+      valid: false,
+      error: "name must contain only lowercase letters, digits, hyphens, and underscores",
+    };
+  if (name.startsWith(".") || name.startsWith("_")) return { valid: false, error: `name '${name}' is reserved` };
+  if (["global", "_archive"].includes(name)) return { valid: false, error: `name '${name}' is reserved` };
+  return { valid: true };
+}
+
+/** Result of collision check against the global identity registry */
+export interface InitCollisionResult {
+  collision: boolean;
+  existing?: {
+    workdir: string;
+    remoteUrl: string | null;
+    lastSeen: string;
+  };
+}
+
+/**
+ * Check whether a project name is already claimed by a different project.
+ * Returns `{ collision: false }` if the name is unclaimed or claimed by the
+ * same project (matched by remote URL or workdir when no remote exists).
+ */
+export async function checkInitCollision(
+  name: string,
+  currentWorkdir: string,
+  currentRemote: string | null,
+): Promise<InitCollisionResult> {
+  const identity = await readProjectIdentity(name);
+  if (!identity) return { collision: false };
+
+  const sameRemote = currentRemote !== null && identity.remoteUrl !== null && currentRemote === identity.remoteUrl;
+  const sameWorkdir = !currentRemote && !identity.remoteUrl && currentWorkdir === identity.workdir;
+  if (sameRemote || sameWorkdir) return { collision: false };
+
+  return {
+    collision: true,
+    existing: {
+      workdir: identity.workdir,
+      remoteUrl: identity.remoteUrl,
+      lastSeen: identity.lastSeen,
+    },
+  };
+}
 
 /** Init command options */
 export interface InitOptions {
@@ -26,6 +89,10 @@ export interface InitOptions {
    * Relative path from repo root, e.g. "packages/api".
    */
   package?: string;
+  /** Project name for the global identity registry */
+  name?: string;
+  /** Skip re-init collision guard */
+  force?: boolean;
 }
 
 /** Options for initProject */
@@ -34,6 +101,8 @@ export interface InitProjectOptions {
   ai?: boolean;
   /** Force overwrite of existing files */
   force?: boolean;
+  /** Project name for validation and identity registry */
+  name?: string;
 }
 
 /**
@@ -187,6 +256,49 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   const logger = getLogger();
   const projectDir = projectConfigDir(projectRoot);
 
+  // Name validation and collision check
+  const detectedName = options?.name ?? basename(projectRoot);
+  const nameValidation = validateProjectName(detectedName);
+  if (!nameValidation.valid) {
+    logger.error("init", "Invalid project name", { name: detectedName, reason: nameValidation.error });
+    throw new NaxError(`Invalid project name "${detectedName}": ${nameValidation.error}`, "INIT_INVALID_NAME", {
+      stage: "init",
+      name: detectedName,
+    });
+  }
+
+  // Detect current git remote (best-effort; non-git projects are fine)
+  let currentRemote: string | null = null;
+  try {
+    const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: projectRoot });
+    if (gitResult.exitCode === 0) {
+      currentRemote = new TextDecoder().decode(gitResult.stdout).trim() || null;
+    }
+  } catch {
+    /* non-git project — ok */
+  }
+
+  // Collision check (read-only; claim happens on first nax run via identity marker)
+  if (!options?.force) {
+    const collision = await checkInitCollision(detectedName, projectRoot, currentRemote);
+    if (collision.collision && collision.existing) {
+      const configPath = join(projectDir, "config.json");
+      throw new NaxError(
+        [
+          `Project name collision: "${detectedName}"`,
+          `  This project:    ${projectRoot}`,
+          `  Already in use:  ${collision.existing.workdir}  (last run: ${collision.existing.lastSeen})`,
+          "  Resolve:",
+          `    1. Rename: edit name in ${configPath}`,
+          `    2. Reclaim: nax migrate --reclaim ${detectedName}`,
+          `    3. Merge:   nax migrate --merge ${detectedName}`,
+        ].join("\n"),
+        "INIT_NAME_COLLISION",
+        { stage: "init", name: detectedName },
+      );
+    }
+  }
+
   // Create .nax/ directory if it doesn't exist
   if (!existsSync(projectDir)) {
     await mkdir(projectDir, { recursive: true });
@@ -274,6 +386,6 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     console.log(`  2. Run: nax generate --package ${options.package}`);
   } else {
     const projectRoot = options.projectRoot ?? process.cwd();
-    await initProject(projectRoot);
+    await initProject(projectRoot, { name: options.name, force: options.force });
   }
 }
