@@ -144,6 +144,6 @@
     "timeoutSeconds": 1200
   },
   "acceptance": {
-    "model": "balanced"
+    "model": "fast"
   }
 }

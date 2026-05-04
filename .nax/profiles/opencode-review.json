@@ -1,0 +1,13 @@
+{
+  "review": {
+    "adversarial": {
+      "model": { "agent": "opencode", "tier": "opencode-go/deepseek-v4-pro" }
+    },
+    "semantic": {
+      "model": { "agent": "opencode", "tier": "opencode-go/kimi-k2.6" }
+    }
+  },
+  "acceptance": {
+    "model": { "agent": "opencode", "tier": "opencode-go/minimax-m2.7" }
+  }  
+}
