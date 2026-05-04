@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { NaxError } from "../errors";
@@ -89,9 +88,7 @@ export async function claimProjectIdentity(
     return;
   }
 
-  // First claim — create the directory and write the identity
-  const identDir = path.dirname(identityPath(projectKey));
-  await mkdir(identDir, { recursive: true });
+  // First claim — Bun.write() creates parent dirs automatically
   await writeProjectIdentity(projectKey, {
     name: projectKey,
     workdir,
