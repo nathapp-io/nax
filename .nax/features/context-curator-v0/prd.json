@@ -3,7 +3,7 @@
   "feature": "context-curator-v0",
   "branchName": "feat/context-curator-v0",
   "createdAt": "2026-05-04T00:00:00Z",
-  "updatedAt": "2026-05-04T12:24:00.559Z",
+  "updatedAt": "2026-05-04T12:39:38.654Z",
   "userStories": [
     {
       "id": "US-001",
@@ -261,8 +261,8 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -318,7 +318,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "no-test",
-        "reasoning": "documentation-only story from source spec PR 7"
+        "reasoning": "documentation-only story from source spec PR 7",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "docs/specs/2026-05-04-context-curator-v0-design.md",
@@ -334,7 +336,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1155caaf6877e4e4edf1ce17732c58c4829d2de3"
     }
   ],
   "analysis": "## Code-Backed Architecture Notes\n\nThe Context Curator remains a deterministic post-run projection plugin: no LLM calls, no automatic canonical-source edits, and no runtime event-log/blob-store unification. It reads existing artifacts, emits per-run observations, renders human-reviewable proposals, and appends observations to the configured rollup.\n\n## Confirmed Current Code Shape\n\n- src/runtime/paths.ts already implements the folder-split path layer: projectOutputDir(projectKey, config.outputDir) defaults to ~/.nax/<projectKey>, and curatorRollupPath(globalDir, config.curator?.rollupPath) defaults to ~/.nax/global/curator/rollup.jsonl.\n- src/runtime/index.ts exposes runtime.outputDir, runtime.globalDir, runtime.projectKey, and runtime.curatorRollupPath, but src/plugins/extensions.ts / src/execution/lifecycle/run-cleanup.ts do not currently pass those fields into PostRunContext.\n- src/plugins/loader.ts currently loads global/project/config plugins only. There is no built-in plugin registration path, so curator registration needs a small loader/registry addition.\n- src/config/schemas-infra.ts currently has only curator.rollupPath; enabled and thresholds are not yet in schema or CuratorConfig.\n- src/context/engine/manifest-store.ts stores manifests under project input .nax/features/<feature>/stories/<storyId>/context-manifest-<stage>.json; these are not under outputDir.\n- src/metrics/tracker.ts saves generated metrics.json under runtime.outputDir.\n- src/review/review-audit.ts writes review audit JSON under outputDir/review-audit/<feature>/ when runtime outputDir is available.\n- The active run JSONL path is known to runner as logFilePath, but it is not currently included in post-run context.\n- src/context/engine/pull-tools.ts and src/pipeline/stages/acceptance.ts do not yet emit the two curator-specific logger lines.\n- ReviewDecisionEvent is optional. The code has direct recordDecision() call sites in semantic.ts, adversarial.ts, and semantic-debate.ts, but curator v0 can read review-audit JSON without changing that path.\n\n## PRD Corrections Applied\n\n- US-003 is included for implementation per product decision, while curator collection remains independent of the new event channel.\n- US-004 now includes post-run context wiring, built-in plugin registration, outputDir/globalDir/rollup path usage, and grouped acceptance coverage for the observation families from the spec.\n- US-005 now uses target.action consistently, clarifies that curatorRollupPath is a file path, and has grouped ACs for heuristics/render/rollup integration.\n- US-006 now resolves generated artifacts through config plus runtime path helpers and has grouped ACs for status/commit/dryrun/gc behavior.\n- US-007 was added for the documentation PR that was present in the spec but missing as an executable story.\n\n## Deferred / Out Of Scope\n\n- Dogfood and calibrated threshold defaults remain post-implementation follow-up work, not this PRD implementation scope.\n- Domain inference for rule files remains deferred; v0 stages rules suggestions in .nax/rules/curator-suggestions.md.\n- Event-log/blob-store unification remains explicitly out of scope."

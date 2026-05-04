@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 5.39436153,
+    "spent": 7.88850693,
     "limit": 50
   },
   "current": {
-    "storyId": "US-006",
-    "title": "nax curator CLI subcommands",
-    "complexity": "medium",
-    "tddStrategy": "tdd-simple",
+    "storyId": "US-007",
+    "title": "Document curator usage and architecture",
+    "complexity": "simple",
+    "tddStrategy": "no-test",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 6,
-  "updatedAt": "2026-05-04T12:38:53.659Z",
-  "durationMs": 5220274,
-  "lastHeartbeat": "2026-05-04T12:38:53.659Z"
+  "iterations": 7,
+  "updatedAt": "2026-05-04T12:40:53.665Z",
+  "durationMs": 5340280,
+  "lastHeartbeat": "2026-05-04T12:40:53.665Z"
 }
