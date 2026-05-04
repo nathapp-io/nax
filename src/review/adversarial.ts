@@ -382,9 +382,6 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     logger?.warn("review", `Adversarial review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
       durationMs,
-    });
-    logger?.debug("review", "Adversarial review findings", {
-      storyId: story.id,
       findings: blockingFindings.map((f) => ({
         severity: f.severity,
         category: f.category,
