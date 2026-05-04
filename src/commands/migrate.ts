@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { readProjectIdentity, writeProjectIdentity } from "../runtime";
 
 export interface MigrateCandidate {
   name: string;
@@ -134,6 +135,10 @@ export interface MigrateOptions {
    * configuring outputDir to a same-FS path instead.
    */
   crossFs?: boolean;
+  /** Project name to archive-and-free from ~/.nax/<name>/. */
+  reclaim?: string;
+  /** Project name to rewrite identity for current workdir. */
+  merge?: string;
 }
 
 /**
@@ -141,6 +146,53 @@ export interface MigrateOptions {
  */
 export async function migrateCommand(options: MigrateOptions): Promise<void> {
   const logger = getLogger();
+
+  // --reclaim: archive ~/.nax/<name>/ to ~/.nax/_archive/<name>-<ts>/
+  if (options.reclaim) {
+    const src = path.join(os.homedir(), ".nax", options.reclaim);
+    if (!existsSync(src)) {
+      throw new NaxError(`Nothing to reclaim: ~/.nax/${options.reclaim} does not exist`, "MIGRATE_RECLAIM_NOT_FOUND", {
+        stage: "migrate",
+        name: options.reclaim,
+      });
+    }
+    const archiveBase = path.join(os.homedir(), ".nax", "_archive");
+    const archiveDest = path.join(archiveBase, `${options.reclaim}-${Date.now()}`);
+    await mkdir(archiveBase, { recursive: true });
+    await rename(src, archiveDest);
+    logger.info("migrate", `Reclaimed: archived to ${archiveDest}`, { storyId: "_migrate" });
+    return;
+  }
+
+  // --merge: rewrite identity to point to current workdir
+  if (options.merge) {
+    const existing = await readProjectIdentity(options.merge);
+    if (!existing) {
+      throw new NaxError(`Cannot merge: ~/.nax/${options.merge}/.identity not found`, "MIGRATE_MERGE_NOT_FOUND", {
+        stage: "migrate",
+        name: options.merge,
+      });
+    }
+    let currentRemote: string | null = null;
+    try {
+      const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: options.workdir });
+      if (gitResult.exitCode === 0) {
+        currentRemote = new TextDecoder().decode(gitResult.stdout).trim() || null;
+      }
+    } catch {
+      /* non-git project */
+    }
+
+    await writeProjectIdentity(options.merge, {
+      ...existing,
+      workdir: options.workdir,
+      remoteUrl: currentRemote,
+      lastSeen: new Date().toISOString(),
+    });
+    logger.info("migrate", `Merged: identity for "${options.merge}" updated`, { storyId: "_migrate" });
+    return;
+  }
+
   const naxDir = path.join(options.workdir, ".nax");
 
   const configPath = path.join(naxDir, "config.json");

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { withTempDir } from "../../helpers/temp";
-import { detectGeneratedContent, type MigrateCandidate } from "../../../src/commands/migrate";
+import { detectGeneratedContent, migrateCommand, type MigrateCandidate } from "../../../src/commands/migrate";
 
 describe("detectGeneratedContent", () => {
   it("detects runs/ directory", async () => {
@@ -43,5 +43,21 @@ describe("detectGeneratedContent", () => {
       const candidates = await detectGeneratedContent(naxDir);
       expect(candidates).toEqual([]);
     });
+  });
+});
+
+describe("migrateCommand --reclaim", () => {
+  it("throws when name does not exist in ~/.nax/", async () => {
+    await expect(
+      migrateCommand({ workdir: "/tmp", reclaim: "__nonexistent_test_9999__" }),
+    ).rejects.toThrow("Nothing to reclaim");
+  });
+});
+
+describe("migrateCommand --merge", () => {
+  it("throws when identity does not exist", async () => {
+    await expect(
+      migrateCommand({ workdir: "/tmp", merge: "__nonexistent_test_9999__" }),
+    ).rejects.toThrow("Cannot merge");
   });
 });
