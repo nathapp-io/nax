@@ -19,6 +19,15 @@ export type {
   ReviewAuditEntry,
 } from "../review/review-audit";
 export type { PackageView, PackageRegistry } from "./packages";
+export {
+  projectInputDir,
+  projectOutputDir,
+  globalOutputDir,
+  identityPath,
+  readProjectIdentity,
+  writeProjectIdentity,
+} from "./paths";
+export type { ProjectIdentity } from "./paths";
 export { createPackageRegistry } from "./packages";
 export type { DispatchContext } from "./dispatch-context";
 export type { AgentMiddleware, MiddlewareContext } from "./agent-middleware";
@@ -120,6 +129,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const configLoader = createConfigLoader(config);
   const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
 
+  // TODO(Task 2): replace casts once name/outputDir are added to NaxConfigSchema
   const projectKey = (config as { name?: string }).name?.trim() || basename(workdir);
   const outputDir = projectOutputDir(projectKey, (config as { outputDir?: string }).outputDir);
   const globalDir = globalOutputDir();

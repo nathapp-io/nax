@@ -44,7 +44,16 @@ export async function readProjectIdentity(projectKey: string): Promise<ProjectId
   const file = Bun.file(p);
   if (!(await file.exists())) return null;
   try {
-    return (await file.json()) as ProjectIdentity;
+    const data = (await file.json()) as Record<string, unknown>;
+    if (
+      typeof data.name !== "string" ||
+      typeof data.workdir !== "string" ||
+      typeof data.createdAt !== "string" ||
+      typeof data.lastSeen !== "string"
+    ) {
+      return null;
+    }
+    return data as unknown as ProjectIdentity;
   } catch {
     return null;
   }

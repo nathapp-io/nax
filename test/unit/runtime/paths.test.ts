@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, beforeEach, afterEach } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { NaxError } from "../../../src/errors";
@@ -6,11 +7,11 @@ import {
   globalOutputDir,
   projectInputDir,
   projectOutputDir,
+  identityPath,
   readProjectIdentity,
   writeProjectIdentity,
-  identityPath,
   type ProjectIdentity,
-} from "../../../src/runtime/paths";
+} from "../../../src/runtime";
 
 describe("projectInputDir", () => {
   it("returns workdir/.nax", () => {
@@ -49,15 +50,13 @@ describe("identity I/O", () => {
   const TEST_PROJECT_KEY = "__nax_test_paths_identity__";
   const identDir = path.join(os.homedir(), ".nax", TEST_PROJECT_KEY);
 
-  // cleanup before and after to ensure isolation
-  function cleanup() {
-    try {
-      const { rmSync } = require("node:fs");
-      rmSync(identDir, { recursive: true, force: true });
-    } catch {
-      // ok
-    }
-  }
+  beforeEach(async () => {
+    await rm(identDir, { recursive: true, force: true });
+  });
+
+  afterEach(async () => {
+    await rm(identDir, { recursive: true, force: true });
+  });
 
   it("identityPath returns correct path", () => {
     expect(identityPath(TEST_PROJECT_KEY)).toBe(
@@ -66,15 +65,12 @@ describe("identity I/O", () => {
   });
 
   it("readProjectIdentity returns null when file does not exist", async () => {
-    cleanup();
     const result = await readProjectIdentity(TEST_PROJECT_KEY);
     expect(result).toBeNull();
   });
 
   it("writeProjectIdentity then readProjectIdentity round-trips", async () => {
-    cleanup();
-    const { mkdirSync } = require("node:fs");
-    mkdirSync(identDir, { recursive: true });
+    await mkdir(identDir, { recursive: true });
 
     const identity: ProjectIdentity = {
       name: TEST_PROJECT_KEY,
@@ -87,7 +83,13 @@ describe("identity I/O", () => {
     await writeProjectIdentity(TEST_PROJECT_KEY, identity);
     const read = await readProjectIdentity(TEST_PROJECT_KEY);
     expect(read).toEqual(identity);
+  });
 
-    cleanup();
+  it("readProjectIdentity returns null for malformed JSON file", async () => {
+    await mkdir(identDir, { recursive: true });
+    // Write malformed identity (missing required fields — shape guard should reject)
+    await Bun.write(path.join(identDir, ".identity"), JSON.stringify({ name: TEST_PROJECT_KEY }));
+    const result = await readProjectIdentity(TEST_PROJECT_KEY);
+    expect(result).toBeNull();
   });
 });
