@@ -218,6 +218,21 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
   statusWriter.setPrd(prd);
 
+  // Auto-migrate generated content out of .nax/ if needed (no-op when already migrated)
+  {
+    const { detectGeneratedContent, migrateCommand } = await import("../../commands/migrate");
+    const naxDir = path.join(workdir, ".nax");
+    const candidates = await detectGeneratedContent(naxDir).catch(() => []);
+    if (candidates.length > 0) {
+      logger?.info("setup", "Found generated content under .nax/ — migrating to output dir", {
+        storyId: "_setup",
+        count: candidates.length,
+      });
+      await migrateCommand({ workdir });
+      logger?.info("setup", "Auto-migration complete", { storyId: "_setup" });
+    }
+  }
+
   // ── Run precheck validations (unless --skip-precheck) ──────────────────────
   if (!skipPrecheck) {
     const { runPrecheckValidation } = await import("./precheck-runner");

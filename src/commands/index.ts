@@ -7,3 +7,5 @@ export { logsCommand, type LogsOptions } from "./logs";
 export { precheckCommand, type PrecheckOptions } from "./precheck";
 export { runsCommand, type RunsOptions } from "./runs";
 export { unlockCommand, type UnlockOptions } from "./unlock";
+export { migrateCommand, detectGeneratedContent } from "./migrate";
+export type { MigrateOptions, MigrateCandidate } from "./migrate";
