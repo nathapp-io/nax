@@ -33,7 +33,8 @@ export type {
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
 
-import { join } from "node:path";
+import os from "node:os";
+import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
@@ -63,6 +64,7 @@ import {
 } from "./middleware";
 import { createPackageRegistry } from "./packages";
 import type { PackageRegistry } from "./packages";
+import { globalOutputDir, projectOutputDir } from "./paths";
 import { PromptAuditor, createNoOpPromptAuditor } from "./prompt-auditor";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createSessionRunHop } from "./session-run-hop";
@@ -72,6 +74,9 @@ export interface NaxRuntime {
   readonly configLoader: ConfigLoader;
   readonly workdir: string;
   readonly projectDir: string;
+  readonly outputDir: string;
+  readonly globalDir: string;
+  readonly projectKey: string;
   readonly agentManager: IAgentManager;
   readonly sessionManager: ISessionManager;
   readonly costAggregator: ICostAggregator;
@@ -115,6 +120,10 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
 
   const configLoader = createConfigLoader(config);
   const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
+
+  const projectKey = (config as { name?: string }).name?.trim() || basename(workdir);
+  const outputDir = projectOutputDir(projectKey, (config as { outputDir?: string }).outputDir);
+  const globalDir = globalOutputDir();
 
   const costDir = join(workdir, ".nax", "cost");
   const costAggregator = opts?.costAggregator ?? new CostAggregator(runId, costDir);
@@ -188,6 +197,9 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     configLoader,
     workdir,
     projectDir: workdir, // Wave 1: equal to workdir; Wave 3 will separate worktree paths
+    outputDir,
+    globalDir,
+    projectKey,
     agentManager,
     sessionManager,
     costAggregator,
