@@ -4,6 +4,7 @@
  * Collects observations from run artifacts and writes observations.jsonl.
  */
 
+import * as path from "node:path";
 import type { IPostRunAction, PluginLogger, PostRunActionResult, PostRunContext } from "../../types";
 import type { NaxPlugin } from "../../types";
 import { collectObservations } from "./collect";
@@ -13,6 +14,26 @@ import type { CuratorPostRunContext } from "./types";
 const PLUGIN_NAME = "nax-curator";
 const PLUGIN_VERSION = "0.1.0";
 
+function getCuratorEnabled(context: PostRunContext): boolean {
+  const cfg = context.config as Record<string, unknown> | undefined;
+  if (!cfg) return true;
+  const curator = cfg.curator as Record<string, unknown> | undefined;
+  if (!curator) return true;
+  if (curator.enabled === false) return false;
+  return true;
+}
+
+function getReviewAuditEnabled(context: PostRunContext): boolean {
+  const cfg = context.config as Record<string, unknown> | undefined;
+  if (!cfg) return true;
+  const review = cfg.review as Record<string, unknown> | undefined;
+  if (!review) return true;
+  const audit = review.audit as Record<string, unknown> | undefined;
+  if (!audit) return true;
+  if (audit.enabled === false) return false;
+  return true;
+}
+
 /**
  * Curator post-run action implementation.
  */
@@ -20,40 +41,39 @@ const curatorAction: IPostRunAction = {
   name: PLUGIN_NAME,
   description: "Collects observations from run artifacts for curator aggregation",
 
-  /**
-   * Determine whether curator should run.
-   *
-   * Curator runs when:
-   * - curator.enabled is not explicitly false
-   * - At least one story completed
-   *
-   * Warns if review.audit.enabled is false.
-   */
   async shouldRun(context: PostRunContext): Promise<boolean> {
-    // TODO: Implement shouldRun logic
-    // - Check config.curator.enabled !== false
-    // - Check context.storySummary.completed > 0
-    // - Warn if config.review.audit.enabled is false
-    return false;
+    if (!getCuratorEnabled(context)) return false;
+    if (context.storySummary.completed < 1) return false;
+    if (!getReviewAuditEnabled(context)) {
+      context.logger.warn("review.audit.enabled is false — review-audit observations will be empty");
+    }
+    return true;
   },
 
-  /**
-   * Execute curator collection.
-   *
-   * Collects observations and writes observations.jsonl.
-   * Never throws — logs warnings for missing sources.
-   */
   async execute(context: PostRunContext): Promise<PostRunActionResult> {
-    // TODO: Implement execute logic
-    // - Cast context to CuratorPostRunContext
-    // - Call collectObservations()
-    // - Resolve output paths
-    // - Write observations.jsonl
-    // - Return success or failure result
-    return {
-      success: false,
-      message: "Not implemented",
-    };
+    try {
+      const curatorContext = context as CuratorPostRunContext;
+      const observations = await collectObservations(curatorContext);
+      if (context.outputDir) {
+        const { observationsPath } = resolveCuratorOutputs(curatorContext);
+        const dir = path.dirname(observationsPath);
+        await Bun.write(
+          observationsPath,
+          observations.map((o) => JSON.stringify(o)).join("\n") + (observations.length > 0 ? "\n" : ""),
+        );
+        void dir;
+      }
+      return {
+        success: true,
+        message: `Curator collected ${observations.length} observations`,
+      };
+    } catch (err) {
+      context.logger.warn("Curator execute failed", { error: String(err) });
+      return {
+        success: false,
+        message: `Curator failed: ${String(err)}`,
+      };
+    }
   },
 };
 
@@ -66,11 +86,11 @@ export const curatorPlugin: NaxPlugin = {
   provides: ["post-run-action"],
 
   async setup(_config: Record<string, unknown>, _logger: PluginLogger): Promise<void> {
-    // TODO: Initialize curator plugin if needed
+    // No initialization required
   },
 
   async teardown(): Promise<void> {
-    // TODO: Cleanup if needed
+    // No cleanup required
   },
 
   extensions: {

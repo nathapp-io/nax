@@ -19,13 +19,10 @@ export interface CuratorOutputs {
  * @returns Paths for observations, proposals, and rollup files
  */
 export function resolveCuratorOutputs(context: CuratorPostRunContext): CuratorOutputs {
-  // TODO: Implement path resolution
-  // - observationsPath: {outputDir}/runs/{runId}/observations.jsonl
-  // - proposalsPath: {outputDir}/runs/{runId}/proposals.jsonl
-  // - rollupPath: {curatorRollupPath}
+  const runDir = `${context.outputDir}/runs/${context.runId}`;
   return {
-    observationsPath: "",
-    proposalsPath: "",
-    rollupPath: "",
+    observationsPath: `${runDir}/observations.jsonl`,
+    proposalsPath: `${runDir}/proposals.jsonl`,
+    rollupPath: context.curatorRollupPath,
   };
 }
