@@ -19,7 +19,9 @@ import {
   createRunCallCounter,
   handleQueryNeighbor,
   handleQueryFeatureContext,
+  _pullToolsDeps,
 } from "../../../../src/context/engine/pull-tools";
+import { makeLogger } from "../../../../test/helpers";
 import type { NaxConfig } from "../../../../src/config/types";
 import type { UserStory } from "../../../../src/prd";
 
@@ -31,12 +33,14 @@ let origFileExists: typeof _codeNeighborDeps.fileExists;
 let origReadFile: typeof _codeNeighborDeps.readFile;
 let origGlob: typeof _codeNeighborDeps.glob;
 let origCreateV1Provider: typeof _featureContextV2Deps.createV1Provider;
+let origGetLogger: typeof _pullToolsDeps.getLogger;
 
 beforeEach(() => {
   origFileExists = _codeNeighborDeps.fileExists;
   origReadFile = _codeNeighborDeps.readFile;
   origGlob = _codeNeighborDeps.glob;
   origCreateV1Provider = _featureContextV2Deps.createV1Provider;
+  origGetLogger = _pullToolsDeps.getLogger;
   // Default: no files exist, no glob results
   _codeNeighborDeps.fileExists = async () => false;
   _codeNeighborDeps.readFile = async () => "";
@@ -45,6 +49,8 @@ beforeEach(() => {
   _featureContextV2Deps.createV1Provider = () => ({
     getContext: async () => null,
   }) as ReturnType<typeof origCreateV1Provider>;
+  // Default: no-op logger (real logger is used)
+  _pullToolsDeps.getLogger = () => makeLogger() as any;
 });
 
 afterEach(() => {
@@ -52,6 +58,7 @@ afterEach(() => {
   _codeNeighborDeps.readFile = origReadFile;
   _codeNeighborDeps.glob = origGlob;
   _featureContextV2Deps.createV1Provider = origCreateV1Provider;
+  _pullToolsDeps.getLogger = origGetLogger;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,6 +241,54 @@ describe("handleQueryNeighbor", () => {
     const result = await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget(), maxTokensPerCall);
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
   });
+
+  test("emits logger.info with tool=query_neighbor and resultCount matching chunk count", async () => {
+    const mockLogger = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger as any;
+    _codeNeighborDeps.fileExists = async () => false;
+    _codeNeighborDeps.glob = () => [];
+
+    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
+
+    expect(mockLogger.calls.some((c) => c.stage === "pull-tool" && c.message === "invoked")).toBe(true);
+    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call?.data?.tool).toBe("query_neighbor");
+    expect(call?.data?.resultCount).toBe(0);
+    expect(call?.data?.resultBytes).toBe(0);
+    expect(call?.data?.filePath).toBe("src/a.ts");
+  });
+
+  test("logger emit includes truncated=true when content is truncated", async () => {
+    const mockLogger = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger as any;
+    const manyNeighbors = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`);
+    _codeNeighborDeps.fileExists = async () => false;
+    _codeNeighborDeps.glob = () => manyNeighbors;
+    _codeNeighborDeps.readFile = async (p) => {
+      if (manyNeighbors.some((f) => p.includes(f))) return 'import { x } from "./a"';
+      return "";
+    };
+
+    const maxTokensPerCall = 10; // tiny cap to force truncation
+    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget(), maxTokensPerCall);
+
+    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call?.data?.truncated).toBe(true);
+  });
+
+  test("logger emit includes resultCount matching number of neighbor chunks", async () => {
+    const mockLogger = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger as any;
+    // Simulate file with test and forward/reverse deps
+    _codeNeighborDeps.fileExists = async (p) => p.includes("test/");
+    _codeNeighborDeps.glob = () => ["src/imported.ts"];
+    _codeNeighborDeps.readFile = async () => 'import { x } from "./a"';
+
+    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
+
+    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call?.data?.resultCount).toBeGreaterThan(0);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -398,5 +453,61 @@ describe("handleQueryFeatureContext", () => {
       maxTokensPerCall,
     );
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
+  });
+
+  test("emits logger.info with tool=query_feature_context and keyword from filter", async () => {
+    const mockLogger = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger as any;
+    mockV1Provider("## Conventions\nUse async/await.");
+
+    await handleQueryFeatureContext(
+      { filter: "conventions" },
+      STORY,
+      CONFIG,
+      "/repo",
+      makeBudget(),
+    );
+
+    expect(mockLogger.calls.some((c) => c.stage === "pull-tool" && c.message === "invoked")).toBe(true);
+    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call?.data?.tool).toBe("query_feature_context");
+    expect(call?.data?.keyword).toBe("conventions");
+    expect(call?.data?.storyId).toBe("US-001");
+  });
+
+  test("logger emit includes resultCount and resultBytes", async () => {
+    const mockLogger = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger as any;
+    const content = "## Section\nSome content here";
+    mockV1Provider(content);
+
+    await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
+
+    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call?.data?.resultCount).toBeGreaterThan(0);
+    expect(call?.data?.resultBytes).toBeGreaterThan(0);
+  });
+
+  test("logger emit includes resultCount=0 when no context exists", async () => {
+    const mockLogger = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger as any;
+    mockV1Provider(null);
+
+    await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
+
+    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call?.data?.resultCount).toBe(0);
+    expect(call?.data?.resultBytes).toBe(0);
+  });
+
+  test("logger emit includes keyword=null when no filter is provided", async () => {
+    const mockLogger = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger as any;
+    mockV1Provider("## Section\nContent");
+
+    await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
+
+    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call?.data?.keyword).toBeNull();
   });
 });

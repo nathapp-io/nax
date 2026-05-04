@@ -21,10 +21,19 @@
 import type { ContextToolRuntimeConfig } from "../../config/selectors";
 import type { NaxConfig } from "../../config/types";
 import { NaxError } from "../../errors";
+import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
 import type { ContextRequest, ToolDescriptor } from "./types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dependencies (injectable for testing)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const _pullToolsDeps = {
+  getLogger,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -192,6 +201,7 @@ export class PullToolBudget {
  * Delegates to CodeNeighborProvider.fetch() with the requested file path.
  * Truncates the response to maxTokensPerCall * 4 characters.
  * Calls budget.consume() before executing — propagates the NaxError if exhausted.
+ * Emits logger.info with pull-tool invocation metrics for curator ingestion.
  *
  * @param input           - Tool call arguments from the agent
  * @param workdir         - Working directory for file resolution
@@ -204,6 +214,7 @@ export async function handleQueryNeighbor(
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
   resolvedTestPatterns?: import("../../test-runners/resolver").ResolvedTestPatterns,
+  storyId?: string,
 ): Promise<string> {
   budget.consume();
 
@@ -222,7 +233,23 @@ export async function handleQueryNeighbor(
 
   const content = result.chunks.map((c) => c.content).join("\n\n");
   const maxChars = maxTokensPerCall * 4;
-  return content.length > maxChars ? content.slice(0, maxChars) : content;
+  const truncated = content.length > maxChars;
+  const finalContent = truncated ? content.slice(0, maxChars) : content;
+
+  const logger = _pullToolsDeps.getLogger();
+  const logData: Record<string, unknown> = {
+    storyId: storyId ?? "_pull-tool",
+    tool: "query_neighbor",
+    filePath: input.filePath,
+    resultCount: result.chunks.length,
+    resultBytes: finalContent.length,
+  };
+  if (truncated) {
+    logData.truncated = true;
+  }
+  logger.info("pull-tool", "invoked", logData);
+
+  return finalContent;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -254,6 +281,7 @@ function filterByKeyword(content: string, keyword: string): string {
  * the returned content by the keyword in input.filter.
  * Truncates the response to maxTokensPerCall * 4 characters.
  * Calls budget.consume() before executing — propagates the NaxError if exhausted.
+ * Emits logger.info with pull-tool invocation metrics for curator ingestion.
  *
  * @param input            - Tool call arguments from the agent
  * @param story            - Current user story (needed by FeatureContextProviderV2)
@@ -290,5 +318,16 @@ export async function handleQueryFeatureContext(
   }
 
   const maxChars = maxTokensPerCall * 4;
-  return content.length > maxChars ? content.slice(0, maxChars) : content;
+  const finalContent = content.length > maxChars ? content.slice(0, maxChars) : content;
+
+  const logger = _pullToolsDeps.getLogger();
+  logger.info("pull-tool", "invoked", {
+    storyId: story.id,
+    tool: "query_feature_context",
+    keyword: input.filter ?? null,
+    resultCount: result.chunks.length,
+    resultBytes: finalContent.length,
+  });
+
+  return finalContent;
 }
