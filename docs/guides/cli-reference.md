@@ -343,3 +343,69 @@ nax config --explain
 # Show only fields where project overrides global
 nax config --diff
 ```
+
+---
+
+### `nax curator status`
+
+Show curator observations and proposals from the latest (or specified) run.
+
+```bash
+nax curator status                    # Latest run
+nax curator status --run <runId>      # Specific run
+nax curator status --project <name>   # Specific project
+```
+
+Displays:
+- Observation counts by kind (review findings, escalations, rectification cycles, etc.)
+- Proposal summary by category (add to context, add to rules, drop from rules, advisory)
+- Path to the proposal file for review
+
+---
+
+### `nax curator commit <runId>`
+
+Apply checked proposals to your canonical context and rules files.
+
+```bash
+nax curator commit run-001
+nax curator commit run-001 --project my-project
+```
+
+Process:
+1. Reads `<runId>/curator-proposals.md`
+2. Parses checked `[x]` lines (unchecked `[ ]` lines are skipped)
+3. For each checked proposal:
+   - **Drop proposals** execute first (removes lines from rules files)
+   - **Add proposals** execute second (appends to `.nax/features/<id>/context.md` or `.nax/rules/` files)
+4. Opens modified files in `$EDITOR` for human review
+5. Prints summary of applied proposals
+
+**Does not commit to git** — changes remain in your working directory for review before `git add` / `git commit`.
+
+---
+
+### `nax curator dryrun`
+
+Re-run curator heuristics against existing observations without re-collecting them.
+
+```bash
+nax curator dryrun --run <runId>
+nax curator dryrun --project my-project
+```
+
+Useful for threshold calibration: adjust `config.curator.thresholds` values, re-run dryrun on the same observations, and see how proposal counts change.
+
+---
+
+### `nax curator gc`
+
+Prune old curator artifacts from the cross-run rollup.
+
+```bash
+nax curator gc --keep 50   # Keep 50 most recent runs (default)
+nax curator gc --keep 100  # Keep 100 runs
+nax curator gc --project my-project
+```
+
+Cleans up per-run proposal and observation files from older runs. Does not delete run logs or metrics — only curator artifacts.

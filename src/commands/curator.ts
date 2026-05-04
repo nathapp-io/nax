@@ -254,17 +254,25 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
   // Validate all drops before any writes: key token must exist, no overlapping ranges
   const drops = proposals.filter((p) => p.action === "drop");
   const dropFileState = new Map<string, { existing: string; usedLines: Set<number> }>();
+  const skippedDrops = new Set<ParsedProposal>();
 
   for (const drop of drops) {
     const targetPath = join(resolved.projectDir, drop.canonicalFile);
 
     if (!dropFileState.has(targetPath)) {
-      const existing = await _curatorCmdDeps.readFile(targetPath).catch(() => "");
+      const fileExists = await Bun.file(targetPath).exists();
+      const existing = fileExists ? await _curatorCmdDeps.readFile(targetPath).catch(() => "") : "";
       dropFileState.set(targetPath, { existing, usedLines: new Set() });
     }
 
     const fileState = dropFileState.get(targetPath);
     if (!fileState) continue;
+
+    // Skip drops for non-existent files (no content to drop)
+    if (fileState.existing === "") {
+      skippedDrops.add(drop);
+      continue;
+    }
 
     const keyToken = extractKeyToken(drop.description);
 
@@ -290,8 +298,11 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
     }
   }
 
-  // Apply drops first (all validated above)
+  // Apply drops first (all validated above, skip non-existent files)
   for (const drop of drops) {
+    if (skippedDrops.has(drop)) {
+      continue;
+    }
     const targetPath = join(resolved.projectDir, drop.canonicalFile);
     const existing = await _curatorCmdDeps.readFile(targetPath).catch(() => "");
     const filtered = filterDropContent(existing, drop.description);
