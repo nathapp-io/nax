@@ -1,7 +1,8 @@
 import type { SemanticVerdict } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
-import type { Finding, FindingSeverity, FixTarget } from "../findings";
+import { acceptanceDiagnoseRawArrayToFindings } from "../findings";
+import type { Finding } from "../findings";
 import { AcceptancePromptBuilder } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
@@ -59,23 +60,8 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
         confidence: raw.confidence,
       };
 
-      if (Array.isArray(raw.findings) && raw.findings.length > 0) {
-        const findings = (raw.findings as Array<Record<string, unknown>>)
-          .filter((f) => typeof f.message === "string" && typeof f.category === "string")
-          .map(
-            (f): Finding => ({
-              source: "acceptance-diagnose",
-              severity: (typeof f.severity === "string" ? f.severity : "error") as FindingSeverity,
-              category: String(f.category),
-              message: String(f.message),
-              fixTarget: (f.fixTarget as FixTarget | undefined) ?? undefined,
-              file: typeof f.file === "string" ? f.file : undefined,
-              line: typeof f.line === "number" ? f.line : undefined,
-              suggestion: typeof f.suggestion === "string" ? f.suggestion : undefined,
-            }),
-          );
-        if (findings.length > 0) return { ...base, findings };
-      }
+      const findings = acceptanceDiagnoseRawArrayToFindings(raw.findings);
+      if (findings.length > 0) return { ...base, findings };
 
       return base;
     }

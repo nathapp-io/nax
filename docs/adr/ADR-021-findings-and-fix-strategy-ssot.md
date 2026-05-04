@@ -1,10 +1,13 @@
 # ADR-021: Finding Type SSOT
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-02
+**Accepted:** 2026-05-04
 **Author:** William Khoo, Claude
 **Supersedes:** —
 **Related:** ADR-022 (Fix Strategy + Cycle Orchestration — companion ADR built on this type)
+
+> **Implementation status (2026-05-04):** Phases 1–4 and 6–9 shipped. **Phase 5 (TDD verifier producer) is suggestion-only and not on the implementation roadmap** — the TDD subsystem already has its own self-contained fix mechanism (3-session orchestration + tier escalation; see [src/tdd/verdict.ts](../../src/tdd/verdict.ts), [src/pipeline/stages/execution-helpers.ts:56](../../src/pipeline/stages/execution-helpers.ts#L56), [src/execution/escalation/tier-escalation.ts:68](../../src/execution/escalation/tier-escalation.ts#L68)). Verifier failures route through `categorizeVerdict()` → `routeTddFailure()` → tier escalation, never through `runFixCycle`. The `"tdd-verifier"` `FindingSource` enum value is preserved as a reserved slot but has no producer adapter and no consumer; building one today would be unread emission. Revisit only if a per-finding TDD rectification path is introduced (would require its own ADR). The `acceptance.fix.findingsV2` flag was skipped — schema rolled out unconditionally after dogfood validation.
 
 ---
 
@@ -160,7 +163,7 @@ Each phase after phase 1 is a **fold-per-producer** PR — the producer's adapte
 | **2. Plugin adapter** | `IReviewPlugin` boundary | `failedChecks` aggregator in autofix; review-result audit serialiser | Plugin contract (`ReviewFinding`) unchanged. Internal nax converts to `Finding` at the IReviewPlugin call site. |
 | **3. Lint** | Biome JSON parser | `splitFindingsByScope` lint branch; lint output rendering | Replaces raw output parsing. Mechanical, deterministic. |
 | **4. Typecheck** | tsc `--pretty=false` parser | `splitFindingsByScope` typecheck branch | Same shape change as lint. |
-| **5. TDD verifier** | TDD verifier output parser | Verifier verdict consumer | Small. User confirmed scope (item 7 in design discussion). |
+| **5. TDD verifier** | TDD verifier output parser | Verifier verdict consumer | **Suggestion only — not on roadmap.** TDD has its own fix mechanism (3-session + tier escalation); `categorizeVerdict()` → `routeTddFailure()` never enters `runFixCycle`. The `"tdd-verifier"` enum slot stays reserved but unproduced. Revisit only if a per-finding TDD rectification path is introduced (separate ADR). |
 | **6. Adversarial** | `acceptanceDiagnoseOp` and the adversarial review op | `buildPriorFindingsBlock` reads `Finding[]`; `AdversarialFindingsCache.findings[]` becomes `Finding[]` | Severity rename `"warn"` → `"warning"` in OUTPUT_SCHEMA block lands here. Read-path `normalizeSeverity` adapters in `semantic-helpers.ts`/`adversarial-helpers.ts`/`dialogue.ts` already handle the rename. |
 | **7. Semantic** | semantic review op | `buildAttemptContextBlock`, `SemanticVerdict.findings`, semantic evidence verifier | `verifiedBy` → `meta.verifiedBy`; AC ID → `rule`. |
 | **8. Acceptance diagnose** | `acceptanceDiagnoseOp` prompt schema | `applyFix` consumes `findings: Finding[]` (with `fixTarget` per item) instead of `testIssues`/`sourceIssues`. AC-HOOK / AC-ERROR sentinels emitted as findings (§5). | Behind `acceptance.fix.findingsV2` flag, default off. Bench against `nax-dogfood/fixtures/hello-lint`. Largest behaviour change in the ADR; lands last to benefit from prior phases' patterns. |

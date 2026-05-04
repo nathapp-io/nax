@@ -21,6 +21,8 @@ export type {
 export { SEVERITY_ORDER, compareSeverity, findingKey } from "./types";
 
 export {
+  acceptanceDiagnoseRawArrayToFindings,
+  acceptanceDiagnoseRawToFinding,
   acFailureToFinding,
   acSentinelToFinding,
   lintDiagnosticToFinding,

@@ -109,33 +109,6 @@ describe("acceptanceDiagnoseOp.parse()", () => {
     expect(result.findings?.length).toBe(1);
     expect(result.findings?.[0]).toMatchObject({ fixTarget: "test", category: "import-path", message: "wrong relative path" });
   });
-  test("injects source:'acceptance-diagnose' into LLM findings (LLM does not emit source)", () => {
-    const ctx = makeBuildCtx();
-    const json = JSON.stringify({
-      verdict: "test_bug",
-      reasoning: "bad import",
-      confidence: 0.9,
-      findings: [{ fixTarget: "test", category: "import-path", message: "wrong path" }],
-    });
-    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
-    expect(result.findings?.[0].source).toBe("acceptance-diagnose");
-  });
-  test("drops findings items missing required message or category", () => {
-    const ctx = makeBuildCtx();
-    const json = JSON.stringify({
-      verdict: "test_bug",
-      reasoning: "bad import",
-      confidence: 0.9,
-      findings: [
-        { fixTarget: "test", category: "import-path", message: "valid" },
-        { fixTarget: "test", message: "missing category" },
-        { fixTarget: "source", category: "missing-impl" },
-      ],
-    });
-    const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
-    expect(result.findings?.length).toBe(1);
-    expect(result.findings?.[0].message).toBe("valid");
-  });
   test("falls back gracefully when findings[] is empty array", () => {
     const ctx = makeBuildCtx();
     const json = JSON.stringify({
