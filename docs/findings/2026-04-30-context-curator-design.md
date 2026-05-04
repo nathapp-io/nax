@@ -367,11 +367,11 @@ This retires the eventLog+blobStore conversation cleanly: the primitive curator 
 
 ---
 
-## Step 5 — Fix-cycle iteration audit (cross-reference)
+## Step 5 — ADR-022 fix-cycle iteration audit (cross-reference)
 
-> **Citation note (2026-05-04):** This section originally cited "ADR-022 §13" repeatedly. As of 2026-05-04, ADR-022 does not exist in `docs/adr/` (highest committed is ADR-020). The implementation **does** exist — see [src/findings/cycle.ts](../../src/findings/cycle.ts) which has 11 emits with the `findings.cycle` stage tag including the `"iteration completed"` event at [line 381](../../src/findings/cycle.ts#L381). [src/pipeline/types.ts:181](../../src/pipeline/types.ts#L181) also references "ADR-022 Phase 7". Treat the ADR-022 references below as pointing to the **implementation**, not a committed ADR document. If/when ADR-022 is committed to `docs/adr/`, update these citations to direct ADR §-references.
+[ADR-022](../adr/ADR-022-fix-strategy-and-cycle.md) introduces the `runFixCycle<F>` machinery driving diagnose-fix-validate iterations across acceptance, autofix, semantic, and adversarial subsystems. Iteration history is ephemeral by default (in-memory `Iteration<F>[]` in the cycle's owning context, used for prompt carry-forward via `buildPriorIterationsBlock` and discarded at end of run).
 
-The `runFixCycle<F>` machinery drives diagnose-fix-validate iterations across acceptance, autofix, semantic, and adversarial subsystems. Iteration history is ephemeral by default (in-memory in `PipelineContext`), used only for prompt carry-forward via `buildPriorIterationsBlock`. Cycle-history persistence was deliberately deferred to this curator redesign.
+ADR-022's "Audit logging" section ([ADR-022 line 350](../adr/ADR-022-fix-strategy-and-cycle.md#audit-logging)) deliberately **defers cycle-history persistence to this curator redesign** — the shape is well-defined in the ADR; the persistence policy and storage location belong with the broader audit work tracked here. Logger emits already exist at [src/findings/cycle.ts:381](../../src/findings/cycle.ts#L381) with the `findings.cycle` stage tag (11 emit sites total covering `iteration completed`, cycle exits with reasons, validator retries).
 
 When this curator redesign lands, cycle iterations should map onto the same `observations.jsonl` schema. Concrete sketch:
 
@@ -439,13 +439,13 @@ Cycle iterations expose patterns the curator wants to surface:
 
 ### Telemetry symmetry
 
-The logger contract for cycle iterations is **already implemented** at [src/findings/cycle.ts:381](../../src/findings/cycle.ts#L381):
+The logger contract for cycle iterations is implemented at [src/findings/cycle.ts:381](../../src/findings/cycle.ts#L381):
 
 ```typescript
 logger.info("findings.cycle", "iteration completed", { storyId, packageDir, cycleName, iterationNum, strategiesRan, outcome, findingsBefore, findingsAfter, costUsd });
 ```
 
-`src/findings/cycle.ts` emits 11 `findings.cycle` events total (iteration completed, cycle exits with reasons, validator retries). All flow through the standard run logger, so curator can ingest them by reading run jsonl — no new auditor needed. This aligns with the "curator IS the unification" pattern (Step 4): use `logger.info` at source, project to `observations.jsonl` at curator layer.
+`src/findings/cycle.ts` emits 11 `findings.cycle` events total (iteration completed, cycle exits with reasons, validator retries). All flow through the standard run logger, so curator ingests them by reading run jsonl — no new auditor needed. This aligns with the "curator IS the unification" pattern (Step 4): use `logger.info` at source, project to `observations.jsonl` at curator layer.
 
 ### Implementation timing
 

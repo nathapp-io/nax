@@ -312,7 +312,7 @@ nax curator gc [--keep <N>]           # prune old run dirs from rollup (defaults
 
 ## 11. Implementation sequence
 
-Eight PRs. Steps 1, 2, and 3 are independent of each other and of curator itself (they're emit shape changes); steps 4–8 are the curator proper.
+Eight PRs **plus a dogfood phase between PR 7 and PR 8**. Steps 1, 2, and 3 are independent of each other and of curator itself (they're emit shape changes); steps 4–7 are the curator proper. Dogfood is real-time on koda after the curator ships, not a PR-scope activity. PR 8 is a small calibration follow-up that commits tuned thresholds.
 
 ### PR 1 — Pull-tool logger emits
 
@@ -409,9 +409,25 @@ Tests: each heuristic in isolation with synthetic observation inputs; render wit
 - README — add "Curator" to features list
 - Update [docs/findings/2026-04-30-context-curator-design.md](../findings/2026-04-30-context-curator-design.md) status to "Implemented in v0; see this spec"
 
-### PR 8 — Dogfood + threshold calibration
+### Dogfood phase (between PR 7 and PR 8)
 
-Run curator over koda's last 30 days of runs (rollup is empty, but per-run observations can be regenerated from existing artifacts via a `nax curator dryrun --backfill` flag). Tune thresholds; commit defaults to config schema.
+PRs 1–7 ship the v0 curator end-to-end. **Dogfood happens after**, in real time, on koda — not inside any single PR. The phase is open-ended; it ends when enough run signal has accumulated to commit calibrated threshold defaults.
+
+**Activities during dogfood:**
+- Enable curator on koda (`config.curator.enabled: true`, `config.review.audit.enabled: true`).
+- Run nax over koda stories as usual; curator produces proposals automatically post-run.
+- Operator reviews `curator-proposals.md` after each run; accepts/rejects via `nax curator commit`.
+- Track signal-to-noise per heuristic: how many proposals were accepted vs rejected, and why.
+- Optional: backfill observations over koda's existing run artifacts via `nax curator dryrun --backfill <runId>` to bootstrap a rollup faster.
+
+**Exit criteria for the dogfood phase:**
+- ≥ 20 koda runs have produced curator proposals.
+- For each heuristic (H1–H6): ≥ 1 accept and ≥ 1 reject in the dogfood window (gives signal both directions).
+- Operator has a defensible threshold value per heuristic, with a one-line rationale ("at threshold ≥ 2, H1 had 80% accept rate; at ≥ 3, only 40% — keep at 2").
+
+### PR 8 — Calibrated threshold defaults
+
+Small follow-up PR after dogfood. Commits the tuned threshold values from the dogfood phase to `src/config/schemas.ts` defaults. Includes a migration note in `CHANGELOG.md` so existing users see the rationale.
 
 This PR finalizes v0 readiness for general adoption.
 
