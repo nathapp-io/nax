@@ -173,6 +173,7 @@ export const autofixStage: PipelineStage = {
       succeeded: agentFixed,
       cost: agentCost,
       unresolvedReason,
+      escalationDigest,
     } = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
 
     // REVIEW-003: Implementer signalled an unresolvable reviewer contradiction.
@@ -243,7 +244,7 @@ export const autofixStage: PipelineStage = {
     logger.warn("autofix", "Autofix exhausted — escalating", { storyId: ctx.story.id });
     return {
       action: "escalate",
-      reason: "Autofix exhausted: review still failing after fix attempts",
+      reason: escalationDigest ?? "Autofix exhausted: review still failing after fix attempts",
       cost: agentCost,
     };
   },

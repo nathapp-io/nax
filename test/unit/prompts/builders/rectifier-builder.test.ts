@@ -442,11 +442,11 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     expect(prompt).toContain("Resolve deadlock");
   });
 
-  test("instructs not to remove tests or modify source files", () => {
+  test("instructs not to delete failing tests or modify source files", () => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
 
-    expect(prompt).toContain("do NOT remove tests");
+    expect(prompt).toContain("Do NOT delete a failing test");
     expect(prompt).toContain("Do NOT modify source implementation files");
   });
 
@@ -476,7 +476,7 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
 
     expect(prompt).toContain("You are fixing test file issues flagged by an adversarial code reviewer.");
     expect(prompt).toContain("### Test File Findings (adversarial review)");
-    expect(prompt).toContain("do NOT remove tests");
+    expect(prompt).toContain("Do NOT delete a failing test");
   });
 
   test("lint-only check: uses lint opener and section label", () => {
@@ -522,5 +522,87 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
 
     expect(prompt).toContain("Fix the lint errors");
     expect(prompt).not.toContain("verify each finding is a real issue");
+  });
+
+  // D1 — Anti-assertion-loosening constraints (#897)
+  test("adversarial check: forbids loosening assertions to match current implementation behavior", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("Do NOT loosen assertions to match current implementation behavior");
+  });
+
+  test("adversarial check: instructs to encode spec not current behavior", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("SPECIFICATION");
+    expect(prompt).toContain("not the current behavior");
+  });
+
+  test("adversarial check: forbids deleting failing tests", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+
+    expect(prompt).toContain("Do NOT delete a failing test");
+  });
+});
+
+// D2 — write-failing-test mode (#897)
+describe("RectifierPromptBuilder.testWriterRectification — write-failing-test mode", () => {
+  function makeSourceBugCheck(file: string, message: string): import("../../../../src/review/types").ReviewCheckResult {
+    return {
+      check: "adversarial",
+      success: false,
+      command: "adversarial-review",
+      exitCode: 1,
+      output: "adversarial output",
+      durationMs: 100,
+      findings: [
+        {
+          severity: "error",
+          file,
+          line: 203,
+          message,
+          source: "adversarial-review",
+          fixTarget: "source" as const,
+          category: "error-path",
+        },
+      ],
+    };
+  }
+
+  function makeStory() {
+    return {
+      id: "US-897",
+      title: "Incremental Graph Diff",
+      workdir: undefined,
+      acceptanceCriteria: ["AC-1: Graph diffs are computed correctly"],
+    } as any;
+  }
+
+  test("write-failing-test mode: instructs to write a failing test, not fix source", () => {
+    const checks = [makeSourceBugCheck("src/service.ts", "upsertNode uses wrong identifier space")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
+
+    expect(prompt).toContain("failing test");
+    expect(prompt).toContain("spec-correct");
+    expect(prompt).toContain("FAIL with the current");
+  });
+
+  test("write-failing-test mode: does not instruct to fix source files", () => {
+    const checks = [makeSourceBugCheck("src/service.ts", "wrong id")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
+
+    expect(prompt).not.toContain("Fix the lint errors");
+    expect(prompt).not.toContain("You are fixing test file");
+  });
+
+  test("write-failing-test mode: includes the source bug finding details", () => {
+    const checks = [makeSourceBugCheck("src/service.ts", "deleteMany uses node.id instead of GraphNode.id")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
+
+    expect(prompt).toContain("deleteMany uses node.id instead of GraphNode.id");
+    expect(prompt).toContain("src/service.ts");
   });
 });

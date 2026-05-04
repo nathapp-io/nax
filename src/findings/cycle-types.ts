@@ -27,6 +27,8 @@ export interface FixApplied {
   targetFiles: string[];
   /** First ~500 chars of agent response or stdout. Empty when unavailable. */
   summary: string;
+  /** Set when the agent explicitly signals it cannot resolve the findings. Triggers agent-gave-up exit. */
+  unresolved?: string;
   costUsd?: number;
 }
 
@@ -58,7 +60,8 @@ export type FixCycleExitReason =
   | "max-attempts-total"
   | "max-attempts-per-strategy"
   | "validator-error"
-  | "bail-when";
+  | "bail-when"
+  | "agent-gave-up";
 
 export interface FixCycleResult<F extends Finding = Finding> {
   iterations: Iteration<F>[];
@@ -68,6 +71,8 @@ export interface FixCycleResult<F extends Finding = Finding> {
   exhaustedStrategy?: string;
   /** Human-readable detail from strategy.bailWhen(). Set when exitReason is "bail-when". */
   bailDetail?: string;
+  /** Reason text from the agent's UNRESOLVED sentinel. Set when exitReason is "agent-gave-up". */
+  unresolvedDetail?: string;
   /** Total cost of all fix attempts in the cycle. Only present when strategies surface cost via extractApplied. */
   costUsd?: number;
 }
@@ -132,7 +137,10 @@ export interface FixStrategy<
    * record-keeping. When absent, targetFiles defaults to [], summary to "", and costUsd
    * is omitted ( FixApplied.costUsd stays undefined).
    */
-  extractApplied?: (output: O, input: I) => { targetFiles?: string[]; summary?: string; costUsd?: number };
+  extractApplied?: (
+    output: O,
+    input: I,
+  ) => { targetFiles?: string[]; summary?: string; costUsd?: number; unresolved?: string };
 
   /**
    * Optional bail predicate called before each iteration. Return a non-null

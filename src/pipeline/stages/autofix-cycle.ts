@@ -75,7 +75,20 @@ function collectCurrentFindings(ctx: PipelineContext): Finding[] {
 }
 
 function collectTestTargetedChecks(ctx: PipelineContext): ReviewCheckResult[] {
-  return collectFailedChecks(ctx).filter((c) => c.findings?.some((f) => f.fixTarget === "test"));
+  return collectFailedChecks(ctx)
+    .map((c) => ({ ...c, findings: (c.findings ?? []).filter((f) => f.fixTarget === "test") }))
+    .filter((c) => c.findings.length > 0);
+}
+
+function collectAdversarialSourceChecks(ctx: PipelineContext): ReviewCheckResult[] {
+  return collectFailedChecks(ctx)
+    .map((c) => ({
+      ...c,
+      findings: (c.findings ?? []).filter(
+        (f) => (f.fixTarget ?? "source") === "source" && f.severity === "error" && f.source === "adversarial-review",
+      ),
+    }))
+    .filter((c) => c.check === "adversarial" && c.findings.length > 0);
 }
 
 // ─── Strategies ───────────────────────────────────────────────────────────────
@@ -96,42 +109,52 @@ function buildAutofixStrategies(
       story: ctx.story,
     }),
     extractApplied: (output) => ({
-      // Surface the UNRESOLVED sentinel in summary so post-cycle scan can detect it
       summary: output.unresolvedReason ?? "",
+      unresolved: output.unresolvedReason,
     }),
   };
 
   const testWriter: FixStrategy<Finding, AutofixTestWriterInput, { applied: true }, AutofixConfig> = {
     name: "autofix-test-writer",
-    appliesTo: (f) => f.fixTarget === "test",
+    // D2: also fires for adversarial source-bug error findings so the test-writer can
+    // generate a failing test that documents spec-correct behavior before the implementer runs.
+    appliesTo: (f) =>
+      f.fixTarget === "test" ||
+      ((f.fixTarget ?? "source") === "source" && f.severity === "error" && f.source === "adversarial-review"),
     fixOp: testWriterRectifyOp,
     maxAttempts: 1,
     coRun: "co-run-sequential",
-    buildInput: (_findings, _prior, _cycleCtx): AutofixTestWriterInput => ({
-      failedChecks: collectTestTargetedChecks(ctx),
-      story: ctx.story,
-    }),
+    buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
+      const hasSourceBug = findings.some(
+        (f) => (f.fixTarget ?? "source") === "source" && f.source === "adversarial-review",
+      );
+      if (hasSourceBug) {
+        return { failedChecks: collectAdversarialSourceChecks(ctx), story: ctx.story, mode: "write-failing-test" };
+      }
+      return { failedChecks: collectTestTargetedChecks(ctx), story: ctx.story };
+    },
   };
 
-  return [implementer, testWriter];
+  // D2: test-writer runs before implementer (TDD order) — test-writer writes the failing
+  // test first, then implementer makes it pass. Both run co-run-sequential in the same iteration.
+  return [testWriter, implementer];
 }
 
-// ─── UNRESOLVED detection ─────────────────────────────────────────────────────
+// ─── Escalation digest ───────────────────────────────────────────────────────
 
-/**
- * Scan iteration history for an UNRESOLVED sentinel emitted by the implementer.
- * The reason is surfaced via extractApplied.summary on the autofix-implementer strategy.
- * Iterates in reverse so the most recent sentinel wins over stale early-iteration messages.
- */
-function findUnresolvedReason(result: FixCycleResult<Finding>): string | undefined {
-  for (let i = result.iterations.length - 1; i >= 0; i--) {
-    for (const fa of result.iterations[i].fixesApplied) {
-      if (fa.strategyName === "autofix-implementer" && fa.summary) {
-        return fa.summary;
-      }
-    }
+function buildEscalationDigest(findings: Finding[]): string {
+  const byFile = new Map<string, Finding[]>();
+  for (const f of findings) {
+    const file = f.file ?? "unknown";
+    const list = byFile.get(file) ?? [];
+    list.push(f);
+    byFile.set(file, list);
   }
-  return undefined;
+  const lines = [...byFile.entries()].map(([file, fs]) => {
+    const categories = fs.map((f) => f.category ?? f.source).join(", ");
+    return `  - ${categories} in ${file}`;
+  });
+  return `Autofix exhausted: ${findings.length} finding${findings.length !== 1 ? "s" : ""} remain\n${lines.join("\n")}`;
 }
 
 // ─── Shadow mode ──────────────────────────────────────────────────────────────
@@ -184,7 +207,7 @@ export async function runAgentRectificationV2(
   _lintFixCmd: string | undefined,
   _formatFixCmd: string | undefined,
   _effectiveWorkdir: string,
-): Promise<{ succeeded: boolean; cost: number; unresolvedReason?: string }> {
+): Promise<{ succeeded: boolean; cost: number; unresolvedReason?: string; escalationDigest?: string }> {
   const logger = getLogger();
   const storyId = ctx.story.id;
 
@@ -222,12 +245,13 @@ export async function runAgentRectificationV2(
 
   await writeShadowReport(ctx, result, initialFindings.length);
 
-  // Only surface unresolvedReason when the implementer explicitly gave up (not when the
-  // cycle simply hit the cap). When exitReason is "max-attempts-per-strategy", the natural
-  // "autofix exhausted" escalation path in autofix.ts fires with the correct message.
-  // Using unresolvedReason from cap-hit runs causes misleading "reviewer contradiction"
-  // escalation driven by a stale early-iteration UNRESOLVED message.
-  const unresolvedReason = result.exitReason !== "max-attempts-per-strategy" ? findUnresolvedReason(result) : undefined;
+  // Surface unresolvedReason only when the agent explicitly gave up mid-cycle.
+  // Cap-exhausted exits ("max-attempts-per-strategy") use the escalation digest path instead.
+  const unresolvedReason = result.exitReason === "agent-gave-up" ? result.unresolvedDetail : undefined;
+  const escalationDigest =
+    result.exitReason === "max-attempts-per-strategy" && result.finalFindings.length > 0
+      ? buildEscalationDigest(result.finalFindings)
+      : undefined;
   const succeeded = result.exitReason === "resolved" || result.finalFindings.length === 0;
 
   logger.info("autofix-cycle", "V2 fix cycle complete", {
@@ -237,7 +261,13 @@ export async function runAgentRectificationV2(
     finalFindingsCount: result.finalFindings.length,
     succeeded,
     ...(unresolvedReason ? { unresolvedReason } : {}),
+    ...(escalationDigest ? { escalationDigest } : {}),
   });
 
-  return { succeeded, cost: 0, ...(unresolvedReason ? { unresolvedReason } : {}) };
+  return {
+    succeeded,
+    cost: 0,
+    ...(unresolvedReason ? { unresolvedReason } : {}),
+    ...(escalationDigest ? { escalationDigest } : {}),
+  };
 }
