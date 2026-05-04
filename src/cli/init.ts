@@ -6,7 +6,7 @@
 
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
@@ -257,15 +257,19 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   const logger = getLogger();
   const projectDir = projectConfigDir(projectRoot);
 
-  // Name validation and collision check
-  const detectedName = options?.name ?? basename(projectRoot);
-  const nameValidation = validateProjectName(detectedName);
-  if (!nameValidation.valid) {
-    logger.error("init", "Invalid project name", { name: detectedName, reason: nameValidation.error });
-    throw new NaxError(`Invalid project name "${detectedName}": ${nameValidation.error}`, "INIT_INVALID_NAME", {
-      stage: "init",
-      name: detectedName,
-    });
+  // Name validation and collision check — only for explicitly provided names.
+  // When no name is given, config.name stays "" and the runtime derives the key
+  // from basename(workdir) at run time, which need not pass schema validation.
+  const detectedName = options?.name ?? "";
+  if (detectedName) {
+    const nameValidation = validateProjectName(detectedName);
+    if (!nameValidation.valid) {
+      logger.error("init", "Invalid project name", { name: detectedName, reason: nameValidation.error });
+      throw new NaxError(`Invalid project name "${detectedName}": ${nameValidation.error}`, "INIT_INVALID_NAME", {
+        stage: "init",
+        name: detectedName,
+      });
+    }
   }
 
   // Detect current git remote (best-effort; non-git projects are fine)
@@ -279,8 +283,8 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
     /* non-git project — ok */
   }
 
-  // Collision check (read-only; claim happens on first nax run via identity marker)
-  if (!options?.force) {
+  // Collision check — only when a name is explicitly provided
+  if (detectedName && !options?.force) {
     const collision = await checkInitCollision(detectedName, projectRoot, currentRemote);
     if (collision.collision && collision.existing) {
       const configPath = join(projectDir, "config.json");
