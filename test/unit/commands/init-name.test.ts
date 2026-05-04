@@ -3,11 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { rm, mkdir } from "node:fs/promises";
 import { writeProjectIdentity } from "../../../src/runtime";
-import {
-  validateProjectName,
-  checkInitCollision,
-  type ProjectNameValidationResult,
-} from "../../../src/cli/init";
+import { validateProjectName, checkInitCollision } from "../../../src/cli/init";
 
 describe("validateProjectName", () => {
   it("accepts 'my-project'", () => {
