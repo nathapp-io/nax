@@ -94,6 +94,25 @@ describe("identity I/O", () => {
   });
 });
 
+import { curatorRollupPath } from "../../../src/runtime";
+
+describe("curatorRollupPath", () => {
+  it("defaults to globalDir/curator/rollup.jsonl", () => {
+    const result = curatorRollupPath("/home/user/.nax/global", undefined);
+    expect(result).toBe("/home/user/.nax/global/curator/rollup.jsonl");
+  });
+
+  it("uses override when provided as absolute path", () => {
+    const result = curatorRollupPath("/home/user/.nax/global", "/mnt/team/rollup.jsonl");
+    expect(result).toBe("/mnt/team/rollup.jsonl");
+  });
+
+  it("expands tilde in override", () => {
+    const result = curatorRollupPath("/home/user/.nax/global", "~/custom/rollup.jsonl");
+    expect(result).toBe(path.join(os.homedir(), "custom/rollup.jsonl"));
+  });
+});
+
 import { NaxConfigSchema } from "../../../src/config/schemas";
 
 describe("NaxConfigSchema name field", () => {

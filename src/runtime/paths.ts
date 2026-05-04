@@ -63,3 +63,13 @@ export async function writeProjectIdentity(projectKey: string, identity: Project
   const p = identityPath(projectKey);
   await Bun.write(p, JSON.stringify(identity, null, 2));
 }
+
+export function curatorRollupPath(globalDir: string, rollupPathOverride: string | undefined): string {
+  if (!rollupPathOverride) {
+    return path.join(globalDir, "curator", "rollup.jsonl");
+  }
+  if (rollupPathOverride.startsWith("~/")) {
+    return path.join(os.homedir(), rollupPathOverride.slice(2));
+  }
+  return rollupPathOverride;
+}
