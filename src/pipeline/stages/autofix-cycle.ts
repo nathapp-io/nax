@@ -121,10 +121,11 @@ function buildAutofixStrategies(
 /**
  * Scan iteration history for an UNRESOLVED sentinel emitted by the implementer.
  * The reason is surfaced via extractApplied.summary on the autofix-implementer strategy.
+ * Iterates in reverse so the most recent sentinel wins over stale early-iteration messages.
  */
 function findUnresolvedReason(result: FixCycleResult<Finding>): string | undefined {
-  for (const iter of result.iterations) {
-    for (const fa of iter.fixesApplied) {
+  for (let i = result.iterations.length - 1; i >= 0; i--) {
+    for (const fa of result.iterations[i].fixesApplied) {
       if (fa.strategyName === "autofix-implementer" && fa.summary) {
         return fa.summary;
       }
@@ -221,7 +222,12 @@ export async function runAgentRectificationV2(
 
   await writeShadowReport(ctx, result, initialFindings.length);
 
-  const unresolvedReason = findUnresolvedReason(result);
+  // Only surface unresolvedReason when the implementer explicitly gave up (not when the
+  // cycle simply hit the cap). When exitReason is "max-attempts-per-strategy", the natural
+  // "autofix exhausted" escalation path in autofix.ts fires with the correct message.
+  // Using unresolvedReason from cap-hit runs causes misleading "reviewer contradiction"
+  // escalation driven by a stale early-iteration UNRESOLVED message.
+  const unresolvedReason = result.exitReason !== "max-attempts-per-strategy" ? findUnresolvedReason(result) : undefined;
   const succeeded = result.exitReason === "resolved" || result.finalFindings.length === 0;
 
   logger.info("autofix-cycle", "V2 fix cycle complete", {

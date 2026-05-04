@@ -176,7 +176,10 @@ export const autofixStage: PipelineStage = {
     } = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
 
     // REVIEW-003: Implementer signalled an unresolvable reviewer contradiction.
-    if (unresolvedReason) {
+    // Only act on unresolvedReason when the fix actually failed — if agentFixed is true,
+    // all findings were resolved and the UNRESOLVED note is informational (one finding
+    // was abandoned but the validate step confirmed nothing is left blocking).
+    if (!agentFixed && unresolvedReason) {
       // When only mechanical checks failed (LLM/semantic passed), the code is functionally
       // correct — the agent cannot fix lint/typecheck errors in test files per its constraints.
       // Suppress tier escalation and proceed; log a warning so the issue remains visible.
