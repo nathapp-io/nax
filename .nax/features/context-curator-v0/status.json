@@ -1,36 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-04T11-11-53-385Z",
+    "id": "run-2026-05-04T15-10-16-643Z",
     "feature": "context-curator-v0",
-    "startedAt": "2026-05-04T11:11:53.385Z",
-    "status": "failed",
+    "startedAt": "2026-05-04T15:10:16.643Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 58689
+    "pid": 17845
   },
   "progress": {
     "total": 7,
-    "passed": 6,
-    "failed": 1,
+    "passed": 7,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
-    "spent": 8.56985793,
+    "spent": 0,
     "limit": 50
   },
   "current": null,
-  "iterations": 7,
-  "updatedAt": "2026-05-04T12:48:11.611Z",
-  "durationMs": 5778226,
+  "iterations": 0,
+  "updatedAt": "2026-05-04T15:48:34.899Z",
+  "durationMs": 2298256,
   "postRun": {
     "acceptance": {
-      "status": "not-run"
+      "status": "passed",
+      "lastRunAt": "2026-05-04T15:48:08.600Z"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-05-04T12:48:11.595Z"
+      "lastRunAt": "2026-05-04T15:48:34.875Z"
     }
   }
 }

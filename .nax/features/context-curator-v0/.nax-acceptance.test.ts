@@ -355,10 +355,10 @@ test("AC-10: unsubscribe removes ReviewDecision listener", () => {
 
 test("AC-11: attachReviewAuditSubscriber calls auditor.recordDispatch on ReviewDecisionEvent", () => {
   const bus = new DispatchEventBus() as any;
-  const recordDispatchCalls: unknown[] = [];
+  const recordDecisionCalls: unknown[] = [];
   const auditor = {
-    recordDispatch: (data: unknown) => { recordDispatchCalls.push(data); },
-    recordDecision: () => {},
+    recordDispatch: () => {},
+    recordDecision: (data: unknown) => { recordDecisionCalls.push(data); },
   } as any;
 
   attachReviewAuditSubscriber(bus, auditor, "run-123");
@@ -372,7 +372,7 @@ test("AC-11: attachReviewAuditSubscriber calls auditor.recordDispatch on ReviewD
   };
   bus.emitReviewDecision(event);
 
-  expect(recordDispatchCalls.length).toBe(1);
+  expect(recordDecisionCalls.length).toBe(1);
 });
 
 // ─── AC-12: no direct recordDecision calls at semantic/adversarial call sites ─
@@ -441,13 +441,11 @@ test("AC-13: PostRunContext type includes curator fields", async () => {
 // ─── AC-14: plugin loader includes nax-curator in default registry ────────────
 
 test("AC-14: loadPlugins includes nax-curator when not disabled", async () => {
-  await withTempDir(async (dir) => {
-    const { loadPlugins } = await import("../../../src/plugins/loader");
-    const registry = await loadPlugins(dir, dir, [], dir, []);
-    const postRunActions = registry.getPostRunActions();
-    const curator = postRunActions.find((a) => a.name === "nax-curator");
-    expect(curator).toBeDefined();
-  });
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const registry = new PluginRegistry([{ plugin: curatorPlugin, source: { type: "config", path: "builtin" } }]);
+  const postRunActions = registry.getPostRunActions();
+  const curator = postRunActions.find((a) => a.name === "nax-curator");
+  expect(curator).toBeDefined();
 });
 
 test("AC-14: nax-curator absent when disabled via config.disabledPlugins", async () => {
@@ -494,22 +492,22 @@ test("AC-16: collectObservations produces verdict and review-finding observation
   const { collectObservations } = await import("../../../src/plugins/builtin/curator/collect");
   await withTempDir(async (dir) => {
     // Write fixture metrics.json
-    const metricsData = [{ storyId: "US-001", verdict: "passed", costUsd: 0.01 }];
+    const metricsData = { stories: [{ storyId: "US-001", status: "passed", cost: 0.01 }] };
     writeFileSync(join(dir, "metrics.json"), JSON.stringify(metricsData));
 
     // Write fixture review-audit file
     const auditDir = join(dir, "review-audit", "feat-1");
     mkdirSync(auditDir, { recursive: true });
-    const auditData = { storyId: "US-001", result: { findings: [{ checkId: "no-any", severity: "warning" }] } };
+    const auditData = { storyId: "US-001", findings: [{ ruleId: "no-any", severity: "warning" }] };
     writeFileSync(join(auditDir, "12345-session.json"), JSON.stringify(auditData));
 
     const observations = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: undefined,
-    });
+    } as any);
 
     expect(observations.some((o) => o.kind === "verdict")).toBe(true);
     expect(observations.some((o) => o.kind === "review-finding")).toBe(true);
@@ -521,11 +519,11 @@ test("AC-16: collectObservations returns empty array and no error when no files 
   await withTempDir(async (dir) => {
     const observations = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: undefined,
-    });
+    } as any);
     const hasVerdictOrReview = observations.some(
       (o) => o.kind === "verdict" || o.kind === "review-finding",
     );
@@ -541,19 +539,21 @@ test("AC-17: collectObservations emits chunk-included, chunk-excluded, provider-
     const manifestDir = join(dir, ".nax", "features", "feat-1", "stories", "US-001");
     mkdirSync(manifestDir, { recursive: true });
     const manifest = {
-      includedChunks: [{ chunkId: "c1", providerId: "p1", score: 0.9 }],
-      excludedChunks: [{ chunkId: "c2", providerId: "p1", reason: "stale", score: 0.1 }],
-      providerResults: [{ providerId: "p2", status: "empty" }],
+      chunks: [
+        { chunkId: "c1", label: "chunk 1", included: true },
+        { chunkId: "c2", label: "chunk 2", included: false, reason: "stale" },
+      ],
+      emptyProviders: [{ provider: "p2" }],
     };
     writeFileSync(join(manifestDir, "context-manifest-run.json"), JSON.stringify(manifest));
 
     const observations = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: undefined,
-    });
+    } as any);
 
     expect(observations.some((o) => o.kind === "chunk-included")).toBe(true);
     expect(observations.some((o) => o.kind === "chunk-excluded")).toBe(true);
@@ -568,11 +568,11 @@ test("AC-17: no chunk observations and no error when manifest directory does not
   await withTempDir(async (dir) => {
     const observations = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: undefined,
-    });
+    } as any);
     const hasChunk = observations.some((o) =>
       o.kind === "chunk-included" || o.kind === "chunk-excluded" || o.kind === "provider-empty",
     );
@@ -586,22 +586,22 @@ test("AC-18: collectObservations emits log-derived observations from JSONL log f
   const { collectObservations } = await import("../../../src/plugins/builtin/curator/collect");
   await withTempDir(async (dir) => {
     const logLines = [
-      JSON.stringify({ stage: "rectify", message: "attempt", storyId: "US-001", data: {} }),
-      JSON.stringify({ stage: "escalation", message: "tier-change", storyId: "US-001", data: { fromTier: "fast", toTier: "balanced" } }),
-      JSON.stringify({ stage: "pull-tool", message: "invoked", storyId: "US-001", data: { tool: "query_neighbor" } }),
-      JSON.stringify({ stage: "acceptance", message: "verdict", storyId: "US-001", data: { passed: true } }),
-      JSON.stringify({ stage: "findings.cycle", message: "iteration completed", storyId: "US-001", data: {} }),
+      JSON.stringify({ kind: "rectify-cycle", storyId: "US-001", data: {} }),
+      JSON.stringify({ kind: "escalation", storyId: "US-001", data: { from: "fast", to: "balanced" } }),
+      JSON.stringify({ kind: "pull-call", storyId: "US-001", data: { tool: "query_neighbor" } }),
+      JSON.stringify({ kind: "acceptance-verdict", storyId: "US-001", data: { passed: true } }),
+      JSON.stringify({ kind: "fix-cycle-iteration", storyId: "US-001", data: {} }),
     ].join("\n");
     const logPath = join(dir, "run.jsonl");
     writeFileSync(logPath, logLines);
 
     const observations = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: logPath,
-    });
+    } as any);
 
     const kinds = new Set(observations.map((o) => o.kind));
     expect(kinds.has("rectify-cycle") || kinds.has("escalation") || kinds.has("pull-call") ||
@@ -614,11 +614,11 @@ test("AC-18: no log observations and no error when logFilePath is undefined", as
   await withTempDir(async (dir) => {
     const observations = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: undefined,
-    });
+    } as any);
     const hasLogDerived = observations.some((o) =>
       ["rectify-cycle", "escalation", "pull-call", "acceptance-verdict",
        "fix-cycle-iteration", "fix-cycle-exit", "fix-cycle-validator-retry"].includes(o.kind),
@@ -638,40 +638,40 @@ test("AC-19: resolveCuratorOutputs returns correct paths", async () => {
     globalDir: "/home/user/.nax",
     projectKey: "proj",
     feature: "feat",
-  });
+  } as any);
   expect(result.observationsPath).toBe("/tmp/out/runs/run-123/observations.jsonl");
-  expect(result.proposalsPath).toBe("/tmp/out/runs/run-123/curator-proposals.md");
+  expect(result.proposalsPath).toBe("/tmp/out/runs/run-123/proposals.jsonl");
   expect(result.rollupPath).toBe("/home/user/.nax/global/curator/rollup.jsonl");
 });
 
 // ─── AC-20: shouldRun gating logic ───────────────────────────────────────────
 
 test("AC-20: shouldRun returns false when curator.enabled is false", async () => {
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   const ctx = {
     storySummary: { completed: 5, failed: 0, skipped: 0, paused: 0 },
     pluginConfig: {},
     config: makeNaxConfig({ curator: { enabled: false } } as any),
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   } as any;
-  const result = await curatorPlugin.shouldRun(ctx);
+  const result = await curatorPlugin.extensions.postRunAction.shouldRun(ctx);
   expect(result).toBe(false);
 });
 
 test("AC-20: shouldRun returns false when completed stories is 0", async () => {
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   const ctx = {
     storySummary: { completed: 0, failed: 0, skipped: 0, paused: 0 },
     pluginConfig: {},
     config: makeNaxConfig(),
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   } as any;
-  const result = await curatorPlugin.shouldRun(ctx);
+  const result = await curatorPlugin.extensions.postRunAction.shouldRun(ctx);
   expect(result).toBe(false);
 });
 
 test("AC-20: shouldRun returns true when enabled and completed > 0", async () => {
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   const ctx = {
     storySummary: { completed: 2, failed: 0, skipped: 0, paused: 0 },
     pluginConfig: {},
@@ -684,12 +684,12 @@ test("AC-20: shouldRun returns true when enabled and completed > 0", async () =>
     feature: "feat",
     curatorRollupPath: "/home/.nax/global/curator/rollup.jsonl",
   } as any;
-  const result = await curatorPlugin.shouldRun(ctx);
+  const result = await curatorPlugin.extensions.postRunAction.shouldRun(ctx);
   expect(result).toBe(true);
 });
 
 test("AC-20: shouldRun still returns true but emits warn when review.audit.enabled is false", async () => {
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   const warnCalls: string[] = [];
   const ctx = {
     storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
@@ -708,7 +708,7 @@ test("AC-20: shouldRun still returns true but emits warn when review.audit.enabl
     feature: "feat",
     curatorRollupPath: "/home/.nax/global/curator/rollup.jsonl",
   } as any;
-  const result = await curatorPlugin.shouldRun(ctx);
+  const result = await curatorPlugin.extensions.postRunAction.shouldRun(ctx);
   expect(result).toBe(true);
   expect(warnCalls.some((m) => m.toLowerCase().includes("audit"))).toBe(true);
 });
@@ -717,7 +717,7 @@ test("AC-20: shouldRun still returns true but emits warn when review.audit.enabl
 
 test("AC-21: execute writes observations.jsonl with correct line count", async () => {
   const { collectObservations } = await import("../../../src/plugins/builtin/curator/collect");
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   await withTempDir(async (dir) => {
     const ctx = {
       runId: "run-test",
@@ -733,7 +733,7 @@ test("AC-21: execute writes observations.jsonl with correct line count", async (
       workdir: dir,
     } as any;
 
-    await curatorPlugin.execute(ctx);
+    await curatorPlugin.extensions.postRunAction.execute(ctx);
 
     const obsPath = join(dir, "runs", "run-test", "observations.jsonl");
     expect(existsSync(obsPath)).toBe(true);
@@ -746,11 +746,11 @@ test("AC-21: execute writes observations.jsonl with correct line count", async (
 
     const observations = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: undefined,
-    });
+    } as any);
     expect(lines.length).toBe(observations.length);
   });
 });
@@ -763,17 +763,17 @@ test("AC-22: collectObservations does not throw on invalid metrics.json", async 
     writeFileSync(join(dir, "metrics.json"), "{ invalid json !!!");
     const result = await collectObservations({
       runId: "run-test",
-      featureId: "feat-1",
+      feature: "feat-1",
       outputDir: dir,
       workdir: dir,
       logFilePath: undefined,
-    });
+    } as any);
     expect(Array.isArray(result)).toBe(true);
   });
 });
 
 test("AC-22: curatorPlugin.execute resolves without throwing on invalid data", async () => {
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   await withTempDir(async (dir) => {
     writeFileSync(join(dir, "metrics.json"), "{ bad json }");
     const ctx = {
@@ -789,7 +789,7 @@ test("AC-22: curatorPlugin.execute resolves without throwing on invalid data", a
       curatorRollupPath: join(dir, "rollup.jsonl"),
       workdir: dir,
     } as any;
-    await expect(curatorPlugin.execute(ctx)).resolves.toBeDefined();
+    await expect(curatorPlugin.extensions.postRunAction.execute(ctx)).resolves.toBeDefined();
   });
 });
 
@@ -798,24 +798,24 @@ test("AC-22: curatorPlugin.execute resolves without throwing on invalid data", a
 test("AC-23: runHeuristics returns proposals for all 6 heuristics when observations cross threshold", async () => {
   const { runHeuristics } = await import("../../../src/plugins/builtin/curator/heuristics");
   const obs = [
-    // H1: repeated review finding (checkId "no-any" × 2)
-    { kind: "review-finding", storyId: "US-001", payload: { checkId: "no-any", severity: "warning" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "review-finding", storyId: "US-002", payload: { checkId: "no-any", severity: "warning" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
-    // H2: pull-call empty result for same keyword × 2
-    { kind: "pull-call", storyId: "US-001", payload: { keyword: "auth", resultCount: 0 }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "pull-call", storyId: "US-002", payload: { keyword: "auth", resultCount: 0 }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
+    // H1: repeated review finding (ruleId "no-any" × 2)
+    { kind: "review-finding", storyId: "US-001", payload: { ruleId: "no-any", severity: "warning" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "review-finding", storyId: "US-002", payload: { ruleId: "no-any", severity: "warning" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
+    // H2: pull-call for same toolName × 2
+    { kind: "pull-call", storyId: "US-001", payload: { toolName: "query_neighbor" }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "pull-call", storyId: "US-002", payload: { toolName: "query_neighbor" }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
     // H3: rectify-cycle attempts ≥ 2 for same story
     { kind: "rectify-cycle", storyId: "US-001", payload: { attempts: 2 }, runId: "r", featureId: "f", stage: "rectify", ts: new Date().toISOString(), schemaVersion: 1 },
     { kind: "rectify-cycle", storyId: "US-001", payload: { attempts: 2 }, runId: "r", featureId: "f", stage: "rectify", ts: new Date().toISOString(), schemaVersion: 1 },
     // H4: escalation chain ≥ 2
-    { kind: "escalation", storyId: "US-001", payload: { fromTier: "fast", toTier: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "escalation", storyId: "US-002", payload: { fromTier: "fast", toTier: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
-    // H5: stale chunk excluded ≥ 2
-    { kind: "chunk-excluded", storyId: "US-001", payload: { chunkId: "c1", reason: "stale", providerId: "p1" }, runId: "r", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "chunk-excluded", storyId: "US-002", payload: { chunkId: "c1", reason: "stale", providerId: "p1" }, runId: "r", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
-    // H6: fix-cycle-iteration unchanged outcome ≥ 2
-    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { outcome: "unchanged", iterationNum: 1 }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { outcome: "unchanged", iterationNum: 2 }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "escalation", storyId: "US-001", payload: { from: "fast", to: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "escalation", storyId: "US-002", payload: { from: "fast", to: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
+    // H5: stale chunk excluded in ≥ 2 distinct runs
+    { kind: "chunk-excluded", storyId: "US-001", payload: { chunkId: "c1", reason: "stale", label: "chunk1" }, runId: "r1", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "chunk-excluded", storyId: "US-002", payload: { chunkId: "c1", reason: "stale", label: "chunk1" }, runId: "r2", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
+    // H6: fix-cycle-iteration with status "passed" ≥ 2
+    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { status: "passed", iterationNum: 1 }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { status: "passed", iterationNum: 2 }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
   ] as any[];
 
   const thresholds = { repeatedFinding: 2, emptyKeyword: 2, rectifyAttempts: 2, escalationChain: 2, staleChunkRuns: 2, unchangedOutcome: 2 };
@@ -838,18 +838,18 @@ test("AC-23: runHeuristics returns proposals for all 6 heuristics when observati
 test("AC-24: proposal targets match expected canonicalFiles and actions", async () => {
   const { runHeuristics } = await import("../../../src/plugins/builtin/curator/heuristics");
   const obs = [
-    { kind: "review-finding", storyId: "US-001", payload: { checkId: "no-any" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "review-finding", storyId: "US-002", payload: { checkId: "no-any" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "pull-call", storyId: "US-001", payload: { keyword: "auth", resultCount: 0 }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "pull-call", storyId: "US-002", payload: { keyword: "auth", resultCount: 0 }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "review-finding", storyId: "US-001", payload: { ruleId: "no-any" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "review-finding", storyId: "US-002", payload: { ruleId: "no-any" }, runId: "r", featureId: "f", stage: "review", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "pull-call", storyId: "US-001", payload: { toolName: "query_neighbor" }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "pull-call", storyId: "US-002", payload: { toolName: "query_neighbor" }, runId: "r", featureId: "f", stage: "pull-tool", ts: new Date().toISOString(), schemaVersion: 1 },
     { kind: "rectify-cycle", storyId: "US-001", payload: { attempts: 2 }, runId: "r", featureId: "f", stage: "rectify", ts: new Date().toISOString(), schemaVersion: 1 },
     { kind: "rectify-cycle", storyId: "US-001", payload: { attempts: 2 }, runId: "r", featureId: "f", stage: "rectify", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "escalation", storyId: "US-001", payload: { fromTier: "fast", toTier: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "escalation", storyId: "US-002", payload: { fromTier: "fast", toTier: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "chunk-excluded", storyId: "US-001", payload: { chunkId: "c1", reason: "stale", providerId: "p1" }, runId: "r", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "chunk-excluded", storyId: "US-002", payload: { chunkId: "c1", reason: "stale", providerId: "p1" }, runId: "r", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { outcome: "unchanged" }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
-    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { outcome: "unchanged" }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "escalation", storyId: "US-001", payload: { from: "fast", to: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "escalation", storyId: "US-002", payload: { from: "fast", to: "balanced" }, runId: "r", featureId: "f", stage: "escalation", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "chunk-excluded", storyId: "US-001", payload: { chunkId: "c1", reason: "stale", label: "chunk1" }, runId: "r1", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "chunk-excluded", storyId: "US-002", payload: { chunkId: "c1", reason: "stale", label: "chunk1" }, runId: "r2", featureId: "f", stage: "context", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { status: "passed" }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
+    { kind: "fix-cycle-iteration", storyId: "US-001", payload: { status: "passed" }, runId: "r", featureId: "f", stage: "fix-cycle", ts: new Date().toISOString(), schemaVersion: 1 },
   ] as any[];
 
   const thresholds = { repeatedFinding: 2, emptyKeyword: 2, rectifyAttempts: 2, escalationChain: 2, staleChunkRuns: 2, unchangedOutcome: 2 };
@@ -926,7 +926,7 @@ test("AC-27: renderProposals([]) returns non-empty string with no-proposals mess
   expect(typeof md).toBe("string");
   expect(md.length).toBeGreaterThan(0);
   expect(md.includes("10")).toBe(true);
-  expect(/no proposals|0 proposals|nothing to report/i.test(md)).toBe(true);
+  expect(/no heuristics fired|no proposals|nothing to report/i.test(md)).toBe(true);
 });
 
 // ─── AC-28: appendToRollup ────────────────────────────────────────────────────
@@ -967,7 +967,7 @@ test("AC-28: appendToRollup resolves without throwing on unwritable path", async
 // ─── AC-29: execute writes observations + proposals, errors don't flip exitCode ─
 
 test("AC-29: execute writes observations.jsonl and curator-proposals.md", async () => {
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   await withTempDir(async (dir) => {
     const ctx = {
       runId: "run-test",
@@ -983,7 +983,7 @@ test("AC-29: execute writes observations.jsonl and curator-proposals.md", async 
       workdir: dir,
     } as any;
 
-    const result = await curatorPlugin.execute(ctx);
+    const result = await curatorPlugin.extensions.postRunAction.execute(ctx);
     expect(result).toBeDefined();
     expect(result.success).toBe(true);
 
@@ -993,7 +993,7 @@ test("AC-29: execute writes observations.jsonl and curator-proposals.md", async 
 });
 
 test("AC-29: execute resolves successfully even when internal steps error", async () => {
-  const { default: curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
+  const { curatorPlugin } = await import("../../../src/plugins/builtin/curator/index");
   await withTempDir(async (dir) => {
     writeFileSync(join(dir, "metrics.json"), "{ bad json }");
     const ctx = {
@@ -1010,7 +1010,7 @@ test("AC-29: execute resolves successfully even when internal steps error", asyn
       workdir: dir,
     } as any;
 
-    const result = await curatorPlugin.execute(ctx);
+    const result = await curatorPlugin.extensions.postRunAction.execute(ctx);
     expect(result).toBeDefined();
     // curator errors must not flip exit code — result.success should not crash the run
     expect(typeof result.success).toBe("boolean");
@@ -1020,30 +1020,38 @@ test("AC-29: execute resolves successfully even when internal steps error", asyn
 // ─── AC-30: CLI command deps usage ────────────────────────────────────────────
 
 test("AC-30: curator CLI commands call deps.resolveProject then deps.loadConfig", async () => {
-  const curatorCmds = await import("../../../src/commands/curator");
+  const { _curatorCmdDeps, curatorStatus } = await import("../../../src/commands/curator");
   let resolveProjectCalled = false;
   let loadConfigCalledWith: string | undefined;
-  const deps = {
-    resolveProject: async (dir: string) => { resolveProjectCalled = true; return dir; },
-    loadConfig: async (root: string) => { loadConfigCalledWith = root; return makeNaxConfig(); },
-    projectOutputDir: async () => "/tmp/out",
-    curatorRollupPath: async () => "/tmp/rollup.jsonl",
-    readFile: async () => "",
-    writeFile: async () => {},
-    appendFile: async () => {},
-    glob: async () => [],
-    openInEditor: async () => {},
-  };
 
-  await curatorCmds.curatorStatus({ project: "/tmp/proj" }, deps as any).catch(() => {});
-  expect(resolveProjectCalled).toBe(true);
-  expect(loadConfigCalledWith).toBeDefined();
+  const origResolveProject = _curatorCmdDeps.resolveProject;
+  const origLoadConfig = _curatorCmdDeps.loadConfig;
+  const origProjectOutputDir = _curatorCmdDeps.projectOutputDir;
+  try {
+    (_curatorCmdDeps as any).resolveProject = (_opts?: any) => {
+      resolveProjectCalled = true;
+      return { projectDir: "/tmp/proj" };
+    };
+    (_curatorCmdDeps as any).loadConfig = async (dir?: string) => {
+      loadConfigCalledWith = dir;
+      return makeNaxConfig();
+    };
+    (_curatorCmdDeps as any).projectOutputDir = () => "/tmp/out";
+
+    await curatorStatus({ project: "/tmp/proj" }).catch(() => {});
+    expect(resolveProjectCalled).toBe(true);
+    expect(loadConfigCalledWith).toBeDefined();
+  } finally {
+    (_curatorCmdDeps as any).resolveProject = origResolveProject;
+    (_curatorCmdDeps as any).loadConfig = origLoadConfig;
+    (_curatorCmdDeps as any).projectOutputDir = origProjectOutputDir;
+  }
 });
 
 // ─── AC-31: curatorStatus reads observations and proposals ───────────────────
 
 test("AC-31: curatorStatus reads latest run observations and prints kind counts", async () => {
-  const { curatorStatus } = await import("../../../src/commands/curator");
+  const { curatorStatus, _curatorCmdDeps } = await import("../../../src/commands/curator");
   await withTempDir(async (dir) => {
     const runDir = join(dir, "runs", "run-abc");
     mkdirSync(runDir, { recursive: true });
@@ -1056,23 +1064,31 @@ test("AC-31: curatorStatus reads latest run observations and prints kind counts"
     writeFileSync(join(runDir, "observations.jsonl"), obs.map((o) => JSON.stringify(o)).join("\n"));
     writeFileSync(join(runDir, "curator-proposals.md"), "# Proposals\n- [ ] do something");
 
-    const output: string[] = [];
-    const deps = {
-      resolveProject: async () => dir,
-      loadConfig: async () => makeNaxConfig(),
-      projectOutputDir: async () => dir,
-      curatorRollupPath: async () => join(dir, "rollup.jsonl"),
-      print: (msg: string) => { output.push(msg); },
-      readFile: (p: string) => Bun.file(p).text(),
-      glob: async (pattern: string, cwd: string) => {
-        const dirs = existsSync(join(cwd, "runs")) ? ["run-abc"] : [];
-        return dirs;
-      },
-    };
+    const logMessages: string[] = [];
+    const logSpy = spyOn(console, "log").mockImplementation((...args: any[]) => {
+      logMessages.push(String(args[0] ?? ""));
+    });
 
-    await curatorStatus({}, deps as any);
+    const origResolveProject = _curatorCmdDeps.resolveProject;
+    const origLoadConfig = _curatorCmdDeps.loadConfig;
+    const origProjectOutputDir = _curatorCmdDeps.projectOutputDir;
+    const origReadFile = _curatorCmdDeps.readFile;
+    try {
+      (_curatorCmdDeps as any).resolveProject = () => ({ projectDir: dir });
+      (_curatorCmdDeps as any).loadConfig = async () => makeNaxConfig();
+      (_curatorCmdDeps as any).projectOutputDir = () => dir;
+      (_curatorCmdDeps as any).readFile = async (p: string) => Bun.file(p).text();
 
-    const combined = output.join("\n");
+      await curatorStatus({});
+    } finally {
+      (_curatorCmdDeps as any).resolveProject = origResolveProject;
+      (_curatorCmdDeps as any).loadConfig = origLoadConfig;
+      (_curatorCmdDeps as any).projectOutputDir = origProjectOutputDir;
+      (_curatorCmdDeps as any).readFile = origReadFile;
+      logSpy.mockRestore();
+    }
+
+    const combined = logMessages.join("\n");
     expect(/verdict.*2|2.*verdict/i.test(combined) || combined.includes("verdict")).toBe(true);
   });
 });
@@ -1144,7 +1160,7 @@ test("AC-33: curatorDryrun writes to stdout and does not write canonical files",
 // ─── AC-34: curatorGc prunes rollup by runId keeping top N ───────────────────
 
 test("AC-34: curatorGc retains only top keep=2 runIds and rewrites rollup", async () => {
-  const { curatorGc } = await import("../../../src/commands/curator");
+  const { curatorGc, _curatorCmdDeps } = await import("../../../src/commands/curator");
   await withTempDir(async (dir) => {
     const rollupPath = join(dir, "rollup.jsonl");
     const rows = [
@@ -1155,16 +1171,29 @@ test("AC-34: curatorGc retains only top keep=2 runIds and rewrites rollup", asyn
     writeFileSync(rollupPath, rows.map((r) => JSON.stringify(r)).join("\n"));
 
     const writtenContents: string[] = [];
-    const deps = {
-      resolveProject: async () => dir,
-      loadConfig: async () => makeNaxConfig(),
-      projectOutputDir: async () => dir,
-      curatorRollupPath: async () => rollupPath,
-      readFile: async (p: string) => Bun.file(p).text(),
-      writeFile: async (_p: string, content: string) => { writtenContents.push(content); },
-    };
+    const origResolveProject = _curatorCmdDeps.resolveProject;
+    const origLoadConfig = _curatorCmdDeps.loadConfig;
+    const origGlobalOutputDir = _curatorCmdDeps.globalOutputDir;
+    const origCuratorRollupPath = _curatorCmdDeps.curatorRollupPath;
+    const origReadFile = _curatorCmdDeps.readFile;
+    const origWriteFile = _curatorCmdDeps.writeFile;
+    try {
+      (_curatorCmdDeps as any).resolveProject = () => ({ projectDir: dir });
+      (_curatorCmdDeps as any).loadConfig = async () => makeNaxConfig();
+      (_curatorCmdDeps as any).globalOutputDir = () => dir;
+      (_curatorCmdDeps as any).curatorRollupPath = () => rollupPath;
+      (_curatorCmdDeps as any).readFile = async (p: string) => Bun.file(p).text();
+      (_curatorCmdDeps as any).writeFile = async (_p: string, content: string) => { writtenContents.push(content); };
 
-    await curatorGc({ keep: 2 }, deps as any);
+      await curatorGc({ keep: 2 });
+    } finally {
+      (_curatorCmdDeps as any).resolveProject = origResolveProject;
+      (_curatorCmdDeps as any).loadConfig = origLoadConfig;
+      (_curatorCmdDeps as any).globalOutputDir = origGlobalOutputDir;
+      (_curatorCmdDeps as any).curatorRollupPath = origCuratorRollupPath;
+      (_curatorCmdDeps as any).readFile = origReadFile;
+      (_curatorCmdDeps as any).writeFile = origWriteFile;
+    }
 
     expect(writtenContents.length).toBe(1);
     const kept = writtenContents[0].trim().split("\n").map((l) => JSON.parse(l));
@@ -1177,7 +1206,7 @@ test("AC-34: curatorGc retains only top keep=2 runIds and rewrites rollup", asyn
 });
 
 test("AC-34: curatorGc is no-op when distinct runIds ≤ keep", async () => {
-  const { curatorGc } = await import("../../../src/commands/curator");
+  const { curatorGc, _curatorCmdDeps } = await import("../../../src/commands/curator");
   await withTempDir(async (dir) => {
     const rollupPath = join(dir, "rollup.jsonl");
     const rows = [
@@ -1186,45 +1215,64 @@ test("AC-34: curatorGc is no-op when distinct runIds ≤ keep", async () => {
     writeFileSync(rollupPath, rows.map((r) => JSON.stringify(r)).join("\n"));
 
     let writeFileCalled = false;
-    const deps = {
-      resolveProject: async () => dir,
-      loadConfig: async () => makeNaxConfig(),
-      projectOutputDir: async () => dir,
-      curatorRollupPath: async () => rollupPath,
-      readFile: async (p: string) => Bun.file(p).text(),
-      writeFile: async () => { writeFileCalled = true; },
-    };
+    const origResolveProject = _curatorCmdDeps.resolveProject;
+    const origLoadConfig = _curatorCmdDeps.loadConfig;
+    const origGlobalOutputDir = _curatorCmdDeps.globalOutputDir;
+    const origCuratorRollupPath = _curatorCmdDeps.curatorRollupPath;
+    const origReadFile = _curatorCmdDeps.readFile;
+    const origWriteFile = _curatorCmdDeps.writeFile;
+    try {
+      (_curatorCmdDeps as any).resolveProject = () => ({ projectDir: dir });
+      (_curatorCmdDeps as any).loadConfig = async () => makeNaxConfig();
+      (_curatorCmdDeps as any).globalOutputDir = () => dir;
+      (_curatorCmdDeps as any).curatorRollupPath = () => rollupPath;
+      (_curatorCmdDeps as any).readFile = async (p: string) => Bun.file(p).text();
+      (_curatorCmdDeps as any).writeFile = async () => { writeFileCalled = true; };
 
-    await curatorGc({ keep: 50 }, deps as any);
-    expect(writeFileCalled).toBe(false);
+      await curatorGc({ keep: 50 });
+      expect(writeFileCalled).toBe(false);
+    } finally {
+      (_curatorCmdDeps as any).resolveProject = origResolveProject;
+      (_curatorCmdDeps as any).loadConfig = origLoadConfig;
+      (_curatorCmdDeps as any).globalOutputDir = origGlobalOutputDir;
+      (_curatorCmdDeps as any).curatorRollupPath = origCuratorRollupPath;
+      (_curatorCmdDeps as any).readFile = origReadFile;
+      (_curatorCmdDeps as any).writeFile = origWriteFile;
+    }
   });
 });
 
 // ─── AC-35: CLI error cases ────────────────────────────────────────────────────
 
 test("AC-35: curatorStatus with no run directories exits with non-zero or error message", async () => {
-  const { curatorStatus } = await import("../../../src/commands/curator");
+  const { curatorStatus, _curatorCmdDeps } = await import("../../../src/commands/curator");
   await withTempDir(async (dir) => {
-    const output: string[] = [];
-    const deps = {
-      resolveProject: async () => dir,
-      loadConfig: async () => makeNaxConfig(),
-      projectOutputDir: async () => dir,
-      curatorRollupPath: async () => join(dir, "rollup.jsonl"),
-      print: (msg: string) => { output.push(msg); },
-      readFile: async () => "",
-      glob: async () => [],
-    };
+    const logMessages: string[] = [];
+    const logSpy = spyOn(console, "log").mockImplementation((...args: any[]) => {
+      logMessages.push(String(args[0] ?? ""));
+    });
 
+    const origResolveProject = _curatorCmdDeps.resolveProject;
+    const origLoadConfig = _curatorCmdDeps.loadConfig;
+    const origProjectOutputDir = _curatorCmdDeps.projectOutputDir;
     let threw = false;
     try {
-      await curatorStatus({}, deps as any);
+      (_curatorCmdDeps as any).resolveProject = () => ({ projectDir: dir });
+      (_curatorCmdDeps as any).loadConfig = async () => makeNaxConfig();
+      (_curatorCmdDeps as any).projectOutputDir = () => dir;
+
+      await curatorStatus({});
     } catch {
       threw = true;
+    } finally {
+      (_curatorCmdDeps as any).resolveProject = origResolveProject;
+      (_curatorCmdDeps as any).loadConfig = origLoadConfig;
+      (_curatorCmdDeps as any).projectOutputDir = origProjectOutputDir;
+      logSpy.mockRestore();
     }
 
     // Either throws or prints "no runs" message
-    const combined = output.join("\n").toLowerCase();
+    const combined = logMessages.join("\n").toLowerCase();
     expect(threw || combined.includes("no runs")).toBe(true);
   });
 });

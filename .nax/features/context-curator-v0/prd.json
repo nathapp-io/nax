@@ -3,7 +3,7 @@
   "feature": "context-curator-v0",
   "branchName": "feat/context-curator-v0",
   "createdAt": "2026-05-04T00:00:00Z",
-  "updatedAt": "2026-05-04T12:47:44.143Z",
+  "updatedAt": "2026-05-04T15:48:08.595Z",
   "userStories": [
     {
       "id": "US-001",
@@ -13,7 +13,9 @@
         "handleQueryNeighbor emits logger.info(\"pull-tool\", \"invoked\", ...) with tool=\"query_neighbor\" and resultCount matching the number of neighbor chunks found",
         "handleQueryFeatureContext emits logger.info(\"pull-tool\", \"invoked\", ...) with tool=\"query_feature_context\" and keyword matching the input filter",
         "When a pull-tool call returns zero results, the emit includes resultCount=0 and resultBytes=0",
-        "When handleQueryNeighbor truncates content, the emit includes truncated=true"
+        "When handleQueryNeighbor truncates content, the emit includes truncated=true",
+        "handleQueryFeatureContext emit includes storyId matching the passed story.id",
+        "Emit fires exactly once per pull-tool invocation, even when the handler returns early or throws"
       ],
       "tags": [
         "feature",
@@ -35,10 +37,6 @@
         "src/context/engine/pull-tools.ts",
         "src/logger/logger.ts"
       ],
-      "suggestedCriteria": [
-        "handleQueryFeatureContext emit includes storyId matching the passed story.id",
-        "Emit fires exactly once per pull-tool invocation, even when the handler returns early or throws"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -52,7 +50,9 @@
         "The acceptance stage emits logger.info(\"acceptance\", \"verdict\", ...) exactly once per story after all ACs are evaluated",
         "When all ACs pass, the emit includes passed=true and failedACs=[]",
         "When any AC fails, the emit includes passed=false and failedACs containing the failing AC identifiers",
-        "The emit includes retries reflecting the hardening pass count and durationMs as a positive integer"
+        "The emit includes retries reflecting the hardening pass count and durationMs as a positive integer",
+        "The verdict emit fires on both the pass path (action: \"continue\") and fail path (action: \"fail\")",
+        "failedACs field matches the exact set returned by parseTestFailures() when failures exist"
       ],
       "tags": [
         "feature",
@@ -74,10 +74,6 @@
         "src/pipeline/stages/acceptance.ts",
         "src/logger/logger.ts"
       ],
-      "suggestedCriteria": [
-        "The verdict emit fires on both the pass path (action: \"continue\") and fail path (action: \"fail\")",
-        "failedACs field matches the exact set returned by parseTestFailures() when failures exist"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -91,7 +87,10 @@
         "emitReviewDecision() fires onReviewDecision listeners with a ReviewDecisionEvent containing kind=\"review-decision\"",
         "onReviewDecision() returns an unsubscribe function that removes the listener from future emits",
         "attachReviewAuditSubscriber() subscribes to review-decision events and forwards them to the auditor via recordDispatch()",
-        "When a review call site emits through the bus instead of calling auditor.recordDecision() directly, the auditor still receives the decision record"
+        "When a review call site emits through the bus instead of calling auditor.recordDecision() directly, the auditor still receives the decision record",
+        "Multiple listeners can subscribe to review-decision events and all receive the same event",
+        "A listener error does not prevent other listeners from receiving the event",
+        "The existing session-turn listener in review-audit middleware continues to work unchanged alongside the new review-decision listener"
       ],
       "tags": [
         "feature",
@@ -115,11 +114,6 @@
         "src/runtime/middleware/review-audit.ts",
         "src/review/review-audit.ts"
       ],
-      "suggestedCriteria": [
-        "Multiple listeners can subscribe to review-decision events and all receive the same event",
-        "A listener error does not prevent other listeners from receiving the event",
-        "The existing session-turn listener in review-audit middleware continues to work unchanged alongside the new review-decision listener"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -139,7 +133,12 @@
         "resolveCuratorOutputs() resolves observationsPath and proposalsPath under context.outputDir/runs/<runId>/ and uses context.curatorRollupPath as the rollup file path.",
         "curatorPlugin.shouldRun() returns false when curator.enabled is explicitly false or no stories completed, returns true when enabled with completed stories, and warns-but-continues when review.audit.enabled is false.",
         "curatorPlugin.execute() writes observations.jsonl to <outputDir>/runs/<runId>/observations.jsonl with one JSON line per observation.",
-        "Missing source directories, malformed source files, and per-source read errors are logged as warnings and do not cause collectObservations() or curatorPlugin.execute() to throw."
+        "Missing source directories, malformed source files, and per-source read errors are logged as warnings and do not cause collectObservations() or curatorPlugin.execute() to throw.",
+        "Each observation's ts field is a valid ISO 8601 string",
+        "Observation payload is always a plain object (never undefined or null), even for kinds with no extra fields",
+        "collectObservations() handles missing source directories gracefully (no JSON files found = empty array for that source, not an error)",
+        "The curator plugin appears in pluginRegistry.getPostRunActions() after registration",
+        "Relative curator.rollupPath is rejected consistently with src/runtime/paths.ts"
       ],
       "tags": [
         "feature",
@@ -178,13 +177,8 @@
         "src/logger/logger.ts"
       ],
       "suggestedCriteria": [
-        "Each observation's ts field is a valid ISO 8601 string",
-        "Observation payload is always a plain object (never undefined or null), even for kinds with no extra fields",
-        "collectObservations() handles missing source directories gracefully (no JSON files found = empty array for that source, not an error)",
         "collectObservations() logs a warning and skips malformed JSON source files instead of failing the post-run action",
-        "The curator plugin appears in pluginRegistry.getPostRunActions() after registration",
-        "config.curator.thresholds defaults are materialized by NaxConfigSchema.parse({}) / DEFAULT_CONFIG",
-        "Relative curator.rollupPath is rejected consistently with src/runtime/paths.ts"
+        "config.curator.thresholds defaults are materialized by NaxConfigSchema.parse({}) / DEFAULT_CONFIG"
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -202,7 +196,12 @@
         "renderProposals() produces markdown with generated timestamp, observation count, checkbox sections grouped by target action/canonical file, and proposal lines containing severity, heuristic ID, counts, and story evidence.",
         "renderProposals() still produces useful markdown when zero proposals fire, including observation count and a zero-heuristics message.",
         "appendToRollup() creates the rollup parent directory, appends one JSON line per observation, and logs/returns without throwing on write errors.",
-        "curatorPlugin.execute() wires collect → heuristics → render → rollup, writes observations.jsonl and curator-proposals.md, and never lets curator failures change the post-run exit behavior."
+        "curatorPlugin.execute() wires collect → heuristics → render → rollup, writes observations.jsonl and curator-proposals.md, and never lets curator failures change the post-run exit behavior.",
+        "runHeuristics() returns an empty array when observations array is empty",
+        "runHeuristics() uses configurable thresholds from config.curator.thresholds, falling back to defaults when not configured",
+        "renderProposals() includes a generated timestamp in ISO 8601 format",
+        "Multiple proposals for the same target file are grouped under the same markdown section heading",
+        "Rollup append works correctly with POSIX concurrent writes (each observation under PIPE_BUF size)"
       ],
       "tags": [
         "feature",
@@ -230,13 +229,6 @@
         "src/metrics/types.ts",
         "src/runtime/paths.ts"
       ],
-      "suggestedCriteria": [
-        "runHeuristics() returns an empty array when observations array is empty",
-        "runHeuristics() uses configurable thresholds from config.curator.thresholds, falling back to defaults when not configured",
-        "renderProposals() includes a generated timestamp in ISO 8601 format",
-        "Multiple proposals for the same target file are grouped under the same markdown section heading",
-        "Rollup append works correctly with POSIX concurrent writes (each observation under PIPE_BUF size)"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -252,7 +244,13 @@
         "curatorCommit() parses checked [x] proposal lines, applies drops before adds, writes accepted changes to canonical target files, detects conflicts with a clear abort, opens modified files in $EDITOR, and never creates a git commit automatically.",
         "curatorDryrun() re-runs heuristics on an existing observations.jsonl using current config.curator.thresholds and prints rendered proposals without modifying canonical files.",
         "curatorGc() keeps rows for the most recent runIds using default --keep 50 or explicit --keep <N>, rewrites only the rollup file, and is a no-op when fewer runs exist than the keep count.",
-        "The CLI reports clear helpful messages for missing runs, missing proposals.md, invalid run IDs, and absent --project by falling back to CWD project resolution."
+        "The CLI reports clear helpful messages for missing runs, missing proposals.md, invalid run IDs, and absent --project by falling back to CWD project resolution.",
+        "curatorStatus() prints a helpful message when no runs exist (no observations.jsonl found)",
+        "curatorStatus() prints a helpful message when observations.jsonl exists but proposals.md does not",
+        "curatorCommit() skips lines in proposals.md that are not checkbox items without error",
+        "curatorCommit() with an invalid runId prints a clear error message",
+        "curatorGc() is a no-op when there are fewer runs than --keep",
+        "Each curator subcommand properly handles missing --project by using CWD resolution"
       ],
       "tags": [
         "feature",
@@ -280,14 +278,6 @@
         "src/runtime/paths.ts",
         "src/plugins/builtin/curator/heuristics.ts",
         "src/plugins/builtin/curator/render.ts"
-      ],
-      "suggestedCriteria": [
-        "curatorStatus() prints a helpful message when no runs exist (no observations.jsonl found)",
-        "curatorStatus() prints a helpful message when observations.jsonl exists but proposals.md does not",
-        "curatorCommit() skips lines in proposals.md that are not checkbox items without error",
-        "curatorCommit() with an invalid runId prints a clear error message",
-        "curatorGc() is a no-op when there are fewer runs than --keep",
-        "Each curator subcommand properly handles missing --project by using CWD resolution"
       ],
       "priorErrors": [],
       "priorFailures": [],
