@@ -20,9 +20,17 @@
     "spent": 0,
     "limit": 50
   },
-  "current": null,
-  "iterations": 0,
-  "updatedAt": "2026-05-04T11:22:53.438Z",
-  "durationMs": 660053,
-  "lastHeartbeat": "2026-05-04T11:22:53.437Z"
+  "current": {
+    "storyId": "US-001",
+    "title": "Add pull-tool logger emits for curator ingestion",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-05-04T11:25:53.448Z",
+  "durationMs": 840063,
+  "lastHeartbeat": "2026-05-04T11:25:53.448Z"
 }
