@@ -75,6 +75,7 @@ function makeCtx(overrides: { parallelCount?: number } = {}) {
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
+    runtime: { outputDir: "/tmp/nax-test-dispatch-output" },
     ...overrides,
   };
 }
