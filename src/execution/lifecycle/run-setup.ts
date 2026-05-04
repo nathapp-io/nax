@@ -240,6 +240,27 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     }
   }
 
+  // Claim project identity on first run (no-op if already claimed for this workdir)
+  {
+    const { claimProjectIdentity } = await import("../../runtime");
+    let remoteUrl: string | null = null;
+    try {
+      const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+      if (gitResult.exitCode === 0) {
+        remoteUrl = new TextDecoder().decode(gitResult.stdout).trim() || null;
+      }
+    } catch {
+      /* non-git project — remoteUrl stays null */
+    }
+    const projectKey = config.name?.trim() || path.basename(workdir);
+    await claimProjectIdentity(projectKey, workdir, remoteUrl).catch((err) => {
+      logger?.warn("setup", "Failed to claim project identity", {
+        storyId: "_setup",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
   // ── Run precheck validations (unless --skip-precheck) ──────────────────────
   if (!skipPrecheck) {
     const { runPrecheckValidation } = await import("./precheck-runner");

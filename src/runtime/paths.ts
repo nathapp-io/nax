@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { NaxError } from "../errors";
@@ -62,6 +63,42 @@ export async function readProjectIdentity(projectKey: string): Promise<ProjectId
 export async function writeProjectIdentity(projectKey: string, identity: ProjectIdentity): Promise<void> {
   const p = identityPath(projectKey);
   await Bun.write(p, JSON.stringify(identity, null, 2));
+}
+
+/**
+ * Claim the project identity for the given projectKey and workdir.
+ *
+ * - First call: writes the identity file under ~/.nax/<projectKey>/.identity
+ * - Same workdir on subsequent calls: updates lastSeen only (idempotent)
+ * - Different workdir: no-op (collision detection is the responsibility of nax init)
+ */
+export async function claimProjectIdentity(
+  projectKey: string,
+  workdir: string,
+  remoteUrl: string | null,
+): Promise<void> {
+  const existing = await readProjectIdentity(projectKey);
+  const now = new Date().toISOString();
+
+  if (existing) {
+    // Workdir matches — update lastSeen only
+    if (existing.workdir === workdir) {
+      await writeProjectIdentity(projectKey, { ...existing, lastSeen: now });
+    }
+    // Different workdir — do not overwrite (collision detection is nax init's job)
+    return;
+  }
+
+  // First claim — create the directory and write the identity
+  const identDir = path.dirname(identityPath(projectKey));
+  await mkdir(identDir, { recursive: true });
+  await writeProjectIdentity(projectKey, {
+    name: projectKey,
+    workdir,
+    remoteUrl,
+    createdAt: now,
+    lastSeen: now,
+  });
 }
 
 export function curatorRollupPath(globalDir: string, rollupPathOverride: string | undefined): string {

@@ -10,6 +10,7 @@ import {
   identityPath,
   readProjectIdentity,
   writeProjectIdentity,
+  claimProjectIdentity,
   curatorRollupPath,
   type ProjectIdentity,
 } from "../../../src/runtime";
@@ -113,6 +114,46 @@ describe("curatorRollupPath", () => {
 
   it("throws NaxError for relative override", () => {
     expect(() => curatorRollupPath("/home/user/.nax/global", "relative/path")).toThrow(NaxError);
+  });
+});
+
+const TEST_CLAIM_KEY = "__nax_test_claim_identity__";
+
+describe("claimProjectIdentity", () => {
+  const identityDir = path.join(os.homedir(), ".nax", TEST_CLAIM_KEY);
+
+  beforeEach(async () => {
+    await rm(identityDir, { recursive: true, force: true });
+  });
+
+  afterEach(async () => {
+    await rm(identityDir, { recursive: true, force: true });
+  });
+
+  it("writes identity on first call", async () => {
+    await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
+    const identity = await readProjectIdentity(TEST_CLAIM_KEY);
+    expect(identity).not.toBeNull();
+    expect(identity?.workdir).toBe("/tmp/my-project");
+    expect(identity?.name).toBe(TEST_CLAIM_KEY);
+  });
+
+  it("is idempotent — second call does not overwrite", async () => {
+    await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
+    await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/other-project", null);
+    const identity = await readProjectIdentity(TEST_CLAIM_KEY);
+    expect(identity?.workdir).toBe("/tmp/my-project");
+  });
+
+  it("updates lastSeen on subsequent calls for same workdir", async () => {
+    await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
+    const first = await readProjectIdentity(TEST_CLAIM_KEY);
+    // Small delay to ensure timestamps differ
+    await new Promise((r) => setTimeout(r, 5));
+    await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
+    const second = await readProjectIdentity(TEST_CLAIM_KEY);
+    expect(second?.lastSeen).not.toBe(first?.lastSeen);
+    expect(second?.createdAt).toBe(first?.createdAt);
   });
 });
 

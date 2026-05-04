@@ -26,6 +26,7 @@ export {
   identityPath,
   readProjectIdentity,
   writeProjectIdentity,
+  claimProjectIdentity,
   curatorRollupPath,
 } from "./paths";
 export type { ProjectIdentity } from "./paths";
