@@ -231,8 +231,8 @@ Verified each Tier 1 source by greppping the nax source tree and inspecting koda
 
 | Source | Why missing | What needs to change |
 |:---|:---|:---|
-| **Pull tool calls** | `src/context/engine/pull-tools.ts` and `tool-runtime.ts` emit **zero log events** in `handleQueryNeighbor` / `handleQueryFeatureContext`. No flag-gated audit exists. | Either add `logger.info("pull-tool", "invoked", { storyId, tool, keyword, resultCount })` inside each handler, or build a `PullToolAuditor` mirroring `ReviewAuditor` (same shape, same flag pattern). |
-| **Acceptance verdict** | `src/acceptance/*.ts` logs progress but no structured pass/fail event. Stage tag is `"acceptance"` but determining outcome requires string-parsing messages. | Add `logger.info("acceptance", "verdict", { storyId, passed, failedACs, retries })` once per story at acceptance completion. |
+| **Pull tool calls** | [src/context/engine/pull-tools.ts:201-226](../../src/context/engine/pull-tools.ts#L201-L226) (`handleQueryNeighbor`) and [pull-tools.ts:265+](../../src/context/engine/pull-tools.ts#L265) (`handleQueryFeatureContext`) — handler bodies emit **zero log events**. The only nearby emit is an error-path `logger.warn` at [tool-runtime.ts:53](../../src/context/engine/tool-runtime.ts#L53) for test-pattern resolution failure (not curator-useful). No flag-gated audit exists. | Add `logger.info("pull-tool", "invoked", { storyId, tool, keyword, resultCount })` inside each handler. (Verified 2026-05-04.) |
+| **Acceptance verdict** | **Location correction (2026-05-04):** the acceptance pipeline stage at [src/pipeline/stages/acceptance.ts](../../src/pipeline/stages/acceptance.ts) **already emits structured pass/fail events** at three sites — [line 228](../../src/pipeline/stages/acceptance.ts#L228) (`logger.error("acceptance", "Acceptance tests failed", …)`), [line 235](../../src/pipeline/stages/acceptance.ts#L235) (`Package acceptance tests passed`), [line 243](../../src/pipeline/stages/acceptance.ts#L243) (`All acceptance tests passed`). These are scattered with non-uniform shape, not missing. | **Consolidate** the 3 existing scattered emits into one canonical structured event per story: `logger.info("acceptance", "verdict", { storyId, passed, failedACs, retries, packageDir })`. Existing emits can stay as progress messages; the verdict event is added once at the per-story termination point. |
 
 ### Newly discovered sources (not in original design)
 
@@ -367,9 +367,11 @@ This retires the eventLog+blobStore conversation cleanly: the primitive curator 
 
 ---
 
-## Step 5 — ADR-022 fix-cycle iteration audit (cross-reference)
+## Step 5 — Fix-cycle iteration audit (cross-reference)
 
-ADR-022 ("Fix Strategy and Cycle Orchestration", 2026-05-02) introduces a `runFixCycle<F>` that drives diagnose-fix-validate iterations across acceptance, autofix, semantic, and adversarial subsystems. Its "Audit logging" section deliberately **defers cycle-history persistence to this curator redesign** — iteration history is ephemeral by default (in-memory in `PipelineContext`), used only for prompt carry-forward via `buildPriorIterationsBlock`.
+> **Citation note (2026-05-04):** This section originally cited "ADR-022 §13" repeatedly. As of 2026-05-04, ADR-022 does not exist in `docs/adr/` (highest committed is ADR-020). The implementation **does** exist — see [src/findings/cycle.ts](../../src/findings/cycle.ts) which has 11 emits with the `findings.cycle` stage tag including the `"iteration completed"` event at [line 381](../../src/findings/cycle.ts#L381). [src/pipeline/types.ts:181](../../src/pipeline/types.ts#L181) also references "ADR-022 Phase 7". Treat the ADR-022 references below as pointing to the **implementation**, not a committed ADR document. If/when ADR-022 is committed to `docs/adr/`, update these citations to direct ADR §-references.
+
+The `runFixCycle<F>` machinery drives diagnose-fix-validate iterations across acceptance, autofix, semantic, and adversarial subsystems. Iteration history is ephemeral by default (in-memory in `PipelineContext`), used only for prompt carry-forward via `buildPriorIterationsBlock`. Cycle-history persistence was deliberately deferred to this curator redesign.
 
 When this curator redesign lands, cycle iterations should map onto the same `observations.jsonl` schema. Concrete sketch:
 
@@ -437,13 +439,13 @@ Cycle iterations expose patterns the curator wants to surface:
 
 ### Telemetry symmetry
 
-ADR-022 §13 already mandates a logger contract for cycle iterations:
+The logger contract for cycle iterations is **already implemented** at [src/findings/cycle.ts:381](../../src/findings/cycle.ts#L381):
 
 ```typescript
 logger.info("findings.cycle", "iteration completed", { storyId, packageDir, cycleName, iterationNum, strategiesRan, outcome, findingsBefore, findingsAfter, costUsd });
 ```
 
-The `observations.jsonl` shape above is a strict superset — once unified-auditor work (Step 4 in this design) lands, the logger emit and the audit emit can share one dispatch path. Until then, a thin auditor reads logger entries and writes observations rows; same pattern as today's `PromptAuditor`.
+`src/findings/cycle.ts` emits 11 `findings.cycle` events total (iteration completed, cycle exits with reasons, validator retries). All flow through the standard run logger, so curator can ingest them by reading run jsonl — no new auditor needed. This aligns with the "curator IS the unification" pattern (Step 4): use `logger.info` at source, project to `observations.jsonl` at curator layer.
 
 ### Implementation timing
 
