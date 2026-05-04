@@ -219,12 +219,58 @@ export class RectifierPromptBuilder {
   }
 
   /**
-   * Prompt for the test-writer to fix test file issues routed from review (#409).
+   * Prompt for the test-writer to fix test file issues or write failing tests (D2, #897).
    *
-   * Sent when review found problems in test files that the implementer cannot fix
-   * (isolation constraint). Handles both adversarial-review findings and lint failures.
+   * Two modes:
+   * - "fix-test-files" (default): fix existing test files flagged by review (#409).
+   * - "write-failing-test": write a NEW failing test that documents spec-correct behavior
+   *   described in an adversarial source-bug finding. The implementer then makes it pass.
    */
-  static testWriterRectification(testFileFindings: ReviewCheckResult[], story: UserStory): string {
+  static testWriterRectification(
+    findings: ReviewCheckResult[],
+    story: UserStory,
+    options?: { mode?: "fix-test-files" | "write-failing-test" },
+  ): string {
+    if (options?.mode === "write-failing-test") {
+      return RectifierPromptBuilder._testWriterWriteFailingTest(findings, story);
+    }
+    return RectifierPromptBuilder._testWriterFixTestFiles(findings, story);
+  }
+
+  private static _testWriterWriteFailingTest(findings: ReviewCheckResult[], story: UserStory): string {
+    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+    const findingLines = findings
+      .flatMap((c) =>
+        (c.findings ?? []).map((f) => `- [${f.severity}] ${f.file ?? "unknown"}:${f.line ?? "?"} — ${f.message}`),
+      )
+      .join("\n");
+
+    const scopeConstraint = story.workdir
+      ? `\n\nIMPORTANT: Only create or modify test files within \`${story.workdir}/\`. Do NOT touch source files.`
+      : "\n\nIMPORTANT: Only create or modify test files. Do NOT touch source implementation files.";
+
+    return `You are writing a failing test that documents spec-correct behavior.
+
+Story: ${story.title} (${story.id})
+
+### Acceptance Criteria
+${acList}
+
+### Source Bugs Found by Adversarial Review
+${findingLines}
+
+**Task:** For each bug above, write a NEW failing test that asserts the spec-correct behavior described in the finding. The test should FAIL with the current (buggy) implementation and PASS once the implementer fixes the source.
+
+Rules:
+1. Write the test against the SPECIFICATION, not the current behavior.
+2. Do NOT fix the source files — only write test files.
+3. Do NOT modify existing passing tests.
+4. The test must fail with the current code.
+
+Commit your new tests when done.${scopeConstraint}`;
+  }
+
+  private static _testWriterFixTestFiles(testFileFindings: ReviewCheckResult[], story: UserStory): string {
     const scopeConstraint = story.workdir
       ? `\n\nIMPORTANT: Only modify test files within \`${story.workdir}/\`. Do NOT touch source files.`
       : "\n\nIMPORTANT: Only modify test files. Do NOT touch source implementation files.";
@@ -261,10 +307,14 @@ export class RectifierPromptBuilder {
 
     const importantNote = isLintOnly
       ? "**Important:** Fix the lint errors in the test files listed above. Do NOT modify source implementation files."
-      : `**Important:** These findings are in test files. Before making any changes:
-1. Read the flagged test files to verify each finding is a real issue
-2. Only fix findings that are genuinely incorrect or missing — do NOT remove tests
-3. Do NOT modify source implementation files`;
+      : `**Important:** You are encoding the SPECIFICATION, not the current behavior.
+
+Before making any changes:
+1. Read the flagged test files to verify each finding is a real issue.
+2. Do NOT loosen assertions to match current implementation behavior. If a test is failing because the source is wrong, the source is the suspect — not the test.
+3. Do NOT delete a failing test because the implementation makes it hard to assert on. Refactor the test structure if needed; never silently drop coverage.
+4. If the current behavior disagrees with the acceptance criteria, write the test against the spec and let the implementer fix the source.
+5. Do NOT modify source implementation files.`;
 
     return `${opener}
 

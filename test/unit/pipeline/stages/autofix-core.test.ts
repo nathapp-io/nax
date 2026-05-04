@@ -238,6 +238,28 @@ describe("autofixStage", () => {
     expect(result.action).toBe("escalate");
   });
 
+  // D6 — escalation digest used as reason when available (#897)
+  test("escalation reason uses digest from rectification when available", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.recheckReview = async () => false;
+    _autofixDeps.runAgentRectification = async () => ({
+      succeeded: false,
+      cost: 0,
+      escalationDigest: "Autofix exhausted: 3 findings remain\n  - error-path × 2 in src/foo.ts",
+    });
+
+    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") {
+      expect(result.reason).toContain("error-path");
+      expect(result.reason).toContain("src/foo.ts");
+    }
+  });
+
   test("partial progress — cleared checks added to skip list, returns retry when budget remains", async () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {

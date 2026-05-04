@@ -256,8 +256,73 @@ export async function runFixCycle<F extends Finding>(
         op: strategy.fixOp.name,
         targetFiles: extracted.targetFiles ?? [],
         summary: extracted.summary ?? "",
+        ...(extracted.unresolved ? { unresolved: extracted.unresolved } : {}),
         costUsd: extracted.costUsd,
       });
+    }
+
+    // ── Bail on agent-gave-up ─────────────────────────────────────────────────
+    // Must run before the cap-exhausted skip-validate check: if the agent signals
+    // UNRESOLVED on its final attempt, agent-gave-up takes priority so the
+    // unresolvedDetail is surfaced rather than silently folded into a cap-exit.
+    const unresolvedFa = fixesApplied.find((fa) => fa.unresolved);
+    if (unresolvedFa) {
+      const finishedAt = now();
+      cycle.iterations.push({
+        iterationNum: cycle.iterations.length + 1,
+        findingsBefore,
+        fixesApplied,
+        findingsAfter: cycle.findings,
+        outcome: "unchanged",
+        startedAt,
+        finishedAt,
+      });
+      logger?.info("findings.cycle", "cycle exited — agent gave up", {
+        storyId,
+        packageDir,
+        cycleName,
+        reason: "agent-gave-up",
+        strategyName: unresolvedFa.strategyName,
+        unresolvedDetail: unresolvedFa.unresolved,
+      });
+      return {
+        iterations: cycle.iterations,
+        finalFindings: cycle.findings,
+        exitReason: "agent-gave-up",
+        unresolvedDetail: unresolvedFa.unresolved,
+        costUsd: totalCostUsd,
+      };
+    }
+
+    // ── Skip validate if all active strategies are now at their cap ───────────
+    // Counting provisional attempts (including this iteration's fixesApplied).
+    const provisionalIterations = [...cycle.iterations, { fixesApplied } as Iteration<F>];
+    const allExhausted = group.every((s) => countStrategyAttempts(provisionalIterations, s.name) >= s.maxAttempts);
+    if (allExhausted) {
+      const finishedAt = now();
+      cycle.iterations.push({
+        iterationNum: cycle.iterations.length + 1,
+        findingsBefore,
+        fixesApplied,
+        findingsAfter: cycle.findings,
+        outcome: "unchanged",
+        startedAt,
+        finishedAt,
+      });
+      logger?.info("findings.cycle", "cycle exited — strategy attempt cap reached (skipped final validate)", {
+        storyId,
+        packageDir,
+        cycleName,
+        reason: "max-attempts-per-strategy",
+        exhaustedStrategy: group[0]?.name,
+      });
+      return {
+        iterations: cycle.iterations,
+        finalFindings: cycle.findings,
+        exitReason: "max-attempts-per-strategy",
+        exhaustedStrategy: group[0]?.name,
+        costUsd: totalCostUsd,
+      };
     }
 
     // ── Validate ──────────────────────────────────────────────────────────────
