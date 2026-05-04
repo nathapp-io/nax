@@ -1,7 +1,7 @@
 # Context Curator — Design Notes
 
 **Date:** 2026-04-30
-**Status:** Design exploration — no code yet
+**Status:** v0 Implemented — see [docs/specs/2026-05-04-context-curator-v0-design.md](../specs/2026-05-04-context-curator-v0-design.md) for specification and [docs/guides/curator.md](../guides/curator.md) for user guide
 **Driver:** Koda dogfood; manual maintenance of `context.md` + `.nax/rules/` doesn't scale across runs.
 
 ---

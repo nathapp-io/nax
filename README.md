@@ -22,6 +22,7 @@ nax is an **orchestrator, not an agent** — it doesn't write code itself. It dr
 - **Language-aware** — auto-detects Go, Rust, Python, TypeScript from manifest files; adapts commands, test structure, and mocking patterns per language
 - **Semantic review** — LLM-based behavioral review against story acceptance criteria; catches stubs, placeholders, and out-of-scope changes
 - **Adversarial review** — LLM-based adversarial code review that probes for input handling, error paths, and abandoned implementations
+- **Context curator** — deterministic post-run analysis that proposes additions/deletions to context.md and rules files, preventing context drift
 
 ## Install
 
