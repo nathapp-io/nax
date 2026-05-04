@@ -311,8 +311,8 @@
       "dependencies": [
         "US-006"
       ],
-      "status": "failed",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 1,
       "escalations": [],
       "routing": {
