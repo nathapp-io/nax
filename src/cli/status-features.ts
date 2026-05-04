@@ -13,6 +13,11 @@ import { listPendingInteractions, loadPendingInteraction } from "../interaction"
 import { countStories, loadPRD } from "../prd";
 import { projectOutputDir } from "../runtime";
 
+/** Injectable deps for status-features (enables test isolation of output dir derivation) */
+export const _statusFeaturesDeps = {
+  projectOutputDir: projectOutputDir as typeof projectOutputDir,
+};
+
 /** Options for feature status command */
 export interface FeatureStatusOptions {
   /** Feature name (from -f flag) */
@@ -69,7 +74,7 @@ async function loadStatusFile(featureDir: string): Promise<NaxStatusFile | null>
 
 /** Load project-level status.json (if it exists) */
 async function loadProjectStatusFile(projectDir: string): Promise<NaxStatusFile | null> {
-  const outputDir = projectOutputDir(basename(projectDir), undefined);
+  const outputDir = _statusFeaturesDeps.projectOutputDir(basename(projectDir), undefined);
   const statusPath = join(outputDir, "status.json");
   if (!existsSync(statusPath)) {
     return null;
@@ -162,7 +167,7 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
 
 /** Display all features table */
 async function displayAllFeatures(projectDir: string): Promise<void> {
-  const outputDir = projectOutputDir(basename(projectDir), undefined);
+  const outputDir = _statusFeaturesDeps.projectOutputDir(basename(projectDir), undefined);
   const featuresDir = join(outputDir, "features");
 
   if (!existsSync(featuresDir)) {
@@ -437,7 +442,7 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     let featureDir: string;
     if (options.dir) {
       const projectDir = resolve(options.dir);
-      const outputDir = projectOutputDir(basename(projectDir), undefined);
+      const outputDir = _statusFeaturesDeps.projectOutputDir(basename(projectDir), undefined);
       featureDir = join(outputDir, "features", options.feature);
     } else {
       const resolved = resolveProject({ feature: options.feature });

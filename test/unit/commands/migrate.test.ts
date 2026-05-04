@@ -1,6 +1,7 @@
 // test/unit/commands/migrate.test.ts
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
+import { NaxError } from "../../../src/errors";
 import { withTempDir } from "../../helpers/temp";
 import { detectGeneratedContent, migrateCommand, type MigrateCandidate } from "../../../src/commands/migrate";
 
@@ -48,16 +49,16 @@ describe("detectGeneratedContent", () => {
 
 describe("migrateCommand --reclaim", () => {
   it("throws when name does not exist in ~/.nax/", async () => {
-    await expect(
-      migrateCommand({ workdir: "/tmp", reclaim: "__nonexistent_test_9999__" }),
-    ).rejects.toThrow("Nothing to reclaim");
+    const err = await migrateCommand({ workdir: "/tmp", reclaim: "__nonexistent_test_9999__" }).catch((e) => e);
+    expect(err).toBeInstanceOf(NaxError);
+    expect((err as NaxError).code).toBe("MIGRATE_RECLAIM_NOT_FOUND");
   });
 });
 
 describe("migrateCommand --merge", () => {
   it("throws when identity does not exist", async () => {
-    await expect(
-      migrateCommand({ workdir: "/tmp", merge: "__nonexistent_test_9999__" }),
-    ).rejects.toThrow("Cannot merge");
+    const err = await migrateCommand({ workdir: "/tmp", merge: "__nonexistent_test_9999__" }).catch((e) => e);
+    expect(err).toBeInstanceOf(NaxError);
+    expect((err as NaxError).code).toBe("MIGRATE_MERGE_NOT_FOUND");
   });
 });
