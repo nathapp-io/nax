@@ -251,8 +251,46 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
 
   const modifiedFiles = new Set<string>();
 
-  // Apply drops first
+  // Validate all drops before any writes: key token must exist, no overlapping ranges
   const drops = proposals.filter((p) => p.action === "drop");
+  const dropFileState = new Map<string, { existing: string; usedLines: Set<number> }>();
+
+  for (const drop of drops) {
+    const targetPath = join(resolved.projectDir, drop.canonicalFile);
+
+    if (!dropFileState.has(targetPath)) {
+      const existing = await _curatorCmdDeps.readFile(targetPath).catch(() => "");
+      dropFileState.set(targetPath, { existing, usedLines: new Set() });
+    }
+
+    const fileState = dropFileState.get(targetPath);
+    if (!fileState) continue;
+
+    const keyToken = extractKeyToken(drop.description);
+
+    if (!keyToken) {
+      throw new Error(`[curator-commit] conflict: cannot extract key token for drop in ${drop.canonicalFile} — abort`);
+    }
+
+    const lines = fileState.existing.split("\n");
+    const matchedIndices = lines
+      .map((line, idx) => ({ line, idx }))
+      .filter(({ line }) => line.includes(keyToken))
+      .map(({ idx }) => idx);
+
+    if (matchedIndices.length === 0) {
+      throw new Error(`[curator-commit] conflict: key token "${keyToken}" not found in ${drop.canonicalFile} — abort`);
+    }
+
+    for (const lineIdx of matchedIndices) {
+      if (fileState.usedLines.has(lineIdx)) {
+        throw new Error(`[curator-commit] conflict: overlapping drop ranges in ${drop.canonicalFile} — abort`);
+      }
+      fileState.usedLines.add(lineIdx);
+    }
+  }
+
+  // Apply drops first (all validated above)
   for (const drop of drops) {
     const targetPath = join(resolved.projectDir, drop.canonicalFile);
     const existing = await _curatorCmdDeps.readFile(targetPath).catch(() => "");
