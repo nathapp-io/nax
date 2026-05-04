@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 5
+    "pending": 4
   },
   "cost": {
-    "spent": 0.8282061000000001,
+    "spent": 1.8837558300000001,
     "limit": 50
   },
   "current": {
-    "storyId": "US-003",
-    "title": "Add ReviewDecisionEvent bus channel for review audit routing",
-    "complexity": "medium",
-    "tddStrategy": "tdd-simple",
+    "storyId": "US-004",
+    "title": "Curator plugin scaffold with observation projection",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-05-04T11:35:53.476Z",
-  "durationMs": 1440091,
-  "lastHeartbeat": "2026-05-04T11:35:53.476Z"
+  "iterations": 4,
+  "updatedAt": "2026-05-04T11:43:53.494Z",
+  "durationMs": 1920109,
+  "lastHeartbeat": "2026-05-04T11:43:53.494Z"
 }
