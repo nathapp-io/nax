@@ -3,7 +3,7 @@
   "feature": "context-curator-v0",
   "branchName": "feat/context-curator-v0",
   "createdAt": "2026-05-04T00:00:00Z",
-  "updatedAt": "2026-05-04T11:28:46.975Z",
+  "updatedAt": "2026-05-04T11:32:33.667Z",
   "userStories": [
     {
       "id": "US-001",
@@ -59,8 +59,8 @@
         "instrumentation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -106,7 +106,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/dispatch-events.ts",
@@ -120,7 +122,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "03cbc21bc184419284b9284439a7cd357c41c451"
     },
     {
       "id": "US-004",

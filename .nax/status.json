@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 6
+    "pending": 5
   },
   "cost": {
-    "spent": 0.39613890000000007,
+    "spent": 0.8282061000000001,
     "limit": 50
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Consolidate acceptance verdict logger emit",
-    "complexity": "simple",
+    "storyId": "US-003",
+    "title": "Add ReviewDecisionEvent bus channel for review audit routing",
+    "complexity": "medium",
     "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-05-04T11:30:53.462Z",
-  "durationMs": 1140077,
-  "lastHeartbeat": "2026-05-04T11:30:53.462Z"
+  "iterations": 3,
+  "updatedAt": "2026-05-04T11:35:53.476Z",
+  "durationMs": 1440091,
+  "lastHeartbeat": "2026-05-04T11:35:53.476Z"
 }
