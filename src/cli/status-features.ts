@@ -8,6 +8,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
+import { loadConfig } from "../config";
 import type { NaxStatusFile } from "../execution/status-file";
 import { listPendingInteractions, loadPendingInteraction } from "../interaction";
 import { countStories, loadPRD } from "../prd";
@@ -16,6 +17,7 @@ import { projectOutputDir } from "../runtime";
 /** Injectable deps for status-features (enables test isolation of output dir derivation) */
 export const _statusFeaturesDeps = {
   projectOutputDir: projectOutputDir as typeof projectOutputDir,
+  loadConfig: loadConfig as typeof loadConfig,
 };
 
 /** Options for feature status command */
@@ -74,7 +76,9 @@ async function loadStatusFile(featureDir: string): Promise<NaxStatusFile | null>
 
 /** Load project-level status.json (if it exists) */
 async function loadProjectStatusFile(projectDir: string): Promise<NaxStatusFile | null> {
-  const outputDir = _statusFeaturesDeps.projectOutputDir(basename(projectDir), undefined);
+  const config = await _statusFeaturesDeps.loadConfig(projectDir).catch(() => null);
+  const projectKey = config?.name?.trim() || basename(projectDir);
+  const outputDir = _statusFeaturesDeps.projectOutputDir(projectKey, config?.outputDir);
   const statusPath = join(outputDir, "status.json");
   if (!existsSync(statusPath)) {
     return null;
@@ -167,7 +171,9 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
 
 /** Display all features table */
 async function displayAllFeatures(projectDir: string): Promise<void> {
-  const outputDir = _statusFeaturesDeps.projectOutputDir(basename(projectDir), undefined);
+  const config = await _statusFeaturesDeps.loadConfig(projectDir).catch(() => null);
+  const projectKey = config?.name?.trim() || basename(projectDir);
+  const outputDir = _statusFeaturesDeps.projectOutputDir(projectKey, config?.outputDir);
   const featuresDir = join(outputDir, "features");
 
   if (!existsSync(featuresDir)) {
@@ -442,7 +448,9 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     let featureDir: string;
     if (options.dir) {
       const projectDir = resolve(options.dir);
-      const outputDir = _statusFeaturesDeps.projectOutputDir(basename(projectDir), undefined);
+      const config = await _statusFeaturesDeps.loadConfig(projectDir).catch(() => null);
+      const projectKey = config?.name?.trim() || basename(projectDir);
+      const outputDir = _statusFeaturesDeps.projectOutputDir(projectKey, config?.outputDir);
       featureDir = join(outputDir, "features", options.feature);
     } else {
       const resolved = resolveProject({ feature: options.feature });

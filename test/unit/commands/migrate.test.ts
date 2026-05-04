@@ -49,16 +49,28 @@ describe("detectGeneratedContent", () => {
 
 describe("migrateCommand --reclaim", () => {
   it("throws when name does not exist in ~/.nax/", async () => {
-    const err = await migrateCommand({ workdir: "/tmp", reclaim: "__nonexistent_test_9999__" }).catch((e) => e);
+    const err = await migrateCommand({ workdir: "/tmp", reclaim: "nonexistent-test-9999" }).catch((e) => e);
     expect(err).toBeInstanceOf(NaxError);
     expect((err as NaxError).code).toBe("MIGRATE_RECLAIM_NOT_FOUND");
+  });
+
+  it("throws MIGRATE_INVALID_NAME when name contains path traversal characters", async () => {
+    const err = await migrateCommand({ workdir: "/tmp", reclaim: "../etc" }).catch((e) => e);
+    expect(err).toBeInstanceOf(NaxError);
+    expect((err as NaxError).code).toBe("MIGRATE_INVALID_NAME");
   });
 });
 
 describe("migrateCommand --merge", () => {
   it("throws when identity does not exist", async () => {
-    const err = await migrateCommand({ workdir: "/tmp", merge: "__nonexistent_test_9999__" }).catch((e) => e);
+    const err = await migrateCommand({ workdir: "/tmp", merge: "nonexistent-test-9999" }).catch((e) => e);
     expect(err).toBeInstanceOf(NaxError);
     expect((err as NaxError).code).toBe("MIGRATE_MERGE_NOT_FOUND");
+  });
+
+  it("throws MIGRATE_INVALID_NAME when name contains path traversal characters", async () => {
+    const err = await migrateCommand({ workdir: "/tmp", merge: "../etc" }).catch((e) => e);
+    expect(err).toBeInstanceOf(NaxError);
+    expect((err as NaxError).code).toBe("MIGRATE_INVALID_NAME");
   });
 });

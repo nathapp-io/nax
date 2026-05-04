@@ -6,10 +6,18 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
+import { loadConfig } from "../config";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type { LogEntry } from "../logger/types";
 import { projectOutputDir } from "../runtime";
+
+async function resolveOutputDir(workdir: string, override?: string): Promise<string> {
+  if (override) return override;
+  const config = await loadConfig(workdir).catch(() => null);
+  const projectKey = config?.name?.trim() || basename(workdir);
+  return projectOutputDir(projectKey, config?.outputDir);
+}
 
 /**
  * Options for runs list command.
@@ -69,7 +77,7 @@ export async function runsListCommand(options: RunsListOptions): Promise<void> {
   const logger = getLogger();
   const { feature, workdir } = options;
 
-  const outputDir = options.outputDir ?? projectOutputDir(basename(workdir), undefined);
+  const outputDir = await resolveOutputDir(workdir, options.outputDir);
   const runsDir = join(outputDir, "features", feature, "runs");
 
   if (!existsSync(runsDir)) {
@@ -132,7 +140,7 @@ export async function runsShowCommand(options: RunsShowOptions): Promise<void> {
   const logger = getLogger();
   const { runId, feature, workdir } = options;
 
-  const outputDir = options.outputDir ?? projectOutputDir(basename(workdir), undefined);
+  const outputDir = await resolveOutputDir(workdir, options.outputDir);
   const logPath = join(outputDir, "features", feature, "runs", `${runId}.jsonl`);
 
   if (!existsSync(logPath)) {

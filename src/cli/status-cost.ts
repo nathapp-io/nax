@@ -5,9 +5,16 @@
  */
 
 import { basename } from "node:path";
+import { loadConfig } from "../config";
 import { getLogger } from "../logger";
 import { calculateAggregateMetrics, getLastRun, loadRunMetrics } from "../metrics";
 import { projectOutputDir } from "../runtime";
+
+async function resolveOutputDir(workdir: string): Promise<string> {
+  const config = await loadConfig(workdir).catch(() => null);
+  const projectKey = config?.name?.trim() || basename(workdir);
+  return projectOutputDir(projectKey, config?.outputDir);
+}
 
 /**
  * Display aggregate cost metrics across all runs.
@@ -21,7 +28,7 @@ import { projectOutputDir } from "../runtime";
  */
 export async function displayCostMetrics(workdir: string): Promise<void> {
   const logger = getLogger();
-  const outputDir = projectOutputDir(basename(workdir), undefined);
+  const outputDir = await resolveOutputDir(workdir);
   const runs = await loadRunMetrics(outputDir);
 
   if (runs.length === 0) {
@@ -54,7 +61,7 @@ export async function displayCostMetrics(workdir: string): Promise<void> {
  */
 export async function displayLastRunMetrics(workdir: string): Promise<void> {
   const logger = getLogger();
-  const outputDir = projectOutputDir(basename(workdir), undefined);
+  const outputDir = await resolveOutputDir(workdir);
   const runs = await loadRunMetrics(outputDir);
 
   if (runs.length === 0) {
@@ -121,7 +128,7 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
  */
 export async function displayModelEfficiency(workdir: string): Promise<void> {
   const logger = getLogger();
-  const outputDir = projectOutputDir(basename(workdir), undefined);
+  const outputDir = await resolveOutputDir(workdir);
   const runs = await loadRunMetrics(outputDir);
 
   if (runs.length === 0) {

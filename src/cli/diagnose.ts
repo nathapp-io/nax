@@ -7,7 +7,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { findProjectDir } from "../config";
+import { findProjectDir, loadConfig } from "../config";
 import type { NaxStatusFile } from "../execution/status-file";
 import { getLogger } from "../logger";
 import { loadPRD } from "../prd";
@@ -17,6 +17,7 @@ import { formatReport } from "./diagnose-formatter";
 
 export const _diagnoseDeps = {
   projectOutputDir: projectOutputDir as typeof projectOutputDir,
+  loadConfig: loadConfig as typeof loadConfig,
 };
 
 export interface DiagnoseOptions {
@@ -145,7 +146,9 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
   }
   if (!projectDir) throw new Error("Not in a nax project directory");
 
-  const outputDir = _diagnoseDeps.projectOutputDir(basename(projectDir), undefined);
+  const config = await _diagnoseDeps.loadConfig(projectDir).catch(() => null);
+  const projectKey = config?.name?.trim() || basename(projectDir);
+  const outputDir = _diagnoseDeps.projectOutputDir(projectKey, config?.outputDir);
 
   let feature = options.feature;
   if (!feature) {

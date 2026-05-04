@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, rename } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { validateProjectName } from "../cli/init";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { readProjectIdentity, writeProjectIdentity } from "../runtime";
@@ -129,12 +130,6 @@ export interface MigrateOptions {
   workdir: string;
   /** When true, log intended moves without touching the filesystem. */
   dryRun?: boolean;
-  /**
-   * When true, copy+delete instead of rename when the source and destination
-   * are on different filesystems (EXDEV). Slower and non-atomic; prefer
-   * configuring outputDir to a same-FS path instead.
-   */
-  crossFs?: boolean;
   /** Project name to archive-and-free from ~/.nax/<name>/. */
   reclaim?: string;
   /** Project name to rewrite identity for current workdir. */
@@ -149,6 +144,17 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
 
   // --reclaim: archive ~/.nax/<name>/ to ~/.nax/_archive/<name>-<ts>/
   if (options.reclaim) {
+    const reclaimValidation = validateProjectName(options.reclaim);
+    if (!reclaimValidation.valid) {
+      throw new NaxError(
+        `Invalid project name "${options.reclaim}": ${reclaimValidation.error}`,
+        "MIGRATE_INVALID_NAME",
+        {
+          stage: "migrate",
+          name: options.reclaim,
+        },
+      );
+    }
     const src = path.join(os.homedir(), ".nax", options.reclaim);
     if (!existsSync(src)) {
       throw new NaxError(`Nothing to reclaim: ~/.nax/${options.reclaim} does not exist`, "MIGRATE_RECLAIM_NOT_FOUND", {
@@ -166,6 +172,13 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
 
   // --merge: rewrite identity to point to current workdir
   if (options.merge) {
+    const mergeValidation = validateProjectName(options.merge);
+    if (!mergeValidation.valid) {
+      throw new NaxError(`Invalid project name "${options.merge}": ${mergeValidation.error}`, "MIGRATE_INVALID_NAME", {
+        stage: "migrate",
+        name: options.merge,
+      });
+    }
     const existing = await readProjectIdentity(options.merge);
     if (!existing) {
       throw new NaxError(`Cannot merge: ~/.nax/${options.merge}/.identity not found`, "MIGRATE_MERGE_NOT_FOUND", {
@@ -247,14 +260,13 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
       await rename(candidate.srcPath, dest);
     } catch (err: unknown) {
       const isXdev = err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "EXDEV";
-      if (isXdev && !options.crossFs) {
+      if (isXdev) {
         throw new NaxError(
           [
             "Cross-filesystem migration detected.",
             `  Source:      ${candidate.srcPath}`,
             `  Destination: ${dest}`,
-            "  Re-run with --cross-fs to copy+delete (slower, not atomic).",
-            "  Alternative: set outputDir in .nax/config.json to a path on the source filesystem.",
+            "  Set outputDir in .nax/config.json to a path on the same filesystem as .nax/.",
           ].join("\n"),
           "MIGRATE_CROSS_FS",
           { stage: "migrate", src: candidate.srcPath, dest },
