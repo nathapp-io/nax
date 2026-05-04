@@ -5,12 +5,13 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import type { NaxStatusFile } from "../execution/status-file";
 import { listPendingInteractions, loadPendingInteraction } from "../interaction";
 import { countStories, loadPRD } from "../prd";
+import { projectOutputDir } from "../runtime";
 
 /** Options for feature status command */
 export interface FeatureStatusOptions {
@@ -68,7 +69,8 @@ async function loadStatusFile(featureDir: string): Promise<NaxStatusFile | null>
 
 /** Load project-level status.json (if it exists) */
 async function loadProjectStatusFile(projectDir: string): Promise<NaxStatusFile | null> {
-  const statusPath = join(projectDir, ".nax", "status.json");
+  const outputDir = projectOutputDir(basename(projectDir), undefined);
+  const statusPath = join(outputDir, "status.json");
   if (!existsSync(statusPath)) {
     return null;
   }
@@ -160,7 +162,8 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
 
 /** Display all features table */
 async function displayAllFeatures(projectDir: string): Promise<void> {
-  const featuresDir = join(projectDir, ".nax", "features");
+  const outputDir = projectOutputDir(basename(projectDir), undefined);
+  const featuresDir = join(outputDir, "features");
 
   if (!existsSync(featuresDir)) {
     console.log(chalk.dim("No features found."));

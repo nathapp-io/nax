@@ -6,11 +6,12 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { findProjectDir } from "../config";
 import type { NaxStatusFile } from "../execution/status-file";
 import { getLogger } from "../logger";
 import { loadPRD } from "../prd";
+import { projectOutputDir } from "../runtime";
 import { diagnoseStories, generateRecommendations } from "./diagnose-analysis";
 import { formatReport } from "./diagnose-formatter";
 
@@ -85,8 +86,8 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-async function loadStatusFile(workdir: string): Promise<NaxStatusFile | null> {
-  const statusPath = join(workdir, ".nax", "status.json");
+async function loadStatusFile(outputDir: string): Promise<NaxStatusFile | null> {
+  const statusPath = join(outputDir, "status.json");
   if (!existsSync(statusPath)) return null;
   try {
     return (await Bun.file(statusPath).json()) as NaxStatusFile;
@@ -140,13 +141,15 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
   }
   if (!projectDir) throw new Error("Not in a nax project directory");
 
+  const outputDir = projectOutputDir(basename(projectDir), undefined);
+
   let feature = options.feature;
   if (!feature) {
-    const status = await loadStatusFile(projectDir);
+    const status = await loadStatusFile(outputDir);
     if (status) {
       feature = status.run.feature;
     } else {
-      const featuresDir = join(projectDir, ".nax", "features");
+      const featuresDir = join(outputDir, "features");
       if (!existsSync(featuresDir)) throw new Error("No features found in project");
       const features = readdirSync(featuresDir, { withFileTypes: true })
         .filter((e) => e.isDirectory())
@@ -157,12 +160,12 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
     }
   }
 
-  const featureDir = join(projectDir, ".nax", "features", feature);
+  const featureDir = join(outputDir, "features", feature);
   const prdPath = join(featureDir, "prd.json");
   if (!existsSync(prdPath)) throw new Error(`Feature not found: ${feature}`);
 
   const prd = await loadPRD(prdPath);
-  const status = await loadStatusFile(projectDir);
+  const status = await loadStatusFile(outputDir);
   const lockCheck = await checkLock(projectDir);
   const commitCount = await countCommitsSince(projectDir, status?.run.startedAt);
 
