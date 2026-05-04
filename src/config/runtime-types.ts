@@ -561,9 +561,22 @@ export interface NaxConfig {
   profile: string;
 }
 
+export interface CuratorThresholds {
+  repeatedFinding: number;
+  emptyKeyword: number;
+  rectifyAttempts: number;
+  escalationChain: number;
+  staleChunkRuns: number;
+  unchangedOutcome: number;
+}
+
 export interface CuratorConfig {
+  /** Whether curator is enabled (default: true) */
+  enabled?: boolean;
   /** Path to the rollup JSONL file for aggregated run results */
   rollupPath?: string;
+  /** Thresholds for observation filtering */
+  thresholds?: CuratorThresholds;
 }
 
 export type {

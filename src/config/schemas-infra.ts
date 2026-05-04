@@ -183,8 +183,31 @@ export const GenerateConfigSchema = z.object({
   agents: z.array(z.enum(VALID_AGENT_TYPES)).optional(),
 });
 
+export const CuratorThresholdsSchema = z.object({
+  repeatedFinding: z.number().int().nonnegative().default(3),
+  emptyKeyword: z.number().int().nonnegative().default(2),
+  rectifyAttempts: z.number().int().nonnegative().default(3),
+  escalationChain: z.number().int().nonnegative().default(2),
+  staleChunkRuns: z.number().int().nonnegative().default(5),
+  unchangedOutcome: z.number().int().nonnegative().default(2),
+});
+
 export const CuratorConfigSchema = z.object({
-  rollupPath: z.string().optional(),
+  enabled: z.boolean().default(true),
+  rollupPath: z
+    .string()
+    .optional()
+    .refine((v) => v === undefined || v.startsWith("/") || v.startsWith("~/"), {
+      message: "rollupPath must be absolute or start with ~/",
+    }),
+  thresholds: CuratorThresholdsSchema.default({
+    repeatedFinding: 3,
+    emptyKeyword: 2,
+    rectifyAttempts: 3,
+    escalationChain: 2,
+    staleChunkRuns: 5,
+    unchangedOutcome: 2,
+  }),
 });
 
 // Re-export ModelTierSchema for consumers that currently import it from schemas-infra

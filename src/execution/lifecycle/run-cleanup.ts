@@ -40,13 +40,41 @@ export interface RunCleanupOptions {
    * run:completed was never emitted.
    */
   runCompleted?: boolean;
+  /** Project output directory (for curator and other plugins) */
+  outputDir?: string;
+  /** Global output directory (for curator and other plugins) */
+  globalDir?: string;
+  /** Project key (for curator and other plugins) */
+  projectKey?: string;
+  /** Path to curator rollup file (for curator plugin) */
+  curatorRollupPath?: string;
+  /** Path to active run JSONL (for curator and other plugins) */
+  logFilePath?: string;
+  /** Full nax config (for curator and other plugins) */
+  config?: unknown;
 }
 
 /**
  * Build PostRunContext from RunCleanupOptions and run duration.
  */
 export function buildPostRunContext(opts: RunCleanupOptions, durationMs: number, logger: PluginLogger): PostRunContext {
-  const { runId, feature, workdir, prdPath, branch, version, totalCost, storiesCompleted, prd } = opts;
+  const {
+    runId,
+    feature,
+    workdir,
+    prdPath,
+    branch,
+    version,
+    totalCost,
+    storiesCompleted,
+    prd,
+    outputDir,
+    globalDir,
+    projectKey,
+    curatorRollupPath,
+    logFilePath,
+    config,
+  } = opts;
   const counts = countStories(prd);
 
   return {
@@ -67,6 +95,12 @@ export function buildPostRunContext(opts: RunCleanupOptions, durationMs: number,
     stories: prd.userStories,
     pluginConfig: {},
     logger,
+    outputDir,
+    globalDir,
+    projectKey,
+    curatorRollupPath,
+    logFilePath,
+    config,
   };
 }
 
