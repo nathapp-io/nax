@@ -208,4 +208,10 @@ describe("ReviewPromptBuilder.jsonRetryCondensed()", () => {
     expect(result).toContain("Include ALL findings with severity \"error\"");
     expect(result).toContain("at most 0 additional findings");
   });
+
+  test("condensed retry schema includes verifiedBy (Bug 4 fix: verifiedBy must not be dropped)", () => {
+    const result = ReviewPromptBuilder.jsonRetryCondensed();
+    expect(result).toContain('"verifiedBy"');
+    expect(result).toContain('"observed"');
+  });
 });

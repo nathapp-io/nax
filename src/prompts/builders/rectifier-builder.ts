@@ -14,6 +14,7 @@
 
 import type { RectificationConfig } from "../../config";
 import type { UserStory } from "../../prd";
+import { isBlockingSeverity } from "../../review/severity";
 import type { ReviewCheckName, ReviewCheckResult } from "../../review/types";
 import { formatFailureSummary } from "../../verification/parser";
 import type { TestFailure } from "../../verification/types";
@@ -41,6 +42,10 @@ export type { FailureRecord, ReviewFinding };
 export type RectifierTrigger = "tdd-test-failure" | "tdd-suite-failure" | "verify-failure" | "review-findings";
 
 type RectificationPriority = "compile-build" | "lint" | "behavior" | "semantic" | "architectural";
+
+interface RectifierRenderOpts {
+  blockingThreshold?: "error" | "warning" | "info";
+}
 
 interface PriorityBucket {
   priority: number;
@@ -106,7 +111,7 @@ function assertNever(value: never): never {
   throw new Error(`Unhandled review check category: ${String(value)}`);
 }
 
-function renderCheckBlock(check: ReviewCheckResult): string {
+function renderCheckBlock(check: ReviewCheckResult, opts?: RectifierRenderOpts): string {
   const parts: string[] = [];
   parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
   const truncated = check.output.length > 4000;
@@ -115,9 +120,13 @@ function renderCheckBlock(check: ReviewCheckResult): string {
     : check.output;
   parts.push(`\`\`\`\n${output}\n\`\`\`\n`);
 
-  if (check.findings?.length) {
+  // Defensive filter — only blocking-severity findings drive the fix prompt,
+  // even if the caller populated `findings` with mixed severities.
+  const threshold = opts?.blockingThreshold ?? "error";
+  const blocking = (check.findings ?? []).filter((f) => isBlockingSeverity(f.severity, threshold));
+  if (blocking.length > 0) {
     parts.push("Structured findings:\n");
-    for (const f of check.findings) {
+    for (const f of blocking) {
       parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
     }
   }
@@ -125,7 +134,7 @@ function renderCheckBlock(check: ReviewCheckResult): string {
   return parts.join("\n");
 }
 
-function renderPrioritizedFailures(failedChecks: Readonly<ReviewCheckResult[]>): string {
+function renderPrioritizedFailures(failedChecks: Readonly<ReviewCheckResult[]>, opts?: RectifierRenderOpts): string {
   const grouped: Readonly<Record<RectificationPriority, Readonly<ReviewCheckResult[]>>> = {
     "compile-build": failedChecks.filter((check) => priorityForCheck(check.check) === "compile-build"),
     lint: failedChecks.filter((check) => priorityForCheck(check.check) === "lint"),
@@ -148,7 +157,7 @@ function renderPrioritizedFailures(failedChecks: Readonly<ReviewCheckResult[]>):
     sections.push(`## Priority ${bucket.priority} — ${bucket.heading}\n`);
     sections.push(`${bucket.guidance}\n`);
     for (const check of checks) {
-      sections.push(renderCheckBlock(check));
+      sections.push(renderCheckBlock(check, opts));
     }
   }
 
@@ -229,19 +238,26 @@ export class RectifierPromptBuilder {
   static testWriterRectification(
     findings: ReviewCheckResult[],
     story: UserStory,
-    options?: { mode?: "fix-test-files" | "write-failing-test" },
+    options?: { mode?: "fix-test-files" | "write-failing-test"; blockingThreshold?: "error" | "warning" | "info" },
   ): string {
     if (options?.mode === "write-failing-test") {
-      return RectifierPromptBuilder._testWriterWriteFailingTest(findings, story);
+      return RectifierPromptBuilder._testWriterWriteFailingTest(findings, story, options);
     }
-    return RectifierPromptBuilder._testWriterFixTestFiles(findings, story);
+    return RectifierPromptBuilder._testWriterFixTestFiles(findings, story, options);
   }
 
-  private static _testWriterWriteFailingTest(findings: ReviewCheckResult[], story: UserStory): string {
+  private static _testWriterWriteFailingTest(
+    findings: ReviewCheckResult[],
+    story: UserStory,
+    opts?: { blockingThreshold?: "error" | "warning" | "info" },
+  ): string {
+    const threshold = opts?.blockingThreshold ?? "error";
     const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
     const findingLines = findings
       .flatMap((c) =>
-        (c.findings ?? []).map((f) => `- [${f.severity}] ${f.file ?? "unknown"}:${f.line ?? "?"} — ${f.message}`),
+        (c.findings ?? [])
+          .filter((f) => isBlockingSeverity(f.severity, threshold))
+          .map((f) => `- [${f.severity}] ${f.file ?? "unknown"}:${f.line ?? "?"} — ${f.message}`),
       )
       .join("\n");
 
@@ -270,7 +286,12 @@ Rules:
 Commit your new tests when done.${scopeConstraint}`;
   }
 
-  private static _testWriterFixTestFiles(testFileFindings: ReviewCheckResult[], story: UserStory): string {
+  private static _testWriterFixTestFiles(
+    testFileFindings: ReviewCheckResult[],
+    story: UserStory,
+    opts?: { blockingThreshold?: "error" | "warning" | "info" },
+  ): string {
+    const threshold = opts?.blockingThreshold ?? "error";
     const scopeConstraint = story.workdir
       ? `\n\nIMPORTANT: Only modify test files within \`${story.workdir}/\`. Do NOT touch source files.`
       : "\n\nIMPORTANT: Only modify test files. Do NOT touch source implementation files.";
@@ -294,8 +315,11 @@ Commit your new tests when done.${scopeConstraint}`;
     const findingLines = testFileFindings
       .flatMap((c) => {
         if (c.findings && c.findings.length > 0) {
-          return c.findings.map((f) => `- [${f.severity}] ${f.file}:${f.line} — ${f.message}`);
+          return c.findings
+            .filter((f) => isBlockingSeverity(f.severity, threshold))
+            .map((f) => `- [${f.severity}] ${f.file}:${f.line} — ${f.message}`);
         }
+        // Lint raw output has no per-line severity, so the blocking filter above does not apply here.
         if (c.check === "lint" && c.output.trim()) {
           return [c.output.trim()];
         }
@@ -338,7 +362,12 @@ Commit your fixes when done.${scopeConstraint}`;
    * after an agent run, we re-prompt once without counting the attempt, forcing the
    * agent to either edit files or emit UNRESOLVED.
    */
-  static noOpReprompt(failedChecks: ReviewCheckResult[], noOpCount: number, maxNoOpReprompts: number): string {
+  static noOpReprompt(
+    failedChecks: ReviewCheckResult[],
+    noOpCount: number,
+    maxNoOpReprompts: number,
+    opts?: RectifierRenderOpts,
+  ): string {
     const parts: string[] = [];
 
     parts.push(
@@ -358,6 +387,7 @@ Commit your fixes when done.${scopeConstraint}`;
 
     parts.push("## Remaining Review Failures\n\n");
 
+    const threshold = opts?.blockingThreshold ?? "error";
     for (const check of failedChecks) {
       parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
       const truncated = check.output.length > 4000;
@@ -365,9 +395,10 @@ Commit your fixes when done.${scopeConstraint}`;
         ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
         : check.output;
       parts.push(`\`\`\`\n${output}\n\`\`\`\n\n`);
-      if (check.findings?.length) {
+      const blocking = (check.findings ?? []).filter((f) => isBlockingSeverity(f.severity, threshold));
+      if (blocking.length > 0) {
         parts.push("Structured findings:\n");
-        for (const f of check.findings) {
+        for (const f of blocking) {
           parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
         }
         parts.push("\n");

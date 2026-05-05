@@ -35,8 +35,9 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
 
 const PASSING_LLM_RESPONSE = JSON.stringify({ passed: true, findings: [] });
 
-// The ACP adapter tail-truncates at MAX_AGENT_OUTPUT_CHARS (5000). A response
-// at 4950 chars is within 100 of the cap — looksLikeTruncatedJson() returns true.
+// A response at 4950 chars is within 100 of the cap, so looksLikeTruncatedJson() returns true.
+// This fixture is intentionally NOT valid JSON — the parser-first logic still retries unparseable
+// near-cap responses. Valid JSON near the cap is the Bug 4 regression scenario (see below).
 const AT_CAP_UNPARSEABLE = "x".repeat(4950);
 
 // ─── Logger mock helpers ─────────────────────────────────────────────────────
@@ -282,5 +283,82 @@ describe("semanticReviewOp.hopBody — truncation logging", () => {
     expect(truncatedLog).toBeUndefined();
 
     loggerSpy.mockRestore();
+  });
+});
+
+describe("semanticReviewOp.hopBody — Bug 4 regression: parser-first, length is a hint not a veto", () => {
+  test("parseable near-cap response is NOT retried (Bug 4 regression)", async () => {
+    // Build a valid, parseable response that is near the output cap.
+    const validNearCap = JSON.stringify({
+      passed: false,
+      findings: Array.from({ length: 7 }, (_, i) => ({
+        severity: "error",
+        file: `src/file${i}.ts`,
+        line: 10 + i,
+        issue: "x".repeat(500),
+        suggestion: "y".repeat(150),
+        verifiedBy: { command: "read", file: `src/file${i}.ts`, line: 10 + i, observed: "..." },
+      })),
+    });
+    expect(validNearCap.length).toBeGreaterThanOrEqual(4900);
+
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      return { output: validNearCap, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    const result = await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    } as any);
+
+    // Parser accepted the response — no retry should fire.
+    expect(sendCalls).toHaveLength(1);
+    expect(result.output).toBe(validNearCap);
+  });
+
+  test("unparseable near-cap response still triggers condensed retry", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    } as any);
+
+    expect(sendCalls).toHaveLength(2);
+    expect(sendCalls[1]).toContain("truncated");
+  });
+
+  test("parseable response with invalid shape triggers standard (non-condensed) retry", async () => {
+    // Parseable JSON but missing required `findings` array — invalid shape.
+    const wrongShape = JSON.stringify({ passed: true });
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: wrongShape, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    } as any);
+
+    expect(sendCalls).toHaveLength(2);
+    // Standard retry — no "truncated" wording.
+    expect(sendCalls[1]).not.toContain("truncated");
   });
 });

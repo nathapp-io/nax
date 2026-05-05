@@ -169,7 +169,13 @@ ${SEMANTIC_OUTPUT_SCHEMA}`;
       threshold === "info"
         ? "If your response would still exceed limits, prioritize the highest-severity findings first."
         : `Below that, include at most ${advisoryCap} additional findings (highest severity first).`;
-    return `Your previous response was truncated and could not be parsed as valid JSON.\nRespond with a condensed summary:\n- ${blockingClause}\n- ${advisoryClause}\nOutput ONLY a complete, valid JSON object. It must start with { and end with }.\nSchema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string}]}`;
+    return `Your previous response was truncated and could not be parsed as valid JSON.
+Respond with a condensed summary:
+- ${blockingClause}
+- ${advisoryClause}
+- Keep \`verifiedBy\` for every finding. If \`verifiedBy.observed\` is long, abbreviate it to one line — never drop the field.
+Output ONLY a complete, valid JSON object. It must start with { and end with }.
+Schema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string, "verifiedBy": {"command": string, "file": string, "line": number, "observed": string}}]}`;
   }
 }
 

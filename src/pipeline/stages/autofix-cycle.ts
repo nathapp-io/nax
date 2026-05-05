@@ -129,9 +129,18 @@ function buildAutofixStrategies(
         (f) => (f.fixTarget ?? "source") === "source" && f.source === "adversarial-review",
       );
       if (hasSourceBug) {
-        return { failedChecks: collectAdversarialSourceChecks(ctx), story: ctx.story, mode: "write-failing-test" };
+        return {
+          failedChecks: collectAdversarialSourceChecks(ctx),
+          story: ctx.story,
+          mode: "write-failing-test",
+          blockingThreshold: ctx.config.review?.blockingThreshold,
+        };
       }
-      return { failedChecks: collectTestTargetedChecks(ctx), story: ctx.story };
+      return {
+        failedChecks: collectTestTargetedChecks(ctx),
+        story: ctx.story,
+        blockingThreshold: ctx.config.review?.blockingThreshold,
+      };
     },
   };
 

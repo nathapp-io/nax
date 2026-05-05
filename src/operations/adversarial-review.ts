@@ -1,15 +1,13 @@
-import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
-import { getSafeLogger } from "../logger";
-import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
+import { AdversarialReviewPromptBuilder } from "../prompts";
 import type { TestInventory } from "../prompts";
 import { validateAdversarialShape } from "../review/adversarial-helpers";
-import { looksLikeTruncatedJson } from "../review/truncation";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { HopBody, RunOperation } from "./types";
+import { makeReviewRetryHopBody } from "./_review-retry";
+import type { RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
 
@@ -45,29 +43,10 @@ export interface AdversarialReviewOutput {
 
 const FAIL_OPEN: AdversarialReviewOutput = { passed: true, findings: [], failOpen: true };
 
-/** Same-session JSON-parse retry. See semantic-review.ts for rationale. */
-const adversarialReviewHopBody: HopBody<AdversarialReviewInput> = async (initialPrompt, ctx) => {
-  const first = await ctx.send(initialPrompt);
-  const isTruncated = looksLikeTruncatedJson(first.output);
-  const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
-  if (!isTruncated && parsed && validateAdversarialShape(parsed)) return first;
-
-  const retryPrompt = isTruncated
-    ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: ctx.input.blockingThreshold })
-    : ReviewPromptBuilder.jsonRetry();
-  if (isTruncated) {
-    getSafeLogger()?.warn("adversarial", "JSON parse retry — original response truncated", {
-      storyId: ctx.input.story.id,
-      originalByteSize: first.output.length,
-      blockingThreshold: ctx.input.blockingThreshold ?? "error",
-    });
-  }
-  const retry: TurnResult = await ctx.send(retryPrompt);
-  return {
-    ...retry,
-    estimatedCostUsd: (first.estimatedCostUsd ?? 0) + (retry.estimatedCostUsd ?? 0),
-  };
-};
+const adversarialReviewHopBody = makeReviewRetryHopBody<AdversarialReviewInput>(
+  (parsed) => validateAdversarialShape(parsed) !== null,
+  "adversarial",
+);
 
 export const adversarialReviewOp: RunOperation<AdversarialReviewInput, AdversarialReviewOutput, ReviewConfig> = {
   kind: "run",

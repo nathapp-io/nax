@@ -7,7 +7,8 @@
 
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
-import { SEVERITY_RANK } from "./severity";
+import { isBlockingSeverity } from "./severity";
+export { isBlockingSeverity };
 
 export interface AdversarialLLMFinding {
   severity: string;
@@ -66,14 +67,6 @@ export function normalizeSeverity(sev: string): FindingSeverity {
   )
     return sev;
   return "info";
-}
-
-/**
- * Check whether a normalized finding severity meets or exceeds the blocking threshold.
- * threshold defaults to "error" — only error/critical block unless configured stricter.
- */
-export function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {
-  return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
 }
 
 /** Convert AdversarialLLMFinding[] to Finding[] with adversarial-review source. */
