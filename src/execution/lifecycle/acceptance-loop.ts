@@ -450,10 +450,9 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     // ── 5. Run acceptance fix cycle ────────────────────────────────────
     const cycleResult = await runAcceptanceFixCycle(ctx, prd, failures, diagnosis, testFileContent, acceptanceTestPath);
-    // @design Cost telemetry gap: FixApplied.costUsd is not yet populated by strategies
-    // because callOp does not surface agent cost in its return type. The plumbing
-    // (FixCycleResult.costUsd + acceptance-loop accumulation) is in place; once
-    // strategies extract cost from op output, the totalCost will reflect fix cycle spend.
+    // Cost is captured at the dispatch-bus layer (runtime.costAggregator); the local
+    // accumulation here is best-effort and may undercount. The authoritative total
+    // is reconciled in handleRunCompletion via Math.max(local, aggregator).
     totalCost += cycleResult.costUsd ?? 0;
     // "resolved" is the canonical success exit; also treat empty finalFindings as success
     // in case the last validate pass cleared all findings before runFixCycle emitted "resolved".
