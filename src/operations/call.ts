@@ -7,12 +7,13 @@ import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { composeSections, join } from "../prompts/compose";
+import { cancellableDelay } from "../utils/bun-deps";
 import { buildHopCallback } from "./build-hop-callback";
 import type { BuildContext, CallContext, CompleteOperation, Operation, RunOperation, VerifyContext } from "./types";
 
 /** Injectable deps for testability — mirrors _agentManagerDeps pattern. */
 export const _callOpDeps = {
-  sleep: (ms: number) => Bun.sleep(ms),
+  sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
 };
 
 /** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
@@ -135,6 +136,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
           storyId: ctx.storyId,
         });
         if (!decision.retry) throw err;
+        if (ctx.runtime.signal?.aborted) throw err;
         getSafeLogger()?.warn(
           "call-op",
           `LLM call failed (attempt ${attempt + 1}), retrying in ${decision.delayMs}ms`,
@@ -145,7 +147,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
             delayMs: decision.delayMs,
           },
         );
-        await _callOpDeps.sleep(decision.delayMs);
+        await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
+        if (ctx.runtime.signal?.aborted) throw err;
         attempt++;
       }
     }
