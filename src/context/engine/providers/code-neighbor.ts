@@ -42,6 +42,8 @@ export interface CodeNeighborProviderOptions {
   /**
    * Maximum files scanned per directory during reverse-dep glob (#895).
    * Default: 500 (raised from 200; language-aware glob reduces noise).
+   * Applied per-directory: with crossPackageDepth > 0, each workspace package
+   * dir counts separately, so effective total can be N × maxGlobFiles.
    */
   maxGlobFiles?: number;
 }
@@ -554,17 +556,16 @@ export class CodeNeighborProvider implements IContextProvider {
     }
 
     const header = "## Code Neighbors\n\nRelated files (imports, reverse-deps, tests):";
-    let rawContent = `${header}\n\n${sections.join("\n\n")}`;
+    const rawContent = `${header}\n\n${sections.join("\n\n")}`;
 
-    if (anyTruncated) {
-      rawContent +=
-        `\n\n> Note: reverse-dep scan capped at ${this.maxGlobFiles} files; some neighbors may be missing.` +
-        "\n> Increase `context.v2.providers.maxGlobFiles` or narrow `sourceGlob` to widen.";
-    }
-
-    // Cap content to avoid overrunning token budget
+    // Cap body first so the truncation note (when present) is never sliced off.
     const maxChars = MAX_CHUNK_TOKENS * 4;
-    const content = rawContent.length > maxChars ? rawContent.slice(0, maxChars) : rawContent;
+    const body = rawContent.length > maxChars ? rawContent.slice(0, maxChars) : rawContent;
+    const truncationNote = anyTruncated
+      ? `\n\n> Note: reverse-dep scan capped at ${this.maxGlobFiles} files; some neighbors may be missing.` +
+        `\n> Increase \`context.v2.providers.maxGlobFiles\` or set \`sourceGlob\` to a narrower pattern (e.g. \`**/*.go\`) to reduce the scan footprint.`
+      : "";
+    const content = body + truncationNote;
     const tokens = Math.ceil(content.length / 4);
 
     const chunk: RawChunk = {

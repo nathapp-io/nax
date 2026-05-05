@@ -84,7 +84,7 @@ export function createContextToolRuntime(options: {
             getBudget(tool),
             tool.maxTokensPerCall,
             patterns,
-            undefined,
+            story.id,
             config.context?.v2?.providers,
           );
         }
