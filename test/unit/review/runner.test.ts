@@ -265,10 +265,10 @@ describe("runReview — git-clean named check (2C)", () => {
     expect(result.checks[0]).toMatchObject({
       check: "git-clean",
       success: false,
-      command: "git status --porcelain",
+      command: "git diff --name-only HEAD",
       exitCode: 1,
     });
-    expect(result.checks[0]?.output).toContain("?? src/foo.ts");
+    expect(result.checks[0]?.output).toContain("src/foo.ts");
   });
 
   test("git-clean check has no findings field (non-LLM check)", async () => {

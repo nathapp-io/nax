@@ -73,7 +73,7 @@ describe("autofixStage", () => {
     _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
 
     const ctx = makeCtx({
-      reviewResult: makeReviewResult(false),
+      reviewResult: makeFailedReviewResult([{ check: "lint", output: "Unexpected token" }]),
       config: {
         ...DEFAULT_CONFIG,
         quality: {
@@ -157,7 +157,7 @@ describe("autofixStage", () => {
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
 
-    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
     const result = await autofixStage.execute(ctx);
 
     Object.assign(_autofixDeps, saved);
@@ -230,7 +230,7 @@ describe("autofixStage", () => {
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
 
-    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "typecheck" }]) });
     const result = await autofixStage.execute(ctx);
 
     Object.assign(_autofixDeps, saved);

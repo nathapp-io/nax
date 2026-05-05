@@ -309,9 +309,9 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         {
           check: "git-clean",
           success: false,
-          command: "git status --porcelain",
+          command: "git diff --name-only HEAD",
           exitCode: 1,
-          output: uncommittedFiles.map((f) => `?? ${f}`).join("\n"),
+          output: uncommittedFiles.join("\n"),
           durationMs: 0,
         },
       ],

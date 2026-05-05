@@ -22,12 +22,17 @@
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
-import type { ReviewCheckResult } from "../../review/types";
+import type { ReviewCheckName, ReviewCheckResult } from "../../review/types";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { runAgentRectification } from "./autofix-agent";
 import { splitFindingsByScope } from "./autofix-scope-split";
 import { runTestWriterRectification } from "./autofix-test-writer";
+
+// Checks that cannot be resolved by agent rectification. Mechanical pre-checks that
+// require human intervention (e.g. commit the dirty files). New mechanical pre-checks
+// must opt in explicitly — the set is intentionally closed.
+const NON_FIXABLE_BY_RECTIFICATION = new Set<ReviewCheckName>(["git-clean"]);
 
 export const autofixStage: PipelineStage = {
   name: "autofix",
@@ -63,10 +68,6 @@ export const autofixStage: PipelineStage = {
     const failedCheckNames = new Set((reviewResult.checks ?? []).filter((c) => !c.success).map((c) => c.check));
     const hasLintFailure = failedCheckNames.has("lint");
 
-    // Checks that autofix cannot resolve via agent rectification — mechanical pre-checks
-    // that require human intervention (e.g. commit the dirty file). Closed set: new
-    // mechanical pre-checks must opt in explicitly.
-    const NON_FIXABLE_BY_RECTIFICATION = new Set(["git-clean"]);
     const totalFindingCount = (reviewResult.checks ?? []).reduce((n, c) => n + (c.findings?.length ?? 0), 0);
     const allFailuresNonFixable =
       failedCheckNames.size > 0 && [...failedCheckNames].every((c) => NON_FIXABLE_BY_RECTIFICATION.has(c));
