@@ -208,13 +208,15 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     }
 
     logger?.info("acceptance", "Hardening pass complete", {
-      storyId: storiesWithSuggested[0].id,
+      storyIds: storiesWithSuggested.map((s) => s.id),
+      storiesProcessed: storiesWithSuggested.length,
       promoted: result.promoted.length,
       discarded: result.discarded.length,
     });
   } catch (err) {
     logger?.warn("acceptance", "Hardening pass failed (non-blocking)", {
-      storyId: storiesWithSuggested[0].id,
+      storyIds: storiesWithSuggested.map((s) => s.id),
+      storiesProcessed: storiesWithSuggested.length,
       error: err instanceof Error ? err.message : String(err),
     });
   }
