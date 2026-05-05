@@ -8,7 +8,6 @@ import type { RunOperation } from "./types";
 export interface AutofixImplementerInput {
   failedChecks: ReviewCheckResult[];
   story: UserStory;
-  blockingThreshold?: "error" | "warning" | "info";
 }
 
 export interface AutofixImplementerOutput {
@@ -24,9 +23,7 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
   session: { role: "implementer", lifetime: "fresh" },
   config: autofixConfigSelector,
   build(input, _ctx) {
-    const prompt = RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story, {
-      blockingThreshold: input.blockingThreshold,
-    });
+    const prompt = RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story);
     return {
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: prompt, overridable: false },

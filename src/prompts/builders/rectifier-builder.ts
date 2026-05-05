@@ -319,6 +319,7 @@ Commit your new tests when done.${scopeConstraint}`;
             .filter((f) => isBlockingSeverity(f.severity, threshold))
             .map((f) => `- [${f.severity}] ${f.file}:${f.line} — ${f.message}`);
         }
+        // Lint raw output has no per-line severity, so the blocking filter above does not apply here.
         if (c.check === "lint" && c.output.trim()) {
           return [c.output.trim()];
         }
@@ -524,11 +525,7 @@ ${testCommands}
    *
    * Migrated from buildReviewRectificationPrompt() in src/pipeline/stages/autofix-prompts.ts.
    */
-  static reviewRectification(
-    failedChecks: ReviewCheckResult[],
-    story: UserStory,
-    opts: { blockingThreshold?: "error" | "warning" | "info" } = {},
-  ): string {
+  static reviewRectification(failedChecks: ReviewCheckResult[], story: UserStory): string {
     const scopeConstraint = story.workdir
       ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
       : "";

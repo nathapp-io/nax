@@ -107,7 +107,6 @@ function buildAutofixStrategies(
     buildInput: (_findings, _prior, _cycleCtx): AutofixImplementerInput => ({
       failedChecks: collectFailedChecks(ctx),
       story: ctx.story,
-      blockingThreshold: ctx.config.review?.blockingThreshold,
     }),
     extractApplied: (output) => ({
       summary: output.unresolvedReason ?? "",
