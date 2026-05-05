@@ -11,3 +11,7 @@ export const SEVERITY_RANK: Record<string, number> = {
   error: 2,
   critical: 3,
 };
+
+export function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {
+  return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
+}

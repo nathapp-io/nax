@@ -5,7 +5,8 @@
 
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
-import { SEVERITY_RANK } from "./severity";
+import { SEVERITY_RANK, isBlockingSeverity } from "./severity";
+export { isBlockingSeverity };
 import type { SemanticReviewConfig } from "./types";
 
 export interface LLMFinding {
@@ -74,10 +75,6 @@ export const UNVERIFIED_FINDING_PATTERNS = [
   "not present in diff",
   "does not appear in diff",
 ] as const;
-
-export function isBlockingSeverity(sev: string, threshold: "error" | "warning" | "info" = "error"): boolean {
-  return (SEVERITY_RANK[sev] ?? 0) >= (SEVERITY_RANK[threshold] ?? 2);
-}
 
 /** Ref-mode semantic errors must prove they were verified against current files. */
 export function sanitizeRefModeFindings(
