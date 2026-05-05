@@ -287,6 +287,12 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
     /\.nax-pids$/,
     /\.nax-wt\//,
     /\.nax-acceptance[^/]*$/,
+    // Test-output artifacts — transient files leaked by tests, not agent changes.
+    // 2B migrated logging.test.ts to a temp dir; these guard against future leak patterns.
+    // Patterns match both repo-root paths (test/...) and monorepo-prefixed paths (.../test/...).
+    /(?:^|\/)test\/.*\.jsonl$/,
+    /(?:^|\/)coverage\//,
+    /\.lcov$/,
   ];
   const afterRuntimeFilter = allUncommittedFiles.filter(
     (f) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(f)),
@@ -299,7 +305,16 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
     logger?.warn("review", `Uncommitted changes detected before review: ${fileList}`);
     return {
       success: false,
-      checks: [],
+      checks: [
+        {
+          check: "git-clean",
+          success: false,
+          command: "git status --porcelain",
+          exitCode: 1,
+          output: uncommittedFiles.map((f) => `?? ${f}`).join("\n"),
+          durationMs: 0,
+        },
+      ],
       totalDurationMs: Date.now() - startTime,
       failureReason: `Working tree has uncommitted changes:\n${uncommittedFiles.map((f) => `  - ${f}`).join("\n")}\n\nStage and commit these files before running review.`,
     };
