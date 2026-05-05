@@ -21,28 +21,27 @@ import {
 } from "../../../src/commands/curator";
 import type { ResolvedProject } from "../../../src/commands/common";
 import type { Observation } from "../../../src/plugins/builtin/curator/types";
+import { makeNaxConfig } from "../../helpers";
 import { makeTempDir } from "../../helpers/temp";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
-    version: 1,
+function buildCuratorConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
+  return makeNaxConfig({
     name: "test-proj",
-    outputDir: undefined,
     curator: {
       enabled: true,
       thresholds: {
         repeatedFinding: 2,
         emptyKeyword: 2,
-        rectifyAttempts: 3,
+        rectifyAttempts: 2,
         escalationChain: 2,
         staleChunkRuns: 2,
-        unchangedOutcome: 3,
+        unchangedOutcome: 2,
       },
     },
     ...overrides,
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeResolvedProject(projectDir: string): ResolvedProject {
@@ -113,7 +112,7 @@ beforeEach(() => {
   };
 
   _deps.resolveProject = mock((_opts?) => makeResolvedProject(tmpDir));
-  _deps.loadConfig = mock(async (_dir?) => makeConfig());
+  _deps.loadConfig = mock(async (_dir?) => buildCuratorConfig());
   _deps.projectOutputDir = mock((_key: string, _override?: string) => outputDir);
   _deps.globalOutputDir = mock(() => globalDir);
   _deps.curatorRollupPath = mock((_globalDir: string, _override?: string) => rollupPath);
@@ -576,7 +575,7 @@ describe("curatorDryrun", () => {
 
       // With threshold 3, 2 review-findings should NOT fire H1
       _deps.loadConfig = mock(async (_dir?) =>
-        makeConfig({
+        buildCuratorConfig({
           curator: {
             enabled: true,
             thresholds: {
