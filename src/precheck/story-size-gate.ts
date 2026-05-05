@@ -6,7 +6,7 @@
  * Returns Tier 2 warning with flaggedStory metadata for interaction prompts.
  */
 
-import type { NaxConfig } from "../config";
+import type { PrecheckConfig } from "../config/selectors";
 import type { PRD, UserStory } from "../prd/types";
 import type { Check } from "./types";
 
@@ -41,7 +41,7 @@ function countBulletPoints(text: string): number {
 /**
  * Analyze a single story for size signals
  */
-function analyzeStory(story: UserStory, config: NaxConfig): FlaggedStory | null {
+function analyzeStory(story: UserStory, config: PrecheckConfig): FlaggedStory | null {
   const thresholds = config.precheck?.storySizeGate ?? {
     enabled: true,
     maxAcCount: 6,
@@ -88,7 +88,7 @@ function analyzeStory(story: UserStory, config: NaxConfig): FlaggedStory | null 
 /**
  * Check story size gate for all pending stories
  */
-export async function checkStorySizeGate(config: NaxConfig, prd: PRD): Promise<StorySizeGateResult> {
+export async function checkStorySizeGate(config: PrecheckConfig, prd: PRD): Promise<StorySizeGateResult> {
   const gateConfig = config.precheck?.storySizeGate ?? {
     enabled: true,
     maxAcCount: 6,

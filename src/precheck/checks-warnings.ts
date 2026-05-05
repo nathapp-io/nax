@@ -7,8 +7,8 @@
 
 import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import type { NaxConfig } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
+import type { PrecheckConfig } from "../config/selectors";
 import type { PRD } from "../prd/types";
 import type { Check } from "./types";
 
@@ -101,7 +101,7 @@ export async function checkPendingStories(prd: PRD): Promise<Check> {
 /**
  * Check if optional commands are configured.
  */
-export async function checkOptionalCommands(config: NaxConfig, workdir: string): Promise<Check> {
+export async function checkOptionalCommands(config: PrecheckConfig, workdir: string): Promise<Check> {
   const missing: string[] = [];
 
   // Check quality.commands first, then execution config, then package.json fallback
@@ -185,7 +185,7 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
  * @param workdir - working directory for resolving relative paths
  * @returns Array of warning checks (one per missing file)
  */
-export async function checkPromptOverrideFiles(config: NaxConfig, workdir: string): Promise<Check[]> {
+export async function checkPromptOverrideFiles(config: PrecheckConfig, workdir: string): Promise<Check[]> {
   // Skip if prompts config is absent or overrides is empty
   if (!config.prompts?.overrides || Object.keys(config.prompts.overrides).length === 0) {
     return [];
@@ -395,7 +395,7 @@ export async function checkLanguageTools(profile: ProjectProfile | undefined, _w
  * Warn when a build command is configured but "build" is not in review.checks.
  * The build command will never run during review unless explicitly added.
  */
-export function checkBuildCommandInReviewChecks(config: NaxConfig): Check {
+export function checkBuildCommandInReviewChecks(config: PrecheckConfig): Check {
   const hasBuildCmd = !!(config.review?.commands?.build || config.quality?.commands?.build);
   const buildInChecks = config.review?.checks?.includes("build") ?? false;
 

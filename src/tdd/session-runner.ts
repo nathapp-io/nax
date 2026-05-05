@@ -6,8 +6,9 @@
 
 import type { AgentAdapter } from "../agents";
 import { resolveDefaultAgent } from "../agents";
-import type { ModelTier, NaxConfig } from "../config";
-import { resolveModelForAgent, type tddConfigSelector } from "../config";
+import type { ModelTier } from "../config";
+import { resolveModelForAgent } from "../config";
+import type { TddConfig } from "../config/selectors";
 import { createContextToolRuntime } from "../context/engine";
 import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
@@ -24,9 +25,6 @@ import {
 } from "./isolation";
 import type { IsolationCheck } from "./types";
 import type { TddSessionResult, TddSessionRole } from "./types";
-
-// Derived from tddConfigSelector so the type stays in sync when the selector changes.
-type TddConfig = ReturnType<typeof tddConfigSelector.select>;
 
 export const _sessionRunnerDeps = {
   autoCommitIfDirty: _autoCommitIfDirtyFn,

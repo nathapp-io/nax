@@ -4,7 +4,7 @@
  * Creates and initializes interaction chain from config.
  */
 
-import type { NaxConfig } from "../config";
+import type { InteractionConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import { InteractionChain } from "./chain";
 import { AutoInteractionPlugin } from "./plugins/auto";
@@ -38,7 +38,10 @@ function createInteractionPlugin(pluginName: string): InteractionPlugin {
  * @param headless - Whether running in headless mode (skip interactions)
  * @returns Initialized interaction chain or null if disabled/headless
  */
-export async function initInteractionChain(config: NaxConfig, headless: boolean): Promise<InteractionChain | null> {
+export async function initInteractionChain(
+  config: InteractionConfig,
+  headless: boolean,
+): Promise<InteractionChain | null> {
   const logger = getSafeLogger();
 
   // If no interaction config, skip
