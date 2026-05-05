@@ -18,7 +18,10 @@ import type { DebateSessionOptions } from "../../../src/debate/session-helpers";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import { debateConfigSelector, DEFAULT_CONFIG } from "../../../src/config";
 import { makeMockAgentManager } from "../../helpers";
+
+const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
 // Barrel re-export checks (resolveDebaterModel is also not yet in barrel — both are RED)
 import {
@@ -258,12 +261,11 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
     const featureName = "semantic-continuity";
     const storyId = "US-004";
 
-    // @ts-ignore — RED: resolveOutcome does not yet accept workdir/featureName params
     await resolveOutcome(
       ["proposal-a", "proposal-b"],
       ["critique-a"],
       stageConfig,
-      undefined,
+      DEFAULT_DEBATE_CONFIG,
       storyId,
       30_000,
       workdir,
@@ -286,7 +288,7 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
       ["proposal-a", "proposal-b"],
       ["critique-a"],
       stageConfig,
-      undefined,
+      DEFAULT_DEBATE_CONFIG,
       "US-004",
       30_000,
       // workdir intentionally omitted (AC7)
@@ -321,12 +323,11 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
     const featureName = "judge-feature";
     const storyId = "US-004";
 
-    // @ts-ignore — RED: resolveOutcome does not yet accept workdir/featureName params
     await resolveOutcome(
       ["proposal-a"],
       ["critique-a"],
       stageConfig,
-      undefined,
+      DEFAULT_DEBATE_CONFIG,
       storyId,
       30_000,
       workdir,
@@ -349,7 +350,7 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
       ["proposal-a"],
       ["critique-a"],
       stageConfig,
-      undefined,
+      DEFAULT_DEBATE_CONFIG,
       "US-004",
       30_000,
       // workdir intentionally omitted (AC7)

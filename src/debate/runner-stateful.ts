@@ -6,7 +6,7 @@
 
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { ConfiguredModel, ModelDef, NaxConfig } from "../config";
+import type { ConfiguredModel, ModelDef } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
@@ -32,8 +32,6 @@ interface StatefulCtx extends DispatchContext {
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
-  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
-  readonly completeConfig?: NaxConfig;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
@@ -304,7 +302,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       proposalOutputs,
       critiqueOutputs,
       ctx.stageConfig,
-      ctx.completeConfig,
+      ctx.config,
       ctx.storyId,
       ctx.timeoutSeconds * 1000,
       ctx.workdir,

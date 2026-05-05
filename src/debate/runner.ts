@@ -1,6 +1,5 @@
 import { DEFAULT_CONFIG } from "../config";
 import { debateConfigSelector } from "../config";
-import type { NaxConfig } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import { callOp } from "../operations/call";
 import { debateProposeOp } from "../operations/debate-propose";
@@ -43,8 +42,6 @@ export class DebateRunner {
   private readonly stage: string;
   private readonly stageConfig: DebateStageConfig;
   private readonly config: DebateConfig;
-  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
-  private readonly completeConfig: NaxConfig | undefined;
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
@@ -57,10 +54,6 @@ export class DebateRunner {
     this.stage = opts.stage;
     this.stageConfig = opts.stageConfig;
     this.config = opts.config ?? debateConfigSelector.select(DEFAULT_CONFIG);
-    // TODO(#853 Phase 2): remove with the CompleteOptions.config field. Until then,
-    // callers that pass a DebateConfig slice may not have NaxConfig keys —
-    // completeConfig stays optional and downstream guards on undefined.
-    this.completeConfig = opts.config as NaxConfig | undefined;
     this.workdir = opts.workdir ?? opts.ctx.packageDir;
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
@@ -253,7 +246,7 @@ export class DebateRunner {
       proposalOutputs,
       critiqueOutputs,
       this.stageConfig,
-      this.completeConfig,
+      this.config,
       this.ctx.storyId ?? "",
       this.timeoutSeconds * 1000,
       this.workdir,
@@ -286,7 +279,6 @@ export class DebateRunner {
       stage: this.stage,
       stageConfig: this.stageConfig,
       config: this.config,
-      completeConfig: this.completeConfig,
       workdir: this.workdir,
       featureName: this.featureName,
       timeoutSeconds: this.timeoutSeconds,
@@ -305,7 +297,6 @@ export class DebateRunner {
       stage: this.stage,
       stageConfig: this.stageConfig,
       config: this.config,
-      completeConfig: this.completeConfig,
       agentManager: this.ctx.runtime.agentManager,
       sessionManager: this.sessionManager ?? this.ctx.runtime.sessionManager,
       runtime: this.ctx.runtime,
