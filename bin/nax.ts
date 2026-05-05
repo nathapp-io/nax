@@ -645,6 +645,7 @@ program
       return;
     }
     const { migrateCommand } = await import("../src/commands/migrate");
+    initLogger({ level: "info", useChalk: true });
     try {
       await migrateCommand({
         workdir,
