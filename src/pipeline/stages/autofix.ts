@@ -22,12 +22,17 @@
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
-import type { ReviewCheckResult } from "../../review/types";
+import type { ReviewCheckName, ReviewCheckResult } from "../../review/types";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { runAgentRectification } from "./autofix-agent";
 import { splitFindingsByScope } from "./autofix-scope-split";
 import { runTestWriterRectification } from "./autofix-test-writer";
+
+// Checks that cannot be resolved by agent rectification. Mechanical pre-checks that
+// require human intervention (e.g. commit the dirty files). New mechanical pre-checks
+// must opt in explicitly — the set is intentionally closed.
+const NON_FIXABLE_BY_RECTIFICATION = new Set<ReviewCheckName>(["git-clean"]);
 
 export const autofixStage: PipelineStage = {
   name: "autofix",
@@ -62,6 +67,21 @@ export const autofixStage: PipelineStage = {
     // Identify which checks failed
     const failedCheckNames = new Set((reviewResult.checks ?? []).filter((c) => !c.success).map((c) => c.check));
     const hasLintFailure = failedCheckNames.has("lint");
+
+    const totalFindingCount = (reviewResult.checks ?? []).reduce((n, c) => n + (c.findings?.length ?? 0), 0);
+    const allFailuresNonFixable =
+      failedCheckNames.size > 0 && [...failedCheckNames].every((c) => NON_FIXABLE_BY_RECTIFICATION.has(c));
+    if (failedCheckNames.size === 0 || (allFailuresNonFixable && totalFindingCount === 0)) {
+      logger.error("autofix", "Cannot autofix: review failed with no actionable signal", {
+        storyId: ctx.story.id,
+        failedChecks: [...failedCheckNames],
+        failureReason: reviewResult.failureReason,
+      });
+      return {
+        action: "escalate",
+        reason: `Review failed without actionable signal: ${reviewResult.failureReason ?? "(no reason given)"}`,
+      };
+    }
 
     logger.info("autofix", "Starting autofix", {
       storyId: ctx.story.id,

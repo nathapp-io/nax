@@ -102,6 +102,10 @@ function priorityForCheck(checkName: ReviewCheckName): RectificationPriority {
       return "semantic";
     case "adversarial":
       return "architectural";
+    case "git-clean":
+      // Mechanical workspace pre-check — autofix escalation guard catches this before
+      // the rectifier is invoked; this arm exists only for exhaustive type safety.
+      return "compile-build";
     default:
       return assertNever(checkName);
   }

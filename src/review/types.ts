@@ -7,7 +7,7 @@
 import type { Finding } from "../findings";
 
 /** Review check name */
-export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic" | "adversarial";
+export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic" | "adversarial" | "git-clean";
 
 /**
  * Diff context passed to debate resolver and prompt builders.

@@ -52,11 +52,24 @@ function buildScopedCommand(testFiles: string[], baseCommand: string, testScoped
 
 export const verifyStage: PipelineStage = {
   name: "verify",
-  enabled: (ctx: PipelineContext) => !ctx.fullSuiteGatePassed,
-  skipReason: () => "not needed (full-suite gate already passed)",
+  enabled: (ctx: PipelineContext) => !ctx.fullSuiteGatePassed && ctx.routing.testStrategy !== "no-test",
+  skipReason: (ctx: PipelineContext) =>
+    ctx.fullSuiteGatePassed
+      ? "not needed (full-suite gate already passed)"
+      : 'not needed (routing.testStrategy="no-test")',
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
+
+    // Defensive: if a caller bypassed the `enabled` predicate, still skip when the
+    // routing decision says no tests. Verify cannot meaningfully validate a docs- or
+    // config-only diff, and unrelated failures get mis-attributed to this story.
+    if (ctx.routing.testStrategy === "no-test") {
+      logger.info("verify", "Skipping verification (testStrategy=no-test)", {
+        storyId: ctx.story.id,
+      });
+      return { action: "continue" };
+    }
 
     // Skip verification if tests are not required
     if (!ctx.config.quality.requireTests) {
