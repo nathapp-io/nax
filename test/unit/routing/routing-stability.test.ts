@@ -12,6 +12,7 @@ import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../src/logger";
 import type { UserStory } from "../../../src/prd/types";
 import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "../../../src/routing";
+import { classifyRouteOp, classifyRouteBatchOp } from "../../../src/operations";
 import { makeStory } from "../../helpers";
 
 /** Minimal keyword-route helper replacing the deleted keywordStrategy object. */
@@ -199,5 +200,34 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #856 site #4: classifyRouteOp / classifyRouteBatchOp retry preset
+// ---------------------------------------------------------------------------
+
+describe("classifyRouteOp declares retry preset (issue #856 site #4)", () => {
+  test("classifyRouteOp has a retry field", () => {
+    expect(classifyRouteOp.retry).toBeDefined();
+  });
+
+  test("classifyRouteBatchOp has a retry field", () => {
+    expect(classifyRouteBatchOp.retry).toBeDefined();
+  });
+
+  test("retry resolver uses routing.llm.retries when set (deprecation bridge)", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: { ...DEFAULT_CONFIG.routing, llm: { mode: "per-story" as const, retries: 3, retryDelayMs: 2000 } },
+    };
+    const buildCtx = {
+      packageView: null as never,
+      config: { routing: config.routing, autoMode: config.autoMode } as never,
+    };
+    const resolver = classifyRouteOp.retry as (input: unknown, ctx: typeof buildCtx) => { maxAttempts: number; baseDelayMs: number } | undefined;
+    const preset = resolver({}, buildCtx);
+    expect(preset?.maxAttempts).toBe(4); // retries: 3 → maxAttempts: 4
+    expect(preset?.baseDelayMs).toBe(2000);
   });
 });

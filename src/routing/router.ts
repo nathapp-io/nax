@@ -13,7 +13,7 @@ import type { Complexity, ModelTier, NaxConfig, TddStrategy } from "../config";
 import { getSafeLogger } from "../logger";
 import { callOp } from "../operations";
 import { classifyRouteBatchOp, classifyRouteOp } from "../operations";
-import type { CallContext, CompleteOperation, Operation } from "../operations";
+import type { CallContext } from "../operations";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
 import type { NaxRuntime } from "../runtime";
@@ -126,38 +126,6 @@ function keywordRoute(story: UserStory, config: RoutingConfig): RoutingDecision 
 }
 
 // ---------------------------------------------------------------------------
-// classifyWithRetry — retry wrapper for callOp-based LLM routing calls
-// ---------------------------------------------------------------------------
-
-async function classifyWithRetry<T>(
-  ctx: CallContext,
-  op: CompleteOperation<unknown, T, RoutingConfig>,
-  input: unknown,
-  opts: { retries: number; retryDelayMs: number },
-): Promise<T> {
-  let lastErr: Error | undefined;
-  for (let i = 0; i <= opts.retries; i++) {
-    try {
-      return await callOp(ctx, op as Operation<unknown, T, RoutingConfig>, input as unknown);
-    } catch (err) {
-      lastErr = err as Error;
-      if (i < opts.retries) {
-        const logger = getSafeLogger();
-        logger?.warn(
-          "routing",
-          `LLM call failed (attempt ${i + 1}/${opts.retries + 1}), retrying in ${opts.retryDelayMs}ms`,
-          {
-            error: lastErr.message,
-          },
-        );
-        await Bun.sleep(opts.retryDelayMs);
-      }
-    }
-  }
-  throw lastErr ?? new Error("classifyWithRetry: unknown failure");
-}
-
-// ---------------------------------------------------------------------------
 // resolveRouting — main entry point
 // ---------------------------------------------------------------------------
 
@@ -258,19 +226,12 @@ export async function resolveRouting(
             agentName: resolveDefaultAgent(runtime.configLoader.current()),
             storyId: story.id,
           };
-          const retries = llmConfig.retries ?? 1;
-          const retryDelayMs = llmConfig.retryDelayMs ?? 1000;
-          const decision = await classifyWithRetry(
-            ctx,
-            classifyRouteOp as CompleteOperation<unknown, RoutingDecision, RoutingConfig>,
-            {
-              title: story.title,
-              description: story.description,
-              acceptanceCriteria: story.acceptanceCriteria,
-              tags: story.tags,
-            },
-            { retries, retryDelayMs },
-          );
+          const decision = await callOp(ctx, classifyRouteOp, {
+            title: story.title,
+            description: story.description,
+            acceptanceCriteria: story.acceptanceCriteria,
+            tags: story.tags,
+          });
 
           if (llmConfig.cacheDecisions) {
             if (cachedDecisions.size >= MAX_CACHE_SIZE) evictOldest();
@@ -416,15 +377,7 @@ export async function tryLlmBatchRoute(
       packageDir: runtime.workdir,
       agentName: resolveDefaultAgent(runtime.configLoader.current()),
     };
-    const retries = llmConfig.retries ?? 1;
-    const retryDelayMs = llmConfig.retryDelayMs ?? 1000;
-
-    const decisions = await classifyWithRetry(
-      ctx,
-      classifyRouteBatchOp as CompleteOperation<unknown, Map<string, RoutingDecision>, RoutingConfig>,
-      needsRouting,
-      { retries, retryDelayMs },
-    );
+    const decisions = await callOp(ctx, classifyRouteBatchOp, needsRouting);
 
     if (llmConfig.cacheDecisions) {
       for (const [storyId, decision] of decisions.entries()) {
