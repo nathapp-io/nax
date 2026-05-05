@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _callOpDeps, callOp } from "../../../src/operations/call";
-import type { CompleteOperation } from "../../../src/operations/types";
+import { _callOpDeps, callOp } from "../../../src/operations";
+import type { CompleteOperation } from "../../../src/operations";
 import type { RetryPreset } from "../../../src/agents/retry";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { makeMockAgentManager, makeTestRuntime } from "../../helpers";

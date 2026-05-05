@@ -15,6 +15,9 @@ export const _callOpDeps = {
   sleep: (ms: number) => Bun.sleep(ms),
 };
 
+/** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
+const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
+
 function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[], opName: string): ConfigSelector<C> {
   if (Array.isArray(s)) {
     return pickSelector(`anonymous:${opName}`, ...(s as readonly (keyof NaxConfig)[])) as unknown as ConfigSelector<C>;
@@ -118,7 +121,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
 
     const retryStrategy = resolveOpRetry(completeOp, input, buildCtx);
     let attempt = 0;
-    while (true) {
+    while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
       try {
         const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, completeOptions);
         const parsedComplete = op.parse(raw.output, input, buildCtx);
@@ -142,10 +145,15 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
             delayMs: decision.delayMs,
           },
         );
-        await _callOpDeps.sleep(decision.delayMs ?? 0);
+        await _callOpDeps.sleep(decision.delayMs);
         attempt++;
       }
     }
+    throw new NaxError(
+      `callOp[${op.name}]: exceeded MAX_COMPLETE_RETRY_ATTEMPTS (${MAX_COMPLETE_RETRY_ATTEMPTS})`,
+      "CALL_OP_MAX_RETRIES",
+      { stage: op.stage, storyId: ctx.storyId },
+    );
   }
 
   // kind:"run" — ADR-019 §5: route through runWithFallback + buildHopCallback.
