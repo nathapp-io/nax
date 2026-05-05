@@ -562,8 +562,7 @@ export class CodeNeighborProvider implements IContextProvider {
     const maxChars = MAX_CHUNK_TOKENS * 4;
     const body = rawContent.length > maxChars ? rawContent.slice(0, maxChars) : rawContent;
     const truncationNote = anyTruncated
-      ? `\n\n> Note: reverse-dep scan capped at ${this.maxGlobFiles} files; some neighbors may be missing.` +
-        `\n> Increase \`context.v2.providers.maxGlobFiles\` or set \`sourceGlob\` to a narrower pattern (e.g. \`**/*.go\`) to reduce the scan footprint.`
+      ? `\n\n> Note: reverse-dep scan capped at ${this.maxGlobFiles} files; some neighbors may be missing.\n> Increase \`context.v2.providers.maxGlobFiles\` or set \`sourceGlob\` to a narrower pattern (e.g. \`**/*.go\`) to reduce the scan footprint.`
       : "";
     const content = body + truncationNote;
     const tokens = Math.ceil(content.length / 4);

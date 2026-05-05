@@ -220,7 +220,12 @@ export const ContextV2ConfigSchema = z
     deterministic: false,
     session: { retentionDays: 7, archiveOnFeatureArchive: true },
     staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
-    providers: { historyScope: "package" as const, neighborScope: "package" as const, crossPackageDepth: 1, maxGlobFiles: 500 },
+    providers: {
+      historyScope: "package" as const,
+      neighborScope: "package" as const,
+      crossPackageDepth: 1,
+      maxGlobFiles: 500,
+    },
   }));
 
 export const ContextConfigSchema = z.object({
