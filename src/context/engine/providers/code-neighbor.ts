@@ -1,22 +1,8 @@
 /**
- * Context Engine v2 — CodeNeighborProvider
+ * Context Engine v2 — CodeNeighborProvider (Phase 3)
  *
- * Surfaces import-graph neighbors for files this story touches:
- *   - Forward deps:  files imported by the touched file (import/require parse)
- *   - Reverse deps:  files that import the touched file (Bun.Glob scan, capped at 200 files)
- *   - Sibling test:  mirrored test file (src/foo/bar.ts → test/unit/foo/bar.test.ts)
- *
- * Language scope:
- *   Forward dep parsing is JavaScript/TypeScript-only (import/require syntax).
- *   For other languages (Python, Go, Rust, etc.), forward deps return empty;
- *   reverse deps and sibling tests are still attempted where applicable.
- *   The reverse-dep glob covers common source extensions across languages.
- *
- * The combined result is collapsed into a single "neighbor" kind chunk.
- * Files are capped at MAX_FILES; neighbors per file capped at MAX_NEIGHBORS_PER_FILE.
- * Chunk is capped at MAX_CHUNK_TOKENS to avoid budget overrun.
- *
- * Phase 3.
+ * Surfaces forward deps, reverse deps (language-aware glob, configurable cap),
+ * and sibling tests for files touched by the story.
  *
  * See: docs/specs/SPEC-context-engine-v2.md §CodeNeighborProvider
  */
@@ -24,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { getLogger } from "../../../logger";
+import { detectLanguage } from "../../../project";
 import { discoverWorkspacePackages } from "../../../test-runners/detect/workspace";
 import type { NaxIgnoreMatcher } from "../../../utils/path-filters";
 import { isRelativeAndSafe } from "../../../utils/path-security";
@@ -47,6 +34,16 @@ export interface CodeNeighborProviderOptions {
    * 1 (default) — additionally scans repoRoot for cross-package reverse deps.
    */
   crossPackageDepth?: number;
+  /**
+   * Override the source-file glob for reverse-dep scanning (#895).
+   * When omitted, derived from detectLanguage(packageDir) via SOURCE_GLOB_BY_LANGUAGE.
+   */
+  sourceGlob?: string;
+  /**
+   * Maximum files scanned per directory during reverse-dep glob (#895).
+   * Default: 500 (raised from 200; language-aware glob reduces noise).
+   */
+  maxGlobFiles?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,35 +56,24 @@ const MAX_FILES = 10;
 /** Maximum number of neighbors (forward + reverse combined) per file */
 const MAX_NEIGHBORS_PER_FILE = 8;
 
-/** Maximum files scanned during reverse-dep glob */
-const MAX_GLOB_FILES = 200;
+/** Default maximum files scanned during reverse-dep glob (#895) */
+const MAX_GLOB_FILES_DEFAULT = 500;
 
 /** Token ceiling for the combined neighbor chunk */
 const MAX_CHUNK_TOKENS = 500;
 
-/**
- * Source file extensions to scan for reverse deps.
- *
- * TODO: temporary workaround — this list is hardcoded. Future work should make
- * it configurable via .nax/config.json or auto-detected from the package language
- * (via detectLanguage(packageDir)) so nax doesn't scan irrelevant extensions.
- *
- * No `src/` prefix: projects may use lib/, app/, cmd/, or root-level layouts.
- * Excluded directories (node_modules, .nax, vendor, etc.) are stripped at scan
- * time by EXCLUDED_DIR_PREFIXES rather than by glob pattern.
- */
-const SOURCE_GLOB = "**/*.{ts,tsx,js,jsx,py,go,rs,java,rb,php,cs,cpp,c,h}";
+// Per-language globs for reverse-dep scanning (#895, L1). Polyglot/unknown falls back to FALLBACK_SOURCE_GLOB.
+const SOURCE_GLOB_BY_LANGUAGE: Record<string, string> = {
+  typescript: "**/*.{ts,tsx,js,jsx,mjs,cjs}",
+  javascript: "**/*.{js,jsx,mjs,cjs}",
+  go: "**/*.go",
+  python: "**/*.py",
+  rust: "**/*.rs",
+};
 
-/**
- * Directory prefixes to exclude from the reverse-dep glob scan.
- *
- * TODO: temporary workaround — future work should make this configurable or
- * derive it from the package language / project type (e.g. only exclude vendor/
- * for Go projects). For now the list covers the most common noise sources.
- *
- * Checked as a startsWith prefix or an interior segment (`/prefix/`), so both
- * repo-root and nested occurrences (e.g. packages/api/.nax/) are excluded.
- */
+const FALLBACK_SOURCE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,rb,php,cs,cpp,c,h}";
+
+/** Directory prefixes excluded from reverse-dep glob; checked as startsWith or interior segment. */
 const EXCLUDED_DIR_PREFIXES = [
   "node_modules/",
   ".git/",
@@ -114,15 +100,22 @@ export const _codeNeighborDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
+  detectLanguage: (packageDir: string) => detectLanguage(packageDir),
   getLogger,
-  glob: (pattern: string, cwd: string, ignoreMatchers: readonly NaxIgnoreMatcher[] = []): string[] => {
+  glob: (
+    pattern: string,
+    cwd: string,
+    ignoreMatchers: readonly NaxIgnoreMatcher[] = [],
+    cap: number = MAX_GLOB_FILES_DEFAULT,
+    ctx?: { storyId?: string; packageDir?: string },
+  ): { files: string[]; truncated: boolean } => {
     const g = new Bun.Glob(pattern);
     const results: string[] = [];
     let count = 0;
     let truncated = false;
     for (const file of g.scanSync({ cwd, absolute: false })) {
       if (isExcludedPath(file, ignoreMatchers)) continue;
-      if (count >= MAX_GLOB_FILES) {
+      if (count >= cap) {
         truncated = true;
         break;
       }
@@ -130,13 +123,16 @@ export const _codeNeighborDeps = {
       count++;
     }
     if (truncated) {
-      _codeNeighborDeps.getLogger().debug("context-v2", "Glob cap reached — results truncated", {
+      _codeNeighborDeps.getLogger().warn("context-v2", "Reverse-dep glob cap reached — results truncated", {
+        storyId: ctx?.storyId,
+        packageDir: ctx?.packageDir,
         pattern,
         cwd,
-        cap: MAX_GLOB_FILES,
+        cap,
+        hint: "Increase context.v2.providers.maxGlobFiles or narrow context.v2.providers.sourceGlob",
       });
     }
-    return results;
+    return { files: results, truncated };
   },
 };
 
@@ -337,6 +333,14 @@ function isTestFile(filePath: string, regex: readonly RegExp[]): boolean {
  * extraGlobWorkdirs: when provided (AC-62 crossPackageDepth > 0), also scans
  * each directory for cross-package reverse deps (workspace package dirs or repoRoot).
  *
+/** Derive the source-file glob for reverse-dep scanning (#895, L1). */
+async function resolveSourceGlob(override: string | undefined, packageDir: string): Promise<string> {
+  if (override) return override;
+  const language = await _codeNeighborDeps.detectLanguage(packageDir);
+  return (language && SOURCE_GLOB_BY_LANGUAGE[language]) ?? FALLBACK_SOURCE_GLOB;
+}
+
+/**
  * siblingTestContext: when provided, enables sibling-test derivation via the
  * resolver's globs + testDirs. When omitted, sibling-test hinting is skipped
  * (the legacy `test/unit/` hardcoding is gone — callers must thread the
@@ -345,11 +349,15 @@ function isTestFile(filePath: string, regex: readonly RegExp[]): boolean {
 async function collectNeighbors(
   filePath: string,
   workdir: string,
+  sourceGlob: string,
+  maxGlobFiles: number,
   extraGlobWorkdirs?: string[],
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
   ignoreMatchers?: readonly NaxIgnoreMatcher[],
-): Promise<string[]> {
+  globCtx?: { storyId?: string; packageDir?: string },
+): Promise<{ neighbors: string[]; truncated: boolean }> {
   const neighbors = new Set<string>();
+  let anyTruncated = false;
 
   // Forward deps (JS/TS only)
   if (await _codeNeighborDeps.fileExists(join(workdir, filePath))) {
@@ -366,7 +374,14 @@ async function collectNeighbors(
   const fileNoExt = filePath.replace(/\.[^.]+$/, "");
 
   const scanForReverseDeps = async (scanWorkdir: string) => {
-    const srcFiles = _codeNeighborDeps.glob(SOURCE_GLOB, scanWorkdir, ignoreMatchers);
+    const { files: srcFiles, truncated } = _codeNeighborDeps.glob(
+      sourceGlob,
+      scanWorkdir,
+      ignoreMatchers,
+      maxGlobFiles,
+      globCtx,
+    );
+    if (truncated) anyTruncated = true;
     for (const srcFile of srcFiles) {
       if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
       if (srcFile === filePath) continue;
@@ -429,7 +444,7 @@ async function collectNeighbors(
     if (chosen !== null && chosen !== filePath) neighbors.add(chosen);
   }
 
-  return [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE);
+  return { neighbors: [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE), truncated: anyTruncated };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -480,10 +495,14 @@ export class CodeNeighborProvider implements IContextProvider {
 
   private readonly neighborScope: "repo" | "package";
   private readonly crossPackageDepth: number;
+  private readonly sourceGlobOverride: string | undefined;
+  private readonly maxGlobFiles: number;
 
   constructor(options: CodeNeighborProviderOptions = {}) {
     this.neighborScope = options.neighborScope ?? "package";
     this.crossPackageDepth = options.crossPackageDepth ?? 1;
+    this.sourceGlobOverride = options.sourceGlob;
+    this.maxGlobFiles = options.maxGlobFiles ?? MAX_GLOB_FILES_DEFAULT;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
@@ -517,9 +536,24 @@ export class CodeNeighborProvider implements IContextProvider {
 
     const ignoreMatchers = request.naxIgnoreIndex?.getMatchers(workdir);
 
+    // Resolve source glob once per request (lazy: detectLanguage called only if no override).
+    const sourceGlob = await resolveSourceGlob(this.sourceGlobOverride, request.packageDir);
+    const globCtx = { storyId: request.storyId, packageDir: request.packageDir };
+
     const sections: string[] = [];
+    let anyTruncated = false;
     for (const file of filesToProcess) {
-      const neighbors = await collectNeighbors(file, workdir, extraGlobWorkdirs, siblingTestContext, ignoreMatchers);
+      const { neighbors, truncated } = await collectNeighbors(
+        file,
+        workdir,
+        sourceGlob,
+        this.maxGlobFiles,
+        extraGlobWorkdirs,
+        siblingTestContext,
+        ignoreMatchers,
+        globCtx,
+      );
+      if (truncated) anyTruncated = true;
       if (neighbors.length > 0) {
         sections.push(`### ${file}\n${neighbors.map((n) => `- ${n}`).join("\n")}`);
       }
@@ -530,7 +564,13 @@ export class CodeNeighborProvider implements IContextProvider {
     }
 
     const header = "## Code Neighbors\n\nRelated files (imports, reverse-deps, tests):";
-    const rawContent = `${header}\n\n${sections.join("\n\n")}`;
+    let rawContent = `${header}\n\n${sections.join("\n\n")}`;
+
+    if (anyTruncated) {
+      rawContent +=
+        `\n\n> Note: reverse-dep scan capped at ${this.maxGlobFiles} files; some neighbors may be missing.` +
+        "\n> Increase `context.v2.providers.maxGlobFiles` or narrow `sourceGlob` to widen.";
+    }
 
     // Cap content to avoid overrunning token budget
     const maxChars = MAX_CHUNK_TOKENS * 4;
