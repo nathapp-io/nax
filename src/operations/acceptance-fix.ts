@@ -5,19 +5,19 @@ import type { RunOperation } from "./types";
 
 export interface AcceptanceFixSourceInput {
   testOutput: string;
+  testCommand?: string;
   diagnosisReasoning?: string;
   priorIterationsBlock?: string;
   acceptanceTestPath: string;
-  testFileContent?: string;
 }
 
 export interface AcceptanceFixTestInput {
   testOutput: string;
+  testCommand?: string;
   diagnosisReasoning?: string;
   priorIterationsBlock?: string;
   failedACs: string[];
   acceptanceTestPath: string;
-  testFileContent?: string;
 }
 
 export interface AcceptanceFixOutput {
@@ -35,10 +35,10 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
       testOutput: input.testOutput,
+      testCommand: input.testCommand,
       diagnosisReasoning: input.diagnosisReasoning,
       priorIterationsBlock: input.priorIterationsBlock,
       acceptanceTestPath: input.acceptanceTestPath,
-      testFileContent: input.testFileContent,
     });
     return {
       role: { id: "role", content: "", overridable: false },
@@ -61,11 +61,11 @@ export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, Acceptanc
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildTestFixPrompt({
       testOutput: input.testOutput,
+      testCommand: input.testCommand,
       diagnosisReasoning: input.diagnosisReasoning,
       priorIterationsBlock: input.priorIterationsBlock,
       failedACs: input.failedACs,
       acceptanceTestPath: input.acceptanceTestPath,
-      testFileContent: input.testFileContent ?? "",
     });
     return {
       role: { id: "role", content: "", overridable: false },

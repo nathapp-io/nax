@@ -46,6 +46,7 @@ export interface ResolveAcceptanceDiagnosisOptions {
   diagnosisOpts: {
     testOutput: string;
     testFileContent: string;
+    acceptanceTestPath?: string;
     workdir: string;
     storyId?: string;
   };
@@ -117,6 +118,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
   return await _diagnosisDeps.callOp(fixCallCtx(ctx), acceptanceDiagnoseOp, {
     testOutput: diagnosisOpts.testOutput,
     testFileContent: diagnosisOpts.testFileContent,
+    acceptanceTestPath: diagnosisOpts.acceptanceTestPath,
     sourceFiles,
     semanticVerdicts,
   });

@@ -264,13 +264,9 @@ export const acceptanceStage: PipelineStage = {
             abortSignal: ctx.abortSignal,
           });
           hardeningRetries = result.promoted.length;
-          logger.info("acceptance", "Hardening pass complete", {
-            storyId: ctx.story.id,
-            promoted: result.promoted.length,
-            discarded: result.discarded.length,
-          });
         } catch (err) {
-          logger.warn("acceptance", "Hardening pass failed (non-blocking)", {
+          // runHardeningPass already logs "Hardening pass failed" with full storyIds attribution
+          logger.debug("acceptance", "Hardening pass failed (non-blocking)", {
             storyId: ctx.story.id,
             error: err instanceof Error ? err.message : String(err),
           });

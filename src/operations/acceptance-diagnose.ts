@@ -10,6 +10,7 @@ import type { RunOperation } from "./types";
 export interface AcceptanceDiagnoseInput {
   testOutput: string;
   testFileContent: string;
+  acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
   semanticVerdicts?: SemanticVerdict[];
 }
@@ -39,6 +40,7 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
     const prompt = new AcceptancePromptBuilder().buildDiagnosisPrompt({
       testOutput: input.testOutput,
       testFileContent: input.testFileContent,
+      acceptanceTestPath: input.acceptanceTestPath,
       sourceFiles: input.sourceFiles,
       semanticVerdicts: input.semanticVerdicts,
     });

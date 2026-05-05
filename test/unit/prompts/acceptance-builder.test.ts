@@ -150,7 +150,7 @@ describe("builder.buildGeneratorFromSpecPrompt()", () => {
 describe("builder.buildDiagnosisPromptTemplate()", () => {
   const base = {
     truncatedOutput: "FAIL: AC-1 assertion error",
-    testFileContent: 'import { test } from "bun:test"; test("AC-1: x", () => {});',
+    acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
     sourceFilesSection: "(No source files could be resolved from imports)",
     verdictSection: "",
     maxFileLines: 500,
@@ -177,10 +177,15 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
       expect(result).toContain(base.truncatedOutput);
     });
 
-    test("includes test file content in fenced block", () => {
+    test("references acceptance test path (Bug 6 — no embedded body)", () => {
       const result = builder.buildDiagnosisPromptTemplate(base);
-      expect(result).toContain("```typescript");
-      expect(result).toContain(base.testFileContent);
+      expect(result).toContain(base.acceptanceTestPath);
+      expect(result).not.toContain("```typescript");
+    });
+
+    test("instructs agent to use Read on the test path", () => {
+      const result = builder.buildDiagnosisPromptTemplate(base);
+      expect(result).toContain("Read");
     });
 
     test("includes source files section", () => {
@@ -219,14 +224,29 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
 
 describe("builder.buildSourceFixPrompt()", () => {
   const base = {
-    testOutput: "FAIL: AC-1 null pointer",
+    testOutput: "(fail) AC-1: null pointer [2ms]\n  Error: Cannot read property\n\n 0 pass\n 1 fail",
     diagnosisReasoning: "Source file has uninitialized field",
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
-    testFileContent: 'test("AC-1: x", () => { expect(foo()).toBe(1); });',
   };
 
-  test("includes test output", () => {
-    expect(builder.buildSourceFixPrompt(base)).toContain(base.testOutput);
+  test("includes structured test output (Bug 6 regression)", () => {
+    const result = builder.buildSourceFixPrompt(base);
+    expect(result).toContain("AC-1");
+    expect(result).toContain("Cannot read property");
+  });
+
+  test("does not embed test file content (Bug 6 regression)", () => {
+    const result = builder.buildSourceFixPrompt(base);
+    expect(result).not.toContain("```typescript");
+  });
+
+  test("references acceptance test path", () => {
+    expect(builder.buildSourceFixPrompt(base)).toContain(base.acceptanceTestPath);
+  });
+
+  test("instructs agent to Read the test file", () => {
+    const result = builder.buildSourceFixPrompt(base);
+    expect(result).toContain("Read the test file at the path above");
   });
 
   test("includes diagnosis reasoning", () => {
@@ -239,19 +259,9 @@ describe("builder.buildSourceFixPrompt()", () => {
     expect(result).toContain("prior table");
   });
 
-  test("includes acceptance test path", () => {
-    expect(builder.buildSourceFixPrompt(base)).toContain(base.acceptanceTestPath);
-  });
-
-  test("includes test file content in fenced typescript block", () => {
-    const result = builder.buildSourceFixPrompt(base);
-    expect(result).toContain("```typescript");
-    expect(result).toContain(base.testFileContent);
-  });
-
-  test("omits fenced block when testFileContent is empty", () => {
-    const result = builder.buildSourceFixPrompt({ ...base, testFileContent: "" });
-    expect(result).not.toContain("```typescript");
+  test("includes test framework hint when testCommand is provided", () => {
+    const result = builder.buildSourceFixPrompt({ ...base, testCommand: "bun test" });
+    expect(result).toContain("Test framework:");
   });
 
   test("instructs not to modify test file", () => {
@@ -263,22 +273,36 @@ describe("builder.buildSourceFixPrompt()", () => {
 
 describe("builder.buildTestFixPrompt()", () => {
   const base = {
-    testOutput: "FAIL: AC-1 assertion error",
+    testOutput: "(pass) AC-1: ok [1ms]\n(fail) AC-2: assertion failed [2ms]\n  Error: Expected 1 got 0\n\n 1 pass\n 1 fail",
     diagnosisReasoning: "Test uses wrong assertion type",
-    failedACs: ["AC-1", "AC-3"],
+    failedACs: ["AC-2"],
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
-    testFileContent: 'test("AC-1: x", () => { expect(foo()).toBe(1); });',
   };
 
   test("includes failing ACs", () => {
     const result = builder.buildTestFixPrompt(base);
-    expect(result).toContain("AC-1");
-    expect(result).toContain("AC-3");
+    expect(result).toContain("AC-2");
   });
 
-  test("includes test output", () => {
+  test("does not embed test file content (Bug 6 regression)", () => {
     const result = builder.buildTestFixPrompt(base);
-    expect(result).toContain(base.testOutput);
+    expect(result).not.toContain("```typescript");
+  });
+
+  test("drops (pass) lines from test output (Bug 6 regression)", () => {
+    const result = builder.buildTestFixPrompt(base);
+    expect(result).not.toContain("(pass) AC-1");
+    expect(result).toContain("AC-2");
+    expect(result).toContain("Expected 1 got 0");
+  });
+
+  test("references acceptance test path", () => {
+    expect(builder.buildTestFixPrompt(base)).toContain(base.acceptanceTestPath);
+  });
+
+  test("instructs agent to Read the test file", () => {
+    const result = builder.buildTestFixPrompt(base);
+    expect(result).toContain("Read the test file at the path above");
   });
 
   test("includes diagnosis reasoning", () => {
@@ -292,15 +316,14 @@ describe("builder.buildTestFixPrompt()", () => {
     expect(result).toContain("prior table");
   });
 
-  test("includes test file content in fenced typescript block", () => {
-    const result = builder.buildTestFixPrompt(base);
-    expect(result).toContain("```typescript");
-    expect(result).toContain(base.testFileContent);
+  test("includes test framework hint when testCommand is provided", () => {
+    const result = builder.buildTestFixPrompt({ ...base, testCommand: "bun test" });
+    expect(result).toContain("Test framework:");
   });
 
   test("instructs to fix only failing ACs and not source code", () => {
     const result = builder.buildTestFixPrompt(base);
-    expect(result).toContain("Fix ONLY the failing test assertions");
+    expect(result).toContain("surgical");
     expect(result).toContain("Do NOT modify source code");
   });
 });

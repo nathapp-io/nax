@@ -11,7 +11,9 @@
  */
 
 import type { PRD } from "../../prd/types";
+import { buildTestFrameworkHint } from "../../test-runners";
 import { wrapJsonPrompt } from "../../utils/llm-json";
+import { formatTestOutputForFix } from "./acceptance-builder-helpers";
 
 export type AcceptanceRole = "generator" | "diagnoser" | "fix-executor";
 
@@ -64,7 +66,13 @@ export interface FixGeneratorParams {
 
 export interface DiagnosisPromptParams {
   testOutput: string;
-  testFileContent: string;
+  /**
+   * @deprecated No longer embedded in the diagnosis prompt — replaced by path-only reference.
+   * Retained at the call layer only for import-parsing in loadSourceFilesForDiagnosis.
+   * Will be removed when that utility migrates to path-based parsing.
+   */
+  testFileContent?: string;
+  acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
   /** Minimal shape — avoids importing SemanticVerdict across layers */
   semanticVerdicts?: Array<{ storyId: string; passed: boolean }>;
@@ -96,7 +104,7 @@ export interface GeneratorFromSpecParams {
 
 export interface DiagnosisTemplateParams {
   truncatedOutput: string;
-  testFileContent: string;
+  acceptanceTestPath: string;
   sourceFilesSection: string;
   verdictSection: string;
   maxFileLines: number;
@@ -104,19 +112,19 @@ export interface DiagnosisTemplateParams {
 
 export interface SourceFixParams {
   testOutput: string;
+  testCommand?: string;
   diagnosisReasoning?: string;
   priorIterationsBlock?: string;
   acceptanceTestPath: string;
-  testFileContent?: string;
 }
 
 export interface TestFixParams {
   testOutput: string;
+  testCommand?: string;
   diagnosisReasoning?: string;
   priorIterationsBlock?: string;
   failedACs: string[];
   acceptanceTestPath: string;
-  testFileContent: string;
 }
 
 // ─── Builder ──────────────────────────────────────────────────────────────────
@@ -187,10 +195,9 @@ TASK: Diagnose whether the failure is due to a bug in the SOURCE CODE or a bug i
 FAILING TEST OUTPUT:
 ${p.truncatedOutput}
 
-ACCEPTANCE TEST FILE CONTENT:
-\`\`\`typescript
-${p.testFileContent}
-\`\`\`
+ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}
+
+(Use Read on the path above to inspect the test code if needed for diagnosis.)
 
 SOURCE FILES (auto-detected from imports, up to ${p.maxFileLines} lines each):
 ${p.sourceFilesSection}
@@ -201,14 +208,14 @@ ${responseSchema}`;
 
   /** Prompt for acceptanceFixSourceOp — instructs agent to fix source implementation. */
   buildSourceFixPrompt(p: SourceFixParams): string {
-    let prompt = `ACCEPTANCE TEST FAILURE:\n${p.testOutput}\n\n`;
+    let prompt = "ACCEPTANCE TEST FAILURE — fix the source implementation.\n\n";
+    if (p.testCommand) prompt += `Test framework: ${buildTestFrameworkHint(p.testCommand)}\n\n`;
+    prompt += `TEST OUTPUT:\n${formatTestOutputForFix(p.testOutput)}\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
     if (p.priorIterationsBlock) prompt += p.priorIterationsBlock;
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;
-    if (p.testFileContent && p.testFileContent.length > 0) {
-      prompt += `\`\`\`typescript\n${p.testFileContent}\n\`\`\`\n\n`;
-    }
-    prompt += "Fix the source implementation. Do NOT modify the test file.";
+    prompt += "Read the test file at the path above for context, then fix the source implementation. ";
+    prompt += "Do NOT modify the test file.";
     return prompt;
   }
 
@@ -274,7 +281,7 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
 
     return this.buildDiagnosisPromptTemplate({
       truncatedOutput,
-      testFileContent: p.testFileContent,
+      acceptanceTestPath: p.acceptanceTestPath ?? "(path unavailable — inspect test output for file references)",
       sourceFilesSection,
       verdictSection,
       maxFileLines: MAX_FILE_LINES,
@@ -366,12 +373,13 @@ Assert about HTTP responses, status codes, and API endpoint output.${framework}
   buildTestFixPrompt(p: TestFixParams): string {
     let prompt = "ACCEPTANCE TEST BUG — surgical fix required.\n\n";
     prompt += `FAILING ACS: ${p.failedACs.join(", ")}\n\n`;
-    prompt += `TEST OUTPUT:\n${p.testOutput}\n\n`;
+    if (p.testCommand) prompt += `Test framework: ${buildTestFrameworkHint(p.testCommand)}\n\n`;
+    prompt += `TEST OUTPUT:\n${formatTestOutputForFix(p.testOutput)}\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
     if (p.priorIterationsBlock) prompt += p.priorIterationsBlock;
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;
-    prompt += `\`\`\`typescript\n${p.testFileContent}\n\`\`\`\n\n`;
-    prompt += "Fix ONLY the failing test assertions for the ACs listed above. ";
+    prompt += "Read the test file at the path above before editing. The fix should be ";
+    prompt += "surgical — locate the failing AC blocks and adjust their assertions only. ";
     prompt += "Do NOT modify passing tests. Do NOT modify source code. ";
     prompt += "Edit the test file in place.";
     return prompt;

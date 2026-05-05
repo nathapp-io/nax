@@ -451,15 +451,15 @@ describe("strategy buildInput closures", () => {
       makePrd(),
       { failedACs: ["AC-1"], testOutput: "initial output" },
       makeDiagnosis(),
-      "test-content",
       "/path/to/test.ts",
+      "bun test",
     );
 
     const sourceStrategy = capturedCycle!.strategies[0];
     const input = sourceStrategy.buildInput([], [], {} as never) as Record<string, unknown>;
     expect(input.testOutput).toBe("initial output");
     expect(input.acceptanceTestPath).toBe("/path/to/test.ts");
-    expect(input.testFileContent).toBe("test-content");
+    expect(input.testCommand).toBe("bun test");
   });
 
   test("source-fix buildInput includes prior iterations block", async () => {
@@ -474,7 +474,6 @@ describe("strategy buildInput closures", () => {
       makePrd(),
       { failedACs: ["AC-1"], testOutput: "initial output" },
       makeDiagnosis(),
-      "test-content",
       "/path/to/test.ts",
     );
 
