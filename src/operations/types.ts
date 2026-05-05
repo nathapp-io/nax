@@ -1,3 +1,4 @@
+import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import type { ConfigSelector, ConfiguredModel } from "../config";
 import type { NaxConfig } from "../config";
@@ -154,6 +155,15 @@ export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
    * in callOp.
    */
   readonly model?: OperationModel<I, C>;
+  /**
+   * Optional retry policy for this op.
+   * - `RetryPreset`: declarative config converted to `RetryStrategy` by `callOp`
+   *   via `resolveRetryPreset`.
+   * - `RetryStrategy`: custom strategy injected directly (discriminant: `"shouldRetry" in retry`).
+   * - function: resolver reading per-call input and build context; return `undefined`
+   *   to disable retry for this invocation.
+   */
+  readonly retry?: RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | undefined);
 }
 
 /**
