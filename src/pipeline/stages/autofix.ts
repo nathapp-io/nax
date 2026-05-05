@@ -63,6 +63,25 @@ export const autofixStage: PipelineStage = {
     const failedCheckNames = new Set((reviewResult.checks ?? []).filter((c) => !c.success).map((c) => c.check));
     const hasLintFailure = failedCheckNames.has("lint");
 
+    // Checks that autofix cannot resolve via agent rectification — mechanical pre-checks
+    // that require human intervention (e.g. commit the dirty file). Closed set: new
+    // mechanical pre-checks must opt in explicitly.
+    const NON_FIXABLE_BY_RECTIFICATION = new Set(["git-clean"]);
+    const totalFindingCount = (reviewResult.checks ?? []).reduce((n, c) => n + (c.findings?.length ?? 0), 0);
+    const allFailuresNonFixable =
+      failedCheckNames.size > 0 && [...failedCheckNames].every((c) => NON_FIXABLE_BY_RECTIFICATION.has(c));
+    if (failedCheckNames.size === 0 || (allFailuresNonFixable && totalFindingCount === 0)) {
+      logger.error("autofix", "Cannot autofix: review failed with no actionable signal", {
+        storyId: ctx.story.id,
+        failedChecks: [...failedCheckNames],
+        failureReason: reviewResult.failureReason,
+      });
+      return {
+        action: "escalate",
+        reason: `Review failed without actionable signal: ${reviewResult.failureReason ?? "(no reason given)"}`,
+      };
+    }
+
     logger.info("autofix", "Starting autofix", {
       storyId: ctx.story.id,
       failedChecks: [...failedCheckNames],
