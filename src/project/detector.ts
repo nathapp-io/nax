@@ -112,9 +112,7 @@ async function detectTestFramework(
  * Detection priority: Go > Rust > Python > TypeScript > JavaScript.
  * Returns `undefined` if no language markers are found.
  */
-export async function detectLanguage(
-  packageDir: string,
-): Promise<ProjectProfile["language"] | undefined> {
+export async function detectLanguage(packageDir: string): Promise<ProjectProfile["language"] | undefined> {
   const pkg = await _detectorDeps.readJson(join(packageDir, "package.json"));
   return _detectLanguageImpl(packageDir, pkg);
 }
