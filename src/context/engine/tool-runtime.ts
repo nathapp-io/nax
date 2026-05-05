@@ -84,6 +84,8 @@ export function createContextToolRuntime(options: {
             getBudget(tool),
             tool.maxTokensPerCall,
             patterns,
+            undefined,
+            config.context?.v2?.providers,
           );
         }
         case "query_feature_context":
