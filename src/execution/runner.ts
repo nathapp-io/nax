@@ -290,6 +290,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
         branch,
         version: NAX_VERSION,
         runCompleted,
+        outputDir: runtime.outputDir,
+        globalDir: runtime.globalDir,
+        projectKey: runtime.projectKey,
+        curatorRollupPath: runtime.curatorRollupPath,
+        logFilePath,
+        config,
       });
       logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
     } finally {

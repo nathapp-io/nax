@@ -14,10 +14,22 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins } from "../../../src/plugins/loader";
+import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins as loadPluginsWithBuiltins } from "../../../src/plugins/loader";
 import type { PluginConfigEntry } from "../../../src/plugins/types";
 import type { NaxPlugin } from "../../../src/plugins/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+
+const DISABLE_BUILTIN_PLUGINS = ["nax-curator"];
+
+function loadPlugins(
+  ...args: Parameters<typeof loadPluginsWithBuiltins>
+): ReturnType<typeof loadPluginsWithBuiltins> {
+  const [globalDir, projectDir, configPlugins, projectRoot, disabledPlugins, isTestFile] = args;
+  return loadPluginsWithBuiltins(globalDir, projectDir, configPlugins, projectRoot, [
+    ...DISABLE_BUILTIN_PLUGINS,
+    ...(disabledPlugins ?? []),
+  ], isTestFile);
+}
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {

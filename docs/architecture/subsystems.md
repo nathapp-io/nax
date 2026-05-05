@@ -1237,3 +1237,171 @@ in ADR-019 Phase C.
 `src/operations/index.ts` exports `callOp`, `buildHopCallback`, every concrete
 op spec, and the type aliases (`Operation`, `RunOperation`, `CompleteOperation`,
 `BuildContext`, `CallContext`).
+
+---
+
+## §38 Post-Run Curator
+
+### Overview
+
+The **context curator** is a built-in `IPostRunAction` plugin that runs automatically after each feature completes. It analyzes run artifacts to generate proposals for improving your project's canonical context sources (`.nax/features/<id>/context.md` and `.nax/rules/`).
+
+**Key principle:** Curator never modifies canonical sources directly. All proposals are human-reviewed and applied explicitly via `nax curator commit`.
+
+**Technology:** Deterministic heuristics (frequency counts, manifest joins, status flags) — no LLM, no auto-apply. Produces two artifacts per run:
+- `observations.jsonl` — normalized event table (all observations from this run)
+- `curator-proposals.md` — human-readable proposal checklist
+
+### Plugin Architecture
+
+`src/plugins/builtin/curator/`:
+
+| Module | Purpose |
+|:---|:---|
+| `index.ts` | `IPostRunAction` plugin registration and lifecycle |
+| `collect.ts` | Read Tier 1 sources; project to `Observation[]` schema |
+| `heuristics.ts` | Apply 6 deterministic heuristics; generate `Proposal[]` |
+| `render.ts` | Produce `observations.jsonl` and `curator-proposals.md` |
+| `rollup.ts` | Append observations to cross-run rollup (append-only) |
+| `types.ts` | `Observation`, `Proposal`, config types |
+| `paths.ts` | Resolve output paths (`projectDir`, `rollupPath`) |
+
+### Observation Schema
+
+Every signal from run artifacts maps to one row in `observations.jsonl`. Schema (`src/plugins/builtin/curator/types.ts`):
+
+```typescript
+type Observation = {
+  // identity
+  runId: string;
+  featureId: string;
+  storyId: string;
+  stage: string;              // "execution" | "review" | "rectify" | …
+  ts: string;                 // ISO timestamp
+  schemaVersion: number;      // 1 for v0.38.0+
+
+  // discriminated by kind
+  kind:
+    | "chunk-included"        // Context chunk was included
+    | "chunk-excluded"        // Context chunk excluded (with reason)
+    | "provider-empty"        // Context provider returned zero results
+    | "review-finding"        // Semantic or adversarial finding
+    | "rectify-cycle"         // Test retry attempt
+    | "escalation"            // Model tier escalation
+    | "acceptance-verdict"    // Feature acceptance test result
+    | "pull-call"             // Agent called a pull tool
+    | "co-change"             // Files co-changed together
+    | "verdict"               // Story-level pass/fail
+    | "fix-cycle.iteration"   // Fix cycle iteration (from ADR-022)
+    | "fix-cycle.exit"        // Fix cycle completed
+    | "fix-cycle.validator-retry";
+
+  // payload: discriminated union, only fields relevant to this kind
+  payload: { … }  // See types.ts for full discriminated union
+};
+```
+
+Observations are append-only within a run (never mutated). Schema versioning via `schemaVersion` field on each row.
+
+### Data Sources (Tier 1)
+
+The curator reads six artifact families:
+
+| Source | Location | What curator extracts |
+|:---|:---|:---|
+| **Context manifest** | `.nax/features/<id>/stories/<sid>/context-manifest-*.json` | `includedChunks`, `excludedChunks` (with reason), `providerResults` |
+| **Review audit** | `<outputDir>/review-audit/<feature>/*.json` (requires `review.audit.enabled: true`) | `findings[]`, `passed`, `failOpen`, `blockingThreshold` |
+| **Run log** | `.nax/features/<id>/runs/<ts>.jsonl` | `stage:"rectify"` / `"escalation"` / `"acceptance"` / `"findings.cycle"` events |
+| **Story metrics** | `<outputDir>/metrics.json` | `firstPassSuccess`, `attempts`, `agentUsed`, `finalTier`, `tokensProduced` |
+| **Pull-tool emits** | Run log `stage:"pull-tool"` events | `tool`, `keyword`, `resultCount` |
+| **Acceptance verdict** | Run log `stage:"acceptance"` events | `passed`, `failedACs`, `retries` |
+
+All reading is **tolerant** — missing or malformed artifacts degrade gracefully with warnings logged, never crashing.
+
+### Heuristics (v0.38.0)
+
+Six deterministic heuristics run after collection. Each produces zero or more `Proposal` with severity (HIGH / MED / LOW) and traceability ID (H1–H6):
+
+| ID | Heuristic | Threshold | Output |
+|:---|:---|:---|:---|
+| **H1** | Repeated review finding | `count(checkId) >= N` | Add to `.nax/rules/` |
+| **H2** | Pull-tool empty result | `resultCount==0 for same keyword >= N` | Add to `.nax/features/<id>/context.md` |
+| **H3** | Repeated rectification cycle | `attempts >= N` for same story | Add to context.md |
+| **H4** | Escalation chain | `fromTier→toTier >= N` | Add to context.md |
+| **H5** | Stale chunk | `chunk excluded as stale, story passed` | Drop from rules |
+| **H6** | Fix-cycle unchanged | `outcome=="unchanged" >= N` in a row | Advisory (prompt diagnosis) |
+
+Thresholds are config-driven (`config.curator.thresholds.<heuristicName>`) to enable calibration without code changes.
+
+### Configuration
+
+```json
+{
+  "curator": {
+    "enabled": true,          // Enable/disable post-run plugin
+    "thresholds": {           // Heuristic trigger points
+      "repeatedFinding": 2,
+      "emptyKeyword": 2,
+      "rectifyAttempts": 2,
+      "escalationChain": 2,
+      "staleChunkRuns": 2,
+      "unchangedOutcome": 2
+    },
+    "rollupPath": "~/.nax/global/curator/rollup.jsonl"  // Cross-run rollup location
+  },
+  "review": {
+    "audit": {
+      "enabled": true         // Required for H1 (review findings)
+    }
+  }
+}
+```
+
+### Lifecycle
+
+`IPostRunAction.execute(context: PostRunContext)`:
+
+1. **Collect phase** — walk all Tier 1 sources, project to `Observation[]`
+2. **Heuristic phase** — apply H1–H6, generate `Proposal[]`
+3. **Render phase** — write `observations.jsonl` and `curator-proposals.md`
+4. **Rollup append** — append observations to cross-run rollup (append-only)
+
+All phases are tolerant of errors (logged, never fatal). Partial output (e.g., heuristics succeeded but rollup write failed) is acceptable — the next run regenerates.
+
+### Output Files
+
+Per run:
+
+- **`<outputDir>/runs/<runId>/observations.jsonl`** — one row per observation (JSONL format, schema version 1)
+- **`<outputDir>/runs/<runId>/curator-proposals.md`** — human-readable checklist for review + acceptance
+
+Cross-run (append-only):
+
+- **`~/.nax/global/curator/rollup.jsonl`** (or `config.curator.rollupPath`) — append one observation row per run, `runId` retained for deduplication on read
+
+### CLI Integration
+
+Three subcommands in `src/commands/curator.ts`:
+
+| Command | Purpose |
+|:---|:---|
+| `nax curator status [--run <runId>]` | Show observations + proposals for a run |
+| `nax curator commit <runId>` | Apply checked proposals to canonical sources |
+| `nax curator dryrun [--run <runId>]` | Re-run heuristics on existing observations (threshold calibration) |
+| `nax curator gc [--keep N]` | Prune old rollup rows |
+
+See [curator.md guide](../guides/curator.md) for full CLI reference.
+
+### Atomicity & Safety
+
+- **Read-only on artifacts** — curator only reads run artifacts, never modifies them
+- **Append-only rollup** — multiple runs writing to rollup; POSIX append is atomic per-line
+- **Idempotent proposals** — running curator twice on the same run overwrites proposals (deterministic heuristics)
+- **Human gate** — `nax curator commit` opens files in `$EDITOR` for review before persisting
+- **Reversible** — all changes stay in working directory; you commit to git when ready
+
+### Integration with Review Audit
+
+Review audit ([§25](./subsystems.md#§25-review--quality-system)) captures semantic and adversarial findings. Curator's H1 heuristic (repeated review finding) depends on `review.audit.enabled: true` to populate `<outputDir>/review-audit/`. Without it, H1 produces no proposals and curator quality degrades gracefully (other heuristics still fire).
+
+User guide: [curator.md guide](../guides/curator.md) §Integration with Review Audit.

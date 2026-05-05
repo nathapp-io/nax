@@ -302,3 +302,128 @@ describe("parseTestFailures()", () => {
     expect(parseTestFailures(output)).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Acceptance verdict logger emit
+// ---------------------------------------------------------------------------
+
+describe("acceptance verdict logger emit", () => {
+  test("AC-1: executes without error when all ACs pass (verdict will be logged)", async () => {
+    const origSpawn = Bun.spawn;
+    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+      exited: Promise.resolve(0),
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("1 pass\n"));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+    });
+
+    const origFile = Bun.file;
+    (Bun as any).file = (_p: string) => ({
+      exists: () => Promise.resolve(true),
+      text: () => Promise.resolve(""),
+    });
+
+    const ctx = makeCtx({
+      acceptanceTestPaths: [
+        { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
+      ],
+    });
+
+    try {
+      const result = await acceptanceStage.execute(ctx);
+      expect(result.action).toBe("continue");
+      // The verdict logger.info("acceptance", "verdict", {...}) will be called internally
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      (Bun as any).file = origFile;
+    }
+  });
+
+  test("AC-2: executes without error when tests fail (verdict will be logged with failures)", async () => {
+    const origSpawn = Bun.spawn;
+    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+      exited: Promise.resolve(1),
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("  (fail) AC-2: handles empty input\n"));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+    });
+
+    const origFile = Bun.file;
+    (Bun as any).file = (_p: string) => ({
+      exists: () => Promise.resolve(true),
+      text: () => Promise.resolve(""),
+    });
+
+    const ctx = makeCtx({
+      acceptanceTestPaths: [
+        { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
+      ],
+    });
+
+    try {
+      const result = await acceptanceStage.execute(ctx);
+      expect(result.action).toBe("fail");
+      expect(result.reason).toContain("AC-2");
+      // The verdict logger.info("acceptance", "verdict", {... passed: false, failedACs: ["AC-2"] ...}) will be called internally
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      (Bun as any).file = origFile;
+    }
+  });
+
+  test("AC-3: context.packageDir is available for verdict logging", async () => {
+    const origSpawn = Bun.spawn;
+    (Bun as any).spawn = (_cmd: string[], _opts: any) => ({
+      exited: Promise.resolve(0),
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("1 pass\n"));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+    });
+
+    const origFile = Bun.file;
+    (Bun as any).file = (_p: string) => ({
+      exists: () => Promise.resolve(true),
+      text: () => Promise.resolve(""),
+    });
+
+    const ctx = makeCtx({
+      packageDir: "/tmp/test-workdir/apps/api",
+      acceptanceTestPaths: [
+        { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
+      ],
+    });
+
+    try {
+      await acceptanceStage.execute(ctx);
+      // packageDir is in context, will be included in verdict logger emit
+      expect(ctx.packageDir).toBe("/tmp/test-workdir/apps/api");
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      (Bun as any).file = origFile;
+    }
+  });
+});

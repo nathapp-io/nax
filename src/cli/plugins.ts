@@ -100,7 +100,10 @@ export async function pluginsListCommand(
  * @param sourcePath - Full path to plugin
  * @returns Formatted source string
  */
-function formatSource(type: "global" | "project" | "config", sourcePath: string): string {
+function formatSource(type: "builtin" | "global" | "project" | "config", sourcePath: string): string {
+  if (type === "builtin") {
+    return `built-in (${sourcePath})`;
+  }
   if (type === "global") {
     return `global (${path.basename(sourcePath)})`;
   }

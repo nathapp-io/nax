@@ -217,6 +217,24 @@ export interface PostRunContext {
 
   /** Write-only logger scoped to this plugin */
   logger: PluginLogger;
+
+  /** Project output directory (for curator and other plugins) — optional for backward compatibility */
+  outputDir?: string;
+
+  /** Global output directory (for curator and other plugins) — optional for backward compatibility */
+  globalDir?: string;
+
+  /** Project key (for curator and other plugins) — optional for backward compatibility */
+  projectKey?: string;
+
+  /** Path to curator rollup file (for curator plugin) — optional for backward compatibility */
+  curatorRollupPath?: string;
+
+  /** Path to active run JSONL (for curator and other plugins) — optional for backward compatibility */
+  logFilePath?: string;
+
+  /** Full nax config (for curator and other plugins) — optional for backward compatibility */
+  config?: unknown;
 }
 
 /**

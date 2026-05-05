@@ -1,8 +1,20 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { loadPlugins, _setPluginErrorSink, _resetPluginErrorSink } from "../../../src/plugins/loader";
+import { loadPlugins as loadPluginsWithBuiltins, _setPluginErrorSink, _resetPluginErrorSink } from "../../../src/plugins/loader";
 import { resolve } from "node:path";
 import * as fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+
+const DISABLE_BUILTIN_PLUGINS = ["nax-curator"];
+
+function loadPlugins(
+  ...args: Parameters<typeof loadPluginsWithBuiltins>
+): ReturnType<typeof loadPluginsWithBuiltins> {
+  const [globalDir, projectDir, configPlugins, projectRoot, disabledPlugins, isTestFile] = args;
+  return loadPluginsWithBuiltins(globalDir, projectDir, configPlugins, projectRoot, [
+    ...DISABLE_BUILTIN_PLUGINS,
+    ...(disabledPlugins ?? []),
+  ], isTestFile);
+}
 
 describe("Loader Security (SEC-1, SEC-2)", () => {
   const projectRoot = `/tmp/nax-sec-test-${randomUUID()}`;

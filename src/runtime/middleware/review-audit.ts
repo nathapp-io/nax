@@ -1,5 +1,5 @@
 import type { IReviewAuditor } from "../../review/review-audit";
-import type { DispatchEvent, IDispatchEventBus } from "../dispatch-events";
+import type { DispatchEvent, IDispatchEventBus, ReviewDecisionEvent } from "../dispatch-events";
 
 function reviewerFromRole(role: string): "semantic" | "adversarial" | null {
   if (role === "reviewer-semantic") return "semantic";
@@ -12,7 +12,7 @@ export function attachReviewAuditSubscriber(
   auditor: IReviewAuditor,
   runId: string,
 ): () => void {
-  return bus.onDispatch((event: DispatchEvent) => {
+  const offDispatch = bus.onDispatch((event: DispatchEvent) => {
     if (event.kind !== "session-turn") return;
     const reviewer = reviewerFromRole(event.sessionRole);
     if (!reviewer) return;
@@ -30,4 +30,32 @@ export function attachReviewAuditSubscriber(
       featureName: event.featureName,
     });
   });
+
+  const offDecision = bus.onReviewDecision((event: ReviewDecisionEvent) => {
+    auditor.recordDecision({
+      runId: event.runId,
+      reviewer: event.reviewer,
+      sessionName: event.sessionName,
+      sessionId: event.sessionId,
+      recordId: event.recordId,
+      workdir: event.workdir,
+      projectDir: event.projectDir,
+      outputDir: event.outputDir,
+      agentName: event.agentName,
+      storyId: event.storyId,
+      featureName: event.featureName,
+      parsed: event.parsed,
+      looksLikeFail: event.looksLikeFail,
+      failOpen: event.failOpen,
+      passed: event.passed,
+      blockingThreshold: event.blockingThreshold,
+      result: event.result,
+      advisoryFindings: event.advisoryFindings,
+    });
+  });
+
+  return () => {
+    offDispatch();
+    offDecision();
+  };
 }

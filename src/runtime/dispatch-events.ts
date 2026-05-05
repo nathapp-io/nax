@@ -72,23 +72,50 @@ export interface DispatchErrorEvent {
   readonly resolvedPermissions: ResolvedPermissions;
 }
 
+export interface ReviewDecisionEvent {
+  readonly kind: "review-decision";
+  readonly runId?: string;
+  readonly reviewer: "semantic" | "adversarial";
+  readonly workdir?: string;
+  readonly projectDir?: string;
+  readonly outputDir?: string;
+  readonly sessionName?: string;
+  readonly sessionId?: string | null;
+  readonly recordId?: string | null;
+  readonly agentName?: string;
+  readonly storyId?: string;
+  readonly featureName?: string;
+  readonly timestamp: number;
+  readonly parsed: boolean;
+  readonly looksLikeFail?: boolean;
+  readonly failOpen?: boolean;
+  readonly passed?: boolean;
+  readonly blockingThreshold?: "error" | "warning" | "info";
+  readonly result: { passed: boolean; findings: unknown[] } | null;
+  readonly advisoryFindings?: unknown[];
+}
+
 export type DispatchListener = (event: DispatchEvent) => void;
 export type OperationCompletedListener = (event: OperationCompletedEvent) => void;
 export type DispatchErrorListener = (event: DispatchErrorEvent) => void;
+export type ReviewDecisionListener = (event: ReviewDecisionEvent) => void;
 
 export interface IDispatchEventBus {
   onDispatch(listener: DispatchListener): () => void;
   onOperationCompleted(listener: OperationCompletedListener): () => void;
   onDispatchError(listener: DispatchErrorListener): () => void;
+  onReviewDecision(listener: ReviewDecisionListener): () => void;
   emitDispatch(event: DispatchEvent): void;
   emitOperationCompleted(event: OperationCompletedEvent): void;
   emitDispatchError(event: DispatchErrorEvent): void;
+  emitReviewDecision(event: ReviewDecisionEvent): void;
 }
 
 export class DispatchEventBus implements IDispatchEventBus {
   private readonly _dispatchListeners = new Set<DispatchListener>();
   private readonly _completedListeners = new Set<OperationCompletedListener>();
   private readonly _errorListeners = new Set<DispatchErrorListener>();
+  private readonly _reviewDecisionListeners = new Set<ReviewDecisionListener>();
 
   onDispatch(l: DispatchListener): () => void {
     this._dispatchListeners.add(l);
@@ -103,6 +130,11 @@ export class DispatchEventBus implements IDispatchEventBus {
   onDispatchError(l: DispatchErrorListener): () => void {
     this._errorListeners.add(l);
     return () => this._errorListeners.delete(l);
+  }
+
+  onReviewDecision(l: ReviewDecisionListener): () => void {
+    this._reviewDecisionListeners.add(l);
+    return () => this._reviewDecisionListeners.delete(l);
   }
 
   emitDispatch(event: DispatchEvent): void {
@@ -131,6 +163,16 @@ export class DispatchEventBus implements IDispatchEventBus {
         l(event);
       } catch (err) {
         getSafeLogger()?.warn("dispatch-bus", "error-listener threw", { error: errorMessage(err) });
+      }
+    }
+  }
+
+  emitReviewDecision(event: ReviewDecisionEvent): void {
+    for (const l of this._reviewDecisionListeners) {
+      try {
+        l(event);
+      } catch (err) {
+        getSafeLogger()?.warn("dispatch-bus", "review-decision-listener threw", { error: errorMessage(err) });
       }
     }
   }

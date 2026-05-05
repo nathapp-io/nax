@@ -1207,6 +1207,71 @@ runs
     await runsShowCommand({ runId, feature: options.feature, workdir });
   });
 
+// ── curator ──────────────────────────────────────────
+const curator = program.command("curator").description("Inspect and manage curator proposals");
+
+curator
+  .command("status")
+  .description("Show observation counts and proposal markdown for a run")
+  .option("-p, --project <path>", "Project directory (default: CWD)")
+  .option("-r, --run <runId>", "Run ID (default: latest)")
+  .action(async (options) => {
+    const { curatorStatus } = await import("../src/commands/curator");
+    try {
+      await curatorStatus({ project: options.project, run: options.run });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+curator
+  .command("commit <runId>")
+  .description("Apply checked proposals from curator-proposals.md to canonical files")
+  .option("-p, --project <path>", "Project directory (default: CWD)")
+  .action(async (runId, options) => {
+    const { curatorCommit } = await import("../src/commands/curator");
+    try {
+      await curatorCommit({ runId, project: options.project });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+curator
+  .command("dryrun")
+  .description("Re-run heuristics on an existing observations.jsonl and print proposals to stdout")
+  .option("-p, --project <path>", "Project directory (default: CWD)")
+  .option("-r, --run <runId>", "Run ID (default: latest)")
+  .action(async (options) => {
+    const { curatorDryrun } = await import("../src/commands/curator");
+    try {
+      await curatorDryrun({ project: options.project, run: options.run });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+curator
+  .command("gc")
+  .description("Prune old rows from the curator rollup JSONL")
+  .option("-p, --project <path>", "Project directory (default: CWD)")
+  .option("--keep <N>", "Number of most recent runIds to keep (default: 50)", "50")
+  .action(async (options) => {
+    const { curatorGc } = await import("../src/commands/curator");
+    try {
+      await curatorGc({
+        project: options.project,
+        keep: options.keep !== undefined ? Number.parseInt(options.keep, 10) : undefined,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
 // ── accept ───────────────────────────────────────────
 program
   .command("accept")
