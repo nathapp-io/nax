@@ -28,11 +28,11 @@ describe("CuratorThresholdsSchema", () => {
     const result = CuratorThresholdsSchema.safeParse({});
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.repeatedFinding).toBe(3);
+      expect(result.data.repeatedFinding).toBe(2);
       expect(result.data.emptyKeyword).toBe(2);
-      expect(result.data.rectifyAttempts).toBe(3);
+      expect(result.data.rectifyAttempts).toBe(2);
       expect(result.data.escalationChain).toBe(2);
-      expect(result.data.staleChunkRuns).toBe(5);
+      expect(result.data.staleChunkRuns).toBe(2);
       expect(result.data.unchangedOutcome).toBe(2);
     }
   });
@@ -134,7 +134,7 @@ describe("CuratorConfigSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.thresholds).toBeDefined();
-      expect(result.data.thresholds.repeatedFinding).toBe(3);
+      expect(result.data.thresholds.repeatedFinding).toBe(2);
       expect(result.data.thresholds.emptyKeyword).toBe(2);
     }
   });

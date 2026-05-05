@@ -207,7 +207,7 @@ describe("runHeuristics", () => {
   });
 
   describe("H2 — Pull-tool Empty Result", () => {
-    test("triggers when pull-call with same toolName appears >= threshold times", () => {
+    test("triggers when pull-call with same empty keyword appears >= threshold times", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
@@ -217,7 +217,7 @@ describe("runHeuristics", () => {
           stage: "pull",
           ts: "2026-05-04T00:00:00Z",
           kind: "pull-call",
-          payload: { toolName: "grep-search", status: "completed" },
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
         },
         {
           schemaVersion: 1,
@@ -227,7 +227,7 @@ describe("runHeuristics", () => {
           stage: "pull",
           ts: "2026-05-04T00:01:00Z",
           kind: "pull-call",
-          payload: { toolName: "grep-search", status: "completed" },
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
         },
       ];
 
@@ -237,10 +237,10 @@ describe("runHeuristics", () => {
       expect(h2).toBeDefined();
       expect(h2?.severity).toBe("MED");
       expect(h2?.target.action).toBe("add");
-      expect(h2?.description).toContain("grep-search");
+      expect(h2?.description).toContain("review batch");
     });
 
-    test("does not trigger for different toolNames", () => {
+    test("does not trigger for non-empty pull-call results", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
@@ -250,7 +250,7 @@ describe("runHeuristics", () => {
           stage: "pull",
           ts: "2026-05-04T00:00:00Z",
           kind: "pull-call",
-          payload: { toolName: "grep-search", status: "completed" },
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 2, status: "completed" },
         },
         {
           schemaVersion: 1,
@@ -260,7 +260,7 @@ describe("runHeuristics", () => {
           stage: "pull",
           ts: "2026-05-04T00:01:00Z",
           kind: "pull-call",
-          payload: { toolName: "find-tool", status: "completed" },
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 1, status: "completed" },
         },
       ];
 
@@ -474,7 +474,7 @@ describe("runHeuristics", () => {
   });
 
   describe("H6 — Fix-cycle Unchanged Outcome", () => {
-    test("triggers when fix-cycle-iteration with status passed then unchanged >= threshold", () => {
+    test("triggers when fix-cycle-iteration has unchanged outcome >= threshold", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
@@ -484,7 +484,7 @@ describe("runHeuristics", () => {
           stage: "fix-cycle",
           ts: "2026-05-04T00:00:00Z",
           kind: "fix-cycle-iteration",
-          payload: { iteration: 1, status: "passed" },
+          payload: { iteration: 1, status: "failed", outcome: "unchanged" },
         },
         {
           schemaVersion: 1,
@@ -494,7 +494,7 @@ describe("runHeuristics", () => {
           stage: "fix-cycle",
           ts: "2026-05-04T00:01:00Z",
           kind: "fix-cycle-iteration",
-          payload: { iteration: 2, status: "passed" },
+          payload: { iteration: 2, status: "failed", outcome: "unchanged" },
         },
         {
           schemaVersion: 1,
@@ -504,7 +504,7 @@ describe("runHeuristics", () => {
           stage: "fix-cycle",
           ts: "2026-05-04T00:02:00Z",
           kind: "fix-cycle-iteration",
-          payload: { iteration: 3, status: "passed" },
+          payload: { iteration: 3, status: "failed", outcome: "unchanged" },
         },
       ];
 
@@ -526,7 +526,7 @@ describe("runHeuristics", () => {
           stage: "fix-cycle",
           ts: "2026-05-04T00:00:00Z",
           kind: "fix-cycle-iteration",
-          payload: { iteration: 1, status: "passed" },
+          payload: { iteration: 1, status: "passed", outcome: "resolved" },
         },
         {
           schemaVersion: 1,
@@ -536,7 +536,7 @@ describe("runHeuristics", () => {
           stage: "fix-cycle",
           ts: "2026-05-04T00:01:00Z",
           kind: "fix-cycle-iteration",
-          payload: { iteration: 2, status: "failed" },
+          payload: { iteration: 2, status: "failed", outcome: "unchanged" },
         },
       ];
 
@@ -592,7 +592,7 @@ describe("runHeuristics", () => {
           stage: "pull",
           ts: "2026-05-04T00:02:00Z",
           kind: "pull-call",
-          payload: { toolName: "grep-search", status: "completed" },
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
         },
         {
           schemaVersion: 1,
@@ -602,7 +602,7 @@ describe("runHeuristics", () => {
           stage: "pull",
           ts: "2026-05-04T00:03:00Z",
           kind: "pull-call",
-          payload: { toolName: "grep-search", status: "completed" },
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
         },
       ];
 

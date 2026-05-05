@@ -70,6 +70,7 @@ export interface ReviewFindingObservation extends BaseObservation {
   kind: "review-finding";
   payload: {
     ruleId: string;
+    checkId?: string;
     severity: string;
     file: string;
     line: number;
@@ -99,8 +100,12 @@ export interface EscalationObservation extends BaseObservation {
 export interface AcceptanceVerdictObservation extends BaseObservation {
   kind: "acceptance-verdict";
   payload: {
-    passed: number;
-    failed: number;
+    passed: boolean | number;
+    failed?: number;
+    failedACs?: string[];
+    retries?: number;
+    packageDir?: string;
+    durationMs?: number;
   };
 }
 
@@ -109,6 +114,10 @@ export interface PullCallObservation extends BaseObservation {
   kind: "pull-call";
   payload: {
     toolName: string;
+    tool?: string;
+    keyword?: string | null;
+    resultCount?: number;
+    resultBytes?: number;
     status: "started" | "completed" | "failed";
   };
 }
@@ -126,7 +135,9 @@ export interface CoChangeObservation extends BaseObservation {
 export interface VerdictObservation extends BaseObservation {
   kind: "verdict";
   payload: {
-    status: "completed" | "failed" | "skipped";
+    status: "completed" | "failed" | "skipped" | "unknown";
+    success?: boolean;
+    attempts?: number;
     cost: number;
     tokens: number;
   };
@@ -137,7 +148,12 @@ export interface FixCycleIterationObservation extends BaseObservation {
   kind: "fix-cycle-iteration";
   payload: {
     iteration: number;
+    iterationNum?: number;
     status: "started" | "passed" | "failed";
+    outcome?: "resolved" | "partial" | "regressed" | "unchanged" | "regressed-different-source";
+    findingsBefore?: number;
+    findingsAfter?: number;
+    costUsd?: number;
   };
 }
 

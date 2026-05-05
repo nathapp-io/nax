@@ -95,11 +95,11 @@ async function parseObservations(observationsPath: string): Promise<Observation[
 function getThresholds(config: NaxConfig): CuratorThresholds {
   const t = config.curator?.thresholds;
   return {
-    repeatedFinding: t?.repeatedFinding ?? 3,
+    repeatedFinding: t?.repeatedFinding ?? 2,
     emptyKeyword: t?.emptyKeyword ?? 2,
-    rectifyAttempts: t?.rectifyAttempts ?? 3,
+    rectifyAttempts: t?.rectifyAttempts ?? 2,
     escalationChain: t?.escalationChain ?? 2,
-    staleChunkRuns: t?.staleChunkRuns ?? 5,
+    staleChunkRuns: t?.staleChunkRuns ?? 2,
     unchangedOutcome: t?.unchangedOutcome ?? 2,
   };
 }

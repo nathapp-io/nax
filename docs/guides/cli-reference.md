@@ -400,7 +400,7 @@ Useful for threshold calibration: adjust `config.curator.thresholds` values, re-
 
 ### `nax curator gc`
 
-Prune old curator artifacts from the cross-run rollup.
+Prune old rows from the cross-run curator rollup.
 
 ```bash
 nax curator gc --keep 50   # Keep 50 most recent runs (default)
@@ -408,4 +408,4 @@ nax curator gc --keep 100  # Keep 100 runs
 nax curator gc --project my-project
 ```
 
-Cleans up per-run proposal and observation files from older runs. Does not delete run logs or metrics — only curator artifacts.
+Rewrites only the configured rollup JSONL file, keeping rows for the most recent run IDs. It does not delete per-run proposal files, observations, run logs, metrics, or canonical context/rules files.

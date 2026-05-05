@@ -45,10 +45,10 @@ export interface Proposal {
 const DEFAULT_THRESHOLDS: CuratorThresholds = {
   repeatedFinding: 2,
   emptyKeyword: 2,
-  rectifyAttempts: 3,
+  rectifyAttempts: 2,
   escalationChain: 2,
   staleChunkRuns: 2,
-  unchangedOutcome: 3,
+  unchangedOutcome: 2,
 };
 
 function mergeThresholds(thresholds: CuratorThresholds): CuratorThresholds {
@@ -100,23 +100,29 @@ function h1RepeatedReviewFinding(observations: Observation[], threshold: number)
   return proposals;
 }
 
-/** H2: Pull-tool repeated — same toolName across stories */
-function h2PullToolRepeated(observations: Observation[], threshold: number): Proposal[] {
-  const pulls = observations.filter((o): o is PullCallObservation => o.kind === "pull-call");
+/** H2: Pull-tool empty result — same keyword returns zero results repeatedly */
+function h2PullToolEmptyResult(observations: Observation[], threshold: number): Proposal[] {
+  const pulls = observations.filter(
+    (o): o is PullCallObservation =>
+      o.kind === "pull-call" &&
+      o.payload.resultCount === 0 &&
+      typeof o.payload.keyword === "string" &&
+      o.payload.keyword.length > 0,
+  );
 
-  const byToolName = new Map<string, { storyIds: string[]; featureId: string }>();
+  const byKeyword = new Map<string, { storyIds: string[]; featureId: string }>();
   for (const obs of pulls) {
-    const toolName = obs.payload.toolName;
-    const existing = byToolName.get(toolName);
+    const keyword = obs.payload.keyword as string;
+    const existing = byKeyword.get(keyword);
     if (existing) {
       existing.storyIds.push(obs.storyId);
     } else {
-      byToolName.set(toolName, { storyIds: [obs.storyId], featureId: obs.featureId });
+      byKeyword.set(keyword, { storyIds: [obs.storyId], featureId: obs.featureId });
     }
   }
 
   const proposals: Proposal[] = [];
-  for (const [toolName, data] of byToolName.entries()) {
+  for (const [keyword, data] of byKeyword.entries()) {
     if (data.storyIds.length < threshold) continue;
     const count = data.storyIds.length;
     const unique = uniqueStoryIds(data.storyIds);
@@ -124,8 +130,8 @@ function h2PullToolRepeated(observations: Observation[], threshold: number): Pro
       id: "H2",
       severity: "MED",
       target: { canonicalFile: `.nax/features/${data.featureId}/context.md`, action: "add" },
-      description: `Repeated pull call: ${toolName} appeared ${count}x across stories`,
-      evidence: `Tool ${toolName} called ${count}× in stories: ${unique.join(", ")}`,
+      description: `Pull-tool keyword returned empty: \"${keyword}\" returned zero results ${count}x`,
+      evidence: `Keyword \"${keyword}\" returned zero results ${count}× in stories: ${unique.join(", ")}`,
       sourceKinds: ["pull-call"],
       storyIds: unique,
     });
@@ -231,31 +237,42 @@ function h5StaleChunk(observations: Observation[], threshold: number): Proposal[
   return proposals;
 }
 
-/** H6: Fix-cycle unchanged outcome — same story passes repeatedly in fix-cycle */
+/** H6: Fix-cycle unchanged outcome — same story has repeated unchanged outcomes */
 function h6FixCycleUnchanged(observations: Observation[], threshold: number): Proposal[] {
-  const iterations = observations.filter(
-    (o): o is FixCycleIterationObservation => o.kind === "fix-cycle-iteration" && o.payload.status === "passed",
-  );
+  const iterations = observations.filter((o): o is FixCycleIterationObservation => o.kind === "fix-cycle-iteration");
 
-  const byStory = new Map<string, { count: number; featureId: string }>();
+  const byStory = new Map<string, FixCycleIterationObservation[]>();
   for (const obs of iterations) {
     const existing = byStory.get(obs.storyId);
     if (existing) {
-      existing.count++;
+      existing.push(obs);
     } else {
-      byStory.set(obs.storyId, { count: 1, featureId: obs.featureId });
+      byStory.set(obs.storyId, [obs]);
     }
   }
 
   const proposals: Proposal[] = [];
-  for (const [storyId, data] of byStory.entries()) {
-    if (data.count < threshold) continue;
+  for (const [storyId, storyIterations] of byStory.entries()) {
+    const ordered = [...storyIterations].sort(
+      (a, b) => (a.payload.iterationNum ?? a.payload.iteration) - (b.payload.iterationNum ?? b.payload.iteration),
+    );
+    let currentStreak = 0;
+    let maxStreak = 0;
+    for (const iteration of ordered) {
+      if (iteration.payload.outcome === "unchanged") {
+        currentStreak += 1;
+        maxStreak = Math.max(maxStreak, currentStreak);
+      } else {
+        currentStreak = 0;
+      }
+    }
+    if (maxStreak < threshold) continue;
     proposals.push({
       id: "H6",
       severity: "LOW",
       target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "advisory" },
-      description: `Fix-cycle unchanged: story ${storyId} passed ${data.count} consecutive fix-cycle iterations`,
-      evidence: `Story ${storyId} had ${data.count} fix-cycle iterations all passing (outcome unchanged)`,
+      description: `Fix-cycle unchanged: story ${storyId} had ${maxStreak} consecutive unchanged outcomes`,
+      evidence: `Story ${storyId} had ${maxStreak} consecutive fix-cycle iterations with outcome=unchanged`,
       sourceKinds: ["fix-cycle-iteration"],
       storyIds: [storyId],
     });
@@ -274,7 +291,7 @@ export function runHeuristics(observations: Observation[], thresholds: CuratorTh
   const t = mergeThresholds(thresholds);
   return [
     ...h1RepeatedReviewFinding(observations, t.repeatedFinding),
-    ...h2PullToolRepeated(observations, t.emptyKeyword),
+    ...h2PullToolEmptyResult(observations, t.emptyKeyword),
     ...h3RepeatedRectification(observations, t.rectifyAttempts),
     ...h4EscalationChain(observations, t.escalationChain),
     ...h5StaleChunk(observations, t.staleChunkRuns),

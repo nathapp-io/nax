@@ -4,7 +4,7 @@
  * Append-only rollup writer for cross-run observation aggregation.
  */
 
-import { mkdir } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import type { Observation } from "./types";
 
@@ -25,19 +25,13 @@ export async function appendToRollup(observations: Observation[], rollupPath: st
     if (observations.length === 0) {
       const f = Bun.file(rollupPath);
       if (!(await f.exists())) {
-        await Bun.write(rollupPath, "");
+        await writeFile(rollupPath, "");
       }
       return;
     }
 
-    let existing = "";
-    const f = Bun.file(rollupPath);
-    if (await f.exists()) {
-      existing = await f.text();
-    }
-
     const newLines = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
-    await Bun.write(rollupPath, existing + newLines);
+    await appendFile(rollupPath, newLines);
   } catch {
     // Write errors are logged but never thrown — curator must not affect run exit code
   }

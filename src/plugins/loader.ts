@@ -12,6 +12,7 @@ import * as path from "node:path";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
+import { curatorPlugin } from "./builtin/curator";
 import { createPluginLogger } from "./plugin-logger";
 import { PluginRegistry } from "./registry";
 import type { NaxPlugin, PluginConfigEntry } from "./types";
@@ -46,7 +47,7 @@ function getSafeLogger() {
  * Plugin source metadata.
  */
 export interface PluginSource {
-  type: "global" | "project" | "config";
+  type: "builtin" | "global" | "project" | "config";
   path: string;
 }
 
@@ -108,6 +109,21 @@ export async function loadPlugins(
   const pluginNames = new Set<string>();
   const disabledSet = new Set(disabledPlugins ?? []);
   const logger = getSafeLogger();
+
+  // 0. Load built-in plugins.
+  if (!disabledSet.has(curatorPlugin.name)) {
+    if (curatorPlugin.setup) {
+      const pluginLogger = createPluginLogger(curatorPlugin.name);
+      await curatorPlugin.setup({}, pluginLogger);
+    }
+    loadedPlugins.push({
+      plugin: curatorPlugin,
+      source: { type: "builtin", path: curatorPlugin.name },
+    });
+    pluginNames.add(curatorPlugin.name);
+  } else {
+    logger?.info("plugins", `Skipping disabled plugin: '${curatorPlugin.name}' (built-in)`);
+  }
 
   // 1. Load plugins from global directory
   const globalPlugins = await discoverPlugins(globalDir, isTestFileFn);

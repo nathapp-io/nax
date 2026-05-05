@@ -5,6 +5,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadPlugins } from "../../../../src/plugins/loader";
 import { PluginRegistry } from "../../../../src/plugins/registry";
 import { curatorPlugin } from "../../../../src/plugins/builtin/curator";
 
@@ -20,6 +24,15 @@ describe("Curator Plugin Registration", () => {
 
     expect(actions.length).toBeGreaterThan(0);
     expect(actions.some((a) => a.name === "nax-curator")).toBe(true);
+  });
+
+  test("loadPlugins registers curator by default and honors disabledPlugins", async () => {
+    const root = await mkdtemp(join(tmpdir(), "curator-registration-"));
+    const enabled = await loadPlugins(join(root, "global"), join(root, "project"), [], root, []);
+    expect(enabled.getPostRunActions().some((a) => a.name === "nax-curator")).toBe(true);
+
+    const disabled = await loadPlugins(join(root, "global"), join(root, "project"), [], root, ["nax-curator"]);
+    expect(disabled.getPostRunActions().some((a) => a.name === "nax-curator")).toBe(false);
   });
 
   test("should be discoverable via getPostRunActions()", () => {

@@ -22,22 +22,30 @@ Curator analyzes run artifacts produced during feature execution:
 | Source | What it tells us | Where it comes from |
 |:---|:---|:---|
 | **Context manifests** | Which chunks were included/excluded (and why: too low score, over budget, stale, etc.), provider health | `.nax/features/<id>/stories/<sid>/context-manifest-*.json` |
-| **Review audit** | Repeated findings across stories → anti-pattern rule candidates | `.nax/review-audit/<feature>/*.json` (requires `review.audit.enabled: true`) |
-| **Run log** | Rectification cycles, escalations, acceptance verdicts, pull-tool results | `.nax/features/<id>/runs/<ts>.jsonl` |
-| **Story metrics** | First-pass success rate, attempt counts, token production, final tier | `.nax/metrics.json` |
+| **Review audit** | Repeated findings across stories → anti-pattern rule candidates | `<outputDir>/review-audit/<feature>/*.json` (requires `review.audit.enabled: true`) |
+| **Run log** | Rectification cycles, escalations, acceptance verdicts, pull-tool results | active run JSONL (`logFilePath`) |
+| **Story metrics** | First-pass success rate, attempt counts, token production, final tier | `<outputDir>/metrics.json` |
 | **Fix-cycle events** | Iteration outcomes, strategy successes/failures | Run log `stage:"findings.cycle"` events |
 
 ## Configuration
 
 ### Enable the Curator
 
-The curator is **enabled by default** in nax 0.38.0+. To disable it project-wide:
+The curator is **enabled by default** in nax 0.38.0+. To disable the post-run action but keep the plugin available:
 
 ```json
 {
   "curator": {
     "enabled": false
   }
+}
+```
+
+To disable the built-in plugin entirely, use `disabledPlugins`:
+
+```json
+{
+  "disabledPlugins": ["nax-curator"]
 }
 ```
 
@@ -137,7 +145,7 @@ Cleans up per-run proposal and observation files from older runs. Does not delet
 
 ## Proposal Review Flow
 
-Each run produces a proposal file at `.nax/runs/<runId>/curator-proposals.md`:
+Each run produces a proposal file at `<outputDir>/runs/<runId>/curator-proposals.md`:
 
 ```markdown
 # Curator proposals — run abc123
@@ -260,10 +268,10 @@ This ordering prevents conflicts where a single proposal file requests both "dro
 
 ### Cross-Run Rollup (Advanced)
 
-By default, curator writes per-run observations to `.nax/runs/<runId>/observations.jsonl`. For multi-run signal (e.g., "this finding appeared in 8 of the last 12 runs"), curator also maintains a cross-run rollup:
+By default, curator writes per-run observations under `<outputDir>/runs/<runId>/observations.jsonl`. With the folder-split path layer, `<outputDir>` defaults to `~/.nax/<projectKey>`. For multi-run signal (e.g., "this finding appeared in 8 of the last 12 runs"), curator also maintains a cross-run rollup:
 
 ```
-.nax/curator/rollup.jsonl
+~/.nax/global/curator/rollup.jsonl
 ```
 
 This is append-only and can be queried to detect long-term trends. Configurable via:
@@ -276,7 +284,7 @@ This is append-only and can be queried to detect long-term trends. Configurable 
 }
 ```
 
-The rollup is primarily for advanced diagnostics and multi-run trend analysis; most users can ignore it.
+The rollup is primarily for advanced diagnostics and multi-run trend analysis; most users can ignore it. Rollup rows may contain project paths, story IDs, and short context/review snippets, so share the file intentionally.
 
 ## Troubleshooting
 
@@ -324,13 +332,13 @@ Run `nax curator status --run <runId>` to view the raw proposal file and verify 
 
 ### Curator Artifacts Accumulating
 
-Run `nax curator gc` to clean up old per-run curator files (proposals, observations):
+Run `nax curator gc` to prune old rows from the cross-run rollup:
 
 ```bash
 nax curator gc --keep 50   # Keep 50 most recent runs
 ```
 
-This only deletes curator-specific output; run logs and metrics are untouched.
+This rewrites only the rollup file. It does not delete per-run proposal files, observations, run logs, metrics, or canonical context/rules files.
 
 ## Integration with Review Audit
 
@@ -338,7 +346,7 @@ Curator depends on `review.audit.enabled: true` for its highest-fidelity signal.
 
 | When | What Happens |
 |:---|:---|
-| Story completes | Review audit captures semantic + adversarial findings → `review-audit/<feature>/*.json` |
+| Story completes | Review audit captures semantic + adversarial findings → `<outputDir>/review-audit/<feature>/*.json` |
 | Run completes | Curator reads audit files and counts repeated findings across stories |
 | Same finding ≥ N times | Curator proposes adding a rule to `.nax/rules/` |
 

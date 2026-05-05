@@ -184,11 +184,11 @@ export const GenerateConfigSchema = z.object({
 });
 
 export const CuratorThresholdsSchema = z.object({
-  repeatedFinding: z.number().int().nonnegative().default(3),
+  repeatedFinding: z.number().int().nonnegative().default(2),
   emptyKeyword: z.number().int().nonnegative().default(2),
-  rectifyAttempts: z.number().int().nonnegative().default(3),
+  rectifyAttempts: z.number().int().nonnegative().default(2),
   escalationChain: z.number().int().nonnegative().default(2),
-  staleChunkRuns: z.number().int().nonnegative().default(5),
+  staleChunkRuns: z.number().int().nonnegative().default(2),
   unchangedOutcome: z.number().int().nonnegative().default(2),
 });
 
@@ -201,11 +201,11 @@ export const CuratorConfigSchema = z.object({
       message: "rollupPath must be absolute or start with ~/",
     }),
   thresholds: CuratorThresholdsSchema.default({
-    repeatedFinding: 3,
+    repeatedFinding: 2,
     emptyKeyword: 2,
-    rectifyAttempts: 3,
+    rectifyAttempts: 2,
     escalationChain: 2,
-    staleChunkRuns: 5,
+    staleChunkRuns: 2,
     unchangedOutcome: 2,
   }),
 });

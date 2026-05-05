@@ -1310,9 +1310,9 @@ The curator reads six artifact families:
 | Source | Location | What curator extracts |
 |:---|:---|:---|
 | **Context manifest** | `.nax/features/<id>/stories/<sid>/context-manifest-*.json` | `includedChunks`, `excludedChunks` (with reason), `providerResults` |
-| **Review audit** | `.nax/review-audit/<feature>/*.json` (requires `review.audit.enabled: true`) | `findings[]`, `passed`, `failOpen`, `blockingThreshold` |
+| **Review audit** | `<outputDir>/review-audit/<feature>/*.json` (requires `review.audit.enabled: true`) | `findings[]`, `passed`, `failOpen`, `blockingThreshold` |
 | **Run log** | `.nax/features/<id>/runs/<ts>.jsonl` | `stage:"rectify"` / `"escalation"` / `"acceptance"` / `"findings.cycle"` events |
-| **Story metrics** | `.nax/metrics.json` | `firstPassSuccess`, `attempts`, `agentUsed`, `finalTier`, `tokensProduced` |
+| **Story metrics** | `<outputDir>/metrics.json` | `firstPassSuccess`, `attempts`, `agentUsed`, `finalTier`, `tokensProduced` |
 | **Pull-tool emits** | Run log `stage:"pull-tool"` events | `tool`, `keyword`, `resultCount` |
 | **Acceptance verdict** | Run log `stage:"acceptance"` events | `passed`, `failedACs`, `retries` |
 
@@ -1372,12 +1372,12 @@ All phases are tolerant of errors (logged, never fatal). Partial output (e.g., h
 
 Per run:
 
-- **`.nax/runs/<runId>/observations.jsonl`** — one row per observation (JSONL format, schema version 1)
-- **`.nax/runs/<runId>/curator-proposals.md`** — human-readable checklist for review + acceptance
+- **`<outputDir>/runs/<runId>/observations.jsonl`** — one row per observation (JSONL format, schema version 1)
+- **`<outputDir>/runs/<runId>/curator-proposals.md`** — human-readable checklist for review + acceptance
 
 Cross-run (append-only):
 
-- **`.nax/curator/rollup.jsonl`** (or `config.curator.rollupPath`) — append one observation row per run, `runId` retained for deduplication on read
+- **`~/.nax/global/curator/rollup.jsonl`** (or `config.curator.rollupPath`) — append one observation row per run, `runId` retained for deduplication on read
 
 ### CLI Integration
 
@@ -1388,7 +1388,7 @@ Three subcommands in `src/commands/curator.ts`:
 | `nax curator status [--run <runId>]` | Show observations + proposals for a run |
 | `nax curator commit <runId>` | Apply checked proposals to canonical sources |
 | `nax curator dryrun [--run <runId>]` | Re-run heuristics on existing observations (threshold calibration) |
-| `nax curator gc [--keep N]` | Prune old per-run curator artifacts |
+| `nax curator gc [--keep N]` | Prune old rollup rows |
 
 See [curator.md guide](../guides/curator.md) for full CLI reference.
 
@@ -1402,6 +1402,6 @@ See [curator.md guide](../guides/curator.md) for full CLI reference.
 
 ### Integration with Review Audit
 
-Review audit ([§25](./subsystems.md#§25-review--quality-system)) captures semantic and adversarial findings. Curator's H1 heuristic (repeated review finding) depends on `review.audit.enabled: true` to populate `.nax/review-audit/`. Without it, H1 produces no proposals and curator quality degrades gracefully (other heuristics still fire).
+Review audit ([§25](./subsystems.md#§25-review--quality-system)) captures semantic and adversarial findings. Curator's H1 heuristic (repeated review finding) depends on `review.audit.enabled: true` to populate `<outputDir>/review-audit/`. Without it, H1 produces no proposals and curator quality degrades gracefully (other heuristics still fire).
 
 User guide: [curator.md guide](../guides/curator.md) §Integration with Review Audit.

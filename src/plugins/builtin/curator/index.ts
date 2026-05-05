@@ -23,10 +23,10 @@ const PLUGIN_VERSION = "0.1.0";
 const DEFAULT_THRESHOLDS: CuratorThresholds = {
   repeatedFinding: 2,
   emptyKeyword: 2,
-  rectifyAttempts: 3,
+  rectifyAttempts: 2,
   escalationChain: 2,
   staleChunkRuns: 2,
-  unchangedOutcome: 3,
+  unchangedOutcome: 2,
 };
 
 function getCuratorEnabled(context: PostRunContext): boolean {
