@@ -461,3 +461,47 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     }
   });
 });
+
+describe("verifyStage — testStrategy gating (2A)", () => {
+  test("enabled returns false when routing.testStrategy is no-test", async () => {
+    const { verifyStage } = await import("../../../../src/pipeline/stages/verify");
+    const ctx = makeContext();
+    const noTestCtx = {
+      ...ctx,
+      routing: { ...ctx.routing, testStrategy: "no-test" as const },
+    } as Parameters<typeof verifyStage.execute>[0];
+    expect(verifyStage.enabled?.(noTestCtx)).toBe(false);
+  });
+
+  test("skipReason returns no-test message when testStrategy is no-test", async () => {
+    const { verifyStage } = await import("../../../../src/pipeline/stages/verify");
+    const ctx = makeContext();
+    const noTestCtx = {
+      ...ctx,
+      routing: { ...ctx.routing, testStrategy: "no-test" as const },
+    } as Parameters<typeof verifyStage.execute>[0];
+    expect(verifyStage.skipReason?.(noTestCtx)).toContain('testStrategy="no-test"');
+  });
+
+  test("enabled returns true for test-after when full-suite gate not yet passed", async () => {
+    const { verifyStage } = await import("../../../../src/pipeline/stages/verify");
+    const ctx = makeContext();
+    const testAfterCtx = {
+      ...ctx,
+      fullSuiteGatePassed: false,
+      routing: { ...ctx.routing, testStrategy: "test-after" as const },
+    } as Parameters<typeof verifyStage.execute>[0];
+    expect(verifyStage.enabled?.(testAfterCtx)).toBe(true);
+  });
+
+  test("execute returns continue when testStrategy is no-test (defensive guard)", async () => {
+    const { verifyStage } = await import("../../../../src/pipeline/stages/verify");
+    const ctx = makeContext();
+    const noTestCtx = {
+      ...ctx,
+      routing: { ...ctx.routing, testStrategy: "no-test" as const },
+    } as Parameters<typeof verifyStage.execute>[0];
+    const result = await verifyStage.execute(noTestCtx);
+    expect(result.action).toBe("continue");
+  });
+});

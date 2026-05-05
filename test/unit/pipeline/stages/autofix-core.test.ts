@@ -201,7 +201,7 @@ describe("autofixStage", () => {
       return { succeeded: false, cost: 0 };
     };
 
-    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
     await autofixStage.execute(ctx);
 
     Object.assign(_autofixDeps, saved);
@@ -215,7 +215,7 @@ describe("autofixStage", () => {
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => ({ succeeded: true, cost: 0 });
 
-    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "typecheck" }]) });
     const result = await autofixStage.execute(ctx);
 
     Object.assign(_autofixDeps, saved);
@@ -248,7 +248,8 @@ describe("autofixStage", () => {
       escalationDigest: "Autofix exhausted: 3 findings remain\n  - error-path × 2 in src/foo.ts",
     });
 
-    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    // Use a non-empty check so the 2D unsignaled-failure guard does not intercept.
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "semantic", output: "issues" }]) });
     const result = await autofixStage.execute(ctx);
 
     Object.assign(_autofixDeps, saved);
@@ -423,5 +424,96 @@ describe("autofixStage", () => {
     const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
 
     expect(prompt).not.toContain("Only modify files within");
+  });
+});
+
+describe("autofixStage — unsignaled-failure guard (2D)", () => {
+  test("escalates when reviewResult.checks is empty", async () => {
+    const ctx = makeCtx({
+      reviewResult: {
+        success: false,
+        failureReason: "Gating LLM checks due to mechanical failure",
+        checks: [],
+      } as any,
+    });
+    const result = await autofixStage.execute(ctx);
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") {
+      expect(result.reason).toContain("Review failed without actionable signal");
+    }
+  });
+
+  test("escalates when only failed check is git-clean with no findings", async () => {
+    const ctx = makeCtx({
+      reviewResult: {
+        success: false,
+        failureReason: "Working tree has uncommitted changes",
+        checks: [
+          {
+            check: "git-clean",
+            success: false,
+            command: "git status --porcelain",
+            exitCode: 1,
+            output: "?? src/foo.ts",
+            durationMs: 0,
+          },
+        ],
+      } as any,
+    });
+    const result = await autofixStage.execute(ctx);
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") {
+      expect(result.reason).toContain("Review failed without actionable signal");
+    }
+  });
+
+  test("proceeds when semantic check has findings", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runAgentRectification = async () => ({ succeeded: true, cost: 0 });
+
+    try {
+      const ctx = makeCtx({
+        reviewResult: {
+          success: false,
+          checks: [
+            {
+              check: "semantic",
+              success: false,
+              command: "",
+              exitCode: 1,
+              output: "issues found",
+              durationMs: 100,
+              findings: [{ severity: "error", file: "a.ts", line: 1, message: "x", ruleId: "y" }],
+            },
+          ],
+        } as any,
+      });
+      const result = await autofixStage.execute(ctx);
+      expect(result.action).not.toBe("escalate");
+    } finally {
+      Object.assign(_autofixDeps, saved);
+    }
+  });
+
+  test("proceeds when lint failed (mechanically fixable, guard does not fire)", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.recheckReview = async () => true;
+    _autofixDeps.runQualityCommand = async () =>
+      ({ commandName: "lintFix", command: "biome", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false });
+
+    try {
+      const ctx = makeCtx({
+        reviewResult: {
+          success: false,
+          checks: [
+            { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
+          ],
+        } as any,
+      });
+      const result = await autofixStage.execute(ctx);
+      expect(result.action).not.toBe("escalate");
+    } finally {
+      Object.assign(_autofixDeps, saved);
+    }
   });
 });
