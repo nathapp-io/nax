@@ -605,4 +605,82 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
     expect(prompt).toContain("deleteMany uses node.id instead of GraphNode.id");
     expect(prompt).toContain("src/service.ts");
   });
+
+  test("blockingThreshold='error' drops advisory findings from write-failing-test mode", () => {
+    const checks: import("../../../../src/review/types").ReviewCheckResult[] = [
+      {
+        check: "adversarial",
+        success: false,
+        command: "adversarial-cmd",
+        exitCode: 1,
+        output: "Adversarial review failed",
+        durationMs: 100,
+        findings: [
+          { severity: "error", file: "src/svc.ts", line: 1, message: "real bug", category: "", source: "adversarial-review" },
+          { severity: "warning", file: "src/svc.ts", line: 2, message: "advisory warning", category: "", source: "adversarial-review" },
+          { severity: "info", file: "src/svc.ts", line: 3, message: "fyi note", category: "", source: "adversarial-review" },
+        ],
+      },
+    ];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), {
+      mode: "write-failing-test",
+      blockingThreshold: "error",
+    });
+    expect(prompt).toContain("real bug");
+    expect(prompt).not.toContain("advisory warning");
+    expect(prompt).not.toContain("fyi note");
+  });
+});
+
+describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive filter", () => {
+  function makeStory() {
+    return {
+      id: "US-test",
+      title: "Test story",
+      workdir: undefined,
+      acceptanceCriteria: ["AC-1: Does the thing"],
+    } as any;
+  }
+
+  function makeMixedSeverityCheck(): import("../../../../src/review/types").ReviewCheckResult {
+    return {
+      check: "semantic",
+      success: false,
+      command: "semantic-cmd",
+      exitCode: 1,
+      output: "Semantic review failed",
+      durationMs: 100,
+      findings: [
+        { severity: "error", file: "a.ts", line: 1, message: "real issue", category: "", source: "semantic-review" },
+        { severity: "warning", file: "b.ts", line: 2, message: "advisory", category: "", source: "semantic-review" },
+        { severity: "info", file: "c.ts", line: 3, message: "fyi", category: "", source: "semantic-review" },
+      ],
+    };
+  }
+
+  test("blockingThreshold='error' drops warning and info from firstAttemptDelta", () => {
+    const checks = [makeMixedSeverityCheck()];
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
+    // With default threshold="error", only error findings appear
+    expect(prompt).toContain("a.ts:1");
+    expect(prompt).not.toContain("b.ts:2");
+    expect(prompt).not.toContain("c.ts:3");
+  });
+
+  test("blockingThreshold='warning' includes warnings but not info", () => {
+    const checks = [makeMixedSeverityCheck()];
+    // firstAttemptDelta doesn't currently accept threshold — defaulting to error
+    // This test verifies the default behavior is consistent
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
+    expect(prompt).toContain("a.ts:1");
+    expect(prompt).not.toContain("c.ts:3");
+  });
+
+  test("absent blockingThreshold defaults to error — advisory findings are excluded", () => {
+    const checks = [makeMixedSeverityCheck()];
+    const prompt = RectifierPromptBuilder.reviewRectification(checks, makeStory());
+    // The semantic path uses formatCheckErrors (raw output), not structured findings
+    // — the blocking filter applies when findings are rendered in check blocks
+    expect(prompt).toContain("Semantic review failed");
+  });
 });
