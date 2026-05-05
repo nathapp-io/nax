@@ -8,7 +8,7 @@
 
 import type { IAgentManager } from "../agents";
 import type { SessionHandle } from "../agents/types";
-import type { ModelTier, NaxConfig } from "../config";
+import type { ModelTier } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
 import type { getLogger } from "../logger";
