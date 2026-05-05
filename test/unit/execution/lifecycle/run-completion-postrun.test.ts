@@ -22,7 +22,7 @@ import type { StoryMetrics } from "../../../../src/metrics";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { makeNaxConfig } from "../../../helpers";
+import { makeNaxConfig, makeMockRuntime } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,6 +126,7 @@ function makeOpts(
     workdir: WORKDIR,
     statusWriter: (statusWriter ?? makeStatusWriter()) as unknown as RunCompletionOptions["statusWriter"],
     config,
+    runtime: makeMockRuntime(),
     ...rest,
   };
 }

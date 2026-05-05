@@ -364,7 +364,9 @@ export async function executeUnified(
           }
 
           // Cost-limit check after parallel batch (AC-7)
-          if (totalCost >= costLimit) {
+          // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
+          const enforcedCostAfterBatch = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
+          if (enforcedCostAfterBatch >= costLimit) {
             return buildResult("cost-limit");
           }
 
@@ -384,25 +386,29 @@ export async function executeUnified(
 
           if (!ctx.useBatch) lastStoryId = singleStory.id;
 
-          if (totalCost >= costLimit) {
-            const shouldProceed =
-              ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
-                ? await checkCostExceeded(
-                    { featureName: ctx.feature, cost: totalCost, limit: costLimit },
-                    ctx.config,
-                    ctx.interactionChain,
-                  )
-                : false;
-            if (!shouldProceed) {
-              pipelineEventBus.emit({
-                type: "run:paused",
-                reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
-                storyId: singleStory.id,
-                cost: totalCost,
-              });
-              return buildResult("cost-limit");
+          {
+            // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
+            const enforcedCostSingle = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
+            if (enforcedCostSingle >= costLimit) {
+              const shouldProceed =
+                ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
+                  ? await checkCostExceeded(
+                      { featureName: ctx.feature, cost: enforcedCostSingle, limit: costLimit },
+                      ctx.config,
+                      ctx.interactionChain,
+                    )
+                  : false;
+              if (!shouldProceed) {
+                pipelineEventBus.emit({
+                  type: "run:paused",
+                  reason: `Cost limit reached: $${enforcedCostSingle.toFixed(2)}`,
+                  storyId: singleStory.id,
+                  cost: enforcedCostSingle,
+                });
+                return buildResult("cost-limit");
+              }
+              pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
             }
-            pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
           }
 
           const modelTier = singleSelection.routing.modelTier;
@@ -470,25 +476,29 @@ export async function executeUnified(
       const { selection } = selected;
       if (!ctx.useBatch) lastStoryId = selection.story.id;
 
-      if (totalCost >= costLimit) {
-        const shouldProceed =
-          ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
-            ? await checkCostExceeded(
-                { featureName: ctx.feature, cost: totalCost, limit: costLimit },
-                ctx.config,
-                ctx.interactionChain,
-              )
-            : false;
-        if (!shouldProceed) {
-          pipelineEventBus.emit({
-            type: "run:paused",
-            reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
-            storyId: selection.story.id,
-            cost: totalCost,
-          });
-          return buildResult("cost-limit");
+      {
+        // Consult the aggregator so completion-phase spend cannot silently bypass the limit.
+        const enforcedCostSeq = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
+        if (enforcedCostSeq >= costLimit) {
+          const shouldProceed =
+            ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
+              ? await checkCostExceeded(
+                  { featureName: ctx.feature, cost: enforcedCostSeq, limit: costLimit },
+                  ctx.config,
+                  ctx.interactionChain,
+                )
+              : false;
+          if (!shouldProceed) {
+            pipelineEventBus.emit({
+              type: "run:paused",
+              reason: `Cost limit reached: $${enforcedCostSeq.toFixed(2)}`,
+              storyId: selection.story.id,
+              cost: enforcedCostSeq,
+            });
+            return buildResult("cost-limit");
+          }
+          pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
         }
-        pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
       }
 
       const modelTier = selection.routing.modelTier;
@@ -527,9 +537,10 @@ export async function executeUnified(
       if (ctx.interactionChain && isTriggerEnabled("cost-warning", ctx.config) && !warningSent) {
         const triggerCfg = ctx.config.interaction?.triggers?.["cost-warning"];
         const threshold = typeof triggerCfg === "object" ? (triggerCfg.threshold ?? 0.8) : 0.8;
-        if (totalCost >= costLimit * threshold) {
+        const enforcedCostWarn = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
+        if (enforcedCostWarn >= costLimit * threshold) {
           await checkCostWarning(
-            { featureName: ctx.feature, cost: totalCost, limit: costLimit },
+            { featureName: ctx.feature, cost: enforcedCostWarn, limit: costLimit },
             ctx.config,
             ctx.interactionChain,
           );

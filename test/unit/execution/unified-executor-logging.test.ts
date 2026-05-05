@@ -71,7 +71,19 @@ function makeCtx(overrides: { parallelCount?: number } = {}) {
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: { outputDir: "/tmp/nax-test-logging-output" },
+    runtime: {
+      outputDir: "/tmp/nax-test-logging-output",
+      costAggregator: {
+        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        byStage: () => ({}),
+        byStory: () => ({}),
+        byAgent: () => ({}),
+        record: () => {},
+        recordError: () => {},
+        recordOperationSummary: () => {},
+        drain: async () => {},
+      },
+    },
     ...overrides,
   };
 }

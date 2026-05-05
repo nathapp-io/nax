@@ -18,7 +18,7 @@ import {
 import type { DeferredRegressionResult } from "../../../src/execution/lifecycle/run-regression";
 import type { RunCompletedEvent } from "../../../src/pipeline/event-bus";
 import { pipelineEventBus } from "../../../src/pipeline/event-bus";
-import { makeNaxConfig } from "../../helpers";
+import { makeNaxConfig, makeMockRuntime } from "../../helpers";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -123,6 +123,7 @@ function makeOpts(
     workdir,
     statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
     config,
+    runtime: makeMockRuntime(),
     ...overrides,
   };
 }

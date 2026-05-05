@@ -124,8 +124,8 @@ export interface StoryMetrics {
   startedAt: string;
   /** Timestamp when completed */
   completedAt: string;
-  /** Execution source — 'parallel' for batch dispatch, 'sequential' for single-story loop, 'rectification' for conflict resolution */
-  source?: "parallel" | "sequential" | "rectification";
+  /** Execution source — 'parallel' for batch dispatch, 'sequential' for single-story loop, 'rectification' for conflict resolution, 'completion-phase' for stories with only acceptance/hardening spend */
+  source?: "parallel" | "sequential" | "rectification" | "completion-phase";
   /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
   runtimeCrashes?: number;
   /** Whether TDD full-suite gate passed (only true for TDD strategies when gate passes) */
