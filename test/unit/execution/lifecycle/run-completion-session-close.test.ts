@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { _runCompletionDeps, handleRunCompletion } from "../../../../src/execution/lifecycle/run-completion";
 import type { ISessionManager } from "../../../../src/session";
+import { makeMockRuntime } from "../../../helpers";
 
 const makeStatusWriter = () => ({
   setPrd: mock(() => {}),
@@ -66,6 +67,7 @@ describe("handleRunCompletion session teardown", () => {
         },
       } as never,
       sessionManager: { closeStory: mock(() => []), listActive: mock(() => []) } as unknown as ISessionManager,
+      runtime: makeMockRuntime() as never,
     });
 
     expect(_runCompletionDeps.closeAllRunSessions).toHaveBeenCalledTimes(1);
@@ -94,6 +96,7 @@ describe("handleRunCompletion session teardown", () => {
           },
         },
       } as never,
+      runtime: makeMockRuntime() as never,
     });
 
     expect(_runCompletionDeps.closeAllRunSessions).not.toHaveBeenCalled();

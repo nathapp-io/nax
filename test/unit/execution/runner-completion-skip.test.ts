@@ -132,6 +132,20 @@ function makeOpts(
     statusWriter: statusWriter as unknown as RunnerCompletionOptions["statusWriter"],
     pluginRegistry: { getAll: () => [], get: () => undefined } as unknown as RunnerCompletionOptions["pluginRegistry"],
     prdPath: `${WORKDIR}/prd.json`,
+    runtime: {
+      outputDir: `${WORKDIR}/output`,
+      close: async () => {},
+      costAggregator: {
+        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        byStage: () => ({}),
+        byStory: () => ({}),
+        byAgent: () => ({}),
+        record: () => {},
+        recordError: () => {},
+        recordOperationSummary: () => {},
+        drain: async () => {},
+      },
+    } as unknown as RunnerCompletionOptions["runtime"],
   };
 }
 

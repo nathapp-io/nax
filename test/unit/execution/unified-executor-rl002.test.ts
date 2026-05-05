@@ -92,7 +92,19 @@ function makeMinimalContext(): SequentialExecutionContext {
     batchPlan: [],
     interactionChain: null,
     logFilePath: undefined,
-    runtime: { outputDir: "/tmp/nax-test-rl002-output" } as unknown as SequentialExecutionContext["runtime"],
+    runtime: {
+      outputDir: "/tmp/nax-test-rl002-output",
+      costAggregator: {
+        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        byStage: () => ({}),
+        byStory: () => ({}),
+        byAgent: () => ({}),
+        record: () => {},
+        recordError: () => {},
+        recordOperationSummary: () => {},
+        drain: async () => {},
+      },
+    } as unknown as SequentialExecutionContext["runtime"],
   };
 }
 
@@ -215,6 +227,7 @@ describe("RL-002: run:completed event payload requirements", () => {
         workdir: ctx.workdir,
         statusWriter: ctx.statusWriter as never,
         config: ctx.config,
+        runtime: ctx.runtime,
       });
 
       // handleRunCompletion should emit run:completed with real counts from countStories(prd)
@@ -269,6 +282,7 @@ describe("RL-002: run:completed event payload requirements", () => {
         workdir: ctx.workdir,
         statusWriter: ctx.statusWriter as never,
         config: ctx.config,
+        runtime: ctx.runtime,
       });
 
       const ev = capturedRunCompleted[0];

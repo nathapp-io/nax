@@ -20,6 +20,7 @@ import type { AgentFallbackHop, StoryMetrics } from "../../../../src/metrics";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 import type { RunCompletedEvent } from "../../../../src/pipeline/event-bus";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { makeMockRuntime } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,6 +108,7 @@ function makeOpts(
     statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
     config,
     isSequential: true,
+    runtime: makeMockRuntime(),
   };
 }
 

@@ -22,7 +22,7 @@ import type { DeferredRegressionResult } from "../../../../src/execution/lifecyc
 import type { StoryMetrics } from "../../../../src/metrics";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 import type { PRD } from "../../../../src/prd";
-import { makeNaxConfig, makePRD as makePRDHelper, makeStory } from "../../../helpers";
+import { makeNaxConfig, makeMockRuntime, makePRD as makePRDHelper, makeStory } from "../../../helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,6 +100,7 @@ function makeOpts(config: NaxConfig, prd: PRD, metrics: StoryMetrics[]): RunComp
     workdir: WORKDIR,
     statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
     config,
+    runtime: makeMockRuntime(),
   };
 }
 
