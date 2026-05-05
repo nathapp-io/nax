@@ -124,7 +124,8 @@
       "build",
       "typecheck",
       "lint",
-      "semantic"
+      "semantic",
+      "adversarial"
     ],
     "commands": {
       "typecheck": "bun run typecheck",
@@ -140,7 +141,7 @@
     }
   },
   "plan": {
-    "model": "powerful",
+    "model": "balanced",
     "timeoutSeconds": 1200
   },
   "acceptance": {
