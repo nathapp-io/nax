@@ -39,6 +39,8 @@ import type {
 } from "./manager-types";
 import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
+import { defaultRetryStrategy } from "./retry/default-strategy";
+import type { RetryContext, RetryStrategy } from "./retry/types";
 import type { AgentResult, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
@@ -75,6 +77,7 @@ export class AgentManager implements IAgentManager {
   private _runHop: SessionRunHopFn | undefined;
   private _dispatchEvents: IDispatchEventBus;
   private _pidRegistry: PidRegistry | undefined;
+  private readonly _retryStrategy: RetryStrategy;
   readonly events: AgentManagerEvents;
 
   constructor(
@@ -87,6 +90,7 @@ export class AgentManager implements IAgentManager {
       sendPrompt?: SendPromptFn;
       runHop?: SessionRunHopFn;
       dispatchEvents?: IDispatchEventBus;
+      retryStrategy?: RetryStrategy;
     },
   ) {
     this._config = config;
@@ -97,6 +101,7 @@ export class AgentManager implements IAgentManager {
     this._sendPrompt = opts?.sendPrompt;
     this._runHop = opts?.runHop;
     this._dispatchEvents = opts?.dispatchEvents ?? new DispatchEventBus();
+    this._retryStrategy = opts?.retryStrategy ?? defaultRetryStrategy;
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
@@ -202,7 +207,6 @@ export class AgentManager implements IAgentManager {
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
     let hopsSoFar = 0;
-    const MAX_RATE_LIMIT_RETRIES = 3;
     let rateLimitRetry = 0;
     let currentBundle = request.bundle;
     let currentFailure: AdapterFailure | undefined;
@@ -262,27 +266,35 @@ export class AgentManager implements IAgentManager {
           // Preserve legacy rate-limit backoff when no swap candidates are available.
           // #585 Path B: race the sleep against the shutdown signal — an abort during
           // backoff settles within milliseconds instead of the full exponential wait.
-          if (result.adapterFailure?.outcome === "fail-rate-limit" && rateLimitRetry < MAX_RATE_LIMIT_RETRIES) {
-            if (request.signal?.aborted) {
-              logger?.info("agent-manager", "Rate-limited backoff aborted — shutdown in progress", {
-                storyId: request.runOptions.storyId,
-              });
-              _finalStatus = "cancelled";
-              return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-            }
-            rateLimitRetry += 1;
-            const backoffMs = 2 ** rateLimitRetry * 1000;
-            logger?.info("agent-manager", "Rate-limited with no swap candidate — backing off", {
+          if (result.adapterFailure) {
+            const retryCtx: RetryContext = {
+              site: "run",
+              agentName: currentAgent,
+              stage: request.runOptions.pipelineStage ?? "run",
               storyId: request.runOptions.storyId,
-              attempt: rateLimitRetry,
-              backoffMs,
-            });
-            await _agentManagerDeps.sleep(backoffMs, request.signal);
-            if (request.signal?.aborted) {
-              _finalStatus = "cancelled";
-              return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+            };
+            const decision = this._retryStrategy.shouldRetry(result.adapterFailure, rateLimitRetry, retryCtx);
+            if (decision.retry) {
+              if (request.signal?.aborted) {
+                logger?.info("agent-manager", "Rate-limited backoff aborted — shutdown in progress", {
+                  storyId: request.runOptions.storyId,
+                });
+                _finalStatus = "cancelled";
+                return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+              }
+              rateLimitRetry += 1;
+              logger?.info("agent-manager", "Rate-limited with no swap candidate — backing off", {
+                storyId: request.runOptions.storyId,
+                attempt: rateLimitRetry,
+                backoffMs: decision.delayMs,
+              });
+              await _agentManagerDeps.sleep(decision.delayMs, request.signal);
+              if (request.signal?.aborted) {
+                _finalStatus = "cancelled";
+                return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+              }
+              continue;
             }
-            continue;
           }
           if (hopsSoFar > 0) {
             this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
