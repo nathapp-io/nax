@@ -210,8 +210,8 @@ export async function runAcceptanceFixCycle(
   prd: PRD,
   initialFailures: { failedACs: string[]; testOutput: string },
   diagnosis: DiagnosisResult,
-  testFileContent: string,
   acceptanceTestPath: string,
+  testCommand?: string,
 ): Promise<FixCycleResult<Finding>> {
   const runtime = ctx.runtime;
   if (!runtime) {
@@ -235,10 +235,10 @@ export async function runAcceptanceFixCycle(
         fixOp: acceptanceFixSourceOp,
         buildInput: (_findings, priorIterations, _ctx) => ({
           testOutput: currentTestOutput,
+          testCommand,
           diagnosisReasoning: diagnosis.reasoning,
           priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           acceptanceTestPath,
-          testFileContent,
         }),
         maxAttempts: 3,
         coRun: "co-run-sequential",
@@ -250,11 +250,11 @@ export async function runAcceptanceFixCycle(
         fixOp: acceptanceFixTestOp,
         buildInput: (_findings, priorIterations, _ctx) => ({
           testOutput: currentTestOutput,
+          testCommand,
           diagnosisReasoning: diagnosis.reasoning,
           priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           failedACs: currentFailedACs,
           acceptanceTestPath,
-          testFileContent,
         }),
         maxAttempts: 3,
         coRun: "co-run-sequential",
@@ -419,12 +419,13 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       );
     }
 
-    // Load test file content for diagnosis
+    // Load test file content for diagnosis (still needed for import parsing in loadSourceFilesForDiagnosis)
     const testEntries = ctx.acceptanceTestPaths
       ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
       : [];
     const testFileContent = testEntries[0]?.content ?? "";
     const acceptanceTestPath = testEntries[0]?.testPath ?? ctx.acceptanceTestPaths?.[0]?.testPath ?? "";
+    const testCommand = ctx.config.quality?.commands?.test;
 
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
     const diagnosis = await resolveAcceptanceDiagnosis({
@@ -436,6 +437,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       diagnosisOpts: {
         testOutput: failures.testOutput,
         testFileContent,
+        acceptanceTestPath,
         workdir: ctx.workdir,
         storyId: firstStory?.id,
       },
@@ -449,7 +451,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     });
 
     // ── 5. Run acceptance fix cycle ────────────────────────────────────
-    const cycleResult = await runAcceptanceFixCycle(ctx, prd, failures, diagnosis, testFileContent, acceptanceTestPath);
+    const cycleResult = await runAcceptanceFixCycle(ctx, prd, failures, diagnosis, acceptanceTestPath, testCommand);
     // Cost is captured at the dispatch-bus layer (runtime.costAggregator); the local
     // accumulation here is best-effort and may undercount. The authoritative total
     // is reconciled in handleRunCompletion via Math.max(local, aggregator).
