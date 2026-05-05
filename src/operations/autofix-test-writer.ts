@@ -9,6 +9,7 @@ export interface AutofixTestWriterInput {
   failedChecks: ReviewCheckResult[];
   story: UserStory;
   mode?: "fix-test-files" | "write-failing-test";
+  blockingThreshold?: "error" | "warning" | "info";
 }
 
 export interface AutofixTestWriterOutput {
@@ -24,6 +25,7 @@ export const testWriterRectifyOp: RunOperation<AutofixTestWriterInput, AutofixTe
   build(input, _ctx) {
     const prompt = RectifierPromptBuilder.testWriterRectification(input.failedChecks, input.story, {
       mode: input.mode,
+      blockingThreshold: input.blockingThreshold,
     });
     return {
       role: { id: "role", content: "", overridable: false },

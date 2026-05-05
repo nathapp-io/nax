@@ -19,7 +19,9 @@ export async function runTestWriterRectification(
   agentManager: IAgentManager,
 ): Promise<number> {
   const logger = getLogger();
-  const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story);
+  const twPrompt = RectifierPromptBuilder.testWriterRectification(testWriterChecks, story, {
+    blockingThreshold: ctx.config.review?.blockingThreshold,
+  });
   // Use the TDD test-writer tier from config -- consistent with how the TDD orchestrator
   // selects the tier for the test-writer session (tdd.orchestrator.ts:150).
   const defaultAgent = agentManager.getDefault();

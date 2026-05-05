@@ -8,6 +8,7 @@ import type { RunOperation } from "./types";
 export interface RectifyInput {
   failedChecks: ReviewCheckResult[];
   story: UserStory;
+  blockingThreshold?: "error" | "warning" | "info";
 }
 
 export interface RectifyOutput {
@@ -21,7 +22,9 @@ export const rectifyOp: RunOperation<RectifyInput, RectifyOutput, RectifyConfig>
   session: { role: "implementer", lifetime: "fresh" },
   config: rectifyConfigSelector,
   build(input, _ctx) {
-    const prompt = RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story);
+    const prompt = RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story, {
+      blockingThreshold: input.blockingThreshold,
+    });
     return {
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: prompt, overridable: false },
