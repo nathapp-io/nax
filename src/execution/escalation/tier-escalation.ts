@@ -79,6 +79,7 @@ export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "p
       return "pause";
     case "session-failure":
     case "tests-failing":
+    case "full-suite-gate-exhausted":
     case "dependency-prep":
       return "fail";
     default:

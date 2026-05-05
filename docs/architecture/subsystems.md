@@ -99,6 +99,8 @@ The shared mutable state passed through all stages. Acts as the single source of
 
 **Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`, `verifyResult`, `reviewResult`, `acceptanceFailures`, `tddFailureCategory`, `fullSuiteGatePassed`
 
+For three-session TDD, the full-suite gate runs after implementer and before verifier. If rectification exhausts for attributable failures, the orchestrator stops before verifier and sets `tddFailureCategory: "full-suite-gate-exhausted"` with `fullSuiteGatePassed: false`.
+
 **Autofix state:** `retrySkipChecks` — set of check names (e.g. `"lint"`, `"semantic"`) that passed during a prior autofix cycle and should be skipped on the next review retry. Accumulated across partial-progress cycles; cleared implicitly when the story completes.
 
 **Metadata:** `storyStartTime`, `rectifyAttempt`, `autofixAttempt`, `storyGitRef`, `accumulatedAttemptCost`, `reviewFindings`

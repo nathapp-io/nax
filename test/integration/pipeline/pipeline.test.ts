@@ -604,6 +604,16 @@ describe("routeTddFailure", () => {
     });
   });
 
+  describe("full-suite-gate-exhausted", () => {
+    test("returns escalate", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure("full-suite-gate-exhausted", false, ctx, "full suite gate exhausted");
+
+      expect(result.action).toBe("escalate");
+      expect(ctx.retryAsLite).toBeUndefined();
+    });
+  });
+
   describe("verifier-rejected", () => {
     test("returns escalate", () => {
       const ctx = makeCtx();
@@ -648,6 +658,7 @@ describe("routeTddFailure", () => {
     const nonIsolationCategories: Array<FailureCategory | undefined> = [
       "session-failure",
       "tests-failing",
+      "full-suite-gate-exhausted",
       "verifier-rejected",
       undefined,
     ];

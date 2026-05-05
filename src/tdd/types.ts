@@ -9,6 +9,8 @@ export type FailureCategory =
   | "session-failure"
   /** Tests were written and implemented but still fail after all sessions */
   | "tests-failing"
+  /** Full-suite gate failed and rectification retries exhausted before verifier */
+  | "full-suite-gate-exhausted"
   /** Verifier explicitly rejected the implementation */
   | "verifier-rejected"
   /** Greenfield project with no test files — TDD not applicable (BUG-010) */

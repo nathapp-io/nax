@@ -58,6 +58,10 @@ When `tdd.strategy: "auto"`, the routing stage classifies each story and selects
 
 If the test writer violates isolation (touches src/), the orchestrator flags it as `isolation-violation` and schedules a lite-mode retry on the next attempt.
 
+Full-suite gate note:
+- The full-suite rectification gate runs after implementer and before verifier.
+- If attributable full-suite failures persist until rectification is exhausted, TDD stops before verifier with `failureCategory: "full-suite-gate-exhausted"`.
+
 ### `three-session-tdd-lite` — Lite Mode
 
 Same 3-session flow, but the test writer prompt is relaxed:

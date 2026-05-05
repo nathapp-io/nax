@@ -18,6 +18,31 @@ import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
 
 export type { ThreeSessionTddOptions };
 
+async function rollbackTddFailureIfNeeded(
+  shouldRollback: boolean,
+  workdir: string,
+  initialRef: string,
+  storyId: string,
+  failureCategory: FailureCategory | undefined,
+): Promise<void> {
+  if (!shouldRollback) {
+    return;
+  }
+  const logger = getLogger();
+  try {
+    await rollbackToRef(workdir, initialRef);
+    logger.info("tdd", "Rolled back git changes due to TDD failure", {
+      storyId,
+      failureCategory,
+    });
+  } catch (error) {
+    logger.error("tdd", "Failed to rollback git changes after TDD failure", {
+      storyId,
+      error: errorMessage(error),
+    });
+  }
+}
+
 /**
  * Run the full three-session TDD pipeline for a user story.
  */
@@ -259,7 +284,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // failure as story-caused (the file-modification filter from BUG-TC-001 was
   // removed — see rectification-gate.ts header for the rationale).
   const implementerBinding = getTddSessionBinding?.("implementer");
-  const { cost: fullSuiteGateCost, fullSuiteGatePassed } = await runFullSuiteGate(
+  const fullSuiteGate = await runFullSuiteGate(
     story,
     config,
     workdir,
@@ -273,6 +298,33 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     implementerBinding?.sessionId,
     runtime,
   );
+  const { cost: fullSuiteGateCost, fullSuiteGatePassed } = fullSuiteGate;
+
+  if (fullSuiteGate.status === "rectification-exhausted") {
+    const failureCategory: FailureCategory = "full-suite-gate-exhausted";
+    const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0) + fullSuiteGateCost;
+    const totalDurationMs = sessions.reduce((sum, s) => sum + s.durationMs, 0);
+    const totalTokenUsage = sumTddTokenUsage(sessions);
+    const terminalReviewReason = "Full suite gate failed after rectification exhausted";
+    logger.warn("tdd", "Stopping before verifier because full-suite gate rectification exhausted", {
+      storyId: story.id,
+      attempts: fullSuiteGate.attempts,
+      failureCategory,
+    });
+    await rollbackTddFailureIfNeeded(shouldRollbackOnFailure, workdir, initialRef, story.id, failureCategory);
+    return {
+      success: false,
+      sessions,
+      needsHumanReview: true,
+      reviewReason: terminalReviewReason,
+      failureCategory,
+      totalCost,
+      totalDurationMs,
+      ...(totalTokenUsage && { totalTokenUsage }),
+      lite,
+      fullSuiteGatePassed,
+    };
+  }
 
   // Session 3: Verifier
   const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
@@ -372,20 +424,13 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   });
 
   // Rollback git changes if TDD failed
-  if (!allSuccessful && shouldRollbackOnFailure) {
-    try {
-      await rollbackToRef(workdir, initialRef);
-      logger.info("tdd", "Rolled back git changes due to TDD failure", {
-        storyId: story.id,
-        failureCategory: finalFailureCategory,
-      });
-    } catch (error) {
-      logger.error("tdd", "Failed to rollback git changes after TDD failure", {
-        storyId: story.id,
-        error: errorMessage(error),
-      });
-    }
-  }
+  await rollbackTddFailureIfNeeded(
+    shouldRollbackOnFailure && !allSuccessful,
+    workdir,
+    initialRef,
+    story.id,
+    finalFailureCategory,
+  );
 
   return {
     success: allSuccessful,

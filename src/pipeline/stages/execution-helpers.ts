@@ -69,6 +69,7 @@ export function routeTddFailure(
   if (
     failureCategory === "session-failure" ||
     failureCategory === "tests-failing" ||
+    failureCategory === "full-suite-gate-exhausted" ||
     failureCategory === "verifier-rejected"
   ) {
     return { action: "escalate" };

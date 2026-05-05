@@ -149,12 +149,13 @@ describe("FailureCategory export from src/execution", () => {
     expect(cat).toBe("session-failure");
   });
 
-  test("all four categories are valid FailureCategory values", () => {
+  test("all failure categories are valid FailureCategory values", () => {
     const isolation: FailureCategory = "isolation-violation";
     const session: FailureCategory = "session-failure";
     const failing: FailureCategory = "tests-failing";
+    const gateExhausted: FailureCategory = "full-suite-gate-exhausted";
     const rejected: FailureCategory = "verifier-rejected";
-    expect([isolation, session, failing, rejected]).toHaveLength(4);
+    expect([isolation, session, failing, gateExhausted, rejected]).toHaveLength(5);
   });
 });
 

@@ -349,6 +349,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
 
     expect(result.passed).toBe(true);
     expect(result.fullSuiteGatePassed).toBe(false);
+    expect(result.status).toBe("deferred-unattributable");
     expect(agent.calls.length).toBe(0);
     expect(warn).toHaveBeenCalledTimes(1);
   });
