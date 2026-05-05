@@ -256,6 +256,65 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     }
   }
 
+  // Bug 909 fix — consult the cost aggregator for the authoritative spend total.
+  // Every agent call dispatched through AgentManager emits a DispatchEvent with cost,
+  // captured by attachCostSubscriber into runtime.costAggregator. The legacy `totalCost`
+  // only counts execution-phase work and silently drops acceptance/hardening/diagnosis spend.
+  const aggSnap = options.runtime.costAggregator.snapshot();
+  const aggregatorTotal = aggSnap.totalCostUsd;
+  const reportedTotal = Math.max(totalCost, aggregatorTotal);
+
+  if (aggregatorTotal > totalCost + 0.01) {
+    logger?.debug("run.complete", "Cost aggregator total exceeds accumulated totalCost", {
+      totalCost,
+      aggregatorTotal,
+      gap: aggregatorTotal - totalCost,
+    });
+  }
+
+  const aggByStage = options.runtime.costAggregator.byStage();
+  const aggByStory = options.runtime.costAggregator.byStory();
+
+  // Back-fill storyMetrics for stories whose only spend was in the completion phase
+  // (acceptance refinement, hardening, diagnosis, fix-cycle). These stories have cost
+  // in the aggregator but no entry in allStoryMetrics from the execution phase.
+  {
+    const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
+    const completionCompletedAt = new Date().toISOString();
+    const defaultAgent = options.agentManager?.getDefault() ?? resolveDefaultAgent(config);
+
+    for (const [storyId, snap] of Object.entries(aggByStory)) {
+      if (snap.totalCostUsd <= 0) continue;
+      const existingIdx = existingIndex.get(storyId);
+      if (existingIdx === undefined) {
+        const story = prd.userStories.find((s) => s.id === storyId);
+        allStoryMetrics.push({
+          storyId,
+          complexity: story?.routing?.complexity ?? "medium",
+          modelTier: "balanced",
+          modelUsed: defaultAgent,
+          attempts: 0,
+          finalTier: "balanced",
+          success: story?.passes ?? true,
+          cost: snap.totalCostUsd,
+          durationMs: 0,
+          firstPassSuccess: story?.passes ?? true,
+          startedAt: completionCompletedAt,
+          completedAt: completionCompletedAt,
+          source: "completion-phase" as const,
+          runtimeCrashes: 0,
+        });
+      } else {
+        // Story already has an execution-phase entry — replace cost with the aggregator
+        // value if it's higher (aggregator is authoritative across all phases).
+        const existing = allStoryMetrics[existingIdx];
+        if (snap.totalCostUsd > (existing.cost ?? 0)) {
+          allStoryMetrics[existingIdx] = { ...existing, cost: snap.totalCostUsd };
+        }
+      }
+    }
+  }
+
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();
 
@@ -285,7 +344,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     skippedStories: finalCounts.skipped,
     pausedStories: finalCounts.paused,
     durationMs,
-    totalCost,
+    totalCost: reportedTotal,
     ...(fallbackAggregate && { fallback: fallbackAggregate }),
   });
   // Drain async subscriber Promises (reporter.onRunEnd file writes, etc.) before
@@ -298,7 +357,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     feature,
     startedAt,
     completedAt: runCompletedAt,
-    totalCost,
+    totalCost: reportedTotal,
     totalStories: allStoryMetrics.length,
     storiesCompleted,
     storiesFailed: finalCounts.failed,
@@ -365,8 +424,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     storiesCompleted,
     storiesFailed: finalCounts.failed,
     storiesPending: finalCounts.pending,
-    totalCost,
+    totalCost: reportedTotal,
     ...(contextCostUsd > 0 && { contextCostUsd }),
+    ...(Object.keys(aggByStage).length > 0 && { costByStage: aggByStage }),
+    ...(Object.keys(aggByStory).length > 0 && { costByStory: aggByStory }),
     durationMs,
     storyMetrics: storyMetricsSummary,
   });
@@ -375,7 +436,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   statusWriter.setPrd(prd);
   statusWriter.setCurrentStory(null);
   statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
-  await statusWriter.update(totalCost, iterations);
+  await statusWriter.update(reportedTotal, iterations);
 
   return {
     durationMs,
