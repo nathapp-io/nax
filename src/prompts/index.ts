@@ -33,6 +33,7 @@ export type {
   DiagnosisPromptParams,
   RefinementPromptOptions,
 } from "./builders/acceptance-builder";
+// fenceLangFor: no production call site yet — prepared for follow-up F3 (SSOT fence-lang across all prompt builders).
 export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-builder-helpers";
 
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.

@@ -58,8 +58,8 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
   if (storiesWithSuggested.length === 0) return result;
 
   logger?.info("acceptance", "Starting hardening pass", {
-    storyId: storiesWithSuggested[0].id,
-    storiesWithSuggested: storiesWithSuggested.length,
+    storyIds: storiesWithSuggested.map((s) => s.id),
+    storiesProcessed: storiesWithSuggested.length,
     totalSuggestedACs: storiesWithSuggested.reduce((n, s) => n + (s.suggestedCriteria?.length ?? 0), 0),
   });
 
@@ -134,7 +134,8 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
         language,
       );
       logger?.warn("acceptance", "Hardening generate op returned no test code — using skeleton", {
-        storyId: storiesWithSuggested[0].id,
+        storyIds: storiesWithSuggested.map((s) => s.id),
+        storiesProcessed: storiesWithSuggested.length,
       });
     }
     await _hardeningDeps.writeFile(suggestedTestPath, testCode);

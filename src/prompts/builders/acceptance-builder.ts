@@ -66,7 +66,12 @@ export interface FixGeneratorParams {
 
 export interface DiagnosisPromptParams {
   testOutput: string;
-  testFileContent: string;
+  /**
+   * @deprecated No longer embedded in the diagnosis prompt — replaced by path-only reference.
+   * Retained at the call layer only for import-parsing in loadSourceFilesForDiagnosis.
+   * Will be removed when that utility migrates to path-based parsing.
+   */
+  testFileContent?: string;
   acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
   /** Minimal shape — avoids importing SemanticVerdict across layers */
