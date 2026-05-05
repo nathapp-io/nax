@@ -230,4 +230,18 @@ describe("classifyRouteOp declares retry preset (issue #856 site #4)", () => {
     expect(preset?.maxAttempts).toBe(4); // retries: 3 → maxAttempts: 4
     expect(preset?.baseDelayMs).toBe(2000);
   });
+
+  test("retry resolver yields maxAttempts: 1 when retries: 0 (single attempt, no retry)", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: { ...DEFAULT_CONFIG.routing, llm: { mode: "per-story" as const, retries: 0, retryDelayMs: 500 } },
+    };
+    const buildCtx = {
+      packageView: null as never,
+      config: { routing: config.routing, autoMode: config.autoMode } as never,
+    };
+    const resolver = classifyRouteOp.retry as (input: unknown, ctx: typeof buildCtx) => { maxAttempts: number } | undefined;
+    const preset = resolver({}, buildCtx);
+    expect(preset?.maxAttempts).toBe(1);
+  });
 });
