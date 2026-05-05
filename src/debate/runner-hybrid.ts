@@ -6,7 +6,7 @@
 
 import type { DebateConfig } from "@/config/selectors";
 import { resolveDefaultAgent } from "../agents";
-import type { ConfiguredModel, NaxConfig } from "../config";
+import type { ConfiguredModel } from "../config";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -38,8 +38,6 @@ export interface HybridCtx extends DispatchContext {
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
-  /** TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary. */
-  readonly completeConfig?: NaxConfig;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
@@ -332,7 +330,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       proposalOutputs,
       critiqueOutputs,
       ctx.stageConfig,
-      ctx.completeConfig,
+      ctx.config,
       ctx.storyId,
       ctx.timeoutSeconds * 1000,
       ctx.workdir,

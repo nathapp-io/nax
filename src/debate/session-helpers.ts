@@ -1,11 +1,12 @@
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
-import type { ConfiguredModel, ModelTier, NaxConfig, ResolvedConfiguredModel } from "../config";
+import type { ConfiguredModel, ModelTier, ResolvedConfiguredModel } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelsConfig } from "../config/schema-types";
 import type { ModelDef } from "../config/schema-types";
+import type { DebateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { formatSessionName } from "../session/naming";
@@ -75,7 +76,7 @@ export interface DebateSessionOptions extends DispatchContext {
   storyId: string;
   stage: string;
   stageConfig: DebateStageConfig;
-  config?: NaxConfig;
+  config?: DebateConfig;
   workdir?: string;
   featureName?: string;
   timeoutSeconds?: number;
@@ -93,7 +94,7 @@ export const _debateSessionDeps = {
 };
 
 /** Resolve the model string for a debater. Defaults to "fast" tier; falls back to raw model string on config error. */
-export function resolveDebaterModel(debater: Debater, config?: NaxConfig): string | undefined {
+export function resolveDebaterModel(debater: Debater, config?: DebateConfig): string | undefined {
   const modelSelection = { agent: debater.agent, model: debater.model ?? "fast" };
   if (!config?.models) return debater.model;
   try {
@@ -183,8 +184,7 @@ export async function resolveOutcome(
   proposalOutputs: string[],
   critiqueOutputs: string[],
   stageConfig: DebateStageConfig,
-  // TODO(#853): remove when CompleteOptions.config is eliminated at the manager boundary.
-  config: NaxConfig | undefined,
+  config: DebateConfig,
   storyId: string,
   timeoutMs: number,
   workdir: string | undefined,
@@ -301,8 +301,8 @@ export async function resolveOutcome(
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
     const manager = agentManager ?? _debateSessionDeps.agentManager;
     if (manager !== undefined && manager.getAgent(agentName) !== undefined) {
-      const configModels = config?.models ?? DEFAULT_CONFIG.models;
-      const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
+      const configModels = config.models ?? DEFAULT_CONFIG.models;
+      const configDefaultAgent = resolveDefaultAgent(config);
       const synthesisSessionName =
         workdir !== undefined ? formatSessionName({ workdir, featureName, storyId, role: "synthesis" }) : undefined;
       const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
@@ -347,8 +347,8 @@ export async function resolveOutcome(
     if (!manager) {
       return { outcome: "passed", resolverCostUsd: 0 };
     }
-    const configModels = config?.models ?? DEFAULT_CONFIG.models;
-    const configDefaultAgent = resolveDefaultAgent(config ?? DEFAULT_CONFIG);
+    const configModels = config.models ?? DEFAULT_CONFIG.models;
+    const configDefaultAgent = resolveDefaultAgent(config);
     const judgeSessionName =
       workdir !== undefined ? formatSessionName({ workdir, featureName, storyId, role: "judge" }) : undefined;
     const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
