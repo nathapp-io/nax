@@ -1,14 +1,12 @@
-import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
-import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
 import { validateLLMShape } from "../review/semantic-helpers";
-import { looksLikeTruncatedJson } from "../review/truncation";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { HopBody, RunOperation } from "./types";
+import { makeReviewRetryHopBody } from "./_review-retry";
+import type { RunOperation } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
 
@@ -41,34 +39,10 @@ export interface SemanticReviewOutput {
 
 const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], failOpen: true };
 
-/**
- * Same-session JSON-parse retry. Sends the initial prompt; if the response is
- * unparseable or truncated, sends a retry prompt in the same handle so the
- * agent has full conversation history. Single retry; further failures fall
- * through to the parse() FAIL_OPEN path.
- */
-const semanticReviewHopBody: HopBody<SemanticReviewInput> = async (initialPrompt, ctx) => {
-  const first = await ctx.send(initialPrompt);
-  const isTruncated = looksLikeTruncatedJson(first.output);
-  const parsed = tryParseLLMJson<Record<string, unknown>>(first.output);
-  if (!isTruncated && parsed && validateLLMShape(parsed)) return first;
-
-  const retryPrompt = isTruncated
-    ? ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: ctx.input.blockingThreshold })
-    : ReviewPromptBuilder.jsonRetry();
-  if (isTruncated) {
-    getSafeLogger()?.warn("semantic", "JSON parse retry — original response truncated", {
-      storyId: ctx.input.story.id,
-      originalByteSize: first.output.length,
-      blockingThreshold: ctx.input.blockingThreshold ?? "error",
-    });
-  }
-  const retry: TurnResult = await ctx.send(retryPrompt);
-  return {
-    ...retry,
-    estimatedCostUsd: (first.estimatedCostUsd ?? 0) + (retry.estimatedCostUsd ?? 0),
-  };
-};
+const semanticReviewHopBody = makeReviewRetryHopBody<SemanticReviewInput>(
+  (parsed) => validateLLMShape(parsed) !== null,
+  "semantic",
+);
 
 export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {
   kind: "run",
