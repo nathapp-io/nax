@@ -34,7 +34,14 @@ function extractLocation(record: Record<string, unknown>): { file?: string; line
 
   const location = asRecord(record.location);
   const span = asRecord(location?.span);
-  const file = readString(location ?? {}, "path") ?? readString(span ?? {}, "path") ?? readString(span ?? {}, "file");
+
+  // Biome --reporter json: location.path is {file: "..."}, not a plain string
+  const pathObj = asRecord(location?.path);
+  const file =
+    readString(pathObj ?? {}, "file") ??
+    readString(location ?? {}, "path") ??
+    readString(span ?? {}, "path") ??
+    readString(span ?? {}, "file");
   if (!file) return {};
 
   return {
@@ -56,7 +63,11 @@ function collectDiagnostics(node: unknown, sink: LocatedDiagnostic[]): void {
 
   const category = readString(record, "category");
   const severity = readString(record, "severity");
-  const message = readString(record, "message") ?? readString(asRecord(record.description) ?? {}, "text");
+  // Biome --reporter json: "message" is a content-fragment array; "description" is the plain string
+  const message =
+    readString(record, "description") ??
+    readString(record, "message") ??
+    readString(asRecord(record.description) ?? {}, "text");
   const { file, line, column } = extractLocation(record);
   if (file && message && (category?.startsWith("lint/") || severity !== undefined)) {
     sink.push({ file, line, column, message, ruleId: category });
