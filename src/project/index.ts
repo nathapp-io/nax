@@ -1,1 +1,1 @@
-export { detectProjectProfile } from "./detector";
+export { detectLanguage, detectProjectProfile } from "./detector";
