@@ -140,6 +140,46 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * @internal Warn when deprecated routing.llm.retries / retryDelayMs are present.
+ *
+ * These keys are deprecated in favour of op-level `retry` presets (issue #856).
+ * Values are preserved for the classifyRouteOp.retry resolver during the transition
+ * period — this function only emits a warning so users know to remove them.
+ *
+ * Returns the same object — values must not be stripped yet.
+ */
+export function applyRoutingRetryDeprecationWarning(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = (msg) => {
+    try {
+      getLogger().warn("config", msg);
+    } catch {
+      /* logger may not be init yet */
+    }
+  },
+): Record<string, unknown> {
+  const routing = conf.routing as Record<string, unknown> | undefined;
+  const llm = routing?.llm as Record<string, unknown> | undefined;
+  if (!llm) return conf;
+
+  if ("retries" in llm) {
+    warn(
+      "routing.llm.retries is deprecated (issue #856). " +
+        "This value is still applied but will be removed in v1.0. " +
+        "Retry policy is now declared on each operation — remove this key from your config.",
+    );
+  }
+  if ("retryDelayMs" in llm) {
+    warn(
+      "routing.llm.retryDelayMs is deprecated (issue #856). " +
+        "This value is still applied but will be removed in v1.0. " +
+        "Retry policy is now declared on each operation — remove this key from your config.",
+    );
+  }
+  return conf;
+}
+
+/**
  * Load merged configuration (defaults < global < project < CLI overrides).
  *
  * @param startDir - Either the project root (workdir) OR the `.nax/` directory.
@@ -185,9 +225,11 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   }
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-    const globalConf = applyBatchModeCompat(
-      applyRemovedStrategyCompat(
-        migrateLegacyReviewModelKey(migrateLegacyTestPattern(globalConfStripped, logger), logger),
+    const globalConf = applyRoutingRetryDeprecationWarning(
+      applyBatchModeCompat(
+        applyRemovedStrategyCompat(
+          migrateLegacyReviewModelKey(migrateLegacyTestPattern(globalConfStripped, logger), logger),
+        ),
       ),
     );
     rawConfig = deepMergeConfig(rawConfig, globalConf);
@@ -198,9 +240,11 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
-      const resolvedProjConf = applyBatchModeCompat(
-        applyRemovedStrategyCompat(
-          migrateLegacyReviewModelKey(migrateLegacyTestPattern(projConfStripped, logger), logger),
+      const resolvedProjConf = applyRoutingRetryDeprecationWarning(
+        applyBatchModeCompat(
+          applyRemovedStrategyCompat(
+            migrateLegacyReviewModelKey(migrateLegacyTestPattern(projConfStripped, logger), logger),
+          ),
         ),
       );
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
