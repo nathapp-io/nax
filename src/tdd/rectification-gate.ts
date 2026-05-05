@@ -41,10 +41,21 @@ interface TddRectificationAttemptResult {
   isolationPassed: boolean;
 }
 
-interface FullSuiteGateResult {
+export type FullSuiteGateStatus =
+  | "disabled"
+  | "passed"
+  | "passed-with-nonzero-exit"
+  | "deferred-unattributable"
+  | "inconclusive"
+  | "execution-failed"
+  | "rectification-exhausted";
+
+export interface FullSuiteGateResult {
   passed: boolean;
   cost: number;
   fullSuiteGatePassed: boolean;
+  status: FullSuiteGateStatus;
+  attempts?: number;
 }
 
 /** Injectable deps for testability — avoids mock.module() contamination */
@@ -81,7 +92,9 @@ export async function runFullSuiteGate(
   runtime?: import("../runtime").NaxRuntime,
 ): Promise<FullSuiteGateResult> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
-  if (!rectificationEnabled) return { passed: false, cost: 0, fullSuiteGatePassed: false };
+  if (!rectificationEnabled) {
+    return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "disabled" };
+  }
 
   const rectificationConfig = config.execution.rectification;
   const fullSuiteTimeout = rectificationConfig.fullSuiteTimeoutSeconds;
@@ -119,7 +132,7 @@ export async function runFullSuiteGate(
           outputLength: fullSuiteResult.output.length,
           outputTail: fullSuiteResult.output.slice(-200),
         });
-        return { passed: true, cost: 0, fullSuiteGatePassed: false };
+        return { passed: true, cost: 0, fullSuiteGatePassed: false, status: "deferred-unattributable" };
       }
 
       return await runRectificationLoop(
@@ -154,7 +167,7 @@ export async function runFullSuiteGate(
         exitCode: fullSuiteResult.exitCode,
         passedTests: testSummary.passed,
       });
-      return { passed: true, cost: 0, fullSuiteGatePassed: true };
+      return { passed: true, cost: 0, fullSuiteGatePassed: true, status: "passed-with-nonzero-exit" };
     }
 
     // No tests passed AND no tests failed — output is likely truncated/crashed
@@ -164,17 +177,17 @@ export async function runFullSuiteGate(
       outputLength: fullSuiteResult.output.length,
       outputTail: fullSuiteResult.output.slice(-200),
     });
-    return { passed: false, cost: 0, fullSuiteGatePassed: false };
+    return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "inconclusive" };
   }
   if (fullSuitePassed) {
     logger.info("tdd", "Full suite gate passed", { storyId: story.id });
-    return { passed: true, cost: 0, fullSuiteGatePassed: true };
+    return { passed: true, cost: 0, fullSuiteGatePassed: true, status: "passed" };
   }
   logger.warn("tdd", "Full suite gate execution failed (no output)", {
     storyId: story.id,
     exitCode: fullSuiteResult.exitCode,
   });
-  return { passed: false, cost: 0, fullSuiteGatePassed: false };
+  return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "execution-failed" };
 }
 
 /** Run the rectification retry loop when full suite gate detects regressions. */
@@ -413,12 +426,18 @@ async function runRectificationLoop(
   const fixed = outcome.outcome === "fixed";
 
   if (fixed) {
-    return { passed: true, cost: gateCostAccum, fullSuiteGatePassed: true };
+    return { passed: true, cost: gateCostAccum, fullSuiteGatePassed: true, status: "passed" };
   }
 
   logger.warn("tdd", "[WARN] Full suite gate failed after rectification exhausted", {
     storyId: story.id,
     attempts: outcome.attempts,
   });
-  return { passed: false, cost: gateCostAccum, fullSuiteGatePassed: false };
+  return {
+    passed: false,
+    cost: gateCostAccum,
+    fullSuiteGatePassed: false,
+    status: "rectification-exhausted",
+    attempts: outcome.attempts,
+  };
 }

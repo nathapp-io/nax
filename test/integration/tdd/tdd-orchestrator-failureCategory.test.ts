@@ -6,18 +6,22 @@ import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { _rectificationGateDeps } from "../../../src/tdd/rectification-gate";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
+let parseTestOutputOrig: typeof _rectificationGateDeps.parseTestOutput;
 
 beforeEach(() => {
   saved = saveDeps();
+  parseTestOutputOrig = _rectificationGateDeps.parseTestOutput;
 });
 
 afterEach(() => {
   restoreDeps(saved);
+  _rectificationGateDeps.parseTestOutput = parseTestOutputOrig;
 });
 
 const story: UserStory = {
@@ -245,6 +249,123 @@ describe("runThreeSessionTdd — failureCategory", () => {
     expect(result.failureCategory).toBeUndefined();
   });
 
+  test("full-suite rectification exhausted stops before verifier with explicit failure category", async () => {
+    let revParseCount = 0;
+    let diffCount = 0;
+    let testRunCount = 0;
+    let sawRollbackReset = false;
+    let sawRollbackClean = false;
+    const diffFiles = [
+      ["test/user.test.ts"],
+      ["test/user.test.ts"],
+      ["src/user.ts"],
+      ["src/user.ts"],
+      ["src/user.ts"],
+      ["src/user.ts"],
+    ];
+
+    mockAllSpawn(
+      mock((cmd: string[]) => {
+        if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
+          testRunCount++;
+          return {
+            pid: 9999,
+            exited: Promise.resolve(1),
+            stdout: new Response("forced suite failure\n").body,
+            stderr: new Response("").body,
+          };
+        }
+        if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+          revParseCount++;
+          return {
+            exited: Promise.resolve(0),
+            stdout: new Response(`ref-${revParseCount}\n`).body,
+            stderr: new Response("").body,
+          };
+        }
+        if (cmd[0] === "git" && cmd[1] === "diff") {
+          const files = diffFiles[diffCount] || [];
+          diffCount++;
+          return {
+            exited: Promise.resolve(0),
+            stdout: new Response(files.join("\n") + "\n").body,
+            stderr: new Response("").body,
+          };
+        }
+        if (cmd[0] === "git" && cmd[1] === "reset" && cmd[2] === "--hard") {
+          sawRollbackReset = true;
+          return {
+            exited: Promise.resolve(0),
+            stdout: new Response("").body,
+            stderr: new Response("").body,
+          };
+        }
+        if (cmd[0] === "git" && cmd[1] === "clean" && cmd[2] === "-fd") {
+          sawRollbackClean = true;
+          return {
+            exited: Promise.resolve(0),
+            stdout: new Response("").body,
+            stderr: new Response("").body,
+          };
+        }
+        return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
+      }),
+    );
+
+    _rectificationGateDeps.parseTestOutput = mock((_output: string) => ({
+      passed: 2,
+      failed: 1,
+      failures: [{ file: "test/user.test.ts", testName: "suite > should fail", error: "boom", stackTrace: [] }],
+    }));
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          enabled: true,
+          maxRetries: 2,
+        },
+      },
+    };
+
+    const agent = createMockAgent([
+      { success: true, estimatedCostUsd: 0.01 },
+      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.03 },
+      { success: true, estimatedCostUsd: 0.03 },
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      agentManager: fakeAgentManager(agent),
+      story: {
+        ...story,
+        routing: {
+          complexity: "simple",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "test",
+          agent: "claude",
+        },
+      },
+      config,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("full-suite-gate-exhausted");
+    expect(result.fullSuiteGatePassed).toBe(false);
+    expect(result.verdict).toBeUndefined();
+    expect(result.sessions.map((s) => s.role)).toEqual(["test-writer", "implementer"]);
+    expect(result.sessions.some((s) => s.role === "verifier")).toBe(false);
+    expect(testRunCount).toBeGreaterThanOrEqual(3);
+    expect(sawRollbackReset).toBe(true);
+    expect(sawRollbackClean).toBe(true);
+  });
+
   test("zero-file scenario (auto strategy) returns greenfield-no-tests (BUG-010 removed auto-fallback)", async () => {
     // BUG-010: In auto strategy, zero test files → return greenfield-no-tests (no more fallback)
     let diffCount = 0;
@@ -300,4 +421,3 @@ describe("runThreeSessionTdd — failureCategory", () => {
 });
 
 // ─── T9: Verdict integration tests ───────────────────────────────────────────
-

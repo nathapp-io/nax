@@ -430,6 +430,11 @@ describe("resolveMaxAttemptsOutcome", () => {
       expect(result).toBe("fail");
     });
 
+    test("full-suite-gate-exhausted → fail", () => {
+      const result = resolveMaxAttemptsOutcome("full-suite-gate-exhausted");
+      expect(result).toBe("fail");
+    });
+
     test("undefined (no category) → fail", () => {
       const result = resolveMaxAttemptsOutcome(undefined);
       expect(result).toBe("fail");
@@ -438,7 +443,7 @@ describe("resolveMaxAttemptsOutcome", () => {
 
   describe("exhaustive coverage of all FailureCategory values", () => {
     const pauseCategories: FailureCategory[] = ["isolation-violation", "verifier-rejected", "greenfield-no-tests"];
-    const failCategories: FailureCategory[] = ["session-failure", "tests-failing"];
+    const failCategories: FailureCategory[] = ["session-failure", "tests-failing", "full-suite-gate-exhausted"];
 
     for (const cat of pauseCategories) {
       test(`${cat} always returns pause`, () => {
@@ -558,4 +563,3 @@ describe("retryAsLite → testStrategy downgrade", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // T6: TDD Escalation Attempts Counting
 // ─────────────────────────────────────────────────────────────────────────────
-

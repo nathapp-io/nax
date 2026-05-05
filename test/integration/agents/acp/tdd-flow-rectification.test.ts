@@ -169,6 +169,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     );
 
     expect(result.passed).toBe(false);
+    expect(result.status).toBe("disabled");
   });
 
   test("returns true when full suite passes without regressions", async () => {
@@ -201,6 +202,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     );
 
     expect(result.passed).toBe(true);
+    expect(result.status).toBe("passed");
   });
 
   test("calls agent.run() via AcpAgentAdapter during rectification loop", async () => {
@@ -253,6 +255,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
 
     expect(clientsCreated).toBeGreaterThanOrEqual(1);
     expect(result.passed).toBe(true);
+    expect(result.status).toBe("passed");
   });
 
   test("rectification gate returns false after max retries with persistent failures", async () => {
@@ -289,5 +292,6 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     );
 
     expect(result.passed).toBe(false);
+    expect(result.status).toBe("rectification-exhausted");
   });
 });

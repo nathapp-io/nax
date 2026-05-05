@@ -54,6 +54,14 @@ describe("routeTddFailure", () => {
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
+  it("escalates on full-suite-gate-exhausted", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("full-suite-gate-exhausted", false, ctx);
+
+    expect(result.action).toBe("escalate");
+    expect(ctx.retryAsLite).toBeUndefined();
+  });
+
   it("escalates on verifier-rejected", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("verifier-rejected", false, ctx);
@@ -109,6 +117,7 @@ describe("routeTddFailure", () => {
       "isolation-violation",
       "session-failure",
       "tests-failing",
+      "full-suite-gate-exhausted",
       "verifier-rejected",
     ];
 
@@ -120,7 +129,12 @@ describe("routeTddFailure", () => {
   });
 
   it("only sets retryAsLite for isolation-violation in strict mode", () => {
-    const categories: FailureCategory[] = ["session-failure", "tests-failing", "verifier-rejected"];
+    const categories: FailureCategory[] = [
+      "session-failure",
+      "tests-failing",
+      "full-suite-gate-exhausted",
+      "verifier-rejected",
+    ];
 
     for (const category of categories) {
       const ctx: MockContext = {};

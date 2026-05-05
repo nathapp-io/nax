@@ -103,6 +103,14 @@ describe("resolveMaxAttemptsOutcome — runtime-crash category", () => {
     expect(resolveMaxAttemptsOutcome("tests-failing")).toBe("fail");
   });
 
+  test("returns fail for full-suite-gate-exhausted (regression guard)", async () => {
+    const { resolveMaxAttemptsOutcome } = await import(
+      "../../../../src/execution/escalation/tier-escalation"
+    );
+
+    expect(resolveMaxAttemptsOutcome("full-suite-gate-exhausted")).toBe("fail");
+  });
+
   test("still returns pause for verifier-rejected (regression guard)", async () => {
     const { resolveMaxAttemptsOutcome } = await import(
       "../../../../src/execution/escalation/tier-escalation"
