@@ -88,21 +88,25 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
 let origGitWithTimeout: typeof _gitHistoryDeps.gitWithTimeout;
 let origCodeNeighborReadFile: typeof _codeNeighborDeps.readFile;
 let origCodeNeighborGlob: typeof _codeNeighborDeps.glob;
+let origCodeNeighborDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
 
 beforeEach(() => {
   origGitWithTimeout = _gitHistoryDeps.gitWithTimeout;
   origCodeNeighborReadFile = _codeNeighborDeps.readFile;
   origCodeNeighborGlob = _codeNeighborDeps.glob;
+  origCodeNeighborDetectLanguage = _codeNeighborDeps.detectLanguage;
   // Default: suppress real FS/git calls
   _gitHistoryDeps.gitWithTimeout = async () => ({ stdout: "", exitCode: 0, stderr: "" });
   _codeNeighborDeps.readFile = async () => "";
-  _codeNeighborDeps.glob = () => [];
+  _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+  _codeNeighborDeps.detectLanguage = async () => undefined;
 });
 
 afterEach(() => {
   _gitHistoryDeps.gitWithTimeout = origGitWithTimeout;
   _codeNeighborDeps.readFile = origCodeNeighborReadFile;
   _codeNeighborDeps.glob = origCodeNeighborGlob;
+  _codeNeighborDeps.detectLanguage = origCodeNeighborDetectLanguage;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,7 +166,7 @@ describe("createDefaultOrchestrator — #507 provider scope config", () => {
     const capturedGlobDirs: string[] = [];
     _codeNeighborDeps.glob = (_pattern, cwd) => {
       capturedGlobDirs.push(cwd);
-      return ["src/auth.ts"];
+      return { files: ["src/auth.ts"], truncated: false };
     };
     _codeNeighborDeps.readFile = async () => "export function auth() {}";
 
@@ -171,6 +175,19 @@ describe("createDefaultOrchestrator — #507 provider scope config", () => {
     await orchestrator.assemble(makeRequest());
 
     expect(capturedGlobDirs.some((d) => d === "/repo")).toBe(true);
+  });
+
+  test("maxGlobFiles=750 in config flows through to provider cap", async () => {
+    let capturedCap: number | undefined;
+    _codeNeighborDeps.glob = (_pattern, _cwd, _m, cap) => {
+      capturedCap = cap;
+      return { files: [], truncated: false };
+    };
+    const config = makeConfig();
+    (config.context!.v2!.providers as any).maxGlobFiles = 750;
+    const orchestrator = createDefaultOrchestrator(makeStory(), config);
+    await orchestrator.assemble(makeRequest());
+    expect(capturedCap).toBe(750);
   });
 });
 

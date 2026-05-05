@@ -215,12 +215,13 @@ export async function handleQueryNeighbor(
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
   resolvedTestPatterns?: import("../../test-runners/resolver").ResolvedTestPatterns,
   storyId?: string,
+  providerOptions?: { sourceGlob?: string; maxGlobFiles?: number },
 ): Promise<string> {
   budget.consume();
 
-  const provider = new CodeNeighborProvider();
+  const provider = new CodeNeighborProvider(providerOptions ?? {});
   const request: ContextRequest = {
-    storyId: "_pull-tool",
+    storyId: storyId ?? "_pull-tool",
     repoRoot,
     packageDir: repoRoot,
     stage: "pull-tool",
