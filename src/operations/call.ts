@@ -1,11 +1,23 @@
+import { resolveRetryPreset } from "../agents/retry";
+import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { pickSelector, resolveConfiguredModel } from "../config";
 import type { ConfigSelector, ConfiguredModel, NaxConfig } from "../config";
 import { NaxError } from "../errors";
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { composeSections, join } from "../prompts/compose";
+import { cancellableDelay } from "../utils/bun-deps";
 import { buildHopCallback } from "./build-hop-callback";
 import type { BuildContext, CallContext, CompleteOperation, Operation, RunOperation, VerifyContext } from "./types";
+
+/** Injectable deps for testability — mirrors _agentManagerDeps pattern. */
+export const _callOpDeps = {
+  sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
+};
+
+/** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
+const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
 
 function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[], opName: string): ConfigSelector<C> {
   if (Array.isArray(s)) {
@@ -34,6 +46,20 @@ function resolveTimeoutMs<I, O, C>(op: Operation<I, O, C>, input: I, buildCtx: B
     });
   }
   return timeoutMs;
+}
+
+function resolveOpRetry<I, O, C>(
+  op: CompleteOperation<I, O, C>,
+  input: I,
+  buildCtx: BuildContext<C>,
+): RetryStrategy | null {
+  if (!op.retry) return null;
+  if (typeof op.retry === "function") {
+    const preset = op.retry(input, buildCtx);
+    return preset ? resolveRetryPreset(preset) : null;
+  }
+  if ("shouldRetry" in op.retry) return op.retry as RetryStrategy;
+  return resolveRetryPreset(op.retry as RetryPreset);
 }
 
 /**
@@ -83,7 +109,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   if (op.kind === "complete") {
     const completeOp = op as CompleteOperation<I, O, C>;
     const sessionRole = ctx.sessionOverride?.role;
-    const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, {
+    const completeOptions = {
       modelDef: resolved.modelDef,
       jsonMode: completeOp.jsonMode ?? false,
       pipelineStage: op.stage,
@@ -92,9 +118,45 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       featureName: ctx.featureName,
       ...(sessionRole !== undefined ? { sessionRole } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    });
-    const parsedComplete = op.parse(raw.output, input, buildCtx);
-    return runPostParse(op, parsedComplete, input, buildCtx);
+    };
+
+    const retryStrategy = resolveOpRetry(completeOp, input, buildCtx);
+    let attempt = 0;
+    while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
+      try {
+        const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, completeOptions);
+        const parsedComplete = op.parse(raw.output, input, buildCtx);
+        return await runPostParse(op, parsedComplete, input, buildCtx);
+      } catch (err) {
+        if (!retryStrategy) throw err;
+        const decision = retryStrategy.shouldRetry(err as Error, attempt, {
+          site: "complete",
+          agentName: dispatchAgent,
+          stage: op.stage,
+          storyId: ctx.storyId,
+        });
+        if (!decision.retry) throw err;
+        if (ctx.runtime.signal?.aborted) throw err;
+        getSafeLogger()?.warn(
+          "call-op",
+          `LLM call failed (attempt ${attempt + 1}), retrying in ${decision.delayMs}ms`,
+          {
+            storyId: ctx.storyId,
+            op: op.name,
+            attempt,
+            delayMs: decision.delayMs,
+          },
+        );
+        await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
+        if (ctx.runtime.signal?.aborted) throw err;
+        attempt++;
+      }
+    }
+    throw new NaxError(
+      `callOp[${op.name}]: exceeded MAX_COMPLETE_RETRY_ATTEMPTS (${MAX_COMPLETE_RETRY_ATTEMPTS})`,
+      "CALL_OP_MAX_RETRIES",
+      { stage: op.stage, storyId: ctx.storyId },
+    );
   }
 
   // kind:"run" — ADR-019 §5: route through runWithFallback + buildHopCallback.

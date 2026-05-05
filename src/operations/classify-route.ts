@@ -27,6 +27,13 @@ export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRout
   jsonMode: true,
   config: routingConfigSelector,
   model: (_input, ctx) => ctx.config.routing.llm?.model ?? "balanced",
+  retry: (_input, ctx) => ({
+    preset: "transient-network" as const,
+    // routing.llm.retries (deprecated, see issue #856) feeds into maxAttempts during
+    // the deprecation period. Default: 2 total attempts (1 retry), matching retries ?? 1.
+    maxAttempts: (ctx.config.routing.llm?.retries ?? 1) + 1,
+    baseDelayMs: ctx.config.routing.llm?.retryDelayMs ?? 1000,
+  }),
   build(input: ClassifyRouteInput, _ctx: BuildContext<RoutingConfig>) {
     const criteria = input.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
     const storyBody = [
@@ -62,6 +69,11 @@ export const classifyRouteBatchOp: CompleteOperation<UserStory[], Map<string, Ro
   jsonMode: true,
   config: routingConfigSelector,
   model: (_input, ctx) => ctx.config.routing.llm?.model ?? "balanced",
+  retry: (_input, ctx) => ({
+    preset: "transient-network" as const,
+    maxAttempts: (ctx.config.routing.llm?.retries ?? 1) + 1,
+    baseDelayMs: ctx.config.routing.llm?.retryDelayMs ?? 1000,
+  }),
   build(input: UserStory[], _ctx: BuildContext<RoutingConfig>) {
     const storyBlocks = input
       .map((story, idx) => {
