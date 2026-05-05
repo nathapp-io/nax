@@ -42,12 +42,14 @@ let origFileExists: typeof _codeNeighborDeps.fileExists;
 let origReadFile: typeof _codeNeighborDeps.readFile;
 let origGlob: typeof _codeNeighborDeps.glob;
 let origDiscoverWorkspacePackages: typeof _codeNeighborDeps.discoverWorkspacePackages;
+let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
 
 beforeEach(() => {
   origFileExists = _codeNeighborDeps.fileExists;
   origReadFile = _codeNeighborDeps.readFile;
   origGlob = _codeNeighborDeps.glob;
   origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
+  origDetectLanguage = _codeNeighborDeps.detectLanguage;
   // Default: no workspace packages (non-monorepo fallback)
   _codeNeighborDeps.discoverWorkspacePackages = async () => [];
 });
@@ -57,6 +59,7 @@ afterEach(() => {
   _codeNeighborDeps.readFile = origReadFile;
   _codeNeighborDeps.glob = origGlob;
   _codeNeighborDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
+  _codeNeighborDeps.detectLanguage = origDetectLanguage;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,7 +92,8 @@ function setupDeps(options: {
     const rel = path.replace("/repo/", "");
     return files[rel] ?? "";
   };
-  _codeNeighborDeps.glob = (_pattern: string, _cwd: string) => globFiles;
+  _codeNeighborDeps.glob = (_pattern: string, _cwd: string) => ({ files: globFiles, truncated: false });
+  _codeNeighborDeps.detectLanguage = async () => undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -421,7 +425,7 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     const captured: string[] = [];
     _codeNeighborDeps.glob = (_pattern: string, cwd: string) => {
       captured.push(cwd);
-      return [];
+      return { files: [], truncated: false };
     };
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.readFile = async () => "";
@@ -508,7 +512,7 @@ describe("CodeNeighborProvider — SEC-503 path traversal prevention", () => {
       readPaths.push(p);
       return false;
     };
-    _codeNeighborDeps.glob = () => [];
+    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
 
     const p = new CodeNeighborProvider();
     await p.fetch(makeRequest({ touchedFiles: ["../../../etc/passwd", "src/valid.ts"] }));
@@ -522,7 +526,7 @@ describe("CodeNeighborProvider — SEC-503 path traversal prevention", () => {
       readPaths.push(p);
       return false;
     };
-    _codeNeighborDeps.glob = () => [];
+    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
 
     const p = new CodeNeighborProvider();
     await p.fetch(makeRequest({ touchedFiles: ["/etc/passwd", "src/valid.ts"] }));
@@ -537,7 +541,7 @@ describe("CodeNeighborProvider — SEC-503 path traversal prevention", () => {
       return true;
     };
     _codeNeighborDeps.readFile = async () => "";
-    _codeNeighborDeps.glob = () => [];
+    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
 
     const p = new CodeNeighborProvider();
     await p.fetch(makeRequest({ touchedFiles: ["../evil", "src/valid.ts"] }));
@@ -577,41 +581,43 @@ describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
     _codeNeighborDeps.getLogger = origGetLogger;
   });
 
-  test("logs debug when glob results are truncated at MAX_GLOB_FILES cap", () => {
-    const debugCalls: Array<[string, string, Record<string, unknown>]> = [];
+  test("logs warn when glob results are truncated at cap", () => {
+    const warnCalls: Array<[string, string, Record<string, unknown>]> = [];
     _codeNeighborDeps.getLogger = () =>
       ({
-        debug: (stage: string, msg: string, ctx: Record<string, unknown>) =>
-          debugCalls.push([stage, msg, ctx]),
-        warn: () => {},
+        debug: () => {},
+        warn: (stage: string, msg: string, ctx: Record<string, unknown>) =>
+          warnCalls.push([stage, msg, ctx]),
         info: () => {},
         error: () => {},
       }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
 
-    // Call the real default glob implementation directly (not the mock from setupDeps)
-    const results = _codeNeighborDeps.glob("src/**/*.ts", tmpDir);
+    // Call the real default glob implementation directly with a small cap
+    const { files, truncated } = _codeNeighborDeps.glob("src/**/*.ts", tmpDir, [], 200);
 
-    expect(results).toHaveLength(200);
-    expect(debugCalls.length).toBeGreaterThan(0);
-    expect(debugCalls[0]?.[0]).toBe("context-v2");
-    expect(debugCalls[0]?.[2]).toMatchObject({ cap: 200 });
+    expect(files).toHaveLength(200);
+    expect(truncated).toBe(true);
+    expect(warnCalls.length).toBeGreaterThan(0);
+    expect(warnCalls[0]?.[0]).toBe("context-v2");
+    expect(warnCalls[0]?.[2]).toMatchObject({ cap: 200 });
   });
 
-  test("does not log debug when glob results are below the cap", () => {
-    const debugCalls: unknown[] = [];
+  test("does not log warn when glob results are below the cap", () => {
+    const warnCalls: unknown[] = [];
     _codeNeighborDeps.getLogger = () =>
       ({
-        debug: (...args: unknown[]) => debugCalls.push(args),
-        warn: () => {},
+        debug: () => {},
+        warn: (...args: unknown[]) => warnCalls.push(args),
         info: () => {},
         error: () => {},
       }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
 
     // Only 1 file matches — well below cap
-    const results = _codeNeighborDeps.glob("src/file0.ts", tmpDir);
+    const { files, truncated } = _codeNeighborDeps.glob("src/file0.ts", tmpDir, [], 500);
 
-    expect(results.length).toBeLessThan(200);
-    expect(debugCalls.length).toBe(0);
+    expect(files.length).toBeLessThan(200);
+    expect(truncated).toBe(false);
+    expect(warnCalls.length).toBe(0);
   });
 });
 
@@ -643,28 +649,28 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
   });
 
   test("excludes node_modules/ from glob results", () => {
-    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
-    expect(results.some((f) => f.startsWith("node_modules/"))).toBe(false);
+    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(files.some((f) => f.startsWith("node_modules/"))).toBe(false);
   });
 
   test("excludes .nax/ from glob results", () => {
-    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
-    expect(results.some((f) => f.startsWith(".nax/"))).toBe(false);
+    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(files.some((f) => f.startsWith(".nax/"))).toBe(false);
   });
 
   test("excludes nested packages/api/.nax/ from glob results", () => {
-    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
-    expect(results.some((f) => f.includes("/.nax/"))).toBe(false);
+    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(files.some((f) => f.includes("/.nax/"))).toBe(false);
   });
 
   test("includes files in lib/ (non-src/ layout)", () => {
-    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
-    expect(results).toContain("lib/utils.ts");
+    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(files).toContain("lib/utils.ts");
   });
 
   test("includes files in src/ (standard layout)", () => {
-    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
-    expect(results).toContain("src/main.ts");
+    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(files).toContain("src/main.ts");
   });
 
   test("excluded dirs do not count against MAX_GLOB_FILES cap", () => {
@@ -674,11 +680,11 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
     for (let i = 0; i < 205; i++) {
       writeFileSync(join(nmDir, `mod${i}.ts`), "");
     }
-    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     // Real source files are still returned despite node_modules flood
-    expect(results).toContain("lib/utils.ts");
-    expect(results).toContain("src/main.ts");
-    expect(results.some((f) => f.startsWith("node_modules/"))).toBe(false);
+    expect(files).toContain("lib/utils.ts");
+    expect(files).toContain("src/main.ts");
+    expect(files.some((f) => f.startsWith("node_modules/"))).toBe(false);
   });
 
   test("respects naxIgnoreIndex matchers passed as third arg", () => {
@@ -687,9 +693,9 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
       pattern: "lib/**",
       test: (p: string) => p.startsWith("lib/"),
     };
-    const results = _codeNeighborDeps.glob("**/*.ts", tmpDir, [matcher]);
-    expect(results.some((f) => f.startsWith("lib/"))).toBe(false);
-    expect(results).toContain("src/main.ts");
+    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir, [matcher]);
+    expect(files.some((f) => f.startsWith("lib/"))).toBe(false);
+    expect(files).toContain("src/main.ts");
   });
 });
 
@@ -702,7 +708,7 @@ describe("CodeNeighborProvider — naxIgnoreIndex threaded through fetch", () =>
     let capturedMatchers: readonly NaxIgnoreMatcher[] | undefined;
     _codeNeighborDeps.glob = (_pattern, _cwd, ignoreMatchers) => {
       capturedMatchers = ignoreMatchers;
-      return [];
+      return { files: [], truncated: false };
     };
 
     const matcher: NaxIgnoreMatcher = {
@@ -729,3 +735,4 @@ describe("CodeNeighborProvider — naxIgnoreIndex threaded through fetch", () =>
     expect(capturedMatchers).toEqual([matcher]);
   });
 });
+

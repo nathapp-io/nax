@@ -34,7 +34,7 @@ const API_DEPS = new Set(["express", "fastify", "hono"]);
 
 // ── Language detection ────────────────────────────────────────────────────────
 
-async function detectLanguage(
+async function detectLanguageImpl(
   workdir: string,
   pkg: Record<string, unknown> | null,
 ): Promise<ProjectProfile["language"] | undefined> {
@@ -125,6 +125,12 @@ async function detectLintTool(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/** Return the primary language for a package directory. Side-effect-free — no profile cache write. */
+export async function detectLanguage(packageDir: string): Promise<ProjectProfile["language"] | undefined> {
+  const pkg = await _detectorDeps.readJson(join(packageDir, "package.json"));
+  return detectLanguageImpl(packageDir, pkg);
+}
+
 /**
  * Detect project profile fields not already set in `existing`.
  * Detection priority: Go > Rust > Python > Node/Bun.
@@ -135,7 +141,7 @@ export async function detectProjectProfile(
 ): Promise<ProjectProfile> {
   const pkg = await _detectorDeps.readJson(join(workdir, "package.json"));
 
-  const language = existing.language !== undefined ? existing.language : await detectLanguage(workdir, pkg);
+  const language = existing.language !== undefined ? existing.language : await detectLanguageImpl(workdir, pkg);
 
   const type = existing.type !== undefined ? existing.type : detectType(pkg);
 

@@ -286,7 +286,7 @@ export const NaxConfigSchema = z
         deterministic: false,
         session: { retentionDays: 7, archiveOnFeatureArchive: true },
         staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
-        providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1 },
+        providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1, maxGlobFiles: 500 },
       },
     }),
     optimizer: OptimizerConfigSchema.optional(),

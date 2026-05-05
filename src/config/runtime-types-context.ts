@@ -118,6 +118,10 @@ export interface ContextV2Config {
     neighborScope: "repo" | "package";
     /** Cross-package scan depth for CodeNeighborProvider. Default: 1. */
     crossPackageDepth: number;
+    /** Override source-file glob for reverse-dep scanning (#895). Derived from language when omitted. */
+    sourceGlob?: string;
+    /** Max files scanned per directory during reverse-dep glob (#895). Default: 500. */
+    maxGlobFiles: number;
   };
 }
 
