@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { initLogger, getLogger, resetLogger } from "../../../../src/logger";
 import type { LogEntry } from "../../../../src/logger/types";
 import { DispatchEventBus } from "../../../../src/runtime/dispatch-events";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../../../../src/runtime/dispatch-events";
 import { attachLoggingSubscriber } from "../../../../src/runtime/middleware/logging";
+import { cleanupTempDir, makeTempDir } from "../../../helpers";
 
 const PERMS = { mode: "approve-reads" as const, skipPermissions: false };
 
@@ -68,20 +70,18 @@ async function parseLastEntry(logFile: string): Promise<LogEntry> {
 
 describe("attachLoggingSubscriber", () => {
   let logFile: string;
+  let tmpDir: string;
 
   beforeEach(() => {
-    logFile = `${import.meta.dir}/test-logging-sub-${Date.now()}.jsonl`;
+    tmpDir = makeTempDir("nax-test-logging-sub-");
+    logFile = join(tmpDir, `test-logging-sub-${Date.now()}.jsonl`);
     initLogger({ level: "debug", filePath: logFile, useChalk: false, headless: true });
   });
 
   afterEach(async () => {
+    await getLogger().flush();
     resetLogger();
-    try {
-      const { unlink } = await import("node:fs/promises");
-      await unlink(logFile);
-    } catch {
-      // ignore cleanup errors
-    }
+    cleanupTempDir(tmpDir);
   });
 
   test("logs Agent call complete on session-turn dispatch", async () => {
