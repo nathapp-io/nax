@@ -170,8 +170,21 @@ export const ContextV2ConfigSchema = z
          * Only active when neighborScope is "package" and the story has a workdir.
          */
         crossPackageDepth: z.number().int().min(0).default(1),
+        /**
+         * Override the source-file glob for CodeNeighborProvider reverse-dep scanning.
+         * When omitted (default), the glob is derived from detectLanguage(packageDir).
+         * Tunable per-package via .nax/mono/<pkg>/config.json.
+         */
+        sourceGlob: z.string().optional(),
+        /**
+         * Maximum files scanned per directory during reverse-dep glob.
+         * Raised from 200 to 500: language-aware globbing now produces less noise,
+         * so a higher default rarely hurts and reduces silent truncation in mid-size
+         * monorepos. Tunable per-package via .nax/mono/<pkg>/config.json.
+         */
+        maxGlobFiles: z.number().int().min(1).default(500),
       })
-      .default({ historyScope: "package", neighborScope: "package", crossPackageDepth: 1 }),
+      .default({ historyScope: "package", neighborScope: "package", crossPackageDepth: 1, maxGlobFiles: 500 }),
     /**
      * Staleness detection for feature context entries (Amendment A AC-46/AC-47).
      * Downweights old or contradicted entries in context.md so stale advice
@@ -207,7 +220,7 @@ export const ContextV2ConfigSchema = z
     deterministic: false,
     session: { retentionDays: 7, archiveOnFeatureArchive: true },
     staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
-    providers: { historyScope: "package" as const, neighborScope: "package" as const, crossPackageDepth: 1 },
+    providers: { historyScope: "package" as const, neighborScope: "package" as const, crossPackageDepth: 1, maxGlobFiles: 500 },
   }));
 
 export const ContextConfigSchema = z.object({
