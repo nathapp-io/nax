@@ -33,6 +33,7 @@ export type {
   DiagnosisPromptParams,
   RefinementPromptOptions,
 } from "./builders/acceptance-builder";
+export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-builder-helpers";
 
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { RectifierPromptBuilder, CONTRADICTION_ESCAPE_HATCH } from "./builders/rectifier-builder";
