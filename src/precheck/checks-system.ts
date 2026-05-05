@@ -3,7 +3,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import type { NaxConfig } from "../config";
+import type { PrecheckConfig } from "../config/selectors";
 import type { Check } from "./types";
 
 /** Check if dependencies are installed (language-aware). Detects: node_modules, target, venv, vendor */
@@ -38,7 +38,7 @@ export async function checkDependenciesInstalled(workdir: string): Promise<Check
 }
 
 /** Check if test command is configured. Downgraded to warning since the verify stage will catch actual failures. */
-export async function checkTestCommand(config: NaxConfig): Promise<Check> {
+export async function checkTestCommand(config: PrecheckConfig): Promise<Check> {
   const testCommand = config.execution.testCommand || (config.quality?.commands?.test as string | undefined);
 
   if (!testCommand || testCommand === null) {
@@ -59,7 +59,7 @@ export async function checkTestCommand(config: NaxConfig): Promise<Check> {
 }
 
 /** Check if lint command is configured. Downgraded to warning since the verify stage will catch actual failures. */
-export async function checkLintCommand(config: NaxConfig): Promise<Check> {
+export async function checkLintCommand(config: PrecheckConfig): Promise<Check> {
   const lintCommand = config.execution.lintCommand;
 
   if (!lintCommand || lintCommand === null) {
@@ -80,7 +80,7 @@ export async function checkLintCommand(config: NaxConfig): Promise<Check> {
 }
 
 /** Check if typecheck command is configured. Downgraded to warning since the verify stage will catch actual failures. */
-export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
+export async function checkTypecheckCommand(config: PrecheckConfig): Promise<Check> {
   const typecheckCommand = config.execution.typecheckCommand;
 
   if (!typecheckCommand || typecheckCommand === null) {

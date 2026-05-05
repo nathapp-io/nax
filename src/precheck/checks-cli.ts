@@ -2,7 +2,7 @@
  * CLI availability precheck implementations
  */
 
-import type { NaxConfig } from "../config";
+import type { PrecheckConfig } from "../config/selectors";
 import { spawn } from "../utils/bun-deps";
 import type { Check } from "./types";
 
@@ -40,7 +40,7 @@ export async function checkClaudeCLI(): Promise<Check> {
 
 /** Check if configured agent binary is available. Reads agent from config, defaults to 'claude'.
  * Supports: claude, codex, opencode, gemini, aider */
-export async function checkAgentCLI(config: NaxConfig): Promise<Check> {
+export async function checkAgentCLI(config: PrecheckConfig): Promise<Check> {
   const agent = config.execution?.agent || "claude";
 
   try {

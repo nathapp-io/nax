@@ -10,7 +10,7 @@
  * - **Project checks** — require PRD (validation, story counts, story size gate)
  */
 
-import type { NaxConfig } from "../config";
+import type { PrecheckConfig } from "../config/selectors";
 import type { PRD } from "../prd/types";
 import {
   checkAgentCLI,
@@ -107,7 +107,7 @@ function getEarlyEnvironmentBlockers(workdir: string): CheckFn[] {
  * Late environment checks — agent CLI, deps, commands, git user.
  * Run after PRD validation in runPrecheck; all included in runEnvironmentPrecheck.
  */
-function getLateEnvironmentBlockers(config: NaxConfig, workdir: string): CheckFn[] {
+function getLateEnvironmentBlockers(config: PrecheckConfig, workdir: string): CheckFn[] {
   return [
     () => checkAgentCLI(config),
     () => checkDependenciesInstalled(workdir),
@@ -119,12 +119,12 @@ function getLateEnvironmentBlockers(config: NaxConfig, workdir: string): CheckFn
 }
 
 /** All environment checks — no PRD needed. Used by runEnvironmentPrecheck. */
-function getEnvironmentBlockers(config: NaxConfig, workdir: string): CheckFn[] {
+function getEnvironmentBlockers(config: PrecheckConfig, workdir: string): CheckFn[] {
   return [...getEarlyEnvironmentBlockers(workdir), ...getLateEnvironmentBlockers(config, workdir)];
 }
 
 /** Environment warnings — no PRD needed. */
-function getEnvironmentWarnings(config: NaxConfig, workdir: string): CheckFn[] {
+function getEnvironmentWarnings(config: PrecheckConfig, workdir: string): CheckFn[] {
   return [
     () => checkClaudeMdExists(workdir),
     () => checkDiskSpace(),
@@ -150,7 +150,7 @@ function getProjectWarnings(prd: PRD): CheckFn[] {
 
 /** Injectable dependencies for testing */
 export const _precheckDeps = {
-  checkStorySizeGate: async (config: NaxConfig, prd: PRD): Promise<StorySizeGateResult> => {
+  checkStorySizeGate: async (config: PrecheckConfig, prd: PRD): Promise<StorySizeGateResult> => {
     const { checkStorySizeGate } = await import("./story-size-gate");
     return checkStorySizeGate(config, prd);
   },
@@ -178,7 +178,7 @@ export interface EnvironmentPrecheckResult {
  * before expensive LLM calls are made.
  */
 export async function runEnvironmentPrecheck(
-  config: NaxConfig,
+  config: PrecheckConfig,
   workdir: string,
   options?: { format?: "human" | "json"; silent?: boolean },
 ): Promise<EnvironmentPrecheckResult> {
@@ -232,7 +232,7 @@ export async function runEnvironmentPrecheck(
  * Returns result, exit code, and formatted output.
  */
 export async function runPrecheck(
-  config: NaxConfig,
+  config: PrecheckConfig,
   prd: PRD,
   options: PrecheckOptions,
 ): Promise<PrecheckResultWithCode> {
