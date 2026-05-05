@@ -324,15 +324,6 @@ function isTestFile(filePath: string, regex: readonly RegExp[]): boolean {
   return regex.some((re) => re.test(filePath));
 }
 
-/**
- * Collect neighbors for a single file:
- * - forward deps (JS/TS import parse only — empty for other languages)
- * - reverse deps (all common source extensions)
- * - sibling test file (derived from ResolvedTestPatterns, ADR-009 SSOT)
- *
- * extraGlobWorkdirs: when provided (AC-62 crossPackageDepth > 0), also scans
- * each directory for cross-package reverse deps (workspace package dirs or repoRoot).
- *
 /** Derive the source-file glob for reverse-dep scanning (#895, L1). */
 async function resolveSourceGlob(override: string | undefined, packageDir: string): Promise<string> {
   if (override) return override;
@@ -341,10 +332,9 @@ async function resolveSourceGlob(override: string | undefined, packageDir: strin
 }
 
 /**
- * siblingTestContext: when provided, enables sibling-test derivation via the
- * resolver's globs + testDirs. When omitted, sibling-test hinting is skipped
- * (the legacy `test/unit/` hardcoding is gone — callers must thread the
- * resolver per ADR-009).
+ * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
+ * (language-aware glob, configurable cap), and sibling test (ADR-009 SSOT).
+ * extraGlobWorkdirs enables cross-package reverse dep scanning (AC-62).
  */
 async function collectNeighbors(
   filePath: string,

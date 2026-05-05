@@ -221,7 +221,7 @@ export async function handleQueryNeighbor(
 
   const provider = new CodeNeighborProvider(providerOptions ?? {});
   const request: ContextRequest = {
-    storyId: "_pull-tool",
+    storyId: storyId ?? "_pull-tool",
     repoRoot,
     packageDir: repoRoot,
     stage: "pull-tool",
