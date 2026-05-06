@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _scopedLintDeps, runScopedLintCheck } from "../../../src/review/scoped-lint";
+import { _scopedLintDeps, runAutofixLint, runScopedLintCheck } from "../../../src/review/scoped-lint";
 import type { ReviewConfig } from "../../../src/review/types";
 
 const baseReviewConfig: ReviewConfig = {
@@ -78,6 +78,7 @@ describe("runScopedLintCheck", () => {
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("no in-scope files");
+    expect(result.lintScope?.packageGroups[0]?.packageDir).toBe(".");
   });
 
   test("degrades to full lint command when storyGitRef is missing", async () => {
@@ -132,5 +133,100 @@ describe("runScopedLintCheck", () => {
 
     expect(result.command).toBe("custom-lint --from-exec");
     expect(runMock).toHaveBeenCalled();
+  });
+
+  test("supports explicit scope input via runAutofixLint", async () => {
+    const result = await runAutofixLint({
+      resolvedLintCommand: "eslint --max-warnings=0",
+      configCommands: { ...baseReviewConfig.commands, lintScoped: "eslint {{files}}" },
+      qualityCommands: {},
+      workdir: "/repo",
+      storyId: "US-001",
+      scope: {
+        changedFiles: ["src/a.ts"],
+        contextFiles: ["src/b.ts"],
+        packageDir: ".",
+      },
+    });
+
+    expect(result.command).toBe("eslint 'src/a.ts' 'src/b.ts'");
+    expect(result.lintScope?.packageGroups).toEqual([{ packageDir: ".", files: ["src/a.ts", "src/b.ts"] }]);
+  });
+
+  test("degraded mode filters out-of-scope diagnostics for unsupported command shape", async () => {
+    _scopedLintDeps.listChangedFiles = mock(async () => ["src/in.ts"]);
+    _scopedLintDeps.runLintCommand = mock(async () => ({
+      command: "custom-lint",
+      success: false,
+      exitCode: 1,
+      output: "src/in.ts:1:1 error in scope\nsrc/out.ts:2:2 error out scope",
+      durationMs: 9,
+    }));
+
+    const result = await runScopedLintCheck({
+      resolvedLintCommand: "custom-lint",
+      configCommands: baseReviewConfig.commands,
+      lintOutputFormat: "eslint",
+      workdir: "/repo",
+      storyId: "US-001",
+      storyGitRef: "abc123",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("src/in.ts");
+    expect(result.output).not.toContain("src/out.ts");
+    expect(result.lintScope?.status).toBe("in_scope");
+    expect(result.lintScope?.outOfScopeDiagnosticCount).toBe(1);
+  });
+
+  test("degraded mode fails closed when lint output is unparseable", async () => {
+    _scopedLintDeps.listChangedFiles = mock(async () => ["src/in.ts"]);
+    _scopedLintDeps.runLintCommand = mock(async () => ({
+      command: "custom-lint",
+      success: false,
+      exitCode: 1,
+      output: "totally unparseable lint output",
+      durationMs: 9,
+    }));
+
+    const result = await runScopedLintCheck({
+      resolvedLintCommand: "custom-lint",
+      configCommands: baseReviewConfig.commands,
+      lintOutputFormat: "eslint",
+      workdir: "/repo",
+      storyId: "US-001",
+      storyGitRef: "abc123",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.output).toBe("totally unparseable lint output");
+  });
+
+  test("dogfood replay shape: sibling-package lint debt is reported as out_of_scope", async () => {
+    _scopedLintDeps.runLintCommand = mock(async () => ({
+      command: "custom-lint",
+      success: false,
+      exitCode: 1,
+      output: "packages/web/src/sibling.ts:3:1 error sibling debt",
+      durationMs: 9,
+    }));
+
+    const result = await runAutofixLint({
+      resolvedLintCommand: "custom-lint",
+      configCommands: baseReviewConfig.commands,
+      lintOutputFormat: "eslint",
+      workdir: "/repo",
+      storyId: "US-001",
+      scope: {
+        changedFiles: ["packages/api/src/in.ts"],
+        contextFiles: [],
+        packageDir: "packages/api",
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.lintScope?.status).toBe("out_of_scope");
+    expect(result.lintScope?.packageGroups).toEqual([{ packageDir: "packages/api", files: ["packages/api/src/in.ts"] }]);
+    expect(result.output).toContain("out of story scope");
   });
 });

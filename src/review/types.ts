@@ -92,6 +92,15 @@ export interface ReviewCheckResult {
   /** True when the LLM reviewer could not parse its response and fell back to success:true (fail-open).
    * Consumers in a retry context (autofixAttempt > 0) must treat this as a non-genuine pass. */
   failOpen?: boolean;
+  /**
+   * Optional scoped-lint metadata for autofix/review consumers.
+   * Provides explicit package grouping and structured out-of-scope status.
+   */
+  lintScope?: {
+    status: "in_scope" | "out_of_scope" | "degraded";
+    packageGroups: Array<{ packageDir: string; files: string[] }>;
+    outOfScopeDiagnosticCount?: number;
+  };
 }
 
 /** Plugin reviewer result */

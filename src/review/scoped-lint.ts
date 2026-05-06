@@ -9,6 +9,12 @@ import { formatDiagnosticsOutput, parseLintOutput } from "./lint-parsing";
 import type { LintOutputFormat } from "./lint-parsing";
 import type { ReviewCheckResult, ReviewConfig } from "./types";
 
+export interface AutofixLintScope {
+  changedFiles: string[];
+  contextFiles: string[];
+  packageDir: string;
+}
+
 interface ScopedLintArgs {
   resolvedLintCommand: string;
   configCommands: ReviewConfig["commands"];
@@ -21,10 +27,12 @@ interface ScopedLintArgs {
   storyGitRef?: string;
   env?: Record<string, string | undefined>;
   naxIgnoreIndex?: NaxIgnoreIndex;
+  scope?: AutofixLintScope;
 }
 
 interface ScopeResult {
   files: string[];
+  packageGroups: Array<{ packageDir: string; files: string[] }>;
   degradedReason?: string;
 }
 
@@ -100,18 +108,41 @@ async function filterFilesToScope(
 }
 
 async function resolveLintScope(args: ScopedLintArgs): Promise<ScopeResult> {
-  const storyContextFiles = args.story ? getContextFiles(args.story) : [];
-  if (!args.storyGitRef) {
+  const storyContextFiles = args.scope?.contextFiles ?? (args.story ? getContextFiles(args.story) : []);
+  const explicitChangedFiles = args.scope?.changedFiles;
+  const explicitPackageDir = args.scope?.packageDir ?? ".";
+
+  if (explicitChangedFiles) {
+    const union = uniqueFiles([...explicitChangedFiles, ...storyContextFiles]);
+    const packageScoped = await filterFilesToScope(
+      union,
+      args.workdir,
+      args.projectDir,
+      explicitPackageDir ?? inferActivePackageDir(args.workdir, args.projectDir),
+    );
+    const withIgnore = args.naxIgnoreIndex ? args.naxIgnoreIndex.filter(packageScoped, args.workdir) : packageScoped;
+    const files = uniqueFiles(withIgnore);
     return {
-      files: uniqueFiles(storyContextFiles),
+      files,
+      packageGroups: [{ packageDir: explicitPackageDir, files }],
+    };
+  }
+
+  if (!args.storyGitRef) {
+    const files = uniqueFiles(storyContextFiles);
+    return {
+      files,
+      packageGroups: [{ packageDir: inferActivePackageDir(args.workdir, args.projectDir) ?? ".", files }],
       degradedReason: "missing_story_git_ref",
     };
   }
 
   const changed = await _scopedLintDeps.listChangedFiles(args.workdir, args.storyGitRef);
   if (changed === null) {
+    const files = uniqueFiles(storyContextFiles);
     return {
-      files: uniqueFiles(storyContextFiles),
+      files,
+      packageGroups: [{ packageDir: inferActivePackageDir(args.workdir, args.projectDir) ?? ".", files }],
       degradedReason: "failed_to_compute_diff",
     };
   }
@@ -120,7 +151,11 @@ async function resolveLintScope(args: ScopedLintArgs): Promise<ScopeResult> {
   const union = uniqueFiles([...changed, ...storyContextFiles]);
   const packageScoped = await filterFilesToScope(union, args.workdir, args.projectDir, activePackageDir);
   const withIgnore = args.naxIgnoreIndex ? args.naxIgnoreIndex.filter(packageScoped, args.workdir) : packageScoped;
-  return { files: uniqueFiles(withIgnore) };
+  const files = uniqueFiles(withIgnore);
+  return {
+    files,
+    packageGroups: [{ packageDir: activePackageDir ?? ".", files }],
+  };
 }
 
 function resolveScopedTemplate(
@@ -156,6 +191,20 @@ function toReviewCheck(result: QualityCommandResult): ReviewCheckResult {
   };
 }
 
+function withLintScope(
+  result: ReviewCheckResult,
+  scope: ScopeResult,
+  status: "in_scope" | "out_of_scope" | "degraded" = "in_scope",
+): ReviewCheckResult {
+  return {
+    ...result,
+    lintScope: {
+      status,
+      packageGroups: scope.packageGroups,
+    },
+  };
+}
+
 export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCheckResult> {
   const logger = getSafeLogger();
   const fullLintCommand = args.resolvedLintCommand;
@@ -169,7 +218,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
         reason: scope.degradedReason,
       });
       const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand);
-      return toReviewCheck(fullResult);
+      return withLintScope(toReviewCheck(fullResult), scope, "degraded");
     }
     logger?.info("review", "lint_scope_empty", { storyId: args.storyId });
     return {
@@ -179,6 +228,10 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
       exitCode: 0,
       output: "lint skipped: no in-scope files",
       durationMs: 0,
+      lintScope: {
+        status: scope.degradedReason ? "degraded" : "in_scope",
+        packageGroups: scope.packageGroups,
+      },
     };
   }
 
@@ -192,13 +245,13 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
   if (scopedTemplate) {
     const scopedCommand = scopedTemplate.replaceAll("{{files}}", scope.files.map(shellQuotePath).join(" "));
     const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand);
-    return toReviewCheck(scopedResult);
+    return withLintScope(toReviewCheck(scopedResult), scope);
   }
 
   if (!scope.degradedReason && isSupportedDerivedScopedCommand(fullLintCommand)) {
     const scopedCommand = appendFilesToCommand(fullLintCommand, scope.files);
     const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand);
-    return toReviewCheck(scopedResult);
+    return withLintScope(toReviewCheck(scopedResult), scope);
   }
 
   // Degraded mode: run full lint then post-filter diagnostics to in-scope files.
@@ -207,12 +260,18 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     reason: scope.degradedReason ?? "unsupported_scoped_command_shape",
   });
   const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand);
-  if (fullResult.exitCode === 0) return toReviewCheck(fullResult);
+  if (fullResult.exitCode === 0) return withLintScope(toReviewCheck(fullResult), scope, "degraded");
 
   const parsed = parseLintOutput(fullResult.output, args.lintOutputFormat ?? "auto", {
     workdir: args.workdir,
   });
-  if (!parsed) return toReviewCheck(fullResult);
+  if (!parsed) {
+    logger?.warn("review", "lint_scope_degraded", {
+      storyId: args.storyId,
+      reason: "unparseable_output",
+    });
+    return toReviewCheck(fullResult);
+  }
 
   const scopedSet = new Set(scope.files.map(normalizePath));
   const inScopeDiagnostics = parsed.diagnostics.filter((d) => scopedSet.has(normalizePath(d.file)));
@@ -225,6 +284,11 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
       exitCode: 0,
       output: "lint warnings/errors were out of story scope",
       durationMs: fullResult.durationMs,
+      lintScope: {
+        status: "out_of_scope",
+        packageGroups: scope.packageGroups,
+        outOfScopeDiagnosticCount: parsed.diagnostics.length,
+      },
     };
   }
 
@@ -235,7 +299,27 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     exitCode: fullResult.exitCode,
     output: scopedOutput,
     durationMs: fullResult.durationMs,
+    lintScope: {
+      status: "in_scope",
+      packageGroups: scope.packageGroups,
+      outOfScopeDiagnosticCount: parsed.diagnostics.length - inScopeDiagnostics.length,
+    },
   };
+}
+
+export async function runAutofixLint(args: {
+  resolvedLintCommand: string;
+  configCommands: ReviewConfig["commands"];
+  qualityCommands?: QualityConfig["commands"];
+  lintOutputFormat?: LintOutputFormat;
+  workdir: string;
+  projectDir?: string;
+  storyId?: string;
+  env?: Record<string, string | undefined>;
+  naxIgnoreIndex?: NaxIgnoreIndex;
+  scope: AutofixLintScope;
+}): Promise<ReviewCheckResult> {
+  return runScopedLintCheck(args);
 }
 
 export const _scopedLintDeps = {
