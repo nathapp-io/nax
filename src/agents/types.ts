@@ -271,6 +271,19 @@ export interface CompleteOptions {
    * PID unregistration callback attached by AgentManager when a PidRegistry is configured.
    */
   onPidExited?: (pid: number) => void;
+  /**
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * Idle-watchdog controller registry. The adapter registers a per-callId cancel function
+   * so the watchdog can cancel stale prompts and classify the resulting stopReason=error
+   * as fail-stale (outcome: "fail-stale", category: "availability").
+   */
+  watchdogControllerRegistry?: Map<string, () => Promise<void>>;
+  /**
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * Stream activity callback forwarded from NaxRuntime.agentStreamEvents.
+   * Required for the idle watchdog to track complete() calls. When absent, stale detection is disabled.
+   */
+  onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
 }
 
 /**

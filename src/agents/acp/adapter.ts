@@ -149,6 +149,11 @@ export class AcpAgentAdapter implements AgentAdapter {
     const permissionMode = _options.resolvedPermissions.mode;
     const workdir = _options.workdir;
 
+    // Shared reference: set by the watchdog cancel function so complete() can
+    // classify the resulting stopReason=error as fail-stale.
+    const staleBox = { cancelled: false };
+    const watchdogRegistry = _options.watchdogControllerRegistry;
+
     // Attempt one call with the given agent; throws on any error
     const tryOneAgent = async (agentName: string): Promise<CompleteResult> => {
       const cmdStr = `acpx --model ${_options.modelDef.model} ${agentName}`;
@@ -160,6 +165,17 @@ export class AcpAgentAdapter implements AgentAdapter {
         _options.onPidSpawned,
         _options.promptRetries,
         _options.onPidExited,
+        {
+          onStreamActivity: _options.onStreamActivity,
+          onWatchdogRegister: watchdogRegistry
+            ? (callId: string, cancelFn: () => Promise<void>) => {
+                watchdogRegistry.set(callId, async () => {
+                  staleBox.cancelled = true;
+                  await cancelFn();
+                });
+              }
+            : undefined,
+        },
       );
       await client.start();
 
@@ -184,6 +200,19 @@ export class AcpAgentAdapter implements AgentAdapter {
         }
 
         if (response.stopReason === "error") {
+          if (staleBox.cancelled) {
+            return {
+              output: "",
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+              adapterFailure: {
+                category: "availability",
+                outcome: "fail-stale",
+                retriable: true,
+                message: "idle watchdog cancelled complete() — no stream activity",
+              },
+            };
+          }
           throw new CompleteError("complete() failed: stop reason is error");
         }
 
