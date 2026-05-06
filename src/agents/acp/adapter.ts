@@ -27,7 +27,7 @@ import type {
   SessionHandle,
   TurnResult,
 } from "../types";
-import { CompleteError } from "../types";
+import { CompleteError, SessionFailureError } from "../types";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
 import type { AgentRegistryEntry } from "./types";
 import type { SessionTokenUsage } from "./wire-types";
@@ -554,6 +554,14 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     if (lastResponse?.stopReason === "error") {
+      if (impl._staleCancelled) {
+        throw new SessionFailureError("idle watchdog cancelled session — no stream activity", {
+          category: "availability",
+          outcome: "fail-stale",
+          retriable: true,
+          message: "idle watchdog cancelled session — no stream activity",
+        });
+      }
       throw new Error("Agent session ended with stop reason: error");
     }
 

@@ -254,6 +254,12 @@ export class AcpSessionHandleImpl implements SessionHandle {
   readonly _timeoutSeconds: number;
   readonly _modelDef: ModelDef;
   readonly _permissionMode: string;
+  /**
+   * Set by the idle watchdog cancel function (via controllerRegistry) before
+   * calling cancelActivePrompt(). When true, sendTurn() classifies the resulting
+   * stopReason=error as fail-stale rather than a hard session error.
+   */
+  _staleCancelled = false;
 
   constructor(opts: {
     id: string;
