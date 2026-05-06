@@ -74,7 +74,11 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
         const update = event.params.update;
 
         // Text chunks — emit activity metadata without raw content
-        if (update.sessionUpdate === "agent_message_chunk" && update.content?.type === "text" && typeof update.content.text === "string") {
+        if (
+          update.sessionUpdate === "agent_message_chunk" &&
+          update.content?.type === "text" &&
+          typeof update.content.text === "string"
+        ) {
           const text = update.content.text;
           state.text += text;
           // Return activity metadata with only deltaBytes (no raw text)
@@ -85,7 +89,11 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
         }
 
         // Thought chunks — emit activity metadata without raw content
-        if (update.sessionUpdate === "agent_thought_chunk" && update.content?.type === "text" && typeof update.content.text === "string") {
+        if (
+          update.sessionUpdate === "agent_thought_chunk" &&
+          update.content?.type === "text" &&
+          typeof update.content.text === "string"
+        ) {
           const text = update.content.text;
           state.text += text;
           return {
