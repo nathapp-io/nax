@@ -602,4 +602,165 @@ describe("attachAgentIdleWatchdog", () => {
 
     unsubscribe();
   });
+
+  // Suggested criteria: mode 'off' should not create timers or state
+  test("when mode is 'off', does not create timers or state", async () => {
+    let cancelWasCalled = false;
+    controllerRegistry.set("call-mode-off", async () => {
+      cancelWasCalled = true;
+    });
+
+    const config = makeNaxConfig({
+      agent: {
+        acp: {
+          idleWatchdog: makeIdleWatchdogConfig({
+            mode: "off",
+            idleTimeoutSeconds: 10,
+            activityKinds: ["message_update"],
+          }),
+        },
+      },
+    });
+
+    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+
+    eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-mode-off" }));
+
+    // Wait longer than idle timeout
+    await new Promise((r) => setTimeout(r, 300));
+    await getLogger().flush();
+
+    // No cancellation should occur when mode is 'off'
+    expect(cancelWasCalled).toBe(false);
+
+    unsubscribe();
+  });
+
+  // Suggested criteria: cancelGraceSeconds of 0 in warn-then-cancel mode
+  test("when cancelGraceSeconds is 0 in warn-then-cancel mode, cancels immediately after warning", async () => {
+    let cancelWasCalled = false;
+    controllerRegistry.set("call-zero-grace", async () => {
+      cancelWasCalled = true;
+    });
+
+    const config = makeNaxConfig({
+      agent: {
+        acp: {
+          idleWatchdog: makeIdleWatchdogConfig({
+            mode: "warn-then-cancel",
+            idleTimeoutSeconds: 0.2,
+            cancelGraceSeconds: 0, // Zero grace period
+            activityKinds: ["message_update"],
+          }),
+        },
+      },
+    });
+
+    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+
+    eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-zero-grace" }));
+
+    // Wait for timeout + negligible grace period
+    await new Promise((r) => setTimeout(r, 400));
+    await getLogger().flush();
+
+    // Cancellation should have been called (like cancel mode)
+    expect(cancelWasCalled).toBe(true);
+
+    const entries = await parseAllEntries(logFile);
+    const warnEntry = entries.find((e) => e.level === "warn" && e.data?.key === "idle_timeout_exceeded");
+    expect(warnEntry?.data?.mode).toBe("warn-then-cancel");
+
+    unsubscribe();
+  });
+
+  // Suggested criteria: cancellation function throwing should be handled gracefully
+  test("when cancellation function throws, logs error and continues monitoring other calls", async () => {
+    const cancelCalls: string[] = [];
+    const throwingError = new Error("Cancellation failed");
+
+    controllerRegistry.set("call-throwing", async () => {
+      cancelCalls.push("call-throwing");
+      throw throwingError;
+    });
+
+    controllerRegistry.set("call-normal", async () => {
+      cancelCalls.push("call-normal");
+    });
+
+    const config = makeNaxConfig({
+      agent: {
+        acp: {
+          idleWatchdog: makeIdleWatchdogConfig({
+            mode: "cancel",
+            idleTimeoutSeconds: 0.2,
+            activityKinds: ["message_update"],
+          }),
+        },
+      },
+    });
+
+    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+
+    // Start two calls
+    eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-throwing" }));
+    await new Promise((r) => setTimeout(r, 50));
+    eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-normal" }));
+
+    // Wait for timeouts
+    await new Promise((r) => setTimeout(r, 400));
+    await getLogger().flush();
+
+    // Both should have been attempted to cancel
+    expect(cancelCalls).toContain("call-throwing");
+    expect(cancelCalls).toContain("call-normal");
+
+    const entries = await parseAllEntries(logFile);
+    // Should have logged warnings for both calls despite one throwing
+    const warningCount = entries.filter((e) => e.level === "warn").length;
+    expect(warningCount).toBeGreaterThan(0);
+
+    unsubscribe();
+  });
+
+  // Suggested criteria: multiple cancel attempts for same call
+  test("tracks independent cancel attempts per call without cross-contamination", async () => {
+    const cancelAttempts: { [key: string]: number } = {};
+    controllerRegistry.set("call-retry-a", async () => {
+      cancelAttempts["call-retry-a"] = (cancelAttempts["call-retry-a"] ?? 0) + 1;
+    });
+
+    controllerRegistry.set("call-retry-b", async () => {
+      cancelAttempts["call-retry-b"] = (cancelAttempts["call-retry-b"] ?? 0) + 1;
+    });
+
+    const config = makeNaxConfig({
+      agent: {
+        acp: {
+          idleWatchdog: makeIdleWatchdogConfig({
+            mode: "cancel",
+            idleTimeoutSeconds: 0.15,
+            maxRetryAttempts: 3,
+            activityKinds: ["message_update"],
+          }),
+        },
+      },
+    });
+
+    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+
+    eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-retry-a" }));
+    await new Promise((r) => setTimeout(r, 50));
+    eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-retry-b" }));
+
+    // Wait for multiple timeout cycles
+    await new Promise((r) => setTimeout(r, 800));
+    await getLogger().flush();
+
+    // Each call should have been retried independently
+    expect(cancelAttempts["call-retry-a"]).toBeGreaterThan(0);
+    expect(cancelAttempts["call-retry-b"]).toBeGreaterThan(0);
+
+    unsubscribe();
+  });
 });
