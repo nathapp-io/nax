@@ -40,10 +40,28 @@ export interface AgentFallbackConfig {
   rebuildContext?: boolean;
 }
 
+/** Idle watchdog configuration */
+export interface IdleWatchdogConfig {
+  /** Whether the idle watchdog is enabled (default: false) */
+  enabled?: boolean;
+  /** Watchdog mode: off (disabled), observe (log only), warn-then-cancel (log + grace period + cancel), cancel (immediate) */
+  mode?: "off" | "observe" | "warn-then-cancel" | "cancel";
+  /** Idle timeout in seconds before watchdog triggers (default: 30) */
+  idleTimeoutSeconds?: number;
+  /** Activity kinds that reset the idle timer (default: all message, thinking, usage updates) */
+  activityKinds?: Array<"message_update" | "thinking_update" | "usage_update">;
+  /** Grace period in seconds before cancel actually happens (used in warn-then-cancel mode, default: 5) */
+  cancelGraceSeconds?: number;
+  /** Maximum retry attempts before emitting terminal failure (default: 3) */
+  maxRetryAttempts?: number;
+}
+
 /** ACP-specific agent configuration */
 export interface AgentAcpConfig {
   /** Retries for transient prompt failures via acpx --prompt-retries (default: 0 — opt-in) */
   promptRetries?: number;
+  /** Idle watchdog configuration */
+  idleWatchdog?: IdleWatchdogConfig;
 }
 
 /** Agent protocol configuration (ACP-003) */

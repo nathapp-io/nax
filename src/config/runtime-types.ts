@@ -585,4 +585,5 @@ export type {
   AgentFallbackConfig,
   AgentAcpConfig,
   AgentConfig,
+  IdleWatchdogConfig,
 } from "./runtime-types-agent";

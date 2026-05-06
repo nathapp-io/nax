@@ -131,8 +131,24 @@ const AgentFallbackConfigSchema = z.object({
   rebuildContext: z.boolean().default(true),
 });
 
+const AgentAcpIdleWatchdogConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    mode: z.enum(["off", "observe", "warn-then-cancel", "cancel"]).default("off"),
+    idleTimeoutSeconds: z.number().nonnegative().default(30),
+    activityKinds: z
+      .array(z.enum(["message_update", "thinking_update", "usage_update"]))
+      .default(["message_update", "thinking_update", "usage_update"]),
+    cancelGraceSeconds: z.number().nonnegative().default(5),
+    maxRetryAttempts: z.number().int().nonnegative().default(3),
+  })
+  .refine((config) => config.mode === "off" || config.idleTimeoutSeconds > 0, {
+    message: "idleTimeoutSeconds must be > 0 when mode is not 'off'",
+  });
+
 const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
+  idleWatchdog: AgentAcpIdleWatchdogConfigSchema.optional(),
 });
 
 export const AgentConfigSchema = z.object({
