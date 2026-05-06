@@ -3,7 +3,7 @@
   "feature": "agent-event-watchdog",
   "branchName": "feat/agent-event-watchdog",
   "createdAt": "2026-05-06T00:00:00.000Z",
-  "updatedAt": "2026-05-06T09:26:56.907Z",
+  "updatedAt": "2026-05-06T10:40:01.138Z",
   "userStories": [
     {
       "id": "US-001",
@@ -241,13 +241,20 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: AC6 finding (complete() at line 174) conflicts with the existing test `\"times out and throws if session.prompt() hangs beyond timeoutMs\"` in adapter.test.ts — the test asserts the old throw behavior that AC6 requires to change; fixing requires modifying the test file which is prohibited by the task constraints.",
+          "timestamp": "2026-05-06T10:39:59.104Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "complex",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/context/engine/types.ts",
@@ -264,8 +271,57 @@
         "Fallback agent selection for fail-stale uses the same fallback map and maxHopsPerStory as other availability failures",
         "Log output for a fail-stale recovery path includes: storyId, original agent, retry attempt number, and whether fallback was invoked"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Reviewer contradiction: AC6 finding (complete() at line 174) conflicts with the existing test `\"times out and throws if session.prompt() hangs beyond timeoutMs\"` in adapter.test.ts — the test asserts the old throw behavior that AC6 requires to change; fixing requires modifying the test file which is prohibited by the task constraints."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/agents/acp/adapter.ts",
+              "line": 431,
+              "message": "AC1 not implemented: When a prompt times out, sendTurn() breaks the loop and returns a normal TurnResult without adapterFailure. There is no code path in the adapter that returns AdapterFailure with outcome='fail-stale' and category='availability' on idle watchdog cancellation.",
+              "suggestion": "In sendTurn(), detect idle watchdog cancellation and return a TurnResult (or throw SessionFailureError) that carries adapterFailure={outcome:'fail-stale',category:'availability',retriable:true}.",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "grep -n 'timedOut\\|adapterFailure' src/agents/acp/adapter.ts",
+                  "file": "src/agents/acp/adapter.ts",
+                  "line": 431,
+                  "observed": "if (turnResult.timedOut) {\n  timedOut = true;\n  // Explicit log to distinguish wall-clock timeout from idle watchdog (fail-stale).\n  getSafeLogger()?.warn(\"acp-adapter\", \"wall-clock timeout exceeded — session terminated\", {\n    sessionName,\n    timeoutSeconds,\n  });\n  break;\n}"
+                }
+              }
+            },
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/agents/acp/adapter.ts",
+              "line": 174,
+              "message": "AC6 not implemented: complete() throws a generic Error on timeout instead of returning a structured CompleteResult with adapterFailure. The stale failure text is never returned as a structured failure.",
+              "suggestion": "In complete(), detect idle/stale timeout separately from wall-clock timeout and return a CompleteResult with adapterFailure={outcome:'fail-stale',category:'availability',retriable:true} instead of throwing.",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "grep -n 'timeoutPromise\\|reject' src/agents/acp/adapter.ts",
+                  "file": "src/agents/acp/adapter.ts",
+                  "line": 174,
+                  "observed": "const timeoutPromise = new Promise<never>((_, reject) => {\n  timeoutId = setTimeout(() => reject(new Error(`complete() timed out after ${timeoutMs}ms`)), timeoutMs);\n});"
+                }
+              }
+            }
+          ],
+          "cost": 2.5094345700000007,
+          "timestamp": "2026-05-06T10:39:59.104Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "38b516e65ea830e0c20975a2db45f8fa89c556fc"
     },
