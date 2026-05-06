@@ -102,7 +102,7 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     );
 
     const qCount = (prompt.match(/Q/g) ?? []).length;
-    expect(qCount).toBeLessThanOrEqual(4010);
+    expect(qCount).toBeLessThanOrEqual(4010); // +10 slack: CONTRADICTION_ESCAPE_HATCH contains "PRD_QUOTE" (one uppercase Q)
     expect(qCount).toBeLessThan(10_000);
     expect(prompt).toContain("truncated");
     expect(prompt).toContain("10000 chars total");

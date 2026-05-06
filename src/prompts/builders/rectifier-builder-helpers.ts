@@ -96,7 +96,7 @@ ${errors}
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
 
-Do NOT change test files or test behavior.
+Do NOT change test files or test behavior — see the three narrow exceptions appended below.
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 }
@@ -175,7 +175,7 @@ The following quality checks failed after implementation:
 
 ${errors}
 
-Fix ALL errors listed above. Do NOT change test files or test behavior.
+Fix all errors listed above that are within this story's scope — see the three narrow exceptions appended below for sibling-story spillover. Do NOT change test files or test behavior except via those exceptions.
 Do NOT add new features — only fix the quality check errors.
 After fixing, re-run the failing check(s) to verify they pass, then commit your changes.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
 }
