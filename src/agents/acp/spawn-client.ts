@@ -12,10 +12,12 @@
  *   acpx <agent> cancel                             → session.cancelActivePrompt()
  */
 
+import { randomUUID } from "node:crypto";
 import { getSafeLogger } from "../../logger";
+import type { AgentStreamEvent } from "../../runtime/agent-stream-events";
 import { typedSpawn } from "../../utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
-import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
+import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 import { type AcpxParseState, createParseState, finalizeParseState, parseAcpxJsonLine } from "./parser";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,8 +49,15 @@ export const _spawnClientDeps = {
  *
  * The caller races this promise against a drain timeout to handle the Bun bug
  * where piped streams may not close after SIGTERM.
+ *
+ * When onActivity is provided, it is called immediately for each line that
+ * produces activity metadata (message_update, thinking_update, usage_update).
  */
-async function readAndParseLines(stream: ReadableStream<Uint8Array>, state: AcpxParseState): Promise<void> {
+async function readAndParseLines(
+  stream: ReadableStream<Uint8Array>,
+  state: AcpxParseState,
+  onActivity?: (activity: import("./parser").AcpxLineActivity) => void,
+): Promise<void> {
   const decoder = new TextDecoder();
   let remainder = "";
   const reader = stream.getReader();
@@ -62,12 +71,18 @@ async function readAndParseLines(stream: ReadableStream<Uint8Array>, state: Acpx
         if (nl < 0) break;
         const line = remainder.slice(0, nl);
         remainder = remainder.slice(nl + 1);
-        if (line.trim()) parseAcpxJsonLine(line, state);
+        if (line.trim()) {
+          const activity = parseAcpxJsonLine(line, state);
+          if (activity && onActivity) onActivity(activity);
+        }
       }
     }
     // Flush decoder and process any content after the last newline
     remainder += decoder.decode();
-    if (remainder.trim()) parseAcpxJsonLine(remainder.trim(), state);
+    if (remainder.trim()) {
+      const activity = parseAcpxJsonLine(remainder.trim(), state);
+      if (activity && onActivity) onActivity(activity);
+    }
   } finally {
     reader.releaseLock();
   }
@@ -98,6 +113,10 @@ export class SpawnAcpSession implements AcpSession {
   private readonly env: Record<string, string | undefined>;
   private readonly onPidSpawned?: (pid: number) => void;
   private readonly onPidExited?: (pid: number) => void;
+  private readonly onStreamActivity?: (event: AgentStreamEvent) => void;
+  private readonly runId: string;
+  private readonly storyId?: string;
+  private readonly stage?: import("../../config/permissions").PipelineStage;
   private activeProc: { pid: number; kill(signal?: number): void } | null = null;
   /** Volatile Claude Code session ID (acpxSessionId) — updated on reconnect. */
   readonly id?: string;
@@ -117,6 +136,10 @@ export class SpawnAcpSession implements AcpSession {
     onPidExited?: (pid: number) => void;
     id?: string;
     recordId?: string;
+    onStreamActivity?: (event: AgentStreamEvent) => void;
+    runId?: string;
+    storyId?: string;
+    stage?: import("../../config/permissions").PipelineStage;
   }) {
     this.agentName = opts.agentName;
     this.sessionName = opts.sessionName;
@@ -128,11 +151,27 @@ export class SpawnAcpSession implements AcpSession {
     this.env = opts.env;
     this.onPidSpawned = opts.onPidSpawned;
     this.onPidExited = opts.onPidExited;
+    this.onStreamActivity = opts.onStreamActivity;
+    this.runId = opts.runId ?? "";
+    this.storyId = opts.storyId;
+    this.stage = opts.stage;
     this.id = opts.id;
     this.recordId = opts.recordId;
   }
 
   async prompt(text: string): Promise<AcpSessionResponse> {
+    const callId = randomUUID();
+    const emit = this.onStreamActivity;
+    const now = () => Date.now();
+    const baseEvent = {
+      callId,
+      runId: this.runId,
+      agentName: this.agentName,
+      sessionName: this.sessionName,
+      storyId: this.storyId,
+      stage: this.stage,
+    } as const;
+
     const cmd = [
       "acpx",
       "--cwd",
@@ -160,17 +199,43 @@ export class SpawnAcpSession implements AcpSession {
     });
     getSafeLogger()?.debug("acp-adapter", `Sending prompt to session: ${this.sessionName}`);
 
-    const proc = _spawnClientDeps.spawn(cmd, {
-      cwd: this.cwd,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: this.env,
+    // AC5: Emit call_started BEFORE spawning the acpx process
+    emit?.({
+      ...baseEvent,
+      kind: "agent.call_started",
+      model: this.model,
+      timeoutSeconds: this.timeoutSeconds,
+      timestamp: now(),
     });
+
+    let proc: ReturnType<typeof _spawnClientDeps.spawn>;
+    try {
+      proc = _spawnClientDeps.spawn(cmd, {
+        cwd: this.cwd,
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: this.env,
+      });
+    } catch (spawnErr) {
+      // Spawn itself threw before we got a PID — emit call_ended with error status
+      emit?.({ ...baseEvent, kind: "agent.call_ended", status: "error", timestamp: now() });
+      throw spawnErr;
+    }
 
     this.activeProc = proc;
     const processPid = proc.pid;
     this.onPidSpawned?.(processPid);
+
+    // AC6: Emit process_update(spawned) AFTER PID registration
+    emit?.({
+      ...baseEvent,
+      kind: "agent.process_update",
+      status: "spawned",
+      pid: processPid,
+      timestamp: now(),
+    });
+
     let exitNotified = false;
     const notifyExit = (): void => {
       if (exitNotified) return;
@@ -181,6 +246,9 @@ export class SpawnAcpSession implements AcpSession {
         // unregister is best-effort — never let it surface from prompt()
       }
     };
+
+    // AC8: Guard to ensure call_ended is emitted exactly once across all terminal paths
+    let callEndedEmitted = false;
 
     try {
       try {
@@ -199,8 +267,27 @@ export class SpawnAcpSession implements AcpSession {
       // the full NDJSON output. Only extracted fields (strings + numbers) are held in
       // memory — raw bytes are discarded immediately after each line is processed.
       // .catch(() => {}) guards against stream errors (e.g. acpx crash mid-run).
+      // AC7: Emit message_update/thinking_update/usage_update events during stdout reading.
       const parseState = createParseState();
-      const parsePromise = readAndParseLines(proc.stdout, parseState).catch(() => {});
+      const onActivity = emit
+        ? (activity: import("./parser").AcpxLineActivity) => {
+            if (activity.kind === "message_update") {
+              emit({ ...baseEvent, kind: "agent.message_update", deltaBytes: activity.deltaBytes, timestamp: now() });
+            } else if (activity.kind === "thinking_update") {
+              emit({ ...baseEvent, kind: "agent.thinking_update", deltaBytes: activity.deltaBytes, timestamp: now() });
+            } else if (activity.kind === "usage_update") {
+              emit({
+                ...baseEvent,
+                kind: "agent.usage_update",
+                inputTokens: activity.inputTokens,
+                outputTokens: activity.outputTokens,
+                costUsd: activity.costUsd,
+                timestamp: now(),
+              });
+            }
+          }
+        : undefined;
+      const parsePromise = readAndParseLines(proc.stdout, parseState, onActivity).catch(() => {});
       const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
       const exitCode = await proc.exited;
@@ -224,6 +311,9 @@ export class SpawnAcpSession implements AcpSession {
         Promise.race([stderrPromise, drainB.promise]).finally(() => drainB.cancel()),
       ]);
 
+      // Emit process_update(exited) after exit code is known
+      emit?.({ ...baseEvent, kind: "agent.process_update", status: "exited", exitCode, timestamp: now() });
+
       if (exitCode !== 0) {
         // Prefer parsed stdout error (JSON-RPC error response from acpx) over raw stderr.
         // stderr at this point is typically the acpx session banner ("agent needs reconnect")
@@ -238,7 +328,9 @@ export class SpawnAcpSession implements AcpSession {
           error: errorContent.slice(0, 500),
           ...(stderr && stderr !== errorContent ? { banner: stderr.trim().slice(0, 200) } : {}),
         });
-        // Return error response so the adapter can handle it
+        // AC8: Emit call_ended on non-zero exit path
+        callEndedEmitted = true;
+        emit?.({ ...baseEvent, kind: "agent.call_ended", status: "error", exitCode, timestamp: now() });
         return {
           messages: [{ role: "assistant", content: errorContent }],
           stopReason: "error",
@@ -249,6 +341,9 @@ export class SpawnAcpSession implements AcpSession {
 
       try {
         const parsed = finalizeParseState(parseState);
+        // AC8: Emit call_ended on success path
+        callEndedEmitted = true;
+        emit?.({ ...baseEvent, kind: "agent.call_ended", status: "success", timestamp: now() });
         return {
           messages: [{ role: "assistant", content: parsed.text || "" }],
           stopReason: parsed.stopReason ?? "end_turn",
@@ -261,6 +356,13 @@ export class SpawnAcpSession implements AcpSession {
         });
         throw err;
       }
+    } catch (err) {
+      // AC8: Emit call_ended exactly once for all thrown paths (stream errors, parse failure, etc.)
+      if (!callEndedEmitted) {
+        callEndedEmitted = true;
+        emit?.({ ...baseEvent, kind: "agent.call_ended", status: "error", timestamp: now() });
+      }
+      throw err;
     } finally {
       this.activeProc = null;
       notifyExit();
@@ -391,6 +493,7 @@ export class SpawnAcpClient implements AcpClient {
   private readonly env: Record<string, string | undefined>;
   private readonly onPidSpawned?: (pid: number) => void;
   private readonly onPidExited?: (pid: number) => void;
+  private readonly onStreamActivity?: (event: AgentStreamEvent) => void;
 
   constructor(
     cmdStr: string,
@@ -399,6 +502,7 @@ export class SpawnAcpClient implements AcpClient {
     onPidSpawned?: (pid: number) => void,
     promptRetries?: number,
     onPidExited?: (pid: number) => void,
+    opts?: AcpClientOptions,
   ) {
     // Parse: "acpx --model <model> <agentName>"
     const parts = cmdStr.split(/\s+/);
@@ -418,6 +522,7 @@ export class SpawnAcpClient implements AcpClient {
     this.env = buildAllowedEnv();
     this.onPidSpawned = onPidSpawned;
     this.onPidExited = onPidExited;
+    this.onStreamActivity = opts?.onStreamActivity;
   }
 
   async start(): Promise<void> {
@@ -478,6 +583,7 @@ export class SpawnAcpClient implements AcpClient {
       env: this.env,
       onPidSpawned: this.onPidSpawned,
       onPidExited: this.onPidExited,
+      onStreamActivity: this.onStreamActivity,
       id: sessionId,
       recordId,
     });
@@ -505,6 +611,7 @@ export class SpawnAcpClient implements AcpClient {
       env: this.env,
       onPidSpawned: this.onPidSpawned,
       onPidExited: this.onPidExited,
+      onStreamActivity: this.onStreamActivity,
       id: sessionId,
       recordId,
     });
@@ -543,6 +650,7 @@ export function createSpawnAcpClient(
   onPidSpawned?: (pid: number) => void,
   promptRetries?: number,
   onPidExited?: (pid: number) => void,
+  opts?: AcpClientOptions,
 ): AcpClient {
-  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited);
+  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited, opts);
 }
