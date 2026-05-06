@@ -3,7 +3,7 @@
   "feature": "agent-event-watchdog",
   "branchName": "feat/agent-event-watchdog",
   "createdAt": "2026-05-06T00:00:00.000Z",
-  "updatedAt": "2026-05-06T01:48:27.869Z",
+  "updatedAt": "2026-05-06T02:26:51.631Z",
   "userStories": [
     {
       "id": "US-001",
@@ -27,7 +27,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/event-bus.ts",
@@ -39,7 +41,11 @@
         "AgentStreamEventBus.emitAgentStream(event) does not throw when zero listeners are registered",
         "AgentStreamEventBus.onAgentStream(listener) does not add duplicate entries for the same listener reference",
         "NaxRuntime.agentStreamEvents is non-null and typed as IAgentStreamEventBus after createRuntime() returns"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "561a45e45b6e8397c387bde248d629f262b18279"
     },
     {
       "id": "US-002",
@@ -87,7 +93,10 @@
         "When parseAcpxJsonLine() receives a non-JSON line, it returns undefined for activity metadata without corrupting parse state",
         "Multiple agent_message_chunk lines in sequence each produce separate agent.message_update events with distinct deltaBytes",
         "callId is generated once at prompt start (crypto.randomUUID) and is referenced unchanged by every event emitted for that turn, from agent.call_started through agent.call_ended"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -137,7 +146,10 @@
         "Multiple concurrent calls each have independent watchdog timers with independent lastActivityAt values",
         "The watchdog does not accumulate state across calls — state is fully deleted on agent.call_ended even if there are active timers",
         "If the cancellation function throws, the watchdog logs the error and continues monitoring other calls"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -187,7 +199,10 @@
         "When the same operation is cancelled by watchdog twice, then succeeds on the third attempt, the retry accounting is reset for the next distinct operation",
         "Fallback agent selection for fail-stale uses the same fallback map and maxHopsPerStory as other availability failures",
         "Log output for a fail-stale recovery path includes: storyId, original agent, retry attempt number, and whether fallback was invoked"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -231,7 +246,10 @@
         "attachAgentStreamLogging() returns an unsubscribe function that detaches all listeners when called",
         "When an agent.call_ended event arrives, the TUI transitions that call's row to 'ended' status and removes it after a brief display period",
         "Log format for stream events follows existing structured JSONL conventions with stage prefix 'agent-stream'"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "## Impact Areas\n\n### New files to create\n- `src/runtime/agent-stream-events.ts` — AgentStreamEvent type union, concrete event interfaces, and AgentStreamEventBus class\n- `src/runtime/middleware/agent-idle-watchdog.ts` — idle watchdog subscriber with timer management\n- `src/runtime/middleware/agent-stream-logging.ts` — lightweight stream event logger\n\n### Files to modify\n- `src/runtime/index.ts` — add `agentStreamEvents` to NaxRuntime, construct in createRuntime(), wire watchdog\n- `src/runtime/middleware/index.ts` — export new attachAgentStreamLogging and attachAgentIdleWatchdog\n- `src/config/schemas-infra.ts` — add IdleWatchdogConfigSchema within AgentAcpConfigSchema\n- `src/config/runtime-types-agent.ts` — add IdleWatchdogConfig interface within AgentAcpConfig\n- `src/agents/acp/parser.ts` — modify parseAcpxJsonLine() to return activity metadata alongside parse state updates\n- `src/agents/acp/spawn-client.ts` — add optional stream callback to spawn client, emit activity events during line-reading\n- `src/agents/acp/adapter-lifecycle.ts` — thread stream callback through createClient and session helpers\n- `src/agents/acp/adapter-session-types.ts` — add stream callback types to AcpClient/AcpSession interfaces\n- `src/agents/acp/adapter.ts` — wire stream callback from AgentRunOptions/CompleteOptions through to spawn client\n- `src/agents/types.ts` — add stream callback to AgentRunOptions, add callId field, add fail-stale classification\n- `src/agents/manager.ts` — thread stream callback, register prompt cancellation in watchdog controller registry\n- `src/agents/retry/default-strategy.ts` — extend shouldRetry() to handle fail-stale outcome\n- `src/context/engine/types.ts` — add 'fail-stale' to AdapterFailure.outcome union\n- `src/operations/call.ts` — ensure stale failure text is not parsed as output\n- `src/operations/build-hop-callback.ts` — propagate fail-stale through hop callback\n- `src/runtime/session-run-hop.ts` — propagate fail-stale through session run hop\n- `src/tui/hooks/usePipelineEvents.ts` — add stream event hook\n- `src/tui/App.tsx` — subscribe to stream events\n- `src/tui/components/AgentPanel.tsx` — render stream activity indicators\n- `src/cli/status.ts` — may need stream event status output\n\n### Key existing patterns to follow\n- `src/pipeline/event-bus.ts` (PipelineEventBus) — event bus pattern with typed events, unsubscribe returns, error isolation\n- `src/runtime/dispatch-events.ts` (DispatchEventBus) — runtime-level bus with Set-based listeners, try/catch per listener\n- `src/runtime/middleware/logging.ts` — subscriber attachment pattern: attach*(bus, ...) => () => void\n- `src/runtime/middleware/index.ts` — barrel exports for middleware subscribers\n- `src/config/schemas-infra.ts` — Zod schema patterns with .default(), .min(), .max(), .int(), discriminated unions\n- `src/config/runtime-types-agent.ts` — TypeScript interfaces mirroring Zod schemas\n- `src/agents/retry/default-strategy.ts` — RetryStrategy interface with shouldRetry(AdapterFailure, attempt, ctx) => RetryDecision\n\n### Architecture decisions\n1. **Separate bus from DispatchEventBus** — stream events are fire-and-forget, metadata-only, O(active prompts) memory. Dispatch events are final results with full prompt/response.\n2. **UUID-based callId** — one physical prompt invocation gets one callId, even if the session has multiple turns. sessionName alone is insufficient.\n3. **Default metadata-only payloads** — content fields (raw message text, thought text) are excluded by default. Only deltaBytes, token counts, and cost are emitted.\n4. **Watchdog as middleware subscriber** — attaches to AgentStreamEventBus, maintains per-call state Map, uses bounded interval timers.\n5. **Config-driven behavior** — mode-based watchdog (off/observe/warn-then-cancel/cancel) with one global idle timeout for first release.\n6. **fail-stale as availability failure** — classified under category: \"availability\" so it triggers agent fallback/retry, not quality escalation.\n\n### Risks\n- ACP parser changes must not break existing JSON-RPC parsing or legacy NDJSON parsing\n- Watchdog timer management must clean up on agent.call_ended to prevent memory leaks\n- Retry strategy changes must preserve existing rate-limit and quality-failure behavior\n- TUI changes must handle absent stream events gracefully (watchdog disabled or no active prompts)\n- agent_thought_chunk content must never leak into logs or watchdog state\n\n### Dependency order (must implement stories in this sequence)\nUS-001 → US-002 → US-003 → US-004\nUS-001 → US-005\n\nUS-002, US-003, and US-004 form a sequential chain (each builds on the previous). US-005 can be implemented in parallel with US-002/US-003/US-004 once US-001 is done."
