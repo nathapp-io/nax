@@ -16,6 +16,14 @@ export interface LLMFinding {
   issue: string;
   suggestion: string;
   acId?: string;
+  /**
+   * Verbatim substring of the AC bullet that constrains this finding's locus.
+   * Required for severity "error" / "critical" (Issue #930 Part 1).
+   * Validated by filterByAcQuote() before findings reach the story blocker pipeline.
+   */
+  acQuote?: string;
+  /** 1-based index into story.acceptanceCriteria corresponding to acQuote. */
+  acIndex?: number;
   verifiedBy?: {
     command?: string;
     file: string;
@@ -111,6 +119,10 @@ function downgradeToUnverifiable(finding: LLMFinding): LLMFinding {
 
 /** Convert a single LLMFinding to the unified Finding wire format. */
 export function llmFindingToFinding(f: LLMFinding): Finding {
+  const metaExtras: Record<string, unknown> = {};
+  if (f.verifiedBy) metaExtras.verifiedBy = f.verifiedBy;
+  if (f.acQuote) metaExtras.acQuote = f.acQuote;
+  if (f.acIndex != null) metaExtras.acIndex = f.acIndex;
   return {
     source: "semantic-review",
     severity: normalizeSeverity(f.severity),
@@ -120,7 +132,7 @@ export function llmFindingToFinding(f: LLMFinding): Finding {
     message: f.issue,
     suggestion: f.suggestion ?? undefined,
     fixTarget: "source",
-    meta: f.verifiedBy ? { verifiedBy: f.verifiedBy } : undefined,
+    meta: Object.keys(metaExtras).length > 0 ? metaExtras : undefined,
   };
 }
 

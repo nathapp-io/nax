@@ -154,6 +154,8 @@ describe("unverifiable finding handling", () => {
           line: 5,
           issue: "AC not implemented",
           suggestion: "Implement it",
+          acQuote: "foo.bar",
+          acIndex: 1,
         },
         {
           severity: "unverifiable",
@@ -284,6 +286,8 @@ describe("unverifiable finding handling", () => {
           line: 5,
           issue: "AC not implemented",
           suggestion: "Implement it",
+          acQuote: "foo.bar",
+          acIndex: 1,
           verifiedBy: {
             command: "sed -n '1,80p' src/foo.ts",
             file: "src/foo.ts",

@@ -149,7 +149,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
-      findings: [{ severity: "error", file: "src/foo.ts", line: 10, issue: "missing impl", suggestion: "implement it" }],
+      findings: [{ severity: "error", file: "src/foo.ts", line: 10, issue: "Parser missing impl", suggestion: "implement it", acQuote: "Parser handles preamble + fenced JSON", acIndex: 1 }],
     };
     const response =
       "Let me check the implementation.\n```json\n" + JSON.stringify(payload) + "\n```";
@@ -184,7 +184,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
-      findings: [{ severity: "error", file: "src/bar.ts", line: 5, issue: "stub", suggestion: "implement" }],
+      findings: [{ severity: "error", file: "src/bar.ts", line: 5, issue: "Parser finds stub in bar", suggestion: "implement", acQuote: "Parser handles bare JSON in narration", acIndex: 2 }],
     };
     const response = "I found issues. " + JSON.stringify(payload) + " That concludes my review.";
     const result = await callRunSemanticReview(response);

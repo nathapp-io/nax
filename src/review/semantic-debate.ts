@@ -11,6 +11,7 @@ import type { NaxConfig } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { DebateRunner, DebateRunnerOptions } from "../debate";
 import { getSafeLogger } from "../logger";
+import { filterByAcQuote } from "./ac-quote-validator";
 import {
   type LLMFinding,
   formatFindings,
@@ -232,8 +233,15 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     }
   }
 
-  // Split debate findings by blocking threshold
-  const debateFindings = sanitizeRefModeFindings(deduped, diffMode);
+  // Split debate findings by blocking threshold — drop ungrounded error findings first
+  const sanitized = sanitizeRefModeFindings(deduped, diffMode);
+  const { accepted: debateFindings, dropped: acDropped } = filterByAcQuote(sanitized, story.acceptanceCriteria ?? []);
+  if (acDropped.length > 0) {
+    logger?.warn("review", "Semantic debate findings dropped: acQuote validation failed", {
+      storyId: story.id,
+      dropped: acDropped.length,
+    });
+  }
   const debateThreshold = blockingThreshold ?? "error";
   const debateBlocking = debateFindings.filter((f) => isBlockingSeverity(f.severity, debateThreshold));
   const debateAdvisory = debateFindings.filter((f) => !isBlockingSeverity(f.severity, debateThreshold));

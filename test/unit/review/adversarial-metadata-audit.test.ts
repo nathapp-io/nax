@@ -85,10 +85,12 @@ const CATEGORY_FINDING_RESPONSE = JSON.stringify({
     {
       severity: "error",
       category: "test-gap",
-      file: "src/auth.ts",
+      file: "src/log.ts",
       line: 30,
       issue: "Missing test for edge case",
       suggestion: "Add test",
+      acQuote: "can log in",
+      acIndex: 1,
     },
   ],
 });

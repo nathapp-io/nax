@@ -92,6 +92,8 @@ const FAILING_LLM_RESPONSE = JSON.stringify({
       line: 42,
       issue: "Function is a stub",
       suggestion: "Implement the function",
+      acQuote: "semanticConfig",
+      acIndex: 1,
     },
   ],
 });
@@ -329,8 +331,8 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
     const multiFindings = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/a.ts", line: 1, issue: "Issue A", suggestion: "Fix A" },
-        { severity: "error", file: "src/b.ts", line: 99, issue: "Issue B", suggestion: "Fix B" },
+        { severity: "error", file: "src/a.ts", line: 1, issue: "storyGitRef missing on a", suggestion: "Fix A", acQuote: "storyGitRef", acIndex: 1 },
+        { severity: "error", file: "src/b.ts", line: 99, issue: "git diff not called for b", suggestion: "Fix B", acQuote: "git diff", acIndex: 2 },
       ],
     });
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
@@ -344,9 +346,9 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
       runtime: makeMockRuntime({ agentManager }),
     });
     expect(result.output).toContain("src/a.ts");
-    expect(result.output).toContain("Issue A");
+    expect(result.output).toContain("storyGitRef missing on a");
     expect(result.output).toContain("src/b.ts");
-    expect(result.output).toContain("Issue B");
+    expect(result.output).toContain("git diff not called for b");
   });
 });
 
@@ -559,7 +561,7 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
-      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "bad code", suggestion: "fix it" }],
+      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "storyGitRef bad code in foo", suggestion: "fix it", acQuote: "storyGitRef", acIndex: 1 }],
     };
     const fencedResponse = "```json\n" + JSON.stringify(payload) + "\n```";
     const agentManager = makeAgentManager(fencedResponse);

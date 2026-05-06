@@ -171,6 +171,8 @@ const FAILING_LLM_RESPONSE = JSON.stringify({
       line: 42,
       issue: "Function is a stub",
       suggestion: "Implement the function",
+      acQuote: "semanticConfig",
+      acIndex: 1,
     },
   ],
 });

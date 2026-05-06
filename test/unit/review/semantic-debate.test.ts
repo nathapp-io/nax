@@ -97,8 +97,10 @@ const PROPOSAL_FAIL_A = JSON.stringify({
       severity: "error",
       file: "src/review/semantic.ts",
       line: 10,
-      issue: "AC1 not implemented",
+      issue: "debate branch not implemented",
       suggestion: "Implement debate branch",
+      acQuote: "debate enabled for review",
+      acIndex: 1,
     },
   ],
 });
@@ -111,8 +113,10 @@ const PROPOSAL_FAIL_B = JSON.stringify({
       severity: "error",
       file: "src/review/semantic.ts",
       line: 10,
-      issue: "AC1 not implemented",
+      issue: "debate branch not implemented",
       suggestion: "Implement debate branch",
+      acQuote: "debate enabled for review",
+      acIndex: 1,
     },
     {
       severity: "warn",

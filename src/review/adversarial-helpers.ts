@@ -17,6 +17,14 @@ export interface AdversarialLLMFinding {
   line: number;
   issue: string;
   suggestion: string;
+  /**
+   * Verbatim substring of the AC bullet that constrains this finding's locus.
+   * Required for severity "error" / "critical" (Issue #930 Part 1).
+   * Validated by filterByAcQuote() before findings reach the story blocker pipeline.
+   */
+  acQuote?: string;
+  /** 1-based index into story.acceptanceCriteria corresponding to acQuote. */
+  acIndex?: number;
 }
 
 export interface AdversarialLLMResponse {
@@ -71,14 +79,20 @@ export function normalizeSeverity(sev: string): FindingSeverity {
 
 /** Convert AdversarialLLMFinding[] to Finding[] with adversarial-review source. */
 export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): Finding[] {
-  return findings.map((f) => ({
-    source: "adversarial-review",
-    severity: normalizeSeverity(f.severity),
-    category: f.category,
-    file: f.file,
-    line: f.line,
-    message: f.issue,
-    suggestion: f.suggestion,
-    fixTarget: f.category === "test-gap" ? "test" : undefined,
-  }));
+  return findings.map((f) => {
+    const metaExtras: Record<string, unknown> = {};
+    if (f.acQuote) metaExtras.acQuote = f.acQuote;
+    if (f.acIndex != null) metaExtras.acIndex = f.acIndex;
+    return {
+      source: "adversarial-review",
+      severity: normalizeSeverity(f.severity),
+      category: f.category,
+      file: f.file,
+      line: f.line,
+      message: f.issue,
+      suggestion: f.suggestion,
+      fixTarget: f.category === "test-gap" ? "test" : undefined,
+      meta: Object.keys(metaExtras).length > 0 ? metaExtras : undefined,
+    };
+  });
 }

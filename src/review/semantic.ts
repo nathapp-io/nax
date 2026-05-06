@@ -23,6 +23,7 @@ import { semanticReviewOp } from "../operations/semantic-review";
 import { ReviewPromptBuilder } from "../prompts";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
+import { filterByAcQuote } from "./ac-quote-validator";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
@@ -407,7 +408,20 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     workdir,
     story.id,
   );
-  const sanitizedParsed: LLMResponse = { ...parsed, findings: sanitizedFindings };
+
+  // Issue #930 Part 1: drop error findings not grounded in AC text
+  const { accepted: acGroundedFindings, dropped: acDropped } = filterByAcQuote(
+    sanitizedFindings,
+    story.acceptanceCriteria,
+  );
+  if (acDropped.length > 0) {
+    logger?.warn("review", "Semantic findings dropped: acQuote validation failed", {
+      storyId: story.id,
+      dropped: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue, code: d.code })),
+    });
+  }
+
+  const sanitizedParsed: LLMResponse = { ...parsed, findings: acGroundedFindings };
 
   // Split findings by blocking threshold
   const threshold = blockingThreshold ?? "error";
