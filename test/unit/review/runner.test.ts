@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   _reviewGitDeps as _deps,
+  _reviewLintDeps as _lintDeps,
   _reviewSemanticDeps as _semanticDeps,
   runReview,
 } from "../../../src/review/runner";
@@ -129,6 +130,41 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
       // Should succeed — no dirty tracked files, review can proceed
       expect(result.success).toBe(true);
     });
+  });
+});
+
+describe("runReview — scoped lint integration", () => {
+  const originalGetUncommittedFiles = _deps.getUncommittedFiles;
+  const originalScopedLint = _lintDeps.runScopedLintCheck;
+
+  afterEach(() => {
+    mock.restore();
+    _deps.getUncommittedFiles = originalGetUncommittedFiles;
+    _lintDeps.runScopedLintCheck = originalScopedLint;
+  });
+
+  test("routes lint checks through scoped lint helper", async () => {
+    _deps.getUncommittedFiles = mock(async () => []);
+    const scopedLintMock = mock(async () => ({
+      check: "lint" as const,
+      success: true,
+      command: "biome check 'src/foo.ts'",
+      exitCode: 0,
+      output: "ok",
+      durationMs: 5,
+    }));
+    _lintDeps.runScopedLintCheck = scopedLintMock;
+
+    const result = await runReview({
+      config: { enabled: true, checks: ["lint"], commands: { lint: "bun run lint" } },
+      workdir: "/tmp/fake-workdir",
+      storyGitRef: "abc123",
+      storyId: "US-001",
+    });
+
+    expect(result.success).toBe(true);
+    expect(scopedLintMock).toHaveBeenCalled();
+    expect(result.checks[0]?.command).toContain("biome check");
   });
 });
 

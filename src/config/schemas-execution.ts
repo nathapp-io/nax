@@ -129,6 +129,7 @@ export const QualityConfigSchema = z.object({
     .object({
       typecheck: z.string().optional(),
       lint: z.string().optional(),
+      lintScoped: z.string().optional(),
       test: z.string().optional(),
       testScoped: z.string().optional(),
       lintFix: z.string().optional(),

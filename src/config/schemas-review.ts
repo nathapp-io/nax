@@ -86,6 +86,7 @@ export const ReviewConfigSchema = z.object({
   commands: z.object({
     typecheck: z.string().optional(),
     lint: z.string().optional(),
+    lintScoped: z.string().optional(),
     test: z.string().optional(),
     build: z.string().optional(),
     lintFix: z.string().optional(),

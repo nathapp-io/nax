@@ -99,6 +99,9 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...(packageOverride.quality?.commands?.lint !== undefined && {
           lint: packageOverride.quality.commands.lint,
         }),
+        ...(packageOverride.quality?.commands?.lintScoped !== undefined && {
+          lintScoped: packageOverride.quality.commands.lintScoped,
+        }),
         ...(packageOverride.quality?.commands?.lintFix !== undefined && {
           lintFix: packageOverride.quality.commands.lintFix,
         }),

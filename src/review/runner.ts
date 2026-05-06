@@ -9,11 +9,13 @@ import type { ExecutionConfig, QualityConfig } from "../config/schema";
 import type { ReviewConfig as ReviewNaxConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
+import type { UserStory } from "../prd";
 import { runQualityCommand } from "../quality";
 import { autoCommitIfDirty } from "../utils/git";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { runAdversarialReview as _runAdversarialReviewImpl } from "./adversarial";
 import { resolveLanguageCommand } from "./language-commands";
+import { runScopedLintCheck } from "./scoped-lint";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { SemanticStory } from "./semantic";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
@@ -66,6 +68,10 @@ export const _reviewSemanticDeps = {
  */
 export const _reviewAdversarialDeps = {
   runAdversarialReview: _runAdversarialReviewImpl,
+};
+
+export const _reviewLintDeps = {
+  runScopedLintCheck,
 };
 
 /**
@@ -429,7 +435,22 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
     }
 
     // Run the check
-    const result = await runCheck(checkName, command, workdir, storyId, env);
+    const result =
+      checkName === "lint"
+        ? await _reviewLintDeps.runScopedLintCheck({
+            resolvedLintCommand: command,
+            configCommands: config.commands,
+            qualityCommands,
+            lintOutputFormat: naxConfig?.quality?.lintOutput?.format ?? "auto",
+            workdir,
+            projectDir,
+            storyId,
+            story: story as UserStory | undefined,
+            storyGitRef,
+            env,
+            naxIgnoreIndex,
+          })
+        : await runCheck(checkName, command, workdir, storyId, env);
     checks.push(result);
 
     // Track first failure
