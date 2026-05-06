@@ -13,3 +13,4 @@ export { buildConventionsSection } from "./conventions";
 export { buildTddLanguageSection } from "./tdd-conventions";
 export { buildAcceptanceSection } from "./acceptance";
 export type { AcceptanceEntry } from "./acceptance";
+export { buildSelfVerificationSection } from "./self-verification";

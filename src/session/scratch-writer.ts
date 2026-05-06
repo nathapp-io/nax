@@ -65,11 +65,28 @@ export interface TddSessionScratchEntry {
   filesChanged: string[];
   /** Tail of agent output for lightweight cross-session continuity */
   outputTail: string;
+  /** Parsed self-verification output from the agent. */
+  selfVerification?: import("../quality").SelfVerificationResult;
   /** Agent id that produced this entry. For cross-agent scratch neutralization (AC-42). */
   writtenByAgent?: string;
 }
 
-export type ScratchEntry = VerifyScratchEntry | RectifyScratchEntry | TddSessionScratchEntry;
+/** Entry written by single-session execution after parsing self-verification marker */
+export interface SelfVerificationScratchEntry {
+  kind: "self-verification";
+  timestamp: string;
+  storyId: string;
+  stage: string;
+  role: "implementer";
+  selfVerification: import("../quality").SelfVerificationResult;
+  writtenByAgent?: string;
+}
+
+export type ScratchEntry =
+  | VerifyScratchEntry
+  | RectifyScratchEntry
+  | TddSessionScratchEntry
+  | SelfVerificationScratchEntry;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps

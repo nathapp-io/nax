@@ -25,6 +25,7 @@ import { assembleForStage } from "../../context/engine";
 import { getLogger } from "../../logger";
 import { PromptBuilder } from "../../prompts";
 import type { AcceptanceEntry } from "../../prompts/sections/acceptance";
+import { resolveSelfVerificationPromptInput } from "../../quality";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const _promptStageDeps = {
@@ -69,6 +70,7 @@ export const promptStage: PipelineStage = {
 
     // AC6–AC8: load acceptance test file content from ctx.acceptanceTestPaths
     const acceptanceEntries = await _loadAcceptanceEntries(ctx, logger);
+    const selfVerification = await resolveSelfVerificationPromptInput(ctx.config, ctx.workdir);
 
     // Assemble a stage-specific v2 bundle for the execution stage so the agent receives
     // the correct role/provider/budget context (Finding 1 fix).  Falls back to null when
@@ -89,7 +91,8 @@ export const promptStage: PipelineStage = {
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
-        .hermeticConfig(ctx.config.quality?.testing);
+        .hermeticConfig(ctx.config.quality?.testing)
+        .selfVerification(selfVerification);
       if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
       prompt = await builder.build();
     } else {
@@ -104,6 +107,7 @@ export const promptStage: PipelineStage = {
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
         .hermeticConfig(ctx.config.quality?.testing)
+        .selfVerification(selfVerification)
         .noTestJustification(ctx.story.routing?.noTestJustification);
       if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
       prompt = await builder.build();

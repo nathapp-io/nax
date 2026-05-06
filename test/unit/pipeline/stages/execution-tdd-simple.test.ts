@@ -205,6 +205,32 @@ describe("executionStage — tdd-simple strategy", () => {
     expect(ctx.tddFailureCategory).toBeUndefined();
     expect(result.action).toBe("continue");
   });
+
+  test("explicit self-verification fail returns escalate", async () => {
+    const agent = makeAgentAdapter({
+      name: "test-agent",
+      capabilities: {
+        supportedTiers: ["fast", "balanced", "powerful"],
+        maxContextTokens: 100_000,
+        features: new Set<"tdd" | "review" | "refactor" | "batch">(),
+      },
+      openSession: mock(async () => ({ id: "mock-session", agentName: "test-agent" })),
+      sendTurn: mock(async () => ({
+        output: "SELF_VERIFICATION:\nlint: fail\ntypecheck: pass\nPRE_EXISTING_FAILURES: []",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 1,
+      })),
+      closeSession: mock(async () => {}),
+    });
+    _executionDeps.getAgent = mock(() => agent as unknown as ReturnType<typeof _executionDeps.getAgent>);
+    _executionDeps.validateAgentForTier = mock(() => true);
+    _executionDeps.detectMergeConflict = mock(() => false);
+
+    const ctx = makeCtx("tdd-simple");
+    const result = await executionStage.execute(ctx);
+
+    expect(result.action).toBe("escalate");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

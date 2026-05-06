@@ -161,6 +161,8 @@ export interface PipelineContext extends DispatchContext {
   prompt?: string;
   /** Agent execution result (set by executionStage) */
   agentResult?: AgentResult;
+  /** Parsed self-verification marker from the latest execution session. */
+  selfVerification?: import("../quality").SelfVerificationResult;
   /** Verify result (set by verifyStage) */
   verifyResult?: VerifyResult;
   /** Review result (set by reviewStage) */
