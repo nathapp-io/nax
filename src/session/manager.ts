@@ -8,6 +8,7 @@
  */
 
 import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../agents/types";
+import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
@@ -71,6 +72,18 @@ export class SessionManager implements ISessionManager {
   private _dispatchEvents: IDispatchEventBus;
   private _defaultAgent: string;
   private _pidRegistry: PidRegistry | undefined;
+  private _watchdogControllerRegistry: Map<string, () => Promise<void>> | undefined;
+  private _onStreamActivity: ((event: import("../runtime/agent-stream-events").AgentStreamEvent) => void) | undefined;
+  /**
+   * Bookkeeping: callIds whose cancel was invoked via the watchdog registry.
+   * Populated by the wrapped `onActiveCall` cancel closure; consumed when the
+   * adapter surfaces `cancelled: true` so we can map the failure to fail-stale.
+   * Drained via `agent.call_ended` events on the stream bus (and as a backstop
+   * when sendPrompt observes the cancellation).
+   */
+  private readonly _watchdogCancelledCalls = new Set<string>();
+  /** Disposer for the agent.call_ended subscription; cleared in `close()` if added. */
+  private _agentStreamUnsubscribe: (() => void) | undefined;
 
   constructor(opts?: {
     getAdapter?: (name: string) => AgentAdapter | undefined;
@@ -90,12 +103,50 @@ export class SessionManager implements ISessionManager {
     dispatchEvents?: IDispatchEventBus;
     defaultAgent?: string;
     pidRegistry?: PidRegistry;
+    watchdogControllerRegistry?: Map<string, () => Promise<void>>;
+    onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
+    /**
+     * Stream event bus. SessionManager subscribes once to depopulate the
+     * watchdog registry on `agent.call_ended` (event-driven cleanup, no
+     * per-call callback needed).
+     */
+    agentStreamEvents?: import("../runtime/agent-stream-events").IAgentStreamEventBus;
   }): void {
     if (opts.getAdapter) this._getAdapter = opts.getAdapter;
     if (opts.config) this._config = opts.config;
     if (opts.dispatchEvents) this._dispatchEvents = opts.dispatchEvents;
     if (opts.defaultAgent) this._defaultAgent = opts.defaultAgent;
     if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
+    if (opts.watchdogControllerRegistry) this._watchdogControllerRegistry = opts.watchdogControllerRegistry;
+    if (opts.onStreamActivity) this._onStreamActivity = opts.onStreamActivity;
+    if (opts.agentStreamEvents) {
+      this._agentStreamUnsubscribe?.();
+      this._agentStreamUnsubscribe = opts.agentStreamEvents.onAgentStream((event) => {
+        if (event.kind === "agent.call_ended") {
+          this._watchdogControllerRegistry?.delete(event.callId);
+          this._watchdogCancelledCalls.delete(event.callId);
+        }
+      });
+    }
+  }
+
+  /**
+   * Build the `onActiveCall` callback handed to the adapter. It populates the
+   * watchdog controller registry with a wrapped cancel that records the callId
+   * in `_watchdogCancelledCalls` BEFORE invoking the adapter's cancel — that
+   * way, when the adapter surfaces `cancelled: true`, sendPrompt can confirm
+   * it was the watchdog (vs an unrelated process kill) and classify as
+   * fail-stale. Returns undefined when no registry is configured.
+   */
+  private _buildOnActiveCall(): ((callId: string, cancel: () => Promise<void>) => void) | undefined {
+    const registry = this._watchdogControllerRegistry;
+    if (!registry) return undefined;
+    return (callId, cancel) => {
+      registry.set(callId, async () => {
+        this._watchdogCancelledCalls.add(callId);
+        await cancel();
+      });
+    };
   }
 
   /**
@@ -391,6 +442,8 @@ export class SessionManager implements ISessionManager {
       onSessionEstablished: opts.onSessionEstablished,
       signal: opts.signal,
       resume,
+      onActiveCall: this._buildOnActiveCall(),
+      onStreamActivity: this._onStreamActivity,
     });
     this._liveHandles.set(name, handle);
 
@@ -511,6 +564,27 @@ export class SessionManager implements ISessionManager {
       });
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
+      // Map the adapter's transport-level cancel signal to the policy-level
+      // outcome. `SessionTurnError.cancelled === true` means the adapter's
+      // cancelActivePrompt() was invoked. If we are confident _we_ triggered
+      // the cancel (callId present in _watchdogCancelledCalls), classify as
+      // fail-stale; otherwise it was an unrelated external kill — pass through.
+      if (err instanceof SessionTurnError && err.cancelled) {
+        // Drain the bookkeeping set: any callId tied to this handle that we
+        // recorded as watchdog-cancelled is the one we just observed. Drain
+        // all of them — there should only be one in-flight call per handle
+        // due to the single-flight (_busySessions) invariant above.
+        const wasWatchdog = this._watchdogCancelledCalls.size > 0;
+        this._watchdogCancelledCalls.clear();
+        if (wasWatchdog) {
+          throw new SessionFailureError("idle watchdog cancelled session — no stream activity", {
+            category: "availability",
+            outcome: "fail-stale",
+            retriable: true,
+            message: "idle watchdog cancelled session — no stream activity",
+          });
+        }
+      }
       // Check signal.aborted OR an AbortError thrown by the adapter to avoid
       // false-positive cancellation when a non-abort error races with an
       // incidentally-aborted signal from an unrelated controller.

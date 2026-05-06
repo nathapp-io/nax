@@ -29,11 +29,13 @@ export interface AdapterFailure {
   category: "availability" | "quality";
   /**
    * Machine-readable outcome code.
-   * availability: fail-quota | fail-service-down | fail-auth | fail-rate-limit | fail-aborted
+   * availability: fail-quota | fail-service-down | fail-auth | fail-rate-limit | fail-aborted | fail-stale
    * quality:      fail-timeout | fail-adapter-error | fail-quality | fail-unknown
    *
    * `fail-aborted` — the run was cancelled via AgentRunOptions.abortSignal
    * (shutdown in progress). Not retriable; fallback chains should not fire.
+   * `fail-stale` — the idle watchdog cancelled the prompt due to no stream activity
+   * within the configured idle timeout. Retriable up to maxRetryAttempts.
    */
   outcome:
     | "fail-quota"
@@ -41,6 +43,7 @@ export interface AdapterFailure {
     | "fail-auth"
     | "fail-rate-limit"
     | "fail-aborted"
+    | "fail-stale"
     | "fail-timeout"
     | "fail-adapter-error"
     | "fail-quality"

@@ -1,0 +1,289 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "AgentStreamEventBus.emitAgentStream(event) delivers the event to all registered listeners",
+    "refined": "emitAgentStream(event) invokes each registered listener function exactly once, passing the event object as the sole argument, in the order listeners were registered",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "AgentStreamEventBus.onAgentStream(listener) returns an unsubscribe function; after calling it, that listener no longer receives events",
+    "refined": "onAgentStream(listener) returns a function that, when invoked, removes the listener from the subscription set such that all subsequent emitAgentStream() calls skip that listener entirely",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When a registered listener throws during emitAgentStream(), the error is logged at warn level and remaining listeners still receive the event",
+    "refined": "If listener function throws an Error during emitAgentStream(event), logger.warn() is called with the error context, and all other registered listeners are still invoked with the full event object",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "AgentStreamEventBus.emitAgentStream(event) does not buffer or retain emitted events after delivery",
+    "refined": "After emitAgentStream(event) completes delivery to all currently-registered listeners, a newly-registered listener added via onAgentStream() does not receive the previously-emitted event; only emitted events after registration are delivered",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When parseAcpxJsonLine() processes a JSON-RPC line with method=session/update and sessionUpdate=agent_message_chunk, it returns activity metadata with kind='message_update' and a non-negative deltaBytes",
+    "refined": "parseAcpxJsonLine() returns an AcpxLineActivity object with kind='message_update' and deltaBytes >= 0 when given a JSON-RPC line with method='session/update' and sessionUpdate='agent_message_chunk'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When parseAcpxJsonLine() processes a JSON-RPC line with method=session/update and sessionUpdate=agent_thought_chunk, it returns activity metadata with kind='thinking_update' and a non-negative deltaBytes",
+    "refined": "parseAcpxJsonLine() returns an AcpxLineActivity object with kind='thinking_update' and deltaBytes >= 0 when given a JSON-RPC line with method='session/update' and sessionUpdate='agent_thought_chunk'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When parseAcpxJsonLine() processes a JSON-RPC line with method=session/update and sessionUpdate=usage_update, it returns activity metadata with kind='usage_update' and populated inputTokens/outputTokens/costUsd fields",
+    "refined": "parseAcpxJsonLine() returns an AcpxLineActivity object with kind='usage_update', inputTokens (number > 0), outputTokens (number >= 0), and costUsd (number > 0) when given a JSON-RPC line with method='session/update' and sessionUpdate='usage_update'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "The returned activity metadata from parseAcpxJsonLine() never contains raw message or thought text content",
+    "refined": "AcpxLineActivity objects returned by parseAcpxJsonLine() have no fields named 'message', 'content', 'text', 'thought', 'body', or similar that contain unstructured string content",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "agent.call_started is emitted before the acpx process is spawned",
+    "refined": "onStreamActivity callback is invoked with AgentStreamEvent type='agent.call_started' before Bun.spawn() is called",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "agent.process_update { status: 'spawned' } is emitted after PID registration completes",
+    "refined": "onStreamActivity callback is invoked with AgentStreamEvent type='agent.process_update' status='spawned' after the spawned process PID is registered via ctx.runtime.onPidSpawned or pidRegistry.register()",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "agent.message_update and agent.thinking_update events are emitted during stdout line reading, before the process exits",
+    "refined": "onStreamActivity callback is invoked with AgentStreamEvent type='agent.message_update' or 'agent.thinking_update' while iterating stdout lines in the stream reader loop, before the process.exited() promise resolves",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "agent.call_ended is emitted exactly once for every agent.call_started event, across success, error, cancel, and parse failure paths",
+    "refined": "For each callId, exactly one onStreamActivity callback invocation with type='agent.call_ended' occurs across all execution paths (normal exit code 0, non-zero exit, cancellation via AbortSignal, JSON parse error, spawn exception)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When the spawned process fails to start, agent.call_ended { status: 'error' } is emitted without a prior agent.call_started",
+    "refined": "If Bun.spawn() throws or the process object is invalid, onStreamActivity is invoked with type='agent.call_ended' status='error', and no preceding agent.call_started with the same callId was emitted",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Each physical prompt invocation generates a unique callId via crypto.randomUUID(), distinct from the session name",
+    "refined": "Each complete() invocation generates a callId using crypto.randomUUID() that differs from the session's sessionName property, and all emitted events for that invocation reference this callId",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When agent.message_update is emitted and 'message_update' is in configured activityKinds, the watchdog resets lastActivityAt for that callId",
+    "refined": "Given a call with id={callId} is active and 'message_update' is in config.agent.acp.idleWatchdog.activityKinds, when agent.message_update event is emitted for that callId, then the WatchdogState.lastActivityAt timestamp for that callId must be updated to the current time (within 10ms of event emission), and messageUpdates counter must be incremented by 1",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When agent.thinking_update is emitted and 'thinking_update' is in configured activityKinds, the watchdog resets lastActivityAt for that callId",
+    "refined": "Given a call with id={callId} is active and 'thinking_update' is in config.agent.acp.idleWatchdog.activityKinds, when agent.thinking_update event is emitted for that callId, then the WatchdogState.lastActivityAt timestamp for that callId must be updated to the current time (within 10ms of event emission), and thinkingUpdates counter must be incremented by 1",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When agent.usage_update is emitted and 'usage_update' is in configured activityKinds, the watchdog resets lastActivityAt for that callId",
+    "refined": "Given a call with id={callId} is active and 'usage_update' is in config.agent.acp.idleWatchdog.activityKinds, when agent.usage_update event is emitted for that callId, then the WatchdogState.lastActivityAt timestamp for that callId must be updated to the current time (within 10ms of event emission), and usageUpdates counter must be incremented by 1",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When agent.process_update is emitted, the watchdog does NOT reset lastActivityAt, regardless of activityKinds config",
+    "refined": "Given a call with id={callId} is active with WatchdogState.lastActivityAt={T0}, when agent.process_update event is emitted for that callId, then WatchdogState.lastActivityAt must remain exactly {T0} (verified via strict equality check)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "In 'observe' mode, when a call exceeds idleTimeoutSeconds without activity, the watchdog logs a warning but does NOT invoke the cancellation function",
+    "refined": "Given config.agent.acp.idleWatchdog.mode='observe' and a call with id={callId} has lastActivityAt older than (now - idleTimeoutSeconds), when the watchdog timer interval executes, then a log entry with severity 'warn' containing {callId, 'idle'} must be emitted, and the cancellation function stored in controllerRegistry[{callId}] must not be invoked",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "In 'warn-then-cancel' mode, when a call exceeds idleTimeoutSeconds, the watchdog logs a warning; if activity arrives during cancelGraceSeconds, the cancellation is aborted",
+    "refined": "Given config.agent.acp.idleWatchdog.mode='warn-then-cancel' and a call transitions to idle state (lastActivityAt older than idleTimeoutSeconds), when the watchdog timer executes: (1) a log entry with severity 'warn' and {callId} must be emitted, (2) if no activity event is received within cancelGraceSeconds, the cancellation function must be invoked; (3) if agent.message_update/thinking_update/usage_update is received before cancelGraceSeconds expires, the scheduled cancellation must be cancelled and state reset",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "In 'cancel' mode, when a call exceeds idleTimeoutSeconds, the watchdog immediately invokes the cancellation function without a grace period",
+    "refined": "Given config.agent.acp.idleWatchdog.mode='cancel' and a call with id={callId} has lastActivityAt older than (now - idleTimeoutSeconds), when the watchdog timer interval executes, then controllerRegistry[{callId}]() must be invoked within 50ms (no grace period), and no subsequent activity events for that callId must reset the state",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When agent.call_ended is emitted, the watchdog deletes all state and timers for that callId",
+    "refined": "Given WatchdogState for callId={callId} exists in the watchdog's internal state map, when agent.call_ended event is emitted for that callId, then: (1) the state entry must be deleted from the map (verified via absent key lookup), (2) any pending timer callbacks referencing that callId must be cancelled and not execute, (3) the controllerRegistry entry for that callId should be removed or marked invalid",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When the same logical agent operation is cancelled by the watchdog maxRetryAttempts times, the watchdog emits a terminal failure and stops retrying",
+    "refined": "Given a call with id={callId} has been cancelled by the watchdog maxRetryAttempts times (where maxRetryAttempts is from config.agent.acp.idleWatchdog.maxRetryAttempts), when the watchdog detects the {maxRetryAttempts}th cancellation for that operation, then: (1) a terminal failure event must be emitted (e.g., logged with code='IDLE_WATCHDOG_MAX_RETRIES'), (2) the watchdog must not issue subsequent cancellation attempts for that callId even if further idle periods are detected",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Config validation rejects idleTimeoutSeconds <= 0 when mode is not 'off'",
+    "refined": "Given a NaxConfig object with agent.acp.idleWatchdog.mode != 'off' and agent.acp.idleWatchdog.idleTimeoutSeconds <= 0, when the config is parsed via NaxConfigSchema.safeParse(), then the result must be {success: false} with an error message referencing 'idleTimeoutSeconds' and the constraint, and the parsed config must not be returned",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When a prompt is cancelled by the idle watchdog, the adapter returns an AdapterFailure with outcome='fail-stale' and category='availability'",
+    "refined": "adapter.complete() returns AdapterFailure object where outcome === 'fail-stale' and category === 'availability' when idle watchdog fires (no activity for idleTimeout milliseconds before model content received)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "fail-stale triggers the same retry/fallback path as other availability failures (e.g., fail-rate-limit) in AgentManager.runWithFallback",
+    "refined": "AgentManager.runWithFallback() applies identical retry/fallback logic for outcome='fail-stale' as for outcome='fail-rate-limit': retries primary agent up to config.agent.retryLimit attempts, then selects first viable fallback agent from config.agent.fallback.map",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "fail-stale does NOT trigger tier escalation or quality escalation in the pipeline",
+    "refined": "When a pipeline stage receives AdapterFailure with outcome='fail-stale', PipelineContext.escalationTier value does not change and quality-related flags remain false; no escalation to balanced/powerful tiers occurs",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Retry for fail-stale stops after maxRetryAttempts attempts; subsequent stale cancellations for the same logical operation return a terminal failure",
+    "refined": "AgentManager tracks fail-stale retry count per operation; after config.agent.retryLimit consecutive fail-stale outcomes on same agent, next completion attempt returns AdapterFailure with retriable === false",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When fail-stale retries are exhausted, AgentManager falls back to a configured fallback agent if one exists",
+    "refined": "AgentManager.runWithFallback() invokes next fallback agent from config.agent.fallback.map after config.agent.retryLimit consecutive fail-stale outcomes; new session created with fallback agent",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When a stale cancellation occurs, complete() returns a structured AdapterFailure — the stale failure text is NOT handed to operation parsers as if it were successful model output",
+    "refined": "complete() returns AdapterFailure with outcome === 'fail-stale' and error field populated; operation parser receives this AdapterFailure before parse phase, never receives raw failure text as JSON input",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "fail-timeout behavior (wall-clock timeout) remains unchanged except for clearer logging that distinguishes it from fail-stale",
+    "refined": "When wall-clock timeout fires, adapter returns AdapterFailure with outcome === 'fail-timeout'; structured logs include outcome field distinguishing 'fail-timeout' from 'fail-stale'; both outcomes appear as separate entries in JSONL",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "SessionFailureError carries the fail-stale AdapterFailure so that sendTurn()/runAsSession() propagates the structured failure for the caller to interpret",
+    "refined": "When idle watchdog cancels session, SessionFailureError.adapterFailure contains AdapterFailure with outcome === 'fail-stale'; caller receives SessionFailureError in catch block with structured failure data",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "An integration test verifies that a hanging ACP prompt with no stream activity is cancelled by the idle watchdog before the wall-clock timeout, producing a fail-stale AdapterFailure",
+    "refined": "Integration test: create ACP session with { idleTimeout: 2000, wallClockTimeout: 30000 }; send prompt that emits no stream events; verify adapter.complete() returns AdapterFailure(outcome='fail-stale') within 3000ms (before wall-clock timeout at 30000ms)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "An integration test verifies that a prompt emitting periodic agent_thought_chunk lines is NOT cancelled by the watchdog, even when total wall-clock duration approaches the wall-clock timeout",
+    "refined": "Integration test: create ACP session with { idleTimeout: 2000, wallClockTimeout: 30000 }; send prompt emitting agent_thought_chunk events every 1000ms for 25000ms total duration; verify session outcome === 'fail-timeout' (not 'fail-stale'); confirm agent_thought_chunk events reset idle timer",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "An integration test verifies that a prompt emitting only periodic usage_update lines is NOT cancelled by the watchdog",
+    "refined": "Integration test: create ACP session with { idleTimeout: 2000 }; send prompt emitting only usage_update events every 1000ms; verify idle watchdog fires and produces fail-stale outcome (usage_update events do not reset idle timer); log confirms fail-stale occurred",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "attachAgentStreamLogging() logs agent.call_started events with callId, agentName, storyId, stage, model, and timeoutSeconds",
+    "refined": "When an agent.call_started event is emitted on the bus, attachAgentStreamLogging() writes a structured log entry (or equivalent callable mock receives) with all fields present: callId (string, non-empty), agentName (string, non-empty), storyId (string), stage (string), model (string, non-empty), timeoutSeconds (number, non-negative); verified by log interception or mock assertion",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-37",
+    "original": "attachAgentStreamLogging() logs agent.call_ended events with completion counters including messageUpdates, thinkingUpdates, usageUpdates, lastActivityAt, and calculated idleMs",
+    "refined": "When an agent.call_ended event is emitted on the bus, attachAgentStreamLogging() writes a structured log entry containing: messageUpdates (number, non-negative), thinkingUpdates (number, non-negative), usageUpdates (number, non-negative), lastActivityAt (number, unix timestamp), idleMs (number, non-negative, computed as now - lastActivityAt); verified by log interception or mock assertion",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-38",
+    "original": "Log output for stream events never contains raw agent_thought_chunk text content",
+    "refined": "For all log entries generated by attachAgentStreamLogging(), the 'content' field from agent_thought_chunk events is not serialized into the log output; verified by grepping logs for absence of thinking text patterns or by mock assertion that log calls never receive the raw content field",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-39",
+    "original": "The TUI continues to render normally when no AgentStreamEventBus is connected or when no stream events are being emitted",
+    "refined": "When useAgentStreamEvents() returns an empty activeCalls Map (size === 0), AgentPanel component renders without throwing errors and displays a fallback/idle state; verified by rendering the component in isolation with empty state and asserting no exceptions and expected fallback UI (e.g., 'No active calls' message or blank rows)",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When multiple agent prompts are active concurrently, the TUI displays distinct rows per active call without accumulating per-chunk history arrays",
+    "refined": "When useAgentStreamEvents() returns activeCalls Map with N > 1 entries, AgentPanel renders exactly N distinct visible rows (one per callId), each displaying its own callId and counters without shared state; per-chunk arrays are not accumulated (messageUpdates, thinkingUpdates are counters, not arrays); verified by rendering with 3+ mock active calls and asserting N rows exist, each with unique callId text, and no per-chunk accumulator arrays in rendered output",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-41",
+    "original": "The TUI renders agent activity metadata (agent name, story, elapsed time, last activity age, activity counters) without displaying raw thinking content",
+    "refined": "For each row in AgentPanel corresponding to an active call, the rendered output displays: agentName (text), storyId (text, if present), elapsed time (computed as now - startedAt, in milliseconds or formatted), last activity age (computed as now - lastActivityAt, in milliseconds or formatted), messageUpdates (number), thinkingUpdates (number), usageUpdates (number); raw thinking content (agent_thought_chunk.content) is never rendered; verified by rendering component and asserting all metadata fields are present in DOM/output and no thinking text appears",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

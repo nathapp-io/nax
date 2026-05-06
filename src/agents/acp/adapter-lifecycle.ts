@@ -9,7 +9,7 @@ import { getSafeLogger } from "../../logger";
 import type { ProtocolIds } from "../../runtime/protocol-types";
 import { sleep, which } from "../../utils/bun-deps";
 import type { SessionHandle } from "../types";
-import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
+import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
@@ -34,8 +34,9 @@ export const _acpAdapterDeps = {
     onPidSpawned?: (pid: number) => void,
     promptRetries?: number,
     onPidExited?: (pid: number) => void,
+    opts?: AcpClientOptions,
   ): AcpClient {
-    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited);
+    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited, opts);
   },
 };
 

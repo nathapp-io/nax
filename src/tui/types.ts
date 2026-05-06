@@ -4,6 +4,7 @@
 
 import type { PipelineEventEmitter } from "../pipeline/events";
 import type { StoryRouting, UserStory } from "../prd/types";
+import type { IAgentStreamEventBus } from "../runtime/agent-stream-events";
 
 /**
  * Story display state for the TUI.
@@ -73,4 +74,6 @@ export interface TuiProps {
   queueFilePath?: string;
   /** PTY spawn options for agent session (optional) */
   ptyOptions?: PtySpawnOptions | null;
+  /** Agent stream event bus for live call metadata (optional) */
+  agentStreamEvents?: IAgentStreamEventBus | null;
 }

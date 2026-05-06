@@ -27,7 +27,7 @@ import type {
   SessionHandle,
   TurnResult,
 } from "../types";
-import { CompleteError } from "../types";
+import { CompleteError, SessionTurnError } from "../types";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
 import type { AgentRegistryEntry } from "./types";
 import type { SessionTokenUsage } from "./wire-types";
@@ -160,6 +160,10 @@ export class AcpAgentAdapter implements AgentAdapter {
         _options.onPidSpawned,
         _options.promptRetries,
         _options.onPidExited,
+        {
+          onStreamActivity: _options.onStreamActivity,
+          onActiveCall: _options.onActiveCall,
+        },
       );
       await client.start();
 
@@ -184,6 +188,19 @@ export class AcpAgentAdapter implements AgentAdapter {
         }
 
         if (response.stopReason === "error") {
+          if (response.cancelled) {
+            // Transport-level fact: an external party (e.g. the idle watchdog)
+            // invoked cancelActivePrompt() during this call. The adapter does
+            // not classify _why_ — the wiring layer (AgentManager / consumer
+            // of CompleteResult) maps `cancelled: true` to a policy outcome
+            // such as `fail-stale`.
+            return {
+              output: "",
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+              cancelled: true,
+            };
+          }
           throw new CompleteError("complete() failed: stop reason is error");
         }
 
@@ -340,6 +357,10 @@ export class AcpAgentAdapter implements AgentAdapter {
       onPidSpawned,
       promptRetries,
       onPidExited,
+      {
+        onStreamActivity: opts.onStreamActivity,
+        onActiveCall: opts.onActiveCall,
+      },
     );
     let session: import("./adapter-session-types").AcpSession | undefined;
 
@@ -430,6 +451,11 @@ export class AcpAgentAdapter implements AgentAdapter {
 
       if (turnResult.timedOut) {
         timedOut = true;
+        // Explicit log to distinguish wall-clock timeout from idle watchdog (fail-stale).
+        getSafeLogger()?.warn("acp-adapter", "wall-clock timeout exceeded — session terminated", {
+          sessionName,
+          timeoutSeconds,
+        });
         break;
       }
       if (turnResult.aborted) {
@@ -549,7 +575,15 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     if (lastResponse?.stopReason === "error") {
-      throw new Error("Agent session ended with stop reason: error");
+      // Surface the transport fact (`cancelled`) without classifying _why_.
+      // SessionManager catches SessionTurnError and maps `cancelled: true`
+      // to the `fail-stale` policy outcome.
+      throw new SessionTurnError(
+        lastResponse.cancelled
+          ? "Agent session ended with stop reason: error (externally cancelled)"
+          : "Agent session ended with stop reason: error",
+        lastResponse.cancelled === true,
+      );
     }
 
     const output = extractOutput(lastResponse);

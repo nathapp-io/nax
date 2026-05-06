@@ -77,6 +77,7 @@ export type {
   TestingConfig,
   AdaptiveRoutingConfig,
   AgentConfig,
+  IdleWatchdogConfig,
   ProjectProfile,
   CuratorConfig,
 } from "./runtime-types";

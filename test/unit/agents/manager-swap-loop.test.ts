@@ -215,3 +215,88 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
     expect(sleepCalls[1]).toBe(4000);
   });
 });
+
+describe("AgentManager.runWithFallback — fail-stale retry", () => {
+  const staleFailure = {
+    category: "availability" as const,
+    outcome: "fail-stale" as const,
+    retriable: true,
+    message: "idle watchdog cancelled the prompt",
+  };
+
+  test("retries once immediately on fail-stale with retriable=true, then succeeds", async () => {
+    let attempts = 0;
+    const m = new AgentManager(makeConfig(), undefined, {
+      runHop: async () => {
+        attempts++;
+        return {
+          prompt: `prompt-${attempts}`,
+          result:
+            attempts === 1
+              ? { success: false, exitCode: 1, output: "stale", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, adapterFailure: staleFailure }
+              : { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 1, estimatedCostUsd: 0 },
+        };
+      },
+    });
+
+    const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+
+    expect(outcome.result.success).toBe(true);
+    expect(attempts).toBe(2);
+    // One fallback record logged for the stale retry (same agent → same agent)
+    expect(outcome.fallbacks).toHaveLength(1);
+    expect(outcome.fallbacks[0]?.outcome).toBe("fail-stale");
+    expect(outcome.fallbacks[0]?.priorAgent).toBe(outcome.fallbacks[0]?.newAgent);
+  });
+
+  test("after one stale retry, a second fail-stale proceeds to fallback swap rather than retrying again", async () => {
+    let attempts = 0;
+    // Claude always fails-stale; codex succeeds
+    const m = new AgentManager(makeConfig(), undefined, {
+      runHop: async (agent) => {
+        attempts++;
+        if (agent === "claude") {
+          return {
+            prompt: `prompt-${attempts}`,
+            result: { success: false, exitCode: 1, output: "stale", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, adapterFailure: staleFailure },
+          };
+        }
+        return { prompt: `prompt-${attempts}`, result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 1, estimatedCostUsd: 0 } };
+      },
+    });
+
+    const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+
+    // Should succeed via codex after claude's stale retry was exhausted
+    expect(outcome.result.success).toBe(true);
+    // Exactly 2 claude attempts (initial + one retry) then 1 codex attempt
+    expect(attempts).toBe(3);
+  });
+
+  test("fail-stale with no fallback agent returns terminal failure without backoff sleep", async () => {
+    const origSleep = _agentManagerDeps.sleep;
+    const sleepCalls: number[] = [];
+    _agentManagerDeps.sleep = async (ms: number) => { sleepCalls.push(ms); };
+
+    try {
+      // No fallback map — only claude
+      const noFallbackConfig = makeNaxConfig({
+        agent: { fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false } },
+      });
+      const m = new AgentManager(noFallbackConfig, undefined, {
+        runHop: async () => ({
+          prompt: "prompt",
+          result: { success: false, exitCode: 1, output: "stale", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, adapterFailure: staleFailure },
+        }),
+      });
+
+      const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+
+      expect(outcome.result.success).toBe(false);
+      // No backoff sleep for fail-stale (unlike fail-rate-limit)
+      expect(sleepCalls).toHaveLength(0);
+    } finally {
+      _agentManagerDeps.sleep = origSleep;
+    }
+  });
+});

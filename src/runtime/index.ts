@@ -43,6 +43,19 @@ export type {
   OperationCompletedEvent,
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
+export type {
+  IAgentStreamEventBus,
+  AgentStreamEvent,
+  AgentStreamEventBase,
+  AgentCallStartedEvent,
+  AgentMessageUpdateEvent,
+  AgentThinkingUpdateEvent,
+  AgentUsageUpdateEvent,
+  AgentProcessUpdateEvent,
+  AgentCallEndedEvent,
+  AgentStreamListener,
+} from "./agent-stream-events";
+export { AgentStreamEventBus } from "./agent-stream-events";
 
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";
@@ -61,11 +74,15 @@ import type { IReviewAuditor } from "../review/review-audit";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
 import { MiddlewareChain } from "./agent-middleware";
+import { AgentStreamEventBus } from "./agent-stream-events";
+import type { IAgentStreamEventBus } from "./agent-stream-events";
 import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
 import type { ICostAggregator } from "./cost-aggregator";
 import { DispatchEventBus } from "./dispatch-events";
 import type { IDispatchEventBus } from "./dispatch-events";
 import {
+  attachAgentIdleWatchdog,
+  attachAgentStreamLogging,
   attachAuditSubscriber,
   attachCostSubscriber,
   attachLoggingSubscriber,
@@ -94,6 +111,7 @@ export interface NaxRuntime {
   readonly promptAuditor: IPromptAuditor;
   readonly reviewAuditor: IReviewAuditor;
   readonly dispatchEvents: IDispatchEventBus;
+  readonly agentStreamEvents: IAgentStreamEventBus;
   readonly packages: PackageRegistry;
   readonly pidRegistry: PidRegistry;
   readonly logger: Logger;
@@ -131,6 +149,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
 
   const configLoader = createConfigLoader(config);
   const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
+  const agentStreamEvents: IAgentStreamEventBus = new AgentStreamEventBus();
 
   const projectKey = config.name?.trim() || basename(workdir);
   const outputDir = projectOutputDir(projectKey, config.outputDir);
@@ -165,6 +184,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const defaultAgent = config.agent?.default ?? "claude";
   const pidRegistry = opts?.pidRegistry ?? new PidRegistry(workdir);
 
+  const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
+
   let agentManager: IAgentManager | undefined;
   const middleware = MiddlewareChain.from([cancellationMiddleware()]);
   const sessionManager = opts?.sessionManager ?? new SessionManager();
@@ -175,6 +196,9 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       dispatchEvents,
       defaultAgent,
       pidRegistry,
+      watchdogControllerRegistry,
+      onStreamActivity: (event) => agentStreamEvents.emitAgentStream(event),
+      agentStreamEvents,
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {
@@ -198,6 +222,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const offCost = attachCostSubscriber(dispatchEvents, costAggregator, runId);
   const offAudit = attachAuditSubscriber(dispatchEvents, promptAuditor, runId);
   const offReviewAudit = attachReviewAuditSubscriber(dispatchEvents, reviewAuditor, runId);
+  const offAgentStreamLogging = attachAgentStreamLogging(agentStreamEvents, runId);
+  const offWatchdog = attachAgentIdleWatchdog(agentStreamEvents, watchdogControllerRegistry, config);
 
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
@@ -219,6 +245,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     promptAuditor,
     reviewAuditor,
     dispatchEvents,
+    agentStreamEvents,
     packages,
     pidRegistry,
     logger,
@@ -233,6 +260,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       offCost();
       offAudit();
       offReviewAudit();
+      offAgentStreamLogging();
+      offWatchdog();
       const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {

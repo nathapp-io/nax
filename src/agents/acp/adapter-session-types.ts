@@ -3,6 +3,8 @@
  * and adapter-lifecycle.ts. Kept separate to avoid circular imports.
  */
 
+import type { PipelineStage } from "../../config/permissions";
+import type { AgentStreamEvent } from "../../runtime/agent-stream-events";
 import type { SessionTokenUsage } from "./wire-types";
 
 export interface AcpSessionResponse {
@@ -15,6 +17,13 @@ export interface AcpSessionResponse {
   retryable?: boolean;
   /** acpx exit code — present only on error responses (exitCode !== 0). */
   exitCode?: number;
+  /**
+   * Transport fact: `cancelActivePrompt()` was invoked during this prompt, so
+   * the resulting `stopReason: "error"` was caused by an external cancel
+   * rather than acpx itself. The adapter does not name _why_ — that is a
+   * wiring-layer policy decision (e.g. fail-stale when the watchdog cancelled).
+   */
+  cancelled?: boolean;
 }
 
 export interface AcpSession {
@@ -25,6 +34,26 @@ export interface AcpSession {
   readonly id?: string;
   /** Stable record ID: assigned at session creation, never changes across reconnects (acpxRecordId). */
   readonly recordId?: string;
+}
+
+export interface AcpClientOptions {
+  /** Optional stream callback to emit activity events during agent execution. */
+  onStreamActivity?: (event: AgentStreamEvent) => void;
+  /**
+   * Generic per-call lifecycle hook — invoked synchronously when each prompt()
+   * starts, with the callId and an opaque cancel function (calls
+   * `session.cancelActivePrompt()`). The wiring layer above the adapter uses
+   * this to populate any per-call cancellation registry it owns. The adapter
+   * has no knowledge of what the consumer does with the cancel handle.
+   * Depopulation happens via the `agent.call_ended` event on the stream bus.
+   */
+  onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
+  /** Run-level correlation ID threaded into all stream events from this client's sessions. */
+  runId?: string;
+  /** Story ID threaded into all stream events for log correlation in parallel runs. */
+  storyId?: string;
+  /** Pipeline stage threaded into all stream events for log correlation. */
+  stage?: PipelineStage;
 }
 
 export interface AcpClient {

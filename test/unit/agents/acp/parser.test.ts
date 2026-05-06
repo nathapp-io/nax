@@ -134,4 +134,27 @@ describe("incremental API — createParseState / parseAcpxJsonLine / finalizePar
     parseAcpxJsonLine("bare fallback text", state);
     expect(finalizeParseState(state).text).toBe("bare fallback text");
   });
+
+  test("agent_thought_chunk is NOT accumulated into state.text", () => {
+    const state = createParseState();
+    const thoughtLine =
+      '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"x","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"internal reasoning"}}}}';
+    const msgLine =
+      '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"x","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"public answer"}}}}';
+    parseAcpxJsonLine(thoughtLine, state);
+    parseAcpxJsonLine(msgLine, state);
+    const result = finalizeParseState(state);
+    // Thought content must NOT appear in the final response text
+    expect(result.text).toBe("public answer");
+    expect(result.text).not.toContain("internal reasoning");
+  });
+
+  test("agent_thought_chunk returns thinking_update activity with deltaBytes", () => {
+    const state = createParseState();
+    const thoughtLine =
+      '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"x","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"thinking"}}}}';
+    const activity = parseAcpxJsonLine(thoughtLine, state);
+    expect(activity?.kind).toBe("thinking_update");
+    expect(activity?.deltaBytes).toBe(8); // "thinking".length
+  });
 });

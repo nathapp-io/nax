@@ -271,6 +271,21 @@ export interface CompleteOptions {
    * PID unregistration callback attached by AgentManager when a PidRegistry is configured.
    */
   onPidExited?: (pid: number) => void;
+  /**
+   * @internal Set by the wiring layer (AgentManager / SessionManager); callers must not pass this.
+   * Generic per-call lifecycle hook — invoked by the adapter when a physical
+   * agent invocation begins. The wiring layer uses this to register `cancel`
+   * in any per-call cancellation registry it owns (e.g. the idle watchdog).
+   * The adapter does not know what the consumer does with the cancel handle.
+   */
+  onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
+  /**
+   * @internal Set by `AgentManager.completeAs`; callers must not pass this — it will be overwritten.
+   * Stream activity callback forwarded from NaxRuntime.agentStreamEvents.
+   * The adapter forwards prompt-level events (call_started, message_update, etc.)
+   * onto this callback for the runtime bus.
+   */
+  onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
 }
 
 /**
@@ -294,6 +309,14 @@ export interface CompleteResult {
   exactCostUsd?: number;
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */
   adapterFailure?: AdapterFailure;
+  /**
+   * Transport fact: `cancelActivePrompt()` was invoked during this call (i.e. an
+   * external party, e.g. the idle watchdog, asked the adapter to cancel).
+   * The adapter never classifies _why_ this happened — the wiring layer
+   * (AgentManager / SessionManager) maps this to a policy outcome such as
+   * `fail-stale` based on its own bookkeeping.
+   */
+  cancelled?: boolean;
 }
 
 /**
@@ -369,6 +392,22 @@ export interface OpenSessionOpts {
    * Set by SessionManager.openSession when a descriptor is found.
    */
   resume?: boolean;
+  /**
+   * Generic per-call lifecycle hook — invoked by the adapter when a physical
+   * agent invocation begins, with a stable `callId` and an opaque cancel
+   * function. The wiring layer uses this to register `cancel` in any per-call
+   * cancellation registry it owns (e.g. the idle watchdog). The adapter does
+   * not know what the consumer does with the cancel handle. Depopulation of
+   * any registry happens via the `agent.call_ended` event on the stream bus.
+   */
+  onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
+  /**
+   * Stream activity callback forwarded from NaxRuntime.agentStreamEvents.
+   * The adapter passes this to the underlying AcpClient so prompt-level events
+   * (call_started, message_update, call_ended, etc.) are emitted on the runtime
+   * bus. Required for the idle watchdog to track calls.
+   */
+  onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
 }
 
 /** Options for sendTurn(). */
@@ -395,6 +434,23 @@ export interface TurnResult {
   internalRoundTrips: number;
   /** Protocol-specific IDs for prompt-audit correlation. */
   protocolIds?: ProtocolIds;
+}
+
+/**
+ * Throwable form of TurnResult. Surfaced by `sendTurn()` when the underlying
+ * session ended with `stopReason === "error"`. Carries `cancelled: true`
+ * when the failure was caused by an external cancel (`cancelActivePrompt()`),
+ * so the wiring layer (SessionManager) can classify it as `fail-stale`
+ * without the adapter naming a policy outcome.
+ */
+export class SessionTurnError extends Error {
+  constructor(
+    message: string,
+    public readonly cancelled: boolean,
+  ) {
+    super(message);
+    this.name = "SessionTurnError";
+  }
 }
 
 /**

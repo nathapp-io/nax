@@ -208,6 +208,7 @@ export class AgentManager implements IAgentManager {
     let currentAgent = primaryAgent;
     let hopsSoFar = 0;
     let rateLimitRetry = 0;
+    let staleRetryAttempts = 0;
     let currentBundle = request.bundle;
     let currentFailure: AdapterFailure | undefined;
     let finalPrompt: string | undefined;
@@ -240,7 +241,12 @@ export class AgentManager implements IAgentManager {
             _finalStatus = "error";
             return { result: unboundResult, fallbacks, finalBundle: currentBundle, finalPrompt };
           }
-          const hopOut = await this._runHop(currentAgent, request.runOptions);
+          const rawHopOut = await this._runHop(currentAgent, request.runOptions);
+          // Normalize: support both wrapped SessionRunHopResult and flat AgentResult (test injection)
+          const hopOut =
+            "result" in rawHopOut && rawHopOut.result != null
+              ? (rawHopOut as { result: AgentResult; prompt?: string })
+              : { result: rawHopOut as unknown as AgentResult, prompt: undefined };
           result = hopOut.result;
           finalPrompt = hopOut.prompt ?? finalPrompt;
         }
@@ -262,7 +268,47 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
 
-        if (!this.shouldSwap(result.adapterFailure, hopsSoFar, !!bundleForSwapCheck)) {
+        // fail-stale: same-agent retries up to maxRetryAttempts before swap or terminal failure.
+        // Session idle timeouts warrant fast retries (no backoff) — the session was
+        // cancelled due to inactivity, not server load, so the next attempt may succeed.
+        const isFailStale = result.adapterFailure?.outcome === "fail-stale";
+        const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 1;
+        if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts < maxStaleRetries) {
+          staleRetryAttempts++;
+          const retryHop: AgentFallbackRecord = {
+            storyId: request.runOptions.storyId,
+            priorAgent: currentAgent,
+            newAgent: currentAgent,
+            hop: staleRetryAttempts,
+            outcome: result.adapterFailure?.outcome ?? "fail-stale",
+            category: result.adapterFailure?.category ?? "availability",
+            timestamp: new Date().toISOString(),
+            costUsd: result.estimatedCostUsd ?? 0,
+          };
+          fallbacks.push(retryHop);
+          this._emitter.emit("onSwapAttempt", retryHop);
+          logger?.info("agent-manager", "fail-stale: immediate same-agent retry", {
+            storyId: request.runOptions.storyId,
+            attempt: staleRetryAttempts,
+            agent: currentAgent,
+          });
+          continue;
+        }
+
+        // For fail-stale, treat hasBundle as true: session restarts don't require
+        // context rebuild to decide whether to swap to a fallback agent.
+        const hasBundleForSwap = !!bundleForSwapCheck || isFailStale;
+
+        if (!this.shouldSwap(result.adapterFailure, hopsSoFar, hasBundleForSwap)) {
+          // For fail-stale with no swap available: exit immediately without backoff.
+          // The session was stale — retrying with backoff won't help if no fallback exists.
+          if (isFailStale) {
+            logger?.warn("agent-manager", "fail-stale: no swap candidate, returning terminal failure", {
+              storyId: request.runOptions.storyId,
+            });
+            _finalStatus = "error";
+            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+          }
           // Preserve legacy rate-limit backoff when no swap candidates are available.
           // #585 Path B: race the sleep against the shutdown signal — an abort during
           // backoff settles within milliseconds instead of the full exponential wait.
