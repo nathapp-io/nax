@@ -19,7 +19,8 @@ export const defaultRetryStrategy: RetryStrategy = {
     if (attempt >= MAX_RETRIES) return { retry: false };
     if (failure instanceof Error) return { retry: false };
     const af = failure as AdapterFailure;
-    if (af.outcome !== "fail-rate-limit") return { retry: false };
+    if (af.retriable === false) return { retry: false };
+    if (af.outcome !== "fail-rate-limit" && af.outcome !== "fail-stale") return { retry: false };
     const delayMs = 2 ** (attempt + 1) * 1000;
     return { retry: true, delayMs };
   },
