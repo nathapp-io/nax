@@ -430,6 +430,11 @@ export class AcpAgentAdapter implements AgentAdapter {
 
       if (turnResult.timedOut) {
         timedOut = true;
+        // Explicit log to distinguish wall-clock timeout from idle watchdog (fail-stale).
+        getSafeLogger()?.warn("acp-adapter", "wall-clock timeout exceeded — session terminated", {
+          sessionName,
+          timeoutSeconds,
+        });
         break;
       }
       if (turnResult.aborted) {
