@@ -1,9 +1,7 @@
-import { describe, expect, test, beforeEach } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { AdapterFailure } from "../../../src/context/engine";
-import type { IAgentManager } from "../../../src/agents/manager-types";
-import { makeMockAgentManager } from "../../helpers";
 
 const staleFailureRetryable: AdapterFailure = {
   category: "availability",
@@ -18,6 +16,32 @@ const staleFailureTerminal: AdapterFailure = {
   retriable: false,
   message: "stale retries exhausted",
 };
+
+// Shared run options used by all runWithFallback tests
+const RUN_OPTIONS = {
+  prompt: "test",
+  workdir: "/tmp",
+  modelTier: "fast" as const,
+  modelDef: { provider: "anthropic" as const, model: "claude-haiku-4-5" as const },
+  timeoutSeconds: 30,
+  config: DEFAULT_CONFIG,
+  storyId: "us-001",
+};
+
+// Helper: flat AgentResult wrapped in SessionRunHopResult so TypeScript is satisfied.
+// AgentManager normalises both flat and wrapped forms at runtime; the wrapper is
+// the canonical shape declared by SessionRunHopFn.
+function hopResult(result: Parameters<typeof AgentManager.prototype.runWithFallback>[0]["runOptions"] extends never ? never : {
+  success: boolean;
+  exitCode: number;
+  output: string;
+  rateLimited: boolean;
+  durationMs: number;
+  estimatedCostUsd: number;
+  adapterFailure?: AdapterFailure;
+}) {
+  return { result, prompt: "test prompt" };
+}
 
 describe("AgentManager with fail-stale availability failures", () => {
   test("shouldSwap() returns true for fail-stale availability failure when hasBundle=true", () => {
@@ -89,7 +113,6 @@ describe("AgentManager with fail-stale availability failures", () => {
 describe("AgentManager.runWithFallback with fail-stale", () => {
   test("recognizes fail-stale as availability failure and includes in fallbacks array", async () => {
     let callCount = 0;
-    let passedAgent = "";
 
     const manager = new AgentManager(
       {
@@ -107,11 +130,10 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
       } as never,
       undefined,
       {
-        runHop: async (agent) => {
-          passedAgent = agent;
+        runHop: async () => {
           callCount++;
           if (callCount === 1) {
-            return {
+            return hopResult({
               success: false,
               exitCode: 1,
               output: "",
@@ -119,32 +141,21 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
               durationMs: 100,
               estimatedCostUsd: 0,
               adapterFailure: staleFailureRetryable,
-            };
+            });
           }
-          return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 };
+          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
         },
       },
     );
 
-    const outcome = await manager.runWithFallback({
-      runOptions: {
-        prompt: "test",
-        workdir: "/tmp",
-        modelTier: "fast",
-        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
-        timeoutSeconds: 30,
-        config: DEFAULT_CONFIG,
-        storyId: "us-001",
-      },
-    });
+    const outcome = await manager.runWithFallback({ runOptions: RUN_OPTIONS });
 
     expect(outcome.result.success).toBe(true);
     expect(outcome.fallbacks.length).toBeGreaterThan(0);
   });
 
   test("retries with same agent before fallback when fail-stale.retriable=true", async () => {
-    let callCount = 0;
-    let agents: string[] = [];
+    const agents: string[] = [];
 
     const manager = new AgentManager(
       {
@@ -165,7 +176,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
         runHop: async (agent) => {
           agents.push(agent);
           if (agents.length <= 2) {
-            return {
+            return hopResult({
               success: false,
               exitCode: 1,
               output: "",
@@ -173,24 +184,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
               durationMs: 100,
               estimatedCostUsd: 0,
               adapterFailure: staleFailureRetryable,
-            };
+            });
           }
-          return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 };
+          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
         },
       },
     );
 
-    const outcome = await manager.runWithFallback({
-      runOptions: {
-        prompt: "test",
-        workdir: "/tmp",
-        modelTier: "fast",
-        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
-        timeoutSeconds: 30,
-        config: DEFAULT_CONFIG,
-        storyId: "us-001",
-      },
-    });
+    const outcome = await manager.runWithFallback({ runOptions: RUN_OPTIONS });
 
     expect(outcome.result.success).toBe(true);
     expect(agents[0]).toBe("claude");
@@ -198,8 +199,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
   });
 
   test("falls back to alternate agent when fail-stale retries exhausted", async () => {
-    let callCount = 0;
-    let agents: string[] = [];
+    const agents: string[] = [];
 
     const manager = new AgentManager(
       {
@@ -220,7 +220,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
         runHop: async (agent) => {
           agents.push(agent);
           if (agents.length === 1 || agents.length === 2) {
-            return {
+            return hopResult({
               success: false,
               exitCode: 1,
               output: "",
@@ -228,24 +228,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
               durationMs: 100,
               estimatedCostUsd: 0,
               adapterFailure: staleFailureRetryable,
-            };
+            });
           }
-          return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 };
+          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
         },
       },
     );
 
-    const outcome = await manager.runWithFallback({
-      runOptions: {
-        prompt: "test",
-        workdir: "/tmp",
-        modelTier: "fast",
-        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
-        timeoutSeconds: 30,
-        config: DEFAULT_CONFIG,
-        storyId: "us-001",
-      },
-    });
+    const outcome = await manager.runWithFallback({ runOptions: RUN_OPTIONS });
 
     expect(outcome.result.success).toBe(true);
     expect(agents[0]).toBe("claude");
@@ -270,8 +260,8 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
       } as never,
       undefined,
       {
-        runHop: async () => {
-          return {
+        runHop: async () =>
+          hopResult({
             success: false,
             exitCode: 1,
             output: "",
@@ -279,24 +269,131 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
             durationMs: 100,
             estimatedCostUsd: 0,
             adapterFailure: staleFailureRetryable,
-          };
+          }),
+      },
+    );
+
+    const outcome = await manager.runWithFallback({ runOptions: RUN_OPTIONS });
+
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.result.adapterFailure?.outcome).toBe("fail-stale");
+  });
+
+  // AC4: Retry for fail-stale stops after maxRetryAttempts attempts.
+  // The manager reads maxRetryAttempts from config.agent.acp.idleWatchdog.maxRetryAttempts.
+  // Current implementation hardcodes 1 retry; these tests encode the spec so the
+  // implementer can fix the source to respect the configurable limit.
+
+  test("fail-stale same-agent retries respect maxRetryAttempts=3 from idleWatchdog config (AC4)", async () => {
+    const MAX_RETRY_ATTEMPTS = 3;
+    const agents: string[] = [];
+
+    const manager = new AgentManager(
+      {
+        ...DEFAULT_CONFIG,
+        agent: {
+          ...DEFAULT_CONFIG.agent,
+          acp: {
+            promptRetries: 0,
+            idleWatchdog: {
+              enabled: true,
+              mode: "cancel",
+              idleTimeoutSeconds: 30,
+              activityKinds: ["message_update", "thinking_update", "usage_update"],
+              cancelGraceSeconds: 5,
+              maxRetryAttempts: MAX_RETRY_ATTEMPTS,
+            },
+          },
+          fallback: {
+            enabled: false, // No fallback — isolate retry behavior
+            map: {},
+            maxHopsPerStory: 0,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
+      } as never,
+      undefined,
+      {
+        runHop: async (agent) => {
+          agents.push(agent);
+          return hopResult({
+            success: false,
+            exitCode: 1,
+            output: "",
+            rateLimited: false,
+            durationMs: 100,
+            estimatedCostUsd: 0,
+            adapterFailure: staleFailureRetryable,
+          });
         },
       },
     );
 
-    const outcome = await manager.runWithFallback({
-      runOptions: {
-        prompt: "test",
-        workdir: "/tmp",
-        modelTier: "fast",
-        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
-        timeoutSeconds: 30,
-        config: DEFAULT_CONFIG,
-        storyId: "us-001",
-      },
-    });
+    const outcome = await manager.runWithFallback({ runOptions: RUN_OPTIONS });
 
+    // Manager must retry with the same agent exactly maxRetryAttempts times:
+    // 1 initial attempt + MAX_RETRY_ATTEMPTS retries = MAX_RETRY_ATTEMPTS + 1 total calls
+    expect(agents).toHaveLength(MAX_RETRY_ATTEMPTS + 1);
+    expect(agents.every((a) => a === "claude")).toBe(true);
     expect(outcome.result.success).toBe(false);
     expect(outcome.result.adapterFailure?.outcome).toBe("fail-stale");
+  });
+
+  test("fail-stale with maxRetryAttempts=0 does not retry before fallback (AC4)", async () => {
+    const agents: string[] = [];
+
+    const manager = new AgentManager(
+      {
+        ...DEFAULT_CONFIG,
+        agent: {
+          ...DEFAULT_CONFIG.agent,
+          acp: {
+            promptRetries: 0,
+            idleWatchdog: {
+              enabled: true,
+              mode: "cancel",
+              idleTimeoutSeconds: 30,
+              activityKinds: ["message_update", "thinking_update", "usage_update"],
+              cancelGraceSeconds: 5,
+              maxRetryAttempts: 0, // No same-agent retries allowed
+            },
+          },
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
+      } as never,
+      undefined,
+      {
+        runHop: async (agent) => {
+          agents.push(agent);
+          if (agent === "claude") {
+            return hopResult({
+              success: false,
+              exitCode: 1,
+              output: "",
+              rateLimited: false,
+              durationMs: 100,
+              estimatedCostUsd: 0,
+              adapterFailure: staleFailureRetryable,
+            });
+          }
+          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
+        },
+      },
+    );
+
+    const outcome = await manager.runWithFallback({ runOptions: RUN_OPTIONS });
+
+    // With maxRetryAttempts=0: first stale → immediate fallback, no same-agent retry
+    expect(agents[0]).toBe("claude"); // Initial attempt
+    expect(agents[1]).toBe("codex"); // Immediate fallback — no claude retry
+    expect(agents).toHaveLength(2);
+    expect(outcome.result.success).toBe(true);
   });
 });
