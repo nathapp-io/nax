@@ -88,17 +88,17 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
           };
         }
 
-        // Thought chunks — emit activity metadata without raw content
+        // Thought chunks — emit activity metadata without raw content.
+        // Thought text is internal reasoning and must NOT accumulate in state.text,
+        // which becomes the final assistant response returned to callers.
         if (
           update.sessionUpdate === "agent_thought_chunk" &&
           update.content?.type === "text" &&
           typeof update.content.text === "string"
         ) {
-          const text = update.content.text;
-          state.text += text;
           return {
             kind: "thinking_update",
-            deltaBytes: text.length,
+            deltaBytes: update.content.text.length,
           };
         }
 

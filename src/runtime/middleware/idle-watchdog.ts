@@ -140,6 +140,9 @@ export function attachAgentIdleWatchdog(
   const graceMs = (watchdogConfig.cancelGraceSeconds ?? 5) * 1000;
   const maxRetryAttempts = watchdogConfig.maxRetryAttempts ?? 3;
   const activityKinds = watchdogConfig.activityKinds ?? ["message_update", "thinking_update", "usage_update"];
+  // Poll at 1/4 of the idle timeout so detection latency is at most idleTimeout * 5/4
+  // rather than up to 2× idleTimeout when the tick interval equals idleTimeoutMs.
+  const tickIntervalMs = Math.max(1, Math.ceil(idleTimeoutMs / 4));
 
   const activeStates = new Map<string, WatchdogStateInternal>();
   const tickRef: { handle: ReturnType<typeof setTimeout> | null } = { handle: null };
@@ -157,7 +160,7 @@ export function attachAgentIdleWatchdog(
         handleWarnThenCancelTimeout(state, controllerRegistry, maxRetryAttempts, idleTimeoutMs, graceMs, activeStates);
       }
     }
-    if (activeStates.size > 0) scheduleTickIfNeeded(tickRef, tick, idleTimeoutMs);
+    if (activeStates.size > 0) scheduleTickIfNeeded(tickRef, tick, tickIntervalMs);
   }
 
   const unsubscribe = agentStreamEvents.onAgentStream((event: AgentStreamEvent) => {
@@ -186,7 +189,7 @@ export function attachAgentIdleWatchdog(
           mode,
           idleTimeoutMs,
         });
-        scheduleTickIfNeeded(tickRef, tick, idleTimeoutMs);
+        scheduleTickIfNeeded(tickRef, tick, tickIntervalMs);
         break;
       }
       case "agent.message_update": {

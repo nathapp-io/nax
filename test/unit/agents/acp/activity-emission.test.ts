@@ -524,8 +524,96 @@ describe("AC9 — spawn failure emits call_ended without prior call_started", ()
     expect(callEnded).toMatchObject({ kind: "agent.call_ended", status: "error" });
 
     // AC9: call_started must NOT precede call_ended when spawn fails before producing a PID
-    // This assertion FAILS with the current implementation (call_started is emitted at line 202
-    // before spawn is attempted at line 213).
     expect(kinds).not.toContain("agent.call_started");
+  });
+
+  test("no watchdog registry entry remains after spawn failure", async () => {
+    // Registry leak fix (#2): onWatchdogRegister must NOT be called when spawn throws,
+    // so the registry stays clean after a spawn failure.
+    let callCount = 0;
+    const registry = new Map<string, () => Promise<void>>();
+
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      if (callCount === 1) return makeSpawnResult(0); // loadSession ensure — OK
+      throw new Error("spawn ENOENT: acpx binary not found");
+    };
+
+    const client = new SpawnAcpClient(
+      "acpx --model claude-sonnet-4-5 claude",
+      "/tmp",
+      30,
+      undefined,
+      0,
+      undefined,
+      {
+        onStreamActivity: () => {},
+        onWatchdogRegister: (callId, cancelFn) => registry.set(callId, cancelFn),
+      },
+    );
+
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    try { await session!.prompt("hello"); } catch { /* expected */ }
+
+    // Registry must be empty — no entry should have been added for the failed spawn
+    expect(registry.size).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC10 — runId/storyId/stage from AcpClientOptions flow into session events
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AC10 — correlation metadata flows from AcpClientOptions to session stream events", () => {
+  withDepsRestore(_spawnClientDeps, ["spawn"]);
+
+  test("stream events carry runId, storyId, stage provided via AcpClientOptions", async () => {
+    let callCount = 0;
+    const events: AgentStreamEvent[] = [];
+
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      if (callCount === 1) return makeSpawnResult(0); // loadSession ensure
+      const ndjson =
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
+          },
+        }) + "\n";
+      return makeSpawnResult(0, ndjson);
+    };
+
+    const client = new SpawnAcpClient(
+      "acpx --model claude-sonnet-4-5 claude",
+      "/tmp",
+      30,
+      undefined,
+      0,
+      undefined,
+      {
+        onStreamActivity: (event) => events.push(event),
+        runId: "run-abc",
+        storyId: "story-123",
+        stage: "run",
+      },
+    );
+
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    await session!.prompt("hello");
+
+    const callStarted = events.find((e) => e.kind === "agent.call_started");
+    expect(callStarted).toBeDefined();
+    expect(callStarted?.runId).toBe("run-abc");
+    expect(callStarted?.storyId).toBe("story-123");
+    expect(callStarted?.stage).toBe("run");
+
+    // All events should carry the same correlation metadata
+    for (const event of events) {
+      expect(event.runId).toBe("run-abc");
+      expect(event.storyId).toBe("story-123");
+    }
   });
 });

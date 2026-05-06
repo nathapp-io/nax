@@ -2,26 +2,39 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { initLogger, getLogger, resetLogger } from "../../../../src/logger";
 import type { LogEntry } from "../../../../src/logger/types";
-import { AgentStreamEventBus, type AgentStreamEvent, type IAgentStreamEventBus } from "../../../../src/runtime/agent-stream-events";
+import {
+  AgentStreamEventBus,
+  type AgentProcessUpdateEvent,
+  type AgentCallEndedEvent,
+  type AgentStreamEvent,
+  type IAgentStreamEventBus,
+} from "../../../../src/runtime/agent-stream-events";
 import { attachAgentIdleWatchdog } from "../../../../src/runtime/middleware/idle-watchdog";
 import { makeNaxConfig } from "../../../helpers";
 import { cleanupTempDir, makeTempDir } from "../../../helpers";
 
 type CancelCallback = () => Promise<void>;
 
-function makeIdleWatchdogConfig(overrides: any = {}) {
+function makeIdleWatchdogConfig(overrides: {
+  enabled?: boolean;
+  mode?: "off" | "observe" | "cancel" | "warn-then-cancel";
+  idleTimeoutSeconds?: number;
+  activityKinds?: ("message_update" | "thinking_update" | "usage_update")[];
+  cancelGraceSeconds?: number;
+  maxRetryAttempts?: number;
+} = {}) {
   return {
     enabled: true,
     mode: "cancel" as const,
     idleTimeoutSeconds: 1,
-    activityKinds: ["message_update", "thinking_update", "usage_update"] as const,
+    activityKinds: ["message_update", "thinking_update", "usage_update"] as ("message_update" | "thinking_update" | "usage_update")[],
     cancelGraceSeconds: 0.5,
     maxRetryAttempts: 3,
     ...overrides,
   };
 }
 
-function makeCallStartedEvent(overrides: any = {}): AgentStreamEvent {
+function makeCallStartedEvent(overrides: { callId?: string; pid?: number } = {}): AgentStreamEvent {
   return {
     kind: "agent.call_started",
     callId: overrides.callId ?? "call-123",
@@ -30,14 +43,14 @@ function makeCallStartedEvent(overrides: any = {}): AgentStreamEvent {
     sessionName: "nax-abc-feat-s1-main",
     storyId: "s-42",
     stage: "run",
-    pid: 1234,
+    pid: overrides.pid ?? 1234,
     timestamp: Date.now(),
     model: "claude-opus-4-5",
     timeoutSeconds: 60,
   } as AgentStreamEvent;
 }
 
-function makeMessageUpdateEvent(overrides: any = {}): AgentStreamEvent {
+function makeMessageUpdateEvent(overrides: { callId?: string } = {}): AgentStreamEvent {
   return {
     kind: "agent.message_update",
     callId: overrides.callId ?? "call-123",
@@ -52,7 +65,7 @@ function makeMessageUpdateEvent(overrides: any = {}): AgentStreamEvent {
   } as AgentStreamEvent;
 }
 
-function makeThinkingUpdateEvent(overrides: any = {}): AgentStreamEvent {
+function makeThinkingUpdateEvent(overrides: { callId?: string } = {}): AgentStreamEvent {
   return {
     kind: "agent.thinking_update",
     callId: overrides.callId ?? "call-123",
@@ -67,7 +80,7 @@ function makeThinkingUpdateEvent(overrides: any = {}): AgentStreamEvent {
   } as AgentStreamEvent;
 }
 
-function makeUsageUpdateEvent(overrides: any = {}): AgentStreamEvent {
+function makeUsageUpdateEvent(overrides: { callId?: string } = {}): AgentStreamEvent {
   return {
     kind: "agent.usage_update",
     callId: overrides.callId ?? "call-123",
@@ -84,7 +97,7 @@ function makeUsageUpdateEvent(overrides: any = {}): AgentStreamEvent {
   } as AgentStreamEvent;
 }
 
-function makeProcessUpdateEvent(overrides: any = {}): AgentStreamEvent {
+function makeProcessUpdateEvent(overrides: { callId?: string; status?: AgentProcessUpdateEvent["status"] } = {}): AgentStreamEvent {
   return {
     kind: "agent.process_update",
     callId: overrides.callId ?? "call-123",
@@ -99,7 +112,7 @@ function makeProcessUpdateEvent(overrides: any = {}): AgentStreamEvent {
   } as AgentStreamEvent;
 }
 
-function makeCallEndedEvent(overrides: any = {}): AgentStreamEvent {
+function makeCallEndedEvent(overrides: { callId?: string; status?: AgentCallEndedEvent["status"] } = {}): AgentStreamEvent {
   return {
     kind: "agent.call_ended",
     callId: overrides.callId ?? "call-123",
@@ -588,12 +601,16 @@ describe("attachAgentIdleWatchdog", () => {
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-10a" }));
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-10b" }));
 
-    // Keep one active, let the other timeout
+    // Keep call-10a alive: emit messages every ~100ms so it never reaches the 200ms idle threshold.
+    // call-10b receives no activity and will time out at t≈200ms.
     await new Promise((r) => setTimeout(r, 100));
-    eventBus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-10a" }));
+    eventBus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-10a" })); // t=100ms
 
-    // Wait for call-10b to timeout
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 100));
+    eventBus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-10a" })); // t=200ms
+
+    // call-10b has been idle 200ms — confirm it timed out; call-10a is still fresh (lastActivity=200ms)
+    await new Promise((r) => setTimeout(r, 150));
     await getLogger().flush();
 
     // call-10b should have been canceled, call-10a should still be active

@@ -268,11 +268,12 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
 
-        // fail-stale: one immediate same-agent retry before swap or terminal failure.
-        // Session idle timeouts warrant a fast retry (no backoff) — the session was
+        // fail-stale: same-agent retries up to maxRetryAttempts before swap or terminal failure.
+        // Session idle timeouts warrant fast retries (no backoff) — the session was
         // cancelled due to inactivity, not server load, so the next attempt may succeed.
         const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-        if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts === 0) {
+        const maxStaleRetries = this._config.agent?.acp?.idleWatchdog?.maxRetryAttempts ?? 1;
+        if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts < maxStaleRetries) {
           staleRetryAttempts++;
           const retryHop: AgentFallbackRecord = {
             storyId: request.runOptions.storyId,

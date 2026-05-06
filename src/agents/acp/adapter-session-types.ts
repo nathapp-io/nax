@@ -3,6 +3,7 @@
  * and adapter-lifecycle.ts. Kept separate to avoid circular imports.
  */
 
+import type { PipelineStage } from "../../config/permissions";
 import type { AgentStreamEvent } from "../../runtime/agent-stream-events";
 import type { SessionTokenUsage } from "./wire-types";
 
@@ -39,6 +40,12 @@ export interface AcpClientOptions {
    * to set _staleCancelled before calling.
    */
   onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
+  /** Run-level correlation ID threaded into all stream events from this client's sessions. */
+  runId?: string;
+  /** Story ID threaded into all stream events for log correlation in parallel runs. */
+  storyId?: string;
+  /** Pipeline stage threaded into all stream events for log correlation. */
+  stage?: PipelineStage;
 }
 
 export interface AcpClient {

@@ -164,9 +164,6 @@ export class SpawnAcpSession implements AcpSession {
 
   async prompt(text: string): Promise<AcpSessionResponse> {
     const callId = randomUUID();
-    // Register cancel function before the first await so the watchdog can cancel
-    // this prompt if it goes idle. The caller wraps the cancel fn to set _staleBox.
-    this.onWatchdogRegister?.(callId, () => this.cancelActivePrompt());
     const emit = this.onStreamActivity;
     const now = () => Date.now();
     const baseEvent = {
@@ -223,6 +220,10 @@ export class SpawnAcpSession implements AcpSession {
     this.activeProc = proc;
     const processPid = proc.pid;
     this.onPidSpawned?.(processPid);
+
+    // Register the watchdog cancel function only after spawn succeeds and we have a live PID.
+    // Registering before spawn would leave a stale registry entry if spawn throws (#2).
+    this.onWatchdogRegister?.(callId, () => this.cancelActivePrompt());
 
     // AC5/AC6: Emit call_started after spawn succeeds (PID obtained), before process_update
     emit?.({
@@ -501,6 +502,9 @@ export class SpawnAcpClient implements AcpClient {
   private readonly onPidExited?: (pid: number) => void;
   private readonly onStreamActivity?: (event: AgentStreamEvent) => void;
   private readonly onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
+  private readonly runId?: string;
+  private readonly storyId?: string;
+  private readonly stage?: import("../../config/permissions").PipelineStage;
 
   constructor(
     cmdStr: string,
@@ -531,6 +535,9 @@ export class SpawnAcpClient implements AcpClient {
     this.onPidExited = onPidExited;
     this.onStreamActivity = opts?.onStreamActivity;
     this.onWatchdogRegister = opts?.onWatchdogRegister;
+    this.runId = opts?.runId;
+    this.storyId = opts?.storyId;
+    this.stage = opts?.stage;
   }
 
   async start(): Promise<void> {
@@ -593,6 +600,9 @@ export class SpawnAcpClient implements AcpClient {
       onPidExited: this.onPidExited,
       onStreamActivity: this.onStreamActivity,
       onWatchdogRegister: this.onWatchdogRegister,
+      runId: this.runId,
+      storyId: this.storyId,
+      stage: this.stage,
       id: sessionId,
       recordId,
     });
@@ -622,6 +632,9 @@ export class SpawnAcpClient implements AcpClient {
       onPidExited: this.onPidExited,
       onStreamActivity: this.onStreamActivity,
       onWatchdogRegister: this.onWatchdogRegister,
+      runId: this.runId,
+      storyId: this.storyId,
+      stage: this.stage,
       id: sessionId,
       recordId,
     });
