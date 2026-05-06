@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-06T09-03-43-298Z",
+    "feature": "agent-event-watchdog",
+    "startedAt": "2026-05-06T09:03:43.298Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 68467
+  },
+  "progress": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 3.7920850500000007,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-05-06T10:56:03.629Z",
+  "durationMs": 6740331,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "skipped": true,
+      "lastRunAt": "2026-05-06T10:56:03.618Z"
+    }
+  }
+}
