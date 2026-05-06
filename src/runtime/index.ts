@@ -81,6 +81,7 @@ import type { ICostAggregator } from "./cost-aggregator";
 import { DispatchEventBus } from "./dispatch-events";
 import type { IDispatchEventBus } from "./dispatch-events";
 import {
+  attachAgentIdleWatchdog,
   attachAgentStreamLogging,
   attachAuditSubscriber,
   attachCostSubscriber,
@@ -183,6 +184,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const defaultAgent = config.agent?.default ?? "claude";
   const pidRegistry = opts?.pidRegistry ?? new PidRegistry(workdir);
 
+  const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
+
   let agentManager: IAgentManager | undefined;
   const middleware = MiddlewareChain.from([cancellationMiddleware()]);
   const sessionManager = opts?.sessionManager ?? new SessionManager();
@@ -193,6 +196,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       dispatchEvents,
       defaultAgent,
       pidRegistry,
+      watchdogControllerRegistry,
+      onStreamActivity: (event) => agentStreamEvents.emitAgentStream(event),
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {
@@ -217,6 +222,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const offAudit = attachAuditSubscriber(dispatchEvents, promptAuditor, runId);
   const offReviewAudit = attachReviewAuditSubscriber(dispatchEvents, reviewAuditor, runId);
   const offAgentStreamLogging = attachAgentStreamLogging(agentStreamEvents, runId);
+  const offWatchdog = attachAgentIdleWatchdog(agentStreamEvents, watchdogControllerRegistry, config);
 
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
@@ -254,6 +260,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       offAudit();
       offReviewAudit();
       offAgentStreamLogging();
+      offWatchdog();
       const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {

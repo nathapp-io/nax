@@ -31,6 +31,14 @@ export interface AcpSession {
 export interface AcpClientOptions {
   /** Optional stream callback to emit activity events during agent execution. */
   onStreamActivity?: (event: AgentStreamEvent) => void;
+  /**
+   * Called synchronously at the start of each prompt() call with the callId and
+   * a cancel function. Callers use this to register the cancel function in the
+   * idle-watchdog controllerRegistry so the watchdog can cancel stale prompts.
+   * The cancel function calls session.cancelActivePrompt(); callers should wrap it
+   * to set _staleCancelled before calling.
+   */
+  onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
 }
 
 export interface AcpClient {

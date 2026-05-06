@@ -255,11 +255,13 @@ export class AcpSessionHandleImpl implements SessionHandle {
   readonly _modelDef: ModelDef;
   readonly _permissionMode: string;
   /**
-   * Set by the idle watchdog cancel function (via controllerRegistry) before
-   * calling cancelActivePrompt(). When true, sendTurn() classifies the resulting
-   * stopReason=error as fail-stale rather than a hard session error.
+   * Shared mutable reference set by the idle watchdog cancel function before
+   * calling cancelActivePrompt(). When `cancelled` is true, sendTurn() classifies
+   * the resulting stopReason=error as fail-stale rather than a hard session error.
+   * Using an object reference lets the cancel closure (created at openSession time)
+   * write to the same value that sendTurn reads, even though sendTurn runs later.
    */
-  _staleCancelled = false;
+  _staleBox: { cancelled: boolean };
 
   constructor(opts: {
     id: string;
@@ -272,6 +274,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     timeoutSeconds: number;
     modelDef: ModelDef;
     permissionMode: string;
+    staleBox?: { cancelled: boolean };
   }) {
     this.id = opts.id;
     this.agentName = opts.agentName;
@@ -283,5 +286,6 @@ export class AcpSessionHandleImpl implements SessionHandle {
     this._timeoutSeconds = opts.timeoutSeconds;
     this._modelDef = opts.modelDef;
     this._permissionMode = opts.permissionMode;
+    this._staleBox = opts.staleBox ?? { cancelled: false };
   }
 }

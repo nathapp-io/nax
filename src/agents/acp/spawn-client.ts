@@ -114,6 +114,7 @@ export class SpawnAcpSession implements AcpSession {
   private readonly onPidSpawned?: (pid: number) => void;
   private readonly onPidExited?: (pid: number) => void;
   private readonly onStreamActivity?: (event: AgentStreamEvent) => void;
+  private readonly onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
   private readonly runId: string;
   private readonly storyId?: string;
   private readonly stage?: import("../../config/permissions").PipelineStage;
@@ -137,6 +138,7 @@ export class SpawnAcpSession implements AcpSession {
     id?: string;
     recordId?: string;
     onStreamActivity?: (event: AgentStreamEvent) => void;
+    onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
     runId?: string;
     storyId?: string;
     stage?: import("../../config/permissions").PipelineStage;
@@ -152,6 +154,7 @@ export class SpawnAcpSession implements AcpSession {
     this.onPidSpawned = opts.onPidSpawned;
     this.onPidExited = opts.onPidExited;
     this.onStreamActivity = opts.onStreamActivity;
+    this.onWatchdogRegister = opts.onWatchdogRegister;
     this.runId = opts.runId ?? "";
     this.storyId = opts.storyId;
     this.stage = opts.stage;
@@ -161,6 +164,9 @@ export class SpawnAcpSession implements AcpSession {
 
   async prompt(text: string): Promise<AcpSessionResponse> {
     const callId = randomUUID();
+    // Register cancel function before the first await so the watchdog can cancel
+    // this prompt if it goes idle. The caller wraps the cancel fn to set _staleBox.
+    this.onWatchdogRegister?.(callId, () => this.cancelActivePrompt());
     const emit = this.onStreamActivity;
     const now = () => Date.now();
     const baseEvent = {
@@ -494,6 +500,7 @@ export class SpawnAcpClient implements AcpClient {
   private readonly onPidSpawned?: (pid: number) => void;
   private readonly onPidExited?: (pid: number) => void;
   private readonly onStreamActivity?: (event: AgentStreamEvent) => void;
+  private readonly onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
 
   constructor(
     cmdStr: string,
@@ -523,6 +530,7 @@ export class SpawnAcpClient implements AcpClient {
     this.onPidSpawned = onPidSpawned;
     this.onPidExited = onPidExited;
     this.onStreamActivity = opts?.onStreamActivity;
+    this.onWatchdogRegister = opts?.onWatchdogRegister;
   }
 
   async start(): Promise<void> {
@@ -584,6 +592,7 @@ export class SpawnAcpClient implements AcpClient {
       onPidSpawned: this.onPidSpawned,
       onPidExited: this.onPidExited,
       onStreamActivity: this.onStreamActivity,
+      onWatchdogRegister: this.onWatchdogRegister,
       id: sessionId,
       recordId,
     });
@@ -612,6 +621,7 @@ export class SpawnAcpClient implements AcpClient {
       onPidSpawned: this.onPidSpawned,
       onPidExited: this.onPidExited,
       onStreamActivity: this.onStreamActivity,
+      onWatchdogRegister: this.onWatchdogRegister,
       id: sessionId,
       recordId,
     });

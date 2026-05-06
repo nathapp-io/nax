@@ -369,6 +369,23 @@ export interface OpenSessionOpts {
    * Set by SessionManager.openSession when a descriptor is found.
    */
   resume?: boolean;
+  /**
+   * Idle-watchdog controller registry shared between the watchdog subscriber and
+   * the adapter. The adapter registers a per-callId cancel function in this map
+   * so the watchdog can cancel stale prompts and the adapter can classify the
+   * resulting failure as fail-stale (outcome: "fail-stale", category: "availability").
+   * Populated by SessionManager from NaxRuntime.watchdogControllerRegistry.
+   * When absent, stale cancellations fall through as generic session errors.
+   */
+  watchdogControllerRegistry?: Map<string, () => Promise<void>>;
+  /**
+   * Stream activity callback forwarded from NaxRuntime.agentStreamEvents.
+   * The adapter passes this to the underlying AcpClient so prompt-level events
+   * (call_started, message_update, etc.) are emitted on the runtime bus.
+   * Required for the idle watchdog to track calls. When absent, the watchdog
+   * cannot track calls and stale detection is disabled.
+   */
+  onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
 }
 
 /** Options for sendTurn(). */

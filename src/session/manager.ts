@@ -71,6 +71,8 @@ export class SessionManager implements ISessionManager {
   private _dispatchEvents: IDispatchEventBus;
   private _defaultAgent: string;
   private _pidRegistry: PidRegistry | undefined;
+  private _watchdogControllerRegistry: Map<string, () => Promise<void>> | undefined;
+  private _onStreamActivity: ((event: import("../runtime/agent-stream-events").AgentStreamEvent) => void) | undefined;
 
   constructor(opts?: {
     getAdapter?: (name: string) => AgentAdapter | undefined;
@@ -90,12 +92,16 @@ export class SessionManager implements ISessionManager {
     dispatchEvents?: IDispatchEventBus;
     defaultAgent?: string;
     pidRegistry?: PidRegistry;
+    watchdogControllerRegistry?: Map<string, () => Promise<void>>;
+    onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
   }): void {
     if (opts.getAdapter) this._getAdapter = opts.getAdapter;
     if (opts.config) this._config = opts.config;
     if (opts.dispatchEvents) this._dispatchEvents = opts.dispatchEvents;
     if (opts.defaultAgent) this._defaultAgent = opts.defaultAgent;
     if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
+    if (opts.watchdogControllerRegistry) this._watchdogControllerRegistry = opts.watchdogControllerRegistry;
+    if (opts.onStreamActivity) this._onStreamActivity = opts.onStreamActivity;
   }
 
   /**
@@ -391,6 +397,8 @@ export class SessionManager implements ISessionManager {
       onSessionEstablished: opts.onSessionEstablished,
       signal: opts.signal,
       resume,
+      watchdogControllerRegistry: this._watchdogControllerRegistry,
+      onStreamActivity: this._onStreamActivity,
     });
     this._liveHandles.set(name, handle);
 

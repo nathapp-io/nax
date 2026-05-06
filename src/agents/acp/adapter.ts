@@ -332,6 +332,11 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     throwIfAborted(signal, "Run aborted — shutdown in progress");
 
+    // Shared reference: set by the watchdog cancel function so sendTurn() can
+    // classify the resulting stopReason=error as fail-stale.
+    const staleBox = { cancelled: false };
+    const watchdogRegistry = opts.watchdogControllerRegistry;
+
     const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
     const client = _acpAdapterDeps.createClient(
       cmdStr,
@@ -340,6 +345,17 @@ export class AcpAgentAdapter implements AgentAdapter {
       onPidSpawned,
       promptRetries,
       onPidExited,
+      {
+        onStreamActivity: opts.onStreamActivity,
+        onWatchdogRegister: watchdogRegistry
+          ? (callId: string, cancelFn: () => Promise<void>) => {
+              watchdogRegistry.set(callId, async () => {
+                staleBox.cancelled = true;
+                await cancelFn();
+              });
+            }
+          : undefined,
+      },
     );
     let session: import("./adapter-session-types").AcpSession | undefined;
 
@@ -388,6 +404,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         timeoutSeconds,
         modelDef,
         permissionMode: resolvedPermissions.mode,
+        staleBox,
       });
     } catch (error) {
       if (session) {
@@ -554,7 +571,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     if (lastResponse?.stopReason === "error") {
-      if (impl._staleCancelled) {
+      if (impl._staleBox.cancelled) {
         throw new SessionFailureError("idle watchdog cancelled session — no stream activity", {
           category: "availability",
           outcome: "fail-stale",
