@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import os from "node:os";
 import path from "node:path";
-// Direct node:fs/promises is used here because writeProjectIdentity writes to ~/.nax/<key>/
-// which is outside os.tmpdir() — the test/helpers/temp.ts helpers only manage tmpdir paths.
 import { rm, mkdir } from "node:fs/promises";
+import { globalConfigDir } from "../../../src/config/paths";
 import { writeProjectIdentity } from "../../../src/runtime";
 import { validateProjectName, checkInitCollision } from "../../../src/cli/init";
 
@@ -45,7 +43,7 @@ describe("validateProjectName", () => {
 const TEST_KEY = "__nax_test_init_collision__";
 
 describe("checkInitCollision", () => {
-  const identityDir = path.join(os.homedir(), ".nax", TEST_KEY);
+  const identityDir = path.join(globalConfigDir(), TEST_KEY);
 
   beforeEach(async () => {
     await rm(identityDir, { recursive: true, force: true });

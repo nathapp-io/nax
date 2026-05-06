@@ -12,6 +12,7 @@ import { mkdir, readdir, rename } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { validateProjectName } from "../cli/init";
+import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { projectOutputDir, readProjectIdentity, writeProjectIdentity } from "../runtime";
@@ -155,14 +156,14 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
         },
       );
     }
-    const src = path.join(os.homedir(), ".nax", options.reclaim);
+    const src = path.join(globalConfigDir(), options.reclaim);
     if (!existsSync(src)) {
       throw new NaxError(`Nothing to reclaim: ~/.nax/${options.reclaim} does not exist`, "MIGRATE_RECLAIM_NOT_FOUND", {
         stage: "migrate",
         name: options.reclaim,
       });
     }
-    const archiveBase = path.join(os.homedir(), ".nax", "_archive");
+    const archiveBase = path.join(globalConfigDir(), "_archive");
     const archiveDest = path.join(archiveBase, `${options.reclaim}-${Date.now()}`);
     await mkdir(archiveBase, { recursive: true });
     await rename(src, archiveDest);

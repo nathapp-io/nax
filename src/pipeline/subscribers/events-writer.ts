@@ -13,9 +13,9 @@
  */
 
 import { appendFile, mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { getSafeLogger } from "../../logger";
+import { getEventsRootDir } from "../../utils/paths";
 import type { PipelineEventBus } from "../event-bus";
 import type { UnsubscribeFn } from "./hooks";
 
@@ -49,7 +49,7 @@ export function wireEventsWriter(
 ): UnsubscribeFn {
   const logger = getSafeLogger();
   const project = basename(workdir);
-  const eventsDir = join(homedir(), ".nax", "events", project);
+  const eventsDir = join(getEventsRootDir(), project);
   const eventsFile = join(eventsDir, "events.jsonl");
   let dirReady = false;
 

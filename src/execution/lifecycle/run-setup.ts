@@ -15,6 +15,7 @@
 import * as os from "node:os";
 import path from "node:path";
 import type { NaxConfig } from "../../config";
+import { globalConfigDir } from "../../config/paths";
 import { LockAcquisitionError, NaxError } from "../../errors";
 import type { LoadedHooksConfig } from "../../hooks";
 import type { InteractionChain } from "../../interaction";
@@ -328,7 +329,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     });
 
     // Load plugins (before try block so it's accessible in finally)
-    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const globalPluginsDir = path.join(globalConfigDir(), "plugins");
     const projectPluginsDir = path.join(workdir, ".nax", "plugins");
     const configPlugins = config.plugins || [];
     // Build a test-file classifier from resolved patterns so the plugin loader

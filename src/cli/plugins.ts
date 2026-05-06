@@ -4,8 +4,8 @@
  * Lists loaded plugins with their metadata.
  */
 
-import * as os from "node:os";
 import * as path from "node:path";
+import { globalConfigDir } from "../config/paths";
 import type { NaxConfig } from "../config/schema";
 import { loadPlugins } from "../plugins/loader";
 
@@ -22,7 +22,7 @@ export async function pluginsListCommand(
   overrideGlobalPluginsDir?: string,
 ): Promise<void> {
   // Load plugins from all sources
-  const globalPluginsDir = overrideGlobalPluginsDir ?? path.join(os.homedir(), ".nax", "plugins");
+  const globalPluginsDir = overrideGlobalPluginsDir ?? path.join(globalConfigDir(), "plugins");
   const projectPluginsDir = path.join(workdir, ".nax", "plugins");
   const configPlugins = config.plugins || [];
   const registry = await loadPlugins(
