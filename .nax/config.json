@@ -146,5 +146,8 @@
   },
   "acceptance": {
     "model": "fast"
+  },
+  "curator": {
+    "enabled": true
   }
 }
