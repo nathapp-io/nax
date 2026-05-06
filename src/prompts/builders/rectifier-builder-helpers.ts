@@ -19,7 +19,59 @@ import type { ReviewCheckResult } from "../../review/types";
 export const CONTRADICTION_ESCAPE_HATCH = `
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>`;
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has three narrow escape valves. Each requires a
+declaration in your output. Outside these three cases the rule is absolute.
+
+### Exception 1 — Lint-only edit
+
+You MAY edit a test file ONLY when ALL of the following hold:
+- The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
+- Your edit removes or reformats a lint violation without altering any \`expect\`, \`assert\`,
+  \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, or equivalent assertion call, its arguments, its
+  input data, its mock setup, or its \`describe\`/\`it\`/\`test\` block text.
+- If you are uncertain whether your edit is assertion-neutral, do NOT make it — emit
+  \`UNRESOLVED\` instead.
+
+Declare every lint-only test edit with:
+\`\`\`
+TEST_EDIT_REASON: lint_only
+FILE: <test file path>
+FINDING: <lint rule or message verbatim>
+CHANGE: <before line> → <after line>
+\`\`\`
+
+### Exception 2 — PRD-contract mismatch
+
+You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
+call contradicts a literal interface signature stated in this story's description or
+acceptance criteria.
+
+Declare every contract-mismatch edit with:
+\`\`\`
+TEST_EDIT_REASON: prd_contract
+PRD_QUOTE: "<verbatim signature line from the story description or acceptance criteria>"
+FILE: <test file path>
+TEST_BEFORE: <offending call line>
+TEST_AFTER: <corrected call line>
+\`\`\`
+
+Do NOT use this exception to change test logic, assertions, or mock setup — only call
+signatures that directly contradict a quoted PRD interface.
+
+### Exception 3 — Sibling-story lint spillover
+
+When a lint or typecheck error is in a file you did NOT create or modify in this turn,
+do NOT edit that file. Instead declare:
+\`\`\`
+TEST_EDIT_REASON: sibling_scope
+SIBLING_FILE: <file path>
+FINDING: <error summary>
+\`\`\`
+and continue. Sibling-scope failures do not block your story.`;
 
 export function formatCheckErrors(checks: ReviewCheckResult[]): string {
   return checks.map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``).join("\n\n");

@@ -189,7 +189,7 @@ export class RectifierPromptBuilder {
     parts.push(renderPrioritizedFailures(failedChecks));
 
     parts.push(
-      "\nFix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.",
+      "\nFix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior — see the three narrow exceptions appended below. Commit your changes when all checks pass.",
     );
     parts.push(CONTRADICTION_ESCAPE_HATCH);
 
@@ -511,7 +511,7 @@ ${testCommands}
 6. Ensure ALL tests pass before completing.
 
 **IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT modify test files — see the three narrow exceptions in the escape valve section if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.
 - When running tests, run ONLY the failing test files shown above${cmd ? ` — NEVER run \`${cmd}\` without a file filter` : " — never run the full test suite without a file filter"}.
@@ -637,7 +637,7 @@ ${errors}${reasoningSection}${historySection}
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
 
-Do NOT change test files or test behavior.
+Do NOT change test files or test behavior — see the three narrow exceptions appended below.
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
   }
@@ -765,7 +765,7 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
 4. Do not declare done until step 3 shows 0 failures.
 
 **IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT modify test files — see the three narrow exceptions in the escape valve section if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.`);
 
