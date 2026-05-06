@@ -190,6 +190,8 @@ export interface ReviewConfig {
   commands: {
     typecheck?: string;
     lint?: string;
+    /** Scoped lint command template with {{files}} placeholder */
+    lintScoped?: string;
     test?: string;
     build?: string;
     /** Auto-fix lint errors — used by autofix stage when lint fails */

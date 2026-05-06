@@ -319,6 +319,23 @@ describe("mergePackageConfig", () => {
         expect(result.review.commands.typecheck).toBe("bun run type-check");
       });
 
+      test("quality.commands.lintScoped bridges to review.commands.lintScoped", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: {
+            enabled: true,
+            checks: ["lint"],
+            commands: { lint: "bunx turbo lint", lintScoped: "eslint {{files}}" },
+            pluginMode: "per-story",
+          },
+        };
+        const result = mergePackageConfig(root, {
+          quality: { commands: { lintScoped: "biome check {{files}}" } },
+        } as Partial<NaxConfig>);
+
+        expect(result.review.commands.lintScoped).toBe("biome check {{files}}");
+      });
+
       test("explicit review.commands takes precedence over bridged quality.commands", () => {
         const root: NaxConfig = {
           ...makeRoot(),

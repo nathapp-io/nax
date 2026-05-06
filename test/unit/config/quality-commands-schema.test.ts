@@ -52,12 +52,19 @@ describe("quality.commands schema", () => {
     expect(result.quality.commands.formatFix).toBe("bun run format --write");
   });
 
+  test("lintScoped is preserved after schema parse", () => {
+    const input = buildConfigWithCommands({ lintScoped: "biome check {{files}}" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.quality.commands.lintScoped).toBe("biome check {{files}}");
+  });
+
   test("all command fields coexist correctly", () => {
     const input = buildConfigWithCommands({
       test: "bun run test",
       testScoped: "bun test --timeout=60000 {{files}}",
       typecheck: "bun run typecheck",
       lint: "bun run lint",
+      lintScoped: "biome check {{files}}",
       lintFix: "bun run lint --fix",
       formatFix: "bun run format --write",
     });
@@ -66,6 +73,7 @@ describe("quality.commands schema", () => {
     expect(result.quality.commands.testScoped).toBe("bun test --timeout=60000 {{files}}");
     expect(result.quality.commands.typecheck).toBe("bun run typecheck");
     expect(result.quality.commands.lint).toBe("bun run lint");
+    expect(result.quality.commands.lintScoped).toBe("biome check {{files}}");
     expect(result.quality.commands.lintFix).toBe("bun run lint --fix");
     expect(result.quality.commands.formatFix).toBe("bun run format --write");
   });
@@ -109,15 +117,23 @@ describe("review.commands schema — lintFix/formatFix not stripped by Zod", () 
     expect(result.review.commands.formatFix).toBe("bun run format --write");
   });
 
+  test("lintScoped in review.commands is preserved after schema parse", () => {
+    const input = buildConfigWithReviewCommands({ lintScoped: "eslint {{files}}" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.review.commands.lintScoped).toBe("eslint {{files}}");
+  });
+
   test("lintFix and formatFix coexist with standard review commands", () => {
     const input = buildConfigWithReviewCommands({
       lint: "bun run lint",
+      lintScoped: "eslint {{files}}",
       typecheck: "bun run typecheck",
       lintFix: "bun run lint:fix",
       formatFix: "bun run format --write",
     });
     const result = NaxConfigSchema.parse(input);
     expect(result.review.commands.lint).toBe("bun run lint");
+    expect(result.review.commands.lintScoped).toBe("eslint {{files}}");
     expect(result.review.commands.typecheck).toBe("bun run typecheck");
     expect(result.review.commands.lintFix).toBe("bun run lint:fix");
     expect(result.review.commands.formatFix).toBe("bun run format --write");

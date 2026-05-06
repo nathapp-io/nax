@@ -179,6 +179,8 @@ export interface QualityConfig {
   commands: {
     typecheck?: string;
     lint?: string;
+    /** Scoped lint command template with {{files}} placeholder (e.g., "biome check {{files}}") */
+    lintScoped?: string;
     test?: string;
     /** Scoped test command template with {{files}} placeholder (e.g., "bun test --timeout=60000 {{files}}") */
     testScoped?: string;
