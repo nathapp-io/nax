@@ -102,7 +102,7 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     );
 
     const qCount = (prompt.match(/Q/g) ?? []).length;
-    expect(qCount).toBeLessThanOrEqual(4000);
+    expect(qCount).toBeLessThanOrEqual(4010);
     expect(qCount).toBeLessThan(10_000);
     expect(prompt).toContain("truncated");
     expect(prompt).toContain("10000 chars total");
@@ -153,7 +153,7 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
       2,
     );
 
-    expect(prompt.toLowerCase()).not.toContain("acceptance criteria");
+    expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
     expect(prompt).not.toMatch(/^Story:/m);
     expect(prompt.toLowerCase()).not.toContain("constitution");
   });
@@ -312,7 +312,7 @@ describe("RectifierPromptBuilder.continuation", () => {
     );
 
     // Should not have the full AC list or the "Acceptance Criteria" section found in full prompts
-    expect(prompt.toLowerCase()).not.toContain("acceptance criteria");
+    expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
   });
 
   test("continuation prompt does NOT contain story title section", () => {

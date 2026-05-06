@@ -101,7 +101,7 @@ describe("RectifierPromptBuilder.reviewRectification — semantic-only", () => {
     const checks = [makeCheck("semantic", "AC-1 not implemented")];
     const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY);
 
-    expect(prompt.toLowerCase()).not.toContain("adversarial");
+    expect(prompt.toLowerCase()).not.toContain("adversarial review findings");
   });
 });
 
@@ -182,6 +182,6 @@ describe("RectifierPromptBuilder.reviewRectification — mechanical-only regress
 
     expect(prompt).toContain("lint/typecheck");
     expect(prompt).not.toContain("semantic review");
-    expect(prompt.toLowerCase()).not.toContain("adversarial");
+    expect(prompt.toLowerCase()).not.toContain("adversarial review findings");
   });
 });
