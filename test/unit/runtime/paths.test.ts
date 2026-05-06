@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { globalConfigDir } from "../../../src/config/paths";
 import { NaxError } from "../../../src/errors";
 import {
   globalOutputDir,
@@ -24,7 +25,7 @@ describe("projectInputDir", () => {
 describe("projectOutputDir", () => {
   it("defaults to ~/.nax/<projectKey> when no outputDir override", () => {
     const result = projectOutputDir("myproject", undefined);
-    expect(result).toBe(path.join(os.homedir(), ".nax", "myproject"));
+    expect(result).toBe(path.join(globalConfigDir(), "myproject"));
   });
 
   it("uses absolute outputDir override as-is", () => {
@@ -44,13 +45,13 @@ describe("projectOutputDir", () => {
 
 describe("globalOutputDir", () => {
   it("returns ~/.nax/global", () => {
-    expect(globalOutputDir()).toBe(path.join(os.homedir(), ".nax", "global"));
+    expect(globalOutputDir()).toBe(path.join(globalConfigDir(), "global"));
   });
 });
 
 describe("identity I/O", () => {
   const TEST_PROJECT_KEY = "__nax_test_paths_identity__";
-  const identDir = path.join(os.homedir(), ".nax", TEST_PROJECT_KEY);
+  const identDir = path.join(globalConfigDir(), TEST_PROJECT_KEY);
 
   beforeEach(async () => {
     await rm(identDir, { recursive: true, force: true });
@@ -61,9 +62,7 @@ describe("identity I/O", () => {
   });
 
   it("identityPath returns correct path", () => {
-    expect(identityPath(TEST_PROJECT_KEY)).toBe(
-      path.join(os.homedir(), ".nax", TEST_PROJECT_KEY, ".identity"),
-    );
+    expect(identityPath(TEST_PROJECT_KEY)).toBe(path.join(globalConfigDir(), TEST_PROJECT_KEY, ".identity"));
   });
 
   it("readProjectIdentity returns null when file does not exist", async () => {
@@ -120,7 +119,7 @@ describe("curatorRollupPath", () => {
 const TEST_CLAIM_KEY = "__nax_test_claim_identity__";
 
 describe("claimProjectIdentity", () => {
-  const identityDir = path.join(os.homedir(), ".nax", TEST_CLAIM_KEY);
+  const identityDir = path.join(globalConfigDir(), TEST_CLAIM_KEY);
 
   beforeEach(async () => {
     await rm(identityDir, { recursive: true, force: true });

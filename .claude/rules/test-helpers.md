@@ -57,6 +57,17 @@ const mockAgentManager = makeMockAgentManager({
 
 Applies to `test/unit/**/*.test.ts` and `test/integration/**/*.test.ts`. The helpers themselves (`test/helpers/`) are exempt — they are the SSOT.
 
+## Global `.nax` Isolation
+
+Tests must not construct real-home paths like `join(homedir(), ".nax", ...)` except when a test is explicitly verifying the fallback behavior of `globalConfigDir()`.
+
+Use the shared path helpers instead:
+- `globalConfigDir()` for the global nax root
+- `identityPath()` for project identity files
+- `makeTempDir()` / `withTempDir()` for temp workdirs
+
+`test/preload.ts` redirects global nax state into an isolated temp directory, and `scripts/check-no-real-global-nax.ts` enforces this rule.
+
 ## Adding a New Helper
 
 When you find yourself writing the same mock in 3+ test files, add it to `test/helpers/` with a `make*(overrides?)` signature and export it from `test/helpers/index.ts`. Then file an issue noting the new pattern.

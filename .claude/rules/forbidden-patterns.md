@@ -26,6 +26,7 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | Resolving permissions outside `SessionManager.openSession` / `AgentManager.completeAs` | Pass `pipelineStage` upward; resource opener resolves once | ADR-019 §3 |
 | `wrapAdapterAsManager` (production or test imports from `src/agents/utils`) | `createRuntime(config, workdir).agentManager` for production; `fakeAgentManager(adapter)` for tests | ADR-020 §D3 — privatized; all dispatch must flow through the middleware chain |
 | `fakeAgentManager` in `src/` production code | `createRuntime(config, workdir).agentManager` | Test-only helper (see Test-Only Helpers below) |
+| `join(homedir(), ".nax", ...)` / `path.join(os.homedir(), ".nax", ...)` outside `src/config/paths.ts` | `globalConfigDir()`, `getRunsDir()`, `getEventsRootDir()`, runtime path helpers | Hardcoding the real home-scoped `.nax` path bypasses test isolation and caused pollution under `~/.nax/nax-*-test-*`. Enforced by `scripts/check-no-real-global-nax.ts`. |
 | Manual disk-recovery ladder in pipeline stages after `callOp` (reading disk to recover null/empty parse output — Tier-1/2/3 patterns) | Declare `verify`/`recover` on the op | Recovery logic belongs with the op (one place to maintain), not duplicated in every stage that calls it. ADR-020 §D4. |
 | Passing `undefined` (or omitting) `onPidSpawned` when constructing an ACP client / opening a session / building `AgentRunOptions` / `CompleteOptions` | Forward the runtime's callback: `onPidSpawned: ctx.runtime.onPidSpawned` (ops via `callOp`) or `(pid) => pidRegistry.register(pid)` (pipeline stages with direct registry access) | Untracked acpx subprocesses orphan past run teardown — Ctrl+C leaves zombie acpx + agent server processes. Issue #792, commit `e65e78b9`. |
 
@@ -97,6 +98,7 @@ const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
 | Copy-pasted mock setup across files | `test/helpers/` shared factories | DRY; single place to update when interfaces change |
 | Spawning full `nax` process in tests | Mock the relevant module | Prechecks fail in temp dirs; slow; flaky |
 | Real signal sending (`process.kill`) | Mock `process.on()` | Can kill the test runner |
+| Direct real-home `.nax` paths in tests (`join(homedir(), ".nax", ...)`) except explicit path-helper fallback tests | `globalConfigDir()`, `identityPath()`, isolated global dir from `test/preload.ts` | Tests must not write to the developer's actual `~/.nax`. Enforced by `scripts/check-no-real-global-nax.ts`. |
 
 ## Test-File Classification Convention
 

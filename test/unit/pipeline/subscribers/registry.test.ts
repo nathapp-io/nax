@@ -1,9 +1,9 @@
 import { readFile, rm } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
 import { type MetaJson, wireRegistry } from "../../../../src/pipeline/subscribers/registry";
+import { globalConfigDir } from "../../../../src/config/paths";
 import { waitForFile } from "../../../helpers/fs";
 
 describe("wireRegistry", () => {
@@ -20,8 +20,8 @@ describe("wireRegistry", () => {
     feature = "auth-system";
     runId = `run-${Date.now()}`;
     const project = basename(workdir);
-    outputDir = join(homedir(), ".nax", project);
-    runDir = join(homedir(), ".nax", "runs", `${project}-${feature}-${runId}`);
+    outputDir = join(globalConfigDir(), project);
+    runDir = join(globalConfigDir(), "runs", `${project}-${feature}-${runId}`);
     metaFile = join(runDir, "meta.json");
   });
 

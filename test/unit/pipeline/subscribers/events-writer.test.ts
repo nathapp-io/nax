@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { globalConfigDir } from "../../../../src/config/paths";
 import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
 import { wireEventsWriter } from "../../../../src/pipeline/subscribers/events-writer";
 import { waitForFile } from "../../../../test/helpers/fs";
@@ -18,13 +18,13 @@ describe("wireEventsWriter", () => {
     // Use a temp workdir with a known basename so we can locate the events file
     workdir = makeTempDir("nax-evtest-");
     const project = workdir.split("/").pop()!;
-    eventsFile = join(process.env.HOME ?? tmpdir(), ".nax", "events", project, "events.jsonl");
+    eventsFile = join(globalConfigDir(), "events", project, "events.jsonl");
   });
 
   afterEach(async () => {
-    // Clean up the events file written under ~/.nax/events/<project>/
+    // Clean up the events file written under the isolated global test dir
     const project = workdir.split("/").pop()!;
-    const dir = join(process.env.HOME ?? tmpdir(), ".nax", "events", project);
+    const dir = join(globalConfigDir(), "events", project);
     await rm(dir, { recursive: true, force: true });
     mock.restore();
   });

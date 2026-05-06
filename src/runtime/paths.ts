@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 
 export interface ProjectIdentity {
@@ -16,7 +17,7 @@ export function projectInputDir(workdir: string): string {
 
 export function projectOutputDir(projectKey: string, outputDirOverride: string | undefined): string {
   if (!outputDirOverride) {
-    return path.join(os.homedir(), ".nax", projectKey);
+    return path.join(globalConfigDir(), projectKey);
   }
   if (outputDirOverride.startsWith("~/")) {
     return path.join(os.homedir(), outputDirOverride.slice(2));
@@ -32,11 +33,11 @@ export function projectOutputDir(projectKey: string, outputDirOverride: string |
 }
 
 export function globalOutputDir(): string {
-  return path.join(os.homedir(), ".nax", "global");
+  return path.join(globalConfigDir(), "global");
 }
 
 export function identityPath(projectKey: string): string {
-  return path.join(os.homedir(), ".nax", projectKey, ".identity");
+  return path.join(globalConfigDir(), projectKey, ".identity");
 }
 
 export async function readProjectIdentity(projectKey: string): Promise<ProjectIdentity | null> {

@@ -12,9 +12,18 @@ import { globalConfigDir, projectConfigDir } from "../../../src/config/paths";
 
 describe("config/paths", () => {
   describe("globalConfigDir", () => {
-    test("returns ~/.nax directory", () => {
+    test("returns override when NAX_GLOBAL_CONFIG_DIR is set", () => {
+      expect(globalConfigDir()).toBe(process.env.NAX_GLOBAL_CONFIG_DIR);
+    });
+
+    test("returns ~/.nax directory when override is absent", () => {
+      const original = process.env.NAX_GLOBAL_CONFIG_DIR;
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+
       const expected = join(homedir(), ".nax");
       expect(globalConfigDir()).toBe(expected);
+
+      process.env.NAX_GLOBAL_CONFIG_DIR = original;
     });
 
     test("returns absolute path", () => {

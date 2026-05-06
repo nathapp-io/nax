@@ -12,9 +12,9 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { getSafeLogger } from "../../logger";
+import { getRunsDir } from "../../utils/paths";
 import type { PipelineEventBus } from "../event-bus";
 import type { UnsubscribeFn } from "./hooks";
 
@@ -50,7 +50,7 @@ export function wireRegistry(
 ): UnsubscribeFn {
   const logger = getSafeLogger();
   const project = basename(workdir);
-  const runDir = join(homedir(), ".nax", "runs", `${project}-${feature}-${runId}`);
+  const runDir = join(getRunsDir(), `${project}-${feature}-${runId}`);
   const metaFile = join(runDir, "meta.json");
 
   const unsub = bus.on("run:started", (_ev) => {
