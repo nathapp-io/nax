@@ -139,7 +139,9 @@ export function attachAgentIdleWatchdog(
   const idleTimeoutMs = (watchdogConfig.idleTimeoutSeconds ?? 30) * 1000;
   const graceMs = (watchdogConfig.cancelGraceSeconds ?? 5) * 1000;
   const maxRetryAttempts = watchdogConfig.maxRetryAttempts ?? 3;
-  const activityKinds = watchdogConfig.activityKinds ?? ["message_update", "thinking_update", "usage_update"];
+  const activityKinds = new Set<string>(
+    watchdogConfig.activityKinds ?? ["message_update", "thinking_update", "usage_update"],
+  );
   // Poll at 1/4 of the idle timeout so detection latency is at most idleTimeout * 5/4
   // rather than up to 2× idleTimeout when the tick interval equals idleTimeoutMs.
   const tickIntervalMs = Math.max(1, Math.ceil(idleTimeoutMs / 4));
@@ -194,7 +196,7 @@ export function attachAgentIdleWatchdog(
       }
       case "agent.message_update": {
         const state = activeStates.get(event.callId);
-        if (state && (activityKinds as readonly string[]).includes("message_update")) {
+        if (state && activityKinds.has("message_update")) {
           state.messageUpdates++;
           resetActivity(state, event.timestamp);
         }
@@ -202,7 +204,7 @@ export function attachAgentIdleWatchdog(
       }
       case "agent.thinking_update": {
         const state = activeStates.get(event.callId);
-        if (state && (activityKinds as readonly string[]).includes("thinking_update")) {
+        if (state && activityKinds.has("thinking_update")) {
           state.thinkingUpdates++;
           resetActivity(state, event.timestamp);
         }
@@ -210,7 +212,7 @@ export function attachAgentIdleWatchdog(
       }
       case "agent.usage_update": {
         const state = activeStates.get(event.callId);
-        if (state && (activityKinds as readonly string[]).includes("usage_update")) {
+        if (state && activityKinds.has("usage_update")) {
           state.usageUpdates++;
           resetActivity(state, event.timestamp);
         }

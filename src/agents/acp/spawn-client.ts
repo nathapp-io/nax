@@ -114,11 +114,18 @@ export class SpawnAcpSession implements AcpSession {
   private readonly onPidSpawned?: (pid: number) => void;
   private readonly onPidExited?: (pid: number) => void;
   private readonly onStreamActivity?: (event: AgentStreamEvent) => void;
-  private readonly onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
+  private readonly onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
   private readonly runId: string;
   private readonly storyId?: string;
   private readonly stage?: import("../../config/permissions").PipelineStage;
   private activeProc: { pid: number; kill(signal?: number): void } | null = null;
+  /**
+   * Transport fact: `cancelActivePrompt()` was invoked during the in-flight
+   * prompt(). The resulting AcpSessionResponse is stamped with `cancelled: true`
+   * so the wiring layer (above the adapter) can classify the failure.
+   * Cleared at the start of each prompt() invocation.
+   */
+  private _externallyCancelled = false;
   /** Volatile Claude Code session ID (acpxSessionId) — updated on reconnect. */
   readonly id?: string;
   /** Stable record ID (acpxRecordId) — assigned at creation, never changes. */
@@ -138,7 +145,7 @@ export class SpawnAcpSession implements AcpSession {
     id?: string;
     recordId?: string;
     onStreamActivity?: (event: AgentStreamEvent) => void;
-    onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
+    onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
     runId?: string;
     storyId?: string;
     stage?: import("../../config/permissions").PipelineStage;
@@ -154,7 +161,7 @@ export class SpawnAcpSession implements AcpSession {
     this.onPidSpawned = opts.onPidSpawned;
     this.onPidExited = opts.onPidExited;
     this.onStreamActivity = opts.onStreamActivity;
-    this.onWatchdogRegister = opts.onWatchdogRegister;
+    this.onActiveCall = opts.onActiveCall;
     this.runId = opts.runId ?? "";
     this.storyId = opts.storyId;
     this.stage = opts.stage;
@@ -166,6 +173,9 @@ export class SpawnAcpSession implements AcpSession {
     const callId = randomUUID();
     const emit = this.onStreamActivity;
     const now = () => Date.now();
+    // Each prompt() starts with a fresh cancellation state — a stale flag from
+    // a prior cancelled prompt must not leak into the next call.
+    this._externallyCancelled = false;
     const baseEvent = {
       callId,
       runId: this.runId,
@@ -223,7 +233,7 @@ export class SpawnAcpSession implements AcpSession {
 
     // Register the watchdog cancel function only after spawn succeeds and we have a live PID.
     // Registering before spawn would leave a stale registry entry if spawn throws (#2).
-    this.onWatchdogRegister?.(callId, () => this.cancelActivePrompt());
+    this.onActiveCall?.(callId, () => this.cancelActivePrompt());
 
     // AC5/AC6: Emit call_started after spawn succeeds (PID obtained), before process_update
     emit?.({
@@ -338,12 +348,14 @@ export class SpawnAcpSession implements AcpSession {
         // AC8: Emit call_ended on non-zero exit path
         callEndedEmitted = true;
         emit?.({ ...baseEvent, kind: "agent.call_ended", status: "error", exitCode, timestamp: now() });
-        return {
+        const errResponse: AcpSessionResponse = {
           messages: [{ role: "assistant", content: errorContent }],
           stopReason: "error",
           retryable: parsedOnError.retryable,
           exitCode,
         };
+        if (this._externallyCancelled) errResponse.cancelled = true;
+        return errResponse;
       }
 
       try {
@@ -426,6 +438,12 @@ export class SpawnAcpSession implements AcpSession {
   }
 
   async cancelActivePrompt(): Promise<void> {
+    // Mark the in-flight prompt as externally cancelled so the resulting
+    // AcpSessionResponse is stamped with `cancelled: true`. The wiring layer
+    // above the adapter classifies _why_ (e.g. fail-stale when the watchdog
+    // triggered the cancel).
+    this._externallyCancelled = true;
+
     // Kill in-flight prompt process directly (faster than acpx cancel)
     if (this.activeProc) {
       try {
@@ -501,7 +519,7 @@ export class SpawnAcpClient implements AcpClient {
   private readonly onPidSpawned?: (pid: number) => void;
   private readonly onPidExited?: (pid: number) => void;
   private readonly onStreamActivity?: (event: AgentStreamEvent) => void;
-  private readonly onWatchdogRegister?: (callId: string, cancel: () => Promise<void>) => void;
+  private readonly onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
   private readonly runId?: string;
   private readonly storyId?: string;
   private readonly stage?: import("../../config/permissions").PipelineStage;
@@ -534,7 +552,7 @@ export class SpawnAcpClient implements AcpClient {
     this.onPidSpawned = onPidSpawned;
     this.onPidExited = onPidExited;
     this.onStreamActivity = opts?.onStreamActivity;
-    this.onWatchdogRegister = opts?.onWatchdogRegister;
+    this.onActiveCall = opts?.onActiveCall;
     this.runId = opts?.runId;
     this.storyId = opts?.storyId;
     this.stage = opts?.stage;
@@ -599,7 +617,7 @@ export class SpawnAcpClient implements AcpClient {
       onPidSpawned: this.onPidSpawned,
       onPidExited: this.onPidExited,
       onStreamActivity: this.onStreamActivity,
-      onWatchdogRegister: this.onWatchdogRegister,
+      onActiveCall: this.onActiveCall,
       runId: this.runId,
       storyId: this.storyId,
       stage: this.stage,
@@ -631,7 +649,7 @@ export class SpawnAcpClient implements AcpClient {
       onPidSpawned: this.onPidSpawned,
       onPidExited: this.onPidExited,
       onStreamActivity: this.onStreamActivity,
-      onWatchdogRegister: this.onWatchdogRegister,
+      onActiveCall: this.onActiveCall,
       runId: this.runId,
       storyId: this.storyId,
       stage: this.stage,

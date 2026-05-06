@@ -27,7 +27,7 @@ import type {
   SessionHandle,
   TurnResult,
 } from "../types";
-import { CompleteError, SessionFailureError } from "../types";
+import { CompleteError, SessionTurnError } from "../types";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
 import type { AgentRegistryEntry } from "./types";
 import type { SessionTokenUsage } from "./wire-types";
@@ -149,11 +149,6 @@ export class AcpAgentAdapter implements AgentAdapter {
     const permissionMode = _options.resolvedPermissions.mode;
     const workdir = _options.workdir;
 
-    // Shared reference: set by the watchdog cancel function so complete() can
-    // classify the resulting stopReason=error as fail-stale.
-    const staleBox = { cancelled: false };
-    const watchdogRegistry = _options.watchdogControllerRegistry;
-
     // Attempt one call with the given agent; throws on any error
     const tryOneAgent = async (agentName: string): Promise<CompleteResult> => {
       const cmdStr = `acpx --model ${_options.modelDef.model} ${agentName}`;
@@ -167,14 +162,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         _options.onPidExited,
         {
           onStreamActivity: _options.onStreamActivity,
-          onWatchdogRegister: watchdogRegistry
-            ? (callId: string, cancelFn: () => Promise<void>) => {
-                watchdogRegistry.set(callId, async () => {
-                  staleBox.cancelled = true;
-                  await cancelFn();
-                });
-              }
-            : undefined,
+          onActiveCall: _options.onActiveCall,
         },
       );
       await client.start();
@@ -200,17 +188,17 @@ export class AcpAgentAdapter implements AgentAdapter {
         }
 
         if (response.stopReason === "error") {
-          if (staleBox.cancelled) {
+          if (response.cancelled) {
+            // Transport-level fact: an external party (e.g. the idle watchdog)
+            // invoked cancelActivePrompt() during this call. The adapter does
+            // not classify _why_ — the wiring layer (AgentManager / consumer
+            // of CompleteResult) maps `cancelled: true` to a policy outcome
+            // such as `fail-stale`.
             return {
               output: "",
               tokenUsage: { inputTokens: 0, outputTokens: 0 },
               estimatedCostUsd: 0,
-              adapterFailure: {
-                category: "availability",
-                outcome: "fail-stale",
-                retriable: true,
-                message: "idle watchdog cancelled complete() — no stream activity",
-              },
+              cancelled: true,
             };
           }
           throw new CompleteError("complete() failed: stop reason is error");
@@ -361,11 +349,6 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     throwIfAborted(signal, "Run aborted — shutdown in progress");
 
-    // Shared reference: set by the watchdog cancel function so sendTurn() can
-    // classify the resulting stopReason=error as fail-stale.
-    const staleBox = { cancelled: false };
-    const watchdogRegistry = opts.watchdogControllerRegistry;
-
     const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
     const client = _acpAdapterDeps.createClient(
       cmdStr,
@@ -376,14 +359,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       onPidExited,
       {
         onStreamActivity: opts.onStreamActivity,
-        onWatchdogRegister: watchdogRegistry
-          ? (callId: string, cancelFn: () => Promise<void>) => {
-              watchdogRegistry.set(callId, async () => {
-                staleBox.cancelled = true;
-                await cancelFn();
-              });
-            }
-          : undefined,
+        onActiveCall: opts.onActiveCall,
       },
     );
     let session: import("./adapter-session-types").AcpSession | undefined;
@@ -433,7 +409,6 @@ export class AcpAgentAdapter implements AgentAdapter {
         timeoutSeconds,
         modelDef,
         permissionMode: resolvedPermissions.mode,
-        staleBox,
       });
     } catch (error) {
       if (session) {
@@ -600,15 +575,15 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     if (lastResponse?.stopReason === "error") {
-      if (impl._staleBox.cancelled) {
-        throw new SessionFailureError("idle watchdog cancelled session — no stream activity", {
-          category: "availability",
-          outcome: "fail-stale",
-          retriable: true,
-          message: "idle watchdog cancelled session — no stream activity",
-        });
-      }
-      throw new Error("Agent session ended with stop reason: error");
+      // Surface the transport fact (`cancelled`) without classifying _why_.
+      // SessionManager catches SessionTurnError and maps `cancelled: true`
+      // to the `fail-stale` policy outcome.
+      throw new SessionTurnError(
+        lastResponse.cancelled
+          ? "Agent session ended with stop reason: error (externally cancelled)"
+          : "Agent session ended with stop reason: error",
+        lastResponse.cancelled === true,
+      );
     }
 
     const output = extractOutput(lastResponse);

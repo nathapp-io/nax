@@ -1,13 +1,22 @@
 /**
- * Integration tests for idle watchdog stale cancellation behavior.
+ * Integration tests for idle watchdog stale cancellation at the adapter boundary.
  *
  * These tests exercise the real AcpAgentAdapter + attachAgentIdleWatchdog path
  * using a mock ACP client (via _acpAdapterDeps.createClient injection).
  *
- * AC9: Hanging prompt (no stream activity) → fail-stale before wall-clock timeout
+ * Architectural split (post-issue-939 refactor):
+ * - **Adapter** is a transport primitive: when the watchdog invokes its cancel
+ *   hook, the adapter returns `CompleteResult { cancelled: true }` with no
+ *   `adapterFailure`. It does NOT name a policy outcome.
+ * - **Wiring layer** (SessionManager / AgentManager) maps `cancelled: true` to
+ *   the `fail-stale` AdapterFailure. End-to-end fail-stale assertions live in
+ *   the SessionManager test suite.
+ *
+ * These tests therefore verify the adapter's transport contract:
+ * AC9:  Hanging prompt → adapter returns cancelled:true before wall-clock timeout
  * AC10: Periodic agent_thought_chunk events → watchdog does NOT cancel
  * AC11: Periodic usage_update events → watchdog does NOT cancel
- * AC7:  Idle watchdog failure is distinguishable from wall-clock timeout behavior
+ * AC7:  Idle-watchdog cancellation is distinguishable from wall-clock timeout
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -59,7 +68,12 @@ function makeCompleteOptions(
     workdir: "/tmp/test",
     timeoutMs,
     storyId: "us-test",
-    watchdogControllerRegistry: registry,
+    // Wiring-layer responsibility: populate the watchdog registry from the
+    // adapter's onActiveCall callback. The adapter has no knowledge of the
+    // registry — it just hands out (callId, cancel) pairs as calls start.
+    onActiveCall: (callId: string, cancel: () => Promise<void>) => {
+      registry.set(callId, cancel);
+    },
     onStreamActivity,
   };
 }
@@ -73,11 +87,12 @@ const BASE_STREAM_EVENT = {
 /**
  * Mock client whose session.prompt() hangs until the watchdog cancel fires.
  *
- * When the adapter calls opts.onWatchdogRegister(callId, cancelFn), the adapter
- * wraps cancelFn to set staleBox.cancelled=true before calling it. The watchdog
- * later calls registry.get(callId)() which triggers the whole chain, causing
- * session.prompt() to resolve with stopReason="error" and the adapter to return
- * a fail-stale AdapterFailure.
+ * Adapter calls `opts.onActiveCall(callId, cancelFn)` — the test plumbing
+ * registers `cancelFn` in the watchdog registry. When the watchdog times out,
+ * it invokes `registry.get(callId)()` which resolves session.prompt() with
+ * `stopReason: "error"` and `cancelled: true`. The adapter forwards
+ * `cancelled` on its CompleteResult; the wiring layer (not exercised here)
+ * is responsible for mapping that to fail-stale.
  */
 function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
   const callId = `hang-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -85,9 +100,14 @@ function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
 
   const session: AcpSession = {
     async prompt(): Promise<AcpSessionResponse> {
-      // Register cancel function — adapter wraps this to set staleBox.cancelled
-      opts?.onWatchdogRegister?.(callId, async () => {
-        resolve?.({ messages: [{ role: "assistant", content: "" }], stopReason: "error" });
+      // Watchdog cancel resolves prompt() with the typed cancelReason so the
+      // adapter can classify the failure as fail-stale.
+      opts?.onActiveCall?.(callId, async () => {
+        resolve?.({
+          messages: [{ role: "assistant", content: "" }],
+          stopReason: "error",
+          cancelled: true,
+        });
         resolve = null;
       });
 
@@ -108,7 +128,11 @@ function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
     },
     async close() {},
     async cancelActivePrompt() {
-      resolve?.({ messages: [{ role: "assistant", content: "" }], stopReason: "error" });
+      resolve?.({
+        messages: [{ role: "assistant", content: "" }],
+        stopReason: "error",
+        cancelled: true,
+      });
       resolve = null;
     },
   };
@@ -138,7 +162,7 @@ function makeActiveSessionMockClient(
 
   const session: AcpSession = {
     async prompt(): Promise<AcpSessionResponse> {
-      opts?.onWatchdogRegister?.(callId, async () => {
+      opts?.onActiveCall?.(callId, async () => {
         // Not expected to fire in normal operation tests
       });
 
@@ -203,8 +227,9 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     _acpAdapterDeps.createClient = origCreateClient;
   });
 
-  // AC9: Hanging prompt with no stream activity triggers fail-stale before wall-clock timeout
-  test("hanging prompt with no stream activity triggers fail-stale before wall-clock timeout", async () => {
+  // AC9: Hanging prompt with no stream activity → adapter surfaces cancelled:true
+  // (not a fail-stale AdapterFailure — that classification lives in the wiring layer).
+  test("hanging prompt with no stream activity surfaces cancelled:true before wall-clock timeout", async () => {
     const IDLE_TIMEOUT_MS = 80;
     const WALL_CLOCK_TIMEOUT_MS = 5000; // much longer — must not interfere
 
@@ -222,13 +247,10 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
         ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), WALL_CLOCK_TIMEOUT_MS),
       });
 
-      // Adapter must return a structured fail-stale AdapterFailure, not throw
-      expect(result.adapterFailure).toBeDefined();
-      expect(result.adapterFailure?.outcome).toBe("fail-stale");
-      expect(result.adapterFailure?.category).toBe("availability");
-      expect(result.adapterFailure?.retriable).toBe(true);
-      // Message must reference idle or watchdog to distinguish from wall-clock timeout
-      expect(result.adapterFailure?.message).toMatch(/idle|watchdog/i);
+      // Transport contract: external cancel surfaces as `cancelled: true` with
+      // no policy-named adapterFailure. The wiring layer maps cancelled → fail-stale.
+      expect(result.cancelled).toBe(true);
+      expect(result.adapterFailure).toBeUndefined();
     } finally {
       detach();
     }
@@ -297,11 +319,11 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     }
   });
 
-  // AC7: Idle watchdog failure is distinguishable from wall-clock timeout behavior.
-  // Idle timeout → AdapterFailure{outcome:"fail-stale"} returned from complete().
-  // Wall-clock timeout → throws CompleteError (not an AdapterFailure).
-  // The spec never produces a "fail-timeout" AdapterFailure for wall-clock timeout.
-  test("idle watchdog failure is distinguishable from wall-clock timeout: fail-stale vs thrown error", async () => {
+  // AC7: Idle watchdog cancellation is distinguishable from wall-clock timeout.
+  // Idle timeout → CompleteResult { cancelled: true } (no adapterFailure).
+  // Wall-clock timeout → throws CompleteError. The wiring layer (not exercised
+  // here) maps cancelled:true → fail-stale; nothing maps wall-clock to fail-*.
+  test("idle watchdog cancellation is distinguishable from wall-clock timeout", async () => {
     const IDLE_TIMEOUT_MS = 80;
     const eventBus = new AgentStreamEventBus();
     const registry = new Map<string, () => Promise<void>>();
@@ -317,14 +339,12 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
         ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), 5000),
       });
 
-      // Idle watchdog → structured AdapterFailure (caller can distinguish and retry)
-      expect(result.adapterFailure?.outcome).toBe("fail-stale");
-      expect(result.adapterFailure?.category).toBe("availability");
-      // Message references idle/watchdog — NOT wall-clock — so callers and logs can distinguish
-      expect(result.adapterFailure?.message).toMatch(/idle|watchdog/i);
-      expect(result.adapterFailure?.message).not.toMatch(/wall-clock/i);
-      // fail-stale is retriable; wall-clock timeout is a permanent termination
-      expect(result.adapterFailure?.retriable).toBe(true);
+      // Idle watchdog → structured cancelled signal (no adapterFailure here)
+      expect(result.cancelled).toBe(true);
+      expect(result.adapterFailure).toBeUndefined();
+      // Output is empty on cancelled return — caller cannot mistake it for
+      // a successful completion.
+      expect(result.output).toBe("");
     } finally {
       detach();
     }
@@ -351,7 +371,7 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
       const elapsedMs = Date.now() - startMs;
 
       // Idle watchdog must have fired — not the wall-clock timeout
-      expect(result.adapterFailure?.outcome).toBe("fail-stale");
+      expect(result.cancelled).toBe(true);
       // Must resolve well before the wall-clock timeout
       expect(elapsedMs).toBeLessThan(WALL_CLOCK_TIMEOUT_MS / 2);
     } finally {

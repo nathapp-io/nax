@@ -198,6 +198,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       pidRegistry,
       watchdogControllerRegistry,
       onStreamActivity: (event) => agentStreamEvents.emitAgentStream(event),
+      agentStreamEvents,
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {

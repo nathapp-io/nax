@@ -77,11 +77,11 @@ describe("AgentConfigSchema", () => {
         idleWatchdog: {},
       },
     });
-    // When provided as an empty object, defaults should be applied
-    expect(result.agent?.idleWatchdog?.enabled).toBe(false);
-    expect(result.agent?.idleWatchdog?.mode).toBe("off");
-    expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(30);
-    expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(5);
+    // When provided as an empty object, FEAT-016 §7 spec defaults apply.
+    expect(result.agent?.idleWatchdog?.enabled).toBe(true);
+    expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
+    expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(900);
+    expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(10);
     expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(3);
     expect(result.agent?.idleWatchdog?.activityKinds).toEqual(["message_update", "thinking_update", "usage_update"]);
   });

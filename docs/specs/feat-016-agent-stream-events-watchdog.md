@@ -162,27 +162,30 @@ The watchdog must be configurable. For the first release, use one global idle
 timeout to keep the policy simple and predictable. More granular overrides can
 be added later if real run data shows they are needed.
 
-Add ACP watchdog config:
+The watchdog config lives at `agent.idleWatchdog` (top-level under `agent`,
+not nested under `agent.acp`). The watchdog operates on the protocol-agnostic
+`AgentStreamEvent` channel, so it does not belong under any single protocol
+namespace.
 
 ```jsonc
 {
   "agent": {
     "acp": {
-      "promptRetries": 2,
-      "idleWatchdog": {
-        "enabled": true,
-        "mode": "warn-then-cancel",
-        "idleTimeoutSeconds": 900,
-        "activityKinds": ["message_update", "thinking_update", "usage_update"],
-        "cancelGraceSeconds": 10,
-        "maxRetryAttempts": 3
-      }
+      "promptRetries": 2
+    },
+    "idleWatchdog": {
+      "enabled": true,
+      "mode": "warn-then-cancel",
+      "idleTimeoutSeconds": 900,
+      "activityKinds": ["message_update", "thinking_update", "usage_update"],
+      "cancelGraceSeconds": 10,
+      "maxRetryAttempts": 3
     }
   }
 }
 ```
 
-Suggested defaults:
+Defaults:
 
 - `enabled: true`
 - `mode: "warn-then-cancel"`
@@ -272,8 +275,10 @@ Tasks:
   - `stage`
   - `model`
   - `timeoutSeconds`
-- Emit `agent.call_started` before spawning `acpx`.
-- Emit `agent.process_update { status: "spawned" }` after PID registration.
+- Emit `agent.call_started` after spawn succeeds and the PID is registered, then
+  emit `agent.process_update { status: "spawned" }`. Emitting after spawn keeps
+  `call_started`/`call_ended` paired exactly once: a synchronous spawn failure
+  emits a single `call_ended { status: "error" }` with no orphan `call_started`.
 - Update `parseAcpxJsonLine()` so it returns activity metadata for the current line while still updating parse state:
   - `agent_message_chunk` → `agent.message_update`
   - `agent_thought_chunk` → `agent.thinking_update`

@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { NO_OP_INTERACTION_HANDLER } from "../../../src/agents";
-import type { SendTurnOpts, SessionHandle, TurnResult } from "../../../src/agents/types";
+import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "../../../src/agents/types";
+import { SessionFailureError, SessionTurnError } from "../../../src/agents/types";
+import { AgentStreamEventBus } from "../../../src/runtime/agent-stream-events";
 import { SessionManager } from "../../../src/session/manager";
 import type { OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";
 import { makeAgentAdapter } from "../../helpers/mock-agent-adapter";
@@ -10,6 +12,7 @@ const WORKDIR = "/tmp/nax-phase-b-test";
 const MOCK_TURN: TurnResult = {
   output: "hello world",
   tokenUsage: { inputTokens: 10, outputTokens: 5 },
+  estimatedCostUsd: 0,
   internalRoundTrips: 1,
 };
 
@@ -127,6 +130,103 @@ describe("sendPrompt()", () => {
     await expect(sm.sendPrompt(handle, "after close")).rejects.toMatchObject({
       code: "SESSION_TERMINAL_STATE",
     });
+  });
+
+  test("rewraps SessionTurnError(cancelled=true) as fail-stale when watchdog triggered the cancel", async () => {
+    // The adapter is a transport primitive — it surfaces cancelled:true via
+    // SessionTurnError. SessionManager owns the watchdog policy: when its own
+    // onActiveCall callback was invoked (i.e. _it_ triggered the cancel), it
+    // maps the throw to a SessionFailureError with outcome:"fail-stale".
+    let capturedActiveCall: ((callId: string, cancel: () => Promise<void>) => void) | undefined;
+    const registry = new Map<string, () => Promise<void>>();
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedActiveCall = opts.onActiveCall;
+        return { id: name, agentName: "claude" } as SessionHandle;
+      }),
+      sendTurn: mock(async () => {
+        // 1. The adapter publishes its in-flight call via onActiveCall —
+        //    SessionManager's wrapper registers a wrapped cancel in the registry.
+        capturedActiveCall?.("call-1", async () => {});
+        // 2. Simulate the watchdog firing: invoke the registered cancel. The
+        //    wrapper records "call-1" in SessionManager's bookkeeping.
+        await registry.get("call-1")?.();
+        // 3. The adapter then throws cancelled:true.
+        throw new SessionTurnError("Agent session ended with stop reason: error (externally cancelled)", true);
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry });
+    const handle = await sm.openSession("nax-stale-test", makeOpenRequest());
+
+    let caught: unknown;
+    try {
+      await sm.sendPrompt(handle, "test");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SessionFailureError);
+    expect((caught as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
+    expect((caught as SessionFailureError).adapterFailure.category).toBe("availability");
+    expect((caught as SessionFailureError).adapterFailure.retriable).toBe(true);
+  });
+
+  test("does not rewrap SessionTurnError(cancelled=true) when watchdog did not trigger the cancel", async () => {
+    // If the adapter reports cancelled:true but SessionManager's bookkeeping
+    // shows _it_ never invoked the cancel (e.g. an unrelated process kill),
+    // pass the error through — do not invent a fail-stale outcome.
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
+      sendTurn: mock(async () => {
+        throw new SessionTurnError("Agent session ended with stop reason: error (externally cancelled)", true);
+      }),
+    });
+
+    const registry = new Map<string, () => Promise<void>>();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry });
+    const handle = await sm.openSession("nax-passthrough-test", makeOpenRequest());
+
+    let caught: unknown;
+    try {
+      await sm.sendPrompt(handle, "test");
+    } catch (err) {
+      caught = err;
+    }
+    // No fail-stale rewrap — original SessionTurnError flows through.
+    expect(caught).toBeInstanceOf(SessionTurnError);
+    expect(caught).not.toBeInstanceOf(SessionFailureError);
+  });
+
+  test("agent.call_ended event drains watchdog registry and bookkeeping", async () => {
+    // Standardised cleanup: SessionManager subscribes once to the stream bus
+    // and depopulates both the controller registry and its cancelled-call
+    // bookkeeping when agent.call_ended fires.
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
+      sendTurn: mock(async () => MOCK_TURN),
+    });
+
+    const registry = new Map<string, () => Promise<void>>();
+    const bus = new AgentStreamEventBus();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry, agentStreamEvents: bus });
+
+    registry.set("call-x", async () => {});
+    expect(registry.size).toBe(1);
+
+    bus.emitAgentStream({
+      kind: "agent.call_ended",
+      callId: "call-x",
+      runId: "r-1",
+      agentName: "claude",
+      sessionName: "nax-test",
+      status: "success",
+      timestamp: Date.now(),
+    });
+
+    expect(registry.size).toBe(0);
   });
 
   test("forwards maxTurns to adapter.sendTurn", async () => {

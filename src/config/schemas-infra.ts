@@ -133,13 +133,13 @@ const AgentFallbackConfigSchema = z.object({
 
 const AgentIdleWatchdogConfigSchema = z
   .object({
-    enabled: z.boolean().default(false),
-    mode: z.enum(["off", "observe", "warn-then-cancel", "cancel"]).default("off"),
-    idleTimeoutSeconds: z.number().nonnegative().default(30),
+    enabled: z.boolean().default(true),
+    mode: z.enum(["off", "observe", "warn-then-cancel", "cancel"]).default("warn-then-cancel"),
+    idleTimeoutSeconds: z.number().nonnegative().default(900),
     activityKinds: z
       .array(z.enum(["message_update", "thinking_update", "usage_update"]))
       .default(["message_update", "thinking_update", "usage_update"]),
-    cancelGraceSeconds: z.number().nonnegative().default(5),
+    cancelGraceSeconds: z.number().nonnegative().default(10),
     maxRetryAttempts: z.number().int().nonnegative().default(3),
   })
   .refine((config) => config.mode === "off" || config.idleTimeoutSeconds > 0, {
