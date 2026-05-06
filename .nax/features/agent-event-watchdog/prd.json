@@ -3,7 +3,7 @@
   "feature": "agent-event-watchdog",
   "branchName": "feat/agent-event-watchdog",
   "createdAt": "2026-05-06T00:00:00.000Z",
-  "updatedAt": "2026-05-06T10:56:03.603Z",
+  "updatedAt": "2026-05-06T10:58:29.523Z",
   "userStories": [
     {
       "id": "US-001",
@@ -238,7 +238,7 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "failed",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
       "escalations": [
