@@ -43,6 +43,19 @@ export type {
   OperationCompletedEvent,
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
+export type {
+  IAgentStreamEventBus,
+  AgentStreamEvent,
+  AgentStreamEventBase,
+  AgentCallStartedEvent,
+  AgentMessageUpdateEvent,
+  AgentThinkingUpdateEvent,
+  AgentUsageUpdateEvent,
+  AgentProcessUpdateEvent,
+  AgentCallEndedEvent,
+  AgentStreamListener,
+} from "./agent-stream-events";
+export { AgentStreamEventBus } from "./agent-stream-events";
 
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";
@@ -61,6 +74,8 @@ import type { IReviewAuditor } from "../review/review-audit";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
 import { MiddlewareChain } from "./agent-middleware";
+import { AgentStreamEventBus } from "./agent-stream-events";
+import type { IAgentStreamEventBus } from "./agent-stream-events";
 import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
 import type { ICostAggregator } from "./cost-aggregator";
 import { DispatchEventBus } from "./dispatch-events";
@@ -94,6 +109,7 @@ export interface NaxRuntime {
   readonly promptAuditor: IPromptAuditor;
   readonly reviewAuditor: IReviewAuditor;
   readonly dispatchEvents: IDispatchEventBus;
+  readonly agentStreamEvents: IAgentStreamEventBus;
   readonly packages: PackageRegistry;
   readonly pidRegistry: PidRegistry;
   readonly logger: Logger;
@@ -131,6 +147,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
 
   const configLoader = createConfigLoader(config);
   const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
+  const agentStreamEvents: IAgentStreamEventBus = new AgentStreamEventBus();
 
   const projectKey = config.name?.trim() || basename(workdir);
   const outputDir = projectOutputDir(projectKey, config.outputDir);
@@ -219,6 +236,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     promptAuditor,
     reviewAuditor,
     dispatchEvents,
+    agentStreamEvents,
     packages,
     pidRegistry,
     logger,
