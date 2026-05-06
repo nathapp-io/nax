@@ -363,4 +363,142 @@ describe("collectObservations", () => {
     expect(observations.some((o) => o.kind === "acceptance-verdict" && o.payload.failedACs?.includes("AC-2"))).toBe(true);
     expect(observations.some((o) => o.kind === "fix-cycle-iteration" && o.payload.outcome === "unchanged")).toBe(true);
   });
+
+  test("projects LLM-shaped review findings (issue/suggestion) into payload.message", async () => {
+    const root = await mkdtemp(join(tmpdir(), "curator-llm-finding-"));
+    const outputDir = join(root, "out");
+    const auditDir = join(outputDir, "review-audit", "feat-x");
+    await mkdir(auditDir, { recursive: true });
+
+    await writeFile(
+      join(auditDir, "1-review-semantic-US-001.json"),
+      JSON.stringify({
+        timestamp: "2026-05-06T00:00:00.000Z",
+        storyId: "US-001",
+        featureName: "feat-x",
+        reviewer: "semantic",
+        result: {
+          findings: [
+            {
+              severity: "warning",
+              category: "input",
+              file: "src/foo.ts",
+              line: 73,
+              issue: "onAgentStream(listener) does not validate that `listener` is a function.",
+              suggestion: "Add a guard: `if (typeof listener !== 'function') return () => {};` at the top.",
+            },
+            {
+              severity: "info",
+              category: "error-path",
+              file: "src/foo.ts",
+              line: 81,
+              issue: "Listener errors are swallowed when logger is null.",
+              // no suggestion
+            },
+          ],
+        },
+      }),
+    );
+
+    const context: CuratorPostRunContext = {
+      runId: "run-llm",
+      feature: "feat-x",
+      workdir: root,
+      prdPath: join(root, "prd.json"),
+      branch: "main",
+      totalDurationMs: 1000,
+      totalCost: 0,
+      storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
+      stories: [],
+      version: "0.1.0",
+      pluginConfig: {},
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      config: {} as any,
+      outputDir,
+      globalDir: join(root, "global"),
+      projectKey: "test-project",
+      curatorRollupPath: join(root, "rollup.jsonl"),
+    };
+
+    const observations = await collectObservations(context);
+    const findings = observations.filter((o) => o.kind === "review-finding");
+    expect(findings.length).toBe(2);
+
+    const withSuggestion = findings.find(
+      (o) => o.kind === "review-finding" && o.payload.line === 73,
+    );
+    expect(withSuggestion).toBeDefined();
+    if (withSuggestion?.kind === "review-finding") {
+      expect(withSuggestion.payload.message).toContain(
+        "onAgentStream(listener) does not validate",
+      );
+      expect(withSuggestion.payload.message).toContain("Add a guard");
+    }
+
+    const noSuggestion = findings.find(
+      (o) => o.kind === "review-finding" && o.payload.line === 81,
+    );
+    expect(noSuggestion).toBeDefined();
+    if (noSuggestion?.kind === "review-finding") {
+      expect(noSuggestion.payload.message).toBe(
+        "Listener errors are swallowed when logger is null.",
+      );
+    }
+  });
+
+  test("prefers canonical `message` field when both message and issue are present", async () => {
+    const root = await mkdtemp(join(tmpdir(), "curator-canonical-finding-"));
+    const outputDir = join(root, "out");
+    const auditDir = join(outputDir, "review-audit", "feat-y");
+    await mkdir(auditDir, { recursive: true });
+
+    await writeFile(
+      join(auditDir, "1-review.json"),
+      JSON.stringify({
+        timestamp: "2026-05-06T00:00:00.000Z",
+        storyId: "US-002",
+        featureName: "feat-y",
+        result: {
+          findings: [
+            {
+              ruleId: "no-foo",
+              severity: "error",
+              file: "src/bar.ts",
+              line: 10,
+              message: "canonical message wins",
+              issue: "should be ignored",
+              suggestion: "also ignored",
+            },
+          ],
+        },
+      }),
+    );
+
+    const context: CuratorPostRunContext = {
+      runId: "run-canonical",
+      feature: "feat-y",
+      workdir: root,
+      prdPath: join(root, "prd.json"),
+      branch: "main",
+      totalDurationMs: 1000,
+      totalCost: 0,
+      storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
+      stories: [],
+      version: "0.1.0",
+      pluginConfig: {},
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      config: {} as any,
+      outputDir,
+      globalDir: join(root, "global"),
+      projectKey: "test-project",
+      curatorRollupPath: join(root, "rollup.jsonl"),
+    };
+
+    const observations = await collectObservations(context);
+    const finding = observations.find((o) => o.kind === "review-finding");
+    expect(finding).toBeDefined();
+    if (finding?.kind === "review-finding") {
+      expect(finding.payload.message).toBe("canonical message wins");
+    }
+  });
 });

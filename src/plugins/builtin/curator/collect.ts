@@ -122,6 +122,24 @@ function findingRuleId(finding: JsonRecord): string {
   return stringValue(finding.rule ?? finding.ruleId ?? finding.checkId ?? finding.category, "unknown");
 }
 
+/**
+ * Extract a human-readable message from a finding record.
+ *
+ * Two on-disk shapes coexist in `review-audit/*.json`:
+ * - Canonical `ReviewFinding` (lint-style): has `message`.
+ * - `LLMFinding` (semantic/adversarial reviewers): has `issue` + optional `suggestion`,
+ *   no `message` field. Without this fallback, `payload.message` is always empty
+ *   for LLM findings — the dominant source today.
+ */
+function findingMessage(finding: JsonRecord): string {
+  const message = stringValue(finding.message);
+  if (message) return message;
+  const issue = stringValue(finding.issue);
+  const suggestion = stringValue(finding.suggestion);
+  if (issue && suggestion) return `${issue}\n→ ${suggestion}`;
+  return issue;
+}
+
 async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<Observation[]> {
   const observations: Observation[] = [];
   const auditDir = path.join(context.outputDir, "review-audit");
@@ -154,7 +172,7 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
               severity: stringValue(finding.severity, "info"),
               file: stringValue(finding.file),
               line: numberValue(finding.line, 0),
-              message: stringValue(finding.message),
+              message: findingMessage(finding),
             },
           };
           observations.push(obs);
