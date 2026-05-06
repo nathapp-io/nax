@@ -3,6 +3,7 @@
  * and adapter-lifecycle.ts. Kept separate to avoid circular imports.
  */
 
+import type { AgentStreamEvent } from "../../runtime/agent-stream-events";
 import type { SessionTokenUsage } from "./wire-types";
 
 export interface AcpSessionResponse {
@@ -25,6 +26,11 @@ export interface AcpSession {
   readonly id?: string;
   /** Stable record ID: assigned at session creation, never changes across reconnects (acpxRecordId). */
   readonly recordId?: string;
+}
+
+export interface AcpClientOptions {
+  /** Optional stream callback to emit activity events during agent execution. */
+  onStreamActivity?: (event: AgentStreamEvent) => void;
 }
 
 export interface AcpClient {

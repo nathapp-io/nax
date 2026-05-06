@@ -23,6 +23,15 @@ export interface AcpxTokenUsage {
   cache_creation_input_tokens?: number;
 }
 
+/** Activity metadata from a single parsed line — emitted to stream listeners. */
+export interface AcpxLineActivity {
+  kind?: "message_update" | "thinking_update" | "usage_update";
+  deltaBytes?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
+}
+
 /** Mutable accumulator for incremental NDJSON line parsing. */
 export interface AcpxParseState {
   text: string;
@@ -52,8 +61,10 @@ export function createParseState(): AcpxParseState {
 /**
  * Process a single NDJSON line into the accumulator state.
  * Handles JSON-RPC envelope format (acpx v0.3+) and legacy flat NDJSON.
+ * Returns activity metadata if the line contains a stream event (message_update, thinking_update, usage_update).
+ * Activity metadata includes only deltaBytes/tokens/cost — never raw text content.
  */
-export function parseAcpxJsonLine(line: string, state: AcpxParseState): void {
+export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLineActivity | undefined {
   try {
     const event = JSON.parse(line);
 
@@ -62,14 +73,40 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): void {
       if (event.method === "session/update" && event.params?.update) {
         const update = event.params.update;
 
-        // Text chunks
-        if (update.sessionUpdate === "agent_message_chunk" && update.content?.type === "text" && update.content.text) {
-          state.text += update.content.text;
+        // Text chunks — emit activity metadata without raw content
+        if (update.sessionUpdate === "agent_message_chunk" && update.content?.type === "text" && typeof update.content.text === "string") {
+          const text = update.content.text;
+          state.text += text;
+          // Return activity metadata with only deltaBytes (no raw text)
+          return {
+            kind: "message_update",
+            deltaBytes: text.length,
+          };
         }
 
-        // Exact cost from usage_update
-        if (update.sessionUpdate === "usage_update" && typeof update.cost?.amount === "number") {
-          state.exactCostUsd = update.cost.amount;
+        // Thought chunks — emit activity metadata without raw content
+        if (update.sessionUpdate === "agent_thought_chunk" && update.content?.type === "text" && typeof update.content.text === "string") {
+          const text = update.content.text;
+          state.text += text;
+          return {
+            kind: "thinking_update",
+            deltaBytes: text.length,
+          };
+        }
+
+        // Usage update — emit activity metadata with token/cost info
+        if (update.sessionUpdate === "usage_update") {
+          const activity: AcpxLineActivity = { kind: "usage_update" };
+          // Extract token counts if available
+          if (typeof update.used === "number") {
+            activity.outputTokens = update.used;
+          }
+          // Extract cost if available
+          if (typeof update.cost?.amount === "number") {
+            activity.costUsd = update.cost.amount;
+            state.exactCostUsd = update.cost.amount;
+          }
+          return activity;
         }
       }
 
@@ -108,7 +145,7 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): void {
         if (!state.error) state.error = errorMsg;
       }
 
-      return;
+      return undefined;
     }
 
     // ── Legacy flat NDJSON format ───────────────────────────────────────────
@@ -133,6 +170,7 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): void {
   } catch {
     if (!state.text) state.text = line;
   }
+  return undefined;
 }
 
 /** Produce the final parsed result from an accumulated state. */

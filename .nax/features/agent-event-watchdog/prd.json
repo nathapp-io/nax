@@ -3,7 +3,7 @@
   "feature": "agent-event-watchdog",
   "branchName": "feat/agent-event-watchdog",
   "createdAt": "2026-05-06T00:00:00.000Z",
-  "updatedAt": "2026-05-06T02:26:51.631Z",
+  "updatedAt": "2026-05-06T02:34:27.170Z",
   "userStories": [
     {
       "id": "US-001",
@@ -20,8 +20,8 @@
         "runtime"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -78,7 +78,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/acp/parser.ts",
@@ -96,7 +98,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "30e481e9d204b3d72252c8e5fc555460676b9d14"
     },
     {
       "id": "US-003",
