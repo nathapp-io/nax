@@ -81,7 +81,7 @@ describe("buildReviewRectificationPrompt", () => {
 
       expect(prompt).toContain("lint/typecheck errors");
       expect(prompt).toContain("Unexpected console.log");
-      expect(prompt).not.toContain("acceptance criteria");
+      expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
       expect(prompt).not.toContain("false positives");
     });
 

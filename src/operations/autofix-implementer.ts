@@ -1,5 +1,6 @@
 import { autofixConfigSelector } from "../config";
 import type { AutofixConfig } from "../config/selectors";
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { ReviewCheckResult } from "../review/types";
@@ -29,8 +30,15 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
       task: { id: "task", content: prompt, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
+  parse(output, input, _ctx) {
     const match = output.match(/^UNRESOLVED:\s*(.+)$/ms);
+    const editReasonMatch = output.match(/TEST_EDIT_REASON:\s*(\w+)/);
+    if (editReasonMatch) {
+      getSafeLogger()?.info("autofix", "test_edit_declared", {
+        storyId: input.story.id,
+        reason: editReasonMatch[1],
+      });
+    }
     return { applied: true, ...(match ? { unresolvedReason: match[1]?.trim() } : {}) };
   },
 };

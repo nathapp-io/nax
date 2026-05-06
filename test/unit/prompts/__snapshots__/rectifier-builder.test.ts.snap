@@ -64,7 +64,7 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
 4. Do not declare done until step 3 shows 0 failures.
 
 **IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT modify test files — see the three narrow exceptions in the escape valve section if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements."
 `;
@@ -163,7 +163,7 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
 4. Do not declare done until step 3 shows 0 failures.
 
 **IMPORTANT:**
-- Do NOT modify test files unless there is a legitimate bug in the test itself.
+- Do NOT modify test files — see the three narrow exceptions in the escape valve section if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements."
 `;
@@ -184,11 +184,63 @@ lint output
 \`\`\`
 
 
-Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.
+Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior — see the three narrow exceptions appended below. Commit your changes when all checks pass.
 
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has three narrow escape valves. Each requires a
+declaration in your output. Outside these three cases the rule is absolute.
+
+### Exception 1 — Lint-only edit
+
+You MAY edit a test file ONLY when ALL of the following hold:
+- The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
+- Your edit removes or reformats a lint violation without altering any \`expect\`, \`assert\`,
+  \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, or equivalent assertion call, its arguments, its
+  input data, its mock setup, or its \`describe\`/\`it\`/\`test\` block text.
+- If you are uncertain whether your edit is assertion-neutral, do NOT make it — emit
+  \`UNRESOLVED\` instead.
+
+Declare every lint-only test edit with:
+\`\`\`
+TEST_EDIT_REASON: lint_only
+FILE: <test file path>
+FINDING: <lint rule or message verbatim>
+CHANGE: <before line> → <after line>
+\`\`\`
+
+### Exception 2 — PRD-contract mismatch
+
+You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
+call contradicts a literal interface signature stated in this story's description or
+acceptance criteria.
+
+Declare every contract-mismatch edit with:
+\`\`\`
+TEST_EDIT_REASON: prd_contract
+PRD_QUOTE: "<verbatim signature line from the story description or acceptance criteria>"
+FILE: <test file path>
+TEST_BEFORE: <offending call line>
+TEST_AFTER: <corrected call line>
+\`\`\`
+
+Do NOT use this exception to change test logic, assertions, or mock setup — only call
+signatures that directly contradict a quoted PRD interface.
+
+### Exception 3 — Sibling-story lint spillover
+
+When a lint or typecheck error is in a file you did NOT create or modify in this turn,
+do NOT edit that file. Instead declare:
+\`\`\`
+TEST_EDIT_REASON: sibling_scope
+SIBLING_FILE: <file path>
+FINDING: <error summary>
+\`\`\`
+and continue. Sibling-scope failures do not block your story."
 `;
 
 exports[`RectifierPromptBuilder.firstAttemptDelta two-categories: renders in fixed priority order, not input order 1`] = `
@@ -217,11 +269,63 @@ semantic output
 \`\`\`
 
 
-Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.
+Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior — see the three narrow exceptions appended below. Commit your changes when all checks pass.
 
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has three narrow escape valves. Each requires a
+declaration in your output. Outside these three cases the rule is absolute.
+
+### Exception 1 — Lint-only edit
+
+You MAY edit a test file ONLY when ALL of the following hold:
+- The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
+- Your edit removes or reformats a lint violation without altering any \`expect\`, \`assert\`,
+  \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, or equivalent assertion call, its arguments, its
+  input data, its mock setup, or its \`describe\`/\`it\`/\`test\` block text.
+- If you are uncertain whether your edit is assertion-neutral, do NOT make it — emit
+  \`UNRESOLVED\` instead.
+
+Declare every lint-only test edit with:
+\`\`\`
+TEST_EDIT_REASON: lint_only
+FILE: <test file path>
+FINDING: <lint rule or message verbatim>
+CHANGE: <before line> → <after line>
+\`\`\`
+
+### Exception 2 — PRD-contract mismatch
+
+You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
+call contradicts a literal interface signature stated in this story's description or
+acceptance criteria.
+
+Declare every contract-mismatch edit with:
+\`\`\`
+TEST_EDIT_REASON: prd_contract
+PRD_QUOTE: "<verbatim signature line from the story description or acceptance criteria>"
+FILE: <test file path>
+TEST_BEFORE: <offending call line>
+TEST_AFTER: <corrected call line>
+\`\`\`
+
+Do NOT use this exception to change test logic, assertions, or mock setup — only call
+signatures that directly contradict a quoted PRD interface.
+
+### Exception 3 — Sibling-story lint spillover
+
+When a lint or typecheck error is in a file you did NOT create or modify in this turn,
+do NOT edit that file. Instead declare:
+\`\`\`
+TEST_EDIT_REASON: sibling_scope
+SIBLING_FILE: <file path>
+FINDING: <error summary>
+\`\`\`
+and continue. Sibling-scope failures do not block your story."
 `;
 
 exports[`RectifierPromptBuilder.firstAttemptDelta all-categories: renders all five buckets with expected grouping 1`] = `
@@ -290,11 +394,63 @@ adversarial output
 \`\`\`
 
 
-Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior. Commit your changes when all checks pass.
+Fix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior — see the three narrow exceptions appended below. Commit your changes when all checks pass.
 
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has three narrow escape valves. Each requires a
+declaration in your output. Outside these three cases the rule is absolute.
+
+### Exception 1 — Lint-only edit
+
+You MAY edit a test file ONLY when ALL of the following hold:
+- The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
+- Your edit removes or reformats a lint violation without altering any \`expect\`, \`assert\`,
+  \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, or equivalent assertion call, its arguments, its
+  input data, its mock setup, or its \`describe\`/\`it\`/\`test\` block text.
+- If you are uncertain whether your edit is assertion-neutral, do NOT make it — emit
+  \`UNRESOLVED\` instead.
+
+Declare every lint-only test edit with:
+\`\`\`
+TEST_EDIT_REASON: lint_only
+FILE: <test file path>
+FINDING: <lint rule or message verbatim>
+CHANGE: <before line> → <after line>
+\`\`\`
+
+### Exception 2 — PRD-contract mismatch
+
+You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
+call contradicts a literal interface signature stated in this story's description or
+acceptance criteria.
+
+Declare every contract-mismatch edit with:
+\`\`\`
+TEST_EDIT_REASON: prd_contract
+PRD_QUOTE: "<verbatim signature line from the story description or acceptance criteria>"
+FILE: <test file path>
+TEST_BEFORE: <offending call line>
+TEST_AFTER: <corrected call line>
+\`\`\`
+
+Do NOT use this exception to change test logic, assertions, or mock setup — only call
+signatures that directly contradict a quoted PRD interface.
+
+### Exception 3 — Sibling-story lint spillover
+
+When a lint or typecheck error is in a file you did NOT create or modify in this turn,
+do NOT edit that file. Instead declare:
+\`\`\`
+TEST_EDIT_REASON: sibling_scope
+SIBLING_FILE: <file path>
+FINDING: <error summary>
+\`\`\`
+and continue. Sibling-scope failures do not block your story."
 `;
 
 exports[`RectifierPromptBuilder.continuation single-category: renders only the matching priority bucket 1`] = `
@@ -315,7 +471,59 @@ lint output
 
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has three narrow escape valves. Each requires a
+declaration in your output. Outside these three cases the rule is absolute.
+
+### Exception 1 — Lint-only edit
+
+You MAY edit a test file ONLY when ALL of the following hold:
+- The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
+- Your edit removes or reformats a lint violation without altering any \`expect\`, \`assert\`,
+  \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, or equivalent assertion call, its arguments, its
+  input data, its mock setup, or its \`describe\`/\`it\`/\`test\` block text.
+- If you are uncertain whether your edit is assertion-neutral, do NOT make it — emit
+  \`UNRESOLVED\` instead.
+
+Declare every lint-only test edit with:
+\`\`\`
+TEST_EDIT_REASON: lint_only
+FILE: <test file path>
+FINDING: <lint rule or message verbatim>
+CHANGE: <before line> → <after line>
+\`\`\`
+
+### Exception 2 — PRD-contract mismatch
+
+You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
+call contradicts a literal interface signature stated in this story's description or
+acceptance criteria.
+
+Declare every contract-mismatch edit with:
+\`\`\`
+TEST_EDIT_REASON: prd_contract
+PRD_QUOTE: "<verbatim signature line from the story description or acceptance criteria>"
+FILE: <test file path>
+TEST_BEFORE: <offending call line>
+TEST_AFTER: <corrected call line>
+\`\`\`
+
+Do NOT use this exception to change test logic, assertions, or mock setup — only call
+signatures that directly contradict a quoted PRD interface.
+
+### Exception 3 — Sibling-story lint spillover
+
+When a lint or typecheck error is in a file you did NOT create or modify in this turn,
+do NOT edit that file. Instead declare:
+\`\`\`
+TEST_EDIT_REASON: sibling_scope
+SIBLING_FILE: <file path>
+FINDING: <error summary>
+\`\`\`
+and continue. Sibling-scope failures do not block your story."
 `;
 
 exports[`RectifierPromptBuilder.continuation two-categories: renders in fixed priority order, not input order 1`] = `
@@ -346,7 +554,59 @@ semantic output
 
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has three narrow escape valves. Each requires a
+declaration in your output. Outside these three cases the rule is absolute.
+
+### Exception 1 — Lint-only edit
+
+You MAY edit a test file ONLY when ALL of the following hold:
+- The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
+- Your edit removes or reformats a lint violation without altering any \`expect\`, \`assert\`,
+  \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, or equivalent assertion call, its arguments, its
+  input data, its mock setup, or its \`describe\`/\`it\`/\`test\` block text.
+- If you are uncertain whether your edit is assertion-neutral, do NOT make it — emit
+  \`UNRESOLVED\` instead.
+
+Declare every lint-only test edit with:
+\`\`\`
+TEST_EDIT_REASON: lint_only
+FILE: <test file path>
+FINDING: <lint rule or message verbatim>
+CHANGE: <before line> → <after line>
+\`\`\`
+
+### Exception 2 — PRD-contract mismatch
+
+You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
+call contradicts a literal interface signature stated in this story's description or
+acceptance criteria.
+
+Declare every contract-mismatch edit with:
+\`\`\`
+TEST_EDIT_REASON: prd_contract
+PRD_QUOTE: "<verbatim signature line from the story description or acceptance criteria>"
+FILE: <test file path>
+TEST_BEFORE: <offending call line>
+TEST_AFTER: <corrected call line>
+\`\`\`
+
+Do NOT use this exception to change test logic, assertions, or mock setup — only call
+signatures that directly contradict a quoted PRD interface.
+
+### Exception 3 — Sibling-story lint spillover
+
+When a lint or typecheck error is in a file you did NOT create or modify in this turn,
+do NOT edit that file. Instead declare:
+\`\`\`
+TEST_EDIT_REASON: sibling_scope
+SIBLING_FILE: <file path>
+FINDING: <error summary>
+\`\`\`
+and continue. Sibling-scope failures do not block your story."
 `;
 
 exports[`RectifierPromptBuilder.continuation all-categories: renders all five buckets with expected grouping 1`] = `
@@ -423,5 +683,57 @@ adversarial output
 
 If two findings in this list contradict each other and you cannot satisfy both, do not guess.
 Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>"
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has three narrow escape valves. Each requires a
+declaration in your output. Outside these three cases the rule is absolute.
+
+### Exception 1 — Lint-only edit
+
+You MAY edit a test file ONLY when ALL of the following hold:
+- The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
+- Your edit removes or reformats a lint violation without altering any \`expect\`, \`assert\`,
+  \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, or equivalent assertion call, its arguments, its
+  input data, its mock setup, or its \`describe\`/\`it\`/\`test\` block text.
+- If you are uncertain whether your edit is assertion-neutral, do NOT make it — emit
+  \`UNRESOLVED\` instead.
+
+Declare every lint-only test edit with:
+\`\`\`
+TEST_EDIT_REASON: lint_only
+FILE: <test file path>
+FINDING: <lint rule or message verbatim>
+CHANGE: <before line> → <after line>
+\`\`\`
+
+### Exception 2 — PRD-contract mismatch
+
+You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
+call contradicts a literal interface signature stated in this story's description or
+acceptance criteria.
+
+Declare every contract-mismatch edit with:
+\`\`\`
+TEST_EDIT_REASON: prd_contract
+PRD_QUOTE: "<verbatim signature line from the story description or acceptance criteria>"
+FILE: <test file path>
+TEST_BEFORE: <offending call line>
+TEST_AFTER: <corrected call line>
+\`\`\`
+
+Do NOT use this exception to change test logic, assertions, or mock setup — only call
+signatures that directly contradict a quoted PRD interface.
+
+### Exception 3 — Sibling-story lint spillover
+
+When a lint or typecheck error is in a file you did NOT create or modify in this turn,
+do NOT edit that file. Instead declare:
+\`\`\`
+TEST_EDIT_REASON: sibling_scope
+SIBLING_FILE: <file path>
+FINDING: <error summary>
+\`\`\`
+and continue. Sibling-scope failures do not block your story."
 `;

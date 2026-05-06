@@ -70,7 +70,7 @@ Your task: make failing tests pass.
 
 Instructions:
 - Implement source code in src/ to make tests pass
-- Do NOT modify test files
+- Do NOT modify test files — three narrow lint/contract/sibling exceptions exist; see the escape valve section in the rectification prompt if you encounter one
 - Run tests frequently to track progress
 - When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
 - Goal: all tests green, all changes committed`;

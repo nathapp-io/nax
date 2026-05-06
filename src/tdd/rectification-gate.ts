@@ -12,6 +12,7 @@ import type { ModelTier } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
 import type { getLogger } from "../logger";
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
@@ -349,6 +350,14 @@ async function runRectificationLoop(
 
       if (!rectifyResult.success && rectifyResult.pid) {
         await cleanupProcessTree(rectifyResult.pid);
+      }
+
+      const editReasonMatch = rectifyResult.output?.match(/TEST_EDIT_REASON:\s*(\w+)/);
+      if (editReasonMatch) {
+        getSafeLogger()?.info("tdd", "test_edit_declared", {
+          storyId: story.id,
+          reason: editReasonMatch[1],
+        });
       }
 
       gateCostAccum += rectifyResult.estimatedCostUsd ?? 0;
