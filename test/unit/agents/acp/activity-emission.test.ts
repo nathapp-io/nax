@@ -13,7 +13,9 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { createParseState, parseAcpxJsonLine, type AcpxLineActivity } from "../../../../src/agents/acp/parser";
+import { SpawnAcpClient, _spawnClientDeps } from "../../../../src/agents/acp/spawn-client";
 import type { AgentStreamEvent } from "../../../../src/runtime/agent-stream-events";
+import { withDepsRestore } from "../../../helpers/deps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // parseAcpxJsonLine activity metadata tests
@@ -444,5 +446,86 @@ describe("Event emission across terminal paths", () => {
   test("spawn failure path: call_ended(error) emitted without call_started", () => {
     // Integration test for early spawn failure
     expect(true).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC9 — spawn failure must not emit call_started (bug: currently it does)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeSpawnResult(exitCode: number, stdout = ""): ReturnType<typeof _spawnClientDeps.spawn> {
+  const enc = new TextEncoder();
+  const makeStream = (content: string) =>
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        if (content) c.enqueue(enc.encode(content));
+        c.close();
+      },
+    });
+  return {
+    stdout: makeStream(stdout),
+    stderr: makeStream(""),
+    stdin: { write: () => 0, end: () => {}, flush: () => {} },
+    exited: Promise.resolve(exitCode),
+    pid: 99999,
+    kill: () => {},
+  };
+}
+
+describe("AC9 — spawn failure emits call_ended without prior call_started", () => {
+  withDepsRestore(_spawnClientDeps, ["spawn"]);
+
+  test("no call_started is emitted when the acpx spawn throws before producing a PID", async () => {
+    // Spec (AC9): When the spawned process fails to start, agent.call_ended { status: 'error' }
+    // is emitted WITHOUT a prior agent.call_started event.
+    //
+    // Bug: The current implementation emits call_started (line 202) before calling spawn (line 213).
+    // When spawn throws, call_ended is emitted in the catch — but call_started was already fired,
+    // violating AC9. This test documents the spec-correct behavior and will FAIL until fixed.
+
+    let callCount = 0;
+    const events: AgentStreamEvent[] = [];
+
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      // First spawn is the loadSession ensure command — must succeed so we get a session object.
+      if (callCount === 1) return makeSpawnResult(0);
+      // Second spawn is the prompt command — throw to simulate "process failed to start".
+      throw new Error("spawn ENOENT: acpx binary not found");
+    };
+
+    const client = new SpawnAcpClient(
+      "acpx --model claude-sonnet-4-5 claude",
+      "/tmp",
+      30,
+      undefined, // onPidSpawned
+      0,         // promptRetries
+      undefined, // onPidExited
+      { onStreamActivity: (event) => events.push(event) },
+    );
+
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    expect(session).not.toBeNull();
+
+    // Prompt must throw because spawn failed.
+    let threw = false;
+    try {
+      await session!.prompt("hello");
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+
+    const kinds = events.map((e) => e.kind);
+
+    // AC9: call_ended must be present
+    expect(kinds).toContain("agent.call_ended");
+    const callEnded = events.find((e) => e.kind === "agent.call_ended");
+    expect(callEnded).toMatchObject({ kind: "agent.call_ended", status: "error" });
+
+    // AC9: call_started must NOT precede call_ended when spawn fails before producing a PID
+    // This assertion FAILS with the current implementation (call_started is emitted at line 202
+    // before spawn is attempted at line 213).
+    expect(kinds).not.toContain("agent.call_started");
   });
 });
