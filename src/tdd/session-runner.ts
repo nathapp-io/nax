@@ -14,6 +14,7 @@ import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
+import { parseSelfVerificationMarker, resolveSelfVerificationPromptInput } from "../quality";
 import type { ISessionManager } from "../session/types";
 import { autoCommitIfDirty as _autoCommitIfDirtyFn } from "../utils/git";
 import { captureGitRef as _captureGitRef } from "../utils/git";
@@ -139,6 +140,7 @@ export async function runTddSession(
   abortSignal?: AbortSignal,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
+  const selfVerification = await resolveSelfVerificationPromptInput(config, workdir);
 
   // Build prompt — use injectable buildPrompt if set, otherwise default PromptBuilder.
   // When a v2 ContextBundle is available, .v2FeatureContext() injects pushMarkdown directly
@@ -169,6 +171,7 @@ export async function runTddSession(
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)
+          .selfVerification(selfVerification)
           .build();
         break;
       case "implementer":
@@ -181,6 +184,7 @@ export async function runTddSession(
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
           .hermeticConfig(config.quality?.testing)
+          .selfVerification(selfVerification)
           .build();
         break;
       case "verifier":
@@ -323,6 +327,10 @@ export async function runTddSession(
   const filesChanged = await _sessionRunnerDeps.getChangedFiles(workdir, beforeRef);
 
   const durationMs = Date.now() - startTime;
+  const selfVerificationResult =
+    role === "verifier" ? undefined : parseSelfVerificationMarker(result.output, selfVerification.packageDir);
+  const selfVerificationFailed =
+    selfVerificationResult?.lint === "fail" || selfVerificationResult?.typecheck === "fail";
 
   if (isolation && !isolation.passed) {
     logger.error("tdd", "Isolation violated", {
@@ -353,12 +361,13 @@ export async function runTddSession(
 
   return {
     role,
-    success: result.success && (!isolation || isolation.passed),
+    success: result.success && (!isolation || isolation.passed) && !selfVerificationFailed,
     isolation,
     filesChanged,
     durationMs,
     estimatedCostUsd: result.estimatedCostUsd,
     tokenUsage: result.tokenUsage,
     outputTail: result.output.slice(-500),
+    selfVerification: selfVerificationResult,
   };
 }

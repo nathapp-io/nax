@@ -99,8 +99,15 @@ function renderEntry(
         const tail = neutralizeForAgent(entry.outputTail.trim(), entry.writtenByAgent ?? "", targetAgentId ?? "");
         lines.push("```", tail, "```");
       }
+      if (entry.selfVerification) {
+        lines.push(
+          `Self-verify: lint=${entry.selfVerification.lint}, typecheck=${entry.selfVerification.typecheck}, pre_existing=${entry.selfVerification.preExistingFailures.length}`,
+        );
+      }
       return lines.join("\n");
     }
+    case "self-verification":
+      return `**Self-verify** at ${entry.timestamp}: lint=${entry.selfVerification.lint}, typecheck=${entry.selfVerification.typecheck}, pre_existing=${entry.selfVerification.preExistingFailures.length}`;
     default:
       return JSON.stringify(entry);
   }

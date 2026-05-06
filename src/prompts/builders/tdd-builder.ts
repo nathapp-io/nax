@@ -25,6 +25,7 @@ import type { PromptLoaderConfig } from "../../config/selectors";
 import type { NaxConfig } from "../../config/types";
 import { filterContextByRole, truncateToContextBudget } from "../../context";
 import type { UserStory } from "../../prd";
+import type { SelfVerificationPromptInput } from "../../quality/self-verification";
 import { SectionAccumulator } from "../core";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { universalConstitutionSection, universalContextSection } from "../core";
@@ -36,6 +37,7 @@ import {
   buildHermeticSection,
   buildIsolationSection,
   buildRoleTaskSection,
+  buildSelfVerificationSection,
   buildStoryReminderSection,
   buildStorySection,
   buildTddLanguageSection,
@@ -60,6 +62,7 @@ export class TddPromptBuilder {
   private hermeticConfig_: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
   private noTestJustification_: string | undefined;
   private acceptanceEntries_: AcceptanceEntry[] | undefined;
+  private selfVerification_: SelfVerificationPromptInput | undefined;
 
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this.role = role;
@@ -144,6 +147,11 @@ export class TddPromptBuilder {
     return this;
   }
 
+  selfVerification(input: SelfVerificationPromptInput | undefined): this {
+    this.selfVerification_ = input;
+    return this;
+  }
+
   /**
    * Compose and return the final prompt string.
    *
@@ -217,6 +225,11 @@ export class TddPromptBuilder {
         this.loaderConfig_?.project,
       );
       if (hermeticSection) acc.add(this.s("hermetic", hermeticSection));
+    }
+
+    if (this.role !== "verifier") {
+      const selfVerify = buildSelfVerificationSection(this.role, this.selfVerification_);
+      if (selfVerify) acc.add(this.s("self-verification", selfVerify));
     }
 
     // (7) Context markdown

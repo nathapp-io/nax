@@ -132,6 +132,7 @@ export async function runThreeSessionTddFromCtx(
           success: result.success,
           filesChanged: result.filesChanged,
           outputTail: result.outputTail ?? "",
+          selfVerification: result.selfVerification,
           writtenByAgent: ctx.routing?.agent ?? ctx.agentManager?.getDefault() ?? "claude",
         });
 

@@ -8,3 +8,14 @@ export { runQualityCommand } from "./runner";
 export type { QualityCommandOptions, QualityCommandResult } from "./runner";
 export { resolveQualityTestCommands, _commandResolverDeps } from "./command-resolver";
 export type { ResolvedTestCommands } from "./command-resolver";
+export {
+  parseSelfVerificationMarker,
+  resolveSelfVerificationPromptInput,
+} from "./self-verification";
+export type {
+  PreExistingFailure,
+  SelfVerificationPromptInput,
+  SelfVerificationResult,
+  SelfVerificationStatus,
+  SelfVerificationTool,
+} from "./self-verification";

@@ -16,7 +16,10 @@ import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { buildHopCallback } from "../../operations/build-hop-callback";
+import { parseSelfVerificationMarker } from "../../quality";
+import { appendScratchEntry } from "../../session/scratch-writer";
 import { runThreeSessionTddFromCtx } from "../../tdd";
+import { errorMessage } from "../../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { isAmbiguousOutput, routeTddFailure } from "./execution-helpers";
@@ -233,6 +236,8 @@ export const executionStage: PipelineStage = {
     const result = await effectiveManager.run(request);
 
     ctx.agentResult = result;
+    ctx.selfVerification = parseSelfVerificationMarker(result.output ?? "", ctx.workdir);
+    const selfVerificationFailed = ctx.selfVerification.lint === "fail" || ctx.selfVerification.typecheck === "fail";
     const fallbacks = result.agentFallbacks ?? [];
 
     ctx.agentSwapCount = fallbacks.length;
@@ -246,6 +251,34 @@ export const executionStage: PipelineStage = {
         hop: f.hop,
         costUsd: f.costUsd,
       }));
+    }
+
+    if (ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
+      try {
+        await appendScratchEntry(ctx.sessionScratchDir, {
+          kind: "self-verification",
+          timestamp: new Date().toISOString(),
+          storyId: ctx.story.id,
+          stage: "execution",
+          role: "implementer",
+          selfVerification: ctx.selfVerification,
+          writtenByAgent: ctx.routing?.agent ?? ctx.agentManager?.getDefault() ?? "claude",
+        });
+      } catch (scratchErr) {
+        logger.warn("execution", "Failed to write self-verification scratch entry — continuing", {
+          storyId: ctx.story.id,
+          error: errorMessage(scratchErr),
+        });
+      }
+    }
+
+    if (selfVerificationFailed) {
+      logger.warn("execution", "Self-verification reported explicit failure", {
+        storyId: ctx.story.id,
+        lint: ctx.selfVerification.lint,
+        typecheck: ctx.selfVerification.typecheck,
+      });
+      return { action: "escalate", reason: "Self-verification reported lint/typecheck failure" };
     }
 
     // @design: BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)

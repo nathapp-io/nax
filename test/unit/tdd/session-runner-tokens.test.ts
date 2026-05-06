@@ -128,6 +128,42 @@ describe("runTddSession — tokenUsage (#590)", () => {
 
     expect(outcome.tokenUsage).toBeUndefined();
   });
+
+  test("captures selfVerification for implementer output", async () => {
+    const agent = makeAgent({
+      output: "SELF_VERIFICATION:\nlint: pass\ntypecheck: pass\nPRE_EXISTING_FAILURES: []",
+    });
+    const outcome = await runTddSession(
+      "implementer",
+      agent as never,
+      fakeAgentManager(agent as never),
+      makeStory(),
+      makeConfig(),
+      "/tmp/fake",
+      "balanced",
+      "HEAD",
+    );
+    expect(outcome.selfVerification?.lint).toBe("pass");
+    expect(outcome.selfVerification?.typecheck).toBe("pass");
+  });
+
+  test("marks session unsuccessful when selfVerification reports fail", async () => {
+    const agent = makeAgent({
+      output: "SELF_VERIFICATION:\nlint: fail\ntypecheck: pass\nPRE_EXISTING_FAILURES: []",
+    });
+    const outcome = await runTddSession(
+      "implementer",
+      agent as never,
+      fakeAgentManager(agent as never),
+      makeStory(),
+      makeConfig(),
+      "/tmp/fake",
+      "balanced",
+      "HEAD",
+    );
+    expect(outcome.selfVerification?.lint).toBe("fail");
+    expect(outcome.success).toBe(false);
+  });
 });
 
 describe("runTddSession — state transitions via runInSession (#589)", () => {

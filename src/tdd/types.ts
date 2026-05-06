@@ -61,6 +61,8 @@ export interface TddSessionResult {
   error?: string;
   /** Tail of the agent output for cross-session continuity/debugging */
   outputTail?: string;
+  /** Agent-declared self-verification status (Issue #928). */
+  selfVerification?: import("../quality").SelfVerificationResult;
   /** Number of tests written/passed/failed */
   tests?: {
     total: number;
