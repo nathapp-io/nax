@@ -1,37 +1,45 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-06T09-03-43-298Z",
+    "id": "run-2026-05-06T10-58-29-456Z",
     "feature": "agent-event-watchdog",
-    "startedAt": "2026-05-06T09:03:43.298Z",
-    "status": "failed",
+    "startedAt": "2026-05-06T10:58:29.456Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 68467
+    "pid": 92053
   },
   "progress": {
     "total": 5,
-    "passed": 4,
-    "failed": 1,
+    "passed": 5,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
-    "spent": 3.7920850500000007,
+    "spent": 0.94413433,
     "limit": 50
   },
   "current": null,
-  "iterations": 3,
-  "updatedAt": "2026-05-06T10:56:03.629Z",
-  "durationMs": 6740331,
+  "iterations": 2,
+  "updatedAt": "2026-05-06T11:57:03.010Z",
+  "durationMs": 3513554,
   "postRun": {
     "acceptance": {
-      "status": "not-run"
+      "status": "failed",
+      "failedACs": [
+        "(pass) AC-3: If listener throws, logger.warn() logs error, other listeners invoked > thrown listener does not prevent other listeners from receiving event [7.58ms]\n(pass) AC-3: If listener throws, logger.warn() logs error, other listeners invoked > all listeners invoked even when one throws [0.55ms]\n279 | \n280 |     await getLogger().flush();\n281 |     const entries = await parseAllLogEntries(logFile);",
+        "(fail) AC-14: Each call generates unique callId via crypto.randomUUID(), distinct from sessionName > callId is generated and differs from sessionName [0.07ms]\n751 | \n752 |     await getLogger().flush();\n753 |     const entries = await parseAllLogEntries(logFile);\n754 |     const debugEntry = entries.find((e) => e.message?.includes(\"message_update\"));",
+        "(fail) AC-15: message_update in activityKinds resets lastActivityAt and increments counter > message_update resets lastActivityAt to event timestamp [102.33ms]\n(pass) AC-15: message_update in activityKinds resets lastActivityAt and increments counter > message_update increments messageUpdates counter [1.03ms]\n(pass) AC-16: thinking_update in activityKinds resets lastActivityAt and increments counter > thinking_update increments thinkingUpdates counter [0.10ms]\n(pass) AC-17: usage_update in activityKinds resets lastActivityAt and increments counter > usage_update increments usageUpdates counter [0.07ms]\n(pass) AC-18: agent.process_update does NOT reset lastActivityAt > process_update does not affect lastActivityAt timestamp [0.78ms]",
+        "(fail) AC-24: Config validation rejects idleTimeoutSeconds <= 0 when mode != 'off' > accepts valid idleWatchdog config with idleTimeoutSeconds > 0 [3.50ms]\n(pass) AC-24: Config validation rejects idleTimeoutSeconds <= 0 when mode != 'off' > rejects idleWatchdog config with idleTimeoutSeconds <= 0 in observe mode [0.08ms]\n(pass) AC-24: Config validation rejects idleTimeoutSeconds <= 0 when mode != 'off' > accepts idleTimeoutSeconds <= 0 when mode is 'off' [0.02ms]\n(pass) AC-25: adapter.complete() returns AdapterFailure with outcome='fail-stale' on idle watchdog > fail-stale outcome is defined in AdapterFailure union\n(pass) AC-26: AgentManager.runWithFallback applies same retry/fallback logic for fail-stale > fail-stale is treated as availability failure for retry"
+      ],
+      "retries": 5,
+      "lastRunAt": "2026-05-06T11:57:02.996Z"
     },
     "regression": {
       "status": "passed",
       "skipped": true,
-      "lastRunAt": "2026-05-06T10:56:03.618Z"
+      "lastRunAt": "2026-05-06T11:57:02.997Z"
     }
   }
 }
