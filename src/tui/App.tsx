@@ -12,6 +12,7 @@ import { CostOverlay } from "./components/CostOverlay";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { StatusBar } from "./components/StatusBar";
 import { StoriesPanel } from "./components/StoriesPanel";
+import { useAgentStreamEvents } from "./hooks/useAgentStreamEvents";
 import { type KeyboardAction, useKeyboard } from "./hooks/useKeyboard";
 import { MIN_TERMINAL_WIDTH, useLayout } from "./hooks/useLayout";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
@@ -43,7 +44,14 @@ import type { TuiProps } from "./types";
  * );
  * ```
  */
-export function App({ feature, stories: initialStories, events, queueFilePath, ptyOptions }: TuiProps) {
+export function App({
+  feature,
+  stories: initialStories,
+  events,
+  queueFilePath,
+  ptyOptions,
+  agentStreamEvents,
+}: TuiProps) {
   const layout = useLayout();
   const state = usePipelineEvents(
     events,
@@ -62,6 +70,9 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
 
   // Wire PTY hook for agent session
   const { outputLines: agentOutputLines, handle: ptyHandle } = usePty(ptyOptions ?? null);
+
+  // Wire agent stream events for live call metadata
+  const { activeCalls } = useAgentStreamEvents(agentStreamEvents);
 
   // Handle keyboard actions
   const handleKeyboardAction = async (action: KeyboardAction) => {
@@ -204,7 +215,7 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
         />
 
         {/* Agent panel */}
-        <AgentPanel focused={focus === PanelFocus.Agent} outputLines={agentOutputLines} />
+        <AgentPanel focused={focus === PanelFocus.Agent} outputLines={agentOutputLines} activeCalls={activeCalls} />
       </Box>
 
       {/* Status bar */}

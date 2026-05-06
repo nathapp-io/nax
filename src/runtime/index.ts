@@ -81,6 +81,7 @@ import type { ICostAggregator } from "./cost-aggregator";
 import { DispatchEventBus } from "./dispatch-events";
 import type { IDispatchEventBus } from "./dispatch-events";
 import {
+  attachAgentStreamLogging,
   attachAuditSubscriber,
   attachCostSubscriber,
   attachLoggingSubscriber,
@@ -215,6 +216,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const offCost = attachCostSubscriber(dispatchEvents, costAggregator, runId);
   const offAudit = attachAuditSubscriber(dispatchEvents, promptAuditor, runId);
   const offReviewAudit = attachReviewAuditSubscriber(dispatchEvents, reviewAuditor, runId);
+  const offAgentStreamLogging = attachAgentStreamLogging(agentStreamEvents, runId);
 
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
@@ -251,6 +253,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       offCost();
       offAudit();
       offReviewAudit();
+      offAgentStreamLogging();
       const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {
