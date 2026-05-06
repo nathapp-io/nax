@@ -1,0 +1,238 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "agent-event-watchdog",
+  "branchName": "feat/agent-event-watchdog",
+  "createdAt": "2026-05-06T00:00:00.000Z",
+  "updatedAt": "2026-05-06T01:48:27.869Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Agent Stream Event Types and Event Bus",
+      "description": "**Goal** — Create the AgentStreamEvent type system and AgentStreamEventBus for live agent activity telemetry, separate from the final dispatch bus.\n\n**Motivation** — The existing heartbeat is a parent-process liveness signal that cannot distinguish a slow model actively thinking from a wedged acpx/agent session producing no ACP updates for a long time. We need a dedicated stream event channel.\n\n**Approach** — Define the AgentStreamEvent discriminated union with six concrete event interfaces (call_started, message_update, thinking_update, usage_update, process_update, call_ended). Implement AgentStreamEventBus with onAgentStream(listener) returning an unsubscribe function and emitAgentStream(event) with listener exception isolation. Keep payloads metadata-only by default — no raw message or thought content. Add agentStreamEvents to NaxRuntime and construct the bus in createRuntime(). Follow the existing DispatchEventBus pattern (Set-based listeners, try/catch per listener, warn-log errors). Do NOT modify DispatchEventBus — final result events and live stream events are separate channels.\n\n**Scope** — In: AgentStreamEvent union, AgentStreamEventBus class, NaxRuntime.agentStreamEvents field, createRuntime() bus construction, barrel exports from src/runtime/index.ts. Out: changes to DispatchEventBus, ACP adapter changes, watchdog logic, TUI changes.\n\n**Interface**\n```typescript\ntype AgentStreamEvent =\n  | AgentCallStartedEvent\n  | AgentMessageUpdateEvent\n  | AgentThinkingUpdateEvent\n  | AgentUsageUpdateEvent\n  | AgentProcessUpdateEvent\n  | AgentCallEndedEvent;\n\ninterface AgentStreamEventBase {\n  readonly callId: string;\n  readonly runId: string;\n  readonly agentName: string;\n  readonly sessionName: string;\n  readonly storyId?: string;\n  readonly stage?: PipelineStage;\n  readonly pid?: number;\n  readonly timestamp: number;\n}\n\ninterface AgentCallStartedEvent extends AgentStreamEventBase {\n  readonly kind: \"agent.call_started\";\n  readonly model: string;\n  readonly timeoutSeconds: number;\n}\n\ninterface AgentMessageUpdateEvent extends AgentStreamEventBase {\n  readonly kind: \"agent.message_update\";\n  readonly deltaBytes?: number;\n}\n\ninterface AgentThinkingUpdateEvent extends AgentStreamEventBase {\n  readonly kind: \"agent.thinking_update\";\n  readonly deltaBytes?: number;\n}\n\ninterface AgentUsageUpdateEvent extends AgentStreamEventBase {\n  readonly kind: \"agent.usage_update\";\n  readonly inputTokens?: number;\n  readonly outputTokens?: number;\n  readonly costUsd?: number;\n}\n\ninterface AgentProcessUpdateEvent extends AgentStreamEventBase {\n  readonly kind: \"agent.process_update\";\n  readonly status: \"spawned\" | \"stderr\" | \"cancelled\" | \"exited\";\n  readonly exitCode?: number;\n}\n\ninterface AgentCallEndedEvent extends AgentStreamEventBase {\n  readonly kind: \"agent.call_ended\";\n  readonly status: \"success\" | \"error\" | \"cancelled\" | \"timeout\";\n  readonly exitCode?: number;\n}\n\nexport interface IAgentStreamEventBus {\n  onAgentStream(listener: (event: AgentStreamEvent) => void): () => void;\n  emitAgentStream(event: AgentStreamEvent): void;\n}\n```",
+      "acceptanceCriteria": [
+        "AgentStreamEventBus.emitAgentStream(event) delivers the event to all registered listeners",
+        "AgentStreamEventBus.onAgentStream(listener) returns an unsubscribe function; after calling it, that listener no longer receives events",
+        "When a registered listener throws during emitAgentStream(), the error is logged at warn level and remaining listeners still receive the event",
+        "AgentStreamEventBus.emitAgentStream(event) does not buffer or retain emitted events after delivery"
+      ],
+      "tags": [
+        "feature",
+        "runtime"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/pipeline/event-bus.ts",
+        "src/runtime/dispatch-events.ts",
+        "src/runtime/index.ts",
+        "src/runtime/middleware/index.ts"
+      ],
+      "suggestedCriteria": [
+        "AgentStreamEventBus.emitAgentStream(event) does not throw when zero listeners are registered",
+        "AgentStreamEventBus.onAgentStream(listener) does not add duplicate entries for the same listener reference",
+        "NaxRuntime.agentStreamEvents is non-null and typed as IAgentStreamEventBus after createRuntime() returns"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "ACP Activity Emission — Wire Stream Events into Agent Execution",
+      "description": "**Goal** — Modify the ACP adapter layer to emit AgentStreamEvents during agent prompt execution, mapping ACP JSON-RPC session/update events to the stream event channel.\n\n**Motivation** — Without live activity events emitted from the ACP adapter, the watchdog and TUI have no signal to distinguish actively-thinking agents from wedged sessions. The adapter layer must emit metadata-only activity events during prompt execution.\n\n**Approach** — Add an optional stream callback to ACP client/session construction. Thread call metadata (runId, agentName, sessionName, storyId, stage, model, timeoutSeconds) through openSession() and complete(). Generate a stable UUID callId per physical prompt invocation at prompt start — not sessionName — because one session can have multiple turns. Emit agent.call_started before spawning acpx. Emit agent.process_update { status: \"spawned\" } after PID registration. Modify parseAcpxJsonLine() to return activity metadata for the current line while still updating parse state: agent_message_chunk → agent.message_update, agent_thought_chunk → agent.thinking_update, usage_update → agent.usage_update. Do NOT include raw message or thought content — use deltaBytes only. Emit activity events immediately while reading stdout lines, not waiting for proc.exited. Emit agent.process_update { status: \"stderr\" } as diagnostic metadata only. Emit agent.process_update { status: \"exited\" } and agent.call_ended in all terminal paths: success, non-zero exit, cancel, parse failure, thrown spawn/stream errors.\n\n**Scope** — In: stream callback threading through adapter-lifecycle.ts, spawn-client.ts, parser.ts, adapter.ts, adapter-session-types.ts; activity metadata return from parseAcpxJsonLine(); callId generation and lifecycle event emission. Out: watchdog logic, config changes, TUI changes, failure classification.\n\n**Interface**\n```typescript\n// In adapter-session-types.ts — add optional stream callback to AcpClient\ninterface AcpClientOptions {\n  // ... existing fields\n  onStreamActivity?: (event: AgentStreamEvent) => void;\n}\n\n// In parser.ts — parseAcpxJsonLine() additionally returns activity metadata\ninterface AcpxLineActivity {\n  kind?: \"message_update\" | \"thinking_update\" | \"usage_update\";\n  deltaBytes?: number;\n  inputTokens?: number;\n  outputTokens?: number;\n  costUsd?: number;\n}\n\n// parseAcpxJsonLine() signature change: returns AcpxLineActivity | undefined\nfunction parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLineActivity | undefined;\n```",
+      "acceptanceCriteria": [
+        "When parseAcpxJsonLine() processes a JSON-RPC line with method=session/update and sessionUpdate=agent_message_chunk, it returns activity metadata with kind='message_update' and a non-negative deltaBytes",
+        "When parseAcpxJsonLine() processes a JSON-RPC line with method=session/update and sessionUpdate=agent_thought_chunk, it returns activity metadata with kind='thinking_update' and a non-negative deltaBytes",
+        "When parseAcpxJsonLine() processes a JSON-RPC line with method=session/update and sessionUpdate=usage_update, it returns activity metadata with kind='usage_update' and populated inputTokens/outputTokens/costUsd fields",
+        "The returned activity metadata from parseAcpxJsonLine() never contains raw message or thought text content",
+        "agent.call_started is emitted before the acpx process is spawned",
+        "agent.process_update { status: 'spawned' } is emitted after PID registration completes",
+        "agent.message_update and agent.thinking_update events are emitted during stdout line reading, before the process exits",
+        "agent.call_ended is emitted exactly once for every agent.call_started event, across success, error, cancel, and parse failure paths",
+        "When the spawned process fails to start, agent.call_ended { status: 'error' } is emitted without a prior agent.call_started",
+        "Each physical prompt invocation generates a unique callId via crypto.randomUUID(), distinct from the session name"
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "telemetry"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/agents/acp/parser.ts",
+        "src/agents/acp/spawn-client.ts",
+        "src/agents/acp/adapter-lifecycle.ts",
+        "src/agents/acp/adapter-session-types.ts",
+        "src/agents/acp/adapter.ts"
+      ],
+      "suggestedCriteria": [
+        "agent.process_update { status: 'cancelled' } is emitted when cancelActivePrompt() is called mid-flight",
+        "agent.process_update { status: 'stderr' } is emitted when acpx writes to stderr, without including the stderr text content",
+        "When parseAcpxJsonLine() receives a non-JSON line, it returns undefined for activity metadata without corrupting parse state",
+        "Multiple agent_message_chunk lines in sequence each produce separate agent.message_update events with distinct deltaBytes",
+        "callId is generated once at prompt start (crypto.randomUUID) and is referenced unchanged by every event emitted for that turn, from agent.call_started through agent.call_ended"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Idle Watchdog Subscriber and Configuration Schema",
+      "description": "**Goal** — Implement the idle watchdog subscriber that monitors AgentStreamEvents and cancels stale prompts when no configured activity is observed within the idle timeout.\n\n**Motivation** — The existing wall-clock timeout cannot distinguish a slow but active model from a truly wedged session. The watchdog uses prompt-level activity telemetry (not parent heartbeat) to detect and cancel stale prompts before the full wall-clock timeout.\n\n**Approach** — Add agent.acp.idleWatchdog config schema (Zod) and runtime types (TypeScript). Implement attachAgentIdleWatchdog(agentStreamEvents, controllerRegistry, config) that subscribes to the AgentStreamEventBus. Maintain a Map<callId, WatchdogState> tracking startedAt, lastActivityAt, and counters (messageUpdates, thinkingUpdates, usageUpdates). Initialize lastActivityAt on agent.call_started. Reset lastActivityAt only for configured activityKinds (message_update, thinking_update, usage_update). Do NOT reset on agent.process_update or parent heartbeat. Implement four modes: off (no state/timers), observe (log only, no cancel), warn-then-cancel (log at threshold, wait cancelGraceSeconds, cancel if still idle), cancel (cancel immediately at threshold). Use one bounded interval timer for all active calls; delete timers/state on agent.call_ended. Track retry attempts per logical agent operation; do not exceed maxRetryAttempts. Add a prompt controller registry keyed by callId with a minimal cancellation function (wraps AcpSession.cancelActivePrompt()).\n\n**Scope** — In: IdleWatchdogConfig schema and types, attachAgentIdleWatchdog() middleware, WatchdogState tracking, timer management, prompt controller registry, four watchdog modes. Out: ACP adapter changes, failure classification, TUI changes, logging middleware.\n\n**Interface**\n```typescript\ninterface IdleWatchdogConfig {\n  enabled: boolean;\n  mode: \"off\" | \"observe\" | \"warn-then-cancel\" | \"cancel\";\n  idleTimeoutSeconds: number;\n  activityKinds: Array<\"message_update\" | \"thinking_update\" | \"usage_update\">;\n  cancelGraceSeconds: number;\n  maxRetryAttempts: number;\n}\n\ninterface WatchdogState {\n  readonly callId: string;\n  readonly agentName: string;\n  readonly sessionName: string;\n  readonly storyId?: string;\n  readonly stage?: PipelineStage;\n  readonly pid?: number;\n  startedAt: number;\n  lastActivityAt: number;\n  messageUpdates: number;\n  thinkingUpdates: number;\n  usageUpdates: number;\n}\n\nfunction attachAgentIdleWatchdog(\n  agentStreamEvents: IAgentStreamEventBus,\n  controllerRegistry: Map<string, () => Promise<void>>,\n  config: NaxConfig\n): () => void;\n```",
+      "acceptanceCriteria": [
+        "When agent.message_update is emitted and 'message_update' is in configured activityKinds, the watchdog resets lastActivityAt for that callId",
+        "When agent.thinking_update is emitted and 'thinking_update' is in configured activityKinds, the watchdog resets lastActivityAt for that callId",
+        "When agent.usage_update is emitted and 'usage_update' is in configured activityKinds, the watchdog resets lastActivityAt for that callId",
+        "When agent.process_update is emitted, the watchdog does NOT reset lastActivityAt, regardless of activityKinds config",
+        "In 'observe' mode, when a call exceeds idleTimeoutSeconds without activity, the watchdog logs a warning but does NOT invoke the cancellation function",
+        "In 'warn-then-cancel' mode, when a call exceeds idleTimeoutSeconds, the watchdog logs a warning; if activity arrives during cancelGraceSeconds, the cancellation is aborted",
+        "In 'cancel' mode, when a call exceeds idleTimeoutSeconds, the watchdog immediately invokes the cancellation function without a grace period",
+        "When agent.call_ended is emitted, the watchdog deletes all state and timers for that callId",
+        "When the same logical agent operation is cancelled by the watchdog maxRetryAttempts times, the watchdog emits a terminal failure and stops retrying",
+        "Config validation rejects idleTimeoutSeconds <= 0 when mode is not 'off'"
+      ],
+      "tags": [
+        "feature",
+        "watchdog",
+        "config"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/runtime/middleware/index.ts",
+        "src/config/schemas-infra.ts",
+        "src/config/runtime-types-agent.ts",
+        "src/runtime/middleware/logging.ts"
+      ],
+      "suggestedCriteria": [
+        "When mode is 'off', attachAgentIdleWatchdog returns immediately without creating any timers or state",
+        "Config validation rejects an empty activityKinds array when enabled is true",
+        "Config validation rejects cancelGraceSeconds < 0",
+        "When cancelGraceSeconds is 0 in 'warn-then-cancel' mode, cancellation fires immediately after the warning log (same as 'cancel' mode)",
+        "Multiple concurrent calls each have independent watchdog timers with independent lastActivityAt values",
+        "The watchdog does not accumulate state across calls — state is fully deleted on agent.call_ended even if there are active timers",
+        "If the cancellation function throws, the watchdog logs the error and continues monitoring other calls"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Failure Classification and Retry for Stale Prompts",
+      "description": "**Goal** — Classify watchdog stale cancellations as retriable availability failures (fail-stale) and wire them through the existing retry/fallback pipeline so stale prompts can be retried or fallback agents invoked.\n\n**Motivation** — Without proper failure classification, watchdog cancellations would be treated as generic errors, bypassing the retry infrastructure. Stale prompts should be retried with the same agent up to maxRetryAttempts, then fall back to alternate agents, just like other availability failures.\n\n**Approach** — Add fail-stale to the AdapterFailure.outcome union in context/engine/types.ts. Classify fail-stale as category: \"availability\", retriable: true until maxRetryAttempts is exhausted, then retriable: false. Extend the default retry strategy (agents/retry/default-strategy.ts) to handle fail-stale alongside existing fail-rate-limit with appropriate backoff. Ensure complete() and runAsSession() return structured AdapterFailure with outcome: fail-stale — never hand failure text to operation parsers as if it were model output. Ensure SessionFailureError carries the fail-stale AdapterFailure so AgentManager can interpret it. Preserve the distinction between fail-stale (no configured stream activity within idle timeout) and fail-timeout (wall-clock timeout exceeded). Log recovery paths: same-agent retry, fallback agent selected, retries exhausted, terminal stale failure. fail-stale must NOT trigger quality escalation.\n\n**Scope** — In: fail-stale outcome in AdapterFailure union, retry strategy extension, SessionFailureError propagation, adapter failure return paths, operation-level stale failure handling. Out: watchdog timer logic, config schema, ACP parser changes, TUI changes.\n\n**Interface**\n```typescript\n// In context/engine/types.ts — AdapterFailure.outcome union gains:\n| \"fail-stale\"\n\n// In agents/retry/default-strategy.ts — shouldRetry extended:\n// fail-stale is retriable (category: \"availability\") up to maxRetryAttempts\n\n// In agents/manager.ts — AgentManager.runWithFallback:\n// fail-stale failures follow same retry→fallback path as fail-rate-limit\n// Retry count for fail-stale is tracked per logical agent operation\n// Wall-clock timeout failures (fail-timeout) remain separate from stale-idle retry accounting\n```",
+      "acceptanceCriteria": [
+        "When a prompt is cancelled by the idle watchdog, the adapter returns an AdapterFailure with outcome='fail-stale' and category='availability'",
+        "fail-stale triggers the same retry/fallback path as other availability failures (e.g., fail-rate-limit) in AgentManager.runWithFallback",
+        "fail-stale does NOT trigger tier escalation or quality escalation in the pipeline",
+        "Retry for fail-stale stops after maxRetryAttempts attempts; subsequent stale cancellations for the same logical operation return a terminal failure",
+        "When fail-stale retries are exhausted, AgentManager falls back to a configured fallback agent if one exists",
+        "When a stale cancellation occurs, complete() returns a structured AdapterFailure — the stale failure text is NOT handed to operation parsers as if it were successful model output",
+        "fail-timeout behavior (wall-clock timeout) remains unchanged except for clearer logging that distinguishes it from fail-stale",
+        "SessionFailureError carries the fail-stale AdapterFailure so that sendTurn()/runAsSession() propagates the structured failure for the caller to interpret",
+        "An integration test verifies that a hanging ACP prompt with no stream activity is cancelled by the idle watchdog before the wall-clock timeout, producing a fail-stale AdapterFailure",
+        "An integration test verifies that a prompt emitting periodic agent_thought_chunk lines is NOT cancelled by the watchdog, even when total wall-clock duration approaches the wall-clock timeout",
+        "An integration test verifies that a prompt emitting only periodic usage_update lines is NOT cancelled by the watchdog"
+      ],
+      "tags": [
+        "feature",
+        "retry",
+        "availability"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/context/engine/types.ts",
+        "src/agents/types.ts",
+        "src/agents/retry/default-strategy.ts",
+        "src/agents/manager.ts",
+        "src/operations/call.ts",
+        "src/operations/build-hop-callback.ts",
+        "src/runtime/session-run-hop.ts"
+      ],
+      "suggestedCriteria": [
+        "fail-stale retry count is tracked independently from fail-rate-limit and fail-timeout retry counts per logical agent operation",
+        "When the same operation is cancelled by watchdog twice, then succeeds on the third attempt, the retry accounting is reset for the next distinct operation",
+        "Fallback agent selection for fail-stale uses the same fallback map and maxHopsPerStory as other availability failures",
+        "Log output for a fail-stale recovery path includes: storyId, original agent, retry attempt number, and whether fallback was invoked"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Stream Event Observability — Logging and TUI Integration",
+      "description": "**Goal** — Add lightweight structured logging and real-time TUI display of agent stream events so operators can diagnose stale prompts and monitor agent activity without raw content exposure.\n\n**Motivation** — Without observability into the stream event channel, operators cannot tell whether a prompt is actively progressing or idle. Logs and TUI should show enough metadata to diagnose a stale prompt without exposing raw message or thought content.\n\n**Approach** — Add attachAgentStreamLogging(bus) middleware subscriber that logs call_started, call_ended, idle warnings, stale cancellations, and completion counters (messageUpdates, thinkingUpdates, usageUpdates, lastActivityAt, idleMs). Subscribe the TUI to AgentStreamEventBus in read-only mode. TUI components render: active agent, current story/stage, elapsed call time, last activity age, activity counters, and idle countdown when watchdog is enabled. TUI must NOT cancel prompts or mutate watchdog state. TUI must NOT display raw thinking content. Handle edge cases: multiple active prompts (distinct rows), absent stream events (graceful fallback), rapid event emission (no flickering or per-chunk accumulation).\n\n**Scope** — In: attachAgentStreamLogging() middleware, TUI stream event hook, AgentPanel and App.tsx enhancements, structured stream logs with counters. Out: watchdog logic, ACP adapter changes, config schema, retry changes.\n\n**Interface**\n```typescript\nfunction attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: string): () => void;\n\n// TUI hook (new or enhanced)\nfunction useAgentStreamEvents(): {\n  activeCalls: Map<string, {\n    callId: string;\n    agentName: string;\n    storyId?: string;\n    stage?: string;\n    startedAt: number;\n    lastActivityAt: number;\n    messageUpdates: number;\n    thinkingUpdates: number;\n    usageUpdates: number;\n    status: \"active\" | \"ended\";\n  }>;\n}\n```",
+      "acceptanceCriteria": [
+        "attachAgentStreamLogging() logs agent.call_started events with callId, agentName, storyId, stage, model, and timeoutSeconds",
+        "attachAgentStreamLogging() logs agent.call_ended events with completion counters including messageUpdates, thinkingUpdates, usageUpdates, lastActivityAt, and calculated idleMs",
+        "Log output for stream events never contains raw agent_thought_chunk text content",
+        "The TUI continues to render normally when no AgentStreamEventBus is connected or when no stream events are being emitted",
+        "When multiple agent prompts are active concurrently, the TUI displays distinct rows per active call without accumulating per-chunk history arrays",
+        "The TUI renders agent activity metadata (agent name, story, elapsed time, last activity age, activity counters) without displaying raw thinking content"
+      ],
+      "tags": [
+        "feature",
+        "observability",
+        "tui"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/runtime/middleware/logging.ts",
+        "src/tui/hooks/usePipelineEvents.ts",
+        "src/tui/App.tsx",
+        "src/tui/components/AgentPanel.tsx",
+        "src/cli/status.ts"
+      ],
+      "suggestedCriteria": [
+        "When the watchdog is enabled and a call approaches the idle threshold, the TUI displays an idle countdown indicator",
+        "TUI updates on stream events do not cause flickering or re-mount of unrelated components",
+        "attachAgentStreamLogging() returns an unsubscribe function that detaches all listeners when called",
+        "When an agent.call_ended event arrives, the TUI transitions that call's row to 'ended' status and removes it after a brief display period",
+        "Log format for stream events follows existing structured JSONL conventions with stage prefix 'agent-stream'"
+      ]
+    }
+  ],
+  "analysis": "## Impact Areas\n\n### New files to create\n- `src/runtime/agent-stream-events.ts` — AgentStreamEvent type union, concrete event interfaces, and AgentStreamEventBus class\n- `src/runtime/middleware/agent-idle-watchdog.ts` — idle watchdog subscriber with timer management\n- `src/runtime/middleware/agent-stream-logging.ts` — lightweight stream event logger\n\n### Files to modify\n- `src/runtime/index.ts` — add `agentStreamEvents` to NaxRuntime, construct in createRuntime(), wire watchdog\n- `src/runtime/middleware/index.ts` — export new attachAgentStreamLogging and attachAgentIdleWatchdog\n- `src/config/schemas-infra.ts` — add IdleWatchdogConfigSchema within AgentAcpConfigSchema\n- `src/config/runtime-types-agent.ts` — add IdleWatchdogConfig interface within AgentAcpConfig\n- `src/agents/acp/parser.ts` — modify parseAcpxJsonLine() to return activity metadata alongside parse state updates\n- `src/agents/acp/spawn-client.ts` — add optional stream callback to spawn client, emit activity events during line-reading\n- `src/agents/acp/adapter-lifecycle.ts` — thread stream callback through createClient and session helpers\n- `src/agents/acp/adapter-session-types.ts` — add stream callback types to AcpClient/AcpSession interfaces\n- `src/agents/acp/adapter.ts` — wire stream callback from AgentRunOptions/CompleteOptions through to spawn client\n- `src/agents/types.ts` — add stream callback to AgentRunOptions, add callId field, add fail-stale classification\n- `src/agents/manager.ts` — thread stream callback, register prompt cancellation in watchdog controller registry\n- `src/agents/retry/default-strategy.ts` — extend shouldRetry() to handle fail-stale outcome\n- `src/context/engine/types.ts` — add 'fail-stale' to AdapterFailure.outcome union\n- `src/operations/call.ts` — ensure stale failure text is not parsed as output\n- `src/operations/build-hop-callback.ts` — propagate fail-stale through hop callback\n- `src/runtime/session-run-hop.ts` — propagate fail-stale through session run hop\n- `src/tui/hooks/usePipelineEvents.ts` — add stream event hook\n- `src/tui/App.tsx` — subscribe to stream events\n- `src/tui/components/AgentPanel.tsx` — render stream activity indicators\n- `src/cli/status.ts` — may need stream event status output\n\n### Key existing patterns to follow\n- `src/pipeline/event-bus.ts` (PipelineEventBus) — event bus pattern with typed events, unsubscribe returns, error isolation\n- `src/runtime/dispatch-events.ts` (DispatchEventBus) — runtime-level bus with Set-based listeners, try/catch per listener\n- `src/runtime/middleware/logging.ts` — subscriber attachment pattern: attach*(bus, ...) => () => void\n- `src/runtime/middleware/index.ts` — barrel exports for middleware subscribers\n- `src/config/schemas-infra.ts` — Zod schema patterns with .default(), .min(), .max(), .int(), discriminated unions\n- `src/config/runtime-types-agent.ts` — TypeScript interfaces mirroring Zod schemas\n- `src/agents/retry/default-strategy.ts` — RetryStrategy interface with shouldRetry(AdapterFailure, attempt, ctx) => RetryDecision\n\n### Architecture decisions\n1. **Separate bus from DispatchEventBus** — stream events are fire-and-forget, metadata-only, O(active prompts) memory. Dispatch events are final results with full prompt/response.\n2. **UUID-based callId** — one physical prompt invocation gets one callId, even if the session has multiple turns. sessionName alone is insufficient.\n3. **Default metadata-only payloads** — content fields (raw message text, thought text) are excluded by default. Only deltaBytes, token counts, and cost are emitted.\n4. **Watchdog as middleware subscriber** — attaches to AgentStreamEventBus, maintains per-call state Map, uses bounded interval timers.\n5. **Config-driven behavior** — mode-based watchdog (off/observe/warn-then-cancel/cancel) with one global idle timeout for first release.\n6. **fail-stale as availability failure** — classified under category: \"availability\" so it triggers agent fallback/retry, not quality escalation.\n\n### Risks\n- ACP parser changes must not break existing JSON-RPC parsing or legacy NDJSON parsing\n- Watchdog timer management must clean up on agent.call_ended to prevent memory leaks\n- Retry strategy changes must preserve existing rate-limit and quality-failure behavior\n- TUI changes must handle absent stream events gracefully (watchdog disabled or no active prompts)\n- agent_thought_chunk content must never leak into logs or watchdog state\n\n### Dependency order (must implement stories in this sequence)\nUS-001 → US-002 → US-003 → US-004\nUS-001 → US-005\n\nUS-002, US-003, and US-004 form a sequential chain (each builds on the previous). US-005 can be implemented in parallel with US-002/US-003/US-004 once US-001 is done."
+}
