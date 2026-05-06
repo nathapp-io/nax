@@ -3,7 +3,7 @@
   "feature": "agent-event-watchdog",
   "branchName": "feat/agent-event-watchdog",
   "createdAt": "2026-05-06T00:00:00.000Z",
-  "updatedAt": "2026-05-06T02:34:27.170Z",
+  "updatedAt": "2026-05-06T03:12:37.112Z",
   "userStories": [
     {
       "id": "US-001",
@@ -74,13 +74,20 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: AC5 (\"agent.call_started is emitted before the acpx process is spawned\") and AC9 (\"When the spawned process fails to start, agent.call_ended is emitted without a prior agent.call_started\") are mutually exclusive. Emitting call_started before spawn means any spawn failure will always have a prior call_started. The current implementation satisfies AC5; satisfying AC9 as written requires violating AC5. These two ACs cannot both be satisfied without redefining one of them.",
+          "timestamp": "2026-05-06T03:12:35.079Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "complex",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/agents/acp/parser.ts",
@@ -96,8 +103,39 @@
         "Multiple agent_message_chunk lines in sequence each produce separate agent.message_update events with distinct deltaBytes",
         "callId is generated once at prompt start (crypto.randomUUID) and is referenced unchanged by every event emitted for that turn, from agent.call_started through agent.call_ended"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Reviewer contradiction: AC5 (\"agent.call_started is emitted before the acpx process is spawned\") and AC9 (\"When the spawned process fails to start, agent.call_ended is emitted without a prior agent.call_started\") are mutually exclusive. Emitting call_started before spawn means any spawn failure will always have a prior call_started. The current implementation satisfies AC5; satisfying AC9 as written requires violating AC5. These two ACs cannot both be satisfied without redefining one of them."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/agents/acp/spawn-client.ts",
+              "line": 202,
+              "message": "AC9 violation: agent.call_started is emitted unconditionally before the spawn attempt (lines 202-209), so when spawn fails and the catch block emits agent.call_ended, there IS a prior agent.call_started. AC9 explicitly requires call_ended to be emitted 'without a prior agent.call_started' for spawn failures.",
+              "suggestion": "Either move agent.call_started emission to after successful spawn (updating AC5 accordingly), or revise AC9 to allow a prior call_started for spawn failures since call_started must precede spawn per AC5 and the story approach.",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "read src/agents/acp/spawn-client.ts lines 202-223",
+                  "file": "src/agents/acp/spawn-client.ts",
+                  "line": 202,
+                  "observed": "    // AC5: Emit call_started BEFORE spawning the acpx process\n    emit?.({\n      ...baseEvent,\n      kind: \"agent.call_started\",\n      model: this.model,\n      timeoutSeconds: this.timeoutSeconds,\n      timestamp: now(),\n    });\n\n    let proc: ReturnType<typeof _spawnClientDeps.spawn>;\n    try {\n      proc = _spawnClientDeps.spawn(cmd, {\n        cwd: this.cwd,\n        stdin: \"pipe\",\n        stdout: \"pipe\",\n        stderr: \"pipe\",\n        env: this.env,\n      });\n    } catch (spawnErr) {\n      // Spawn itself threw before we got a PID — emit call_ended with error status\n      emit?.({ ...baseEvent, kind: \"agent.call_ended\", status: \"error\", timestamp: now() });\n      throw spawnErr;\n    }"
+                }
+              }
+            }
+          ],
+          "cost": 2.3817558400000003,
+          "timestamp": "2026-05-06T03:12:35.079Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "30e481e9d204b3d72252c8e5fc555460676b9d14"
     },
