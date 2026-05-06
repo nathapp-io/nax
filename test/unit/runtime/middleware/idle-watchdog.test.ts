@@ -228,7 +228,7 @@ describe("attachAgentIdleWatchdog", () => {
         acp: {
           idleWatchdog: makeIdleWatchdogConfig({
             mode: "observe",
-            idleTimeoutSeconds: 0.5, // Short timeout to detect activity reset
+            idleTimeoutSeconds: 0.2, // Short timeout so the timer fires quickly
             activityKinds: ["message_update", "thinking_update", "usage_update"],
           }),
         },
@@ -239,14 +239,20 @@ describe("attachAgentIdleWatchdog", () => {
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-4" }));
 
-    // Emit process_update (should NOT reset activity timer)
+    // Emit process_update well before the timeout — must NOT reset the idle clock
     await new Promise((r) => setTimeout(r, 50));
     eventBus.emitAgentStream(makeProcessUpdateEvent({ callId: "call-4", status: "spawned" }));
+
+    // Wait past the idle timeout — the timer must fire because process_update did not count as activity
+    await new Promise((r) => setTimeout(r, 250));
     await getLogger().flush();
 
-    // Watchdog should not treat process_update as activity
-    // (In the actual implementation, the timer will fire after the timeout)
-    await getLogger().flush();
+    const entries = await parseAllEntries(logFile);
+    const warnEntry = entries.find((e) => e.level === "warn" && e.data?.key === "idle_timeout_exceeded");
+
+    // Warning must be present, proving the timer fired (i.e. process_update did not reset it)
+    expect(warnEntry).toBeDefined();
+    expect(warnEntry?.data?.callId).toBe("call-4");
 
     unsubscribe();
   });
