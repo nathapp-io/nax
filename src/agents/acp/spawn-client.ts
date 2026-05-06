@@ -199,15 +199,6 @@ export class SpawnAcpSession implements AcpSession {
     });
     getSafeLogger()?.debug("acp-adapter", `Sending prompt to session: ${this.sessionName}`);
 
-    // AC5: Emit call_started BEFORE spawning the acpx process
-    emit?.({
-      ...baseEvent,
-      kind: "agent.call_started",
-      model: this.model,
-      timeoutSeconds: this.timeoutSeconds,
-      timestamp: now(),
-    });
-
     let proc: ReturnType<typeof _spawnClientDeps.spawn>;
     try {
       proc = _spawnClientDeps.spawn(cmd, {
@@ -218,7 +209,7 @@ export class SpawnAcpSession implements AcpSession {
         env: this.env,
       });
     } catch (spawnErr) {
-      // Spawn itself threw before we got a PID — emit call_ended with error status
+      // Spawn threw before a PID was obtained — AC9: emit call_ended without a prior call_started
       emit?.({ ...baseEvent, kind: "agent.call_ended", status: "error", timestamp: now() });
       throw spawnErr;
     }
@@ -226,6 +217,15 @@ export class SpawnAcpSession implements AcpSession {
     this.activeProc = proc;
     const processPid = proc.pid;
     this.onPidSpawned?.(processPid);
+
+    // AC5/AC6: Emit call_started after spawn succeeds (PID obtained), before process_update
+    emit?.({
+      ...baseEvent,
+      kind: "agent.call_started",
+      model: this.model,
+      timeoutSeconds: this.timeoutSeconds,
+      timestamp: now(),
+    });
 
     // AC6: Emit process_update(spawned) AFTER PID registration
     emit?.({
