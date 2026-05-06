@@ -112,10 +112,12 @@ const FAILING_ERROR_RESPONSE = JSON.stringify({
     {
       severity: "error",
       category: "error-path",
-      file: "src/auth.ts",
+      file: "src/log.ts",
       line: 10,
       issue: "No error handling on login",
       suggestion: "Add try/catch",
+      acQuote: "can log in",
+      acIndex: 1,
     },
   ],
 });
@@ -168,10 +170,12 @@ const PASSED_TRUE_WITH_ERROR_RESPONSE = JSON.stringify({
     {
       severity: "error",
       category: "error-path",
-      file: "src/auth.ts",
+      file: "src/log.ts",
       line: 15,
       issue: "Unhandled promise rejection",
       suggestion: "Add .catch()",
+      acQuote: "can log in",
+      acIndex: 1,
     },
   ],
 });

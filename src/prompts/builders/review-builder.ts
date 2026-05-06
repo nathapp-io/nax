@@ -31,6 +31,12 @@ For each acceptance criterion, verify the current codebase implements it correct
 - Every "error" finding must include verifiedBy evidence from the current codebase. If you cannot provide verifiedBy, downgrade the finding to "unverifiable".
 - The \`verifiedBy.observed\` field MUST be a **verbatim** 1-3 line code excerpt copy-pasted from the file — not a description. Paste the actual source lines (or a substring of them) that prove your claim. A description like "function X does not check Y" is not a verifiable observation; quote the lines that demonstrate the omission instead. If you cannot quote an exact excerpt that proves your point, downgrade the finding to "unverifiable".
 
+**AC-grounding rule — required for every "error" finding:**
+- Every "error" finding MUST include \`acQuote\`: a verbatim substring of one AC bullet that names or constrains the exact file, function, or symbol you are flagging.
+- Include \`acIndex\` (1-based) indicating which AC bullet you are quoting.
+- If no AC bullet mentions the file, function, or symbol being flagged, the finding is out-of-scope. Emit it as \`severity: "info"\` instead — it cannot block the story.
+- Copy \`acQuote\` directly from the Acceptance Criteria text — do not paraphrase.
+
 Flag issues only when you have confirmed:
 1. An AC is not implemented or partially implemented (verified by reading the actual files)
 2. The implementation contradicts what the AC specifies
@@ -49,6 +55,8 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
       "line": 42,
       "issue": "description of the issue",
       "suggestion": "how to fix it",
+      "acQuote": "<verbatim substring of one AC bullet constraining this locus — required for 'error'>",
+      "acIndex": 3,
       "verifiedBy": {
         "command": "command used to inspect the current codebase",
         "file": "path/to/file",
@@ -59,6 +67,9 @@ const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text b
   ]
 }
 
+Notes:
+- \`acQuote\` and \`acIndex\` are required when severity is "error". Omit them for "warning", "info", "unverifiable".
+- \`acIndex\` is 1-based (AC 1 = first bullet in the Acceptance Criteria list above).
 If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.`;
 
 // ─── Options ──────────────────────────────────────────────────────────────────

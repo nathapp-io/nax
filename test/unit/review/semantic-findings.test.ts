@@ -27,7 +27,10 @@ const STORY: SemanticStory = {
   id: "US-003",
   title: "Wire semantic findings",
   description: "Wire findings into autofix context",
-  acceptanceCriteria: ["ctx.reviewFindings is populated when semantic fails"],
+  acceptanceCriteria: [
+    "ctx.reviewFindings is populated when semantic fails",
+    "Each src module error finding must be included in the result",
+  ],
 };
 
 const CFG: SemanticReviewConfig = {
@@ -117,7 +120,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 10, issue: "Stub left in code", suggestion: "Remove stub" },
+        { severity: "error", file: "src/foo.ts", line: 10, issue: "Stub left in code", suggestion: "Remove stub", acQuote: "Each src module error finding", acIndex: 2 },
       ],
     });
     const result = await callRunSemanticReview(llmResponse);
@@ -128,13 +131,13 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 5, issue: "Missing wiring in runner", suggestion: "Fix it" },
+        { severity: "error", file: "src/foo.ts", line: 5, issue: "src module wiring missing in runner", suggestion: "Fix it", acQuote: "Each src module error finding", acIndex: 2 },
       ],
     });
 
     const result = await callRunSemanticReview(llmResponse);
 
-    expect(result.findings![0].message).toBe("Missing wiring in runner");
+    expect(result.findings![0].message).toBe("src module wiring missing in runner");
   });
 
   test("sets source='semantic-review' on blocking ReviewFindings", async () => {
@@ -142,8 +145,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/a.ts", line: 1, issue: "An issue", suggestion: "Fix" },
-        { severity: "error", file: "src/b.ts", line: 2, issue: "Another issue", suggestion: "Fix" },
+        { severity: "error", file: "src/a.ts", line: 1, issue: "src module error in a", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
+        { severity: "error", file: "src/b.ts", line: 2, issue: "src module error in b", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
       ],
     });
 
@@ -175,7 +178,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/review/runner.ts", line: 42, issue: "Issue", suggestion: "Fix" },
+        { severity: "error", file: "src/review/runner.ts", line: 42, issue: "src module error not wired", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
       ],
     });
 
@@ -189,7 +192,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 99, issue: "Issue", suggestion: "Fix" },
+        { severity: "error", file: "src/foo.ts", line: 99, issue: "src module error missing", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
       ],
     });
     const result = await callRunSemanticReview(llmResponse);
@@ -202,7 +205,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 1, issue: "Issue", suggestion: "Fix" },
+        { severity: "error", file: "src/foo.ts", line: 1, issue: "src module error not flagged", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
       ],
     });
     const result = await callRunSemanticReview(llmResponse);
@@ -243,7 +246,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/a.ts", line: 1, issue: "Issue A", suggestion: "Fix A" },
+        { severity: "error", file: "src/a.ts", line: 1, issue: "src module error missing in A", suggestion: "Fix A", acQuote: "Each src module error finding", acIndex: 2 },
         { severity: "warn", file: "src/b.ts", line: 20, issue: "Issue B", suggestion: "Fix B" },
         { severity: "info", file: "src/c.ts", line: 5, issue: "Issue C", suggestion: "Fix C" },
       ],
@@ -252,7 +255,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     // Only error blocks by default
     expect(result.findings!.length).toBe(1);
-    expect(result.findings![0].message).toBe("Issue A");
+    expect(result.findings![0].message).toBe("src module error missing in A");
     // warn + info are advisory
     expect(result.advisoryFindings!.length).toBe(2);
     expect(result.advisoryFindings![0].message).toBe("Issue B");

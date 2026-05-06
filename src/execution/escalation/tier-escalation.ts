@@ -19,6 +19,7 @@ import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { hookCtx } from "../helpers";
 import { appendProgress } from "../progress";
+import { verifyEscalationQuotes } from "./quote-integrity";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
 
 /** Build a StructuredFailure for tier escalation. */
@@ -341,7 +342,14 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     }
   }
 
-  const pipelineReason = ctx.pipelineResult.reason ? `: ${ctx.pipelineResult.reason}` : "";
+  // Issue #930 Part 2: verify any (file, line, quote) triples in the escalation reason
+  // before propagating to priorErrors. Fabricated quotes are replaced with <UNVERIFIED_QUOTE>.
+  const rawPipelineReason = ctx.pipelineResult.reason ?? "";
+  const verifiedPipelineReason = rawPipelineReason
+    ? await verifyEscalationQuotes(rawPipelineReason, ctx.workdir, ctx.story.id)
+    : rawPipelineReason;
+
+  const pipelineReason = verifiedPipelineReason ? `: ${verifiedPipelineReason}` : "";
   const errorMessage = `Attempt ${ctx.story.attempts + 1} failed with model tier: ${ctx.routing.modelTier}${ctx.isBatchExecution ? " (in batch)" : ""}${pipelineReason}`;
 
   const updatedPrd = {

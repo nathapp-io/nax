@@ -43,7 +43,7 @@ const MIXED_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
     { severity: "warning", file: "src/foo.ts", line: 1, issue: "A warning", suggestion: "Fix warning" },
-    { severity: "error", file: "src/bar.ts", line: 2, issue: "An error", suggestion: "Fix error" },
+    { severity: "error", file: "src/blockingThreshold.ts", line: 2, issue: "An error", suggestion: "Fix error", acQuote: "blockingThreshold controls which findings block", acIndex: 1 },
   ],
 });
 
@@ -156,7 +156,7 @@ describe("runSemanticReview — blockingThreshold defaults to 'error'", () => {
   test("error finding blocks by default (goes to findings)", async () => {
     const errorOnly = JSON.stringify({
       passed: false,
-      findings: [{ severity: "error", file: "src/a.ts", line: 1, issue: "An error", suggestion: "Fix" }],
+      findings: [{ severity: "error", file: "src/blockingThreshold.ts", line: 1, issue: "An error", suggestion: "Fix", acQuote: "blockingThreshold controls which findings block", acIndex: 1 }],
     });
     const agentManager = makeAgentManager(errorOnly);
     const runtime = makeMockRuntime({ agentManager });

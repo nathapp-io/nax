@@ -123,7 +123,9 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
       "file": "relative/path/to/file.ts",
       "line": 42,
       "issue": "Precise description of the weakness",
-      "suggestion": "Concrete fix or mitigation"
+      "suggestion": "Concrete fix or mitigation",
+      "acQuote": "<verbatim substring of one AC bullet constraining this locus — required for 'error'>",
+      "acIndex": 2
     }
   ]
 }
@@ -136,7 +138,13 @@ Severity guide:
 - \`"unverifiable"\`: suspect problem but couldn't confirm from available artifacts
 
 \`passed\` must be \`false\` if any finding has severity \`"error"\` or \`"warning"\`.
-\`passed\` may be \`true\` with findings if all findings are \`"info"\` or \`"unverifiable"\`.`;
+\`passed\` may be \`true\` with findings if all findings are \`"info"\` or \`"unverifiable"\`.
+
+**AC-grounding rule — required for every "error" finding:**
+- \`acQuote\` must be a verbatim substring of one AC bullet (from the Acceptance Criteria above) that names or constrains the exact file, function, or symbol you are flagging.
+- \`acIndex\` is the 1-based position of that AC bullet in the list.
+- If no AC bullet mentions the file, function, or symbol being flagged, emit the finding as \`"info"\` instead — it cannot block the story.
+- Do not paraphrase the AC text — copy it exactly.`;
 
 /**
  * Build the diff section for "ref" mode.

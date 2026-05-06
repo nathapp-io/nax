@@ -25,6 +25,7 @@ import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
+import { filterByAcQuote } from "./ac-quote-validator";
 import {
   type AdversarialLLMFinding,
   type AdversarialLLMResponse,
@@ -351,10 +352,23 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       durationMs: Date.now() - startTime,
     };
   }
-  const parsed: AdversarialLLMResponse = {
+  const rawParsed: AdversarialLLMResponse = {
     passed: opResult.passed,
     findings: opResult.findings as AdversarialLLMFinding[],
   };
+
+  // Issue #930 Part 1: drop error findings not grounded in AC text
+  const { accepted: acGroundedFindings, dropped: acDropped } = filterByAcQuote(
+    rawParsed.findings,
+    story.acceptanceCriteria,
+  );
+  if (acDropped.length > 0) {
+    logger?.warn("review", "Adversarial findings dropped: acQuote validation failed", {
+      storyId: story.id,
+      dropped: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue, code: d.code })),
+    });
+  }
+  const parsed: AdversarialLLMResponse = { ...rawParsed, findings: acGroundedFindings };
 
   const threshold = blockingThreshold ?? "error";
   const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));

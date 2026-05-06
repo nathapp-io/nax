@@ -53,7 +53,7 @@ const WARNING_ONLY_RESPONSE = JSON.stringify({
 const ERROR_ONLY_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
-    { severity: "error", category: "error-path", file: "src/bar.ts", line: 2, issue: "An error", suggestion: "Fix error" },
+    { severity: "error", category: "error-path", file: "src/findings-bar.ts", line: 2, issue: "An error", suggestion: "Fix error", acQuote: "findings", acIndex: 1 },
   ],
 });
 
@@ -61,7 +61,7 @@ const MIXED_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
     { severity: "warning", category: "input", file: "src/foo.ts", line: 1, issue: "A warning", suggestion: "Fix w" },
-    { severity: "error", category: "error-path", file: "src/bar.ts", line: 2, issue: "An error", suggestion: "Fix e" },
+    { severity: "error", category: "error-path", file: "src/findings-bar.ts", line: 2, issue: "An error", suggestion: "Fix e", acQuote: "findings", acIndex: 1 },
   ],
 });
 

@@ -216,7 +216,7 @@ describe("runSemanticReview — JSON retry outcomes", () => {
   test("returns failure with blocking findings when callOp returns findings", async () => {
     _semanticDeps.callOp = mock(async () => ({
       passed: false,
-      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "Bug", suggestion: "Fix" }],
+      findings: [{ severity: "error", file: "src/workdir.ts", line: 1, issue: "Bug", suggestion: "Fix", acQuote: "accepts workdir, storyGitRef", acIndex: 1 }],
     }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
