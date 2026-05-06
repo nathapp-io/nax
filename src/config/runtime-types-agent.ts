@@ -60,8 +60,6 @@ export interface IdleWatchdogConfig {
 export interface AgentAcpConfig {
   /** Retries for transient prompt failures via acpx --prompt-retries (default: 0 — opt-in) */
   promptRetries?: number;
-  /** Idle watchdog configuration */
-  idleWatchdog?: IdleWatchdogConfig;
 }
 
 /** Agent protocol configuration (ACP-003) */
@@ -78,4 +76,6 @@ export interface AgentConfig {
   fallback?: AgentFallbackConfig;
   /** ACP-specific settings */
   acp?: AgentAcpConfig;
+  /** Idle watchdog configuration */
+  idleWatchdog?: IdleWatchdogConfig;
 }

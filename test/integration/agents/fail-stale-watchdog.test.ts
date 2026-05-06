@@ -36,15 +36,13 @@ function makeWatchdogConfig(
 ) {
   return makeNaxConfig({
     agent: {
-      acp: {
-        idleWatchdog: {
-          enabled: true,
-          mode: "cancel",
-          idleTimeoutSeconds: idleTimeoutMs / 1000,
-          activityKinds,
-          cancelGraceSeconds: 0,
-          maxRetryAttempts: 1,
-        },
+      idleWatchdog: {
+        enabled: true,
+        mode: "cancel",
+        idleTimeoutSeconds: idleTimeoutMs / 1000,
+        activityKinds,
+        cancelGraceSeconds: 0,
+        maxRetryAttempts: 1,
       },
     },
   });
@@ -332,7 +330,7 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     }
   });
 
-  test("idle watchdog is configurable via config.agent.acp.idleWatchdog.idleTimeoutSeconds", async () => {
+  test("idle watchdog is configurable via config.agent.idleWatchdog.idleTimeoutSeconds", async () => {
     const SHORT_IDLE_TIMEOUT_MS = 60;
     const WALL_CLOCK_TIMEOUT_MS = 2000;
 

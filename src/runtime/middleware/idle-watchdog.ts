@@ -130,7 +130,7 @@ export function attachAgentIdleWatchdog(
   controllerRegistry: Map<string, () => Promise<void>>,
   config: NaxConfig,
 ): () => void {
-  const watchdogConfig = config.agent?.acp?.idleWatchdog;
+  const watchdogConfig = config.agent?.idleWatchdog;
   if (!watchdogConfig?.enabled || watchdogConfig.mode === "off" || watchdogConfig.mode === undefined) {
     return agentStreamEvents.onAgentStream(() => {});
   }

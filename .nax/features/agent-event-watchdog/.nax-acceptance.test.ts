@@ -727,14 +727,13 @@ describe("AC-15: message_update in activityKinds resets lastActivityAt and incre
     const controllerRegistry = new Map<string, () => Promise<void>>();
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: 5,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: 5,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -763,14 +762,13 @@ describe("AC-15: message_update in activityKinds resets lastActivityAt and incre
     const controllerRegistry = new Map<string, () => Promise<void>>();
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["message_update", "thinking_update", "usage_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["message_update", "thinking_update", "usage_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -791,14 +789,13 @@ describe("AC-16: thinking_update in activityKinds resets lastActivityAt and incr
     const bus = new AgentStreamEventBus();
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["thinking_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["thinking_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -819,14 +816,13 @@ describe("AC-17: usage_update in activityKinds resets lastActivityAt and increme
     const bus = new AgentStreamEventBus();
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["usage_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["usage_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -862,14 +858,13 @@ describe("AC-18: agent.process_update does NOT reset lastActivityAt", () => {
     const controllerRegistry = new Map<string, () => Promise<void>>();
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -912,14 +907,13 @@ describe("AC-19: observe mode logs warning without invoking cancellation", () =>
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: 0.05,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: 0.05,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -968,14 +962,13 @@ describe("AC-20: warn-then-cancel mode respects grace period and activity resets
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "warn-then-cancel",
-            idleTimeoutSeconds: 0.1,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 0.2,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "warn-then-cancel",
+          idleTimeoutSeconds: 0.1,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 0.2,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -1024,14 +1017,13 @@ describe("AC-21: cancel mode immediately invokes cancellation without grace peri
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "cancel",
-            idleTimeoutSeconds: 0.05,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 10,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "cancel",
+          idleTimeoutSeconds: 0.05,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 10,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -1072,14 +1064,13 @@ describe("AC-22: agent.call_ended deletes state and cancels pending timers", () 
     const controllerRegistry = new Map<string, () => Promise<void>>();
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "cancel",
-            idleTimeoutSeconds: 5,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "cancel",
+          idleTimeoutSeconds: 5,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -1120,14 +1111,13 @@ describe("AC-23: Exceeding maxRetryAttempts emits terminal failure and stops ret
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "cancel",
-            idleTimeoutSeconds: 0.05,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 0,
-            maxRetryAttempts: 2,
+        idleWatchdog: {
+          enabled: true,
+          mode: "cancel",
+          idleTimeoutSeconds: 0.05,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 0,
+          maxRetryAttempts: 2,
           },
         },
       },
@@ -1156,14 +1146,13 @@ describe("AC-24: Config validation rejects idleTimeoutSeconds <= 0 when mode != 
   test("accepts valid idleWatchdog config with idleTimeoutSeconds > 0", () => {
     const config = {
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: 5,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: 5,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -1177,14 +1166,13 @@ describe("AC-24: Config validation rejects idleTimeoutSeconds <= 0 when mode != 
   test("rejects idleWatchdog config with idleTimeoutSeconds <= 0 in observe mode", () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "observe",
-            idleTimeoutSeconds: -1,
-            activityKinds: ["message_update"],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: true,
+          mode: "observe",
+          idleTimeoutSeconds: -1,
+          activityKinds: ["message_update"],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },
@@ -1195,14 +1183,13 @@ describe("AC-24: Config validation rejects idleTimeoutSeconds <= 0 when mode != 
   test("accepts idleTimeoutSeconds <= 0 when mode is 'off'", () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: false,
-            mode: "off",
-            idleTimeoutSeconds: -1,
-            activityKinds: [],
-            cancelGraceSeconds: 1,
-            maxRetryAttempts: 3,
+        idleWatchdog: {
+          enabled: false,
+          mode: "off",
+          idleTimeoutSeconds: -1,
+          activityKinds: [],
+          cancelGraceSeconds: 1,
+          maxRetryAttempts: 3,
           },
         },
       },

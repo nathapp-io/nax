@@ -131,7 +131,7 @@ const AgentFallbackConfigSchema = z.object({
   rebuildContext: z.boolean().default(true),
 });
 
-const AgentAcpIdleWatchdogConfigSchema = z
+const AgentIdleWatchdogConfigSchema = z
   .object({
     enabled: z.boolean().default(false),
     mode: z.enum(["off", "observe", "warn-then-cancel", "cancel"]).default("off"),
@@ -148,7 +148,6 @@ const AgentAcpIdleWatchdogConfigSchema = z
 
 const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
-  idleWatchdog: AgentAcpIdleWatchdogConfigSchema.optional(),
 });
 
 export const AgentConfigSchema = z.object({
@@ -164,6 +163,7 @@ export const AgentConfigSchema = z.object({
     rebuildContext: true,
   }),
   acp: AgentAcpConfigSchema.default({ promptRetries: 0 }),
+  idleWatchdog: AgentIdleWatchdogConfigSchema.optional(),
 });
 
 export const PrecheckConfigSchema = z.object({

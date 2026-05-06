@@ -280,9 +280,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
   });
 
   // AC4: Retry for fail-stale stops after maxRetryAttempts attempts.
-  // The manager reads maxRetryAttempts from config.agent.acp.idleWatchdog.maxRetryAttempts.
-  // Current implementation hardcodes 1 retry; these tests encode the spec so the
-  // implementer can fix the source to respect the configurable limit.
+  // The manager reads maxRetryAttempts from config.agent.idleWatchdog.maxRetryAttempts.
 
   test("fail-stale same-agent retries respect maxRetryAttempts=3 from idleWatchdog config (AC4)", async () => {
     const MAX_RETRY_ATTEMPTS = 3;
@@ -293,16 +291,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
         ...DEFAULT_CONFIG,
         agent: {
           ...DEFAULT_CONFIG.agent,
-          acp: {
-            promptRetries: 0,
-            idleWatchdog: {
-              enabled: true,
-              mode: "cancel",
-              idleTimeoutSeconds: 30,
-              activityKinds: ["message_update", "thinking_update", "usage_update"],
-              cancelGraceSeconds: 5,
-              maxRetryAttempts: MAX_RETRY_ATTEMPTS,
-            },
+          acp: { promptRetries: 0 },
+          idleWatchdog: {
+            enabled: true,
+            mode: "cancel",
+            idleTimeoutSeconds: 30,
+            activityKinds: ["message_update", "thinking_update", "usage_update"],
+            cancelGraceSeconds: 5,
+            maxRetryAttempts: MAX_RETRY_ATTEMPTS,
           },
           fallback: {
             enabled: false, // No fallback — isolate retry behavior
@@ -348,16 +344,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
         ...DEFAULT_CONFIG,
         agent: {
           ...DEFAULT_CONFIG.agent,
-          acp: {
-            promptRetries: 0,
-            idleWatchdog: {
-              enabled: true,
-              mode: "cancel",
-              idleTimeoutSeconds: 30,
-              activityKinds: ["message_update", "thinking_update", "usage_update"],
-              cancelGraceSeconds: 5,
-              maxRetryAttempts: 0, // No same-agent retries allowed
-            },
+          acp: { promptRetries: 0 },
+          idleWatchdog: {
+            enabled: true,
+            mode: "cancel",
+            idleTimeoutSeconds: 30,
+            activityKinds: ["message_update", "thinking_update", "usage_update"],
+            cancelGraceSeconds: 5,
+            maxRetryAttempts: 0, // No same-agent retries allowed
           },
           fallback: {
             enabled: true,

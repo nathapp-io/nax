@@ -157,13 +157,11 @@ describe("attachAgentIdleWatchdog", () => {
   test("AC1: resets lastActivityAt when message_update is emitted and configured", async () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "observe",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "observe",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -186,13 +184,11 @@ describe("attachAgentIdleWatchdog", () => {
   test("AC2: resets lastActivityAt when thinking_update is emitted and configured", async () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "observe",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["thinking_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "observe",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["thinking_update"],
+        }),
       },
     });
 
@@ -212,13 +208,11 @@ describe("attachAgentIdleWatchdog", () => {
   test("AC3: resets lastActivityAt when usage_update is emitted and configured", async () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "observe",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["usage_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "observe",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["usage_update"],
+        }),
       },
     });
 
@@ -238,13 +232,11 @@ describe("attachAgentIdleWatchdog", () => {
   test("AC4: does NOT reset lastActivityAt when process_update is emitted", async () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "observe",
-            idleTimeoutSeconds: 0.2, // Short timeout so the timer fires quickly
-            activityKinds: ["message_update", "thinking_update", "usage_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "observe",
+          idleTimeoutSeconds: 0.2, // Short timeout so the timer fires quickly
+          activityKinds: ["message_update", "thinking_update", "usage_update"],
+        }),
       },
     });
 
@@ -279,13 +271,11 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "observe",
-            idleTimeoutSeconds: 0.2,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "observe",
+          idleTimeoutSeconds: 0.2,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -316,14 +306,12 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "warn-then-cancel",
-            idleTimeoutSeconds: 0.2,
-            cancelGraceSeconds: 0.2,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "warn-then-cancel",
+          idleTimeoutSeconds: 0.2,
+          cancelGraceSeconds: 0.2,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -355,14 +343,12 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "warn-then-cancel",
-            idleTimeoutSeconds: 0.2,
-            cancelGraceSeconds: 0.3,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "warn-then-cancel",
+          idleTimeoutSeconds: 0.2,
+          cancelGraceSeconds: 0.3,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -399,14 +385,12 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 0.2,
-            cancelGraceSeconds: 0, // ignored in cancel mode
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 0.2,
+          cancelGraceSeconds: 0, // ignored in cancel mode
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -430,13 +414,11 @@ describe("attachAgentIdleWatchdog", () => {
   test("AC8: deletes state and timers when call_ended is emitted", async () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 0.5,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 0.5,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -465,14 +447,12 @@ describe("attachAgentIdleWatchdog", () => {
   test("AC9: emits terminal failure when maxRetryAttempts exceeded", async () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 0.2,
-            maxRetryAttempts: 2,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 0.2,
+          maxRetryAttempts: 2,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -501,17 +481,15 @@ describe("attachAgentIdleWatchdog", () => {
 
     const validConfig = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 10,
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 10,
+        }),
       },
     });
 
     // Valid config should have positive timeout when not in 'off' mode
-    expect(validConfig.agent?.acp?.idleWatchdog?.idleTimeoutSeconds).toBeGreaterThan(0);
+    expect(validConfig.agent?.idleWatchdog?.idleTimeoutSeconds).toBeGreaterThan(0);
   });
 
   test("returns an unsubscribe function that stops monitoring", async () => {
@@ -522,13 +500,11 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 0.2,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 0.2,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -551,13 +527,11 @@ describe("attachAgentIdleWatchdog", () => {
   test("handles disabled watchdog (enabled: false)", async () => {
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            enabled: false,
-            mode: "cancel",
-            idleTimeoutSeconds: 0.1,
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          enabled: false,
+          mode: "cancel",
+          idleTimeoutSeconds: 0.1,
+        }),
       },
     });
 
@@ -585,13 +559,11 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 0.2,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 0.2,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -629,13 +601,11 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "off",
-            idleTimeoutSeconds: 10,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "off",
+          idleTimeoutSeconds: 10,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -662,14 +632,12 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "warn-then-cancel",
-            idleTimeoutSeconds: 0.2,
-            cancelGraceSeconds: 0, // Zero grace period
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "warn-then-cancel",
+          idleTimeoutSeconds: 0.2,
+          cancelGraceSeconds: 0, // Zero grace period
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -707,13 +675,11 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 0.2,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 0.2,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 
@@ -753,14 +719,12 @@ describe("attachAgentIdleWatchdog", () => {
 
     const config = makeNaxConfig({
       agent: {
-        acp: {
-          idleWatchdog: makeIdleWatchdogConfig({
-            mode: "cancel",
-            idleTimeoutSeconds: 0.15,
-            maxRetryAttempts: 3,
-            activityKinds: ["message_update"],
-          }),
-        },
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: 0.15,
+          maxRetryAttempts: 3,
+          activityKinds: ["message_update"],
+        }),
       },
     });
 

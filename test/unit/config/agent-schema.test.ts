@@ -65,185 +65,165 @@ describe("AgentConfigSchema", () => {
     expect(() => NaxConfigSchema.parse({ agent: { acp: { promptRetries: 6 } } })).toThrow();
   });
 
-  test("agent.acp.idleWatchdog is optional by default", () => {
+  test("agent.idleWatchdog is optional by default", () => {
     const result = NaxConfigSchema.parse({});
     // idleWatchdog is optional, so it should be undefined when not provided
-    expect(result.agent?.acp?.idleWatchdog).toBeUndefined();
+    expect(result.agent?.idleWatchdog).toBeUndefined();
   });
 
-  test("agent.acp.idleWatchdog internal defaults when provided", () => {
+  test("agent.idleWatchdog internal defaults when provided", () => {
     const result = NaxConfigSchema.parse({
       agent: {
-        acp: {
-          idleWatchdog: {},
-        },
+        idleWatchdog: {},
       },
     });
     // When provided as an empty object, defaults should be applied
-    expect(result.agent?.acp?.idleWatchdog?.enabled).toBe(false);
-    expect(result.agent?.acp?.idleWatchdog?.mode).toBe("off");
-    expect(result.agent?.acp?.idleWatchdog?.idleTimeoutSeconds).toBe(30);
-    expect(result.agent?.acp?.idleWatchdog?.cancelGraceSeconds).toBe(5);
-    expect(result.agent?.acp?.idleWatchdog?.maxRetryAttempts).toBe(3);
-    expect(result.agent?.acp?.idleWatchdog?.activityKinds).toEqual(["message_update", "thinking_update", "usage_update"]);
+    expect(result.agent?.idleWatchdog?.enabled).toBe(false);
+    expect(result.agent?.idleWatchdog?.mode).toBe("off");
+    expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(30);
+    expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(5);
+    expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(3);
+    expect(result.agent?.idleWatchdog?.activityKinds).toEqual(["message_update", "thinking_update", "usage_update"]);
   });
 
-  test("agent.acp.idleWatchdog accepts fully populated config", () => {
+  test("agent.idleWatchdog accepts fully populated config", () => {
     const raw = {
       agent: {
-        acp: {
-          idleWatchdog: {
-            enabled: true,
-            mode: "warn-then-cancel",
-            idleTimeoutSeconds: 60,
-            cancelGraceSeconds: 10,
-            maxRetryAttempts: 5,
-            activityKinds: ["message_update"],
-          },
+        idleWatchdog: {
+          enabled: true,
+          mode: "warn-then-cancel",
+          idleTimeoutSeconds: 60,
+          cancelGraceSeconds: 10,
+          maxRetryAttempts: 5,
+          activityKinds: ["message_update"],
         },
       },
     };
     const result = NaxConfigSchema.parse(raw);
-    expect(result.agent?.acp?.idleWatchdog?.mode).toBe("warn-then-cancel");
-    expect(result.agent?.acp?.idleWatchdog?.idleTimeoutSeconds).toBe(60);
-    expect(result.agent?.acp?.idleWatchdog?.cancelGraceSeconds).toBe(10);
-    expect(result.agent?.acp?.idleWatchdog?.maxRetryAttempts).toBe(5);
-    expect(result.agent?.acp?.idleWatchdog?.activityKinds).toEqual(["message_update"]);
+    expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
+    expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(60);
+    expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(10);
+    expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(5);
+    expect(result.agent?.idleWatchdog?.activityKinds).toEqual(["message_update"]);
   });
 
-  test("agent.acp.idleWatchdog rejects idleTimeoutSeconds <= 0 when mode is not 'off'", () => {
+  test("agent.idleWatchdog rejects idleTimeoutSeconds <= 0 when mode is not 'off'", () => {
     expect(() =>
       NaxConfigSchema.parse({
         agent: {
-          acp: {
-            idleWatchdog: {
-              enabled: true,
-              mode: "cancel",
-              idleTimeoutSeconds: 0,
-            },
-          },
-        },
-      }),
-    ).toThrow();
-
-    expect(() =>
-      NaxConfigSchema.parse({
-        agent: {
-          acp: {
-            idleWatchdog: {
-              enabled: true,
-              mode: "observe",
-              idleTimeoutSeconds: -1,
-            },
-          },
-        },
-      }),
-    ).toThrow();
-  });
-
-  test("agent.acp.idleWatchdog accepts idleTimeoutSeconds = 0 when mode is 'off'", () => {
-    const result = NaxConfigSchema.parse({
-      agent: {
-        acp: {
           idleWatchdog: {
-            mode: "off",
+            enabled: true,
+            mode: "cancel",
             idleTimeoutSeconds: 0,
           },
         },
-      },
-    });
-    expect(result.agent?.acp?.idleWatchdog?.idleTimeoutSeconds).toBe(0);
-    expect(result.agent?.acp?.idleWatchdog?.mode).toBe("off");
+      }),
+    ).toThrow();
+
+    expect(() =>
+      NaxConfigSchema.parse({
+        agent: {
+          idleWatchdog: {
+            enabled: true,
+            mode: "observe",
+            idleTimeoutSeconds: -1,
+          },
+        },
+      }),
+    ).toThrow();
   });
 
-  test("agent.acp.idleWatchdog accepts all valid modes", () => {
+  test("agent.idleWatchdog accepts idleTimeoutSeconds = 0 when mode is 'off'", () => {
+    const result = NaxConfigSchema.parse({
+      agent: {
+        idleWatchdog: {
+          mode: "off",
+          idleTimeoutSeconds: 0,
+        },
+      },
+    });
+    expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(0);
+    expect(result.agent?.idleWatchdog?.mode).toBe("off");
+  });
+
+  test("agent.idleWatchdog accepts all valid modes", () => {
     const modes = ["off", "observe", "warn-then-cancel", "cancel"] as const;
     for (const mode of modes) {
       const result = NaxConfigSchema.parse({
         agent: {
-          acp: {
-            idleWatchdog: {
-              mode,
-              idleTimeoutSeconds: mode === "off" ? 0 : 30,
-            },
+          idleWatchdog: {
+            mode,
+            idleTimeoutSeconds: mode === "off" ? 0 : 30,
           },
         },
       });
-      expect(result.agent?.acp?.idleWatchdog?.mode).toBe(mode);
+      expect(result.agent?.idleWatchdog?.mode).toBe(mode);
     }
   });
 
-  test("agent.acp.idleWatchdog rejects negative cancelGraceSeconds", () => {
+  test("agent.idleWatchdog rejects negative cancelGraceSeconds", () => {
     expect(() =>
       NaxConfigSchema.parse({
         agent: {
-          acp: {
-            idleWatchdog: {
-              enabled: true,
-              mode: "warn-then-cancel",
-              idleTimeoutSeconds: 30,
-              cancelGraceSeconds: -1,
-            },
+          idleWatchdog: {
+            enabled: true,
+            mode: "warn-then-cancel",
+            idleTimeoutSeconds: 30,
+            cancelGraceSeconds: -1,
           },
         },
       }),
     ).toThrow();
   });
 
-  test("agent.acp.idleWatchdog accepts zero and positive cancelGraceSeconds", () => {
+  test("agent.idleWatchdog accepts zero and positive cancelGraceSeconds", () => {
     for (const grace of [0, 1, 5, 10]) {
       const result = NaxConfigSchema.parse({
         agent: {
-          acp: {
-            idleWatchdog: {
-              enabled: true,
-              mode: "warn-then-cancel",
-              idleTimeoutSeconds: 30,
-              cancelGraceSeconds: grace,
-            },
+          idleWatchdog: {
+            enabled: true,
+            mode: "warn-then-cancel",
+            idleTimeoutSeconds: 30,
+            cancelGraceSeconds: grace,
           },
         },
       });
-      expect(result.agent?.acp?.idleWatchdog?.cancelGraceSeconds).toBe(grace);
+      expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(grace);
     }
   });
 
-  test("agent.acp.idleWatchdog rejects negative maxRetryAttempts", () => {
+  test("agent.idleWatchdog rejects negative maxRetryAttempts", () => {
     expect(() =>
       NaxConfigSchema.parse({
         agent: {
-          acp: {
-            idleWatchdog: {
-              enabled: true,
-              mode: "cancel",
-              idleTimeoutSeconds: 30,
-              maxRetryAttempts: -1,
-            },
+          idleWatchdog: {
+            enabled: true,
+            mode: "cancel",
+            idleTimeoutSeconds: 30,
+            maxRetryAttempts: -1,
           },
         },
       }),
     ).toThrow();
   });
 
-  test("agent.acp.idleWatchdog accepts zero and positive maxRetryAttempts", () => {
+  test("agent.idleWatchdog accepts zero and positive maxRetryAttempts", () => {
     for (const retries of [0, 1, 3, 10]) {
       const result = NaxConfigSchema.parse({
         agent: {
-          acp: {
-            idleWatchdog: {
-              enabled: true,
-              mode: "cancel",
-              idleTimeoutSeconds: 30,
-              maxRetryAttempts: retries,
-            },
+          idleWatchdog: {
+            enabled: true,
+            mode: "cancel",
+            idleTimeoutSeconds: 30,
+            maxRetryAttempts: retries,
           },
         },
       });
-      expect(result.agent?.acp?.idleWatchdog?.maxRetryAttempts).toBe(retries);
+      expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(retries);
     }
   });
 
-  test("agent.acp.idleWatchdog accepts all valid activityKinds combinations", () => {
+  test("agent.idleWatchdog accepts all valid activityKinds combinations", () => {
     const validCombinations: Array<Array<"message_update" | "thinking_update" | "usage_update">> = [
       [],
       ["message_update"],
@@ -258,17 +238,15 @@ describe("AgentConfigSchema", () => {
     for (const kinds of validCombinations) {
       const result = NaxConfigSchema.parse({
         agent: {
-          acp: {
-            idleWatchdog: {
-              enabled: true,
-              mode: "observe",
-              idleTimeoutSeconds: 30,
-              activityKinds: kinds,
-            },
+          idleWatchdog: {
+            enabled: true,
+            mode: "observe",
+            idleTimeoutSeconds: 30,
+            activityKinds: kinds,
           },
         },
       });
-      expect(result.agent?.acp?.idleWatchdog?.activityKinds).toEqual(kinds);
+      expect(result.agent?.idleWatchdog?.activityKinds).toEqual(kinds);
     }
   });
 });
