@@ -2,7 +2,9 @@ import type { PipelineStage } from "../../config/permissions";
 import type { AdapterFailure } from "../../context/engine";
 import type { TurnResult } from "../types";
 
-export type RetryDecision = { retry: false } | { retry: true; delayMs: number; nextPrompt?: string };
+export type RetryDecision =
+  | { retry: false; fallback?: unknown }
+  | { retry: true; delayMs: number; nextPrompt?: string };
 
 export interface RetryContext {
   readonly site: "run" | "complete";

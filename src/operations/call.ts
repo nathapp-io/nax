@@ -320,7 +320,12 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         lastTurnResult,
       };
       const decision = runRetryStrategy.shouldRetry(parseValidationError, runAttempt, retryCtx);
-      if (!decision.retry) return lastTurnResult as unknown as O;
+      if (!decision.retry) {
+        if ("fallback" in decision && decision.fallback !== undefined) {
+          return { ...(decision.fallback as object), estimatedCostUsd: accumulatedRunCostUsd } as O;
+        }
+        return lastTurnResult as unknown as O;
+      }
       if (ctx.runtime.signal?.aborted) throw parseErr;
 
       getSafeLogger()?.warn("callop", "Op retrying", {

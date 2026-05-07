@@ -131,17 +131,13 @@ describe("semanticReviewOp.parse()", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].severity).toBe("error");
   });
-  test("fails open on unparseable output", () => {
+  test("throws ParseValidationError on unparseable output (callOp retries then fails open)", () => {
     const ctx = makeBuildCtx();
-    const result = semanticReviewOp.parse("not json", SAMPLE_INPUT, ctx);
-    expect(result.passed).toBe(true);
-    expect(result.findings).toEqual([]);
-    expect(result.failOpen).toBe(true);
+    expect(() => semanticReviewOp.parse("not json", SAMPLE_INPUT, ctx)).toThrow();
   });
-  test("fails open on missing passed field", () => {
+  test("throws ParseValidationError on missing passed field (callOp retries then fails open)", () => {
     const ctx = makeBuildCtx();
-    const result = semanticReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx);
-    expect(result.failOpen).toBe(true);
+    expect(() => semanticReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx)).toThrow();
   });
   test("parses fence-wrapped JSON response", () => {
     const ctx = makeBuildCtx();

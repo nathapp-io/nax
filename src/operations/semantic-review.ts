@@ -1,4 +1,4 @@
-import { makeParseRetryStrategy } from "../agents/retry";
+import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
@@ -48,6 +48,8 @@ const semanticParseRetry = (input: SemanticReviewInput) =>
       invalid: () => ReviewPromptBuilder.jsonRetry(),
       truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
     },
+    exhaustedFallback: (lastOutput) =>
+      /"passed"\s*:\s*false/.test(lastOutput) ? { passed: false, findings: [], looksLikeFail: true } : FAIL_OPEN,
   });
 
 export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {
@@ -81,7 +83,11 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateLLMShape(raw);
     if (parsed) return { passed: parsed.passed, findings: parsed.findings };
-    if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
-    return FAIL_OPEN;
+    // "passed":false without a started findings object → clear failure signal, no retry needed
+    // "passed":false WITH "findings":[{ → real truncated response → throw to trigger retry
+    if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {
+      return { passed: false, findings: [], looksLikeFail: true };
+    }
+    throw new ParseValidationError("[semantic-review] parse failed: invalid JSON shape");
   },
 };

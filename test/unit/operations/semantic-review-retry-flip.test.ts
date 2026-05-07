@@ -227,16 +227,13 @@ describe("AC6: parse behavior — looksLikeFail detection on truncated fail", ()
     expect(result.looksLikeFail).toBe(true);
   });
 
-  test("parse does not set looksLikeFail when output cannot be parsed and doesn't contain passed:false", () => {
+  test("parse throws ParseValidationError when output cannot be parsed and doesn't contain passed:false", () => {
     const ctx = makeBuildCtx();
 
     const randomGarbage = "this is just random text with no structure";
 
-    const result = semanticReviewOp.parse(randomGarbage, SAMPLE_INPUT, ctx as any);
-
-    expect(result.passed).toBe(true);
-    expect(result.failOpen).toBe(true);
-    expect(result.looksLikeFail).toBeUndefined();
+    // parse throws so callOp retries; after exhaustion callOp returns failOpen via exhaustedFallback
+    expect(() => semanticReviewOp.parse(randomGarbage, SAMPLE_INPUT, ctx as any)).toThrow();
   });
 
   test("parse preserves looksLikeFail when second attempt contains passed:false", () => {
@@ -409,17 +406,12 @@ describe("Integration: full retry flow simulation", () => {
     expect(result.looksLikeFail).toBeUndefined();
   });
 
-  test("parse preserves behavior: does not parse non-error failures as fail-open", () => {
+  test("parse throws ParseValidationError for non-error failures without passed:false", () => {
     const ctx = makeBuildCtx();
 
-    // Non-JSON that doesn't look like truncated failure
+    // Non-JSON that doesn't look like truncated failure — parse throws, callOp fails open after exhaustion
     const garbleOutput = "Some random words that are not JSON";
 
-    const result = semanticReviewOp.parse(garbleOutput, SAMPLE_INPUT, ctx as any);
-
-    // Should fail-open, not looksLikeFail
-    expect(result.passed).toBe(true);
-    expect(result.failOpen).toBe(true);
-    expect(result.looksLikeFail).toBeUndefined();
+    expect(() => semanticReviewOp.parse(garbleOutput, SAMPLE_INPUT, ctx as any)).toThrow();
   });
 });

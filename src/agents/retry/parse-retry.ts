@@ -15,6 +15,8 @@ export interface ParseRetryOpts {
   };
   readonly parse?: (output: string) => unknown;
   readonly looksTruncated?: (output: string) => boolean;
+  /** Called when all retry attempts are exhausted — its return value is surfaced as RetryDecision.fallback. */
+  readonly exhaustedFallback?: (lastOutput: string) => unknown;
   /** Injectable logger for testing. */
   readonly _logger?: { warn(kind: string, msg: string, data: Record<string, unknown>): void };
 }
@@ -46,7 +48,8 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
       }
 
       if (attempt >= maxAttempts - 1) {
-        return { retry: false };
+        const fallback = opts.exhaustedFallback ? opts.exhaustedFallback(ctx.lastOutput) : undefined;
+        return { retry: false, ...(fallback !== undefined ? { fallback } : {}) };
       }
 
       const isTruncated = checkTruncated(ctx.lastOutput);
