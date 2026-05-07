@@ -40,8 +40,8 @@ paths:
 
 | Role | Dispatch |
 |:---|:---|
-| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `reviewer-semantic`, `reviewer-adversarial` | `callOp` run-kind |
-| `plan`, `decompose`, `acceptance-gen`, `refine`, `fix-gen`, `auto` | `callOp` complete-kind |
+| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen` | `callOp` run-kind |
+| `plan`, `decompose`, `refine`, `fix-gen`, `auto` | `callOp` complete-kind |
 | `synthesis`, `judge` | `agentManager.completeAs` |
 | `` debate-${string} `` | `agentManager.runAsSession` |
 
