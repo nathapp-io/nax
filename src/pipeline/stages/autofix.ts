@@ -34,6 +34,14 @@ import { runTestWriterRectification } from "./autofix-test-writer";
 // require human intervention (e.g. commit the dirty files). New mechanical pre-checks
 // must opt in explicitly — the set is intentionally closed.
 const NON_FIXABLE_BY_RECTIFICATION = new Set<ReviewCheckName>(["git-clean"]);
+type FixCommandName = "lintFix" | "formatFix";
+
+interface ResolvedFixCommand {
+  commandName: FixCommandName;
+  command: string;
+  scoped: boolean;
+  skipped?: boolean;
+}
 
 export const autofixStage: PipelineStage = {
   name: "autofix",
@@ -63,11 +71,6 @@ export const autofixStage: PipelineStage = {
     // increment before any work so subsequent reads on the same call see N >= 1.
     ctx.autofixAttempt = (ctx.autofixAttempt ?? 0) + 1;
 
-    // Check quality.commands first, then fall back to review.commands — users often define
-    // lintFix/formatFix in review.commands alongside other review commands (lint, typecheck).
-    const lintFixCmd = ctx.config.quality.commands.lintFix ?? ctx.config.review.commands.lintFix;
-    const formatFixCmd = ctx.config.quality.commands.formatFix ?? ctx.config.review.commands.formatFix;
-
     // Effective workdir for running commands — workdir is already resolved at context creation
 
     // Identify which checks failed
@@ -96,43 +99,8 @@ export const autofixStage: PipelineStage = {
     });
 
     // Phase 1: Mechanical fix — only for lint failures (lintFix/formatFix cannot fix typecheck errors)
-    if (hasLintFailure && (lintFixCmd || formatFixCmd)) {
-      if (lintFixCmd) {
-        pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: lintFixCmd });
-        const lintResult = await _autofixDeps.runQualityCommand({
-          commandName: "lintFix",
-          command: lintFixCmd,
-          workdir: ctx.workdir,
-          storyId: ctx.story.id,
-        });
-        logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id, command: lintFixCmd });
-        if (lintResult.exitCode !== 0) {
-          logger.warn("autofix", "lintFix command failed — may not have fixed all issues", {
-            storyId: ctx.story.id,
-            exitCode: lintResult.exitCode,
-          });
-        }
-      }
-
-      if (formatFixCmd) {
-        pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: formatFixCmd });
-        const fmtResult = await _autofixDeps.runQualityCommand({
-          commandName: "formatFix",
-          command: formatFixCmd,
-          workdir: ctx.workdir,
-          storyId: ctx.story.id,
-        });
-        logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, {
-          storyId: ctx.story.id,
-          command: formatFixCmd,
-        });
-        if (fmtResult.exitCode !== 0) {
-          logger.warn("autofix", "formatFix command failed — may not have fixed all issues", {
-            storyId: ctx.story.id,
-            exitCode: fmtResult.exitCode,
-          });
-        }
-      }
+    if (hasLintFailure && hasMechanicalFixCommand(ctx)) {
+      await runMechanicalFixes(ctx, failedCheckNames);
 
       const recheckPassed = await _autofixDeps.recheckReview(ctx);
       pipelineEventBus.emit({ type: "autofix:completed", storyId: ctx.story.id, fixed: recheckPassed });
@@ -200,7 +168,12 @@ export const autofixStage: PipelineStage = {
       cost: agentCost,
       unresolvedReason,
       escalationDigest,
-    } = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
+    } = await _autofixDeps.runAgentRectification(
+      ctx,
+      resolveBroadFixCommand(ctx, "lintFix"),
+      resolveBroadFixCommand(ctx, "formatFix"),
+      ctx.workdir,
+    );
 
     // REVIEW-003: Implementer signalled an unresolvable reviewer contradiction.
     // Only act on unresolvedReason when the fix actually failed — if agentFixed is true,
@@ -310,6 +283,131 @@ async function recheckReview(ctx: PipelineContext): Promise<boolean> {
   const hasFailOpen = (ctx.reviewResult?.checks ?? []).some((c) => c.failOpen);
   if (hasFailOpen) return false;
   return ctx.reviewResult?.success === true;
+}
+
+async function runMechanicalFixes(ctx: PipelineContext, failedCheckNames: Set<ReviewCheckName>): Promise<void> {
+  const commands = resolveMechanicalFixCommands(ctx, failedCheckNames);
+  for (const resolved of commands) {
+    if (resolved.skipped) continue;
+    pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: resolved.command });
+    const result = await _autofixDeps.runQualityCommand({
+      commandName: resolved.commandName,
+      command: resolved.command,
+      workdir: ctx.workdir,
+      storyId: ctx.story.id,
+    });
+    logMechanicalFixResult(ctx, resolved, result.exitCode);
+  }
+}
+
+function resolveMechanicalFixCommands(
+  ctx: PipelineContext,
+  failedCheckNames: Set<ReviewCheckName>,
+): ResolvedFixCommand[] {
+  if (!failedCheckNames.has("lint")) return [];
+  const scopeFiles = collectLintScopeFiles(ctx.reviewResult?.checks ?? []);
+  return [resolveFixCommand(ctx, "lintFix", scopeFiles), resolveFixCommand(ctx, "formatFix", scopeFiles)].filter(
+    (cmd): cmd is ResolvedFixCommand => cmd !== undefined,
+  );
+}
+
+function resolveFixCommand(
+  ctx: PipelineContext,
+  commandName: FixCommandName,
+  scopeFiles: string[] | undefined,
+): ResolvedFixCommand | undefined {
+  const broad = resolveBroadFixCommand(ctx, commandName);
+  const template = resolveScopedFixTemplate(ctx, commandName);
+  if (!broad && !template) return undefined;
+  if (!scopeFiles) return warnAndUseFullFix(ctx, commandName, broad, "missing_lint_scope");
+  if (scopeFiles.length === 0) return logEmptyFixScope(ctx, commandName, broad ?? template ?? "");
+  if (template) {
+    return {
+      commandName,
+      command: template.replaceAll("{{files}}", scopeFiles.map(shellQuotePath).join(" ")),
+      scoped: true,
+    };
+  }
+  if (!broad) return undefined;
+  const derived = deriveScopedFixCommand(broad, scopeFiles);
+  if (derived) return { commandName, command: derived, scoped: true };
+  return warnAndUseFullFix(ctx, commandName, broad, "unsupported_scoped_command_shape");
+}
+
+function collectLintScopeFiles(checks: readonly ReviewCheckResult[]): string[] | undefined {
+  const lintChecks = checks.filter((check) => check.check === "lint" && !check.success);
+  if (lintChecks.length === 0) return undefined;
+  if (lintChecks.some((check) => !check.lintScope)) return undefined;
+  if (lintChecks.some((check) => check.lintScope?.status === "degraded")) return undefined;
+  const files = lintChecks.flatMap((check) => check.lintScope?.packageGroups.flatMap((group) => group.files) ?? []);
+  return [...new Set(files)];
+}
+
+function resolveBroadFixCommand(ctx: PipelineContext, commandName: FixCommandName): string | undefined {
+  return commandName === "lintFix"
+    ? (ctx.config.quality.commands.lintFix ?? ctx.config.review.commands.lintFix)
+    : (ctx.config.quality.commands.formatFix ?? ctx.config.review.commands.formatFix);
+}
+
+function hasMechanicalFixCommand(ctx: PipelineContext): boolean {
+  return (["lintFix", "formatFix"] as const).some(
+    (name) => resolveBroadFixCommand(ctx, name) ?? resolveScopedFixTemplate(ctx, name),
+  );
+}
+
+function resolveScopedFixTemplate(ctx: PipelineContext, commandName: FixCommandName): string | undefined {
+  return commandName === "lintFix"
+    ? (ctx.config.review.commands.lintFixScoped ?? ctx.config.quality.commands.lintFixScoped)
+    : (ctx.config.review.commands.formatFixScoped ?? ctx.config.quality.commands.formatFixScoped);
+}
+
+function deriveScopedFixCommand(command: string, files: readonly string[]): string | undefined {
+  const trimmed = command.trim();
+  const supportedTools = ["eslint", "biome", "ruff", "flake8", "prettier"];
+  const isSupported =
+    supportedTools.some((tool) => trimmed === tool || trimmed.startsWith(`${tool} `)) ||
+    supportedTools.some((tool) => trimmed.startsWith(`bunx ${tool}`));
+  if (!isSupported) return undefined;
+  return `${command} ${files.map(shellQuotePath).join(" ")}`;
+}
+
+function shellQuotePath(path: string): string {
+  return `'${path.replaceAll("'", "'\\''")}'`;
+}
+
+function logEmptyFixScope(ctx: PipelineContext, commandName: FixCommandName, command: string): ResolvedFixCommand {
+  getLogger().info("autofix", `${toScopeLogPrefix(commandName)}_scope_empty`, { storyId: ctx.story.id });
+  return { commandName, command, scoped: true, skipped: true };
+}
+
+function warnAndUseFullFix(
+  ctx: PipelineContext,
+  commandName: FixCommandName,
+  command: string | undefined,
+  reason: string,
+): ResolvedFixCommand {
+  getLogger().warn("autofix", `${toScopeLogPrefix(commandName)}_scope_degraded`, { storyId: ctx.story.id, reason });
+  if (!command) return { commandName, command: "", scoped: false, skipped: true };
+  return { commandName, command, scoped: false };
+}
+
+function toScopeLogPrefix(commandName: FixCommandName): "lint_fix" | "format_fix" {
+  return commandName === "lintFix" ? "lint_fix" : "format_fix";
+}
+
+function logMechanicalFixResult(ctx: PipelineContext, resolved: ResolvedFixCommand, exitCode: number): void {
+  const logger = getLogger();
+  logger.debug("autofix", `${resolved.commandName} exit=${exitCode}`, {
+    storyId: ctx.story.id,
+    command: resolved.command,
+    scoped: resolved.scoped,
+  });
+  if (exitCode !== 0) {
+    logger.warn("autofix", `${resolved.commandName} command failed — may not have fixed all issues`, {
+      storyId: ctx.story.id,
+      exitCode,
+    });
+  }
 }
 
 /**

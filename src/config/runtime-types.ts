@@ -186,8 +186,12 @@ export interface QualityConfig {
     testScoped?: string;
     /** Auto-fix lint errors (e.g., "biome check --fix") */
     lintFix?: string;
+    /** Scoped auto-fix lint command template with {{files}} placeholder */
+    lintFixScoped?: string;
     /** Auto-fix formatting (e.g., "biome format --write") */
     formatFix?: string;
+    /** Scoped auto-format command template with {{files}} placeholder */
+    formatFixScoped?: string;
     /** Build command (e.g., "bun run build") */
     build?: string;
   };

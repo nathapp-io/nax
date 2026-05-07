@@ -18,6 +18,7 @@ function makeFailedReviewResult(checks: Partial<ReviewCheckResult>[]) {
     exitCode: c.exitCode ?? 1,
     output: c.output ?? "error output",
     durationMs: c.durationMs ?? 100,
+    ...c,
   }));
   return { success: false, checks: fullChecks, summary: "" } as any;
 }
@@ -102,6 +103,181 @@ describe("autofixStage", () => {
 
     expect(result.action).toBe("retry");
     if (result.action === "retry") expect(result.fromStage).toBe("review");
+  });
+
+  test("uses review lintFixScoped before quality lintFixScoped with shell-quoted scope files", async () => {
+    const saved = { ..._autofixDeps };
+    const commandsRun: string[] = [];
+    _autofixDeps.runQualityCommand = async ({ command }) => {
+      commandsRun.push(command);
+      return { commandName: "lintFix", command, success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false };
+    };
+    _autofixDeps.recheckReview = async () => true;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([
+        {
+          check: "lint",
+          lintScope: {
+            status: "in_scope",
+            packageGroups: [{ packageDir: ".", files: ["src/a.ts", "src/has space's.ts"] }],
+          },
+        },
+      ]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: {
+            lintFix: "custom-lint --fix",
+            lintFixScoped: "quality-fix {{files}}",
+          },
+          autofix: { enabled: true },
+        },
+        review: {
+          ...DEFAULT_CONFIG.review,
+          commands: { ...DEFAULT_CONFIG.review.commands, lintFixScoped: "review-fix {{files}}" },
+        },
+      } as any,
+    });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("retry");
+    expect(commandsRun).toEqual(["review-fix 'src/a.ts' 'src/has space'\\''s.ts'"]);
+  });
+
+  test("derives scoped lintFix from supported broad command when no scoped template is configured", async () => {
+    const saved = { ..._autofixDeps };
+    const commandsRun: string[] = [];
+    _autofixDeps.runQualityCommand = async ({ command }) => {
+      commandsRun.push(command);
+      return { commandName: "lintFix", command, success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false };
+    };
+    _autofixDeps.recheckReview = async () => true;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([
+        {
+          check: "lint",
+          lintScope: {
+            status: "in_scope",
+            packageGroups: [{ packageDir: "apps/api", files: ["apps/api/src/a.ts"] }],
+          },
+        },
+      ]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { lintFix: "biome check --fix" },
+          autofix: { enabled: true },
+        },
+      } as any,
+    });
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(commandsRun).toEqual(["biome check --fix 'apps/api/src/a.ts'"]);
+  });
+
+  test("runs mechanical phase when only lintFixScoped is configured", async () => {
+    const saved = { ..._autofixDeps };
+    const commandsRun: string[] = [];
+    _autofixDeps.runQualityCommand = async ({ command }) => {
+      commandsRun.push(command);
+      return { commandName: "lintFix", command, success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false };
+    };
+    _autofixDeps.recheckReview = async () => true;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([
+        {
+          check: "lint",
+          lintScope: { status: "in_scope", packageGroups: [{ packageDir: ".", files: ["src/a.ts"] }] },
+        },
+      ]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { lintFixScoped: "biome check --fix {{files}}" },
+          autofix: { enabled: true },
+        },
+      } as any,
+    });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("retry");
+    expect(commandsRun).toEqual(["biome check --fix 'src/a.ts'"]);
+  });
+
+  test("empty scoped lint failure skips mechanical fix and still rechecks", async () => {
+    const saved = { ..._autofixDeps };
+    let commandRun = false;
+    let recheckRun = false;
+    _autofixDeps.runQualityCommand = async () => {
+      commandRun = true;
+      return { commandName: "lintFix", command: "", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false };
+    };
+    _autofixDeps.recheckReview = async () => {
+      recheckRun = true;
+      return true;
+    };
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([
+        {
+          check: "lint",
+          lintScope: { status: "in_scope", packageGroups: [{ packageDir: ".", files: [] }] },
+        },
+      ]),
+    });
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(commandRun).toBe(false);
+    expect(recheckRun).toBe(true);
+  });
+
+  test("unsupported broad lintFix command degrades to full command with explicit fallback", async () => {
+    const saved = { ..._autofixDeps };
+    const commandsRun: string[] = [];
+    _autofixDeps.runQualityCommand = async ({ command }) => {
+      commandsRun.push(command);
+      return { commandName: "lintFix", command, success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false };
+    };
+    _autofixDeps.recheckReview = async () => true;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([
+        {
+          check: "lint",
+          lintScope: {
+            status: "in_scope",
+            packageGroups: [{ packageDir: ".", files: ["src/a.ts"] }],
+          },
+        },
+      ]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { lintFix: "bun run lint:fix" },
+          autofix: { enabled: true },
+        },
+      } as any,
+    });
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(commandsRun).toEqual(["bun run lint:fix"]);
   });
 
   test("recheck pass: skipped checks are not added to retrySkipChecks", async () => {

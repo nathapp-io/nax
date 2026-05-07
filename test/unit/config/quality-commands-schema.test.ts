@@ -46,10 +46,22 @@ describe("quality.commands schema", () => {
     expect(result.quality.commands.lintFix).toBe("bun run lint --fix");
   });
 
+  test("lintFixScoped is preserved after schema parse", () => {
+    const input = buildConfigWithCommands({ lintFixScoped: "biome check --fix {{files}}" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.quality.commands.lintFixScoped).toBe("biome check --fix {{files}}");
+  });
+
   test("formatFix is preserved after schema parse", () => {
     const input = buildConfigWithCommands({ formatFix: "bun run format --write" });
     const result = NaxConfigSchema.parse(input);
     expect(result.quality.commands.formatFix).toBe("bun run format --write");
+  });
+
+  test("formatFixScoped is preserved after schema parse", () => {
+    const input = buildConfigWithCommands({ formatFixScoped: "biome format --write {{files}}" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.quality.commands.formatFixScoped).toBe("biome format --write {{files}}");
   });
 
   test("lintScoped is preserved after schema parse", () => {
@@ -66,7 +78,9 @@ describe("quality.commands schema", () => {
       lint: "bun run lint",
       lintScoped: "biome check {{files}}",
       lintFix: "bun run lint --fix",
+      lintFixScoped: "biome check --fix {{files}}",
       formatFix: "bun run format --write",
+      formatFixScoped: "biome format --write {{files}}",
     });
     const result = NaxConfigSchema.parse(input);
     expect(result.quality.commands.test).toBe("bun run test");
@@ -75,7 +89,9 @@ describe("quality.commands schema", () => {
     expect(result.quality.commands.lint).toBe("bun run lint");
     expect(result.quality.commands.lintScoped).toBe("biome check {{files}}");
     expect(result.quality.commands.lintFix).toBe("bun run lint --fix");
+    expect(result.quality.commands.lintFixScoped).toBe("biome check --fix {{files}}");
     expect(result.quality.commands.formatFix).toBe("bun run format --write");
+    expect(result.quality.commands.formatFixScoped).toBe("biome format --write {{files}}");
   });
 
   test("build is preserved after schema parse", () => {
@@ -111,10 +127,22 @@ describe("review.commands schema — lintFix/formatFix not stripped by Zod", () 
     expect(result.review.commands.lintFix).toBe("bun run lint:fix");
   });
 
+  test("lintFixScoped in review.commands is preserved after schema parse", () => {
+    const input = buildConfigWithReviewCommands({ lintFixScoped: "eslint --fix {{files}}" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.review.commands.lintFixScoped).toBe("eslint --fix {{files}}");
+  });
+
   test("formatFix in review.commands is preserved after schema parse", () => {
     const input = buildConfigWithReviewCommands({ formatFix: "bun run format --write" });
     const result = NaxConfigSchema.parse(input);
     expect(result.review.commands.formatFix).toBe("bun run format --write");
+  });
+
+  test("formatFixScoped in review.commands is preserved after schema parse", () => {
+    const input = buildConfigWithReviewCommands({ formatFixScoped: "prettier --write {{files}}" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.review.commands.formatFixScoped).toBe("prettier --write {{files}}");
   });
 
   test("lintScoped in review.commands is preserved after schema parse", () => {
@@ -129,14 +157,18 @@ describe("review.commands schema — lintFix/formatFix not stripped by Zod", () 
       lintScoped: "eslint {{files}}",
       typecheck: "bun run typecheck",
       lintFix: "bun run lint:fix",
+      lintFixScoped: "eslint --fix {{files}}",
       formatFix: "bun run format --write",
+      formatFixScoped: "prettier --write {{files}}",
     });
     const result = NaxConfigSchema.parse(input);
     expect(result.review.commands.lint).toBe("bun run lint");
     expect(result.review.commands.lintScoped).toBe("eslint {{files}}");
     expect(result.review.commands.typecheck).toBe("bun run typecheck");
     expect(result.review.commands.lintFix).toBe("bun run lint:fix");
+    expect(result.review.commands.lintFixScoped).toBe("eslint --fix {{files}}");
     expect(result.review.commands.formatFix).toBe("bun run format --write");
+    expect(result.review.commands.formatFixScoped).toBe("prettier --write {{files}}");
   });
 });
 
