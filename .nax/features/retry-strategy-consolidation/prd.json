@@ -1,0 +1,384 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "retry-strategy-consolidation",
+  "branchName": "feat/retry-strategy-consolidation",
+  "createdAt": "2026-05-07T00:00:00.000Z",
+  "updatedAt": "2026-05-07T13:00:00.000Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extend RetryDecision, RetryContext, and add ParseValidationError sentinel",
+      "description": "**Goal** — Extend the `RetryDecision` union type and `RetryContext` interface, and introduce a `ParseValidationError` sentinel class, to support op-tier retries that fire when the call succeeded but the output failed validation (e.g. invalid JSON shape).\n\n**Motivation** — The current `RetryDecision` cannot carry the next prompt to send, `RetryContext` lacks the last output, and `RetryStrategy.shouldRetry`'s `failure` parameter (`AdapterFailure | Error`) cannot represent a successful call whose output failed downstream validation. Parse-retry strategies need all three.\n\n**Approach** — Additive changes for the type fields (optional). Sentinel class is new but small and lives next to the types it relates to.\n\n**Interface**\n```typescript\n// src/agents/retry/types.ts\nexport type RetryDecision =\n  | { retry: false }\n  | { retry: true; delayMs: number; nextPrompt?: string };\n\nexport interface RetryContext {\n  readonly site: \"run\" | \"complete\";\n  readonly agentName: string;\n  readonly stage: PipelineStage;\n  readonly storyId?: string;\n  readonly lastOutput?: string;          // full output of the failed attempt\n  readonly lastTurnResult?: TurnResult;  // for strategies that need cost/usage context\n}\n\n/**\n * Sentinel error passed to RetryStrategy.shouldRetry when an LLM call\n * succeeded but the produced output failed downstream validation\n * (e.g. invalid JSON shape, schema mismatch). Strategies that don't care\n * about validation failures can `instanceof` discriminate and ignore.\n */\nexport class ParseValidationError extends Error {\n  readonly kind = \"parse-validation\" as const;\n  constructor(message: string) {\n    super(message);\n    this.name = \"ParseValidationError\";\n  }\n}\n```\n\n**Note on `lastParsed`:** Earlier drafts proposed a `lastParsed?: unknown` field on `RetryContext`. Removed because the parsing strategy (e.g. JSON, plain text, custom format) is op- and strategy-specific. `callOp` stays generic by passing only `lastOutput`; strategies parse internally as needed (see US-003).\n\n**Scope** — In: `src/agents/retry/types.ts`. Out: no new files, no barrel changes (sentinel is exported from the same module via `index.ts` re-export — see also US-002), no behavioral change.",
+      "acceptanceCriteria": [
+        "The `RetryDecision` retry-true variant has an optional `nextPrompt?: string` field",
+        "Existing `RetryStrategy` implementations that return `{ retry: true, delayMs: N }` without `nextPrompt` compile and pass tests without modification",
+        "`RetryContext` has optional fields `lastOutput?: string` and `lastTurnResult?: TurnResult` — and does NOT have a `lastParsed` field",
+        "Existing `RetryContext` construction sites that omit the new fields compile without error",
+        "`defaultRetryStrategy.shouldRetry` and `resolveRetryPreset`-produced strategies both remain valid `RetryStrategy` implementations after the type change",
+        "`ParseValidationError` extends `Error`, sets `name = \"ParseValidationError\"`, and exposes `kind: \"parse-validation\"` as a readonly literal for discrimination",
+        "`ParseValidationError` is exported from `src/agents/retry/index.ts` so consumers (callOp, strategies, tests) can import it from the barrel"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/agents/retry/types.ts",
+        "src/agents/retry/default-strategy.ts",
+        "src/agents/retry/presets.ts",
+        "src/agents/retry/index.ts"
+      ],
+      "suggestedCriteria": [
+        "`RetryContext` import of `TurnResult` comes from `../../agents/types` (same source used elsewhere in `src/agents/retry/`)"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Add composeRetry combinator",
+      "description": "**Goal** — Implement the `composeRetry` combinator that chains multiple `RetryStrategy` instances with first-match-wins semantics, so op authors can declare multiple distinct retry concerns on a single op without a list-typed field on the operation itself.\n\n**Motivation** — Without composition, an op that needs both parse-retry and transport-retry would have to write a custom monolithic `RetryStrategy` that handles both failure kinds. `composeRetry` lets each strategy be single-purpose and independently tested.\n\n**Approach**\n\n```typescript\n// src/agents/retry/compose.ts\nexport function composeRetry(strategies: readonly RetryStrategy[]): RetryStrategy {\n  return {\n    shouldRetry(failure, attempt, ctx) {\n      for (const s of strategies) {\n        const d = s.shouldRetry(failure, attempt, ctx);\n        if (d.retry) return d;   // first match wins\n      }\n      return { retry: false };\n    },\n  };\n}\n```\n\n**Semantics: first match wins.** Order matters — the op author lists most specific first. Each strategy is single-purpose and ignores failures outside its remit by returning `{ retry: false }`. Once any strategy votes to retry, later strategies are not consulted (no delay-merging, no decision-merging).\n\n**Scope** — In: new file `src/agents/retry/compose.ts`, export from `src/agents/retry/index.ts`. Out: no changes to existing retry files.",
+      "acceptanceCriteria": [
+        "`composeRetry([])` returns a strategy whose `shouldRetry` always returns `{ retry: false }` regardless of failure or attempt",
+        "When the first strategy returns `{ retry: true, delayMs: 100, nextPrompt: 'p' }`, `composeRetry([s0, s1]).shouldRetry(...)` returns that decision and never calls `s1.shouldRetry`",
+        "When the first strategy returns `{ retry: false }` and the second returns `{ retry: true, delayMs: 50 }`, `composeRetry([s0, s1]).shouldRetry(...)` returns `{ retry: true, delayMs: 50 }`",
+        "`composeRetry` is exported from `src/agents/retry/index.ts`"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/agents/retry/types.ts",
+        "src/agents/retry/index.ts",
+        "src/agents/retry/default-strategy.ts",
+        "test/unit/agents/retry/default-strategy.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When all strategies return `{ retry: false }`, `composeRetry` returns `{ retry: false }` without calling strategies beyond the point of exhaustion",
+        "`composeRetry` forwards the full `RetryContext` (including new optional fields) to each strategy unchanged"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Add makeParseRetryStrategy factory (strategy parses internally)",
+      "description": "**Goal** — Implement `makeParseRetryStrategy`, a factory that produces a `RetryStrategy` triggered by `ParseValidationError`, which parses the raw output with a caller-provided parser, validates the parsed value, and on failure picks between two retry-prompt variants (condensed vs. standard) based on whether the output looks truncated.\n\n**Motivation** — `makeReviewRetryHopBody` in `src/operations/_review-retry.ts` is the current parse-retry mechanism but lives outside the `RetryStrategy` interface, making it invisible to the unified retry framework. `makeParseRetryStrategy` is its drop-in replacement that plugs directly into `op.retry`.\n\n**Why the strategy parses internally** — `callOp` cannot call `tryParseLLMJson` itself: not every run-op produces JSON, and `op.parse` returns the typed `O` rather than the raw parsed JSON the validator wants. Keeping parse + validate inside the strategy keeps `callOp` generic and lets each strategy bring its own parser (default: `tryParseLLMJson`).\n\n**Interface**\n\n```typescript\n// src/agents/retry/parse-retry.ts\nexport interface ParseRetryOpts {\n  readonly validate: (parsed: unknown) => boolean;\n  readonly reviewerKind: string;                              // for logging\n  readonly maxAttempts?: number;                              // default 2 (one retry, matches today)\n  readonly prompts: {\n    readonly invalid: () => string;\n    readonly truncated: () => string;\n  };\n  readonly parse?: (output: string) => unknown;               // default: tryParseLLMJson\n  readonly looksTruncated?: (output: string) => boolean;      // default: looksLikeTruncatedJson\n}\n\nexport function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy\n```\n\n**Approach — Internal behavior:**\n- Discriminates on `failure`:\n  - If `failure` is **not** a `ParseValidationError` (transport error, AdapterFailure, plain Error): return `{ retry: false }`. These bubble up to the manager tier.\n  - If `failure` IS a `ParseValidationError`: proceed with parse-retry logic.\n- Reads `ctx.lastOutput`. If undefined or empty: return `{ retry: false }` (defensive — should not happen when callOp wires this correctly, but safe).\n- Calls `opts.parse(ctx.lastOutput)` (default `tryParseLLMJson`). If parsing throws or returns null/undefined, treat as 'invalid' (not 'truncated' — truncation is decided separately by `opts.looksTruncated`).\n- Calls `opts.validate(parsed)`. If true: return `{ retry: false }` (validation passed — should not have been called, but defensive).\n- If `attempt >= (opts.maxAttempts ?? 2) - 1`: return `{ retry: false }` (budget exhausted).\n- Otherwise: pick prompt:\n  - `opts.looksTruncated(ctx.lastOutput)` true → `nextPrompt = opts.prompts.truncated()`\n  - Otherwise → `nextPrompt = opts.prompts.invalid()`\n  - Return `{ retry: true, delayMs: 0, nextPrompt }`\n- Emits `getSafeLogger()?.warn(opts.reviewerKind, ...)` with `storyId` first in the data object, matching the existing log calls in `makeReviewRetryHopBody`.\n\n**Scope** — In: new file `src/agents/retry/parse-retry.ts`, export from `src/agents/retry/index.ts`. Out: no changes to `_review-retry.ts` yet (migration is US-005a..d).",
+      "acceptanceCriteria": [
+        "When `failure` is NOT a `ParseValidationError` (e.g. plain `Error`, `AdapterFailure`), `shouldRetry` returns `{ retry: false }` so the failure falls through to the manager tier",
+        "When `failure` IS a `ParseValidationError` and `ctx.lastOutput` is undefined/empty, `shouldRetry` returns `{ retry: false }` defensively (rather than throwing)",
+        "Given `failure` is `ParseValidationError`, `ctx.lastOutput` parses successfully, and `opts.validate(parsed)` returns true, `shouldRetry` returns `{ retry: false }` (defensive — strategy was called but validation actually passed)",
+        "Given `failure` is `ParseValidationError`, `ctx.lastOutput` looks truncated, attempt 0, `shouldRetry` returns `{ retry: true, delayMs: 0, nextPrompt }` where `nextPrompt === opts.prompts.truncated()`",
+        "Given `failure` is `ParseValidationError`, `ctx.lastOutput` does not look truncated, attempt 0, `shouldRetry` returns `{ retry: true, delayMs: 0, nextPrompt }` where `nextPrompt === opts.prompts.invalid()`",
+        "When `opts.parse(ctx.lastOutput)` throws or returns null, the strategy treats it as invalid and proceeds to retry (not as a transport error)",
+        "When `attempt >= (opts.maxAttempts ?? 2) - 1`, `shouldRetry` returns `{ retry: false }` regardless of output state",
+        "When `opts.parse` is omitted, the factory defaults to `tryParseLLMJson` from `src/utils/llm-json`",
+        "When `opts.looksTruncated` is omitted, the factory defaults to `looksLikeTruncatedJson` from `src/review/truncation`",
+        "The warn log emitted on parse failure has `storyId` as the first key in the data object",
+        "`makeParseRetryStrategy` is exported from `src/agents/retry/index.ts`"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/agents/retry/types.ts",
+        "src/agents/retry/index.ts",
+        "src/operations/_review-retry.ts",
+        "src/review/truncation.ts",
+        "src/prompts/builders/review-builder.ts",
+        "src/utils/llm-json.ts"
+      ],
+      "suggestedCriteria": []
+    },
+    {
+      "id": "US-004",
+      "title": "Add retry slot to RunOperation and wire callOp run-kind retry path with structured logging",
+      "description": "**Goal** — Add an optional `retry?` field to `RunOperation` and wire `callOp`'s run-kind dispatch path to honor it, keeping retries inside the same session. Add uniform structured logging to both run-kind and complete-kind retry paths.\n\n**Motivation** — Without a `retry` slot on `RunOperation`, parse-retry logic must live as a `HopBody` outside the unified `RetryStrategy` framework. This story adds the missing slot and the wiring, making all three retry sites uniform.\n\n**Interface change — add retry slot to RunOperation**\n\n```typescript\n// src/operations/types.ts\nexport interface RunOperation<I, O, C> extends OperationBase<I, O, C> {\n  readonly kind: \"run\";\n  // ... existing fields ...\n  readonly retry?: RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);\n}\n```\n\nSame shape as `CompleteOperation.retry`. The resolver form returns either a `RetryPreset` or a fully-formed `RetryStrategy` — the latter lets ops compose multiple strategies via `composeRetry`.\n\n**How callOp consumes RunOperation.retry**\n\nWhen `op.retry` is set (and `op.hopBody` is not), `callOp` resolves `op.retry` once at the start of the dispatch (before the first `send`) — same timing as the complete-kind path. It then synthesizes a `hopBody` closure from the resolved `RetryStrategy`. The synthetic hop body:\n1. Sends the initial prompt via `ctx.send(initialPrompt)` and stores the returned `TurnResult` (call this `turnResult`).\n2. Constructs a `RetryContext` with `lastOutput: turnResult.output` and `lastTurnResult: turnResult` (no `lastParsed` — parsing is the strategy's responsibility, see US-003).\n3. Calls `op.parse(turnResult.output, input, buildCtx)` to obtain the typed `O`. The strategy is consulted on whether *the raw output* is acceptable; the strategy decides validity from `ctx.lastOutput` itself, not from `O`.\n4. Constructs a `ParseValidationError` with a generic message and calls `resolvedStrategy.shouldRetry(parseValidationError, attempt, retryCtx)`. (Strategies that don't handle parse-validation discriminate on `instanceof ParseValidationError` and return `{ retry: false }`, falling through to manager-tier.)\n5. If `{ retry: true, nextPrompt }` → sends `nextPrompt` via `ctx.send(nextPrompt)` in the same session; accumulates cost; loop with the new `turnResult`.\n6. If `{ retry: true }` without `nextPrompt` → resends the original `initialPrompt` in the same session; loop.\n7. If `{ retry: false }` → return the most recent `turnResult` (with accumulated cost across attempts).\n8. Repeats until `{ retry: false }` or `MAX_COMPLETE_RETRY_ATTEMPTS` is reached. Hitting the cap throws `NaxError` with code `CALL_OP_MAX_RETRIES`.\n\n**Note on transport failures inside the synthetic hopBody:** When `ctx.send(...)` throws (transport error / `AdapterFailure`), the synthetic hopBody re-throws to surface the failure to `buildHopCallback` / the manager tier — it does NOT consult `op.retry`. The op-tier retry strategy only decides on validation-style retries (see US-003 discrimination rule). Transport retries are exclusively the manager tier's concern.\n\nWhen both `op.hopBody` and `op.retry` are set, `callOp` prefers `op.hopBody` (backward compatibility for the migration window — see US-005a). A follow-up rule banning coexistence will land after migration completes.\n\nThe retry loop sits inside the same session (matches HopBody semantics — same session, different prompt). `_callOpDeps.sleep(decision.delayMs, ctx.runtime.signal)` is used for any non-zero delay — no `Bun.sleep` in retry loops.\n\n**Structured logging on every retry** — applied uniformly to both run-kind and complete-kind paths:\n\n```typescript\nlogger.warn(\"callop\", \"Op retrying\", {\n  storyId: ctx.storyId,\n  opName: op.name,\n  site: \"run\" | \"complete\",\n  agentName: ctx.agentName,\n  stage: op.stage,\n  attempt,\n  delayMs: decision.delayMs,\n  promptTransformed: decision.nextPrompt !== undefined,\n  failureKind: failure instanceof Error ? \"error\" : (failure as AdapterFailure).outcome,\n  failureMessage: errorMessage(failure),\n});\n```\n\nWhen `MAX_COMPLETE_RETRY_ATTEMPTS` is hit:\n\n```typescript\nlogger.error(\"callop\", \"Op retry budget exhausted\", {\n  storyId: ctx.storyId,\n  opName: op.name,\n  site: \"run\" | \"complete\",\n  attempt,\n  totalAttempts: attempt + 1,\n});\n```\n\n`storyId` must be the first key in all log data objects.\n\n**Scope** — In: `src/operations/types.ts` (add `retry?` to `RunOperation`), `src/operations/call.ts` (synthetic hopBody wiring + uniform structured logging). Out: no changes to `_review-retry.ts` or to the review ops (migration is US-005a..d).",
+      "acceptanceCriteria": [
+        "`RunOperation` interface has an optional `retry?` field typed as `RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined)`",
+        "When a `RunOperation` has `op.retry` set and `op.hopBody` is absent, `callOp` synthesizes a hop body that sends the initial prompt, threads `lastOutput` and `lastTurnResult` into `RetryContext`, calls `op.retry.shouldRetry(parseValidationError, attempt, retryCtx)` where `parseValidationError` is an instance of `ParseValidationError`, and returns the latest `TurnResult` when the strategy says `{ retry: false }`",
+        "When the retry decision has `nextPrompt`, `callOp`'s synthesized hop body sends `nextPrompt` via `send()` in the same session (not a new session)",
+        "When the retry decision has no `nextPrompt`, `callOp`'s synthesized hop body resends the original `initialPrompt`",
+        "When `ctx.send(...)` throws inside the synthesized hop body (transport failure), the synthetic hop body re-throws — it does NOT consult `op.retry`. Manager tier handles transport retries.",
+        "The synthesized hop body's retry loop is bounded by `MAX_COMPLETE_RETRY_ATTEMPTS`; exceeding it throws `NaxError` with code `CALL_OP_MAX_RETRIES`",
+        "The retry sleep in the synthesized hop body uses `_callOpDeps.sleep(decision.delayMs, ctx.runtime.signal)`, not `Bun.sleep`",
+        "When both `op.hopBody` and `op.retry` are set on a `RunOperation`, `callOp` uses `op.hopBody` and ignores `op.retry` (temporary migration accommodation — see US-007)",
+        "When `op.retry` is absent on a `RunOperation`, existing behavior is unchanged",
+        "When `op.retry` is a resolver function, `callOp` invokes it exactly once per `callOp` invocation (before the first `send`), not per retry attempt",
+        "When the resolver form of `op.retry` returns `undefined`, the synthesized hop body behaves as if `op.retry` was not set (no retry — single send)",
+        "`CompleteOperation.retry` resolver return type is widened from `RetryPreset | undefined` to `RetryPreset | RetryStrategy | undefined` so both kinds share the same resolver contract (review ops need to return `RetryStrategy` from `makeParseRetryStrategy`)",
+        "Existing `CompleteOperation` resolvers that return `RetryPreset | undefined` continue to compile and behave identically — the widening is additive",
+        "TurnResult `estimatedCostUsd` is accumulated across all retry attempts inside the synthesized hop body — the value returned to `buildHopCallback` is the sum of every send's cost (parity with `makeReviewRetryHopBody`'s explicit summation)",
+        "`callOp` emits `logger.warn('callop', 'Op retrying', {...})` on every retry decision for both run-kind and complete-kind, with `storyId` as the first data key and `promptTransformed` reflecting whether `nextPrompt` was set",
+        "`callOp` emits `logger.error('callop', 'Op retry budget exhausted', {...})` when `MAX_COMPLETE_RETRY_ATTEMPTS` is reached for both run-kind and complete-kind",
+        "When the op-tier strategy exhausts and the underlying call later surfaces `fail-stale` (e.g. via watchdog cancel on a subsequent dispatch), the manager-tier `defaultRetryStrategy` retries the dispatch per its own budget — without sharing or double-counting the op-tier's `MAX_COMPLETE_RETRY_ATTEMPTS` counter",
+        "`callOp` threads `storyId` into the `RetryContext` passed to `op.retry.shouldRetry` for run-kind ops"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/operations/types.ts",
+        "src/operations/call.ts",
+        "src/operations/build-hop-callback.ts",
+        "src/agents/retry/types.ts",
+        "src/agents/retry/index.ts",
+        "test/unit/operations/call-op-retry.test.ts"
+      ],
+      "suggestedCriteria": [
+        "The `resolver` form of `op.retry` on `RunOperation` — returning a `RetryStrategy` (not just `RetryPreset`) — is correctly resolved via the same `resolveOpRetry`-like helper used for complete-kind"
+      ]
+    },
+    {
+      "id": "US-005a",
+      "title": "Add op.retry alongside op.hopBody on review ops (no behavior change)",
+      "description": "**Goal** — Add a `retry: makeParseRetryStrategy(...)` field to both `semanticReviewOp` and `adversarialReviewOp` while keeping their existing `hopBody`. Per US-004, when both are set `callOp` uses `hopBody` — so this story produces zero behavioral change. It puts the new code path on disk so subsequent stories can flip it without touching multiple files at once.\n\n**Why this story exists (dogfooding safety):** When nax executes this PR against itself, the semantic/adversarial review ops are the same ops being modified. Splitting the migration ensures every commit boundary is reviewer-stable: this commit changes only data (an extra field), not the active code path.\n\n**Migration steps per op:**\n1. Construct the parse-retry strategy in module scope (or via a resolver if `input.blockingThreshold` is needed):\n   ```typescript\n   const semanticParseRetry = (input: SemanticReviewInput): RetryStrategy => makeParseRetryStrategy({\n     validate: (parsed) => validateLLMShape(parsed) !== null,\n     reviewerKind: \"semantic\",\n     maxAttempts: 2,\n     prompts: {\n       invalid: () => ReviewPromptBuilder.jsonRetry(),\n       truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),\n     },\n   });\n   ```\n2. Add `retry: (input) => semanticParseRetry(input)` to the op definition (resolver form, matches US-004 invocation contract).\n3. Keep `hopBody: semanticReviewHopBody` unchanged.\n4. Verify all existing review tests pass (no behavior change expected — `op.hopBody` wins per US-004 AC).\n\n**Scope** — In: `src/operations/semantic-review.ts`, `src/operations/adversarial-review.ts`. Out: no deletions, no changes to `callOp`, no changes to `_review-retry.ts`.",
+      "acceptanceCriteria": [
+        "`semanticReviewOp` has both `hopBody` (unchanged) and `retry` (new, via `makeParseRetryStrategy`) fields",
+        "`adversarialReviewOp` has both `hopBody` (unchanged) and `retry` (new, via `makeParseRetryStrategy`) fields",
+        "All existing semantic/adversarial review tests pass without modification — runtime behavior is identical to pre-change because `callOp` uses `hopBody` when both are set",
+        "The `retry` resolver on each op forwards `input.blockingThreshold` to `ReviewPromptBuilder.jsonRetryCondensed` so the resolved strategy can produce the same condensed prompt as today"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure additive change. Existing tests verify hopBody path; no new behavior to test until US-005b/c."
+      },
+      "contextFiles": [
+        "src/operations/semantic-review.ts",
+        "src/operations/adversarial-review.ts",
+        "src/operations/_review-retry.ts",
+        "src/agents/retry/index.ts",
+        "src/review/semantic-helpers.ts"
+      ],
+      "suggestedCriteria": []
+    },
+    {
+      "id": "US-005b",
+      "title": "Flip semanticReviewOp from hopBody to op.retry",
+      "description": "**Goal** — Remove `hopBody: semanticReviewHopBody` from `semanticReviewOp`, leaving only the `retry` field added in US-005a as the active retry path.\n\n**Dogfooding safety:** This commit changes the active reviewer behavior for semantic review. Adversarial review remains on `hopBody` (flipped in US-005c). Splitting these means the commit that changes semantic doesn't simultaneously change adversarial — the in-flight reviewer used to verify *this* commit is whichever was committed previously.\n\n**Migration steps:**\n1. Delete `hopBody: semanticReviewHopBody` from `semanticReviewOp`.\n2. Delete the `semanticReviewHopBody` constant if it has no other consumers (it shouldn't — it's local to `semantic-review.ts`).\n3. Verify behavioral parity on all four parse-failure paths.\n\n**Cost accumulation parity:** The deleted `makeReviewRetryHopBody` accumulates `estimatedCostUsd: first + retry`. US-004 requires `callOp`'s synthesized hopBody to accumulate cost identically. This story verifies the parity end-to-end for semantic review.\n\n**`looksLikeFail` parity:** `op.parse` runs on the *final* output after retry completes and may set `looksLikeFail: true` when output contains `\"passed\":false` but does not validate. This behavior must be preserved — the retry loop returns the final `TurnResult`, then `op.parse` runs as before.\n\n**Scope** — In: `src/operations/semantic-review.ts` (delete `hopBody` + local helper). Out: adversarial review stays on hopBody (US-005c); `_review-retry.ts` stays (US-005d).",
+      "acceptanceCriteria": [
+        "`semanticReviewOp` no longer has a `hopBody` field; only `retry` remains as the retry mechanism",
+        "Given a valid JSON LLM output, `callOp` calls `send()` exactly once (no retry)",
+        "Given an invalid and truncated first output, the second `send()` call uses the `jsonRetryCondensed` prompt with `input.blockingThreshold` forwarded",
+        "Given an invalid and non-truncated first output, the second `send()` call uses the `jsonRetry` prompt",
+        "Given two consecutive invalid outputs, no third `send()` is issued (budget exhausted at `maxAttempts: 2`)",
+        "Given two consecutive invalid outputs where the second contains `\"passed\":false`, `op.parse` runs on the final output and returns `{ passed: false, findings: [], looksLikeFail: true }` — parity with today's behavior",
+        "`estimatedCostUsd` returned from the retry loop equals the sum of both turns' costs (parity with the deleted `makeReviewRetryHopBody`'s explicit summation)",
+        "The warn log emitted on parse failure preserves `storyId` as the first key in the data object"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-005a"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Active behavior flip with parity tests across multiple paths."
+      },
+      "contextFiles": [
+        "src/operations/semantic-review.ts",
+        "src/operations/_review-retry.ts",
+        "test/unit/review/semantic-retry.test.ts",
+        "test/unit/review/semantic-retry-truncation.test.ts"
+      ],
+      "suggestedCriteria": []
+    },
+    {
+      "id": "US-005c",
+      "title": "Flip adversarialReviewOp from hopBody to op.retry",
+      "description": "**Goal** — Remove `hopBody: adversarialReviewHopBody` from `adversarialReviewOp`, leaving only the `retry` field added in US-005a as the active retry path.\n\n**Dogfooding safety:** Same rationale as US-005b but for adversarial review. After this story lands, no review op uses `hopBody` for parse retries.\n\n**Migration steps:**\n1. Delete `hopBody: adversarialReviewHopBody` from `adversarialReviewOp`.\n2. Delete the `adversarialReviewHopBody` constant if it has no other consumers.\n3. Verify behavioral parity on all four parse-failure paths.\n\n**Scope** — In: `src/operations/adversarial-review.ts` (delete `hopBody` + local helper). Out: `_review-retry.ts` deletion is US-005d.",
+      "acceptanceCriteria": [
+        "`adversarialReviewOp` no longer has a `hopBody` field; only `retry` remains as the retry mechanism",
+        "Given a valid JSON LLM output, `callOp` calls `send()` exactly once (no retry)",
+        "Given an invalid and truncated first output, the second `send()` call uses the `jsonRetryCondensed` prompt",
+        "Given an invalid and non-truncated first output, the second `send()` call uses the `jsonRetry` prompt",
+        "Given two consecutive invalid outputs, no third `send()` is issued",
+        "`estimatedCostUsd` returned from the retry loop equals the sum of both turns' costs",
+        "The warn log emitted on parse failure preserves `storyId` as the first key"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-005b"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Active behavior flip with parity tests; mirrors US-005b for adversarial."
+      },
+      "contextFiles": [
+        "src/operations/adversarial-review.ts",
+        "src/operations/_review-retry.ts",
+        "test/unit/review/adversarial-retry.test.ts",
+        "test/unit/review/adversarial-retry-truncation.test.ts"
+      ],
+      "suggestedCriteria": []
+    },
+    {
+      "id": "US-005d",
+      "title": "Delete _review-retry.ts after both review ops migrate",
+      "description": "**Goal** — Delete `src/operations/_review-retry.ts` and verify no source or test file imports from it.\n\n**Why this is its own story:** `_review-retry.ts` becomes unused only after both US-005b and US-005c land. Deleting it in either of those stories would couple them; deleting in a separate commit produces a clean, easily-revertible 'remove dead code' diff.\n\n**Scope** — In: delete `src/operations/_review-retry.ts`; remove imports from `semantic-review.ts` and `adversarial-review.ts` if any remain. Out: no other changes.",
+      "acceptanceCriteria": [
+        "`src/operations/_review-retry.ts` does not exist",
+        "No file in `src/` imports from `_review-retry`",
+        "No file in `test/` imports from `_review-retry`",
+        "Build, typecheck, and full test suite pass"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-005b",
+        "US-005c"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure deletion verified by build/typecheck."
+      },
+      "contextFiles": [
+        "src/operations/_review-retry.ts",
+        "src/operations/semantic-review.ts",
+        "src/operations/adversarial-review.ts"
+      ],
+      "suggestedCriteria": []
+    },
+    {
+      "id": "US-006",
+      "title": "Update retry-strategy and forbidden-patterns rules for consolidated framework",
+      "description": "**Goal** — Update `.claude/rules/retry-strategy.md` and `.claude/rules/forbidden-patterns.md` to reflect the consolidated retry framework: remove the stale exclusion for HopBody parse retries and document when to use `composeRetry` vs. single-strategy escalation.\n\n**Motivation** — The rule file currently states 'Do not express [HopBody parse retries] as RetryStrategy.' This exclusion was correct when `RetryDecision` could not carry `nextPrompt`, but is now wrong post-migration. Leaving stale rules causes future op authors to implement the forbidden pattern.\n\n**Changes to `.claude/rules/retry-strategy.md`:**\n- Remove the 'What NOT to convert' section that excludes `HopBody` parse retries from `RetryStrategy`.\n- Add guidance on when to use `composeRetry` vs. single-strategy escalation:\n  - Different failure types, each with own logic → `composeRetry([parseRetry, transientNetwork])`\n  - Same failure type, escalating attempts → one strategy, branch on `attempt` inside `shouldRetry`\n  - Universal infra (rate-limit, stale) → manager tier, no op opt-in\n- Add a rule: op-tier strategies must not handle `fail-rate-limit` or `fail-stale` (manager-tier concerns). If an op-tier strategy handles these, it double-retries with the manager tier.\n- Document the `HopBody` vs. `op.retry` distinction: `HopBody` for genuine multi-turn flows that are NOT reactions to failure; `op.retry` for 'the call failed, try again with a (possibly different) prompt.'\n- Document the parse-retry-internal-parser convention: `makeParseRetryStrategy` parses output internally (default `tryParseLLMJson`); strategies do NOT receive `lastParsed` from `callOp` because parsing is op- and strategy-specific. `callOp` passes only `lastOutput`.\n- Document the `ParseValidationError` sentinel: strategies that handle validation-style failures discriminate via `instanceof ParseValidationError`; strategies that handle transport failures ignore it.\n- Add `makeParseRetryStrategy` to the usage examples.\n\n**Changes to `.claude/rules/forbidden-patterns.md`:**\n- Add an entry to the Source Code table: new `HopBody` parse-retry implementations are forbidden; use `op.retry` with `makeParseRetryStrategy` instead.\n\n**Scope** — In: `.claude/rules/retry-strategy.md`, `.claude/rules/forbidden-patterns.md`. Out: no source code changes; the `op.hopBody` + `op.retry` coexistence ban is US-007.",
+      "acceptanceCriteria": [
+        "`.claude/rules/retry-strategy.md` no longer contains the statement that `HopBody` callbacks must not be expressed as `RetryStrategy`",
+        "`.claude/rules/retry-strategy.md` includes guidance distinguishing `composeRetry` (different failure types) from single-strategy escalation (same failure type, escalating attempts)",
+        "`.claude/rules/retry-strategy.md` includes a rule stating op-tier strategies must not handle `fail-rate-limit` or `fail-stale`",
+        "`.claude/rules/retry-strategy.md` includes a rule documenting the parse-retry-internal-parser convention (strategies parse internally; `callOp` passes only `lastOutput`)",
+        "`.claude/rules/retry-strategy.md` includes a rule documenting `ParseValidationError` discrimination",
+        "`.claude/rules/retry-strategy.md` includes an example of `makeParseRetryStrategy` usage on a `RunOperation`",
+        "`.claude/rules/forbidden-patterns.md` Source Code table includes an entry banning new `HopBody` parse-retry implementations with `makeParseRetryStrategy` as the alternative"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-005d"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "validated from LLM output",
+        "noTestJustification": "Pure documentation changes to rule files — no runtime behavior, no source code, no logic. The correctness of these files is verified by human review, not automated tests."
+      },
+      "contextFiles": [
+        ".claude/rules/retry-strategy.md",
+        ".claude/rules/forbidden-patterns.md"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Ban op.hopBody + op.retry coexistence on RunOperation",
+      "description": "**Goal** — Remove the temporary US-004 accommodation that allows both `op.hopBody` and `op.retry` to be set on a `RunOperation`. After US-005d lands, no op in the codebase sets both. Tighten the rule before someone adds a new violation.\n\n**Motivation** — The coexistence rule in US-004 (`callOp` prefers `hopBody`) was a migration safety net. With migration complete, it becomes a footgun: a future op author might set both, expect `op.retry` to fire, and silently get the wrong behavior because `callOp` ignores `op.retry`.\n\n**Approach — pick one (decide during implementation):**\n- **Runtime guard**: in `callOp`, throw `NaxError` with code `OP_HOPBODY_RETRY_BOTH_SET` when both are set on a `RunOperation`.\n- **Compile-time guard**: tighten the `RunOperation` type so the union has a discriminated XOR (`{ hopBody: HopBody; retry?: never } | { hopBody?: never; retry?: ... }`). Cleaner but more type machinery.\n\nRecommend the runtime guard (smaller change, clear error message, identical migration cost for future op authors who hit it).\n\n**Documentation:**\n- Add an entry to `.claude/rules/forbidden-patterns.md` Source Code table: setting both `op.hopBody` and `op.retry` on a `RunOperation` is forbidden — choose one.\n\n**Scope** — In: `src/operations/call.ts` (guard), `.claude/rules/forbidden-patterns.md`. Out: type-level XOR (deferred unless runtime guard turns out to be insufficient).",
+      "acceptanceCriteria": [
+        "When a `RunOperation` is registered with both `op.hopBody` and `op.retry` set and `callOp` is invoked, `callOp` throws `NaxError` with a recognizable error code (e.g. `OP_HOPBODY_RETRY_BOTH_SET`) and a clear message naming the offending op",
+        "The error fires before the first `send()` — no agent call is made when the op definition is invalid",
+        "Existing ops (post-US-005d) all set exactly one of `op.hopBody` or `op.retry` — the build passes",
+        "`.claude/rules/forbidden-patterns.md` Source Code table includes an entry banning the coexistence with a pointer to this guard"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "US-005d",
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single guard with one error path; tested via unit test that constructs an invalid op definition."
+      },
+      "contextFiles": [
+        "src/operations/call.ts",
+        "src/operations/types.ts",
+        ".claude/rules/forbidden-patterns.md",
+        "src/errors/index.ts"
+      ],
+      "suggestedCriteria": []
+    }
+  ],
+  "analysis": "The codebase currently has three retry surfaces that share the same shape but live in different abstractions:\n\n1. **Manager-tier retry** (`src/agents/retry/default-strategy.ts`): `defaultRetryStrategy` handles `fail-rate-limit` and `fail-stale` outcomes universally via `AgentManager.runWithFallback`. Already conforms to `RetryStrategy` interface.\n\n2. **Op-tier complete retry** (`src/operations/call.ts` complete-kind path): `CompleteOperation.retry` wires a retry loop bounded by `MAX_COMPLETE_RETRY_ATTEMPTS = 20`. Supports `RetryPreset | RetryStrategy | resolver`.\n\n3. **Intra-session parse retry** (`src/operations/_review-retry.ts`): `makeReviewRetryHopBody` is a `HopBody` that sends the initial prompt, tries `tryParseLLMJson` + `validate`, and if invalid sends `ReviewPromptBuilder.jsonRetry()` or `.jsonRetryCondensed()` (based on `looksLikeTruncatedJson`) in the same session. Used by `semanticReviewOp` and `adversarialReviewOp` via their `hopBody` fields.\n\n**Story map (8 stories, dogfood-safe):**\n- US-001 — types + `ParseValidationError` sentinel\n- US-002 — `composeRetry` combinator\n- US-003 — `makeParseRetryStrategy` factory (parses internally)\n- US-004 — `RunOperation.retry` slot + `callOp` wiring + uniform structured logging\n- US-005a — review ops: add `retry` alongside `hopBody` (no behavior change; `hopBody` wins)\n- US-005b — flip `semanticReviewOp` to `op.retry`\n- US-005c — flip `adversarialReviewOp` to `op.retry`\n- US-005d — delete `_review-retry.ts`\n- US-006 — update `.claude/rules/retry-strategy.md` and `forbidden-patterns.md`\n- US-007 — ban `op.hopBody` + `op.retry` coexistence on `RunOperation` (post-migration tightening)\n\n**Key files modified by this feature:**\n- `src/agents/retry/types.ts` — extend `RetryDecision` (add `nextPrompt?`), extend `RetryContext` (add `lastOutput?`, `lastTurnResult?` — NOT `lastParsed`), introduce `ParseValidationError` sentinel class\n- `src/agents/retry/compose.ts` — new file, `composeRetry` combinator\n- `src/agents/retry/parse-retry.ts` — new file, `makeParseRetryStrategy` factory (parser is internal; default `tryParseLLMJson`)\n- `src/agents/retry/index.ts` — export new symbols including `ParseValidationError`\n- `src/operations/types.ts` — add `retry?` slot to `RunOperation` (same shape as `CompleteOperation.retry`)\n- `src/operations/call.ts` — synthesize a hopBody from `op.retry` when present (retries stay inside the same session); construct `ParseValidationError` after each `send` to drive the strategy; add uniform structured logging to both run-kind and complete-kind retry paths\n- `src/operations/semantic-review.ts` — US-005a adds `retry` alongside `hopBody`; US-005b removes `hopBody`\n- `src/operations/adversarial-review.ts` — US-005a adds `retry` alongside `hopBody`; US-005c removes `hopBody`\n- `src/operations/_review-retry.ts` — deleted in US-005d\n- `.claude/rules/retry-strategy.md` — remove 'What NOT to convert' exclusion; document `composeRetry`, `ParseValidationError`, internal-parser convention\n- `.claude/rules/forbidden-patterns.md` — ban new `HopBody` parse-retry implementations (US-006); ban `hopBody`+`retry` coexistence (US-007)\n\n**Architectural decisions:**\n\n*Run-kind retry semantics — same session.* When `op.retry` is set on a `RunOperation`, `callOp` synthesizes a `hopBody` closure from the resolved `RetryStrategy`. The synthetic hop body: (1) sends the initial prompt, (2) calls `op.parse(turnResult.output, input, buildCtx)` to get the typed `O`, (3) constructs a `ParseValidationError` and a `RetryContext` carrying `lastOutput` (no `lastParsed`), (4) calls `op.retry.shouldRetry(parseValidationError, attempt, retryCtx)`, (5) if `{ retry: true, nextPrompt }` sends that via `send()` in the same session — accumulating cost — and loops, (6) repeats up to `MAX_COMPLETE_RETRY_ATTEMPTS`. Reuses `buildHopCallback`'s session management with no new wiring layer.\n\n*Failure discrimination — `ParseValidationError` sentinel.* `RetryStrategy.shouldRetry` accepts `AdapterFailure | Error`. Successful calls with invalid output don't fit either category, so we introduce `ParseValidationError extends Error` (with `kind: \"parse-validation\"` literal) as the signal that 'the call succeeded but output failed validation'. Strategies that handle validation discriminate via `instanceof ParseValidationError`; strategies that handle transport errors ignore it. This avoids widening the interface beyond what's necessary.\n\n*Strategy parses internally — no `lastParsed` on RetryContext.* Earlier drafts proposed threading the parsed JSON through `RetryContext.lastParsed`. Rejected because the parser shape is op- and strategy-specific (JSON, plain text, custom). `callOp` stays generic by passing only `lastOutput`. `makeParseRetryStrategy` accepts an optional `parse?: (output: string) => unknown` (default `tryParseLLMJson`) and runs it internally.\n\n*Transport errors inside the synthetic hop body bypass `op.retry`.* When `ctx.send(...)` throws, the synthetic hop body re-throws — it does NOT consult `op.retry`. Op-tier retry only fires on `ParseValidationError` (validation-style failures). Transport retries are exclusively the manager tier's concern. This composition rule prevents double-counting.\n\n*Coexistence accommodation is temporary.* When both `op.hopBody` and `op.retry` are set, US-004 specifies `callOp` prefers `op.hopBody`. This is a migration safety net used by US-005a (which adds `retry` alongside `hopBody` so the in-flight reviewer doesn't change shape mid-PR). US-007 removes the accommodation after US-005d completes.\n\n**Dogfooding safety:** `semanticReviewOp` and `adversarialReviewOp` are the same ops nax uses to review its own code during a run. The migration is split (US-005a adds alongside, US-005b/c flip one at a time, US-005d deletes the dead file) so every commit boundary is reviewer-stable: no commit simultaneously changes the semantic *and* adversarial reviewer paths, and US-005a is purely additive.\n\n**Impacted tests:** `test/unit/operations/call-op-retry.test.ts` (extend for new logging assertions and run-kind retry path), `test/unit/review/semantic-retry.test.ts`, `test/unit/review/semantic-retry-truncation.test.ts`, `test/unit/review/adversarial-retry.test.ts`, `test/unit/review/adversarial-retry-truncation.test.ts` (parity verification post-migration). New files: `test/unit/agents/retry/compose.test.ts`, `test/unit/agents/retry/parse-retry.test.ts`.\n\n**Risks:**\n- *Behavioral parity in review ops.* Verified in US-005b/c via parity tests covering all four parse-failure paths plus `looksLikeFail` and cost accumulation.\n- *`HopBody` / `op.retry` confusion.* `HopBody` for genuine multi-turn flows that are NOT reactions to failure; `op.retry` for 'the call failed, try again'. Documented in US-006; coexistence banned in US-007.\n- *Manager + op double-retry.* Op-tier strategies must not handle `fail-rate-limit` or `fail-stale` (manager-tier concerns). Rule documented in US-006."
+}
