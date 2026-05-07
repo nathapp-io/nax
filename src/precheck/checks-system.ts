@@ -4,10 +4,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import type { PrecheckConfig } from "../config/selectors";
-import {
-  NeutralityLintError,
-  loadCanonicalRules,
-} from "../context/rules/canonical-loader";
+import { NeutralityLintError, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { errorMessage } from "../utils/errors";
 import type { Check } from "./types";
 
@@ -132,9 +129,7 @@ export async function checkCanonicalRulesLint(workdir: string): Promise<Check> {
   } catch (err) {
     if (err instanceof NeutralityLintError) {
       const first = err.violations[0];
-      const detail = first
-        ? `${first.file}:${first.lineNumber} (${first.ruleId})`
-        : "unknown location";
+      const detail = first ? `${first.file}:${first.lineNumber} (${first.ruleId})` : "unknown location";
       return {
         name: "canonical-rules-lint",
         tier: "blocker",
