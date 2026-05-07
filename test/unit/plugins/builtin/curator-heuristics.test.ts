@@ -722,6 +722,48 @@ function makeReviewFindingObs942(
   };
 }
 
+describe("H1 — sample messages in evidence", () => {
+  test("evidence includes up to two sample messages drawn from the group", () => {
+    const observations: Observation[] = [
+      makeReviewFindingObs942("US-001", "input:listener-arg-not-validated", "warning", "Listener arg not validated as a function"),
+      makeReviewFindingObs942("US-002", "input:listener-arg-not-validated", "warning", "Listener arg not validated as a function — handler path"),
+      makeReviewFindingObs942("US-003", "input:listener-arg-not-validated", "warning", "Third example should not appear"),
+    ];
+
+    const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
+    const h1 = proposals.find((p) => p.id === "H1")!;
+
+    expect(h1).toBeDefined();
+    expect(h1.evidence).toContain("Listener arg not validated as a function");
+    expect(h1.evidence).toContain("Listener arg not validated as a function — handler path");
+    expect(h1.evidence).not.toContain("Third example should not appear");
+  });
+
+  test("evidence omits sample section when all messages are empty", () => {
+    const observations: Observation[] = [
+      makeReviewFindingObs942("US-001", "input:listener-arg-not-validated", "warning", ""),
+      makeReviewFindingObs942("US-002", "input:listener-arg-not-validated", "warning", ""),
+    ];
+
+    const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
+    const h1 = proposals.find((p) => p.id === "H1")!;
+    expect(h1).toBeDefined();
+    expect(h1.evidence).not.toContain("Examples:");
+  });
+
+  test("sample uses only the first line of a multi-line message", () => {
+    const observations: Observation[] = [
+      makeReviewFindingObs942("US-001", "review:null-check", "warning", "Null check missing\n→ Add a guard before access"),
+      makeReviewFindingObs942("US-002", "review:null-check", "warning", "Null check missing\n→ Add a guard before access"),
+    ];
+
+    const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
+    const h1 = proposals.find((p) => p.id === "H1")!;
+    expect(h1.evidence).toContain("Null check missing");
+    expect(h1.evidence).not.toContain("→ Add a guard");
+  });
+});
+
 describe("H1 — issue #942 AC-5: ruleId buckets are not single-word collapses", () => {
   test("findings sharing a category but different issues yield distinct buckets", () => {
     const observations: Observation[] = [
