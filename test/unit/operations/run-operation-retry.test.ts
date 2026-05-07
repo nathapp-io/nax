@@ -856,4 +856,72 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     expect(retryContextCalls.length).toBeGreaterThan(0);
     expect(retryContextCalls[0]?.storyId).toBe("US-TEST-123");
   });
+
+  // Bug: src/operations/call.ts:323 — when { retry: false }, code throws parseErr
+  // instead of returning the latest TurnResult per AC-2.
+  // This test FAILS with the current buggy implementation and PASSES once fixed.
+  test("when { retry: false } after parse failure, callOp resolves with lastTurnResult not rejects", async () => {
+    const agentOutput = "output that cannot be parsed";
+    const agentCost = 0.0042;
+
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: {
+          success: true,
+          exitCode: 0,
+          output: agentOutput,
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: agentCost,
+          tokenUsage: { inputTokens: 10, outputTokens: 20 },
+          internalRoundTrips: 0,
+          agentFallbacks: [],
+        },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const noRetryStrategy = {
+      shouldRetry: () => ({ retry: false as const }),
+    };
+
+    const opAlwaysFailsParse: RunOperation<
+      { text: string },
+      // Return type is TurnResult so the cast below is legal at runtime
+      import("../../../src/agents/types").TurnResult,
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    > = {
+      ...runEchoOp,
+      name: "no-retry-returns-turn-result-op",
+      parse: (_output) => {
+        throw new Error("parse always fails — expect TurnResult returned, not this thrown");
+      },
+      retry: noRetryStrategy,
+    } as unknown as RunOperation<
+      { text: string },
+      import("../../../src/agents/types").TurnResult,
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    >;
+
+    // AC-2: when { retry: false }, the synthesized hop body returns the latest
+    // TurnResult. callOp should RESOLVE, not reject with the parse error.
+    const result = await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-004",
+      },
+      opAlwaysFailsParse,
+      { text: "trigger parse failure" },
+    );
+
+    // The resolved value should be the lastTurnResult from the final attempt.
+    expect(result).toBeDefined();
+    expect(result.output).toBe(agentOutput);
+    expect(result.estimatedCostUsd).toBe(agentCost);
+  });
 });
