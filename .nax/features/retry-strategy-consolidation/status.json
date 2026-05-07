@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-07T13-33-31-389Z",
+    "feature": "retry-strategy-consolidation",
+    "startedAt": "2026-05-07T13:33:31.389Z",
+    "status": "crashed",
+    "dryRun": false,
+    "pid": 51036,
+    "crashedAt": "2026-05-07T14:38:57.307Z",
+    "crashSignal": "SIGINT"
+  },
+  "progress": {
+    "total": 10,
+    "passed": 5,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 5
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 50
+  },
+  "current": {
+    "storyId": "US-005b",
+    "title": "Flip semanticReviewOp from hopBody to op.retry",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 0,
+  "updatedAt": "2026-05-07T14:38:57.307Z",
+  "durationMs": 3925918
+}
