@@ -19,6 +19,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 
 /** Grace period between SIGTERM and SIGKILL on timeout. */
 const SIGKILL_GRACE_PERIOD_MS = 5_000;
+const STREAM_DRAIN_TIMEOUT_MS = 2_000;
 
 export interface QualityCommandOptions {
   /** Short name used in logs (e.g. "lint", "typecheck", "lintFix"). */
@@ -54,6 +55,21 @@ export interface QualityCommandResult {
 export const _qualityRunnerDeps = {
   spawn: spawn as typeof Bun.spawn,
 };
+
+function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; cancel: () => void } {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<string>((resolve) => {
+    timeoutId = setTimeout(() => resolve(""), deadlineMs);
+  });
+  return {
+    promise,
+    cancel: () => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    },
+  };
+}
 
 /**
  * Spawn a quality-check command, collect its output, and enforce a hard
@@ -105,11 +121,24 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
 
     // Drain stdout and stderr concurrently with proc.exited to avoid deadlock
     // when process output exceeds the OS pipe buffer (~64 KB).
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+    const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+    const exitCode = await proc.exited;
+    const [stdout, stderr] = timedOut
+      ? await (async () => {
+          const stdoutDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
+          const stderrDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
+          try {
+            return await Promise.all([
+              Promise.race([stdoutPromise, stdoutDrain.promise]),
+              Promise.race([stderrPromise, stderrDrain.promise]),
+            ]);
+          } finally {
+            stdoutDrain.cancel();
+            stderrDrain.cancel();
+          }
+        })()
+      : await Promise.all([stdoutPromise, stderrPromise]);
 
     clearTimeout(killTimer);
     if (sigkillTimer !== undefined) {

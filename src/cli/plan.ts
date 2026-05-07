@@ -19,6 +19,7 @@ import { callOp, planOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
+import { validateFeatureName } from "../utils/feature-name";
 import { buildCodebaseContext, buildPackageSummary } from "./plan-helpers";
 import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
 
@@ -58,6 +59,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   if (!existsSync(naxDir)) {
     throw new Error(`.nax directory not found. Run 'nax init' first in ${workdir}`);
   }
+
+  validateFeatureName(options.feature);
 
   const logger = getLogger();
 

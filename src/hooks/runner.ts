@@ -13,6 +13,22 @@ import { killProcessGroup } from "../utils/process-kill";
 import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
 
 const DEFAULT_TIMEOUT = 5000;
+const STREAM_DRAIN_TIMEOUT_MS = 2000;
+
+function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; cancel: () => void } {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<string>((resolve) => {
+    timeoutId = setTimeout(() => resolve(""), deadlineMs);
+  });
+  return {
+    promise,
+    cancel: () => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    },
+  };
+}
 
 /** Extended hooks config that tracks global vs project hooks */
 export interface LoadedHooksConfig extends HooksConfig {
@@ -202,20 +218,37 @@ async function executeHook(
   });
 
   // Timeout handling
+  let timedOut = false;
   const timeoutId = setTimeout(() => {
+    timedOut = true;
     killProcessGroup(proc.pid, "SIGTERM");
   }, timeout);
 
+  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
   const exitCode = await proc.exited;
   clearTimeout(timeoutId);
 
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const [stdout, stderr] = timedOut
+    ? await (async () => {
+        const stdoutDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
+        const stderrDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
+        try {
+          return await Promise.all([
+            Promise.race([stdoutPromise, stdoutDrain.promise]),
+            Promise.race([stderrPromise, stderrDrain.promise]),
+          ]);
+        } finally {
+          stdoutDrain.cancel();
+          stderrDrain.cancel();
+        }
+      })()
+    : await Promise.all([stdoutPromise, stderrPromise]);
 
   const output = (stdout + stderr).trim();
 
   // Check if process was killed by timeout
-  if (exitCode !== 0 && output === "") {
+  if (timedOut) {
     return {
       success: false,
       output: `Hook timed out after ${timeout}ms`,

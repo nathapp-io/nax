@@ -8,6 +8,7 @@ import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { MAX_DIRECTORY_DEPTH } from "../config/path-security";
 import { NaxError } from "../errors";
+import { validateFeatureName } from "../utils/feature-name";
 
 /**
  * Options for project resolution
@@ -106,6 +107,11 @@ export function resolveProject(options: ResolveProjectOptions = {}): ResolvedPro
   // Step 4: Validate feature directory (if specified)
   let featureDir: string | undefined;
   if (feature) {
+    try {
+      validateFeatureName(feature);
+    } catch (error) {
+      throw new NaxError((error as Error).message, "FEATURE_INVALID", { feature });
+    }
     const featuresDir = join(naxDir, "features");
     featureDir = join(featuresDir, feature);
 

@@ -143,8 +143,10 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const runId = crypto.randomUUID();
 
   const controller = new AbortController();
+  let parentAbortHandler: (() => void) | undefined;
   if (opts?.parentSignal) {
-    opts.parentSignal.addEventListener("abort", () => controller.abort(opts.parentSignal?.reason), { once: true });
+    parentAbortHandler = () => controller.abort(opts.parentSignal?.reason);
+    opts.parentSignal.addEventListener("abort", parentAbortHandler, { once: true });
   }
 
   const configLoader = createConfigLoader(config);
@@ -262,6 +264,9 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       offReviewAudit();
       offAgentStreamLogging();
       offWatchdog();
+      if (opts?.parentSignal && parentAbortHandler) {
+        opts.parentSignal.removeEventListener("abort", parentAbortHandler);
+      }
       const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {
