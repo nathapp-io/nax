@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _cycleDeps } from "../../../../src/findings";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
-import { runAgentRectificationV2 } from "../../../../src/pipeline/stages/autofix-cycle";
+import { autofixCapacityExhausted, runAgentRectificationV2 } from "../../../../src/pipeline/stages/autofix-cycle";
+import type { Iteration } from "../../../../src/findings";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { toAdversarialReviewFindings } from "../../../../src/review/adversarial-helpers";
 import type { ReviewCheckResult } from "../../../../src/review/types";
@@ -397,3 +398,88 @@ describe("runAgentRectificationV2", () => {
     expect(ctx.autofixPriorIterations?.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ─── autofixCapacityExhausted ─────────────────────────────────────────────────
+
+function priorIteration(strategyNames: string[]): Iteration {
+  return {
+    iterationNum: 1,
+    findingsBefore: [],
+    fixesApplied: strategyNames.map((name) => ({
+      strategyName: name,
+      op: name,
+      targetFiles: [],
+      summary: "",
+    })),
+    findingsAfter: [],
+    outcome: "unchanged",
+    startedAt: "2026-05-07T00:00:00.000Z",
+    finishedAt: "2026-05-07T00:00:01.000Z",
+  };
+}
+
+describe("autofixCapacityExhausted", () => {
+  test("false when there are no failing findings", () => {
+    const ctx = makeCtx({
+      reviewResult: { success: true, checks: [] } as unknown as PipelineContext["reviewResult"],
+    });
+    expect(autofixCapacityExhausted(ctx)).toBe(false);
+  });
+
+  test("false when no prior iterations and at least one strategy applies", () => {
+    const ctx = makeCtx();
+    ctx.autofixPriorIterations = [];
+    expect(autofixCapacityExhausted(ctx)).toBe(false);
+  });
+
+  test("true when an active strategy has reached its per-strategy cap", () => {
+    // adversarial source-bug findings activate BOTH test-writer (cap 1) and implementer.
+    // Pre-load one test-writer fix into priors to exhaust the test-writer cap.
+    const ctx = makeCtx({
+      reviewResult: {
+        success: false,
+        checks: [
+          {
+            ...failedCheck("adversarial", "blocking"),
+            findings: toAdversarialReviewFindings([
+              {
+                severity: "error",
+                category: "assumption",
+                file: "src/x.ts",
+                line: 1,
+                issue: "bug",
+                suggestion: "fix",
+              },
+            ]),
+          },
+        ],
+      } as unknown as PipelineContext["reviewResult"],
+    });
+    ctx.autofixPriorIterations = [priorIteration(["autofix-test-writer", "autofix-implementer"])];
+    expect(autofixCapacityExhausted(ctx)).toBe(true);
+  });
+
+  test("true when total prior fixesApplied reaches maxTotalAttempts", () => {
+    const ctx = makeCtx({
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          autofix: { enabled: true, maxAttempts: 5, maxTotalAttempts: 2 },
+        },
+      } as PipelineContext["config"],
+    });
+    ctx.autofixPriorIterations = [
+      priorIteration(["autofix-implementer", "autofix-implementer"]),
+    ];
+    expect(autofixCapacityExhausted(ctx)).toBe(true);
+  });
+
+  test("false when only implementer has been used and its cap is not reached", () => {
+    // lint check → only implementer applies. With maxAttempts=2 and 1 prior use, capacity remains.
+    const ctx = makeCtx();
+    ctx.autofixPriorIterations = [priorIteration(["autofix-implementer"])];
+    expect(autofixCapacityExhausted(ctx)).toBe(false);
+  });
+});
+
