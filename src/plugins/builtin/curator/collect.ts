@@ -118,6 +118,7 @@ async function collectFromMetrics(context: CuratorPostRunContext): Promise<Obser
   return observations;
 }
 
+// Prefer canonical Phase-1 fields first; fall back to legacy on-disk variants for pre-normalization audits.
 function findingRuleId(finding: JsonRecord): string {
   return stringValue(finding.ruleId ?? finding.rule ?? finding.checkId ?? finding.category, "unknown");
 }

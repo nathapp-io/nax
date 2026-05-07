@@ -762,6 +762,18 @@ describe("H1 — sample messages in evidence", () => {
     expect(h1.evidence).toContain("Null check missing");
     expect(h1.evidence).not.toContain("→ Add a guard");
   });
+
+  test("first finding with empty message does not block later real message from appearing", () => {
+    const observations: Observation[] = [
+      makeReviewFindingObs942("US-001", "review:null-check", "warning", ""),
+      makeReviewFindingObs942("US-002", "review:null-check", "warning", "Null check missing"),
+    ];
+
+    const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
+    const h1 = proposals.find((p) => p.id === "H1")!;
+    expect(h1).toBeDefined();
+    expect(h1.evidence).toContain("Null check missing");
+  });
 });
 
 describe("H1 — issue #942 AC-5: ruleId buckets are not single-word collapses", () => {

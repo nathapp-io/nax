@@ -466,9 +466,9 @@ describe("collectObservations", () => {
               severity: "error",
               file: "src/foo.ts",
               line: 73,
-              message: "X is not validated\n→ guard with typeof",
+              message: "CANONICAL_SENTINEL — pre-formatted message from Phase-1 normalization",
               category: "input",
-              meta: { issue: "X is not validated", suggestion: "guard with typeof" },
+              meta: { issue: "stale issue text", suggestion: "stale suggestion text" },
             },
           ],
         },
@@ -500,8 +500,7 @@ describe("collectObservations", () => {
     expect(finding).toBeDefined();
     if (finding?.kind === "review-finding") {
       expect(finding.payload.ruleId).toBe("input:listener-arg-not-validated");
-      expect(finding.payload.message).toContain("X is not validated");
-      expect(finding.payload.message).toContain("→ guard with typeof");
+      expect(finding.payload.message).toBe("CANONICAL_SENTINEL — pre-formatted message from Phase-1 normalization");
     }
   });
 

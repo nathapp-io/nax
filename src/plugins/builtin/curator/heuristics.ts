@@ -81,11 +81,13 @@ function h1RepeatedReviewFinding(observations: Observation[], threshold: number)
     const existing = groups.get(ruleId);
     if (existing) {
       existing.storyIds.push(obs.storyId);
-      if (existing.samples.length < 2 && message && !existing.samples.includes(message)) {
-        existing.samples.push(message);
+      const sampleKey = firstLine(message);
+      if (existing.samples.length < 2 && sampleKey && !existing.samples.includes(sampleKey)) {
+        existing.samples.push(sampleKey);
       }
     } else {
-      groups.set(ruleId, { storyIds: [obs.storyId], samples: message ? [message] : [] });
+      const sampleKey = firstLine(message);
+      groups.set(ruleId, { storyIds: [obs.storyId], samples: sampleKey ? [sampleKey] : [] });
     }
   }
 
@@ -95,7 +97,7 @@ function h1RepeatedReviewFinding(observations: Observation[], threshold: number)
     const count = storyIds.length;
     const severity = count >= 4 ? "HIGH" : "MED";
     const unique = uniqueStoryIds(storyIds);
-    const sampleSection = samples.length > 0 ? `\n  Examples: ${samples.map(firstLine).join(" | ")}` : "";
+    const sampleSection = samples.length > 0 ? `\n  Examples: ${samples.join(" | ")}` : "";
     proposals.push({
       id: "H1",
       severity,
