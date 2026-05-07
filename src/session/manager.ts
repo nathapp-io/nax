@@ -123,8 +123,14 @@ export class SessionManager implements ISessionManager {
       this._agentStreamUnsubscribe?.();
       this._agentStreamUnsubscribe = opts.agentStreamEvents.onAgentStream((event) => {
         if (event.kind === "agent.call_ended") {
+          // Only clean up the controller registry here. Do NOT drain
+          // _watchdogCancelledCalls from this subscriber: agent.call_ended is
+          // emitted synchronously inside SpawnAcpSession.prompt() before the
+          // error propagates into sendPrompt. Draining here would clear the flag
+          // before sendPrompt checks it, preventing fail-stale classification.
+          // _watchdogCancelledCalls is drained by sendPrompt instead (on both
+          // the error path and the success path to prevent stale entries).
           this._watchdogControllerRegistry?.delete(event.callId);
-          this._watchdogCancelledCalls.delete(event.callId);
         }
       });
     }
@@ -562,6 +568,11 @@ export class SessionManager implements ISessionManager {
         signal: opts?.signal,
         maxTurns: opts?.maxTurns,
       });
+      // Drain any stale watchdog entry: the watchdog may have fired and set a
+      // callId here just before the call completed successfully. The success path
+      // never reaches the SessionTurnError handler below, so we clear here to
+      // prevent the stale entry from misclassifying a future unrelated cancel.
+      this._watchdogCancelledCalls.clear();
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
       // Map the adapter's transport-level cancel signal to the policy-level

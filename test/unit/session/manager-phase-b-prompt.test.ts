@@ -199,10 +199,11 @@ describe("sendPrompt()", () => {
     expect(caught).not.toBeInstanceOf(SessionFailureError);
   });
 
-  test("agent.call_ended event drains watchdog registry and bookkeeping", async () => {
-    // Standardised cleanup: SessionManager subscribes once to the stream bus
-    // and depopulates both the controller registry and its cancelled-call
-    // bookkeeping when agent.call_ended fires.
+  test("agent.call_ended event drains watchdog controller registry", async () => {
+    // SessionManager subscribes once to the stream bus and depopulates the
+    // controller registry when agent.call_ended fires. Note: _watchdogCancelledCalls
+    // is NOT drained from this subscriber to avoid the race where agent.call_ended
+    // fires inside SpawnAcpSession.prompt() before sendPrompt sees the error.
     const adapter = makeAgentAdapter({
       openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
       sendTurn: mock(async () => MOCK_TURN),
@@ -227,6 +228,55 @@ describe("sendPrompt()", () => {
     });
 
     expect(registry.size).toBe(0);
+  });
+
+  test("fail-stale classification survives agent.call_ended emitted before SessionTurnError throws", async () => {
+    // Regression: agent.call_ended fires synchronously inside SpawnAcpSession.prompt()
+    // BEFORE the error propagates as a SessionTurnError. Previously the agent.call_ended
+    // subscriber drained _watchdogCancelledCalls, causing sendPrompt to see an empty
+    // set and miss the fail-stale classification. The fix: only drain from sendPrompt.
+    let capturedActiveCall: ((callId: string, cancel: () => Promise<void>) => void) | undefined;
+    const registry = new Map<string, () => Promise<void>>();
+    const bus = new AgentStreamEventBus();
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedActiveCall = opts.onActiveCall;
+        return { id: name, agentName: "claude" } as SessionHandle;
+      }),
+      sendTurn: mock(async () => {
+        // 1. Register the in-flight call via onActiveCall.
+        capturedActiveCall?.("call-race", async () => {});
+        // 2. Watchdog fires: wrapped cancel records callId in _watchdogCancelledCalls.
+        await registry.get("call-race")?.();
+        // 3. Simulate agent.call_ended fired by SpawnAcpSession BEFORE throwing —
+        //    this is what happens in production (event emitted on non-zero exit path).
+        bus.emitAgentStream({
+          kind: "agent.call_ended",
+          callId: "call-race",
+          runId: "r-1",
+          agentName: "claude",
+          sessionName: "nax-test",
+          status: "error",
+          timestamp: Date.now(),
+        });
+        // 4. Now throw — like the adapter does after emitting call_ended.
+        throw new SessionTurnError("Agent session ended with stop reason: error (externally cancelled)", true);
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry, agentStreamEvents: bus });
+    const handle = await sm.openSession("nax-race-test", makeOpenRequest());
+
+    let caught: unknown;
+    try {
+      await sm.sendPrompt(handle, "test");
+    } catch (err) {
+      caught = err;
+    }
+    // Must still be classified as fail-stale despite agent.call_ended firing first.
+    expect(caught).toBeInstanceOf(SessionFailureError);
+    expect((caught as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
   });
 
   test("forwards maxTurns to adapter.sendTurn", async () => {
