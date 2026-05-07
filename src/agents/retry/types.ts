@@ -1,13 +1,16 @@
 import type { PipelineStage } from "../../config/permissions";
 import type { AdapterFailure } from "../../context/engine";
+import type { TurnResult } from "../types";
 
-export type RetryDecision = { retry: false } | { retry: true; delayMs: number };
+export type RetryDecision = { retry: false } | { retry: true; delayMs: number; nextPrompt?: string };
 
 export interface RetryContext {
   readonly site: "run" | "complete";
   readonly agentName: string;
   readonly stage: PipelineStage;
   readonly storyId?: string;
+  readonly lastOutput?: string;
+  readonly lastTurnResult?: TurnResult;
 }
 
 export interface RetryStrategy {
@@ -17,6 +20,27 @@ export interface RetryStrategy {
     attempt: number,
     ctx: RetryContext,
   ): RetryDecision;
+}
+
+/**
+ * Sentinel error passed to RetryStrategy.shouldRetry when an LLM call
+ * succeeded but the produced output failed downstream validation
+ * (e.g. invalid JSON shape, schema mismatch). Strategies that don't care
+ * about validation failures can `instanceof` discriminate and ignore.
+ */
+export class ParseValidationError extends Error {
+  readonly kind = "parse-validation" as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "ParseValidationError";
+    Object.defineProperty(this, "kind", {
+      value: "parse-validation" as const,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+  }
 }
 
 /**
