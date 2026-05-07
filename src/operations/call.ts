@@ -240,6 +240,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // (no retry or hopBody is set), a single dispatch is performed.
   let runAttempt = 0;
   let currentRunPrompt = prompt;
+  let accumulatedRunCostUsd = 0;
   while (runAttempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
     const currentRunOptions = runAttempt === 0 ? runOptions : { ...runOptions, prompt: currentRunPrompt };
     const currentExecuteHop =
@@ -284,6 +285,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     );
 
     const rawOutput = outcome.result.output;
+    accumulatedRunCostUsd += outcome.result.estimatedCostUsd ?? 0;
     if (!rawOutput) {
       throw new NaxError(`callOp[${op.name}]: agent returned no output`, "CALL_OP_NO_OUTPUT", {
         stage: op.stage,
@@ -305,7 +307,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       const lastTurnResult: TurnResult = {
         output: rawOutput,
         tokenUsage: outcome.result.tokenUsage ?? { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: outcome.result.estimatedCostUsd ?? 0,
+        estimatedCostUsd: accumulatedRunCostUsd,
         internalRoundTrips: outcome.result.internalRoundTrips ?? 0,
       };
       const parseValidationError = new ParseValidationError(`[${op.name}] parse failed: ${errorMessage(parseErr)}`);
