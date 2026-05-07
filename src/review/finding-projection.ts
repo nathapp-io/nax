@@ -13,6 +13,7 @@
  * dashboards) only deal with the canonical shape.
  */
 
+import type { Finding } from "../findings";
 import type { ReviewFinding } from "../plugins/extensions";
 import type { AdversarialLLMFinding } from "./adversarial-helpers";
 import type { LLMFinding } from "./semantic-helpers";
@@ -109,4 +110,37 @@ export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOpti
 
 export function llmFindingsToReviewFindings(findings: AnyLLMFinding[], opts: ProjectionOptions = {}): ReviewFinding[] {
   return findings.map((f) => llmFindingToReviewFinding(f, opts));
+}
+
+/**
+ * Project a unified `Finding` (ADR-021 wire format, e.g. from the
+ * dialogue/verdict path) to canonical `ReviewFinding` for audit persistence.
+ *
+ * `Finding` already carries `message` and an optional `rule`; this mapper
+ * promotes `rule` to `ruleId` when present, falls back to deriving a ruleId
+ * from `category` + slug of the message when `rule` is absent, and routes
+ * any sidecar fields into `meta`.
+ */
+export function findingToReviewFinding(f: Finding, opts: ProjectionOptions = {}): ReviewFinding {
+  const narrowed = narrowSeverity(f.severity);
+  const ruleId = f.rule?.trim() ? f.rule.trim() : deriveRuleId(f.category, f.message);
+  const result: ReviewFinding = {
+    ruleId,
+    severity: narrowed,
+    file: f.file ?? "",
+    line: f.line ?? 0,
+    message: f.message,
+  };
+  if (f.category) result.category = f.category;
+  const effectiveSource = opts.source ?? (f.source as string | undefined);
+  if (effectiveSource) result.source = effectiveSource;
+  const meta: Record<string, unknown> = { ...(f.meta ?? {}) };
+  if (f.suggestion) meta.suggestion = f.suggestion;
+  if (f.severity !== narrowed) meta.originalSeverity = f.severity;
+  if (Object.keys(meta).length > 0) result.meta = meta;
+  return result;
+}
+
+export function findingsToReviewFindings(findings: Finding[], opts: ProjectionOptions = {}): ReviewFinding[] {
+  return findings.map((f) => findingToReviewFinding(f, opts));
 }

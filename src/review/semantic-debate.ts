@@ -12,7 +12,7 @@ import type { ReviewConfig } from "../config/selectors";
 import type { DebateRunner, DebateRunnerOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import { filterByAcQuote } from "./ac-quote-validator";
-import { llmFindingsToReviewFindings } from "./finding-projection";
+import { findingsToReviewFindings, llmFindingsToReviewFindings } from "./finding-projection";
 import {
   type LLMFinding,
   formatFindings,
@@ -169,7 +169,10 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
           parsed: true,
           passed: false,
           blockingThreshold,
-          result: { passed: false, findings },
+          result: {
+            passed: false,
+            findings: findingsToReviewFindings(findings, { source: "semantic-debate-review" }),
+          },
         });
         return {
           check: "semantic",
@@ -194,7 +197,10 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
         parsed: true,
         passed: true,
         blockingThreshold,
-        result: { passed: true, findings },
+        result: {
+          passed: true,
+          findings: findingsToReviewFindings(findings, { source: "semantic-debate-review" }),
+        },
       });
       return {
         check: "semantic",
