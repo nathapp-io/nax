@@ -13,6 +13,7 @@ import type { Iteration } from "../findings";
 import type { HooksConfig } from "../hooks/types";
 import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics/types";
+import type { TestEditDeclaration } from "../operations";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
 import type { ReviewResult } from "../review/types";
@@ -182,6 +183,13 @@ export interface PipelineContext extends DispatchContext {
   autofixAttempt?: number;
   /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
   autofixPriorIterations?: Iteration[];
+  /**
+   * Pending TEST_EDIT_REASON declarations from the most recent implementer
+   * rectification attempt. Populated by autofix-cycle implementer strategy's
+   * extractApplied; consumed by the cycle's validate() to re-tag fixTarget on
+   * fresh findings. Always cleared after consumption.
+   */
+  testEditDeclarations?: TestEditDeclaration[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */

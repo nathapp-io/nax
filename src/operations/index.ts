@@ -23,6 +23,8 @@ export { rectifyOp } from "./rectify";
 export type { RectifyInput, RectifyOutput } from "./rectify";
 export { implementerRectifyOp } from "./autofix-implementer";
 export type { AutofixImplementerInput, AutofixImplementerOutput } from "./autofix-implementer";
+export { parseTestEditDeclarations, validatePrdQuote } from "./test-edit-declaration";
+export type { TestEditDeclaration } from "./test-edit-declaration";
 export { testWriterRectifyOp } from "./autofix-test-writer";
 export type { AutofixTestWriterInput, AutofixTestWriterOutput } from "./autofix-test-writer";
 export { debateProposeOp } from "./debate-propose";

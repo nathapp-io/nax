@@ -22,9 +22,15 @@ import type { AutofixConfig } from "../../config/selectors";
 import type { Finding, FixCycle, FixCycleContext, FixCycleResult, FixStrategy } from "../../findings";
 import { runFixCycle } from "../../findings";
 import { getLogger } from "../../logger";
-import { implementerRectifyOp, testWriterRectifyOp } from "../../operations";
+import {
+  type TestEditDeclaration,
+  implementerRectifyOp,
+  testWriterRectifyOp,
+  validatePrdQuote,
+} from "../../operations";
 import type { AutofixImplementerInput, AutofixImplementerOutput } from "../../operations";
 import type { AutofixTestWriterInput } from "../../operations";
+import type { UserStory } from "../../prd";
 import type { ReviewCheckResult } from "../../review/types";
 import type { PipelineContext } from "../types";
 import { _autofixDeps } from "./autofix";
@@ -93,14 +99,16 @@ function collectAdversarialSourceChecks(ctx: PipelineContext): ReviewCheckResult
 
 // ─── Strategies ───────────────────────────────────────────────────────────────
 
-function buildAutofixStrategies(
+export function buildAutofixStrategies(
   ctx: PipelineContext,
   maxAttempts: number,
   // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O types are opaque to cycle layer
 ): FixStrategy<Finding, any, any, AutofixConfig>[] {
   const implementer: FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> = {
     name: "autofix-implementer",
-    appliesTo: (f) => (f.fixTarget ?? "source") === "source",
+    // Exclude prd_quote_mismatch advisories: they are diagnostic only and should not
+    // trigger another implementer session.
+    appliesTo: (f) => (f.fixTarget ?? "source") === "source" && f.category !== "prd_quote_mismatch",
     fixOp: implementerRectifyOp,
     maxAttempts,
     coRun: "co-run-sequential",
@@ -108,10 +116,16 @@ function buildAutofixStrategies(
       failedChecks: collectFailedChecks(ctx),
       story: ctx.story,
     }),
-    extractApplied: (output) => ({
-      summary: output.unresolvedReason ?? "",
-      unresolved: output.unresolvedReason,
-    }),
+    extractApplied: (output) => {
+      const decls = output.testEditDeclarations ?? [];
+      if (decls.length > 0) {
+        ctx.testEditDeclarations = [...(ctx.testEditDeclarations ?? []), ...decls];
+      }
+      return {
+        summary: output.unresolvedReason ?? "",
+        unresolved: output.unresolvedReason,
+      };
+    },
   };
 
   const testWriter: FixStrategy<Finding, AutofixTestWriterInput, { applied: true }, AutofixConfig> = {
@@ -122,7 +136,7 @@ function buildAutofixStrategies(
       f.fixTarget === "test" ||
       ((f.fixTarget ?? "source") === "source" && f.severity === "error" && f.source === "adversarial-review"),
     fixOp: testWriterRectifyOp,
-    maxAttempts: 1,
+    maxAttempts: 2,
     coRun: "co-run-sequential",
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
       const hasSourceBug = findings.some(
@@ -246,6 +260,72 @@ async function writeShadowReport(
   }
 }
 
+// ─── Declaration application ──────────────────────────────────────────────────
+
+/**
+ * Apply implementer-emitted TEST_EDIT_REASON declarations to fresh findings.
+ *
+ * For each `prd_contract` declaration:
+ *   - If PRD_QUOTE is fabricated (not in story text), append a `prd_quote_mismatch`
+ *     advisory finding so the misuse is visible without escalating.
+ *   - Otherwise, re-tag any finding whose file matches FILE: change fixTarget
+ *     from "source" to "test" so the testWriter strategy claims it next iteration.
+ *
+ * `lint_only` and `sibling_scope` declarations are passthrough (parsed for
+ * telemetry but not routed by this function).
+ *
+ * Pure — does not mutate input arrays. Returns a new array.
+ */
+export function applyTestEditDeclarations(
+  findings: Finding[],
+  declarations: TestEditDeclaration[],
+  story: UserStory,
+): Finding[] {
+  if (declarations.length === 0) return findings;
+
+  const out: Finding[] = [...findings];
+  const originalLength = findings.length;
+  const reTaggedKeys = new Set<number>();
+
+  for (const decl of declarations) {
+    if (decl.reason !== "prd_contract") continue;
+
+    if (!validatePrdQuote(decl.prdQuote ?? "", story)) {
+      out.push({
+        source: "adversarial-review",
+        severity: "warning",
+        category: "prd_quote_mismatch",
+        message: `Implementer declared TEST_EDIT_REASON: prd_contract with PRD_QUOTE not found in story description or AC text: ${decl.prdQuote}`,
+        file: decl.file,
+        fixTarget: "source",
+      });
+      continue;
+    }
+
+    // Only iterate original findings — not advisory findings appended earlier in this loop.
+    for (let i = 0; i < originalLength; i++) {
+      if (reTaggedKeys.has(i)) continue;
+      if (out[i].file !== decl.file) continue;
+      if ((out[i].fixTarget ?? "source") === "test") continue;
+      out[i] = {
+        ...out[i],
+        fixTarget: "test",
+        meta: {
+          ...(out[i].meta ?? {}),
+          prdContractDeclaration: {
+            prdQuote: decl.prdQuote,
+            testBefore: decl.testBefore,
+            testAfter: decl.testAfter,
+          },
+        },
+      };
+      reTaggedKeys.add(i);
+    }
+  }
+
+  return out;
+}
+
 // ─── V2 entry point ───────────────────────────────────────────────────────────
 
 /**
@@ -283,7 +363,19 @@ export async function runAgentRectificationV2(
     async validate(_cycleCtx: FixCycleContext): Promise<Finding[]> {
       // recheckReview mutates ctx.reviewResult; subsequent buildInput reads fresh state
       await _autofixDeps.recheckReview(ctx);
-      return collectCurrentFindings(ctx);
+      const fresh = collectCurrentFindings(ctx);
+      const pending = ctx.testEditDeclarations ?? [];
+      if (pending.length === 0) return fresh;
+      const retagged = applyTestEditDeclarations(fresh, pending, ctx.story);
+      // Clear side-channel after consumption so the next iteration starts fresh.
+      ctx.testEditDeclarations = [];
+      logger.info("autofix-cycle", "applied test-edit declarations", {
+        storyId: ctx.story.id,
+        declarationCount: pending.length,
+        reTaggedCount:
+          retagged.filter((f) => f.fixTarget === "test").length - fresh.filter((f) => f.fixTarget === "test").length,
+      });
+      return retagged;
     },
   };
 
