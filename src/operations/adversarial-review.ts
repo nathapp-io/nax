@@ -1,7 +1,8 @@
+import { makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
-import { AdversarialReviewPromptBuilder } from "../prompts";
+import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { TestInventory } from "../prompts";
 import { validateAdversarialShape } from "../review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
@@ -48,6 +49,17 @@ const adversarialReviewHopBody = makeReviewRetryHopBody<AdversarialReviewInput>(
   "adversarial",
 );
 
+const adversarialParseRetry = (input: AdversarialReviewInput) =>
+  makeParseRetryStrategy({
+    validate: (parsed) => validateAdversarialShape(parsed) !== null,
+    reviewerKind: "adversarial",
+    maxAttempts: 2,
+    prompts: {
+      invalid: () => ReviewPromptBuilder.jsonRetry(),
+      truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
+    },
+  });
+
 export const adversarialReviewOp: RunOperation<AdversarialReviewInput, AdversarialReviewOutput, ReviewConfig> = {
   kind: "run",
   name: "adversarial-review",
@@ -58,6 +70,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
   hopBody: adversarialReviewHopBody,
+  retry: (input) => adversarialParseRetry(input),
   build(input, _ctx) {
     const base = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
       input.story,

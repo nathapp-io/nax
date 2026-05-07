@@ -1,3 +1,4 @@
+import { makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
@@ -44,6 +45,17 @@ const semanticReviewHopBody = makeReviewRetryHopBody<SemanticReviewInput>(
   "semantic",
 );
 
+const semanticParseRetry = (input: SemanticReviewInput) =>
+  makeParseRetryStrategy({
+    validate: (parsed) => validateLLMShape(parsed) !== null,
+    reviewerKind: "semantic",
+    maxAttempts: 2,
+    prompts: {
+      invalid: () => ReviewPromptBuilder.jsonRetry(),
+      truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
+    },
+  });
+
 export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {
   kind: "run",
   name: "semantic-review",
@@ -56,6 +68,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
   hopBody: semanticReviewHopBody,
+  retry: (input) => semanticParseRetry(input),
   build(input, _ctx) {
     const base = new ReviewPromptBuilder().buildSemanticReviewPrompt(input.story, input.semanticConfig, {
       mode: input.mode,
