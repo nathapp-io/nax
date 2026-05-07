@@ -1,1 +1,2 @@
 [2026-05-07T12:23:58.270Z] US-001 — PASSED — Extend RetryDecision, RetryContext, and add ParseValidationError sentinel — Cost: $0.3046
+[2026-05-07T12:27:07.983Z] US-002 — PASSED — Add composeRetry combinator — Cost: $0.2243
