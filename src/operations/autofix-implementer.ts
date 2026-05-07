@@ -4,6 +4,7 @@ import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { ReviewCheckResult } from "../review/types";
+import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";
 
 export interface AutofixImplementerInput {
@@ -15,6 +16,8 @@ export interface AutofixImplementerOutput {
   applied: true;
   /** Set when the agent emits UNRESOLVED: (REVIEW-003 reviewer contradiction). */
   unresolvedReason?: string;
+  /** Parsed TEST_EDIT_REASON blocks. Empty when no escape valve was invoked. */
+  testEditDeclarations: TestEditDeclaration[];
 }
 
 export const implementerRectifyOp: RunOperation<AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> = {
@@ -31,14 +34,19 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
     };
   },
   parse(output, input, _ctx) {
-    const match = output.match(/^UNRESOLVED:\s*(.+)$/ms);
-    const editReasonMatch = output.match(/TEST_EDIT_REASON:\s*(\w+)/);
-    if (editReasonMatch) {
+    const unresolvedMatch = output.match(/^UNRESOLVED:\s*(.+)$/m);
+    const declarations = parseTestEditDeclarations(output);
+    for (const d of declarations) {
       getSafeLogger()?.info("autofix", "test_edit_declared", {
         storyId: input.story.id,
-        reason: editReasonMatch[1],
+        reason: d.reason,
+        file: d.file,
       });
     }
-    return { applied: true, ...(match ? { unresolvedReason: match[1]?.trim() } : {}) };
+    return {
+      applied: true,
+      testEditDeclarations: declarations,
+      ...(unresolvedMatch ? { unresolvedReason: unresolvedMatch[1]?.trim() } : {}),
+    };
   },
 };
