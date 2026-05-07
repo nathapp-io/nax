@@ -131,6 +131,22 @@ const AgentFallbackConfigSchema = z.object({
   rebuildContext: z.boolean().default(true),
 });
 
+export const DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG: {
+  enabled: boolean;
+  mode: "warn-then-cancel";
+  idleTimeoutSeconds: number;
+  activityKinds: Array<"message_update" | "thinking_update" | "usage_update">;
+  cancelGraceSeconds: number;
+  maxRetryAttempts: number;
+} = {
+  enabled: true,
+  mode: "warn-then-cancel",
+  idleTimeoutSeconds: 900,
+  activityKinds: ["message_update", "thinking_update", "usage_update"],
+  cancelGraceSeconds: 10,
+  maxRetryAttempts: 3,
+};
+
 const AgentIdleWatchdogConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -163,7 +179,7 @@ export const AgentConfigSchema = z.object({
     rebuildContext: true,
   }),
   acp: AgentAcpConfigSchema.default({ promptRetries: 0 }),
-  idleWatchdog: AgentIdleWatchdogConfigSchema.optional(),
+  idleWatchdog: AgentIdleWatchdogConfigSchema.default(DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG),
 });
 
 export const PrecheckConfigSchema = z.object({

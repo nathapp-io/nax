@@ -13,6 +13,8 @@ describe("AgentConfigSchema", () => {
     expect(result.agent?.fallback.maxHopsPerStory).toBe(2);
     expect(result.agent?.fallback.onQualityFailure).toBe(false);
     expect(result.agent?.fallback.rebuildContext).toBe(true);
+    expect(result.agent?.idleWatchdog?.enabled).toBe(true);
+    expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
   });
 
   test("accepts a fully populated agent block", () => {
@@ -65,10 +67,14 @@ describe("AgentConfigSchema", () => {
     expect(() => NaxConfigSchema.parse({ agent: { acp: { promptRetries: 6 } } })).toThrow();
   });
 
-  test("agent.idleWatchdog is optional by default", () => {
+  test("agent.idleWatchdog defaults to enabled", () => {
     const result = NaxConfigSchema.parse({});
-    // idleWatchdog is optional, so it should be undefined when not provided
-    expect(result.agent?.idleWatchdog).toBeUndefined();
+    expect(result.agent?.idleWatchdog?.enabled).toBe(true);
+    expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
+    expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(900);
+    expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(10);
+    expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(3);
+    expect(result.agent?.idleWatchdog?.activityKinds).toEqual(["message_update", "thinking_update", "usage_update"]);
   });
 
   test("agent.idleWatchdog internal defaults when provided", () => {

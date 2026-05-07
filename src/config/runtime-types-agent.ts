@@ -42,15 +42,15 @@ export interface AgentFallbackConfig {
 
 /** Idle watchdog configuration */
 export interface IdleWatchdogConfig {
-  /** Whether the idle watchdog is enabled (default: false) */
+  /** Whether the idle watchdog is enabled (default: true) */
   enabled?: boolean;
   /** Watchdog mode: off (disabled), observe (log only), warn-then-cancel (log + grace period + cancel), cancel (immediate) */
   mode?: "off" | "observe" | "warn-then-cancel" | "cancel";
-  /** Idle timeout in seconds before watchdog triggers (default: 30) */
+  /** Idle timeout in seconds before watchdog triggers (default: 900) */
   idleTimeoutSeconds?: number;
   /** Activity kinds that reset the idle timer (default: all message, thinking, usage updates) */
   activityKinds?: Array<"message_update" | "thinking_update" | "usage_update">;
-  /** Grace period in seconds before cancel actually happens (used in warn-then-cancel mode, default: 5) */
+  /** Grace period in seconds before cancel actually happens (used in warn-then-cancel mode, default: 10) */
   cancelGraceSeconds?: number;
   /** Maximum retry attempts before emitting terminal failure (default: 3) */
   maxRetryAttempts?: number;

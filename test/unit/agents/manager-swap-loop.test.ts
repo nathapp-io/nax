@@ -9,6 +9,14 @@ function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
   return makeNaxConfig({
     agent: {
       fallback: { enabled: true, map, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false },
+      idleWatchdog: {
+        enabled: true,
+        mode: "warn-then-cancel",
+        idleTimeoutSeconds: 900,
+        activityKinds: ["message_update", "thinking_update", "usage_update"],
+        cancelGraceSeconds: 10,
+        maxRetryAttempts: 1,
+      },
     },
   });
 }

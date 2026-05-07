@@ -206,6 +206,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
         ...DEFAULT_CONFIG,
         agent: {
           ...DEFAULT_CONFIG.agent,
+          idleWatchdog: {
+            enabled: true,
+            mode: "warn-then-cancel",
+            idleTimeoutSeconds: 900,
+            activityKinds: ["message_update", "thinking_update", "usage_update"],
+            cancelGraceSeconds: 10,
+            maxRetryAttempts: 1,
+          },
           fallback: {
             enabled: true,
             map: { claude: ["codex", "opencode"] },
