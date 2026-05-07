@@ -535,6 +535,26 @@ Two-phase approach when review fails:
 - Global budget exhausted (`autofixAttempt >= maxTotalAttempts`) → escalate
 - `UNRESOLVED` signal from implementer (reviewer contradiction) → escalate
 
+### Implementer→test-writer feedback loop
+
+When the implementer encounters a test that contradicts the PRD, it emits a
+`TEST_EDIT_REASON: prd_contract` block in its rectification output. The block is
+parsed into a `TestEditDeclaration` (see `src/operations/test-edit-declaration.ts`)
+and stashed on `ctx.testEditDeclarations` by the implementer strategy's
+`extractApplied`. The cycle's `validate()` hook applies these declarations to
+fresh findings: each declaration whose `PRD_QUOTE` is verbatim-present in the
+story description or AC text causes a finding on the declared file to be
+re-tagged from `fixTarget: "source"` to `"test"`. The test-writer strategy
+claims the re-tagged finding on the next iteration. Declarations with fabricated
+PRD quotes inject a `prd_quote_mismatch` advisory finding (severity=warning) and
+do not re-tag.
+
+The test-writer strategy's `maxAttempts` is set to `2` to allow exactly one
+re-fire after the initial source-bug-error attempt.
+
+This wiring is internal to the V2 autofix cycle — the rectification gate
+(`src/tdd/rectification-gate.ts`) is unaffected.
+
 ### Review Audit Trail
 
 `src/review/review-audit.ts`:
