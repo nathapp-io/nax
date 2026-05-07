@@ -15,9 +15,10 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import { ParseValidationError } from "../../../src/agents/retry/types";
+import { _callOpDeps, callOp, type CallContext } from "../../../src/operations";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
-import { makeTestRuntime } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeTestRuntime } from "../../helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -253,23 +254,60 @@ describe("AC6: parse behavior — looksLikeFail detection on truncated fail", ()
 // ─── AC7: Cost accumulation = sum of both turns ──────────────────────────────
 
 describe("AC7: cost accumulation — estimatedCostUsd sums both turns", () => {
-  test("callOp accumulates cost from both initial and retry turns", () => {
-    // This test verifies that callOp's retry mechanism (when using op.retry)
-    // correctly accumulates estimatedCostUsd from all attempts.
-    // The implementation details are in src/operations/call-op.ts
+  test("callOp accumulates estimatedCostUsd from both initial and retry turns", async () => {
+    let turnCount = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async () => {
+        turnCount++;
+        return {
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "not valid json output",
+            rateLimited: false,
+            durationMs: 10,
+            estimatedCostUsd: turnCount === 1 ? 0.001 : 0.002,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        };
+      },
+    });
 
-    const ctx = makeBuildCtx();
+    const runtime = makeMockRuntime({ agentManager });
 
-    // Verify retry field exists and is callable
-    expect(typeof semanticReviewOp.retry).toBe("function");
+    // Make parse throw ParseValidationError to activate the retry mechanism.
+    // The spec requires parse to throw on invalid shape so callOp's retry
+    // loop fires — without this, callOp short-circuits on the first result.
+    const originalParse = semanticReviewOp.parse;
+    (semanticReviewOp as any).parse = () => {
+      throw new ParseValidationError("invalid shape — triggers retry");
+    };
 
-    // When op.retry is used by callOp, cost accumulation happens inside callOp
-    // based on TurnResult.estimatedCostUsd from each turn
-    const opCtx = { packageView: ctx.packageView, config: ctx.config };
-    const strategy = (semanticReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+    const origSleep = _callOpDeps.sleep;
+    _callOpDeps.sleep = async () => {};
 
-    expect(strategy).toBeDefined();
-    expect(typeof strategy.shouldRetry).toBe("function");
+    let result: unknown;
+    try {
+      const ctx: CallContext = {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp/test",
+        storyId: SAMPLE_STORY.id,
+        featureName: "_test",
+        agentName: "claude",
+      };
+      result = await callOp(ctx, semanticReviewOp, SAMPLE_INPUT);
+    } finally {
+      (semanticReviewOp as any).parse = originalParse;
+      _callOpDeps.sleep = origSleep;
+    }
+
+    // semanticReviewOp uses maxAttempts: 2 — after 2 failed parses, budget is
+    // exhausted and callOp returns lastTurnResult with the accumulated cost.
+    // estimatedCostUsd must equal turn1 (0.001) + turn2 (0.002) = 0.003.
+    expect(turnCount).toBe(2);
+    expect((result as any).estimatedCostUsd).toBeCloseTo(0.003, 6);
   });
 });
 
