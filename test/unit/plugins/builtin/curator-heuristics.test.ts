@@ -701,3 +701,45 @@ describe("runHeuristics", () => {
     });
   });
 });
+
+// ─── Issue #942 AC-5: H1 ruleId buckets are not single-word collapses ──────
+
+function makeReviewFindingObs942(
+  storyId: string,
+  ruleId: string,
+  severity: string,
+  message = "msg",
+): Observation {
+  return {
+    schemaVersion: 1,
+    runId: "run-test",
+    featureId: "feat-x",
+    storyId,
+    stage: "review",
+    ts: "2026-05-07T00:00:00.000Z",
+    kind: "review-finding",
+    payload: { ruleId, checkId: ruleId, severity, file: "src/foo.ts", line: 1, message },
+  };
+}
+
+describe("H1 — issue #942 AC-5: ruleId buckets are not single-word collapses", () => {
+  test("findings sharing a category but different issues yield distinct buckets", () => {
+    const observations: Observation[] = [
+      makeReviewFindingObs942("US-001", "input:listener-arg-not-validated-as-function", "warning"),
+      makeReviewFindingObs942("US-002", "input:listener-arg-not-validated-as-function", "warning"),
+      makeReviewFindingObs942("US-003", "input:timeout-value-missing-upper-bound", "error"),
+      makeReviewFindingObs942("US-004", "input:timeout-value-missing-upper-bound", "error"),
+    ];
+
+    const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
+    const h1s = proposals.filter((p) => p.id === "H1");
+
+    expect(h1s.length).toBe(2);
+    for (const p of h1s) {
+      const ruleId = p.description.match(/Repeated review finding: (\S+)/)?.[1] ?? "";
+      expect(ruleId.split("-").length).toBeGreaterThan(1);
+      expect(ruleId).not.toBe("input");
+      expect(ruleId).not.toBe("unknown");
+    }
+  });
+});
