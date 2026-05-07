@@ -3,7 +3,7 @@
   "feature": "retry-strategy-consolidation",
   "branchName": "feat/retry-strategy-consolidation",
   "createdAt": "2026-05-07T00:00:00.000Z",
-  "updatedAt": "2026-05-07T13:33:31.451Z",
+  "updatedAt": "2026-05-07T13:39:06.102Z",
   "userStories": [
     {
       "id": "US-001",
@@ -166,8 +166,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 1,
       "escalations": [],
       "routing": {
@@ -217,7 +217,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure additive change. Existing tests verify hopBody path; no new behavior to test until US-005b/c."
+        "reasoning": "Pure additive change. Existing tests verify hopBody path; no new behavior to test until US-005b/c.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/operations/semantic-review.ts",
@@ -228,7 +230,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "641df072e0908b48c822240b2414e79884cb1ec4"
     },
     {
       "id": "US-005b",
