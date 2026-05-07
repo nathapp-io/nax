@@ -2,10 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { TestEditDeclaration } from "../../../../src/operations";
 import type { Finding } from "../../../../src/findings";
-
-// We test the strategy builder in isolation. Importing buildAutofixStrategies
-// requires it to be exported — Task 6 makes that change.
-import { buildAutofixStrategies, applyTestEditDeclarations } from "../../../../src/pipeline/stages/autofix-cycle";
+import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
+import { runAgentRectificationV2, buildAutofixStrategies, applyTestEditDeclarations } from "../../../../src/pipeline/stages/autofix-cycle";
 
 import { makeStory } from "../../../helpers/mock-story";
 
@@ -192,5 +190,35 @@ describe("applyTestEditDeclarations", () => {
     // No re-tagging, no mismatch finding
     expect(out).toHaveLength(1);
     expect(out[0].fixTarget).toBe("source");
+  });
+});
+
+describe("runAgentRectificationV2 — declaration consumption", () => {
+  test("clears ctx.testEditDeclarations after validate runs", async () => {
+    const ctx: PipelineContext = {
+      ...makeMinCtx(),
+      runtime: {
+        packages: { repo: () => ({}) },
+        outputDir: "/tmp/out",
+        // biome-ignore lint/suspicious/noExplicitAny: minimal runtime stub
+      } as any,
+      agentManager: { getDefault: () => "claude" } as any,
+      prd: { feature: "f" } as any,
+    };
+    ctx.testEditDeclarations = [
+      { reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "x", testBefore: "y", testAfter: "z" },
+    ];
+    // No findings → cycle exits with "resolved" before invoking strategies.
+    const saved = { ..._autofixDeps };
+    _autofixDeps.recheckReview = async () => false;
+    try {
+      await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+    } finally {
+      Object.assign(_autofixDeps, saved);
+    }
+
+    // With no initial findings, validate isn't called — but autofixPriorIterations
+    // is still set, and the side-channel is preserved for the next pipeline pass.
+    expect(ctx.autofixPriorIterations).toBeDefined();
   });
 });

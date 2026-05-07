@@ -22,7 +22,12 @@ import type { AutofixConfig } from "../../config/selectors";
 import type { Finding, FixCycle, FixCycleContext, FixCycleResult, FixStrategy } from "../../findings";
 import { runFixCycle } from "../../findings";
 import { getLogger } from "../../logger";
-import { implementerRectifyOp, testWriterRectifyOp, type TestEditDeclaration, validatePrdQuote } from "../../operations";
+import {
+  type TestEditDeclaration,
+  implementerRectifyOp,
+  testWriterRectifyOp,
+  validatePrdQuote,
+} from "../../operations";
 import type { AutofixImplementerInput, AutofixImplementerOutput } from "../../operations";
 import type { AutofixTestWriterInput } from "../../operations";
 import type { UserStory } from "../../prd";
@@ -111,10 +116,7 @@ export function buildAutofixStrategies(
     }),
     extractApplied: (output) => {
       if (output.testEditDeclarations.length > 0) {
-        ctx.testEditDeclarations = [
-          ...(ctx.testEditDeclarations ?? []),
-          ...output.testEditDeclarations,
-        ];
+        ctx.testEditDeclarations = [...(ctx.testEditDeclarations ?? []), ...output.testEditDeclarations];
       }
       return {
         summary: output.unresolvedReason ?? "",
@@ -356,7 +358,19 @@ export async function runAgentRectificationV2(
     async validate(_cycleCtx: FixCycleContext): Promise<Finding[]> {
       // recheckReview mutates ctx.reviewResult; subsequent buildInput reads fresh state
       await _autofixDeps.recheckReview(ctx);
-      return collectCurrentFindings(ctx);
+      const fresh = collectCurrentFindings(ctx);
+      const pending = ctx.testEditDeclarations ?? [];
+      if (pending.length === 0) return fresh;
+      const retagged = applyTestEditDeclarations(fresh, pending, ctx.story);
+      // Clear side-channel after consumption so the next iteration starts fresh.
+      ctx.testEditDeclarations = [];
+      logger.info("autofix-cycle", "applied test-edit declarations", {
+        storyId: ctx.story.id,
+        declarationCount: pending.length,
+        reTaggedCount:
+          retagged.filter((f) => f.fixTarget === "test").length - fresh.filter((f) => f.fixTarget === "test").length,
+      });
+      return retagged;
     },
   };
 
