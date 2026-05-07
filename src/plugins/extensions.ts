@@ -40,6 +40,13 @@ export interface ReviewFinding {
   source?: string;
   /** Finding category (e.g., "security", "performance", "style", "bug") */
   category?: string;
+  /**
+   * Producer-defined sidecar metadata. LLM reviewers populate this with the
+   * raw `issue` / `suggestion` strings, AC-binding (`acQuote`, `acIndex`,
+   * `acId`), and `verifiedBy` evidence so on-disk audits remain debuggable
+   * without re-introducing the LLMFinding shape at the top level.
+   */
+  meta?: Record<string, unknown>;
 }
 
 /**
