@@ -110,6 +110,19 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
     expect(meta.acIndex).toBe(2);
     expect(meta.issue).toContain("does not validate");
     expect(meta.suggestion).toContain("typeof guard");
+
+    // advisoryFindings (warning severity — below default "error" threshold) must
+    // also conform to canonical ReviewFinding shape, not raw LLMFinding shape.
+    const advisory = decision.advisoryFindings as Array<Record<string, unknown>> | undefined;
+    expect(Array.isArray(advisory)).toBe(true);
+    expect(advisory!.length).toBe(1);
+    const advisoryFinding = advisory![0]!;
+    expect(typeof advisoryFinding.ruleId).toBe("string");
+    expect((advisoryFinding.ruleId as string).length).toBeGreaterThan(0);
+    expect(typeof advisoryFinding.message).toBe("string");
+    expect(advisoryFinding.message).toContain("Listener errors are swallowed");
+    expect(advisoryFinding.issue).toBeUndefined();
+    expect(advisoryFinding.suggestion).toBeUndefined();
   });
 
   test("ruleId is non-coarse — does not collapse to a single category word", async () => {
