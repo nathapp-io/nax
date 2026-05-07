@@ -34,6 +34,7 @@ import {
   toAdversarialReviewFindings,
 } from "./adversarial-helpers";
 import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
+import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
@@ -416,8 +417,14 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       failOpen: false,
       passed: false,
       blockingThreshold: threshold,
-      result: { passed: false, findings: parsed.findings },
-      advisoryFindings,
+      result: {
+        passed: false,
+        findings: llmFindingsToReviewFindings(parsed.findings, { source: "adversarial-review" }),
+      },
+      advisoryFindings:
+        advisoryFindings.length > 0
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
+          : undefined,
     });
     return {
       check: "adversarial",
@@ -449,8 +456,14 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       failOpen: false,
       passed: true,
       blockingThreshold: threshold,
-      result: { passed: true, findings: parsed.findings },
-      advisoryFindings,
+      result: {
+        passed: true,
+        findings: llmFindingsToReviewFindings(parsed.findings, { source: "adversarial-review" }),
+      },
+      advisoryFindings:
+        advisoryFindings.length > 0
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
+          : undefined,
     });
     return {
       check: "adversarial",
@@ -478,8 +491,14 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     failOpen: false,
     passed: parsed.passed,
     blockingThreshold: threshold,
-    result: { passed: parsed.passed, findings: parsed.findings },
-    advisoryFindings,
+    result: {
+      passed: parsed.passed,
+      findings: llmFindingsToReviewFindings(parsed.findings, { source: "adversarial-review" }),
+    },
+    advisoryFindings:
+      advisoryFindings.length > 0
+        ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
+        : undefined,
   });
   return {
     check: "adversarial",

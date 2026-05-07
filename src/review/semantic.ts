@@ -25,6 +25,7 @@ import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-r
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { filterByAcQuote } from "./ac-quote-validator";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
+import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
 import { substantiateSemanticEvidence } from "./semantic-evidence";
@@ -467,8 +468,14 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       failOpen: false,
       passed: false,
       blockingThreshold: threshold,
-      result: { passed: false, findings: sanitizedParsed.findings },
-      advisoryFindings,
+      result: {
+        passed: false,
+        findings: llmFindingsToReviewFindings(sanitizedParsed.findings, { source: "semantic-review" }),
+      },
+      advisoryFindings:
+        advisoryFindings.length > 0
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+          : undefined,
     });
     return {
       check: "semantic",
@@ -500,8 +507,14 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       failOpen: false,
       passed: true,
       blockingThreshold: threshold,
-      result: { passed: true, findings: sanitizedParsed.findings },
-      advisoryFindings,
+      result: {
+        passed: true,
+        findings: llmFindingsToReviewFindings(sanitizedParsed.findings, { source: "semantic-review" }),
+      },
+      advisoryFindings:
+        advisoryFindings.length > 0
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+          : undefined,
     });
     return {
       check: "semantic",
@@ -529,8 +542,14 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     failOpen: false,
     passed: sanitizedParsed.passed,
     blockingThreshold: threshold,
-    result: { passed: sanitizedParsed.passed, findings: sanitizedParsed.findings },
-    advisoryFindings,
+    result: {
+      passed: sanitizedParsed.passed,
+      findings: llmFindingsToReviewFindings(sanitizedParsed.findings, { source: "semantic-review" }),
+    },
+    advisoryFindings:
+      advisoryFindings.length > 0
+        ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+        : undefined,
   });
   return {
     check: "semantic",
