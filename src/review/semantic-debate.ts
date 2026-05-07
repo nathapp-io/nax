@@ -12,6 +12,7 @@ import type { ReviewConfig } from "../config/selectors";
 import type { DebateRunner, DebateRunnerOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import { filterByAcQuote } from "./ac-quote-validator";
+import { llmFindingsToReviewFindings } from "./finding-projection";
 import {
   type LLMFinding,
   formatFindings,
@@ -261,8 +262,14 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
         parsed: true,
         passed: false,
         blockingThreshold: debateThreshold,
-        result: { passed: false, findings: debateFindings },
-        advisoryFindings: debateAdvisory,
+        result: {
+          passed: false,
+          findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review" }),
+        },
+        advisoryFindings:
+          debateAdvisory.length > 0
+            ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review" })
+            : undefined,
       });
       return {
         check: "semantic",
@@ -289,8 +296,14 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
       parsed: true,
       passed: true,
       blockingThreshold: debateThreshold,
-      result: { passed: true, findings: debateFindings },
-      advisoryFindings: debateAdvisory,
+      result: {
+        passed: true,
+        findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review" }),
+      },
+      advisoryFindings:
+        debateAdvisory.length > 0
+          ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review" })
+          : undefined,
     });
     return {
       check: "semantic",
@@ -312,8 +325,14 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     parsed: true,
     passed: true,
     blockingThreshold: debateThreshold,
-    result: { passed: true, findings: debateFindings },
-    advisoryFindings: debateAdvisory,
+    result: {
+      passed: true,
+      findings: llmFindingsToReviewFindings(debateFindings, { source: "semantic-debate-review" }),
+    },
+    advisoryFindings:
+      debateAdvisory.length > 0
+        ? llmFindingsToReviewFindings(debateAdvisory, { source: "semantic-debate-review" })
+        : undefined,
   });
   return {
     check: "semantic",
