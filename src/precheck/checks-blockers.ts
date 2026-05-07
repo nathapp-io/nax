@@ -20,4 +20,5 @@ export {
   checkTestCommand,
   checkLintCommand,
   checkTypecheckCommand,
+  checkCanonicalRulesLint,
 } from "./checks-system";

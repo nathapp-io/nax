@@ -15,6 +15,7 @@ import type { PRD } from "../prd/types";
 import {
   checkAgentCLI,
   checkBuildCommandInReviewChecks,
+  checkCanonicalRulesLint,
   checkClaudeMdExists,
   checkDependenciesInstalled,
   checkDiskSpace,
@@ -114,6 +115,7 @@ function getLateEnvironmentBlockers(config: PrecheckConfig, workdir: string): Ch
     () => checkTestCommand(config),
     () => checkLintCommand(config),
     () => checkTypecheckCommand(config),
+    () => checkCanonicalRulesLint(workdir),
     () => checkGitUserConfigured(workdir),
   ];
 }
