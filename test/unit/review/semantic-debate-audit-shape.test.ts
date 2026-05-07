@@ -6,11 +6,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { DebateResult, DebateRunner } from "../../../src/debate";
 import { reviewConfigSelector } from "../../../src/config/selectors";
-import type { IReviewAuditor, ReviewAuditDecision } from "../../../src/runtime";
+import type { ReviewAuditDecision } from "../../../src/runtime";
 import { runSemanticDebate } from "../../../src/review/semantic-debate";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
-import { makeNaxConfig, makeMockAgentManager, makeMockRuntime } from "../../helpers";
+import { makeNaxConfig, makeMockAgentManager, makeMockRuntime, captureAuditDecisions } from "../../helpers";
 
 const STORY: SemanticStory = {
   id: "US-001",
@@ -68,27 +68,20 @@ function makeMockDebateRunner(result: DebateResult): DebateRunner {
 }
 
 describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
-  const decisions: ReviewAuditDecision[] = [];
-
-  function makeReviewAuditor(): IReviewAuditor {
-    return {
-      recordDispatch: () => {},
-      recordDecision: (entry) => { decisions.push(entry); },
-      flush: async () => {},
-    };
-  }
+  let decisions: ReviewAuditDecision[];
 
   beforeEach(() => {
-    decisions.length = 0;
+    decisions = [];
   });
 
-  afterEach(() => {
-  });
+  afterEach(() => {});
 
   test("stateless fallback path: findings carry ruleId + message, no top-level issue/suggestion", async () => {
     const debateResult = makeDebateResult(LLM_FINDINGS_JSON);
     const agentManager = makeMockAgentManager();
-    const runtime = makeMockRuntime({ agentManager, reviewAuditor: makeReviewAuditor() });
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
     const naxConfig = reviewConfigSelector.select(makeNaxConfig());
 
     await runSemanticDebate({
@@ -135,7 +128,9 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
   test("ruleId is non-coarse — slug has multiple tokens", async () => {
     const debateResult = makeDebateResult(LLM_FINDINGS_JSON);
     const agentManager = makeMockAgentManager();
-    const runtime = makeMockRuntime({ agentManager, reviewAuditor: makeReviewAuditor() });
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
     const naxConfig = reviewConfigSelector.select(makeNaxConfig());
 
     await runSemanticDebate({

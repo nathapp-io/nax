@@ -3,12 +3,16 @@
  * ReviewFinding[] to .nax/review-audit/*.json, never raw LLMFinding[].
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { IReviewAuditor, ReviewAuditDecision } from "../../../src/runtime";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { ReviewAuditDecision } from "../../../src/runtime";
 import { runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticReviewConfig, SemanticStory } from "../../../src/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
+import {
+  agentManagerWithFixedLLMResponse,
+  captureAuditDecisions,
+  mockDiffUtilsDeps,
+  makeMockRuntime,
+} from "../../helpers";
 
 const STORY: SemanticStory = {
   id: "US-001",
@@ -52,81 +56,24 @@ const SEMANTIC_LLM_RESPONSE = JSON.stringify({
   ],
 });
 
-function makeSpawnMock(stdout = "diff output", exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(c) { c.enqueue(new TextEncoder().encode(stdout)); c.close(); },
-    }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
-}
-
 describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
-  const decisions: ReviewAuditDecision[] = [];
-
-  let origSpawn: typeof _diffUtilsDeps.spawn;
-  let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
-  let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
+  let decisions: ReviewAuditDecision[];
+  let teardown: () => void;
 
   beforeEach(() => {
-    decisions.length = 0;
-    origSpawn = _diffUtilsDeps.spawn;
-    origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
-    origGetMergeBase = _diffUtilsDeps.getMergeBase;
-    _diffUtilsDeps.isGitRefValid = mock(async () => true);
-    _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff");
+    decisions = [];
+    teardown = mockDiffUtilsDeps("some diff");
   });
 
   afterEach(() => {
-    _diffUtilsDeps.spawn = origSpawn;
-    _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
-    _diffUtilsDeps.getMergeBase = origGetMergeBase;
+    teardown();
   });
 
-  function makeReviewAuditor(): IReviewAuditor {
-    return {
-      recordDispatch: () => {},
-      recordDecision: (entry) => { decisions.push(entry); },
-      flush: async () => {},
-    };
-  }
-
-  const COMPLETE_RESULT_BASE = {
-    tokenUsage: { inputTokens: 0, outputTokens: 0 },
-    estimatedCostUsd: 0,
-  };
-
-  function makeAgentManagerForResponse(llmResponse: string) {
-    return makeMockAgentManager({
-      getDefaultAgent: "claude",
-      runFn: async (_agent, _opts) => ({
-        success: true,
-        exitCode: 0,
-        output: llmResponse,
-        rateLimited: false,
-        durationMs: 100,
-        estimatedCostUsd: 0,
-        agentFallbacks: [],
-      }),
-      completeFn: async () => ({ output: llmResponse, ...COMPLETE_RESULT_BASE }),
-      runWithFallbackFn: async (request) => ({
-        result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: 0, agentFallbacks: [] },
-        fallbacks: [],
-        bundle: request.bundle,
-      }),
-      completeWithFallbackFn: async () => ({ result: { output: llmResponse, ...COMPLETE_RESULT_BASE }, fallbacks: [] }),
-      runAsFn: async () => ({ success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: 0, agentFallbacks: [] }),
-      completeAsFn: async () => ({ output: llmResponse, ...COMPLETE_RESULT_BASE }),
-      getAgentFn: () => makeAgentAdapter(),
-    });
-  }
-
   test("on-disk findings carry ruleId + message, never top-level issue/suggestion", async () => {
-    const agentManager = makeAgentManagerForResponse(SEMANTIC_LLM_RESPONSE);
-    const runtime = makeMockRuntime({ agentManager, reviewAuditor: makeReviewAuditor() });
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const agentManager = agentManagerWithFixedLLMResponse(SEMANTIC_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
 
     await runSemanticReview({
       workdir: "/tmp/test",
@@ -166,8 +113,10 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
   });
 
   test("ruleId is non-coarse — does not collapse to a single category word", async () => {
-    const agentManager = makeAgentManagerForResponse(SEMANTIC_LLM_RESPONSE);
-    const runtime = makeMockRuntime({ agentManager, reviewAuditor: makeReviewAuditor() });
+    const { auditor, decisions: captured } = captureAuditDecisions();
+    decisions = captured;
+    const agentManager = agentManagerWithFixedLLMResponse(SEMANTIC_LLM_RESPONSE);
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
 
     await runSemanticReview({
       workdir: "/tmp/test",

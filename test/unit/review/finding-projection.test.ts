@@ -113,10 +113,29 @@ describe("llmFindingToReviewFinding", () => {
     });
   });
 
-  test("omits meta entirely when no LLM-only fields are present", () => {
+  test("includes issue in meta even without annotation fields", () => {
     const f: LLMFinding = { severity: "info", file: "x.ts", line: 1, issue: "y", suggestion: "" };
     const rf = llmFindingToReviewFinding(f);
-    expect(rf.meta).toBeUndefined();
+    expect(rf.meta).toEqual({ issue: "y" });
+  });
+
+  test("does not treat acIndex: 0 as a valid AC anchor", () => {
+    const f: LLMFinding = { severity: "warning", file: "x.ts", line: 1, issue: "y", suggestion: "", acIndex: 0 };
+    const rf = llmFindingToReviewFinding(f);
+    expect(rf.meta?.acIndex).toBeUndefined();
+  });
+
+  test("preserves originalSeverity in meta when severity is narrowed", () => {
+    const f: LLMFinding = { severity: "unverifiable", file: "x.ts", line: 1, issue: "y", suggestion: "" };
+    const rf = llmFindingToReviewFinding(f);
+    expect(rf.severity).toBe("info");
+    expect(rf.meta?.originalSeverity).toBe("unverifiable");
+  });
+
+  test("does not add originalSeverity to meta when severity is unchanged", () => {
+    const f: LLMFinding = { severity: "warning", file: "x.ts", line: 1, issue: "y", suggestion: "" };
+    const rf = llmFindingToReviewFinding(f);
+    expect(rf.meta?.originalSeverity).toBeUndefined();
   });
 
   test("propagates source label when provided", () => {

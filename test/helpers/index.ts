@@ -16,3 +16,9 @@ export { makeSessionManager } from "./mock-session-manager";
 export { makeMockRuntime, makeTestRuntime, type MockRuntimeOptions, type TestRuntimeOptions } from "./runtime";
 export { makeInProgressStory, makePRD, makePendingStory, makeStory } from "./mock-story";
 export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
+export {
+  agentManagerWithFixedLLMResponse,
+  captureAuditDecisions,
+  makeSpawnMock,
+  mockDiffUtilsDeps,
+} from "./review-audit";

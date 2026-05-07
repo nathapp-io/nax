@@ -37,12 +37,14 @@ function narrowSeverity(raw: string): ReviewFinding["severity"] {
   return SEVERITY_MAP[raw] ?? "info";
 }
 
+/** Six tokens balances clustering (related findings collide) and specificity (genuinely different issues stay distinct). */
+const RULE_ID_SLUG_TOKENS = 6;
+
 /**
  * Slugify the leading tokens of an issue string into a stable, human-readable
- * key fragment. Six tokens balances clustering (related findings collide) and
- * specificity (genuinely different issues stay distinct).
+ * key fragment.
  */
-function slugLeadingTokens(text: string, tokenCount = 6): string {
+function slugLeadingTokens(text: string, tokenCount = RULE_ID_SLUG_TOKENS): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, " ")
@@ -67,22 +69,21 @@ function joinMessage(issue: string, suggestion: string | undefined): string {
   return trimmedIssue;
 }
 
-function buildMeta(f: AnyLLMFinding): Record<string, unknown> | undefined {
-  // Only populate meta when LLM-specific annotation fields are present.
-  // issue/suggestion are always on LLMFinding and are also included in meta
-  // for debuggability, but only when an annotation field anchors the meta.
-  const hasAnnotation =
-    !!f.acQuote || f.acIndex != null || ("acId" in f && !!f.acId) || ("verifiedBy" in f && !!f.verifiedBy);
-  if (!hasAnnotation) return undefined;
-
+function buildMeta(f: AnyLLMFinding, originalSeverity?: string): Record<string, unknown> | undefined {
   const meta: Record<string, unknown> = {};
+  // Always persist raw issue/suggestion so autofix consumers can address them separately.
   if (f.issue) meta.issue = f.issue;
   if (f.suggestion) meta.suggestion = f.suggestion;
+  // AC-annotation fields — only when present and valid.
   if (f.acQuote) meta.acQuote = f.acQuote;
-  if (f.acIndex != null) meta.acIndex = f.acIndex;
+  // acIndex is 1-based; 0 is a buggy LLM emission and must not be persisted.
+  if (typeof f.acIndex === "number" && f.acIndex >= 1) meta.acIndex = f.acIndex;
   if ("acId" in f && f.acId) meta.acId = f.acId;
   if ("verifiedBy" in f && f.verifiedBy) meta.verifiedBy = f.verifiedBy;
-  return meta;
+  // Preserve the raw severity when narrowing changes the value so consumers
+  // can still bucket "unverifiable" separately from genuine info findings.
+  if (originalSeverity !== undefined) meta.originalSeverity = originalSeverity;
+  return Object.keys(meta).length > 0 ? meta : undefined;
 }
 
 function findingCategory(f: AnyLLMFinding): string | undefined {
@@ -91,16 +92,17 @@ function findingCategory(f: AnyLLMFinding): string | undefined {
 
 export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOptions = {}): ReviewFinding {
   const category = findingCategory(f);
+  const narrowed = narrowSeverity(f.severity);
   const result: ReviewFinding = {
     ruleId: deriveRuleId(category, f.issue),
-    severity: narrowSeverity(f.severity),
+    severity: narrowed,
     file: f.file,
     line: f.line,
     message: joinMessage(f.issue, f.suggestion),
   };
   if (category) result.category = category;
   if (opts.source) result.source = opts.source;
-  const meta = buildMeta(f);
+  const meta = buildMeta(f, f.severity !== narrowed ? f.severity : undefined);
   if (meta) result.meta = meta;
   return result;
 }
