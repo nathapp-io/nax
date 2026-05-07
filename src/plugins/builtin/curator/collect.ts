@@ -119,17 +119,16 @@ async function collectFromMetrics(context: CuratorPostRunContext): Promise<Obser
 }
 
 function findingRuleId(finding: JsonRecord): string {
-  return stringValue(finding.rule ?? finding.ruleId ?? finding.checkId ?? finding.category, "unknown");
+  return stringValue(finding.ruleId ?? finding.rule ?? finding.checkId ?? finding.category, "unknown");
 }
 
 /**
  * Extract a human-readable message from a finding record.
  *
- * Two on-disk shapes coexist in `review-audit/*.json`:
- * - Canonical `ReviewFinding` (lint-style): has `message`.
- * - `LLMFinding` (semantic/adversarial reviewers): has `issue` + optional `suggestion`,
- *   no `message` field. Without this fallback, `payload.message` is always empty
- *   for LLM findings — the dominant source today.
+ * Issue #942 Phase 1 normalized semantic/adversarial/debate reviewers to write
+ * canonical `ReviewFinding` (with `message`) before persistence. The
+ * `issue`/`suggestion` fallback is retained ONLY for legacy on-disk audits
+ * written before that change landed (AC-4 transition compatibility).
  */
 function findingMessage(finding: JsonRecord): string {
   const message = stringValue(finding.message);
