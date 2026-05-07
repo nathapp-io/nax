@@ -66,33 +66,44 @@ function uniqueStoryIds(storyIds: string[]): string[] {
   return [...new Set(storyIds)];
 }
 
+function firstLine(message: string): string {
+  return message.split("\n")[0] ?? message;
+}
+
 /** H1: Repeated review finding — same ruleId appearing across stories */
 function h1RepeatedReviewFinding(observations: Observation[], threshold: number): Proposal[] {
   const findings = observations.filter((o): o is ReviewFindingObservation => o.kind === "review-finding");
 
-  const byRuleId = new Map<string, string[]>();
+  const groups = new Map<string, { storyIds: string[]; samples: string[] }>();
   for (const obs of findings) {
     const ruleId = obs.payload.ruleId;
-    const existing = byRuleId.get(ruleId);
+    const message = obs.payload.message;
+    const existing = groups.get(ruleId);
     if (existing) {
-      existing.push(obs.storyId);
+      existing.storyIds.push(obs.storyId);
+      const sampleKey = firstLine(message);
+      if (existing.samples.length < 2 && sampleKey && !existing.samples.includes(sampleKey)) {
+        existing.samples.push(sampleKey);
+      }
     } else {
-      byRuleId.set(ruleId, [obs.storyId]);
+      const sampleKey = firstLine(message);
+      groups.set(ruleId, { storyIds: [obs.storyId], samples: sampleKey ? [sampleKey] : [] });
     }
   }
 
   const proposals: Proposal[] = [];
-  for (const [ruleId, storyIds] of byRuleId.entries()) {
+  for (const [ruleId, { storyIds, samples }] of groups.entries()) {
     if (storyIds.length < threshold) continue;
     const count = storyIds.length;
     const severity = count >= 4 ? "HIGH" : "MED";
     const unique = uniqueStoryIds(storyIds);
+    const sampleSection = samples.length > 0 ? `\n  Examples: ${samples.join(" | ")}` : "";
     proposals.push({
       id: "H1",
       severity,
       target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "add" },
       description: `Repeated review finding: ${ruleId} appeared ${count}x across stories`,
-      evidence: `Rule ${ruleId} fired ${count}× in stories: ${unique.join(", ")}`,
+      evidence: `Rule ${ruleId} fired ${count}× in stories: ${unique.join(", ")}${sampleSection}`,
       sourceKinds: ["review-finding"],
       storyIds: unique,
     });
