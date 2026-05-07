@@ -115,8 +115,9 @@ export function buildAutofixStrategies(
       story: ctx.story,
     }),
     extractApplied: (output) => {
-      if (output.testEditDeclarations.length > 0) {
-        ctx.testEditDeclarations = [...(ctx.testEditDeclarations ?? []), ...output.testEditDeclarations];
+      const decls = output.testEditDeclarations ?? [];
+      if (decls.length > 0) {
+        ctx.testEditDeclarations = [...(ctx.testEditDeclarations ?? []), ...decls];
       }
       return {
         summary: output.unresolvedReason ?? "",
