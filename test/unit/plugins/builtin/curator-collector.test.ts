@@ -364,7 +364,7 @@ describe("collectObservations", () => {
     expect(observations.some((o) => o.kind === "fix-cycle-iteration" && o.payload.outcome === "unchanged")).toBe(true);
   });
 
-  test("projects LLM-shaped review findings (issue/suggestion) into payload.message", async () => {
+  test("AC-4: legacy on-disk LLM-shape audits remain readable", async () => {
     const root = await mkdtemp(join(tmpdir(), "curator-llm-finding-"));
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-x");
@@ -443,6 +443,65 @@ describe("collectObservations", () => {
       expect(noSuggestion.payload.message).toBe(
         "Listener errors are swallowed when logger is null.",
       );
+    }
+  });
+
+  test("AC-3: canonical-shape audits pass through without fallback logic", async () => {
+    const root = await mkdtemp(join(tmpdir(), "curator-canonical-pass-"));
+    const outputDir = join(root, "out");
+    const auditDir = join(outputDir, "review-audit", "feat-z");
+    await mkdir(auditDir, { recursive: true });
+
+    await writeFile(
+      join(auditDir, "1-review-semantic-US-005.json"),
+      JSON.stringify({
+        timestamp: "2026-05-07T00:00:00.000Z",
+        storyId: "US-005",
+        featureName: "feat-z",
+        reviewer: "semantic",
+        result: {
+          findings: [
+            {
+              ruleId: "input:listener-arg-not-validated",
+              severity: "error",
+              file: "src/foo.ts",
+              line: 73,
+              message: "X is not validated\n→ guard with typeof",
+              category: "input",
+              meta: { issue: "X is not validated", suggestion: "guard with typeof" },
+            },
+          ],
+        },
+      }),
+    );
+
+    const context: CuratorPostRunContext = {
+      runId: "run-canonical-pass",
+      feature: "feat-z",
+      workdir: root,
+      prdPath: join(root, "prd.json"),
+      branch: "main",
+      totalDurationMs: 1000,
+      totalCost: 0,
+      storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
+      stories: [],
+      version: "0.1.0",
+      pluginConfig: {},
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      config: {} as any,
+      outputDir,
+      globalDir: join(root, "global"),
+      projectKey: "test-project",
+      curatorRollupPath: join(root, "rollup.jsonl"),
+    };
+
+    const observations = await collectObservations(context);
+    const finding = observations.find((o) => o.kind === "review-finding");
+    expect(finding).toBeDefined();
+    if (finding?.kind === "review-finding") {
+      expect(finding.payload.ruleId).toBe("input:listener-arg-not-validated");
+      expect(finding.payload.message).toContain("X is not validated");
+      expect(finding.payload.message).toContain("→ guard with typeof");
     }
   });
 
