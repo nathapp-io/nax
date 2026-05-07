@@ -693,3 +693,103 @@ describe("autofixStage — unsignaled-failure guard (2D)", () => {
     }
   });
 });
+
+describe("autofixStage — autofixAttempt counter (#951 Bug 1)", () => {
+  test("increments ctx.autofixAttempt by 1 on each real entry", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runAgentRectification = async () => ({ succeeded: true, cost: 0 });
+
+    try {
+      const ctx = makeCtx({
+        reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "ts err" }]),
+      });
+      expect(ctx.autofixAttempt ?? 0).toBe(0);
+      await autofixStage.execute(ctx);
+      expect(ctx.autofixAttempt).toBe(1);
+      // simulate review re-running and still failing → autofix re-enters
+      ctx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "ts err" }]);
+      await autofixStage.execute(ctx);
+      expect(ctx.autofixAttempt).toBe(2);
+    } finally {
+      Object.assign(_autofixDeps, saved);
+    }
+  });
+
+  test("does not increment when review already passed (no-op early return)", async () => {
+    const ctx = makeCtx({ reviewResult: makeReviewResult(true), autofixAttempt: 4 });
+    await autofixStage.execute(ctx);
+    expect(ctx.autofixAttempt).toBe(4);
+  });
+});
+
+describe("autofixStage — capacity gate on partial-progress retry (#951 Bug 2)", () => {
+  function priorIter(strategyNames: string[]): any {
+    return {
+      iterationNum: 1,
+      findingsBefore: [],
+      fixesApplied: strategyNames.map((name) => ({ strategyName: name, op: name, targetFiles: [], summary: "" })),
+      findingsAfter: [],
+      outcome: "unchanged",
+      startedAt: "2026-05-07T00:00:00.000Z",
+      finishedAt: "2026-05-07T00:00:01.000Z",
+    };
+  }
+
+  test("escalates instead of retrying review when prior iterations exhaust the active strategy cap", async () => {
+    const saved = { ..._autofixDeps };
+    // After rectification: lint passes (nowPassing), typecheck still fails (currentlyFailing).
+    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
+      mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "ts err" }]);
+      return { succeeded: false, cost: 0 };
+    };
+
+    try {
+      const ctx = makeCtx({
+        reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
+        config: {
+          ...DEFAULT_CONFIG,
+          quality: {
+            ...DEFAULT_CONFIG.quality,
+            commands: { test: "bun test" },
+            // maxAttempts=2 so two prior implementer fixes exhaust the per-strategy cap.
+            autofix: { enabled: true, maxAttempts: 2, maxTotalAttempts: 12 },
+          },
+        } as any,
+      });
+      ctx.autofixPriorIterations = [priorIter(["autofix-implementer", "autofix-implementer"])];
+      const result = await autofixStage.execute(ctx);
+      expect(result.action).toBe("escalate");
+    } finally {
+      Object.assign(_autofixDeps, saved);
+    }
+  });
+
+  test("still retries when at least one applicable strategy has remaining capacity", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
+      mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "ts err" }]);
+      return { succeeded: false, cost: 0 };
+    };
+
+    try {
+      const ctx = makeCtx({
+        reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
+        config: {
+          ...DEFAULT_CONFIG,
+          quality: {
+            ...DEFAULT_CONFIG.quality,
+            commands: { test: "bun test" },
+            autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
+          },
+        } as any,
+      });
+      // 1/3 implementer attempts used — capacity remains.
+      ctx.autofixPriorIterations = [priorIter(["autofix-implementer"])];
+      const result = await autofixStage.execute(ctx);
+      expect(result.action).toBe("retry");
+      if (result.action === "retry") expect(result.fromStage).toBe("review");
+    } finally {
+      Object.assign(_autofixDeps, saved);
+    }
+  });
+});

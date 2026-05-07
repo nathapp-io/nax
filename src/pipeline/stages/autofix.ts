@@ -26,6 +26,7 @@ import type { ReviewCheckName, ReviewCheckResult } from "../../review/types";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { runAgentRectification } from "./autofix-agent";
+import { autofixCapacityExhausted } from "./autofix-cycle";
 import { splitFindingsByScope } from "./autofix-scope-split";
 import { runTestWriterRectification } from "./autofix-test-writer";
 
@@ -64,6 +65,11 @@ export const autofixStage: PipelineStage = {
     if (!reviewResult || reviewResult.success) {
       return { action: "continue" };
     }
+
+    // Counts real entries to autofix this pipeline. Read by the partial-progress
+    // budget gate below and the fail-closed-on-fail-open guard in review.ts. Must
+    // increment before any work so subsequent reads on the same call see N >= 1.
+    ctx.autofixAttempt = (ctx.autofixAttempt ?? 0) + 1;
 
     // Effective workdir for running commands — workdir is already resolved at context creation
 
@@ -223,7 +229,13 @@ export const autofixStage: PipelineStage = {
     );
     const nowPassing = [...failedCheckNames].filter((c) => !currentlyFailing.has(c));
 
-    if (nowPassing.length > 0 && totalUsed < maxTotal) {
+    // Avoid burning LLM tokens on a review pass that the next autofix cycle would
+    // immediately bail on at its cap precheckers. After cycle V2 lands, prior
+    // iterations persist across pipeline retries via ctx.autofixPriorIterations,
+    // so a "partial progress" exit can leave every relevant strategy at cap even
+    // when the global budget still has room. See issue #951.
+    const capacityExhausted = autofixCapacityExhausted(ctx);
+    if (nowPassing.length > 0 && totalUsed < maxTotal && !capacityExhausted) {
       ctx.retrySkipChecks = new Set([...(ctx.retrySkipChecks ?? []), ...nowPassing]);
       logger.info("autofix", "Partial progress — retrying review with updated skip list", {
         storyId: ctx.story.id,
@@ -232,6 +244,17 @@ export const autofixStage: PipelineStage = {
         budgetUsed: `${totalUsed}/${maxTotal}`,
       });
       return { action: "retry", fromStage: "review", cost: agentCost };
+    }
+    if (nowPassing.length > 0 && capacityExhausted) {
+      logger.info(
+        "autofix",
+        "Partial progress — but autofix capacity exhausted; escalating instead of retrying review",
+        {
+          storyId: ctx.story.id,
+          nowPassing,
+          remaining: [...currentlyFailing],
+        },
+      );
     }
 
     logger.warn("autofix", "Autofix exhausted — escalating", { storyId: ctx.story.id });

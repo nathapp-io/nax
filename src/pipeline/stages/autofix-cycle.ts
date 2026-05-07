@@ -149,6 +149,46 @@ function buildAutofixStrategies(
   return [testWriter, implementer];
 }
 
+// ─── Capacity prediction ──────────────────────────────────────────────────────
+
+/**
+ * Predicts whether the next runFixCycle call would exit immediately at one of its
+ * cap precheckers (max-attempts-per-strategy or max-attempts-total) given the
+ * current ctx.autofixPriorIterations and current failing findings.
+ *
+ * Used by autofix.ts to short-circuit a partial-progress retry when re-running
+ * review would only feed an already-exhausted autofix cycle — wasting LLM tokens
+ * on adversarial / semantic checks that cannot lead to a fix this run.
+ *
+ * Mirrors the cap logic in cycle.ts:180–219:
+ *   - any active strategy at its per-strategy cap → exhausted
+ *   - total prior fixesApplied at maxAttemptsTotal → exhausted
+ *   - no strategy matches the current findings    → exhausted (no-strategy)
+ */
+export function autofixCapacityExhausted(ctx: PipelineContext): boolean {
+  const findings = collectCurrentFindings(ctx);
+  if (findings.length === 0) return false;
+
+  const maxAttempts = ctx.config.quality.autofix?.maxAttempts ?? 3;
+  const maxTotal = ctx.config.quality.autofix?.maxTotalAttempts ?? 12;
+  const prior = ctx.autofixPriorIterations ?? [];
+
+  const totalUsed = prior.reduce((sum, iter) => sum + iter.fixesApplied.length, 0);
+  if (totalUsed >= maxTotal) return true;
+
+  const strategies = buildAutofixStrategies(ctx, maxAttempts);
+  const active = strategies.filter((s) => findings.some((f) => s.appliesTo(f)));
+  if (active.length === 0) return true;
+
+  return active.some((s) => {
+    const used = prior.reduce(
+      (sum, iter) => sum + iter.fixesApplied.filter((fa) => fa.strategyName === s.name).length,
+      0,
+    );
+    return used >= s.maxAttempts;
+  });
+}
+
 // ─── Escalation digest ───────────────────────────────────────────────────────
 
 function buildEscalationDigest(findings: Finding[]): string {
