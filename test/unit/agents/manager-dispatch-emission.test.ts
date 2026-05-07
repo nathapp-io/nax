@@ -13,8 +13,10 @@
  *   - runAs envelope     → zero DispatchEvents + one OperationCompletedEvent
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
+import { _acpAdapterDeps } from "../../../src/agents/acp/adapter";
+import { makeClient, makeSession } from "./acp/adapter.test";
 import type { SessionHandle, TurnResult } from "../../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { NaxConfigSchema } from "../../../src/config/schemas";
@@ -235,41 +237,37 @@ describe("runTrackedSession — dispatch emission", () => {
 // ─── completeAs ─────────────────────────────────────────────────────────────
 
 describe("completeAs — dispatch emission", () => {
+  const origCreateClient = _acpAdapterDeps.createClient;
+  beforeEach(() => {
+    _acpAdapterDeps.createClient = mock(() => makeClient(makeSession()));
+  });
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    mock.restore();
+  });
+
   test("emits exactly one complete event", async () => {
     const bus = new DispatchEventBus();
     const manager = new AgentManager(DEFAULT_CONFIG, undefined, { dispatchEvents: bus });
-    const adapter = manager["_resolveRegistry"]?.();
-    if (!adapter) {
-      // Registry not available; use adapter injection via private field for isolation.
-    }
 
     const received: CompleteDispatchEvent[] = [];
     bus.onDispatch((e) => {
       if (e.kind === "complete") received.push(e);
     });
 
-    try {
-      await manager.completeAs("claude", "summarise this", {
-        modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
-        workdir: "/tmp/test",
-        storyId: "US-003",
-        sessionRole: "synthesis",
-        pipelineStage: "complete",
-        timeoutMs: 100,
-      });
-    } catch {
-      // Adapter not wired in unit test — error is expected; emission still happens if adapter path reached.
-    }
+    await manager.completeAs("claude", "summarise this", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      storyId: "US-003",
+      sessionRole: "synthesis",
+      pipelineStage: "complete",
+      timeoutMs: 100,
+    });
 
-    // completeAs emits on success only — error path emits DispatchErrorEvent.
-    // If completeWithFallback fails before calling adapter, no complete event is emitted.
-    // Assert: at most one complete event (zero if adapter not available).
-    expect(received.length).toBeLessThanOrEqual(1);
-    if (received.length === 1) {
-      expect(received[0]?.kind).toBe("complete");
-      expect(received[0]?.sessionRole).toBe("synthesis");
-      expect(received[0]?.storyId).toBe("US-003");
-    }
+    expect(received).toHaveLength(1);
+    expect(received[0]?.kind).toBe("complete");
+    expect(received[0]?.sessionRole).toBe("synthesis");
+    expect(received[0]?.storyId).toBe("US-003");
   });
 });
 
