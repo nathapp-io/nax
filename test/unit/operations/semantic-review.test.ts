@@ -183,8 +183,7 @@ describe("semanticReviewOp.retry", () => {
     expect(typeof strategy.shouldRetry).toBe("function");
   });
 
-  test("hopBody field exists and is unchanged", () => {
-    expect(semanticReviewOp).toHaveProperty("hopBody");
-    expect(typeof semanticReviewOp.hopBody).toBe("function");
+  test("hopBody field does NOT exist (removed in US-005b)", () => {
+    expect(semanticReviewOp).not.toHaveProperty("hopBody");
   });
 });

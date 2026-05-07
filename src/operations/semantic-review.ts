@@ -6,7 +6,6 @@ import { ReviewPromptBuilder } from "../prompts";
 import { validateLLMShape } from "../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import { makeReviewRetryHopBody } from "./_review-retry";
 import type { RunOperation } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
@@ -40,11 +39,6 @@ export interface SemanticReviewOutput {
 
 const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], failOpen: true };
 
-const semanticReviewHopBody = makeReviewRetryHopBody<SemanticReviewInput>(
-  (parsed) => validateLLMShape(parsed) !== null,
-  "semantic",
-);
-
 const semanticParseRetry = (input: SemanticReviewInput) =>
   makeParseRetryStrategy({
     validate: (parsed) => validateLLMShape(parsed) !== null,
@@ -67,7 +61,6 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   // silently ignore the user's review.semantic.model setting.
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
-  hopBody: semanticReviewHopBody,
   retry: (input) => semanticParseRetry(input),
   build(input, _ctx) {
     const base = new ReviewPromptBuilder().buildSemanticReviewPrompt(input.story, input.semanticConfig, {
