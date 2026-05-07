@@ -279,6 +279,50 @@ describe("sendPrompt()", () => {
     expect((caught as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
   });
 
+  test("watchdog fail-stale classification is isolated per session handle during parallel prompts", async () => {
+    let capturedA: ((callId: string, cancel: () => Promise<void>) => void) | undefined;
+    let capturedB: ((callId: string, cancel: () => Promise<void>) => void) | undefined;
+    const registry = new Map<string, () => Promise<void>>();
+    let releaseB: (() => void) | undefined;
+    const allowBToFinish = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        if (name === "nax-session-a") capturedA = opts.onActiveCall;
+        if (name === "nax-session-b") capturedB = opts.onActiveCall;
+        return { id: name, agentName: "claude" } as SessionHandle;
+      }),
+      sendTurn: mock(async (handle: SessionHandle) => {
+        if (handle.id === "nax-session-a") {
+          capturedA?.("call-a", async () => {});
+          await registry.get("call-a")?.();
+          await allowBToFinish;
+          throw new SessionTurnError("Agent session ended with stop reason: error (externally cancelled)", true);
+        }
+        if (handle.id === "nax-session-b") {
+          capturedB?.("call-b", async () => {});
+          releaseB?.();
+          return MOCK_TURN;
+        }
+        return MOCK_TURN;
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry });
+    const handleA = await sm.openSession("nax-session-a", makeOpenRequest());
+    const handleB = await sm.openSession("nax-session-b", makeOpenRequest());
+
+    const promiseA = sm.sendPrompt(handleA, "prompt-a").catch((err) => err);
+    const promiseB = sm.sendPrompt(handleB, "prompt-b");
+    const [resultA] = await Promise.all([promiseA, promiseB]);
+
+    expect(resultA).toBeInstanceOf(SessionFailureError);
+    expect((resultA as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
+  });
+
   test("forwards maxTurns to adapter.sendTurn", async () => {
     let capturedMaxTurns: number | undefined;
     const adapter = makeAgentAdapter({

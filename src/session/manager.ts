@@ -75,13 +75,12 @@ export class SessionManager implements ISessionManager {
   private _watchdogControllerRegistry: Map<string, () => Promise<void>> | undefined;
   private _onStreamActivity: ((event: import("../runtime/agent-stream-events").AgentStreamEvent) => void) | undefined;
   /**
-   * Bookkeeping: callIds whose cancel was invoked via the watchdog registry.
-   * Populated by the wrapped `onActiveCall` cancel closure; consumed when the
-   * adapter surfaces `cancelled: true` so we can map the failure to fail-stale.
-   * Drained via `agent.call_ended` events on the stream bus (and as a backstop
-   * when sendPrompt observes the cancellation).
+   * Bookkeeping: per-session callIds whose cancel was invoked via the watchdog
+   * registry. Populated by the wrapped `onActiveCall` cancel closure; consumed
+   * when the adapter surfaces `cancelled: true` so we can map the failure to
+   * fail-stale without cross-session contamination in parallel runs.
    */
-  private readonly _watchdogCancelledCalls = new Set<string>();
+  private readonly _watchdogCancelledCallsBySession = new Map<string, Set<string>>();
   /** Disposer for the agent.call_ended subscription; cleared in `close()` if added. */
   private _agentStreamUnsubscribe: (() => void) | undefined;
 
@@ -144,15 +143,21 @@ export class SessionManager implements ISessionManager {
    * it was the watchdog (vs an unrelated process kill) and classify as
    * fail-stale. Returns undefined when no registry is configured.
    */
-  private _buildOnActiveCall(): ((callId: string, cancel: () => Promise<void>) => void) | undefined {
+  private _buildOnActiveCall(sessionName: string): ((callId: string, cancel: () => Promise<void>) => void) | undefined {
     const registry = this._watchdogControllerRegistry;
     if (!registry) return undefined;
     return (callId, cancel) => {
       registry.set(callId, async () => {
-        this._watchdogCancelledCalls.add(callId);
+        const cancelledCalls = this._watchdogCancelledCallsBySession.get(sessionName) ?? new Set<string>();
+        cancelledCalls.add(callId);
+        this._watchdogCancelledCallsBySession.set(sessionName, cancelledCalls);
         await cancel();
       });
     };
+  }
+
+  private _clearWatchdogCancelledCalls(sessionName: string): void {
+    this._watchdogCancelledCallsBySession.delete(sessionName);
   }
 
   /**
@@ -448,7 +453,7 @@ export class SessionManager implements ISessionManager {
       onSessionEstablished: opts.onSessionEstablished,
       signal: opts.signal,
       resume,
-      onActiveCall: this._buildOnActiveCall(),
+      onActiveCall: this._buildOnActiveCall(name),
       onStreamActivity: this._onStreamActivity,
     });
     this._liveHandles.set(name, handle);
@@ -568,11 +573,6 @@ export class SessionManager implements ISessionManager {
         signal: opts?.signal,
         maxTurns: opts?.maxTurns,
       });
-      // Drain any stale watchdog entry: the watchdog may have fired and set a
-      // callId here just before the call completed successfully. The success path
-      // never reaches the SessionTurnError handler below, so we clear here to
-      // prevent the stale entry from misclassifying a future unrelated cancel.
-      this._watchdogCancelledCalls.clear();
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
       // Map the adapter's transport-level cancel signal to the policy-level
@@ -585,8 +585,7 @@ export class SessionManager implements ISessionManager {
         // recorded as watchdog-cancelled is the one we just observed. Drain
         // all of them — there should only be one in-flight call per handle
         // due to the single-flight (_busySessions) invariant above.
-        const wasWatchdog = this._watchdogCancelledCalls.size > 0;
-        this._watchdogCancelledCalls.clear();
+        const wasWatchdog = (this._watchdogCancelledCallsBySession.get(handle.id)?.size ?? 0) > 0;
         if (wasWatchdog) {
           throw new SessionFailureError("idle watchdog cancelled session — no stream activity", {
             category: "availability",
@@ -608,6 +607,9 @@ export class SessionManager implements ISessionManager {
       }
       throw err;
     } finally {
+      // Clear per-session watchdog-cancel bookkeeping after each turn: this
+      // call is complete (success or error), and single-flight is per session.
+      this._clearWatchdogCancelledCalls(handle.id);
       this._busySessions.delete(handle.id);
     }
   }
