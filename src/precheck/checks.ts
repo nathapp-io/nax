@@ -18,6 +18,7 @@ export {
   checkTestCommand,
   checkLintCommand,
   checkTypecheckCommand,
+  checkCanonicalRulesLint,
   checkGitUserConfigured,
 } from "./checks-blockers";
 

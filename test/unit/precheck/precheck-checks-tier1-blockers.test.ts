@@ -10,6 +10,7 @@ import type { ExecutionConfig, NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
 import {
+  checkCanonicalRulesLint,
   checkClaudeCLI,
   checkDependenciesInstalled,
   checkGitRepoExists,
@@ -18,6 +19,7 @@ import {
   checkStaleLock,
   checkWorkingTreeClean,
 } from "../../../src/precheck/checks";
+import { _checkCanonicalRulesDeps } from "../../../src/precheck/checks-system";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -432,6 +434,77 @@ describe("checkDependenciesInstalled (Tier 1 blocker)", () => {
     const result = await checkDependenciesInstalled(testDir);
 
     expect(result.passed).toBe(true);
+  });
+});
+
+describe("checkCanonicalRulesLint (Tier 1 blocker)", () => {
+  let testDir: string;
+  let originalLoadCanonicalRules: typeof _checkCanonicalRulesDeps.loadCanonicalRules;
+
+  beforeEach(() => {
+    testDir = makeTempDir("nax-test-precheck-");
+    originalLoadCanonicalRules = _checkCanonicalRulesDeps.loadCanonicalRules;
+  });
+
+  afterEach(() => {
+    _checkCanonicalRulesDeps.loadCanonicalRules = originalLoadCanonicalRules;
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  test("passes when no canonical rules store exists", async () => {
+    const result = await checkCanonicalRulesLint(testDir);
+
+    expect(result.name).toBe("canonical-rules-lint");
+    expect(result.tier).toBe("blocker");
+    expect(result.passed).toBe(true);
+    expect(result.message).toContain("passed");
+  });
+
+  test("passes when canonical rules are neutral", async () => {
+    const rulesDir = join(testDir, ".nax", "rules");
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(join(rulesDir, "style.md"), "Use clear naming.\nPrefer immutable updates.");
+
+    const result = await checkCanonicalRulesLint(testDir);
+
+    expect(result.passed).toBe(true);
+    expect(result.message).toContain("1 file(s)");
+  });
+
+  test("fails when canonical rules contain banned markers", async () => {
+    const rulesDir = join(testDir, ".nax", "rules");
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(join(rulesDir, "bad.md"), "Do exactly what AGENTS.md says.");
+
+    const result = await checkCanonicalRulesLint(testDir);
+
+    expect(result.passed).toBe(false);
+    expect(result.message).toContain("violation");
+    expect(result.message).toContain("bad.md");
+  });
+
+  test("minimal integration lints repository root canonical rules", async () => {
+    mkdirSync(join(testDir, ".nax", "rules"), { recursive: true });
+    writeFileSync(join(testDir, ".nax", "rules", "root.md"), "Root guidance.");
+    mkdirSync(join(testDir, "packages", "api", ".nax", "rules"), { recursive: true });
+    writeFileSync(join(testDir, "packages", "api", ".nax", "rules", "api.md"), "API guidance.");
+
+    const result = await checkCanonicalRulesLint(testDir);
+
+    expect(result.passed).toBe(true);
+    expect(result.message).toContain("1 file(s)");
+    expect(result.message).toContain("1 root(s)");
+  });
+
+  test("fails with generic message when canonical loader throws non-neutrality error", async () => {
+    _checkCanonicalRulesDeps.loadCanonicalRules = async () => {
+      throw new Error("boom");
+    };
+
+    const result = await checkCanonicalRulesLint(testDir);
+
+    expect(result.passed).toBe(false);
+    expect(result.message).toContain("Canonical rules lint failed: boom");
   });
 });
 
