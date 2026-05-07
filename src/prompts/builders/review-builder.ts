@@ -32,10 +32,14 @@ For each acceptance criterion, verify the current codebase implements it correct
 - The \`verifiedBy.observed\` field MUST be a **verbatim** 1-3 line code excerpt copy-pasted from the file — not a description. Paste the actual source lines (or a substring of them) that prove your claim. A description like "function X does not check Y" is not a verifiable observation; quote the lines that demonstrate the omission instead. If you cannot quote an exact excerpt that proves your point, downgrade the finding to "unverifiable".
 
 **AC-grounding rule — required for every "error" finding:**
-- Every "error" finding MUST include \`acQuote\`: a verbatim substring of one AC bullet that names or constrains the exact file, function, or symbol you are flagging.
+- Every "error" finding MUST include \`acQuote\`: a verbatim substring of one AC bullet that names or constrains the exact **symbol** you are flagging — not merely the file the symbol lives in.
 - Include \`acIndex\` (1-based) indicating which AC bullet you are quoting.
-- If no AC bullet mentions the file, function, or symbol being flagged, the finding is out-of-scope. Emit it as \`severity: "info"\` instead — it cannot block the story.
-- Copy \`acQuote\` directly from the Acceptance Criteria text — do not paraphrase.
+- Copy \`acQuote\` directly from the Acceptance Criteria — including any backticks, asterisks, or punctuation. Do not paraphrase, strip formatting, or rewrite.
+
+**The "AC names the file but not the symbol" trap (most common failure mode):**
+If the AC bullet mentions a file or component but the **specific symbol you are flagging** (the function, class, interface, type, or convention) is not named in that bullet, the AC does **not** constrain your finding. Emit it as \`severity: "info"\` — not \`"error"\`. **Convention / coding-standard violations almost always belong as \`"info"\`** unless an AC specifically names the convention or the symbol it concerns.
+
+If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\`. A finding dropped by the validator as ungrounded is worse than one correctly classified as advisory.
 
 Flag issues only when you have confirmed:
 1. An AC is not implemented or partially implemented (verified by reading the actual files)

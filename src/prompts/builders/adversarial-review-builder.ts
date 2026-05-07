@@ -141,10 +141,22 @@ Severity guide:
 \`passed\` may be \`true\` with findings if all findings are \`"info"\` or \`"unverifiable"\`.
 
 **AC-grounding rule — required for every "error" finding:**
-- \`acQuote\` must be a verbatim substring of one AC bullet (from the Acceptance Criteria above) that names or constrains the exact file, function, or symbol you are flagging.
+- \`acQuote\` must be a verbatim substring of one AC bullet (from the Acceptance Criteria above) that names or constrains the exact **symbol** you are flagging — not merely the file the symbol lives in.
 - \`acIndex\` is the 1-based position of that AC bullet in the list.
-- If no AC bullet mentions the file, function, or symbol being flagged, emit the finding as \`"info"\` instead — it cannot block the story.
-- Do not paraphrase the AC text — copy it exactly.`;
+- Copy \`acQuote\` **exactly** from the AC text, including any backticks, asterisks, or punctuation. Do not paraphrase, strip formatting, or rewrite.
+
+**The "AC names the file but not the symbol" trap (most common failure mode):**
+If the AC bullet mentions a file or component but the **specific symbol you are flagging** (the function, class, interface, type, or convention) is not named in that bullet, the AC does **not** constrain your finding. Emit it as \`"info"\` — not \`"error"\`.
+
+Worked example:
+- AC#1 reads: \`\`\`\`AstIndexService.indexCommit() is called by the code_commit outbox handler\`\`\`\`
+- You found that \`code-commit-outbox-handler.ts\` defines a custom \`ExtendedPrismaClient\` interface, violating a project convention rule.
+- WRONG: severity \`"error"\`, \`acQuote: "AstIndexService.indexCommit() is called by the code_commit outbox handler"\`, \`acIndex: 1\`. — AC#1 is about *who calls indexCommit*; it says nothing about Prisma typing. Picking it because the file is named is mis-grounding.
+- RIGHT: severity \`"info"\`, no \`acQuote\`. The convention violation is real, but no AC constrains \`ExtendedPrismaClient\`, so it cannot block the story.
+
+**Convention / coding-standard violations almost always belong as \`"info"\`** unless an AC specifically names the convention or the symbol it concerns.
+
+If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\`. A finding dropped by the validator is worse than one correctly classified as advisory.`;
 
 /**
  * Build the diff section for "ref" mode.
