@@ -205,8 +205,12 @@ export interface ReviewConfig {
     build?: string;
     /** Auto-fix lint errors — used by autofix stage when lint fails */
     lintFix?: string;
+    /** Scoped auto-fix lint command template with {{files}} placeholder */
+    lintFixScoped?: string;
     /** Auto-fix formatting — used by autofix stage when lint fails */
     formatFix?: string;
+    /** Scoped auto-format command template with {{files}} placeholder */
+    formatFixScoped?: string;
   };
   /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
   pluginMode?: "per-story" | "deferred";
