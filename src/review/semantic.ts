@@ -25,9 +25,9 @@ import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-r
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { filterByAcQuote } from "./ac-quote-validator";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
+import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
-import { llmFindingsToReviewFindings } from "./finding-projection";
 import { substantiateSemanticEvidence } from "./semantic-evidence";
 import {
   type LLMFinding,
