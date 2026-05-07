@@ -5,6 +5,7 @@
  */
 
 import type { AgentResult } from "../agents/types";
+import type { TestEditDeclaration } from "../operations";
 import type { NaxConfig } from "../config/schema";
 import type { ConstitutionResult } from "../constitution/types";
 import type { BuiltContext } from "../context/types";
@@ -182,6 +183,13 @@ export interface PipelineContext extends DispatchContext {
   autofixAttempt?: number;
   /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
   autofixPriorIterations?: Iteration[];
+  /**
+   * Pending TEST_EDIT_REASON declarations from the most recent implementer
+   * rectification attempt. Populated by autofix-cycle implementer strategy's
+   * extractApplied; consumed by the cycle's validate() to re-tag fixTarget on
+   * fresh findings. Always cleared after consumption.
+   */
+  testEditDeclarations?: TestEditDeclaration[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */
