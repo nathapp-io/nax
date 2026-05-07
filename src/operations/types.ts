@@ -141,8 +141,19 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   /**
    * Optional intra-hop multi-prompt body. See HopBody / HopBodyContext.
    * Used by review ops to perform a same-session JSON-parse retry.
+   * When both `hopBody` and `retry` are set, `hopBody` takes precedence.
    */
   readonly hopBody?: HopBody<I>;
+  /**
+   * Optional retry policy for parse-validation failures on this op.
+   * Same shape as `CompleteOperation.retry` — accepts a `RetryPreset`,
+   * a `RetryStrategy`, or a resolver function. When `hopBody` is also set,
+   * `hopBody` takes precedence and `retry` is ignored.
+   */
+  readonly retry?:
+    | RetryPreset
+    | RetryStrategy
+    | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
 }
 
 export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
@@ -163,7 +174,10 @@ export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
    * - function: resolver reading per-call input and build context; return `undefined`
    *   to disable retry for this invocation.
    */
-  readonly retry?: RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | undefined);
+  readonly retry?:
+    | RetryPreset
+    | RetryStrategy
+    | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
 }
 
 /**

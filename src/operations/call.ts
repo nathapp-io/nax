@@ -1,4 +1,4 @@
-import { resolveRetryPreset } from "../agents/retry";
+import { ParseValidationError, resolveRetryPreset } from "../agents/retry";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { pickSelector, resolveConfiguredModel } from "../config";
@@ -8,6 +8,7 @@ import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { composeSections, join } from "../prompts/compose";
 import { cancellableDelay } from "../utils/bun-deps";
+import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
 import type { BuildContext, CallContext, CompleteOperation, Operation, RunOperation, VerifyContext } from "./types";
 
@@ -48,18 +49,21 @@ function resolveTimeoutMs<I, O, C>(op: Operation<I, O, C>, input: I, buildCtx: B
   return timeoutMs;
 }
 
-function resolveOpRetry<I, O, C>(
-  op: CompleteOperation<I, O, C>,
-  input: I,
-  buildCtx: BuildContext<C>,
-): RetryStrategy | null {
-  if (!op.retry) return null;
-  if (typeof op.retry === "function") {
-    const preset = op.retry(input, buildCtx);
-    return preset ? resolveRetryPreset(preset) : null;
+function resolveOpRetry<I, O, C>(op: Operation<I, O, C>, input: I, buildCtx: BuildContext<C>): RetryStrategy | null {
+  const retry = (
+    op as {
+      retry?: RetryPreset | RetryStrategy | ((i: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
+    }
+  ).retry;
+  if (!retry) return null;
+  if (typeof retry === "function") {
+    const resolved = retry(input, buildCtx);
+    if (!resolved) return null;
+    if ("shouldRetry" in resolved) return resolved as RetryStrategy;
+    return resolveRetryPreset(resolved as RetryPreset);
   }
-  if ("shouldRetry" in op.retry) return op.retry as RetryStrategy;
-  return resolveRetryPreset(op.retry as RetryPreset);
+  if ("shouldRetry" in retry) return retry as RetryStrategy;
+  return resolveRetryPreset(retry as RetryPreset);
 }
 
 /**
@@ -129,7 +133,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         return await runPostParse(op, parsedComplete, input, buildCtx);
       } catch (err) {
         if (!retryStrategy) throw err;
-        const decision = retryStrategy.shouldRetry(err as Error, attempt, {
+        const failure = err as Error;
+        const decision = retryStrategy.shouldRetry(failure, attempt, {
           site: "complete",
           agentName: dispatchAgent,
           stage: op.stage,
@@ -137,21 +142,31 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         });
         if (!decision.retry) throw err;
         if (ctx.runtime.signal?.aborted) throw err;
-        getSafeLogger()?.warn(
-          "call-op",
-          `LLM call failed (attempt ${attempt + 1}), retrying in ${decision.delayMs}ms`,
-          {
-            storyId: ctx.storyId,
-            op: op.name,
-            attempt,
-            delayMs: decision.delayMs,
-          },
-        );
+        getSafeLogger()?.warn("callop", "Op retrying", {
+          storyId: ctx.storyId,
+          opName: op.name,
+          site: "complete" as const,
+          agentName: ctx.agentName,
+          stage: op.stage,
+          attempt,
+          delayMs: decision.delayMs,
+          promptTransformed: decision.nextPrompt !== undefined,
+          failureKind:
+            failure instanceof Error ? "error" : (failure as import("../context/engine").AdapterFailure).outcome,
+          failureMessage: errorMessage(failure),
+        });
         await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
         if (ctx.runtime.signal?.aborted) throw err;
         attempt++;
       }
     }
+    getSafeLogger()?.error("callop", "Op retry budget exhausted", {
+      storyId: ctx.storyId,
+      opName: op.name,
+      site: "complete" as const,
+      attempt,
+      totalAttempts: attempt + 1,
+    });
     throw new NaxError(
       `callOp[${op.name}]: exceeded MAX_COMPLETE_RETRY_ATTEMPTS (${MAX_COMPLETE_RETRY_ATTEMPTS})`,
       "CALL_OP_MAX_RETRIES",
@@ -166,6 +181,11 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const runOp = op as RunOperation<I, O, C>;
   const story = ctx.story ?? synthesizeStory(ctx.storyId);
   const sessionRole = ctx.sessionOverride?.role ?? runOp.session.role;
+
+  // Resolve run-kind retry strategy once before the first send.
+  // When both hopBody and retry are set, hopBody takes precedence (migration window).
+  const runRetryStrategy = runOp.hopBody ? null : resolveOpRetry(runOp, input, buildCtx);
+
   const runOptions = {
     prompt,
     workdir: ctx.packageDir,
@@ -214,27 +234,125 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     runOptions,
   );
 
-  const outcome = await ctx.runtime.agentManager.runWithFallback(
-    {
-      runOptions,
-      signal: ctx.runtime.signal,
-      executeHop,
-      noFallback: runOp.noFallback,
-      bundle: ctx.contextBundle,
-    },
-    dispatchAgent,
-  );
+  // Run-kind retry loop: bounded by MAX_COMPLETE_RETRY_ATTEMPTS.
+  // Transport failures (runWithFallback throws) propagate immediately — op.retry
+  // only handles parse-validation failures. When runRetryStrategy is null
+  // (no retry or hopBody is set), a single dispatch is performed.
+  let runAttempt = 0;
+  let currentRunPrompt = prompt;
+  while (runAttempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
+    const currentRunOptions = runAttempt === 0 ? runOptions : { ...runOptions, prompt: currentRunPrompt };
+    const currentExecuteHop =
+      runAttempt === 0
+        ? executeHop
+        : buildHopCallback(
+            {
+              sessionManager: ctx.runtime.sessionManager,
+              agentManager: ctx.runtime.agentManager,
+              story,
+              config,
+              projectDir: ctx.runtime.projectDir,
+              featureName: ctx.featureName ?? "",
+              workdir: ctx.packageDir,
+              effectiveTier,
+              defaultAgent,
+              pipelineStage: op.stage,
+              ...(runOp.hopBody && {
+                hopBody: ((
+                  initialPrompt: string,
+                  bodyCtx: { send: (p: string) => Promise<TurnResult>; input: unknown },
+                ) => runOp.hopBody?.(initialPrompt, { send: bodyCtx.send, input: bodyCtx.input as I })) as NonNullable<
+                  import("./build-hop-callback").BuildHopCallbackContext["hopBody"]
+                >,
+                hopBodyInput: input,
+              }),
+            },
+            undefined,
+            currentRunOptions,
+          );
 
-  const rawOutput = outcome.result.output;
-  if (!rawOutput) {
-    throw new NaxError(`callOp[${op.name}]: agent returned no output`, "CALL_OP_NO_OUTPUT", {
-      stage: op.stage,
-      storyId: ctx.storyId,
-      agentName: dispatchAgent,
-    });
+    // Transport failures from runWithFallback propagate — op.retry does not handle them.
+    const outcome = await ctx.runtime.agentManager.runWithFallback(
+      {
+        runOptions: currentRunOptions,
+        signal: ctx.runtime.signal,
+        executeHop: currentExecuteHop,
+        noFallback: runOp.noFallback,
+        bundle: ctx.contextBundle,
+      },
+      dispatchAgent,
+    );
+
+    const rawOutput = outcome.result.output;
+    if (!rawOutput) {
+      throw new NaxError(`callOp[${op.name}]: agent returned no output`, "CALL_OP_NO_OUTPUT", {
+        stage: op.stage,
+        storyId: ctx.storyId,
+        agentName: dispatchAgent,
+      });
+    }
+
+    if (!runRetryStrategy) {
+      const parsedRun = op.parse(rawOutput, input, buildCtx);
+      return runPostParse(op, parsedRun, input, buildCtx);
+    }
+
+    // With retry strategy: attempt parse; on failure consult the strategy.
+    try {
+      const parsedRun = op.parse(rawOutput, input, buildCtx);
+      return await runPostParse(op, parsedRun, input, buildCtx);
+    } catch (parseErr) {
+      const lastTurnResult: TurnResult = {
+        output: rawOutput,
+        tokenUsage: outcome.result.tokenUsage ?? { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: outcome.result.estimatedCostUsd ?? 0,
+        internalRoundTrips: outcome.result.internalRoundTrips ?? 0,
+      };
+      const parseValidationError = new ParseValidationError(`[${op.name}] parse failed: ${errorMessage(parseErr)}`);
+      const retryCtx = {
+        site: "run" as const,
+        agentName: dispatchAgent,
+        stage: op.stage,
+        storyId: ctx.storyId,
+        lastOutput: rawOutput,
+        lastTurnResult,
+      };
+      const decision = runRetryStrategy.shouldRetry(parseValidationError, runAttempt, retryCtx);
+      if (!decision.retry) throw parseErr;
+      if (ctx.runtime.signal?.aborted) throw parseErr;
+
+      getSafeLogger()?.warn("callop", "Op retrying", {
+        storyId: ctx.storyId,
+        opName: op.name,
+        site: "run" as const,
+        agentName: ctx.agentName,
+        stage: op.stage,
+        attempt: runAttempt,
+        delayMs: decision.delayMs,
+        promptTransformed: decision.nextPrompt !== undefined,
+        failureKind: "error",
+        failureMessage: errorMessage(parseValidationError),
+      });
+
+      await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
+      if (ctx.runtime.signal?.aborted) throw parseErr;
+      currentRunPrompt = decision.nextPrompt ?? prompt;
+      runAttempt++;
+    }
   }
-  const parsedRun = op.parse(rawOutput, input, buildCtx);
-  return runPostParse(op, parsedRun, input, buildCtx);
+
+  getSafeLogger()?.error("callop", "Op retry budget exhausted", {
+    storyId: ctx.storyId,
+    opName: op.name,
+    site: "run" as const,
+    attempt: runAttempt,
+    totalAttempts: runAttempt + 1,
+  });
+  throw new NaxError(
+    `callOp[${op.name}]: CALL_OP_MAX_RETRIES — exceeded MAX_COMPLETE_RETRY_ATTEMPTS (${MAX_COMPLETE_RETRY_ATTEMPTS})`,
+    "CALL_OP_MAX_RETRIES",
+    { stage: op.stage, storyId: ctx.storyId },
+  );
 }
 
 async function runPostParse<I, O, C>(
