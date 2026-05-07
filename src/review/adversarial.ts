@@ -440,7 +440,52 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   }
 
   // If all findings are advisory (below threshold), override to pass regardless of passed field.
+  //
+  // Guard: when blocking-severity findings were dropped by filterByAcQuote, "no blocking
+  // findings remaining" is NOT evidence of "all advisory" — it is evidence of "the model
+  // produced blocking concerns that it could not ground in any AC." Silently flipping to
+  // pass in that case turns "model misclassified findings as `error`" into "story shipped."
+  // Fail closed and surface the drops so the curator can act on them. (Issue: 2 stories
+  // observed passing this way after acQuote drops; see logs/prompt-audit.txt.)
   if (!parsed.passed && blockingFindings.length === 0) {
+    if (acDropped.length > 0) {
+      const durationMs = Date.now() - startTime;
+      logger?.warn("review", "Adversarial review fail-closed: blocking findings dropped as ungrounded", {
+        storyId: story.id,
+        durationMs,
+        droppedCount: acDropped.length,
+        dropCodes: acDropped.map((d) => d.code),
+      });
+      const dropSummary = acDropped
+        .map((d, i) => `${i + 1}. [${d.code}] ${d.finding.file ?? "<unknown>"}: ${d.finding.issue}`)
+        .join("\n");
+      recordAdversarialAudit({
+        runtime,
+        workdir,
+        projectDir,
+        storyId: story.id,
+        featureName,
+        parsed: true,
+        failOpen: false,
+        passed: false,
+        blockingThreshold: threshold,
+        result: { passed: false, findings: [] },
+        advisoryFindings:
+          advisoryFindings.length > 0
+            ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
+            : undefined,
+      });
+      return {
+        check: "adversarial",
+        success: false,
+        command: "",
+        exitCode: 1,
+        output: `Adversarial review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Either re-classify these as "info" upstream or extend the ACs. Drops:\n\n${dropSummary}`,
+        durationMs,
+        advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+        cost: llmCost,
+      };
+    }
     const durationMs = Date.now() - startTime;
     logger?.info("review", "Adversarial review passed (all findings below blocking threshold)", {
       storyId: story.id,

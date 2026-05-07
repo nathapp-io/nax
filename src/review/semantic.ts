@@ -490,8 +490,52 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     };
   }
 
-  // If LLM said failed but all findings are advisory (below threshold), override to pass
+  // If LLM said failed but all findings are advisory (below threshold), override to pass.
+  //
+  // Guard: when blocking-severity findings were dropped by filterByAcQuote, "no blocking
+  // findings remaining" is NOT evidence of "all advisory" — it is evidence of "the model
+  // produced blocking concerns that it could not ground in any AC." Silently flipping to
+  // pass in that case turns "model misclassified findings as `error`" into "story shipped."
+  // Fail closed and surface the drops so the curator can act on them.
   if (!sanitizedParsed.passed && blockingFindings.length === 0) {
+    if (acDropped.length > 0) {
+      const durationMs = Date.now() - startTime;
+      logger?.warn("review", "Semantic review fail-closed: blocking findings dropped as ungrounded", {
+        storyId: story.id,
+        durationMs,
+        droppedCount: acDropped.length,
+        dropCodes: acDropped.map((d) => d.code),
+      });
+      const dropSummary = acDropped
+        .map((d, i) => `${i + 1}. [${d.code}] ${d.finding.file ?? "<unknown>"}: ${d.finding.issue}`)
+        .join("\n");
+      recordSemanticAudit({
+        runtime,
+        workdir,
+        projectDir,
+        storyId: story.id,
+        featureName,
+        parsed: true,
+        failOpen: false,
+        passed: false,
+        blockingThreshold: threshold,
+        result: { passed: false, findings: [] },
+        advisoryFindings:
+          advisoryFindings.length > 0
+            ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+            : undefined,
+      });
+      return {
+        check: "semantic",
+        success: false,
+        command: "",
+        exitCode: 1,
+        output: `Semantic review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Either re-classify these as "info" upstream or extend the ACs. Drops:\n\n${dropSummary}`,
+        durationMs,
+        advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
+        cost: llmCost,
+      };
+    }
     const durationMs = Date.now() - startTime;
     logger?.info("review", "Semantic review passed (all findings below blocking threshold)", {
       storyId: story.id,

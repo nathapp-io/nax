@@ -320,6 +320,52 @@ describe("runAdversarialReview — non-blocking only findings", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Regression: passed:false with all blocking findings dropped as ungrounded
+// must fail-closed (must NOT silently flip to pass)
+// ---------------------------------------------------------------------------
+
+const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "convention",
+      file: "src/log.ts",
+      line: 10,
+      issue: "Defines custom ExtendedPrismaClient interface, violating convention",
+      suggestion: "Use Record<string, unknown> cast",
+      // AC#1 reads "Users can log in" — a quote about Prisma typing cannot be a substring,
+      // and even if it were, the locus check would fail. The validator drops this.
+      acQuote: "convention forbids custom ExtendedPrismaClient",
+      acIndex: 1,
+    },
+  ],
+});
+
+describe("runAdversarialReview — drops + passed:false (fail-closed regression)", () => {
+  beforeEach(() => {
+    saveAllDeps();
+    setupHappyPathDeps();
+  });
+
+  afterEach(restoreAllDeps);
+
+  test("fails closed when all blocking findings were dropped as ungrounded by acQuote validation", async () => {
+    const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
+    // Before this fix: success was true (silent pass) because blockingFindings.length === 0
+    // after the validator drop, and the "all advisory" branch overrode passed:false → true.
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(1);
+  });
+
+  test("output names the drop as the failure reason", async () => {
+    const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
+    expect(result.output).toContain("dropped as ungrounded");
+    expect(result.output).toContain("ExtendedPrismaClient");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC-5: Skip when no git ref
 // ---------------------------------------------------------------------------
 
