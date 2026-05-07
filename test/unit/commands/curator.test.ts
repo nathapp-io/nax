@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import {
@@ -95,6 +95,7 @@ const originalCuratorRollupPath = _deps.curatorRollupPath;
 const originalReadFile = _deps.readFile;
 const originalWriteFile = _deps.writeFile;
 const originalAppendFile = _deps.appendFile;
+const originalRemoveFile = _deps.removeFile;
 const originalOpenInEditor = _deps.openInEditor;
 const originalLog = console.log;
 
@@ -128,6 +129,14 @@ beforeEach(() => {
     const prev = (await existing.exists()) ? await existing.text() : "";
     await Bun.write(p, prev + content);
   });
+  _deps.removeFile = mock(async (p: string) => {
+    const { unlink: fsUnlink } = await import("node:fs/promises");
+    try {
+      await fsUnlink(p);
+    } catch {
+      // ignore
+    }
+  });
   _deps.openInEditor = mock(async (_p: string) => {});
 });
 
@@ -141,6 +150,7 @@ afterEach(() => {
   _deps.readFile = originalReadFile;
   _deps.writeFile = originalWriteFile;
   _deps.appendFile = originalAppendFile;
+  _deps.removeFile = originalRemoveFile;
   _deps.openInEditor = originalOpenInEditor;
   rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -725,6 +735,43 @@ describe("curatorGc", () => {
       const lines = writtenContent!.trim().split("\n").filter(Boolean);
       const uniqueRunIds = new Set(lines.map((l) => (JSON.parse(l) as Observation).runId));
       expect(uniqueRunIds.size).toBe(50);
+    });
+
+    test("deletes observations.jsonl and curator-proposals.md from pruned per-run dirs", async () => {
+      // Create 5 runs in rollup and matching per-run dirs
+      const obs: Observation[] = [
+        { ...makeObservation("verdict", "run-001"), ts: "2026-01-01T00:00:00.000Z" },
+        { ...makeObservation("verdict", "run-002"), ts: "2026-01-02T00:00:00.000Z" },
+        { ...makeObservation("verdict", "run-003"), ts: "2026-01-03T00:00:00.000Z" },
+        { ...makeObservation("verdict", "run-004"), ts: "2026-01-04T00:00:00.000Z" },
+        { ...makeObservation("verdict", "run-005"), ts: "2026-01-05T00:00:00.000Z" },
+      ];
+      writeRollup(rollupPath, obs);
+
+      // Create per-run dirs with curator artifacts for all 5 runs
+      for (const { runId } of obs) {
+        const runDir = join(outputDir, "runs", runId);
+        mkdirSync(runDir, { recursive: true });
+        writeFileSync(join(runDir, "observations.jsonl"), JSON.stringify(makeObservation("verdict", runId)));
+        writeFileSync(join(runDir, "curator-proposals.md"), `# proposals for ${runId}`);
+      }
+
+      _deps.writeFile = mock(async (p: string, content: string) => {
+        await Bun.write(p, content);
+      });
+
+      await curatorGc({ keep: 3 });
+
+      // run-001 and run-002 are pruned — their curator files should be gone
+      expect(existsSync(join(outputDir, "runs", "run-001", "observations.jsonl"))).toBe(false);
+      expect(existsSync(join(outputDir, "runs", "run-001", "curator-proposals.md"))).toBe(false);
+      expect(existsSync(join(outputDir, "runs", "run-002", "observations.jsonl"))).toBe(false);
+      expect(existsSync(join(outputDir, "runs", "run-002", "curator-proposals.md"))).toBe(false);
+
+      // run-003, run-004, run-005 are kept — their files should remain
+      expect(existsSync(join(outputDir, "runs", "run-003", "observations.jsonl"))).toBe(true);
+      expect(existsSync(join(outputDir, "runs", "run-004", "observations.jsonl"))).toBe(true);
+      expect(existsSync(join(outputDir, "runs", "run-005", "observations.jsonl"))).toBe(true);
     });
 
     test("rewrites only the rollup file, not canonical feature files", async () => {

@@ -338,7 +338,7 @@ Run `nax curator gc` to prune old rows from the cross-run rollup:
 nax curator gc --keep 50   # Keep 50 most recent runs
 ```
 
-This rewrites only the rollup file. It does not delete per-run proposal files, observations, run logs, metrics, or canonical context/rules files.
+This rewrites the rollup file and deletes `observations.jsonl` and `curator-proposals.md` from pruned per-run directories. It does not delete run logs, cost metrics, or canonical context/rules files.
 
 ## Integration with Review Audit
 
