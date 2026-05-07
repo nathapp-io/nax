@@ -22,9 +22,10 @@ import type { AutofixConfig } from "../../config/selectors";
 import type { Finding, FixCycle, FixCycleContext, FixCycleResult, FixStrategy } from "../../findings";
 import { runFixCycle } from "../../findings";
 import { getLogger } from "../../logger";
-import { implementerRectifyOp, testWriterRectifyOp } from "../../operations";
+import { implementerRectifyOp, testWriterRectifyOp, type TestEditDeclaration, validatePrdQuote } from "../../operations";
 import type { AutofixImplementerInput, AutofixImplementerOutput } from "../../operations";
 import type { AutofixTestWriterInput } from "../../operations";
+import type { UserStory } from "../../prd";
 import type { ReviewCheckResult } from "../../review/types";
 import type { PipelineContext } from "../types";
 import { _autofixDeps } from "./autofix";
@@ -252,6 +253,70 @@ async function writeShadowReport(
       error: String(err),
     });
   }
+}
+
+// ─── Declaration application ──────────────────────────────────────────────────
+
+/**
+ * Apply implementer-emitted TEST_EDIT_REASON declarations to fresh findings.
+ *
+ * For each `prd_contract` declaration:
+ *   - If PRD_QUOTE is fabricated (not in story text), append a `prd_quote_mismatch`
+ *     advisory finding so the misuse is visible without escalating.
+ *   - Otherwise, re-tag any finding whose file matches FILE: change fixTarget
+ *     from "source" to "test" so the testWriter strategy claims it next iteration.
+ *
+ * `lint_only` and `sibling_scope` declarations are passthrough (parsed for
+ * telemetry but not routed by this function).
+ *
+ * Pure — does not mutate input arrays. Returns a new array.
+ */
+export function applyTestEditDeclarations(
+  findings: Finding[],
+  declarations: TestEditDeclaration[],
+  story: UserStory,
+): Finding[] {
+  if (declarations.length === 0) return findings;
+
+  const out: Finding[] = [...findings];
+  const reTaggedKeys = new Set<number>();
+
+  for (const decl of declarations) {
+    if (decl.reason !== "prd_contract") continue;
+
+    if (!validatePrdQuote(decl.prdQuote ?? "", story)) {
+      out.push({
+        source: "adversarial-review",
+        severity: "warning",
+        category: "prd_quote_mismatch",
+        message: `Implementer declared TEST_EDIT_REASON: prd_contract with PRD_QUOTE not found in story description or AC text: ${decl.prdQuote}`,
+        file: decl.file,
+        fixTarget: "source",
+      });
+      continue;
+    }
+
+    for (let i = 0; i < out.length; i++) {
+      if (reTaggedKeys.has(i)) continue;
+      if (out[i].file !== decl.file) continue;
+      if ((out[i].fixTarget ?? "source") === "test") continue;
+      out[i] = {
+        ...out[i],
+        fixTarget: "test",
+        meta: {
+          ...(out[i].meta ?? {}),
+          prdContractDeclaration: {
+            prdQuote: decl.prdQuote,
+            testBefore: decl.testBefore,
+            testAfter: decl.testAfter,
+          },
+        },
+      };
+      reTaggedKeys.add(i);
+    }
+  }
+
+  return out;
 }
 
 // ─── V2 entry point ───────────────────────────────────────────────────────────

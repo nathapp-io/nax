@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { TestEditDeclaration } from "../../../../src/operations";
+import type { Finding } from "../../../../src/findings";
 
 // We test the strategy builder in isolation. Importing buildAutofixStrategies
 // requires it to be exported — Task 6 makes that change.
-import { buildAutofixStrategies } from "../../../../src/pipeline/stages/autofix-cycle";
+import { buildAutofixStrategies, applyTestEditDeclarations } from "../../../../src/pipeline/stages/autofix-cycle";
 
 import { makeStory } from "../../../helpers/mock-story";
 
@@ -84,5 +85,112 @@ describe("buildAutofixStrategies — testWriter strategy", () => {
     const [testWriter] = buildAutofixStrategies(ctx, 3);
     expect(testWriter.name).toBe("autofix-test-writer");
     expect(testWriter.maxAttempts).toBe(2);
+  });
+});
+
+describe("applyTestEditDeclarations", () => {
+  function makeFinding(overrides: Partial<Finding> = {}): Finding {
+    return {
+      source: "adversarial-review",
+      severity: "error",
+      category: "convention",
+      message: "uses unsafe cast",
+      file: "src/foo.ts",
+      fixTarget: "source",
+      ...overrides,
+    };
+  }
+
+  test("re-tags matching source findings to fixTarget=test on valid prd_contract", () => {
+    const story = makeStory({
+      description: "fnA(x: number): void must be exposed",
+    });
+    const findings: Finding[] = [
+      makeFinding({ file: "test/foo.spec.ts", message: "test calls fnA() without arg" }),
+      makeFinding({ file: "src/bar.ts", message: "unrelated" }),
+    ];
+    const declarations: TestEditDeclaration[] = [
+      {
+        reason: "prd_contract",
+        file: "test/foo.spec.ts",
+        prdQuote: "fnA(x: number): void",
+        testBefore: "fnA()",
+        testAfter: "fnA(1)",
+      },
+    ];
+
+    const out = applyTestEditDeclarations(findings, declarations, story);
+
+    expect(out).toHaveLength(2);
+    expect(out[0].fixTarget).toBe("test");
+    expect(out[0].file).toBe("test/foo.spec.ts");
+    expect(out[1].fixTarget).toBe("source");
+  });
+
+  test("emits a prd_quote_mismatch finding when quote is not in story", () => {
+    const story = makeStory({ description: "Real story text" });
+    const findings: Finding[] = [
+      makeFinding({ file: "test/foo.spec.ts" }),
+    ];
+    const declarations: TestEditDeclaration[] = [
+      {
+        reason: "prd_contract",
+        file: "test/foo.spec.ts",
+        prdQuote: "fabricated(x): void",
+        testBefore: "x",
+        testAfter: "y",
+      },
+    ];
+
+    const out = applyTestEditDeclarations(findings, declarations, story);
+
+    // Original finding is left source-tagged
+    expect(out[0].fixTarget).toBe("source");
+    // A new advisory finding is appended
+    const mismatch = out.find((f) => f.category === "prd_quote_mismatch");
+    expect(mismatch).toBeDefined();
+    expect(mismatch?.severity).toBe("warning");
+    expect(mismatch?.source).toBe("adversarial-review");
+    expect(mismatch?.message).toContain("fabricated(x): void");
+  });
+
+  test("ignores lint_only and sibling_scope declarations (no re-tagging)", () => {
+    const story = makeStory();
+    const findings: Finding[] = [makeFinding({ file: "test/foo.spec.ts" })];
+    const declarations: TestEditDeclaration[] = [
+      { reason: "lint_only", file: "test/foo.spec.ts", finding: "no-x" },
+      { reason: "sibling_scope", file: "test/foo.spec.ts", finding: "TS2304" },
+    ];
+
+    const out = applyTestEditDeclarations(findings, declarations, story);
+
+    expect(out).toHaveLength(1);
+    expect(out[0].fixTarget).toBe("source");
+  });
+
+  test("no-op on empty declarations", () => {
+    const story = makeStory();
+    const findings: Finding[] = [makeFinding()];
+    expect(applyTestEditDeclarations(findings, [], story)).toEqual(findings);
+  });
+
+  test("drops a prd_contract declaration whose FILE matches no current finding", () => {
+    const story = makeStory({ description: "fn(): void" });
+    const findings: Finding[] = [makeFinding({ file: "test/other.spec.ts" })];
+    const declarations: TestEditDeclaration[] = [
+      {
+        reason: "prd_contract",
+        file: "test/missing.spec.ts",
+        prdQuote: "fn(): void",
+        testBefore: "x",
+        testAfter: "y",
+      },
+    ];
+
+    const out = applyTestEditDeclarations(findings, declarations, story);
+
+    // No re-tagging, no mismatch finding
+    expect(out).toHaveLength(1);
+    expect(out[0].fixTarget).toBe("source");
   });
 });
