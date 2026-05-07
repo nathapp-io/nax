@@ -54,12 +54,13 @@ export interface PlanCommandOptions {
  * @returns Path to generated prd.json
  */
 export async function planCommand(workdir: string, config: NaxConfig, options: PlanCommandOptions): Promise<string> {
-  validateFeatureName(options.feature);
   const naxDir = join(workdir, ".nax");
 
   if (!existsSync(naxDir)) {
     throw new Error(`.nax directory not found. Run 'nax init' first in ${workdir}`);
   }
+
+  validateFeatureName(options.feature);
 
   const logger = getLogger();
 
