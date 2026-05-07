@@ -105,6 +105,15 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...(packageOverride.quality?.commands?.lintFix !== undefined && {
           lintFix: packageOverride.quality.commands.lintFix,
         }),
+        ...(packageOverride.quality?.commands?.lintFixScoped !== undefined && {
+          lintFixScoped: packageOverride.quality.commands.lintFixScoped,
+        }),
+        ...(packageOverride.quality?.commands?.formatFix !== undefined && {
+          formatFix: packageOverride.quality.commands.formatFix,
+        }),
+        ...(packageOverride.quality?.commands?.formatFixScoped !== undefined && {
+          formatFixScoped: packageOverride.quality.commands.formatFixScoped,
+        }),
         ...(packageOverride.quality?.commands?.typecheck !== undefined && {
           typecheck: packageOverride.quality.commands.typecheck,
         }),

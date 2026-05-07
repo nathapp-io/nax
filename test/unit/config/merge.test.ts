@@ -336,6 +336,32 @@ describe("mergePackageConfig", () => {
         expect(result.review.commands.lintScoped).toBe("biome check {{files}}");
       });
 
+      test("quality scoped fix commands bridge to review scoped fix commands", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: {
+            enabled: true,
+            checks: ["lint"],
+            commands: {
+              lintFixScoped: "eslint --fix {{files}}",
+              formatFixScoped: "prettier --write {{files}}",
+            },
+            pluginMode: "per-story",
+          },
+        };
+        const result = mergePackageConfig(root, {
+          quality: {
+            commands: {
+              lintFixScoped: "biome check --fix {{files}}",
+              formatFixScoped: "biome format --write {{files}}",
+            },
+          },
+        } as Partial<NaxConfig>);
+
+        expect(result.review.commands.lintFixScoped).toBe("biome check --fix {{files}}");
+        expect(result.review.commands.formatFixScoped).toBe("biome format --write {{files}}");
+      });
+
       test("explicit review.commands takes precedence over bridged quality.commands", () => {
         const root: NaxConfig = {
           ...makeRoot(),
