@@ -6,6 +6,7 @@
  */
 
 import { readdirSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
 import { loadConfig } from "../config";
@@ -55,6 +56,13 @@ export const _curatorCmdDeps = {
     const existing = Bun.file(p);
     const prev = (await existing.exists()) ? await existing.text() : "";
     await Bun.write(p, prev + content);
+  },
+  removeFile: async (p: string): Promise<void> => {
+    try {
+      await unlink(p);
+    } catch {
+      // File may not exist — ignore
+    }
   },
   openInEditor: async (filePath: string): Promise<void> => {
     const editor = process.env.EDITOR ?? process.env.VISUAL ?? "vi";
@@ -426,5 +434,18 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
   const newContent = `${filtered.map((obs) => JSON.stringify(obs)).join("\n")}\n`;
 
   await _curatorCmdDeps.writeFile(rollupPath, newContent);
+
+  // Delete curator artifacts from per-run directories that are no longer kept
+  const projectKey = getProjectKey(config, resolved.projectDir);
+  const outputDir = _curatorCmdDeps.projectOutputDir(projectKey, config.outputDir as string | undefined);
+  const perRunsDir = join(outputDir, "runs");
+  for (const runId of uniqueRunIds) {
+    if (!keepSet.has(runId)) {
+      const runDir = join(perRunsDir, runId);
+      await _curatorCmdDeps.removeFile(join(runDir, "observations.jsonl"));
+      await _curatorCmdDeps.removeFile(join(runDir, "curator-proposals.md"));
+    }
+  }
+
   console.log(`[gc] Pruned rollup to ${keep} most recent runs (was ${uniqueRunIds.length}).`);
 }
