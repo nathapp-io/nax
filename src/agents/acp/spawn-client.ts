@@ -396,8 +396,16 @@ export class SpawnAcpSession implements AcpSession {
     opts?: Parameters<typeof _spawnClientDeps.spawn>[1],
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...opts });
+    const pid = proc.pid;
+    this.onPidSpawned?.(pid);
     const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
+      proc.exited.finally(() => {
+        try {
+          this.onPidExited?.(pid);
+        } catch {
+          // unregister is best-effort — never surface from trackedSpawn
+        }
+      }),
       new Response(proc.stdout).text().catch(() => ""),
       new Response(proc.stderr).text().catch(() => ""),
     ]);
@@ -567,8 +575,16 @@ export class SpawnAcpClient implements AcpClient {
    */
   private async trackedSpawn(cmd: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const pid = proc.pid;
+    this.onPidSpawned?.(pid);
     const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
+      proc.exited.finally(() => {
+        try {
+          this.onPidExited?.(pid);
+        } catch {
+          // unregister is best-effort — never surface from trackedSpawn
+        }
+      }),
       new Response(proc.stdout).text().catch(() => ""),
       new Response(proc.stderr).text().catch(() => ""),
     ]);

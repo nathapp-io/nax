@@ -91,24 +91,24 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
     await expect(client.closeSession("missing-session", "claude")).resolves.toBeUndefined();
   });
 
-  test("onPidSpawned does NOT fire during createSession (short-lived trackedSpawn)", async () => {
+  test("onPidSpawned fires during createSession (short-lived trackedSpawn)", async () => {
     _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(0);
 
     const pids: number[] = [];
     const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, (pid) => pids.push(pid));
     await client.createSession({ agentName: "claude", permissionMode: "approve-reads" });
 
-    expect(pids).toHaveLength(0);
+    expect(pids).toHaveLength(1);
   });
 
-  test("onPidSpawned does NOT fire during closeSession (short-lived trackedSpawn)", async () => {
+  test("onPidSpawned fires during closeSession (short-lived trackedSpawn)", async () => {
     _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(0);
 
     const pids: number[] = [];
     const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, (pid) => pids.push(pid));
     await client.closeSession("test-session", "claude");
 
-    expect(pids).toHaveLength(0);
+    expect(pids).toHaveLength(1);
   });
 });
 
