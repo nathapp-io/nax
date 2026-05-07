@@ -214,14 +214,18 @@ describe("SpawnAcpClient — propagates onPidSpawned to sessions", () => {
     const client = makeClient((pid) => pids.push(pid));
     const session = await client.createSession({ agentName: "claude", permissionMode: "approve-all" });
 
+    // createSession itself fires onPidSpawned once (tracked acpx sessions ensure)
+    expect(pids).toHaveLength(1);
+
     // Now swap spawn to return a prompt response
     _spawnClientDeps.spawn = mock(() =>
       makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })),
     );
 
     await session.prompt("hello");
-    expect(pids).toHaveLength(1);
-    expect(pids[0]).toBe(FIXED_PID);
+    // prompt() fires onPidSpawned once more
+    expect(pids).toHaveLength(2);
+    expect(pids[1]).toBe(FIXED_PID);
   });
 
   test("createSession without callback creates session without callback", async () => {
@@ -256,13 +260,17 @@ describe("createSpawnAcpClient factory", () => {
     );
     const session = await client.createSession({ agentName: "claude", permissionMode: "approve-all" });
 
+    // createSession fires onPidSpawned once (tracked acpx sessions ensure)
+    expect(pids).toHaveLength(1);
+
     _spawnClientDeps.spawn = mock(() =>
       makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })),
     );
     await session.prompt("go");
 
-    expect(pids).toHaveLength(1);
-    expect(pids[0]).toBe(FIXED_PID);
+    // prompt() fires onPidSpawned once more
+    expect(pids).toHaveLength(2);
+    expect(pids[1]).toBe(FIXED_PID);
   });
 
   test("accepts undefined onPidSpawned without error", () => {

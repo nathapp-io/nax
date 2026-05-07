@@ -31,6 +31,7 @@ async function closeStorylessSession(
   sessionManager: Pick<ISessionManager, "transition">,
   descriptor: SessionDescriptor,
   agentGetFn?: AgentGetFn,
+  opts?: { force?: boolean },
 ): Promise<number> {
   const transitionChain: SessionState[] = getStorylessCloseChain(descriptor.state);
   for (const targetState of transitionChain) {
@@ -41,8 +42,9 @@ async function closeStorylessSession(
     }
   }
 
-  // AC-83: force hard-terminate when the session was already in FAILED state
-  const force = descriptor.state === "FAILED";
+  // AC-83: force hard-terminate when the session was already in FAILED state,
+  // or when the caller explicitly requests force (e.g. signal-driven shutdown).
+  const force = opts?.force === true || descriptor.state === "FAILED";
   await closePhysicalSession(descriptor, agentGetFn, force);
   return 1;
 }
@@ -68,12 +70,14 @@ export async function closeStorySessions(
   sessionManager: Pick<ISessionManager, "closeStory">,
   storyId: string,
   agentGetFn?: AgentGetFn,
+  opts?: { force?: boolean },
 ): Promise<number> {
   const closedSessions = sessionManager.closeStory(storyId);
 
   for (const descriptor of closedSessions) {
-    // AC-83: force hard-terminate for sessions that were already in FAILED state
-    const force = descriptor.state === "FAILED";
+    // AC-83: force hard-terminate for sessions that were already in FAILED state,
+    // or when the caller explicitly requests force (e.g. signal-driven shutdown).
+    const force = opts?.force === true || descriptor.state === "FAILED";
     await closePhysicalSession(descriptor, agentGetFn, force);
   }
 
@@ -116,6 +120,7 @@ export async function failAndClose(
 export async function closeAllRunSessions(
   sessionManager: Pick<ISessionManager, "listActive" | "closeStory" | "transition">,
   agentGetFn?: AgentGetFn,
+  opts?: { force?: boolean },
 ): Promise<number> {
   const storyIds = new Set<string>();
   const storylessSessionIds = new Set<string>();
@@ -129,13 +134,13 @@ export async function closeAllRunSessions(
 
   let totalClosed = 0;
   for (const storyId of storyIds) {
-    totalClosed += await closeStorySessions(sessionManager, storyId, agentGetFn);
+    totalClosed += await closeStorySessions(sessionManager, storyId, agentGetFn, opts);
   }
 
   for (const descriptor of activeSessions) {
     if (descriptor.storyId || storylessSessionIds.has(descriptor.id)) continue;
     storylessSessionIds.add(descriptor.id);
-    totalClosed += await closeStorylessSession(sessionManager, descriptor, agentGetFn);
+    totalClosed += await closeStorylessSession(sessionManager, descriptor, agentGetFn, opts);
   }
 
   return totalClosed;

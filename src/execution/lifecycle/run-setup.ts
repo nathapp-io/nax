@@ -206,7 +206,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
     },
     onShutdown: async () => {
-      await closeAllRunSessions(sessionManager, options.agentGetFn);
+      // force=true: signal-driven shutdown must hard-terminate daemons (acpx stop)
+      // regardless of session state to prevent orphaned acpx/claude/opencode processes.
+      await closeAllRunSessions(sessionManager, options.agentGetFn, { force: true });
     },
   });
 
