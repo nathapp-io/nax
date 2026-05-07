@@ -55,6 +55,16 @@ function slugLeadingTokens(text: string, tokenCount = RULE_ID_SLUG_TOKENS): stri
     .join("-");
 }
 
+/**
+ * Derive a stable ruleId from `category` + slug of the leading issue tokens.
+ *
+ * Empty or punctuation-only `issue` values (malformed LLM output) fall back
+ * to the `"unspecified"` slug — e.g. `"review:unspecified"` or
+ * `"input:unspecified"`. Multiple such findings will share the same bucket,
+ * which is acceptable: they represent broken LLM output rather than distinct
+ * signal. Callers should not rely on `unspecified` buckets for anything other
+ * than "something went wrong with the LLM response."
+ */
 function deriveRuleId(category: string | undefined, issue: string): string {
   const prefix = category?.trim() ? category.trim() : "review";
   const slug = slugLeadingTokens(issue) || "unspecified";
@@ -72,7 +82,7 @@ function joinMessage(issue: string, suggestion: string | undefined): string {
 
 function buildMeta(f: AnyLLMFinding, originalSeverity?: string): Record<string, unknown> | undefined {
   const meta: Record<string, unknown> = {};
-  // Always persist raw issue/suggestion so autofix consumers can address them separately.
+  // Persist non-empty issue/suggestion so autofix consumers can address them separately.
   if (f.issue) meta.issue = f.issue;
   if (f.suggestion) meta.suggestion = f.suggestion;
   // AC-annotation fields — only when present and valid.

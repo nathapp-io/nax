@@ -143,6 +143,33 @@ describe("llmFindingToReviewFinding", () => {
     const rf = llmFindingToReviewFinding(f, { source: "semantic-review" });
     expect(rf.source).toBe("semantic-review");
   });
+
+  test("empty issue produces 'unspecified' slug — documents intentional fallback bucket", () => {
+    const f: LLMFinding = { severity: "warning", file: "x.ts", line: 1, issue: "", suggestion: "" };
+    const rf = llmFindingToReviewFinding(f);
+    expect(rf.ruleId).toBe("review:unspecified");
+    expect(rf.message).toBe("");
+  });
+
+  test("punctuation-only issue also produces 'unspecified' slug", () => {
+    const f: AdversarialLLMFinding = {
+      severity: "warning", category: "input", file: "x.ts", line: 1,
+      issue: "???", suggestion: "",
+    };
+    const rf = llmFindingToReviewFinding(f);
+    expect(rf.ruleId).toBe("input:unspecified");
+  });
+
+  test("slug truncates at exactly 6 tokens regardless of input length", () => {
+    const f: LLMFinding = {
+      severity: "info", file: "x.ts", line: 1,
+      issue: "a b c d e f g", suggestion: "",
+    };
+    const rf = llmFindingToReviewFinding(f);
+    const slug = rf.ruleId.split(":")[1] ?? "";
+    expect(slug).toBe("a-b-c-d-e-f");
+    expect(slug.split("-").length).toBe(6);
+  });
 });
 
 describe("llmFindingsToReviewFindings", () => {
