@@ -92,3 +92,30 @@ export function parseTestEditDeclarations(output: string): TestEditDeclaration[]
 
   return result;
 }
+
+import type { UserStory } from "../prd";
+
+/**
+ * Collapse all whitespace runs to a single space, strip spaces adjacent to
+ * punctuation chars used in type signatures, then trim.
+ */
+function normaliseWs(s: string): string {
+  return s
+    .replace(/\s+/g, " ")
+    .replace(/\s*([(),<>])\s*/g, "$1")
+    .replace(/\s*:\s*/g, ": ")
+    .trim();
+}
+
+/**
+ * Verify that `prdQuote` appears verbatim (whitespace-normalised) in the story's
+ * description or any acceptance criterion. This is the only check that gates
+ * Exception 2 from CONTRADICTION_ESCAPE_HATCH — without it, the implementer
+ * could fabricate a quote and silently bypass test immutability.
+ */
+export function validatePrdQuote(prdQuote: string, story: UserStory): boolean {
+  if (!prdQuote.trim()) return false;
+  const needle = normaliseWs(prdQuote);
+  const haystack = normaliseWs([story.description, ...story.acceptanceCriteria].join(" "));
+  return haystack.includes(needle);
+}

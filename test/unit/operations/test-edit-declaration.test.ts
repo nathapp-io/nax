@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseTestEditDeclarations } from "../../../src/operations/test-edit-declaration";
+import { parseTestEditDeclarations, validatePrdQuote } from "../../../src/operations/test-edit-declaration";
+import { makeStory } from "../../helpers/mock-story";
 
 describe("parseTestEditDeclarations", () => {
   test("parses a single prd_contract block", () => {
@@ -92,5 +93,43 @@ TEST_AFTER: fn()`;
 FILE: foo.ts`;
 
     expect(parseTestEditDeclarations(output)).toEqual([]);
+  });
+});
+
+describe("validatePrdQuote", () => {
+  test("returns true when quote appears verbatim in description", () => {
+    const story = makeStory({
+      description: "Implement getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>",
+    });
+    expect(validatePrdQuote("getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>", story)).toBe(true);
+  });
+
+  test("returns true when quote appears in an acceptance criterion", () => {
+    const story = makeStory({
+      acceptanceCriteria: [
+        "AC-1: API exposes `fnA(x: number): void`",
+        "AC-2: returns void",
+      ],
+    });
+    expect(validatePrdQuote("fnA(x: number): void", story)).toBe(true);
+  });
+
+  test("normalises whitespace before matching", () => {
+    const story = makeStory({
+      description: "fn(  a:   string ,  b:   number ): void",
+    });
+    expect(validatePrdQuote("fn(a: string, b: number): void", story)).toBe(true);
+  });
+
+  test("returns false when quote is fabricated", () => {
+    const story = makeStory({
+      description: "fnA(): void",
+      acceptanceCriteria: ["AC-1: API does X"],
+    });
+    expect(validatePrdQuote("fnB(y: string): boolean", story)).toBe(false);
+  });
+
+  test("returns false on empty quote", () => {
+    expect(validatePrdQuote("", makeStory())).toBe(false);
   });
 });
