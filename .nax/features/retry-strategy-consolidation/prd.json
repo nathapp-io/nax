@@ -3,7 +3,7 @@
   "feature": "retry-strategy-consolidation",
   "branchName": "feat/retry-strategy-consolidation",
   "createdAt": "2026-05-07T00:00:00.000Z",
-  "updatedAt": "2026-05-07T13:15:44.136Z",
+  "updatedAt": "2026-05-07T13:33:31.451Z",
   "userStories": [
     {
       "id": "US-001",
@@ -166,7 +166,7 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "failed",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
       "escalations": [],
