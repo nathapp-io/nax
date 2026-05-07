@@ -1,0 +1,520 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "The `RetryDecision` retry-true variant has an optional `nextPrompt?: string` field",
+    "refined": "RetryDecision type definition includes { retry: true; delayMs: number; nextPrompt?: string } as a valid variant, verified by TypeScript compilation with strict null checks",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Existing `RetryStrategy` implementations that return `{ retry: true, delayMs: N }` without `nextPrompt` compile and pass tests without modification",
+    "refined": "All existing RetryStrategy implementations returning { retry: true, delayMs: number } without nextPrompt field compile without TypeScript errors and pass 100% of existing unit and integration tests",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "`RetryContext` has optional fields `lastOutput?: string` and `lastTurnResult?: TurnResult` — and does NOT have a `lastParsed` field",
+    "refined": "RetryContext interface includes optional fields lastOutput?: string and lastTurnResult?: TurnResult, does not include lastParsed field, verified by inspecting src/agents/retry/types.ts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Existing `RetryContext` construction sites that omit the new fields compile without error",
+    "refined": "All call sites constructing RetryContext objects without lastOutput and lastTurnResult fields compile without TypeScript errors in strict mode",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "`defaultRetryStrategy.shouldRetry` and `resolveRetryPreset`-produced strategies both remain valid `RetryStrategy` implementations after the type change",
+    "refined": "defaultRetryStrategy.shouldRetry and all RetryStrategy instances returned by resolveRetryPreset satisfy the RetryStrategy interface contract and pass all existing retry strategy test suites",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "`ParseValidationError` extends `Error`, sets `name = \"ParseValidationError\"`, and exposes `kind: \"parse-validation\"` as a readonly literal for discrimination",
+    "refined": "ParseValidationError instances inherit from Error, have .name === 'ParseValidationError', expose readonly .kind property with literal value 'parse-validation', and instanceof checks correctly identify instances",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "`ParseValidationError` is exported from `src/agents/retry/index.ts` so consumers (callOp, strategies, tests) can import it from the barrel",
+    "refined": "ParseValidationError is exported from src/agents/retry/index.ts barrel and can be successfully imported via 'import { ParseValidationError } from \"../agents/retry\"' in src/operations/call-op.ts, retry strategy files, and test files",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "composeRetry([]) returns a strategy whose shouldRetry always returns { retry: false } regardless of failure or attempt",
+    "refined": "composeRetry([]) returns an object with a shouldRetry method that returns exactly { retry: false } when invoked with any failure, attempt count, and context parameter",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When the first strategy returns { retry: true, delayMs: 100, nextPrompt: 'p' }, composeRetry([s0, s1]).shouldRetry(...) returns that decision and never calls s1.shouldRetry",
+    "refined": "composeRetry([s0, s1]).shouldRetry(failure, attempt, ctx) invokes s0.shouldRetry exactly once and returns its result { retry: true, delayMs: 100, nextPrompt: 'p' } without invoking s1.shouldRetry when s0 returns { retry: true, ... }",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When the first strategy returns { retry: false } and the second returns { retry: true, delayMs: 50 }, composeRetry([s0, s1]).shouldRetry(...) returns { retry: true, delayMs: 50 }",
+    "refined": "composeRetry([s0, s1]).shouldRetry(failure, attempt, ctx) returns exactly { retry: true, delayMs: 50 } when s0.shouldRetry returns { retry: false } and s1.shouldRetry returns { retry: true, delayMs: 50 }",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "composeRetry is exported from src/agents/retry/index.ts",
+    "refined": "The composeRetry function is exported as a named export from src/agents/retry/index.ts and is importable via: import { composeRetry } from 'src/agents/retry'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `failure` is NOT a `ParseValidationError` (e.g. plain `Error`, `AdapterFailure`), `shouldRetry` returns `{ retry: false }` so the failure falls through to the manager tier",
+    "refined": "Given failure instanceof Error (but not ParseValidationError) or failure instanceof AdapterFailure, shouldRetry returns { retry: false }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `failure` IS a `ParseValidationError` and `ctx.lastOutput` is undefined/empty, `shouldRetry` returns `{ retry: false }` defensively (rather than throwing)",
+    "refined": "Given failure instanceof ParseValidationError and (ctx.lastOutput === undefined or ctx.lastOutput === ''), shouldRetry returns { retry: false } without throwing",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given `failure` is `ParseValidationError`, `ctx.lastOutput` parses successfully, and `opts.validate(parsed)` returns true, `shouldRetry` returns `{ retry: false }` (defensive — strategy was called but validation actually passed)",
+    "refined": "Given failure instanceof ParseValidationError, ctx.lastOutput is non-empty and parses successfully, and opts.validate(parsed) === true, shouldRetry returns { retry: false }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given `failure` is `ParseValidationError`, `ctx.lastOutput` looks truncated, attempt 0, `shouldRetry` returns `{ retry: true, delayMs: 0, nextPrompt }` where `nextPrompt === opts.prompts.truncated()`",
+    "refined": "Given failure instanceof ParseValidationError, ctx.lastOutput looks truncated (opts.looksTruncated(ctx.lastOutput) === true), and attempt === 0, shouldRetry returns { retry: true, delayMs: 0, nextPrompt } where nextPrompt === opts.prompts.truncated()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given `failure` is `ParseValidationError`, `ctx.lastOutput` does not look truncated, attempt 0, `shouldRetry` returns `{ retry: true, delayMs: 0, nextPrompt }` where `nextPrompt === opts.prompts.invalid()`",
+    "refined": "Given failure instanceof ParseValidationError, ctx.lastOutput does not look truncated (opts.looksTruncated(ctx.lastOutput) === false), and attempt === 0, shouldRetry returns { retry: true, delayMs: 0, nextPrompt } where nextPrompt === opts.prompts.invalid()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `opts.parse(ctx.lastOutput)` throws or returns null, the strategy treats it as invalid and proceeds to retry (not as a transport error)",
+    "refined": "When opts.parse(ctx.lastOutput) throws an Error or returns null/undefined, and attempt < (opts.maxAttempts ?? 2) - 1, shouldRetry returns { retry: true, delayMs: 0, nextPrompt } where nextPrompt === opts.prompts.invalid()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `attempt >= (opts.maxAttempts ?? 2) - 1`, `shouldRetry` returns `{ retry: false }` regardless of output state",
+    "refined": "When attempt >= (opts.maxAttempts ?? 2) - 1, shouldRetry returns { retry: false } regardless of lastOutput state, parseability, or validation result",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `opts.parse` is omitted, the factory defaults to `tryParseLLMJson` from `src/utils/llm-json`",
+    "refined": "When ParseRetryOpts does not include a parse property, makeParseRetryStrategy internally uses tryParseLLMJson(ctx.lastOutput) for parsing",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `opts.looksTruncated` is omitted, the factory defaults to `looksLikeTruncatedJson` from `src/review/truncation`",
+    "refined": "When ParseRetryOpts does not include a looksTruncated property, makeParseRetryStrategy internally uses looksLikeTruncatedJson(ctx.lastOutput) for truncation detection",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "The warn log emitted on parse failure has `storyId` as the first key in the data object",
+    "refined": "When shouldRetry emits logger.warn(), the data object has storyId as its first key (verified via Object.keys(data)[0] === 'storyId')",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "`makeParseRetryStrategy` is exported from `src/agents/retry/index.ts`",
+    "refined": "makeParseRetryStrategy is exported as a named export from src/agents/retry/index.ts and is importable as `import { makeParseRetryStrategy } from \"src/agents/retry\"`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "`RunOperation` interface has an optional `retry?` field typed as `RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined)`",
+    "refined": "RunOperation interface exported from src/operations/types.ts includes optional field `retry?: RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined)`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When a `RunOperation` has `op.retry` set and `op.hopBody` is absent, `callOp` synthesizes a hop body that sends the initial prompt, threads `lastOutput` and `lastTurnResult` into `RetryContext`, calls `op.retry.shouldRetry(parseValidationError, attempt, retryCtx)` where `parseValidationError` is an instance of `ParseValidationError`, and returns the latest `TurnResult` when the strategy says `{ retry: false }`",
+    "refined": "When RunOperation.retry is set and RunOperation.hopBody is undefined, callOp creates a synthetic hopBody that: (1) calls ctx.send(initialPrompt) and stores TurnResult, (2) constructs RetryContext with { lastOutput: turnResult.output, lastTurnResult: turnResult, storyId }, (3) calls op.parse(turnResult.output, input, buildCtx), (4) creates ParseValidationError instance and calls resolvedStrategy.shouldRetry(error, attempt, retryCtx), (5) returns the most recent TurnResult when strategy returns { retry: false }",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When the retry decision has `nextPrompt`, `callOp`'s synthesized hop body sends `nextPrompt` via `send()` in the same session (not a new session)",
+    "refined": "When op.retry.shouldRetry() returns { retry: true, nextPrompt: string }, the synthetic hopBody calls ctx.send(nextPrompt) within the same SessionManager session (verified by session ID unchanged before and after send)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When the retry decision has no `nextPrompt`, `callOp`'s synthesized hop body resends the original `initialPrompt`",
+    "refined": "When op.retry.shouldRetry() returns { retry: true } without nextPrompt, the synthetic hopBody calls ctx.send(initialPrompt) (same prompt string as the first attempt)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When `ctx.send(...)` throws inside the synthesized hop body (transport failure), the synthetic hop body re-throws — it does NOT consult `op.retry`. Manager tier handles transport retries.",
+    "refined": "When ctx.send() throws an instance of Error or AdapterFailure during synthetic hopBody execution, the exception is re-thrown without calling op.retry.shouldRetry() and without catching the exception inside callOp",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "The synthesized hop body's retry loop is bounded by `MAX_COMPLETE_RETRY_ATTEMPTS`; exceeding it throws `NaxError` with code `CALL_OP_MAX_RETRIES`",
+    "refined": "When the synthetic hopBody retry loop reaches MAX_COMPLETE_RETRY_ATTEMPTS iterations without receiving { retry: false } from the strategy, callOp throws NaxError with code 'CALL_OP_MAX_RETRIES' (code field matches exactly)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "The retry sleep in the synthesized hop body uses `_callOpDeps.sleep(decision.delayMs, ctx.runtime.signal)`, not `Bun.sleep`",
+    "refined": "When decision.delayMs > 0, the synthetic hopBody calls _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal) before the next retry send (verified via mock of _callOpDeps.sleep or spy on sleep calls, not Bun.sleep)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When both `op.hopBody` and `op.retry` are set on a `RunOperation`, `callOp` uses `op.hopBody` and ignores `op.retry` (temporary migration accommodation — see US-007)",
+    "refined": "When RunOperation has both hopBody and retry defined and non-null, callOp invokes hopBody and never calls op.retry or synthesizes a retry loop from op.retry",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When `op.retry` is absent on a `RunOperation`, existing behavior is unchanged",
+    "refined": "When RunOperation.retry is undefined, callOp behavior is identical to pre-story behavior: single ctx.send(initialPrompt), parse result, return TurnResult without retry loop",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `op.retry` is a resolver function, `callOp` invokes it exactly once per `callOp` invocation (before the first `send`), not per retry attempt",
+    "refined": "When RunOperation.retry is a function, callOp calls the function exactly once before any ctx.send(), receives the resolved RetryPreset or RetryStrategy, and does not re-invoke the function on retry attempts",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When the resolver form of `op.retry` returns `undefined`, the synthesized hop body behaves as if `op.retry` was not set (no retry — single send)",
+    "refined": "When RunOperation.retry is a function and returns undefined, the synthetic hopBody calls ctx.send(initialPrompt) exactly once and returns the TurnResult without entering a retry loop",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "`CompleteOperation.retry` resolver return type is widened from `RetryPreset | undefined` to `RetryPreset | RetryStrategy | undefined` so both kinds share the same resolver contract (review ops need to return `RetryStrategy` from `makeParseRetryStrategy`)",
+    "refined": "CompleteOperation.retry field in src/operations/types.ts is typed as `RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined)` (widened from `RetryPreset | undefined`)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Existing `CompleteOperation` resolvers that return `RetryPreset | undefined` continue to compile and behave identically — the widening is additive",
+    "refined": "Code with existing CompleteOperation retry resolvers returning RetryPreset | undefined compiles without type errors after the widening and behaves identically (same retry decisions, same costs, same logging)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "TurnResult `estimatedCostUsd` is accumulated across all retry attempts inside the synthesized hop body — the value returned to `buildHopCallback` is the sum of every send's cost (parity with `makeReviewRetryHopBody`'s explicit summation)",
+    "refined": "The TurnResult returned by the synthetic hopBody to buildHopCallback has estimatedCostUsd field equal to the sum of estimatedCostUsd from all ctx.send() calls across all retry attempts (verified by comparing total to sum of individual attempt costs)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "`callOp` emits `logger.warn('callop', 'Op retrying', {...})` on every retry decision for both run-kind and complete-kind, with `storyId` as the first data key and `promptTransformed` reflecting whether `nextPrompt` was set",
+    "refined": "For each retry decision in both run-kind and complete-kind paths, callOp calls logger.warn('callop', 'Op retrying', {...}) where the data object has storyId as the first key, promptTransformed equals (decision.nextPrompt !== undefined), and includes agentName, opName, site ('run' or 'complete'), stage, attempt, delayMs, failureKind, and failureMessage fields",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "`callOp` emits `logger.error('callop', 'Op retry budget exhausted', {...})` when `MAX_COMPLETE_RETRY_ATTEMPTS` is reached for both run-kind and complete-kind",
+    "refined": "When retry attempts reach MAX_COMPLETE_RETRY_ATTEMPTS without strategy returning { retry: false }, callOp calls logger.error('callop', 'Op retry budget exhausted', {...}) with data object having storyId as first key, opName, site ('run' or 'complete'), attempt (final attempt number), and totalAttempts (attempt + 1) fields",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When the op-tier strategy exhausts and the underlying call later surfaces `fail-stale` (e.g. via watchdog cancel on a subsequent dispatch), the manager-tier `defaultRetryStrategy` retries the dispatch per its own budget — without sharing or double-counting the op-tier's `MAX_COMPLETE_RETRY_ATTEMPTS` counter",
+    "refined": "If op-tier retry exhausts (throws CALL_OP_MAX_RETRIES) and a subsequent manager-tier dispatch receives AdapterFailure with outcome 'fail-stale', the manager-tier defaultRetryStrategy retries with its own independent attempt counter (0-based, separate from op-tier counter)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "`callOp` threads `storyId` into the `RetryContext` passed to `op.retry.shouldRetry` for run-kind ops",
+    "refined": "When constructing RetryContext for run-kind ops in the synthetic hopBody, callOp includes storyId field and passes it to op.retry.shouldRetry(parseValidationError, attempt, retryCtx)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "semanticReviewOp has both hopBody (unchanged) and retry (new, via makeParseRetryStrategy) fields",
+    "refined": "semanticReviewOp object has two properties: (1) hopBody is a function with signature (input: SemanticReviewInput) => string, (2) retry is a function with signature (input: SemanticReviewInput) => RetryStrategy",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-42",
+    "original": "adversarialReviewOp has both hopBody (unchanged) and retry (new, via makeParseRetryStrategy) fields",
+    "refined": "adversarialReviewOp object has two properties: (1) hopBody is a function with signature (input: AdversarialReviewInput) => string, (2) retry is a function with signature (input: AdversarialReviewInput) => RetryStrategy",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-43",
+    "original": "All existing semantic/adversarial review tests pass without modification — runtime behavior is identical to pre-change because callOp uses hopBody when both are set",
+    "refined": "All test files matching test/unit/operations/*review*.test.ts execute with exit code 0 when run with `bun test` (no modifications to test files required)",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-44",
+    "original": "The retry resolver on each op forwards input.blockingThreshold to ReviewPromptBuilder.jsonRetryCondensed so the resolved strategy can produce the same condensed prompt as today",
+    "refined": "When semanticReviewOp.retry(input) or adversarialReviewOp.retry(input) is called with an input object containing blockingThreshold: number, the returned RetryStrategy.prompts.truncated() method must call ReviewPromptBuilder.jsonRetryCondensed(...) with blockingThreshold parameter matching the input value",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-45",
+    "original": "`semanticReviewOp` no longer has a `hopBody` field; only `retry` remains as the retry mechanism",
+    "refined": "The exported `semanticReviewOp` object has no `hopBody` property; the `retry` property is defined and contains `condition` function and `maxAttempts` number",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-46",
+    "original": "Given a valid JSON LLM output, `callOp` calls `send()` exactly once (no retry)",
+    "refined": "When `send()` returns a valid JSON response matching the semantic review schema (all required fields present and parseable), `send()` is invoked exactly 1 time total",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-47",
+    "original": "Given an invalid and truncated first output, the second `send()` call uses the `jsonRetryCondensed` prompt with `input.blockingThreshold` forwarded",
+    "refined": "When first `send()` returns output detected as truncated (incomplete JSON), the second `send()` invocation receives a prompt with type/id `jsonRetryCondensed` and its input object includes `blockingThreshold` property matching the first attempt's threshold value",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-48",
+    "original": "Given an invalid and non-truncated first output, the second `send()` call uses the `jsonRetry` prompt",
+    "refined": "When first `send()` returns output that is invalid (malformed JSON) but not truncated, the second `send()` invocation receives a prompt with type/id `jsonRetry`",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-49",
+    "original": "Given two consecutive invalid outputs, no third `send()` is issued (budget exhausted at `maxAttempts: 2`)",
+    "refined": "`send()` is invoked at most 2 times total; when both attempts return invalid outputs, `send()` is not called a third time",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-50",
+    "original": "Given two consecutive invalid outputs where the second contains `\"passed\":false`, `op.parse` runs on the final output and returns `{ passed: false, findings: [], looksLikeFail: true }` — parity with today's behavior",
+    "refined": "When both `send()` calls return invalid outputs and the second output string contains `\"passed\":false`, the final parsed result object contains exactly: `passed: false`, `findings: []` (empty array), `looksLikeFail: true`",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-51",
+    "original": "`estimatedCostUsd` returned from the retry loop equals the sum of both turns' costs (parity with the deleted `makeReviewRetryHopBody`'s explicit summation)",
+    "refined": "The `estimatedCostUsd` number in the final returned result equals the sum of `estimatedCostUsd` from the first `send()` result plus `estimatedCostUsd` from the second `send()` result (when retry occurs)",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-52",
+    "original": "The warn log emitted on parse failure preserves `storyId` as the first key in the data object",
+    "refined": "When `logger.warn()` is called due to semantic review parse failure, the data object argument's first enumerable property key is `storyId`",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-53",
+    "original": "adversarialReviewOp no longer has a hopBody field; only retry remains as the retry mechanism",
+    "refined": "The adversarialReviewOp export in src/operations/adversarial-review.ts has no hopBody property; inspecting the object structure confirms only a retry property exists for handling parse failures",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-54",
+    "original": "Given a valid JSON LLM output, callOp calls send() exactly once (no retry)",
+    "refined": "When adversarialReviewOp is called with a valid JSON response that passes parseLLMJson, send() is invoked exactly once and the retry handler does not trigger a second send()",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-55",
+    "original": "Given an invalid and truncated first output, the second send() call uses the jsonRetryCondensed prompt",
+    "refined": "When the first LLM response fails JSON validation and the output length equals or exceeds the token budget (indicating truncation), the retry handler invokes send() a second time with a prompt string containing the text 'condensed'",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-56",
+    "original": "Given an invalid and non-truncated first output, the second send() call uses the jsonRetry prompt",
+    "refined": "When the first LLM response fails JSON validation and the output length is below the token budget (non-truncated), the retry handler invokes send() a second time with a prompt string that does not contain 'condensed' and is the standard jsonRetry prompt",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-57",
+    "original": "Given two consecutive invalid outputs, no third send() is issued",
+    "refined": "When both the first and second LLM responses fail JSON parsing (both return null from parseLLMJson), send() is called exactly twice and not called a third time; the operation returns a parse failure result",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-58",
+    "original": "estimatedCostUsd returned from the retry loop equals the sum of both turns' costs",
+    "refined": "When retry occurs (two successful send() calls), the estimatedCostUsd field in the returned operation result equals (firstTurnCost + secondTurnCost) rounded to match the cost calculation precision",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-59",
+    "original": "The warn log emitted on parse failure preserves storyId as the first key",
+    "refined": "When JSON parsing fails on either the first or second LLM response and a warn-level log is emitted, the data object passed to logger.warn has storyId as the first key (Object.keys(logData)[0] === 'storyId')",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-60",
+    "original": "src/operations/_review-retry.ts does not exist",
+    "refined": "File `src/operations/_review-retry.ts` does not exist in the repository filesystem",
+    "testable": true,
+    "storyId": "US-005d"
+  },
+  {
+    "acId": "AC-61",
+    "original": "No file in `src/` imports from `_review-retry`",
+    "refined": "Grep search with pattern `from\\s+['\\\"].*_review-retry` in directory `src/` returns zero matches",
+    "testable": true,
+    "storyId": "US-005d"
+  },
+  {
+    "acId": "AC-62",
+    "original": "No file in `test/` imports from `_review-retry`",
+    "refined": "Grep search with pattern `from\\s+['\\\"].*_review-retry` in directory `test/` returns zero matches",
+    "testable": true,
+    "storyId": "US-005d"
+  },
+  {
+    "acId": "AC-63",
+    "original": "Build, typecheck, and full test suite pass",
+    "refined": "`bun run build` exits with code 0, `bun run typecheck` exits with code 0, and `bun run test` exits with code 0",
+    "testable": true,
+    "storyId": "US-005d"
+  },
+  {
+    "acId": "AC-64",
+    "original": ".claude/rules/retry-strategy.md no longer contains the statement that `HopBody` callbacks must not be expressed as `RetryStrategy`",
+    "refined": "File `.claude/rules/retry-strategy.md` does not contain any phrase excluding HopBody parse retries from RetryStrategy (e.g., 'must not be expressed', 'cannot be converted', 'forbidden' in the context of HopBody callbacks)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-65",
+    "original": ".claude/rules/retry-strategy.md includes guidance distinguishing `composeRetry` (different failure types) from single-strategy escalation (same failure type, escalating attempts)",
+    "refined": "File `.claude/rules/retry-strategy.md` contains a section that explicitly explains: (1) use `composeRetry([...])` when handling different failure types each with distinct logic, and (2) use a single strategy with branching on `attempt` when escalating the same failure type",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-66",
+    "original": ".claude/rules/retry-strategy.md includes a rule stating op-tier strategies must not handle `fail-rate-limit` or `fail-stale`",
+    "refined": "File `.claude/rules/retry-strategy.md` contains a rule stating: op-tier strategies must not handle `fail-rate-limit` or `fail-stale` because these are manager-tier concerns, and handling them at both tiers causes double-retry",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-67",
+    "original": ".claude/rules/retry-strategy.md includes a rule documenting the parse-retry-internal-parser convention (strategies parse internally; `callOp` passes only `lastOutput`)",
+    "refined": "File `.claude/rules/retry-strategy.md` contains documentation explaining: (1) parse-retry strategies parse output internally (default via `tryParseLLMJson`), (2) `callOp` passes only `lastOutput` to strategies, not `lastParsed`, and (3) parsing is op- and strategy-specific",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-68",
+    "original": ".claude/rules/retry-strategy.md includes a rule documenting `ParseValidationError` discrimination",
+    "refined": "File `.claude/rules/retry-strategy.md` contains documentation explaining: validation-style strategies discriminate failures via `instanceof ParseValidationError`, while transport-failure strategies ignore this sentinel",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-69",
+    "original": ".claude/rules/retry-strategy.md includes an example of `makeParseRetryStrategy` usage on a `RunOperation`",
+    "refined": "File `.claude/rules/retry-strategy.md` contains a code example showing `makeParseRetryStrategy` applied to a `RunOperation`'s `retry` field (not `hopBody`)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-70",
+    "original": ".claude/rules/forbidden-patterns.md Source Code table includes an entry banning new `HopBody` parse-retry implementations with `makeParseRetryStrategy` as the alternative",
+    "refined": "File `.claude/rules/forbidden-patterns.md` Source Code table contains a row with: (1) forbidden pattern = 'new HopBody parse-retry implementations' or similar, (2) alternative = '`op.retry` with `makeParseRetryStrategy`', (3) why = explains the consolidation",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-71",
+    "original": "When a `RunOperation` is registered with both `op.hopBody` and `op.retry` set and `callOp` is invoked, `callOp` throws `NaxError` with a recognizable error code (e.g. `OP_HOPBODY_RETRY_BOTH_SET`) and a clear message naming the offending op",
+    "refined": "callOp throws NaxError with code 'OP_HOPBODY_RETRY_BOTH_SET' when invoked with a RunOperation that has both `hopBody` and `retry` properties defined; the error message includes the operation name",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-72",
+    "original": "The error fires before the first `send()` — no agent call is made when the op definition is invalid",
+    "refined": "callOp throws 'OP_HOPBODY_RETRY_BOTH_SET' synchronously (before any await or send call) when both `hopBody` and `retry` are defined on the RunOperation",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-73",
+    "original": "Existing ops (post-US-005d) all set exactly one of `op.hopBody` or `op.retry` — the build passes",
+    "refined": "Grep of src/operations/*.ts finds zero Operation definitions where both `hopBody` and `retry` are non-undefined (after US-005d migration completes); build succeeds",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-74",
+    "original": "`.claude/rules/forbidden-patterns.md` Source Code table includes an entry banning the coexistence with a pointer to this guard",
+    "refined": ".claude/rules/forbidden-patterns.md Source Code table contains a row with pattern 'Setting both `op.hopBody` and `op.retry` on RunOperation' and solution text referencing the runtime guard in src/operations/call.ts",
+    "testable": true,
+    "storyId": "US-007"
+  }
+]
