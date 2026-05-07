@@ -5,7 +5,6 @@
  */
 
 import type { AgentResult } from "../agents/types";
-import type { TestEditDeclaration } from "../operations";
 import type { NaxConfig } from "../config/schema";
 import type { ConstitutionResult } from "../constitution/types";
 import type { BuiltContext } from "../context/types";
@@ -14,6 +13,7 @@ import type { Iteration } from "../findings";
 import type { HooksConfig } from "../hooks/types";
 import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics/types";
+import type { TestEditDeclaration } from "../operations";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
 import type { ReviewResult } from "../review/types";

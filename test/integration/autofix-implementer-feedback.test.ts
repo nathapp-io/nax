@@ -16,7 +16,7 @@ import { runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle
 import { _cycleDeps } from "../../src/findings/cycle";
 import type { Finding } from "../../src/findings";
 import type { PipelineContext } from "../../src/pipeline/types";
-import { makeStory } from "../helpers/mock-story";
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "../helpers";
 
 function makeCtx(
   story = makeStory({
@@ -26,7 +26,7 @@ function makeCtx(
   // biome-ignore lint/suspicious/noExplicitAny: integration test fixture
   return {
     story,
-    config: { quality: { autofix: { maxAttempts: 3, maxTotalAttempts: 12 } }, review: {} },
+    config: makeNaxConfig({ quality: { autofix: { maxAttempts: 3, maxTotalAttempts: 12 } } }),
     reviewResult: { success: false, checks: [] },
     workdir: "/tmp",
     runtime: {
@@ -34,7 +34,7 @@ function makeCtx(
       outputDir: "/tmp/out",
     },
     prd: { feature: "f" },
-    agentManager: { getDefault: () => "claude" },
+    agentManager: makeMockAgentManager(),
   } as any;
 }
 

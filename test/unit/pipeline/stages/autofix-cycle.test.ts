@@ -5,15 +5,15 @@ import type { Finding } from "../../../../src/findings";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import { runAgentRectificationV2, buildAutofixStrategies, applyTestEditDeclarations } from "../../../../src/pipeline/stages/autofix-cycle";
 
-import { makeStory } from "../../../helpers/mock-story";
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../../helpers";
 
 function makeMinCtx(): PipelineContext {
-  // Minimal context: only the fields strategy buildInput / extractApplied read.
   return {
     story: makeStory(),
-    config: { quality: { autofix: {} }, review: {} },
+    config: makeNaxConfig(),
     reviewResult: { success: false, checks: [] },
     workdir: "/tmp",
+    agentManager: makeMockAgentManager(),
     // biome-ignore lint/suspicious/noExplicitAny: only fields read by buildAutofixStrategies are populated
   } as any;
 }
@@ -194,7 +194,7 @@ describe("applyTestEditDeclarations", () => {
 });
 
 describe("runAgentRectificationV2 — declaration consumption", () => {
-  test("clears ctx.testEditDeclarations after validate runs", async () => {
+  test("preserves testEditDeclarations when no findings present (validate never fires)", async () => {
     const ctx: PipelineContext = {
       ...makeMinCtx(),
       runtime: {
@@ -202,13 +202,13 @@ describe("runAgentRectificationV2 — declaration consumption", () => {
         outputDir: "/tmp/out",
         // biome-ignore lint/suspicious/noExplicitAny: minimal runtime stub
       } as any,
-      agentManager: { getDefault: () => "claude" } as any,
       prd: { feature: "f" } as any,
     };
     ctx.testEditDeclarations = [
       { reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "x", testBefore: "y", testAfter: "z" },
     ];
-    // No findings → cycle exits with "resolved" before invoking strategies.
+    // No findings → cycle exits immediately; validate() is never called, so
+    // the side-channel is NOT cleared (consumed on next pipeline retry).
     const saved = { ..._autofixDeps };
     _autofixDeps.recheckReview = async () => false;
     try {
@@ -217,8 +217,8 @@ describe("runAgentRectificationV2 — declaration consumption", () => {
       Object.assign(_autofixDeps, saved);
     }
 
-    // With no initial findings, validate isn't called — but autofixPriorIterations
-    // is still set, and the side-channel is preserved for the next pipeline pass.
     expect(ctx.autofixPriorIterations).toBeDefined();
+    // Side-channel still present — validate() never ran to consume it.
+    expect(ctx.testEditDeclarations).toHaveLength(1);
   });
 });

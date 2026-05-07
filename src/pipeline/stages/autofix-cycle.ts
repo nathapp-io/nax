@@ -106,7 +106,9 @@ export function buildAutofixStrategies(
 ): FixStrategy<Finding, any, any, AutofixConfig>[] {
   const implementer: FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> = {
     name: "autofix-implementer",
-    appliesTo: (f) => (f.fixTarget ?? "source") === "source",
+    // Exclude prd_quote_mismatch advisories: they are diagnostic only and should not
+    // trigger another implementer session.
+    appliesTo: (f) => (f.fixTarget ?? "source") === "source" && f.category !== "prd_quote_mismatch",
     fixOp: implementerRectifyOp,
     maxAttempts,
     coRun: "co-run-sequential",
@@ -282,6 +284,7 @@ export function applyTestEditDeclarations(
   if (declarations.length === 0) return findings;
 
   const out: Finding[] = [...findings];
+  const originalLength = findings.length;
   const reTaggedKeys = new Set<number>();
 
   for (const decl of declarations) {
@@ -299,7 +302,8 @@ export function applyTestEditDeclarations(
       continue;
     }
 
-    for (let i = 0; i < out.length; i++) {
+    // Only iterate original findings — not advisory findings appended earlier in this loop.
+    for (let i = 0; i < originalLength; i++) {
       if (reTaggedKeys.has(i)) continue;
       if (out[i].file !== decl.file) continue;
       if ((out[i].fixTarget ?? "source") === "test") continue;

@@ -1,3 +1,5 @@
+import type { UserStory } from "../prd";
+
 /**
  * Structured representation of a TEST_EDIT_REASON block emitted by the implementer
  * under one of the three escape valves in CONTRADICTION_ESCAPE_HATCH.
@@ -20,8 +22,6 @@ export interface TestEditDeclaration {
   testAfter?: string;
   /** Lint rule / error summary, only set for lint_only / sibling_scope. */
   finding?: string;
-  /** True when prdQuote was found verbatim (whitespace-normalised) in story.description + AC text. */
-  prdQuoteValid?: boolean;
 }
 
 const REASON_RE = /^TEST_EDIT_REASON:\s*(prd_contract|lint_only|sibling_scope)\s*$/m;
@@ -50,13 +50,12 @@ function unwrapQuotes(s: string): string {
  * Parse all TEST_EDIT_REASON blocks from agent output.
  *
  * Block model: each block begins with `TEST_EDIT_REASON: <reason>` and continues
- * until the next blank line OR the next `TEST_EDIT_REASON:` line. Fields outside
+ * until the next blank line. A blank line between blocks is required. Fields outside
  * a block are ignored. Malformed blocks (missing required FILE / SIBLING_FILE)
  * are silently dropped — the agent is expected to retry on the next attempt.
  */
 export function parseTestEditDeclarations(output: string): TestEditDeclaration[] {
   const result: TestEditDeclaration[] = [];
-  // Split on blank lines OR before each new TEST_EDIT_REASON marker
   const blocks = output.split(/\n\s*\n/);
 
   for (const block of blocks) {
@@ -92,8 +91,6 @@ export function parseTestEditDeclarations(output: string): TestEditDeclaration[]
 
   return result;
 }
-
-import type { UserStory } from "../prd";
 
 /**
  * Collapse all whitespace runs to a single space, strip spaces adjacent to
