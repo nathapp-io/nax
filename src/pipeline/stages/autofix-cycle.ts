@@ -93,7 +93,7 @@ function collectAdversarialSourceChecks(ctx: PipelineContext): ReviewCheckResult
 
 // ─── Strategies ───────────────────────────────────────────────────────────────
 
-function buildAutofixStrategies(
+export function buildAutofixStrategies(
   ctx: PipelineContext,
   maxAttempts: number,
   // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O types are opaque to cycle layer
@@ -108,10 +108,18 @@ function buildAutofixStrategies(
       failedChecks: collectFailedChecks(ctx),
       story: ctx.story,
     }),
-    extractApplied: (output) => ({
-      summary: output.unresolvedReason ?? "",
-      unresolved: output.unresolvedReason,
-    }),
+    extractApplied: (output) => {
+      if (output.testEditDeclarations.length > 0) {
+        ctx.testEditDeclarations = [
+          ...(ctx.testEditDeclarations ?? []),
+          ...output.testEditDeclarations,
+        ];
+      }
+      return {
+        summary: output.unresolvedReason ?? "",
+        unresolved: output.unresolvedReason,
+      };
+    },
   };
 
   const testWriter: FixStrategy<Finding, AutofixTestWriterInput, { applied: true }, AutofixConfig> = {
@@ -122,7 +130,7 @@ function buildAutofixStrategies(
       f.fixTarget === "test" ||
       ((f.fixTarget ?? "source") === "source" && f.severity === "error" && f.source === "adversarial-review"),
     fixOp: testWriterRectifyOp,
-    maxAttempts: 1,
+    maxAttempts: 2,
     coRun: "co-run-sequential",
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
       const hasSourceBug = findings.some(
