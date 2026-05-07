@@ -105,14 +105,19 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
 
     expect(callLog.length).toBeGreaterThanOrEqual(2);
     const opNames = callLog.map((c) => c.op);
-    expect(opNames.filter((n) => n === "autofix-test-writer").length).toBeGreaterThanOrEqual(1);
     expect(opNames.filter((n) => n === "autofix-implementer").length).toBeGreaterThanOrEqual(1);
+    expect(opNames.filter((n) => n === "autofix-test-writer").length).toBeGreaterThanOrEqual(1);
+
+    // test-writer must fire AFTER the implementer (declaration emitted by implementer, consumed next iteration)
+    const firstImplementerIdx = opNames.indexOf("autofix-implementer");
+    const firstTestWriterAfterDeclaration = opNames.indexOf("autofix-test-writer", firstImplementerIdx + 1);
+    expect(firstTestWriterAfterDeclaration).toBeGreaterThan(firstImplementerIdx);
 
     // Side-channel must be cleared after consumption.
     expect(ctx.testEditDeclarations).toEqual([]);
   });
 
-  test("invalid PRD_QUOTE does not re-tag findings; emits prd_quote_mismatch", async () => {
+  test("invalid PRD_QUOTE does not re-tag findings; emits prd_quote_mismatch advisory", async () => {
     const ctx = makeCtx(makeStory({ description: "Unrelated story content" }));
     const initialFinding: Finding = {
       source: "adversarial-review",
@@ -139,9 +144,38 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
 
     const savedAutofix = { ..._autofixDeps };
     const savedCycle = { ..._cycleDeps };
-    _autofixDeps.recheckReview = async () => false;
 
-    _cycleDeps.callOp = (async (_ctx: any, op: any) => {
+    // Track the findings passed to each strategy call so we can assert routing.
+    const callLog: { op: string; findings: Finding[] }[] = [];
+
+    let recheckCount = 0;
+    _autofixDeps.recheckReview = async (c: any) => {
+      recheckCount++;
+      if (recheckCount === 1) {
+        // After implementer runs: keep the same adversarial finding (unchanged)
+        c.reviewResult = {
+          success: false,
+          checks: [
+            {
+              check: "adversarial",
+              success: false,
+              command: "",
+              exitCode: 1,
+              output: "",
+              durationMs: 0,
+              findings: [initialFinding],
+            },
+          ],
+        };
+        return false;
+      }
+      c.reviewResult = { success: true, checks: [] };
+      return true;
+    };
+
+    _cycleDeps.callOp = (async (_c: any, op: any, input: any) => {
+      const findings = (input?.failedChecks ?? []).flatMap((ch: any) => ch.findings ?? []);
+      callLog.push({ op: op.name, findings });
       if (op.name === "autofix-implementer") {
         return {
           applied: true,
@@ -168,5 +202,19 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
 
     // Side-channel consumed and cleared.
     expect(ctx.testEditDeclarations).toEqual([]);
+
+    // The original adversarial finding must never be re-tagged to fixTarget=test
+    // (fabricated PRD_QUOTE blocks the re-tag path).
+    const allFindings = callLog.flatMap((e) => e.findings);
+    const reTagged = allFindings.filter((f) => f.file === "test/y.spec.ts" && f.fixTarget === "test");
+    expect(reTagged).toHaveLength(0);
+
+    // A prd_quote_mismatch advisory is emitted and passed into the next iteration's strategies.
+    // It must NOT activate the implementer (implementer.appliesTo excludes prd_quote_mismatch).
+    const advisorySeenByImplementer = callLog
+      .filter((e) => e.op === "autofix-implementer")
+      .flatMap((e) => e.findings)
+      .filter((f) => f.category === "prd_quote_mismatch");
+    expect(advisorySeenByImplementer).toHaveLength(0);
   });
 });
