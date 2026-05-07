@@ -13,7 +13,8 @@
 
 /* biome-ignore lint/suspicious/noExplicitAny: test mocking and type compatibility */
 
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as loggerModule from "../../../src/logger";
 import { ParseValidationError } from "../../../src/agents/retry/types";
 import { _callOpDeps, callOp, type CallContext } from "../../../src/operations";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
@@ -315,38 +316,53 @@ describe("AC8: logging — storyId is first key in data object", () => {
     // This test verifies the logging contract from makeParseRetryStrategy
     // in src/agents/retry/parse-retry.ts — storyId is first key in data
 
-    mock((_kind: string, _message: string, data: Record<string, unknown>) => {
-      // Verify storyId is first key in data object
-      const keys = Object.keys(data);
-      expect(keys[0]).toBe("storyId");
-      expect(data.storyId).toBe(SAMPLE_STORY.id);
-    });
-
-    const ctx = makeBuildCtx();
-    const opCtx = { packageView: ctx.packageView, config: ctx.config };
-    const strategy = (semanticReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
-
-    // Create a scenario that triggers logging in the retry strategy
-    const truncatedOutput = "x".repeat(4950);
-
-    const retryCtx = {
-      site: "complete" as const,
-      agentName: "claude",
-      stage: "review" as const,
-      storyId: SAMPLE_STORY.id,
-      lastOutput: truncatedOutput,
+    const mockLogger = {
+      info: () => {},
+      warn: (_stage: string, message: string, data: Record<string, unknown>) => {
+        // Verify storyId is present and is the first key when logging retry
+        if (message.includes("retry")) {
+          const keys = Object.keys(data);
+          expect(keys[0]).toBe("storyId");
+          expect(data.storyId).toBe(SAMPLE_STORY.id);
+        }
+      },
+      debug: () => {},
+      error: () => {},
     };
 
-    // When shouldRetry is called with a ParseValidationError and truncated output,
-    // the strategy logs with storyId as the first key
-    const result = strategy.shouldRetry(
-      new ParseValidationError("JSON parse failed"),
-      0,
-      retryCtx,
+    const spy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
+      mockLogger as unknown as ReturnType<typeof loggerModule.getSafeLogger>,
     );
 
-    // Verify it triggers a retry (which would cause logging)
-    expect(result.retry).toBe(true);
+    try {
+      const ctx = makeBuildCtx();
+      const opCtx = { packageView: ctx.packageView, config: ctx.config };
+      const strategy = (semanticReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+
+      // Create a scenario that triggers logging in the retry strategy
+      const truncatedOutput = "x".repeat(4950);
+
+      const retryCtx = {
+        site: "complete" as const,
+        agentName: "claude",
+        stage: "review" as const,
+        storyId: SAMPLE_STORY.id,
+        lastOutput: truncatedOutput,
+      };
+
+      // When shouldRetry is called with a ParseValidationError and truncated output,
+      // the strategy logs with storyId as the first key
+      const result = strategy.shouldRetry(
+        new ParseValidationError("JSON parse failed"),
+        0,
+        retryCtx,
+      );
+
+      // Verify it triggers a retry (which causes logging)
+      expect(result.retry).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
