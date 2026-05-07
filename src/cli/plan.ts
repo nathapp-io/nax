@@ -19,6 +19,7 @@ import { callOp, planOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
+import { validateFeatureName } from "../utils/feature-name";
 import { buildCodebaseContext, buildPackageSummary } from "./plan-helpers";
 import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
 
@@ -53,6 +54,7 @@ export interface PlanCommandOptions {
  * @returns Path to generated prd.json
  */
 export async function planCommand(workdir: string, config: NaxConfig, options: PlanCommandOptions): Promise<string> {
+  validateFeatureName(options.feature);
   const naxDir = join(workdir, ".nax");
 
   if (!existsSync(naxDir)) {

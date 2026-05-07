@@ -32,7 +32,8 @@ function coerceSmartRunner(val: unknown) {
 
 function buildScopedCommand(testFiles: string[], baseCommand: string, testScopedTemplate?: string): string {
   if (testScopedTemplate) {
-    return testScopedTemplate.replace("{{files}}", testFiles.join(" "));
+    const quotedFiles = testFiles.map((file) => `'${file.replaceAll("'", "'\\''")}'`);
+    return testScopedTemplate.replace("{{files}}", quotedFiles.join(" "));
   }
   return _scopedDeps.buildSmartTestCommand(testFiles, baseCommand);
 }

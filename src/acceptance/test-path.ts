@@ -34,7 +34,8 @@ export function acceptanceTestFilename(language?: string): string {
  * Resolve acceptance test filename based on explicit config override and language.
  */
 export function resolveAcceptanceTestFile(language?: string, testPathConfig?: string): string {
-  return testPathConfig ?? acceptanceTestFilename(language);
+  const candidate = testPathConfig ?? acceptanceTestFilename(language);
+  return sanitizeTestFileName(candidate, "acceptance.testPath");
 }
 
 /**
@@ -161,7 +162,22 @@ export function suggestedTestFilename(language?: string): string {
  * Resolve suggested test filename based on explicit config override and language.
  */
 export function resolveSuggestedTestFile(language?: string, testPathConfig?: string): string {
-  return testPathConfig ?? suggestedTestFilename(language);
+  const candidate = testPathConfig ?? suggestedTestFilename(language);
+  return sanitizeTestFileName(candidate, "acceptance.suggestedTestPath");
+}
+
+function sanitizeTestFileName(value: string, fieldName: string): string {
+  const filename = value.trim();
+  if (filename.length === 0) {
+    throw new Error(`${fieldName} must be non-empty`);
+  }
+  if (filename.includes("/") || filename.includes("\\")) {
+    throw new Error(`${fieldName} must be a filename, not a path: ${filename}`);
+  }
+  if (filename.includes("..")) {
+    throw new Error(`${fieldName} cannot contain '..': ${filename}`);
+  }
+  return filename;
 }
 
 /**

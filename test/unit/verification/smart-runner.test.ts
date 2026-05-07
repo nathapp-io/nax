@@ -22,7 +22,7 @@ describe("buildSmartTestCommand", () => {
 
   test("replaces last path argument with specific test file", () => {
     const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test test/");
-    expect(result).toBe("bun test test/unit/foo.test.ts");
+    expect(result).toBe("bun test 'test/unit/foo.test.ts'");
   });
 
   test("joins multiple test files with spaces", () => {
@@ -30,12 +30,12 @@ describe("buildSmartTestCommand", () => {
       ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
       "bun test test/",
     );
-    expect(result).toBe("bun test test/unit/foo.test.ts test/unit/bar.test.ts");
+    expect(result).toBe("bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts'");
   });
 
   test("appends test files when command has no path argument", () => {
     const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test");
-    expect(result).toBe("bun test test/unit/foo.test.ts");
+    expect(result).toBe("bun test 'test/unit/foo.test.ts'");
   });
 
   test("replaces last path-like token even when flags precede it", () => {
@@ -43,7 +43,7 @@ describe("buildSmartTestCommand", () => {
       ["test/unit/foo.test.ts"],
       "bun test --coverage test/",
     );
-    expect(result).toBe("bun test --coverage test/unit/foo.test.ts");
+    expect(result).toBe("bun test --coverage 'test/unit/foo.test.ts'");
   });
 
   test("preserves trailing flags after path argument (BUG-043)", () => {
@@ -51,7 +51,7 @@ describe("buildSmartTestCommand", () => {
       ["test/unit/foo.test.ts"],
       "bun test test/ --timeout=60000",
     );
-    expect(result).toBe("bun test test/unit/foo.test.ts --timeout=60000");
+    expect(result).toBe("bun test 'test/unit/foo.test.ts' --timeout=60000");
   });
 
   test("preserves trailing flags with multiple test files", () => {
@@ -59,7 +59,7 @@ describe("buildSmartTestCommand", () => {
       ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
       "bun test test/ --timeout=60000 --bail",
     );
-    expect(result).toBe("bun test test/unit/foo.test.ts test/unit/bar.test.ts --timeout=60000 --bail");
+    expect(result).toBe("bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts' --timeout=60000 --bail");
   });
 });
 

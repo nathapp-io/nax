@@ -244,6 +244,9 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
     return baseCommand;
   }
 
+  const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+  const quotedTestFiles = testFiles.map(shellQuote);
+
   const parts = baseCommand.trim().split(/\s+/);
 
   // Find the last token that looks like a path (contains '/')
@@ -257,14 +260,14 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
 
   if (lastPathIndex === -1) {
     // No path argument — append test files
-    return `${baseCommand} ${testFiles.join(" ")}`;
+    return `${baseCommand} ${quotedTestFiles.join(" ")}`;
   }
 
   // Replace the last path argument with the specific test files,
   // preserving any flags that appear after the path (e.g. --timeout=60000).
   const beforePath = parts.slice(0, lastPathIndex);
   const afterPath = parts.slice(lastPathIndex + 1);
-  const newParts = [...beforePath, ...testFiles, ...afterPath];
+  const newParts = [...beforePath, ...quotedTestFiles, ...afterPath];
   return newParts.join(" ");
 }
 
