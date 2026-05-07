@@ -1,0 +1,71 @@
+import type { AdapterFailure } from "../../context/engine";
+import { getSafeLogger } from "../../logger";
+import { looksLikeTruncatedJson } from "../../review/truncation";
+import { tryParseLLMJson } from "../../utils/llm-json";
+import { ParseValidationError } from "./types";
+import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
+
+export interface ParseRetryOpts {
+  readonly validate: (parsed: unknown) => boolean;
+  readonly reviewerKind: string;
+  readonly maxAttempts?: number;
+  readonly prompts: {
+    readonly invalid: () => string;
+    readonly truncated: () => string;
+  };
+  readonly parse?: (output: string) => unknown;
+  readonly looksTruncated?: (output: string) => boolean;
+  /** Injectable logger for testing. */
+  readonly _logger?: { warn(kind: string, msg: string, data: Record<string, unknown>): void };
+}
+
+export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
+  const parse = opts.parse ?? tryParseLLMJson;
+  const checkTruncated = opts.looksTruncated ?? looksLikeTruncatedJson;
+  const maxAttempts = opts.maxAttempts ?? 2;
+
+  return {
+    shouldRetry(failure: AdapterFailure | Error, attempt: number, ctx: RetryContext): RetryDecision {
+      if (!(failure instanceof ParseValidationError)) {
+        return { retry: false };
+      }
+
+      if (!ctx.lastOutput) {
+        return { retry: false };
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = parse(ctx.lastOutput);
+      } catch {
+        parsed = null;
+      }
+
+      if (parsed != null && opts.validate(parsed)) {
+        return { retry: false };
+      }
+
+      if (attempt >= maxAttempts - 1) {
+        return { retry: false };
+      }
+
+      const isTruncated = checkTruncated(ctx.lastOutput);
+      const nextPrompt = isTruncated ? opts.prompts.truncated() : opts.prompts.invalid();
+
+      const logger = opts._logger ?? getSafeLogger();
+      if (isTruncated) {
+        logger?.warn(opts.reviewerKind, "JSON parse retry — likely truncated", {
+          storyId: ctx.storyId,
+          originalByteSize: ctx.lastOutput.length,
+        });
+      } else {
+        logger?.warn(opts.reviewerKind, "JSON parse retry — invalid shape", {
+          storyId: ctx.storyId,
+          originalByteSize: ctx.lastOutput.length,
+        });
+      }
+
+      return { retry: true, delayMs: 0, nextPrompt };
+    },
+  };
+}
