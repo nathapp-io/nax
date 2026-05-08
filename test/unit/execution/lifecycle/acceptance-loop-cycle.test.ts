@@ -479,7 +479,7 @@ describe("strategy buildInput closures", () => {
 
     const input = capturedCycle!.strategies[0].buildInput([], [makeIteration()], {} as never) as Record<string, unknown>;
     expect(input.priorIterationsBlock).toContain("## Prior Iterations");
-    expect(input.priorIterationsBlock).toContain("acceptance-test-fix");
+    expect(input.priorIterationsBlock).toContain("AC-1 failed");
   });
 
   test("test-fix buildInput reflects currentFailedACs at call time", async () => {
