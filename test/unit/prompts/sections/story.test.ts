@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { UserStory } from "../../../../src/prd/types";
-import { buildBatchStorySection, buildStorySection } from "../../../../src/prompts/sections/story";
+import {
+  buildBatchStorySection,
+  buildStoryReminderSection,
+  buildStorySection,
+} from "../../../../src/prompts/sections/story";
 import { makeStory } from "../../../helpers";
 
 describe("buildStorySection", () => {
@@ -28,6 +32,50 @@ describe("buildStorySection", () => {
     const lines = result.split("\n");
     const criteriaLines = lines.filter((l) => /^\d+\./.test(l.trim()));
     expect(criteriaLines.length).toBe(3);
+  });
+});
+
+describe("buildStoryReminderSection", () => {
+  test("mirrors numbered acceptance criteria", () => {
+    const story = makeStory({
+      title: "Reminder Recency Story",
+      acceptanceCriteria: ["Save the reminder AC", "Render it near the bottom"],
+    });
+
+    const result = buildStoryReminderSection(story);
+
+    expect(result).toContain("Reminder Recency Story");
+    expect(result).toContain("1. Save the reminder AC");
+    expect(result).toContain("2. Render it near the bottom");
+  });
+
+  test("wraps mirrored criteria as user-supplied data", () => {
+    const criterion = "Boundary-protected AC";
+    const result = buildStoryReminderSection(makeStory({ acceptanceCriteria: [criterion] }));
+
+    const boundaryStartIdx = result.indexOf("<!-- USER-SUPPLIED DATA");
+    const criterionIdx = result.indexOf(criterion);
+    const boundaryEndIdx = result.indexOf("<!-- END USER-SUPPLIED DATA -->");
+
+    expect(boundaryStartIdx).toBeGreaterThanOrEqual(0);
+    expect(criterionIdx).toBeGreaterThan(boundaryStartIdx);
+    expect(boundaryEndIdx).toBeGreaterThan(criterionIdx);
+  });
+
+  test("falls back cleanly with no acceptance criteria", () => {
+    const result = buildStoryReminderSection(makeStory({ title: "Empty AC Story", acceptanceCriteria: [] }));
+
+    expect(result).toBe(
+      "---\n\n**Reminder:** Your task is to implement **Empty AC Story**. Satisfy every acceptance criterion listed above before finishing.",
+    );
+    expect(result).not.toContain("**Acceptance Criteria:**");
+  });
+
+  test("preserves acceptance criterion text verbatim", () => {
+    const criterion = "Preserve **markdown-ish** text, punctuation, and `code()` exactly.";
+    const result = buildStoryReminderSection(makeStory({ acceptanceCriteria: [criterion] }));
+
+    expect(result).toContain(`1. ${criterion}`);
   });
 });
 
