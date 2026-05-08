@@ -1,37 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-07T13-33-31-389Z",
+    "id": "run-2026-05-08T01-38-53-928Z",
     "feature": "retry-strategy-consolidation",
-    "startedAt": "2026-05-07T13:33:31.389Z",
+    "startedAt": "2026-05-08T01:38:53.928Z",
     "status": "crashed",
     "dryRun": false,
-    "pid": 51036,
-    "crashedAt": "2026-05-07T14:38:57.307Z",
+    "pid": 14350,
+    "crashedAt": "2026-05-08T01:45:08.990Z",
     "crashSignal": "SIGINT"
   },
   "progress": {
     "total": 10,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
-    "paused": 0,
+    "paused": 1,
     "blocked": 0,
-    "pending": 5
+    "pending": 3
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.5816527600000001,
     "limit": 50
   },
-  "current": {
-    "storyId": "US-005b",
-    "title": "Flip semanticReviewOp from hopBody to op.retry",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 0,
-  "updatedAt": "2026-05-07T14:38:57.307Z",
-  "durationMs": 3925918
+  "current": null,
+  "iterations": 2,
+  "updatedAt": "2026-05-08T01:45:08.991Z",
+  "durationMs": 375063,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "running"
+    }
+  }
 }

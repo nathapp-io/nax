@@ -3,7 +3,7 @@
   "feature": "retry-strategy-consolidation",
   "branchName": "feat/retry-strategy-consolidation",
   "createdAt": "2026-05-07T00:00:00.000Z",
-  "updatedAt": "2026-05-07T17:13:18.647Z",
+  "updatedAt": "2026-05-08T01:52:41.320Z",
   "userStories": [
     {
       "id": "US-001",
@@ -253,8 +253,8 @@
       "dependencies": [
         "US-005a"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -314,12 +314,14 @@
       ],
       "status": "pending",
       "passes": false,
-      "attempts": 0,
+      "attempts": 2,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Active behavior flip with parity tests; mirrors US-005b for adversarial."
+        "reasoning": "Active behavior flip with parity tests; mirrors US-005b for adversarial.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/adversarial-review.ts",
@@ -329,7 +331,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "84abb90f1b4974391336c70e2167c59d95000b35"
     },
     {
       "id": "US-005d",

@@ -4,3 +4,4 @@
 [2026-05-07T13:15:44.136Z] US-004 — FAILED — Add retry slot to RunOperation and wire callOp run-kind retry path with structured logging — Execution failed
 [2026-05-07T13:39:03.920Z] US-004 — PASSED — Add retry slot to RunOperation and wire callOp run-kind retry path with structured logging — Cost: $0.4946
 [2026-05-07T13:44:32.641Z] US-005a — PASSED — Add op.retry alongside op.hopBody on review ops (no behavior change) — Cost: $0.4994
+[2026-05-07T17:22:59.228Z] US-005b — PASSED — Flip semanticReviewOp from hopBody to op.retry — Cost: $1.1227
