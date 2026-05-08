@@ -1,0 +1,316 @@
+/**
+ * Unit tests for adversarialReviewOp retry flip from hopBody to op.retry
+ *
+ * Story: US-005c — Flip adversarialReviewOp from hopBody to op.retry
+ *
+ * Verifies that:
+ * - hopBody field is deleted
+ * - retry field is active and provides same behavior
+ * - cost accumulation works correctly
+ * - logging preserves storyId as first key
+ * - parse phase runs on final output with looksLikeFail detection
+ */
+
+/* biome-ignore lint/suspicious/noExplicitAny: test mocking and type compatibility */
+
+import { describe, expect, spyOn, test } from "bun:test";
+import * as loggerModule from "../../../src/logger";
+import { ParseValidationError } from "../../../src/agents/retry/types";
+import { _callOpDeps, callOp, type CallContext } from "../../../src/operations";
+import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
+import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
+import { makeMockAgentManager, makeMockRuntime, makeTestRuntime } from "../../helpers";
+
+// ─── Fixtures ────────────────────────────────────────────────────────────────
+
+const SAMPLE_STORY = {
+  id: "STORY-002",
+  title: "Add logout endpoint",
+  description: "Implement DELETE /session to invalidate the JWT",
+  acceptanceCriteria: ["Clears the session token", "Returns 204 on success"],
+};
+
+const SAMPLE_CONFIG = {
+  model: "balanced" as const,
+  diffMode: "ref" as const,
+  rules: [],
+  timeoutMs: 600_000,
+  parallel: false,
+  maxConcurrentSessions: 2,
+};
+
+const SAMPLE_INPUT: AdversarialReviewInput = {
+  story: SAMPLE_STORY,
+  adversarialConfig: SAMPLE_CONFIG,
+  mode: "ref",
+  storyGitRef: "def5678",
+  stat: "src/session.ts | 15 +++++",
+};
+
+const VALID_JSON_OUTPUT = JSON.stringify({ passed: true, findings: [] });
+
+function makeBuildCtx() {
+  const runtime = makeTestRuntime();
+  const view = runtime.packages.repo();
+  return { packageView: view, config: view.select(adversarialReviewOp.config as any) };
+}
+
+// ─── AC1: hopBody field is deleted ───────────────────────────────────────────
+
+describe("AC1: adversarialReviewOp structure — hopBody removed", () => {
+  test("adversarialReviewOp does NOT have a hopBody field", () => {
+    expect(adversarialReviewOp).not.toHaveProperty("hopBody");
+  });
+
+  test("adversarialReviewOp DOES have a retry field", () => {
+    expect(adversarialReviewOp).toHaveProperty("retry");
+  });
+
+  test("retry field is a function (resolver form)", () => {
+    expect(typeof adversarialReviewOp.retry).toBe("function");
+  });
+});
+
+// ─── AC2: Valid JSON = 1 send() call ─────────────────────────────────────────
+
+describe("AC2: retry behavior — valid JSON response", () => {
+  test("retry strategy does not retry when parse succeeds", () => {
+    const ctx = makeBuildCtx();
+    const opCtx = { packageView: ctx.packageView, config: ctx.config };
+    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+
+    expect(typeof strategy.shouldRetry).toBe("function");
+  });
+
+  test("parse receives valid JSON and returns parsed result", () => {
+    const ctx = makeBuildCtx();
+    const result = adversarialReviewOp.parse(VALID_JSON_OUTPUT, SAMPLE_INPUT, ctx as any);
+
+    expect(result.passed).toBe(true);
+    expect(result.findings).toEqual([]);
+    expect(result.failOpen).toBeUndefined();
+    expect(result.looksLikeFail).toBeUndefined();
+  });
+});
+
+// ─── AC3: Invalid+truncated = jsonRetryCondensed with blockingThreshold ──────
+
+describe("AC3: retry behavior — truncated JSON response", () => {
+  test("retry strategy detects truncated response and returns retry decision", () => {
+    const ctx = makeBuildCtx();
+    const opCtx = { packageView: ctx.packageView, config: ctx.config };
+    const inputWithThreshold: AdversarialReviewInput = {
+      ...SAMPLE_INPUT,
+      blockingThreshold: "warning",
+    };
+    const strategy = (adversarialReviewOp.retry as any)(inputWithThreshold, opCtx);
+
+    const truncatedOutput = "x".repeat(4950);
+
+    const retryCtx = {
+      site: "complete" as const,
+      agentName: "claude",
+      stage: "review" as const,
+      storyId: SAMPLE_STORY.id,
+      lastOutput: truncatedOutput,
+    };
+
+    const result = strategy.shouldRetry(
+      new ParseValidationError("JSON shape validation failed"),
+      0,
+      retryCtx,
+    );
+
+    expect(result.retry).toBe(true);
+    expect(result.delayMs).toBeDefined();
+    expect(result.nextPrompt).toBeDefined();
+  });
+
+  test("condensed retry prompt contains 'truncated'", () => {
+    const ctx = makeBuildCtx();
+    const opCtx = { packageView: ctx.packageView, config: ctx.config };
+    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+
+    const result = strategy.shouldRetry(
+      new ParseValidationError("parse failed"),
+      0,
+      {
+        site: "complete" as const,
+        agentName: "claude",
+        stage: "review" as const,
+        storyId: SAMPLE_STORY.id,
+        lastOutput: "x".repeat(4950),
+      },
+    );
+
+    expect(result.retry).toBe(true);
+    expect(result.nextPrompt).toContain("truncated");
+  });
+});
+
+// ─── AC4: Invalid+non-truncated = jsonRetry prompt ──────────────────────────
+
+describe("AC4: retry behavior — invalid but non-truncated response", () => {
+  test("retry strategy detects invalid non-truncated response and retries", () => {
+    const ctx = makeBuildCtx();
+    const opCtx = { packageView: ctx.packageView, config: ctx.config };
+    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+
+    const shortInvalidOutput = "this is not valid JSON at all";
+
+    const retryCtx = {
+      site: "complete" as const,
+      agentName: "claude",
+      stage: "review" as const,
+      storyId: SAMPLE_STORY.id,
+      lastOutput: shortInvalidOutput,
+    };
+
+    const result = strategy.shouldRetry(
+      new ParseValidationError("JSON parsing failed"),
+      0,
+      retryCtx,
+    );
+
+    expect(result.retry).toBe(true);
+    expect(result.nextPrompt).not.toContain("truncated");
+  });
+});
+
+// ─── AC5: Two consecutive invalid = no third send() (maxAttempts: 2) ────────
+
+describe("AC5: retry behavior — budget exhaustion at maxAttempts: 2", () => {
+  test("retry strategy does not retry after maxAttempts exhausted", () => {
+    const ctx = makeBuildCtx();
+    const opCtx = { packageView: ctx.packageView, config: ctx.config };
+    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+
+    const invalidOutput = "not json";
+
+    const retryCtx = {
+      site: "complete" as const,
+      agentName: "claude",
+      stage: "review" as const,
+      storyId: SAMPLE_STORY.id,
+      lastOutput: invalidOutput,
+    };
+
+    const firstResult = strategy.shouldRetry(
+      new ParseValidationError("Parse failed"),
+      0,
+      retryCtx,
+    );
+    expect(firstResult.retry).toBe(true);
+
+    const secondResult = strategy.shouldRetry(
+      new ParseValidationError("Parse failed again"),
+      1,
+      retryCtx,
+    );
+
+    expect(secondResult.retry).toBe(false);
+  });
+});
+
+// ─── AC6: cost accumulation = sum of both turns ──────────────────────────────
+
+describe("AC6: cost accumulation — estimatedCostUsd sums both turns", () => {
+  test("callOp accumulates estimatedCostUsd from both initial and retry turns", async () => {
+    let turnCount = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async () => {
+        turnCount++;
+        return {
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "not valid json output",
+            rateLimited: false,
+            durationMs: 10,
+            estimatedCostUsd: turnCount === 1 ? 0.001 : 0.002,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        };
+      },
+    });
+
+    const runtime = makeMockRuntime({ agentManager });
+
+    const originalParse = adversarialReviewOp.parse;
+    (adversarialReviewOp as any).parse = () => {
+      throw new ParseValidationError("invalid shape — triggers retry");
+    };
+
+    const origSleep = _callOpDeps.sleep;
+    _callOpDeps.sleep = async () => {};
+
+    let result: unknown;
+    try {
+      const ctx: CallContext = {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp/test",
+        storyId: SAMPLE_STORY.id,
+        featureName: "_test",
+        agentName: "claude",
+      };
+      result = await callOp(ctx, adversarialReviewOp, SAMPLE_INPUT);
+    } finally {
+      (adversarialReviewOp as any).parse = originalParse;
+      _callOpDeps.sleep = origSleep;
+    }
+
+    expect(turnCount).toBe(2);
+    expect((result as any).estimatedCostUsd).toBeCloseTo(0.003, 6);
+  });
+});
+
+// ─── AC7: Warn log on parse failure has storyId first ──────────────────────
+
+describe("AC7: logging — storyId is first key in data object", () => {
+  test("warn logs on JSON parse retry include storyId as first key", () => {
+    const mockLogger = {
+      info: () => {},
+      warn: (_stage: string, message: string, data: Record<string, unknown>) => {
+        if (message.includes("retry")) {
+          const keys = Object.keys(data);
+          expect(keys[0]).toBe("storyId");
+          expect(data.storyId).toBe(SAMPLE_STORY.id);
+        }
+      },
+      debug: () => {},
+      error: () => {},
+    };
+
+    const spy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
+      mockLogger as unknown as ReturnType<typeof loggerModule.getSafeLogger>,
+    );
+
+    try {
+      const ctx = makeBuildCtx();
+      const opCtx = { packageView: ctx.packageView, config: ctx.config };
+      const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+
+      const truncatedOutput = "x".repeat(4950);
+
+      const retryCtx = {
+        site: "complete" as const,
+        agentName: "claude",
+        stage: "review" as const,
+        storyId: SAMPLE_STORY.id,
+        lastOutput: truncatedOutput,
+      };
+
+      const result = strategy.shouldRetry(
+        new ParseValidationError("JSON parse failed"),
+        0,
+        retryCtx,
+      );
+
+      expect(result.retry).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

@@ -137,17 +137,13 @@ describe("adversarialReviewOp.parse()", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].issue).toBe("error swallowed");
   });
-  test("fails open on unparseable output", () => {
+  test("throws ParseValidationError on unparseable output (triggers retry)", () => {
     const ctx = makeBuildCtx();
-    const result = adversarialReviewOp.parse("no json here", SAMPLE_INPUT, ctx);
-    expect(result.passed).toBe(true);
-    expect(result.findings).toEqual([]);
-    expect(result.failOpen).toBe(true);
+    expect(() => adversarialReviewOp.parse("no json here", SAMPLE_INPUT, ctx)).toThrow();
   });
-  test("fails open on missing passed field", () => {
+  test("throws ParseValidationError on missing passed field (triggers retry)", () => {
     const ctx = makeBuildCtx();
-    const result = adversarialReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx);
-    expect(result.failOpen).toBe(true);
+    expect(() => adversarialReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx)).toThrow();
   });
   test("parses fence-wrapped JSON response", () => {
     const ctx = makeBuildCtx();
@@ -189,8 +185,7 @@ describe("adversarialReviewOp.retry", () => {
     expect(typeof strategy.shouldRetry).toBe("function");
   });
 
-  test("hopBody field exists and is unchanged", () => {
-    expect(adversarialReviewOp).toHaveProperty("hopBody");
-    expect(typeof adversarialReviewOp.hopBody).toBe("function");
+  test("hopBody field does NOT exist (removed in US-005c)", () => {
+    expect(adversarialReviewOp).not.toHaveProperty("hopBody");
   });
 });
