@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { makeParseRetryStrategy } from "../../../../src/agents/retry/parse-retry";
 import { ParseValidationError } from "../../../../src/agents/retry/types";
 import type { RetryContext } from "../../../../src/agents/retry/types";
@@ -247,6 +248,51 @@ describe("makeParseRetryStrategy", () => {
     test("makeParseRetryStrategy is exported from src/agents/retry/index.ts", async () => {
       const mod = await import("../../../../src/agents/retry");
       expect(typeof mod.makeParseRetryStrategy).toBe("function");
+    });
+  });
+
+  // AC-12: Documentation example correctness
+  // Bug found by adversarial review: retry-strategy.md:118 uses `parser:` (wrong),
+  // `nextPrompt:` (wrong), and omits required `validate:` and `reviewerKind:` fields.
+  // These tests assert the spec-correct API surface in the documentation example.
+  describe("AC-12: retry-strategy.md example uses correct makeParseRetryStrategy API", () => {
+    const ruleFilePath = join(__dirname, "../../../../.claude/rules/retry-strategy.md");
+
+    async function extractMakeParseRetryExample(): Promise<string> {
+      const content = await Bun.file(ruleFilePath).text();
+      const startMarker = "makeParseRetryStrategy({";
+      const start = content.indexOf(startMarker);
+      if (start === -1) throw new Error("makeParseRetryStrategy example not found in retry-strategy.md");
+      // Find closing }) that ends the outer call
+      const end = content.indexOf("}),", start);
+      if (end === -1) throw new Error("Could not find end of makeParseRetryStrategy example");
+      return content.slice(start, end + 3);
+    }
+
+    test("example uses 'parse:' not the non-existent 'parser:' parameter", async () => {
+      const block = await extractMakeParseRetryExample();
+      // 'parser:' is not a valid ParseRetryOpts key — only 'parse:' is
+      expect(block).not.toContain("parser:");
+      expect(block).toContain("parse:");
+    });
+
+    test("example uses 'prompts:' with invalid/truncated callbacks, not 'nextPrompt:'", async () => {
+      const block = await extractMakeParseRetryExample();
+      // 'nextPrompt:' does not exist on ParseRetryOpts — the correct key is 'prompts:'
+      expect(block).not.toContain("nextPrompt:");
+      expect(block).toContain("prompts:");
+    });
+
+    test("example includes required 'validate:' field", async () => {
+      const block = await extractMakeParseRetryExample();
+      // validate is a required field on ParseRetryOpts
+      expect(block).toContain("validate:");
+    });
+
+    test("example includes required 'reviewerKind:' field", async () => {
+      const block = await extractMakeParseRetryExample();
+      // reviewerKind is a required field on ParseRetryOpts
+      expect(block).toContain("reviewerKind:");
     });
   });
 });
