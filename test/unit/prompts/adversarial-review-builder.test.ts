@@ -332,34 +332,36 @@ describe("AdversarialReviewPromptBuilder — priorAdversarialIterations", () => 
     expect(result).toContain("## Prior Iterations — verdict required before new analysis");
   });
 
-  test("prior iterations block contains the iteration number", () => {
+  test("prior iterations block contains the round header with iteration number", () => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
       mode: "ref",
       storyGitRef: STORY_GIT_REF,
       priorAdversarialIterations: PRIOR_ITERATIONS,
     });
-    expect(result).toContain("| 1 |");
+    expect(result).toContain("### Round 1");
   });
 
-  test("prior iterations block contains strategy name and outcome", () => {
+  test("prior iterations block contains outcome and finding text", () => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
       mode: "ref",
       storyGitRef: STORY_GIT_REF,
       priorAdversarialIterations: PRIOR_ITERATIONS,
     });
-    expect(result).toContain("source-fix");
     expect(result).toContain("partial");
+    // Finding text (message) is rendered verbatim rather than as a count
+    expect(result).toContain("Null pointer dereference on empty input");
   });
 
-  test("prior iterations block contains finding count summary", () => {
+  test("prior iterations block contains file:line and count in round header", () => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
       mode: "ref",
       storyGitRef: STORY_GIT_REF,
       priorAdversarialIterations: PRIOR_ITERATIONS,
     });
-    // findingsBefore is empty (0), findingsAfter has 2 findings
-    expect(result).toContain("0 →");
-    expect(result).toContain("2 [");
+    // findingsBefore is empty (0), findingsAfter has 2 findings → header shows (0 → 2)
+    expect(result).toContain("(0 → 2)");
+    // Finding file:line rendered
+    expect(result).toContain("src/auth/login.ts:42");
   });
 
   test("prior iterations block appears before the story block (verdict-first)", () => {

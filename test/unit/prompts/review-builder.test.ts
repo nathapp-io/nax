@@ -153,7 +153,7 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — priorSemanticItera
     expect(result).not.toContain("## Prior Iterations");
   });
 
-  test("includes prior iterations table when priorSemanticIterations has entries", () => {
+  test("includes prior iterations block with round header and finding text when priorSemanticIterations has entries", () => {
     const iteration: Iteration = {
       iterationNum: 1,
       findingsBefore: [],
@@ -171,10 +171,10 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — priorSemanticItera
       priorSemanticIterations: [iteration],
     });
     expect(result).toContain("## Prior Iterations — verdict required before new analysis");
-    expect(result).toContain("| 1 |");
-    expect(result).toContain("partial");
-    expect(result).toContain("0 →");
-    expect(result).toContain("1 [ac-coverage]");
+    expect(result).toContain("### Round 1 — outcome: partial");
+    expect(result).toContain("(0 → 1)");
+    // Finding text rendered verbatim — not a count-category summary
+    expect(result).toContain("AC 2 not wired");
   });
 });
 

@@ -249,18 +249,6 @@ export interface PipelineContext extends DispatchContext {
    * for mechanical failures in files the agent cannot modify (e.g. lint in test files).
    */
   mechanicalFailedOnly?: boolean;
-  /**
-   * Carry-forward iteration history for adversarial review rounds (ADR-022 phase 5).
-   * Appended by reviewFromContext() when adversarial fails with blocking findings.
-   * Cleared when adversarial passes. Injected into the next round's prompt via
-   * buildPriorIterationsBlock so the reviewer sees prior-round findings verdict-first.
-   */
-  priorAdversarialIterations?: Iteration[];
-  /**
-   * Carry-forward iteration history for semantic review rounds (ADR-022 phase 6).
-   * Mirrors priorAdversarialIterations: appended on failure, cleared on pass.
-   */
-  priorSemanticIterations?: Iteration[];
 }
 
 /**

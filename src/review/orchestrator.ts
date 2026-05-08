@@ -156,6 +156,36 @@ export interface OrchestratorReviewOptions {
 }
 
 export class ReviewOrchestrator {
+  /**
+   * Run-scoped per-story iteration history (issue #736 Patch B).
+   *
+   * Keyed by storyId. Lifetime: survives PipelineContext recreation (e.g. after
+   * "agent gave up" triggers a new TDD attempt with a fresh ctx). Cleared per-story
+   * on pass/terminal-fail, and fully reset at run end via reset().
+   */
+  private readonly priorAdversarialByStory = new Map<string, Iteration[]>();
+  private readonly priorSemanticByStory = new Map<string, Iteration[]>();
+
+  /**
+   * Remove iteration history for a single story.
+   * Call after markStoryPassed or markStoryFailed (terminal) so a subsequent
+   * re-run for the same story starts fresh.
+   */
+  clearStory(storyId: string): void {
+    this.priorAdversarialByStory.delete(storyId);
+    this.priorSemanticByStory.delete(storyId);
+  }
+
+  /**
+   * Remove all iteration history.
+   * Call at the end of runCompletionPhase so the singleton is clean for the
+   * next run in the same process.
+   */
+  reset(): void {
+    this.priorAdversarialByStory.clear();
+    this.priorSemanticByStory.clear();
+  }
+
   /** Run built-in checks + plugin reviewers. Returns unified result. */
   async review(opts: OrchestratorReviewOptions): Promise<OrchestratorReviewResult> {
     const {
@@ -559,6 +589,10 @@ export class ReviewOrchestrator {
         ? { semantic: semanticBundle ?? undefined, adversarial: adversarialBundle ?? undefined }
         : undefined;
 
+    // Read from run-scoped maps (Patch B) — survives PipelineContext recreation.
+    const priorAdversarialIterations = this.priorAdversarialByStory.get(ctx.story.id) ?? [];
+    const priorSemanticIterations = this.priorSemanticByStory.get(ctx.story.id) ?? [];
+
     const result = await this.review({
       reviewConfig: ctx.config.review,
       workdir: ctx.workdir,
@@ -580,32 +614,33 @@ export class ReviewOrchestrator {
       featureName: ctx.prd.feature,
       resolverSession,
       priorFailures: ctx.story.priorFailures,
-      priorSemanticIterations: ctx.priorSemanticIterations,
+      priorSemanticIterations,
       featureContextMarkdown: ctx.featureContextMarkdown,
       contextBundles,
       projectDir: ctx.projectDir,
       env: ctx.worktreeDependencyContext?.env,
       naxIgnoreIndex: ctx.naxIgnoreIndex,
       runtime: ctx.runtime,
-      priorAdversarialIterations: ctx.priorAdversarialIterations,
+      priorAdversarialIterations,
     });
 
-    // Update ctx.priorAdversarialIterations for the next review round (ADR-022 phase 5).
+    // Update run-scoped maps for the next review round (issue #736 Patch B).
     // When adversarial fails, append an Iteration so the next round's prompt carries
     // history forward via buildPriorIterationsBlock (verdict-first). This covers both
     // structured-findings failures and looksLikeFail (truncated JSON / no findings array).
-    // When adversarial passes, clear the history.
+    // When adversarial passes, remove the story from the map.
     //
     // fixesApplied is always [] here because adversarial fixes run in the implementation
     // session outside this subsystem — there is no FixApplied op to record.
+    const logger = getSafeLogger();
     const advCheck = result.builtIn.checks?.find((c) => c.check === "adversarial");
     if (advCheck) {
       if (!advCheck.success && !advCheck.skipped) {
-        const prior = ctx.priorAdversarialIterations ?? [];
+        const prior = this.priorAdversarialByStory.get(ctx.story.id) ?? [];
         const findingsBefore = prior.length > 0 ? (prior[prior.length - 1].findingsAfter ?? []) : [];
         const findingsAfter = advCheck.findings ?? [];
         const now = new Date().toISOString();
-        const newIteration: Iteration = {
+        const next: Iteration = {
           iterationNum: prior.length + 1,
           findingsBefore,
           fixesApplied: [],
@@ -614,27 +649,32 @@ export class ReviewOrchestrator {
           startedAt: now,
           finishedAt: now,
         };
-        ctx.priorAdversarialIterations = [...prior, newIteration];
+        this.priorAdversarialByStory.set(ctx.story.id, [...prior, next]);
+        logger?.debug("review", "Adversarial iteration recorded", {
+          storyId: ctx.story.id,
+          iterationNum: next.iterationNum,
+          outcome: next.outcome,
+          findingsCount: findingsAfter.length,
+        });
       } else if (advCheck.success && !advCheck.skipped) {
-        ctx.priorAdversarialIterations = undefined;
+        this.priorAdversarialByStory.delete(ctx.story.id);
       }
     } else if (retrySkipChecks?.has("adversarial")) {
       // Adversarial was skipped because it passed in the previous review pass.
       // Clear any stale iteration history — the reviewer already approved this code.
-      ctx.priorAdversarialIterations = undefined;
+      this.priorAdversarialByStory.delete(ctx.story.id);
     }
 
-    // Update ctx.priorSemanticIterations for the next review round (ADR-022 phase 6).
-    // Mirrors the adversarial carry-forward pattern: append on failure, clear on pass.
+    // Mirror the same pattern for semantic review (ADR-022 phase 6, issue #736 Patch B).
     // fixesApplied is always [] — semantic fixes run in the implementation session.
     const semCheck = result.builtIn.checks?.find((c) => c.check === "semantic");
     if (semCheck) {
       if (!semCheck.success && !semCheck.skipped) {
-        const prior = ctx.priorSemanticIterations ?? [];
+        const prior = this.priorSemanticByStory.get(ctx.story.id) ?? [];
         const findingsBefore = prior.length > 0 ? (prior[prior.length - 1].findingsAfter ?? []) : [];
         const findingsAfter = semCheck.findings ?? [];
         const now = new Date().toISOString();
-        const newIteration: Iteration = {
+        const next: Iteration = {
           iterationNum: prior.length + 1,
           findingsBefore,
           fixesApplied: [],
@@ -643,12 +683,18 @@ export class ReviewOrchestrator {
           startedAt: now,
           finishedAt: now,
         };
-        ctx.priorSemanticIterations = [...prior, newIteration];
+        this.priorSemanticByStory.set(ctx.story.id, [...prior, next]);
+        logger?.debug("review", "Semantic iteration recorded", {
+          storyId: ctx.story.id,
+          iterationNum: next.iterationNum,
+          outcome: next.outcome,
+          findingsCount: findingsAfter.length,
+        });
       } else if (semCheck.success && !semCheck.skipped) {
-        ctx.priorSemanticIterations = undefined;
+        this.priorSemanticByStory.delete(ctx.story.id);
       }
     } else if (retrySkipChecks?.has("semantic")) {
-      ctx.priorSemanticIterations = undefined;
+      this.priorSemanticByStory.delete(ctx.story.id);
     }
 
     return result;
