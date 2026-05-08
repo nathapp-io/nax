@@ -1,9 +1,9 @@
 /**
- * Unit tests for truncation-aware condensed retry in semanticReviewOp.
+ * Unit tests for truncation-aware condensed retry in src/review/semantic.ts
  *
- * US-005b: hopBody removed; retry behavior is now expressed through op.retry
- * (makeParseRetryStrategy). Tests verify prompt selection via shouldRetry()
- * and truncation detection through the RetryContext.lastOutput path.
+ * ADR-019: Retry moved inside semanticReviewOp.hopBody. runSemanticReview
+ * calls callOp once; retry is invisible at this level. Tests verify
+ * hopBody prompt selection and truncation detection.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
@@ -12,11 +12,8 @@ import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import { ParseValidationError } from "../../../src/agents/retry/types";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
 import { makeMockAgentManager } from "../../helpers";
 import { makeMockRuntime } from "../../helpers/runtime";
-import { makeTestRuntime } from "../../helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -33,6 +30,7 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 60_000,
+  substantiation: { requote: true, maxRequotes: 5 },
   excludePatterns: [":!test/", ":!*.test.ts"],
 };
 
@@ -117,12 +115,6 @@ function setupHappyPathDeps() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeBuildCtx() {
-  const runtime = makeTestRuntime();
-  const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(semanticReviewOp.config as any) };
-}
-
 function makeAgentManager(llmResponse: string): ReturnType<typeof makeMockAgentManager> {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
@@ -141,104 +133,132 @@ function makeAgentManager(llmResponse: string): ReturnType<typeof makeMockAgentM
   });
 }
 
-function makeRetryCtx(lastOutput: string, storyId = STORY.id) {
-  return {
-    site: "complete" as const,
-    agentName: "claude",
-    stage: "review" as const,
-    storyId,
-    lastOutput,
-  };
-}
-
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe("semanticReviewOp.retry — truncation-detected condensed retry", () => {
-  test("uses condensed retry prompt when response length is at the ACP output cap", () => {
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
+describe("semanticReviewOp.hopBody — truncation-detected condensed retry", () => {
+  test("uses condensed retry prompt when response length is at the ACP output cap", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
-    );
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        workdir: "/tmp/wd",
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
-    expect(result.retry).toBe(true);
-    expect(result.nextPrompt).toContain("truncated");
+    expect(sendCalls).toHaveLength(2);
+    expect(sendCalls[1]).toContain("truncated");
   });
 
-  test("uses standard retry prompt when response is short unparseable text (not at cap)", () => {
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
+  test("uses standard retry prompt when response is short unparseable text (not at cap)", async () => {
+    const nonJson = "here is my analysis: the code looks fine overall";
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: nonJson, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx("here is my analysis: the code looks fine overall"),
-    );
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        workdir: "/tmp/wd",
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
-    expect(result.retry).toBe(true);
-    expect(result.nextPrompt).not.toContain("truncated");
+    expect(sendCalls).toHaveLength(2);
+    expect(sendCalls[1]).not.toContain("truncated");
   });
 
-  test("fires retry when response is at cap even before attempting parse", () => {
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
+  test("fires retry when response is at cap even before attempting parse", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
-    );
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        workdir: "/tmp/wd",
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
-    expect(result.retry).toBe(true);
+    expect(sendCalls).toHaveLength(2);
   });
 
-  test("succeeds when condensed retry returns valid JSON after cap-length truncation", () => {
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
+  test("succeeds when condensed retry returns valid JSON after cap-length truncation", async () => {
+    const condensedResponse = JSON.stringify({
+      passed: false,
+      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "missing impl", suggestion: "add it" }],
+    });
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: condensedResponse, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
 
-    // First attempt: truncated output → should retry
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
-    );
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    const result = await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        workdir: "/tmp/wd",
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
-    expect(result.retry).toBe(true);
-    expect(result.nextPrompt).toBeDefined();
+    expect(result.output).toBe(condensedResponse);
   });
 });
 
-describe("semanticReviewOp.retry — truncation logging", () => {
-  test("logs warn 'JSON parse retry — likely truncated' when response is at cap", () => {
+describe("semanticReviewOp.hopBody — truncation logging", () => {
+  test("logs warn 'JSON parse retry — original response truncated' when response is at cap", async () => {
     const logger = makeLogger();
     const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const mockSend = mock(async (_prompt: string) => {
+      return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
 
-    strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
-    );
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        workdir: "/tmp/wd",
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
     expect(truncatedLog).toBeDefined();
@@ -247,21 +267,24 @@ describe("semanticReviewOp.retry — truncation logging", () => {
     loggerSpy.mockRestore();
   });
 
-  test("does not log truncation warning when response is short unparseable text (not at cap)", () => {
+  test("does not log truncation warning when response is short unparseable text (not at cap)", async () => {
     const logger = makeLogger();
     const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const mockSend = mock(async (_prompt: string) => {
+      return { output: "not json text", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
 
-    strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx("not json text"),
-    );
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: {
+        workdir: "/tmp/wd",
+        story: STORY,
+        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+        mode: "embedded",
+      },
+    } as any);
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
     expect(truncatedLog).toBeUndefined();
@@ -270,8 +293,8 @@ describe("semanticReviewOp.retry — truncation logging", () => {
   });
 });
 
-describe("semanticReviewOp.retry — Bug 4 regression: parser-first, length is a hint not a veto", () => {
-  test("parseable near-cap response is NOT retried (Bug 4 regression)", () => {
+describe("semanticReviewOp.hopBody — Bug 4 regression: parser-first, length is a hint not a veto", () => {
+  test("parseable near-cap response is NOT retried (Bug 4 regression)", async () => {
     // Build a valid, parseable response that is near the output cap.
     const validNearCap = JSON.stringify({
       passed: false,
@@ -286,93 +309,63 @@ describe("semanticReviewOp.retry — Bug 4 regression: parser-first, length is a
     });
     expect(validNearCap.length).toBeGreaterThanOrEqual(4900);
 
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
-
-    // Parser accepted the response — shouldRetry should not retry
-    // (parsed is valid, so the strategy returns { retry: false })
-    const result = strategy.shouldRetry(
-      // This would only be called if callOp detected a parse error — but for a valid
-      // near-cap response, callOp would NOT call shouldRetry at all. This test verifies
-      // the strategy handles already-valid-parsed content gracefully.
-      new ParseValidationError("shape invalid"),
-      0,
-      makeRetryCtx(validNearCap),
-    );
-
-    // The strategy parses the output internally — since it's valid, no retry
-    expect(result.retry).toBe(false);
-  });
-
-  test("unparseable near-cap response still triggers condensed retry", () => {
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
-
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(AT_CAP_UNPARSEABLE),
-    );
-
-    expect(result.retry).toBe(true);
-    expect(result.nextPrompt).toContain("truncated");
-  });
-
-  test("parseable response with invalid shape triggers standard (non-condensed) retry", () => {
-    // Parseable JSON but missing required `findings` array — invalid shape.
-    const wrongShape = JSON.stringify({ passed: true });
-
-    const ctx = makeBuildCtx();
-    const strategy = (semanticReviewOp.retry as any)(
-      { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-      ctx,
-    );
-
-    const result = strategy.shouldRetry(
-      new ParseValidationError("shape invalid"),
-      0,
-      makeRetryCtx(wrongShape),
-    );
-
-    expect(result.retry).toBe(true);
-    // Standard retry — no "truncated" wording.
-    expect(result.nextPrompt).not.toContain("truncated");
-  });
-});
-
-describe("runSemanticReview — truncation integration via callOp mock", () => {
-  beforeEach(() => {
-    saveAllDeps();
-    setupHappyPathDeps();
-  });
-
-  afterEach(restoreAllDeps);
-
-  test("returns fail-open when callOp returns failOpen (after retry exhausted)", async () => {
-    _semanticDeps.callOp = mock(async () => ({
-      passed: true,
-      findings: [],
-      failOpen: true,
-    }));
-    const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
-    const runtime = makeMockRuntime({ agentManager });
-
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime,
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      return { output: validNearCap, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
     });
 
-    expect(result.success).toBe(true);
-    expect(result.failOpen).toBe(true);
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    const result = await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    } as any);
+
+    // Parser accepted the response — no retry should fire.
+    expect(sendCalls).toHaveLength(1);
+    expect(result.output).toBe(validNearCap);
+  });
+
+  test("unparseable near-cap response still triggers condensed retry", async () => {
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    } as any);
+
+    expect(sendCalls).toHaveLength(2);
+    expect(sendCalls[1]).toContain("truncated");
+  });
+
+  test("parseable response with invalid shape triggers standard (non-condensed) retry", async () => {
+    // Parseable JSON but missing required `findings` array — invalid shape.
+    const wrongShape = JSON.stringify({ passed: true });
+    const sendCalls: string[] = [];
+    const mockSend = mock(async (prompt: string) => {
+      sendCalls.push(prompt);
+      if (sendCalls.length === 1) {
+        return { output: wrongShape, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }
+      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+    });
+
+    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+    await semanticReviewOp.hopBody!("initial prompt", {
+      send: mockSend,
+      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    } as any);
+
+    expect(sendCalls).toHaveLength(2);
+    // Standard retry — no "truncated" wording.
+    expect(sendCalls[1]).not.toContain("truncated");
   });
 });

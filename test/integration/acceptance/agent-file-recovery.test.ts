@@ -44,9 +44,9 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const testFilePath = join(dir, "test-feature.nax-acceptance.test.ts");
 
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => {
+        runWithFallbackFn: async (_req) => {
           await Bun.write(testFilePath, REAL_TEST_CODE);
-          return { output: CONVERSATIONAL_OUTPUT, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return { result: { success: true, exitCode: 0, output: CONVERSATIONAL_OUTPUT, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
@@ -78,9 +78,9 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const testFilePath = join(dir, "test-feature.nax-acceptance.test.ts");
 
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => {
+        runWithFallbackFn: async (_req) => {
           await Bun.write(testFilePath, STUB_TEST_CODE);
-          return { output: CONVERSATIONAL_OUTPUT, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return { result: { success: true, exitCode: 0, output: CONVERSATIONAL_OUTPUT, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
@@ -110,7 +110,7 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const testFilePath = join(dir, "test-feature.nax-acceptance.test.ts");
 
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => ({ output: CONVERSATIONAL_OUTPUT, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+        runWithFallbackFn: async (_req) => ({ result: { success: true, exitCode: 0, output: CONVERSATIONAL_OUTPUT, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
       const ctx: CallContext = {

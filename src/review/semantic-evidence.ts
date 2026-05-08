@@ -2,23 +2,21 @@ import { isAbsolute } from "node:path";
 import { getSafeLogger } from "../logger";
 import { validateModulePath } from "../utils/path-security";
 import type { LLMFinding } from "./semantic-helpers";
+import { isBlockingSeverity } from "./semantic-helpers";
 import type { SemanticReviewConfig } from "./types";
 
 const OBSERVED_PREVIEW_CHARS = 160;
 const ISSUE_PREVIEW_CHARS = 200;
 
-/**
- * Stable telemetry marker for the substring-substantiation downgrade.
- * Surfaced on every "Downgraded unsubstantiated semantic error finding" log
- * line so audit / dashboards can measure how often this filter suppresses
- * findings (#826).
- */
 export const SEMANTIC_FINDING_DOWNGRADED_EVENT = "review.semantic.finding.downgraded";
 
-/**
- * Injectable deps so tests can capture log calls without poking the logger
- * singleton. Production code should never override this.
- */
+export interface EvidenceCheckResult {
+  status: "matched" | "unmatched" | "unreadable" | "missing-observed";
+  file: string;
+  line?: number;
+  observed?: string;
+}
+
 export const _evidenceDeps = {
   getLogger: getSafeLogger,
 };
@@ -28,36 +26,51 @@ export async function substantiateSemanticEvidence(
   diffMode: SemanticReviewConfig["diffMode"],
   workdir: string,
   storyId: string,
+  blockingThreshold: "error" | "warning" | "info" = "error",
 ): Promise<LLMFinding[]> {
   if (diffMode !== "ref") return findings;
-  return Promise.all(findings.map((finding) => substantiateFinding(finding, workdir, storyId)));
+  return Promise.all(
+    findings.map(async (finding) => {
+      if (!isBlockingSeverity(finding.severity, blockingThreshold)) return finding;
+      const evidence = await checkFindingEvidence({ finding, workdir });
+      if (evidence.status !== "unmatched") return finding;
+      return downgradeUnsubstantiatedFinding({ finding, storyId, ...evidence });
+    }),
+  );
 }
 
-async function substantiateFinding(finding: LLMFinding, workdir: string, storyId: string): Promise<LLMFinding> {
-  if (finding.severity !== "error") return finding;
+export async function checkFindingEvidence(opts: {
+  finding: LLMFinding;
+  workdir: string;
+}): Promise<EvidenceCheckResult> {
+  const observed = opts.finding.verifiedBy?.observed?.trim();
+  const file = opts.finding.verifiedBy?.file?.trim() || opts.finding.file;
+  const line = opts.finding.verifiedBy?.line ?? opts.finding.line;
+  if (!observed) return { status: "missing-observed", file, line };
+  const contents = await readSafeFile(opts.workdir, file);
+  if (contents === null) return { status: "unreadable", file, line, observed };
+  return normalizedIncludes(contents, observed)
+    ? { status: "matched", file, line, observed }
+    : { status: "unmatched", file, line, observed };
+}
 
-  const observed = finding.verifiedBy?.observed?.trim();
-  if (!observed) return finding;
-
-  const file = finding.verifiedBy?.file?.trim() || finding.file;
-  const contents = await readSafeFile(workdir, file);
-
-  // File genuinely unreadable on this machine — cannot verify or refute.
-  // Preserve the finding rather than silently demoting a real AC violation.
-  if (contents === null) return finding;
-
-  if (normalizedIncludes(contents, observed)) return finding;
-
+export function downgradeUnsubstantiatedFinding(opts: {
+  finding: LLMFinding;
+  storyId: string;
+  event?: string;
+  file?: string;
+  line?: number;
+  observed?: string;
+}): LLMFinding {
   _evidenceDeps.getLogger()?.warn("review", "Downgraded unsubstantiated semantic error finding", {
-    storyId,
-    event: SEMANTIC_FINDING_DOWNGRADED_EVENT,
-    file,
-    line: finding.verifiedBy?.line ?? finding.line,
-    issue: finding.issue?.slice(0, ISSUE_PREVIEW_CHARS),
-    observed: observed.slice(0, OBSERVED_PREVIEW_CHARS),
+    storyId: opts.storyId,
+    event: opts.event ?? SEMANTIC_FINDING_DOWNGRADED_EVENT,
+    file: opts.file ?? opts.finding.verifiedBy?.file ?? opts.finding.file,
+    line: opts.line ?? opts.finding.verifiedBy?.line ?? opts.finding.line,
+    issue: opts.finding.issue?.slice(0, ISSUE_PREVIEW_CHARS),
+    observed: opts.observed?.slice(0, OBSERVED_PREVIEW_CHARS),
   });
-
-  return { ...finding, severity: "unverifiable" };
+  return { ...opts.finding, severity: "unverifiable" };
 }
 
 async function readSafeFile(workdir: string, file: string): Promise<string | null> {
@@ -69,10 +82,6 @@ async function readSafeFile(workdir: string, file: string): Promise<string | nul
       return null;
     }
   }
-
-  // Absolute path outside workdir — the LLM ran its tool against a different
-  // machine or repo root. Attempt a direct read so we can still verify the
-  // evidence rather than skipping substantiation entirely.
   if (isAbsolute(file)) {
     try {
       return await Bun.file(file).text();
@@ -80,7 +89,6 @@ async function readSafeFile(workdir: string, file: string): Promise<string | nul
       return null;
     }
   }
-
   return null;
 }
 

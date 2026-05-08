@@ -3,7 +3,7 @@ import { hasLikelyTestContent, isStubTestContent } from "../acceptance/heuristic
 import { acceptanceGenConfigSelector } from "../config";
 import type { AcceptanceGenConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
-import type { CompleteOperation } from "./types";
+import type { RunOperation } from "./types";
 
 export interface AcceptanceGenerateInput {
   featureName: string;
@@ -17,15 +17,15 @@ export interface AcceptanceGenerateOutput {
   testCode: string | null;
 }
 
-export const acceptanceGenerateOp: CompleteOperation<
+export const acceptanceGenerateOp: RunOperation<
   AcceptanceGenerateInput,
   AcceptanceGenerateOutput,
   AcceptanceGenConfig
 > = {
-  kind: "complete",
+  kind: "run",
   name: "acceptance-generate",
   stage: "acceptance",
-  jsonMode: false,
+  session: { role: "acceptance-gen", lifetime: "fresh" },
   config: acceptanceGenConfigSelector,
   model: (_input, ctx) => ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,

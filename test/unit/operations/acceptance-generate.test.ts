@@ -34,14 +34,14 @@ function makeVerifyCtx(overrides: {
 }
 
 describe("acceptanceGenerateOp shape", () => {
-  test("kind is complete", () => {
-    expect(acceptanceGenerateOp.kind).toBe("complete");
+  test("kind is run", () => {
+    expect(acceptanceGenerateOp.kind).toBe("run");
   });
   test("name is acceptance-generate", () => {
     expect(acceptanceGenerateOp.name).toBe("acceptance-generate");
   });
-  test("jsonMode is false", () => {
-    expect(acceptanceGenerateOp.jsonMode).toBe(false);
+  test("session role is acceptance-gen with fresh lifetime", () => {
+    expect(acceptanceGenerateOp.session).toEqual({ role: "acceptance-gen", lifetime: "fresh" });
   });
   test("stage is acceptance", () => {
     expect(acceptanceGenerateOp.stage).toBe("acceptance");

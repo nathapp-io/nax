@@ -17,9 +17,11 @@ const SAMPLE_CONFIG = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 600_000,
+  substantiation: { requote: true, maxRequotes: 5 },
 };
 
 const SAMPLE_INPUT: SemanticReviewInput = {
+  workdir: "/tmp/wd",
   story: SAMPLE_STORY,
   semanticConfig: SAMPLE_CONFIG,
   mode: "ref",

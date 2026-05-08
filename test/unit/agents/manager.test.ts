@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
 import { NaxConfigSchema } from "../../../src/config/schemas";
 import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "../../../src/runtime/agent-middleware";
+import { _acpAdapterDeps } from "../../../src/agents/acp/adapter";
+import { makeClient, makeSession } from "./acp/adapter.test";
 
 function makeManager(fallback: Record<string, unknown> = {}) {
   return new AgentManager({
@@ -205,6 +207,15 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
 });
 
 describe("AgentManager — middleware envelope", () => {
+  const origCreateClient = _acpAdapterDeps.createClient;
+  beforeEach(() => {
+    _acpAdapterDeps.createClient = mock(() => makeClient(makeSession()));
+  });
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    mock.restore();
+  });
+
   function makeMiddlewareManager(mw?: AgentMiddleware): AgentManager {
     return new AgentManager(DEFAULT_CONFIG, undefined, {
       middleware: mw ? MiddlewareChain.from([mw]) : MiddlewareChain.empty(),

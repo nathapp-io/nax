@@ -1,16 +1,19 @@
-import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
+import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
-import { validateLLMShape } from "../review/semantic-helpers";
+import { checkFindingEvidence, downgradeUnsubstantiatedFinding } from "../review/semantic-evidence";
+import { type LLMFinding, isBlockingSeverity, validateLLMShape } from "../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { makeReviewRetryHopBody } from "./_review-retry";
 import type { RunOperation } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
 
 export interface SemanticReviewInput {
+  workdir: string;
   story: SemanticStory;
   semanticConfig: SemanticReviewConfig;
   mode: "embedded" | "ref";
@@ -38,20 +41,30 @@ export interface SemanticReviewOutput {
 }
 
 const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], failOpen: true };
+const SEMANTIC_REQUOTE_RECOVERED_EVENT = "review.semantic.finding.requote_recovered";
+const SEMANTIC_REQUOTE_FAILED_EVENT = "review.semantic.finding.requote_failed";
+const DEFAULT_MAX_REQUOTES = 5;
 
-const semanticParseRetry = (input: SemanticReviewInput) =>
-  makeParseRetryStrategy({
-    validate: (parsed) => validateLLMShape(parsed) !== null,
-    reviewerKind: "semantic",
-    maxAttempts: 2,
-    prompts: {
-      invalid: () => ReviewPromptBuilder.jsonRetry(),
-      truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
-    },
-    exhaustedFallback: (lastOutput) =>
-      /"passed"\s*:\s*false/.test(lastOutput) ? { passed: false, findings: [], looksLikeFail: true } : FAIL_OPEN,
-    logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
-  });
+const retrySemanticReviewHopBody = makeReviewRetryHopBody<SemanticReviewInput>(
+  (parsed) => validateLLMShape(parsed) !== null,
+  "semantic",
+);
+
+const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig>["hopBody"] = async (
+  initialPrompt,
+  ctx,
+) => {
+  const turn = await retrySemanticReviewHopBody(initialPrompt, ctx);
+  const parsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
+  if (!parsed) return turn;
+  const requoted = await requoteBlockingFindings(parsed.findings, ctx);
+  if (!requoted.changed) return turn;
+  return {
+    ...turn,
+    output: JSON.stringify({ passed: parsed.passed, findings: requoted.findings }),
+    estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
+  };
+};
 
 export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {
   kind: "run",
@@ -64,7 +77,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   // silently ignore the user's review.semantic.model setting.
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
-  retry: (input) => semanticParseRetry(input),
+  hopBody: semanticReviewHopBody,
   build(input, _ctx) {
     const base = new ReviewPromptBuilder().buildSemanticReviewPrompt(input.story, input.semanticConfig, {
       mode: input.mode,
@@ -84,11 +97,93 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateLLMShape(raw);
     if (parsed) return { passed: parsed.passed, findings: parsed.findings };
-    // "passed":false without a started findings object → clear failure signal, no retry needed
-    // "passed":false WITH "findings":[{ → real truncated response → throw to trigger retry
-    if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {
-      return { passed: false, findings: [], looksLikeFail: true };
-    }
-    throw new ParseValidationError("[semantic-review] parse failed: invalid JSON shape");
+    if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
+    return FAIL_OPEN;
   },
 };
+
+async function requoteBlockingFindings(
+  findings: LLMFinding[],
+  ctx: { send: (prompt: string) => Promise<{ output: string; estimatedCostUsd?: number }>; input: SemanticReviewInput },
+): Promise<{ findings: LLMFinding[]; changed: boolean; extraCostUsd: number }> {
+  const threshold = ctx.input.blockingThreshold ?? "error";
+  const maxRequotes = ctx.input.semanticConfig.substantiation?.maxRequotes ?? DEFAULT_MAX_REQUOTES;
+  const requoteEnabled = ctx.input.semanticConfig.substantiation?.requote ?? true;
+  if (ctx.input.mode !== "ref" || !requoteEnabled || maxRequotes <= 0) {
+    return { findings, changed: false, extraCostUsd: 0 };
+  }
+  const next = [...findings];
+  let changed = false;
+  let extraCostUsd = 0;
+  let used = 0;
+  for (const [index, finding] of next.entries()) {
+    if (!isBlockingSeverity(finding.severity, threshold)) continue;
+    const initialEvidence = await checkFindingEvidence({ finding, workdir: ctx.input.workdir });
+    if (initialEvidence.status !== "unmatched") continue;
+    if (used >= maxRequotes) break;
+    used += 1;
+
+    const retry = await ctx.send(
+      ReviewPromptBuilder.requoteVerbatim({ finding, previousObserved: initialEvidence.observed ?? "" }),
+    );
+    extraCostUsd += retry.estimatedCostUsd ?? 0;
+    const requote = parseRequoteResponse(retry.output);
+    if (!requote) {
+      next[index] = downgradeUnsubstantiatedFinding({
+        finding,
+        storyId: ctx.input.story.id,
+        event: SEMANTIC_REQUOTE_FAILED_EVENT,
+        ...initialEvidence,
+      });
+      changed = true;
+      continue;
+    }
+
+    const updatedFinding: LLMFinding = {
+      ...finding,
+      verifiedBy: {
+        command: finding.verifiedBy?.command,
+        file: requote.file,
+        line: requote.line,
+        observed: requote.observed,
+      },
+    };
+    const requotedEvidence = await checkFindingEvidence({
+      finding: updatedFinding,
+      workdir: ctx.input.workdir,
+    });
+    if (requotedEvidence.status === "matched") {
+      getSafeLogger()?.info("review", "Recovered semantic finding via same-session requote", {
+        storyId: ctx.input.story.id,
+        event: SEMANTIC_REQUOTE_RECOVERED_EVENT,
+        file: requotedEvidence.file,
+        line: requotedEvidence.line,
+      });
+      next[index] = updatedFinding;
+      changed = true;
+      continue;
+    }
+
+    next[index] = downgradeUnsubstantiatedFinding({
+      finding: updatedFinding,
+      storyId: ctx.input.story.id,
+      event: SEMANTIC_REQUOTE_FAILED_EVENT,
+      file: requotedEvidence.file,
+      line: requotedEvidence.line,
+      observed: requotedEvidence.observed,
+    });
+    changed = true;
+  }
+  return { findings: next, changed, extraCostUsd };
+}
+
+function parseRequoteResponse(output: string): { file: string; line?: number; observed: string } | null {
+  const parsed = tryParseLLMJson<Record<string, unknown>>(output);
+  if (!parsed || typeof parsed.file !== "string" || typeof parsed.observed !== "string") return null;
+  if (parsed.line != null && typeof parsed.line !== "number") return null;
+  return {
+    file: parsed.file,
+    line: typeof parsed.line === "number" ? parsed.line : undefined,
+    observed: parsed.observed,
+  };
+}

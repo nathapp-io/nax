@@ -241,7 +241,8 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   }
 
   // Split debate findings by blocking threshold — drop ungrounded error findings first
-  const sanitized = sanitizeRefModeFindings(deduped, diffMode);
+  const debateThreshold = blockingThreshold ?? "error";
+  const sanitized = sanitizeRefModeFindings(deduped, diffMode, debateThreshold);
   const { accepted: debateFindings, dropped: acDropped } = filterByAcQuote(sanitized, story.acceptanceCriteria ?? []);
   if (acDropped.length > 0) {
     logger?.warn("review", "Semantic debate findings dropped: acQuote validation failed", {
@@ -249,7 +250,6 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
       dropped: acDropped.length,
     });
   }
-  const debateThreshold = blockingThreshold ?? "error";
   const debateBlocking = debateFindings.filter((f) => isBlockingSeverity(f.severity, debateThreshold));
   const debateAdvisory = debateFindings.filter((f) => !isBlockingSeverity(f.severity, debateThreshold));
 
